@@ -10,7 +10,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds
+from game_sandbox_harness.environment import BuiltinAgent, EnvironmentEntry, EnvironmentMeta, PlayerBounds
 from game_sandbox_harness.local_server import LocalServer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +20,7 @@ META = EnvironmentMeta(
     env_id="flappy_bird",
     display_name="Flappy Bird",
     description="A deterministic local browser test environment.",
+    builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
     layout=PlayerBounds(min=1, max=1),
     human_players=("player_0",),
     human_timeout_ms=None,

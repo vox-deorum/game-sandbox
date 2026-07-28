@@ -382,10 +382,10 @@ describe('SessionPage', () => {
       parameters: { players: 4 },
       seed: 0,
       players: {
-        player_0: { kind: 'agent', label: 'Naive agent' },
-        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
         player_2: { kind: 'human', label: 'dev', user: 'dev' },
-        player_3: { kind: 'agent', label: 'Naive agent' },
+        player_3: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       },
       seats: {
         seat_0: ['player_0'],
@@ -422,10 +422,10 @@ describe('SessionPage', () => {
       environment: 'hearts',
       parameters: { players: 4 },
       players: {
-        player_0: { kind: 'agent', label: 'Naive agent' },
-        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
         player_2: { kind: 'human', label: 'dev', user: 'dev' },
-        player_3: { kind: 'agent', label: 'Naive agent' },
+        player_3: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       },
       seats: {
         seat_0: ['player_0'],

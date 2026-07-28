@@ -95,12 +95,20 @@ def resolve_cli_parameters(entry: EnvironmentEntry, raw_parameters: list[str]) -
     return resolve_parameters(entry.meta, overrides)
 
 
-def builtin_agent_path(env_id: str) -> str:
-    """Return the host copy of the environment-specific production baseline."""
-    path = BUILTIN_AGENT_ROOT / env_id
+def builtin_agent_path(env_id: str, name: str = "naive") -> str:
+    """Return the host copy of one named production builtin."""
+    path = BUILTIN_AGENT_ROOT / env_id / name
     if not path.is_dir():
-        raise RuntimeError(f"no built-in baseline for {env_id!r} at {path}")
+        raise RuntimeError(f"no built-in agent {name!r} for {env_id!r} at {path}")
     return str(path)
+
+
+def builtin_agent_label(entry: EnvironmentEntry, name: str = "naive") -> str:
+    """Return a builtin's snapshotted display label from installed metadata."""
+    for agent in entry.meta.builtin_agents:
+        if agent.name == name:
+            return agent.label
+    raise RuntimeError(f"environment {entry.meta.env_id!r} does not declare built-in agent {name!r}")
 
 
 def local_config(
@@ -127,9 +135,11 @@ def local_config(
     if companion is not None and (mode != "human" or len(selected_players) == 1):
         raise RuntimeError("--companion is only valid for a wide human seat")
     companion_path: str | None = None
+    companion_builtin = False
     if companion is not None:
         if companion == "naive":
-            companion_path = builtin_agent_path(entry.meta.env_id)
+            companion_path = builtin_agent_path(entry.meta.env_id, "naive")
+            companion_builtin = True
         else:
             supplied = Path(companion)
             repo = supplied.parent if supplied.name == "manifest.json" else supplied
@@ -145,14 +155,25 @@ def local_config(
             continue
         is_companion = mode == "human" and player_id in selected_players and player_id != human_player
         if is_companion:
-            path, label = companion_path, "Companion"
+            path = companion_path
+            label = builtin_agent_label(entry, "naive") if companion_builtin else "Companion"
+            attribution = (
+                {"kind": "agent", "builtin_name": "naive", "label": label}
+                if companion_builtin
+                else {"kind": "agent", "submission_id": "local", "label": label}
+            )
         elif mode == "agent":
             path, label = str(agent_repo), "Selected agent"
+            attribution = {"kind": "agent", "submission_id": "local", "label": label}
         else:
-            path, label = builtin_agent_path(entry.meta.env_id), "Built-in baseline"
+            path, label = builtin_agent_path(entry.meta.env_id, "naive"), builtin_agent_label(entry, "naive")
+            attribution = {"kind": "agent", "builtin_name": "naive", "label": label}
         assert path is not None
-        bindings[player_id] = {"kind": "builtin-agent", "path": path}
-        players[player_id] = {"kind": "agent", "label": label}
+        binding = {"kind": "builtin-agent", "path": path}
+        if "builtin_name" in attribution:
+            binding["name"] = "naive"
+        bindings[player_id] = binding
+        players[player_id] = attribution
     config: dict[str, object] = {
         "env_id": entry.meta.env_id,
         "parameters": resolved_parameters,

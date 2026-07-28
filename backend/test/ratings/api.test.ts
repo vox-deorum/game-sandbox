@@ -32,7 +32,8 @@ const ENV_ID = 'flappy_bird'
 /** A header `players` entry as the recording schema shapes it. */
 type PlayerEntry =
   | { kind: 'human'; label: string; user?: string }
-  | { kind: 'agent'; label: string; submission_id?: string; user?: string }
+  | { kind: 'agent'; label: string; submission_id: string; user?: string }
+  | { kind: 'agent'; label: string; builtin_name: string }
 
 describe('rating API', () => {
   let app: FastifyInstance
@@ -165,12 +166,12 @@ describe('rating API', () => {
     return h
   }
 
-  it('stores a rating of a submitted agent and the Naive baseline under the caller identity', async () => {
+  it('stores a rating of a submitted agent and a named builtin under the caller identity', async () => {
     const season = await playOpenSeason()
     const subId = await submissionFor(season.id, aliceId)
     const recId = await writeRecording('flappy_bird-a', {
       player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      player_1: { kind: 'agent', label: 'Naive agent' },
+      player_1: { kind: 'agent', builtin_name: 'cautious', label: 'Cautious bidder' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
@@ -181,7 +182,7 @@ describe('rating API', () => {
       payload: {
         ratings: [
           { agent: { kind: 'submission', submission_id: subId }, score: 4 },
-          { agent: { kind: 'builtin-naive' }, score: 5 },
+          { agent: { kind: 'builtin', name: 'cautious' }, score: 5 },
         ],
       },
     })
@@ -194,8 +195,8 @@ describe('rating API', () => {
     })
     expect(submittedRating?.score).toBe(4)
     const aggregate = await storage.aggregateRatingsByAgent(season.id)
-    expect(aggregate.find((row) => row.agent.kind === 'builtin-naive')).toEqual({
-      agent: { kind: 'builtin-naive' },
+    expect(aggregate.find((row) => row.agent.kind === 'builtin')).toEqual({
+      agent: { kind: 'builtin', name: 'cautious' },
       mean: 5,
       std: 0,
       count: 1,
@@ -278,7 +279,7 @@ describe('rating API', () => {
     const subId = await submissionFor(season.id, aliceId)
     const recId = await writeRecording('flappy_bird-c', {
       player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      player_1: { kind: 'agent', label: 'Naive agent' },
+      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
@@ -288,7 +289,7 @@ describe('rating API', () => {
       headers: BOB,
       payload: {
         ratings: [
-          { agent: { kind: 'builtin-naive' }, score: 4 },
+          { agent: { kind: 'builtin', name: 'naive' }, score: 4 },
           { agent: { kind: 'submission', submission_id: subId }, score: 9 },
         ],
       },
@@ -302,7 +303,7 @@ describe('rating API', () => {
   it('rejects rating an agent that did not take part in the session', async () => {
     const season = await playOpenSeason()
     const recId = await writeRecording('flappy_bird-d', {
-      player_0: { kind: 'agent', label: 'Naive agent' },
+      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
@@ -339,7 +340,7 @@ describe('rating API', () => {
 
   it('returns session_not_rateable for a null-season session', async () => {
     const recId = await writeRecording('flappy_bird-f', {
-      player_0: { kind: 'agent', label: 'Naive agent' },
+      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     const sessionId = await seedSession({ seasonId: null, recordingId: recId })
     const res = await app.inject({
@@ -358,7 +359,7 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent: { kind: 'builtin-naive' }, score: 4 }] },
+      payload: { ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4 }] },
     })
     expect(res.statusCode).toBe(409)
     expect((res.json() as { code: string }).code).toBe('session_not_finished')
@@ -367,7 +368,7 @@ describe('rating API', () => {
   it('returns session_not_finished for a session that has not ended yet', async () => {
     const season = await playOpenSeason()
     const recId = await writeRecording('flappy_bird-run', {
-      player_0: { kind: 'agent', label: 'Naive agent' },
+      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     // The recording header is on the volume, but the session is still running, not finalized.
     const sessionId = await seedSession({
@@ -419,7 +420,7 @@ describe('rating API', () => {
     await storage.upsertAgentRatingPrompt(season.id, aliceId, 'Judge my dodging')
     const recId = await writeRecording('flappy_bird-h', {
       player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      player_1: { kind: 'agent', label: 'Naive agent' },
+      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       player_2: { kind: 'human', label: 'bob', user: 'bob' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
@@ -460,9 +461,9 @@ describe('rating API', () => {
       your_rating: 4,
       is_own: false,
     })
-    const naive = body.agents.find((a) => a.agent.kind === 'builtin-naive')
+    const naive = body.agents.find((a) => a.agent.kind === 'builtin')
     expect(naive).toMatchObject({
-      display_name: 'Naive baseline',
+      display_name: 'Naive agent',
       author_prompt: null,
       your_rating: null,
     })
@@ -544,7 +545,7 @@ describe('rating API', () => {
   it('returns no rateable agents for a pure Naive watch recording', async () => {
     const season = await playOpenSeason()
     const recId = await writeRecording('flappy_bird-naive-only', {
-      player_0: { kind: 'agent', label: 'Naive agent' },
+      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 

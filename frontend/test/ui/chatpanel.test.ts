@@ -7,8 +7,8 @@ import type { ChatEntry } from '../../src/lib/chat.js'
 // A four-player Spades attribution map: two plain agents, the viewer's human player, and a submitted
 // agent whose ownership a blind viewer must not see.
 const PLAYERS = {
-  player_0: { kind: 'agent' as const, label: 'Naive agent' },
-  player_1: { kind: 'agent' as const, label: 'Naive agent' },
+  player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
+  player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
   player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
   player_3: { kind: 'agent' as const, label: "maya's agent", user: 'maya', submission_id: 'sub-1' },
 }
@@ -158,10 +158,10 @@ describe('ChatPanel', () => {
     // Three opponents share the "Naive agent" label, the common default Spades table. Attribution
     // alone would render three identical recipient options; the player prefix keeps them distinct.
     const roster = {
-      player_0: { kind: 'agent' as const, label: 'Naive agent' },
-      player_1: { kind: 'agent' as const, label: 'Naive agent' },
+      player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
+      player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
       player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
-      player_3: { kind: 'agent' as const, label: 'Naive agent' },
+      player_3: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
     }
     const { container } = render(ChatPanel, {
       props: {

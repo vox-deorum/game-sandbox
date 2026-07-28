@@ -9,7 +9,7 @@ PettingZoo env, not the metadata layer or the harness. Composition writes a mini
 
 from __future__ import annotations
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds
+from game_sandbox_harness.environment import BuiltinAgent, EnvironmentEntry, EnvironmentMeta, PlayerBounds
 
 from .env import default_action, make_env
 from .overlay import extract_overlay
@@ -24,6 +24,7 @@ META = EnvironmentMeta(
         "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of "
         "spades. Or, shoot the moon by taking them all to flip the score!"
     ),
+    builtin_agents=(BuiltinAgent(name="naive", label="Naive agent"),),
     layout=PlayerBounds(min=4, max=4),
     human_players=("player_0", "player_1", "player_2", "player_3"),
     # Turn-based, so there is no pace interval; the move clock is the human deadline.

@@ -72,13 +72,17 @@ class DuckAgent:
 
 
 def main() -> int:
-    # A submitted-agent attribution per player so the fixture header carries a `players` block like a
-    # real multi-agent recording (player_0 a "human", the rest agents) without needing a live session.
+    # Explicit attribution gives the fixture the same disjoint human, builtin, and submitted-agent
+    # identities as a real multi-agent recording without needing a live session.
     player_attribution: dict[str, PlayerAttribution] = {
         "player_0": {"kind": "human", "label": "you"},
-        "player_1": {"kind": "agent", "label": "Naive agent"},
-        "player_2": {"kind": "agent", "label": "Naive agent"},
-        "player_3": {"kind": "agent", "label": "duck-hearts"},
+        "player_1": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
+        "player_2": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
+        "player_3": {
+            "kind": "agent",
+            "submission_id": "duck-hearts",
+            "label": "duck-hearts",
+        },
     }
     players = {f"player_{i}": AgentPlayer(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
     run_and_copy(

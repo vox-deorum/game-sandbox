@@ -338,7 +338,7 @@ def test_tee_store_streams_the_exact_bytes_it_stores(tmp_path: Path):
         environment="fake",
         parameters={"players": 1},
         seed=1,
-        players={"player_0": {"kind": "agent", "label": "Agent"}},
+        players={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
         layout=ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1),
     )
     with store.create("r", header) as writer:

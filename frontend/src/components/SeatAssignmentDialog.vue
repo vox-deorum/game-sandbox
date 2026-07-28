@@ -64,15 +64,18 @@ const emit = defineEmits<{
 // Each seat's agent is a string (a <select> only carries strings): the Naive baseline or
 // `submission:<id>`. The connected human seat is tracked separately by `humanSeat`, so a seat is never
 // in an ambiguous "human-or-agent" string state. Decoded back to the wire union on Start.
-const BUILTIN = 'builtin'
+const BUILTIN_PREFIX = 'builtin:'
+const NAIVE_BUILTIN = `${BUILTIN_PREFIX}naive`
 
 function encodeAgent(assignment: AgentAssignmentInput): string {
-  return assignment.kind === 'submission' ? `submission:${assignment.submissionId}` : BUILTIN
+  return assignment.kind === 'submission'
+    ? `submission:${assignment.submissionId}`
+    : `${BUILTIN_PREFIX}${assignment.name}`
 }
 
 function decodeAgent(value: string): AgentAssignmentInput {
-  return value === BUILTIN
-    ? { kind: 'builtin-agent' }
+  return value.startsWith(BUILTIN_PREFIX)
+    ? { kind: 'builtin-agent', name: value.slice(BUILTIN_PREFIX.length) }
     : { kind: 'submission', submissionId: value.slice('submission:'.length) }
 }
 
@@ -109,7 +112,9 @@ const humanCapableSeats = computed(
 // the Naive baseline and seats the human at the first human-capable seat. A seat goes blank only when
 // its chosen agent stops being offered, and `sanitizeChoices` then makes the operator pick again.
 const defaultAgent =
-  props.mode === 'play' ? BUILTIN : encodeAgent(props.preselect ?? { kind: 'builtin-agent' })
+  props.mode === 'play'
+    ? NAIVE_BUILTIN
+    : encodeAgent(props.preselect ?? { kind: 'builtin-agent', name: 'naive' })
 const agentChoice = reactive<Record<string, string>>(
   Object.fromEntries(seatIds.value.map((seatId) => [seatId, defaultAgent])),
 )
@@ -134,7 +139,7 @@ function canSitHere(seatId: string): boolean {
 // The strict index check types `agentChoice[seatId]` as `string | undefined`, but a seat always has a
 // value, so this read keeps the dropdown binding and the payload typed.
 function seatValue(seatId: string): string {
-  return agentChoice[seatId] ?? BUILTIN
+  return agentChoice[seatId] ?? NAIVE_BUILTIN
 }
 
 function setSeat(seatId: string, value: string): void {
@@ -161,7 +166,7 @@ function playerCountHint(seatId: string): string {
 /** Move the connected human to a seat; the seat it leaves falls back to the Naive default agent. */
 function sitHere(target: string): void {
   if (humanSeat.value !== null) {
-    agentChoice[humanSeat.value] = BUILTIN
+    agentChoice[humanSeat.value] = NAIVE_BUILTIN
   }
   humanSeat.value = target
   sanitizeChoices()
@@ -186,10 +191,16 @@ function agentOptionLabel(agent: WatchAgentSummary): string {
   return maskedSubmissionLabel(agent.anonymous_number)
 }
 
-// The agent options every seat dropdown offers: the always-available Naive baseline, then each ready
-// submission. There is no empty option — a seat always names a concrete agent.
+// Stage 16.1 names the existing Naive choice on the wire. Stage 16.3 adds the remaining declared
+// builtins alongside the restricted-seat behavior. There is no empty option: a seat always names a
+// concrete agent.
 const agentOptions = computed<{ value: string; label: string }[]>(() => [
-  { value: BUILTIN, label: 'Naive agent' },
+  ...props.meta.builtin_agents
+    .filter((agent) => agent.name === 'naive')
+    .map((agent) => ({
+    value: `${BUILTIN_PREFIX}${agent.name}`,
+    label: agent.label,
+    })),
   ...props.agents.map((agent) => ({
     value: `submission:${agent.submission_id}`,
     label: agentOptionLabel(agent),

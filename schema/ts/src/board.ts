@@ -12,4 +12,4 @@ export type BoardAgentRef =
       /** The owner's display name, when the directory has one; absent falls back to `user_id`. */
       user_name?: string
     }
-  | { kind: 'builtin-naive' }
+  | { kind: 'builtin'; name: string }

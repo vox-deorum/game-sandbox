@@ -145,7 +145,7 @@ export interface RecordingSummary {
  * `SeatAssignment`, so the frontend payload is honest at the trust boundary.
  */
 export type AgentAssignmentInput =
-  | { kind: 'builtin-agent' }
+  | { kind: 'builtin-agent'; name: string }
   | { kind: 'submission'; submissionId: string }
 
 /** One assignable seat, including the companion seam used when a later stage adds wide seats. */
@@ -280,7 +280,7 @@ export async function getDocsPage(path: string): Promise<DocsPage> {
 function toAgentBody(assignment: AgentAssignmentInput): Record<string, unknown> {
   return assignment.kind === 'submission'
     ? { kind: 'submission', submission_id: assignment.submissionId }
-    : { kind: assignment.kind }
+    : { kind: assignment.kind, name: assignment.name }
 }
 
 /** Map one seat assignment onto the backend wire shape. */
@@ -671,7 +671,9 @@ export async function unpinRecording(id: string): Promise<PinResult> {
 // --- Ratings and the author prompt (Stage 6.6) -----------------------------------------------
 
 /** The agent identity as it travels on the wire: no `user_id`, which the backend resolves itself. */
-export type AgentRefWire = { kind: 'submission'; submission_id: string } | { kind: 'builtin-naive' }
+export type AgentRefWire =
+  | { kind: 'submission'; submission_id: string }
+  | { kind: 'builtin'; name: string }
 
 /** One rateable agent in a session, as the rating read/write returns it. */
 export interface RateableAgent {
@@ -1040,7 +1042,8 @@ export interface AutomatedPlacement {
   env_id: string
   run_id: string
   rank: number
-  agent_kind: 'submission' | 'builtin-naive'
+  agent_kind: 'submission' | 'builtin'
+  agent_builtin_name: string | null
   agent_submission_id: string | null
   agent_user_id: string | null
   mean_score: number

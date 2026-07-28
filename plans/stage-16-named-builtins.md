@@ -1,6 +1,6 @@
 # Stage 16: Named builtins and a restricted seat
 
-Status: not started.
+Status: in progress.
 
 ## Goal
 

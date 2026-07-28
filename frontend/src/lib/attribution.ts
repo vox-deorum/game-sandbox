@@ -40,7 +40,8 @@ function blindAgentLabel(submissionId: string, anonymousNumbers?: Record<string,
  * anonymous viewer somebody else's identity.
  */
 function isOwnRow(player: Player, ctx: AttributionContext): boolean {
-  return player.user !== undefined && player.user === ctx.viewerId
+  const user = 'user' in player ? player.user : undefined
+  return user !== undefined && user === ctx.viewerId
 }
 
 /**
@@ -58,7 +59,7 @@ export function isBlindMasked(player: Player, ctx: AttributionContext = {}): boo
   if (player.kind === 'human') {
     return !isOwnRow(player, ctx)
   }
-  return player.submission_id !== undefined && !isOwnRow(player, ctx)
+  return 'submission_id' in player && !isOwnRow(player, ctx)
 }
 
 /** Whether a players map contains a submitted (non-builtin) agent player, the only case blind
@@ -66,7 +67,7 @@ export function isBlindMasked(player: Player, ctx: AttributionContext = {}): boo
  *  recording) needs no masking regardless of season state. */
 export function hasSubmittedAgent(players: RecordingHeader['players'] | undefined): boolean {
   return Object.values(players ?? {}).some(
-    (player) => player.kind === 'agent' && player.submission_id !== undefined,
+    (player) => player.kind === 'agent' && 'submission_id' in player,
   )
 }
 
@@ -97,9 +98,9 @@ export function attributionLabel(
     // isBlindMasked is true for an agent only when it carries a submission_id, so the fallback is inert.
     return player.kind === 'human'
       ? 'Human'
-      : blindAgentLabel(player.submission_id ?? '', ctx.anonymousNumbers)
+      : blindAgentLabel('submission_id' in player ? player.submission_id : '', ctx.anonymousNumbers)
   }
-  return player.kind === 'human' ? (player.label ?? player.user) : player.label
+  return player.label
 }
 
 /**

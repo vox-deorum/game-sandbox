@@ -111,10 +111,10 @@ function heartsSeats(
   overrides: Record<string, SeatAssignment> = {},
 ): Record<string, SeatAssignment> {
   return {
-    seat_0: { kind: 'builtin-agent' },
-    seat_1: { kind: 'builtin-agent' },
-    seat_2: { kind: 'builtin-agent' },
-    seat_3: { kind: 'builtin-agent' },
+    seat_0: { kind: 'builtin-agent', name: 'naive' },
+    seat_1: { kind: 'builtin-agent', name: 'naive' },
+    seat_2: { kind: 'builtin-agent', name: 'naive' },
+    seat_3: { kind: 'builtin-agent', name: 'naive' },
     ...overrides,
   }
 }
@@ -128,7 +128,7 @@ function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
     seasonId: PLAY_SEASONS.get(envId) ?? 'missing',
     parameters:
       envId === 'hearts' || envId === 'chatty' ? { players: 4 } : { players: 1, pipe_gap: 100 },
-    seats: seats({ kind: 'builtin-agent' }),
+    seats: seats({ kind: 'builtin-agent', name: 'naive' }),
     ...overrides,
   }
 }
@@ -137,7 +137,7 @@ const HEADER = JSON.stringify({
   schema_version: 1,
   environment: 'flappy_bird',
   parameters: { players: 1, pipe_gap: 100 },
-  players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+  players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
   seats: { seat_0: ['player_0'] },
   seat_plan: 'solo',
   seed: 0,
@@ -155,9 +155,16 @@ function wideEnvironments(): EnvironmentRegistry {
         env_id: WIDE_ENV_ID,
         display_name: 'Synthetic wide',
         description: 'A four-player synthetic layout for orchestrator tests.',
+        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
         layout: {
           kind: 'seat_plans',
-          plans: [{ key: 'uneven', title: 'Uneven', seats: [[0, 2, 3], [1]] }],
+          plans: [
+            {
+              key: 'uneven',
+              title: 'Uneven',
+              seats: [{ players: [0, 2, 3] }, { players: [1] }],
+            },
+          ],
         },
         human_players: ['player_0'],
         human_timeout_ms: 5_000,
@@ -400,11 +407,24 @@ describe('orchestrator', () => {
 
     it('binds the built-in agent for a scripted (watch) session', async () => {
       const { config } = await start(makeOrchestrator(), {
-        seats: seats({ kind: 'builtin-agent' }),
+        seats: seats({ kind: 'builtin-agent', name: 'naive' }),
       })
-      expect(config.player_bindings).toEqual({ player_0: { kind: 'builtin-agent' } })
+      expect(config.player_bindings).toEqual({ player_0: { kind: 'builtin-agent', name: 'naive' } })
       // A plain watch run attributes the player to the built-in Naive agent.
-      expect(config.players).toEqual({ player_0: { kind: 'agent', label: 'Naive agent' } })
+      expect(config.players).toEqual({
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      })
+    })
+
+    it('rejects an undeclared built-in agent before launching a session', async () => {
+      const orch = makeOrchestrator()
+      await expect(
+        orch.start(startRequest({ seats: seats({ kind: 'builtin-agent', name: 'unknown' }) })),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: 'unknown built-in agent unknown for environment flappy_bird',
+      })
+      expect(driver.launches).toHaveLength(0)
     })
 
     it('derives scripted mode for an all-agent session', async () => {
@@ -518,7 +538,7 @@ describe('orchestrator', () => {
         parameters: { seat_plan: 'uneven' },
         seats: {
           seat_0: { kind: 'submission', submissionId: submission.id },
-          seat_1: { kind: 'builtin-agent' },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
         },
       })
 
@@ -532,7 +552,7 @@ describe('orchestrator', () => {
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
         player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
         player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
-        player_1: { kind: 'builtin-agent' },
+        player_1: { kind: 'builtin-agent', name: 'naive' },
       })
       expect(launchConfig.players).toEqual({
         player_0: {
@@ -553,7 +573,7 @@ describe('orchestrator', () => {
           user: 'eve',
           submission_id: submission.id,
         },
-        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       })
       expect(issued?.agentPlayers).toEqual(['player_0', 'player_2', 'player_3', 'player_1'])
       expect(launchConfig.llm.keys).toEqual({
@@ -594,7 +614,7 @@ describe('orchestrator', () => {
             kind: 'human',
             companion: { kind: 'submission', submissionId: companion.id },
           },
-          seat_1: { kind: 'builtin-agent' },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
         },
       })
 
@@ -608,7 +628,7 @@ describe('orchestrator', () => {
         player_0: { kind: 'external' },
         player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
         player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
-        player_1: { kind: 'builtin-agent' },
+        player_1: { kind: 'builtin-agent', name: 'naive' },
       })
       expect(launchConfig.players).toEqual({
         player_0: { kind: 'human', label: 'alice', user: 'alice' },
@@ -624,7 +644,7 @@ describe('orchestrator', () => {
           user: 'eve',
           submission_id: companion.id,
         },
-        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       })
       expect(issued?.agentPlayers).toEqual(['player_2', 'player_3', 'player_1'])
       expect(launchConfig.llm.keys).toEqual({
@@ -710,9 +730,9 @@ describe('orchestrator', () => {
         // Only three of the four required seats assigned.
         orch.start(
           startHearts({
-            seat_0: { kind: 'builtin-agent' },
-            seat_1: { kind: 'builtin-agent' },
-            seat_2: { kind: 'builtin-agent' },
+            seat_0: { kind: 'builtin-agent', name: 'naive' },
+            seat_1: { kind: 'builtin-agent', name: 'naive' },
+            seat_2: { kind: 'builtin-agent', name: 'naive' },
           }),
         ),
       ).rejects.toMatchObject({ status: 400 })
@@ -722,7 +742,7 @@ describe('orchestrator', () => {
     it('rejects an unknown seat id', async () => {
       const orch = makeOrchestrator(60_000, new FakeSource())
       await expect(
-        orch.start(startHearts(heartsSeats({ seat_9: { kind: 'builtin-agent' } }))),
+        orch.start(startHearts(heartsSeats({ seat_9: { kind: 'builtin-agent', name: 'naive' } }))),
       ).rejects.toMatchObject({ status: 400 })
       expect(driver.launches).toHaveLength(0)
     })
@@ -733,7 +753,7 @@ describe('orchestrator', () => {
         orch.start(
           startHearts(
             heartsSeats({
-              seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
+              seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
             }),
           ),
         ),
@@ -827,14 +847,14 @@ describe('orchestrator', () => {
       expect(config.player_bindings).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
         player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
-        player_2: { kind: 'builtin-agent' },
+        player_2: { kind: 'builtin-agent', name: 'naive' },
         player_3: { kind: 'external' },
       })
       // Built-in and human players are represented only here, never as a link row.
       expect(config.players).toEqual({
         player_0: { kind: 'agent', label: "eve's agent", user: 'eve', submission_id: subA.id },
         player_1: { kind: 'agent', label: "frank's agent", user: 'frank', submission_id: subB.id },
-        player_2: { kind: 'agent', label: 'Naive agent' },
+        player_2: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
         player_3: { kind: 'human', label: 'alice', user: 'alice' },
       })
       // The composed session image materialized one tree per submitted player and disposed each.
@@ -872,7 +892,7 @@ describe('orchestrator', () => {
       expect(config.players).toEqual({
         player_0: { kind: 'agent', label: "Eve Vee's agent", user: 'eve', submission_id: subA.id },
         player_1: { kind: 'agent', label: "frank's agent", user: 'frank', submission_id: subB.id },
-        player_2: { kind: 'agent', label: 'Naive agent' },
+        player_2: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
         player_3: { kind: 'human', label: 'Alice Chen', user: 'alice' },
       })
     })
@@ -1195,9 +1215,9 @@ describe('orchestrator', () => {
       envId: 'chatty',
       seats: {
         seat_0: { kind: 'human' },
-        seat_1: { kind: 'builtin-agent' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
     })
 

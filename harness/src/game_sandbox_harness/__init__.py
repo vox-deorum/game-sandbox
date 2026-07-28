@@ -18,6 +18,7 @@ from .agent import (
 from .clock import Clock, ManualClock, SystemClock
 from .environment import (
     ENTRY_POINT_GROUP,
+    BuiltinAgent,
     ChatPolicy,
     ChatPolicySource,
     EnvironmentEntry,
@@ -30,6 +31,7 @@ from .environment import (
     PlayerBounds,
     ResolvedLayout,
     ResolvedSeat,
+    SeatDeclaration,
     SeatPlan,
     SeatPlans,
     canonical_player_order,
@@ -102,6 +104,7 @@ __all__ = [
     "ManualClock",
     # environment
     "ENTRY_POINT_GROUP",
+    "BuiltinAgent",
     "ParameterValue",
     "EnvParameterChoice",
     "EnvParameter",
@@ -109,6 +112,7 @@ __all__ = [
     "EnvironmentMeta",
     "PlayerBounds",
     "SeatPlan",
+    "SeatDeclaration",
     "SeatPlans",
     "ResolvedSeat",
     "ResolvedLayout",

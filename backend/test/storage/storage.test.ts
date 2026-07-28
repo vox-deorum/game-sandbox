@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { NewSessionInput, Storage } from '../../src/storage/index.js'
+import { isAgentRef, type NewSessionInput, type Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
@@ -28,6 +28,14 @@ describe('storage on :memory:', () => {
 
   afterEach(async () => {
     await storage.close()
+  })
+
+  it('accepts only complete named builtin and submission agent references', () => {
+    expect(isAgentRef({ kind: 'builtin', name: 'cautious' })).toBe(true)
+    expect(isAgentRef({ kind: 'builtin', name: 'Cautious bidder' })).toBe(false)
+    expect(isAgentRef({ kind: 'builtin' })).toBe(false)
+    expect(isAgentRef({ kind: 'submission', submission_id: 'sub-1', user_id: 'user-1' })).toBe(true)
+    expect(isAgentRef({ kind: 'submission', submission_id: 'sub-1' })).toBe(false)
   })
 
   it('creates a session in the starting state and reads it back', async () => {
@@ -139,7 +147,7 @@ describe('storage on :memory:', () => {
                 match_index: 0,
                 game_index: 0,
                 seed: 1,
-                seats: [{ kind: 'builtin-naive' }],
+                seats: [{ kind: 'builtin', name: 'naive' }],
                 seat_plan: 'solo',
               },
             ],
@@ -175,7 +183,7 @@ describe('storage on :memory:', () => {
             season_id: seasonId,
             env_id: 'flappy_bird',
             rater_user_id: `rater-${seasonId}`,
-            agent: { kind: 'builtin-naive' },
+            agent: { kind: 'builtin', name: 'naive' },
             score: 5,
           })
         },

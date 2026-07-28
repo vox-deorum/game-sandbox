@@ -14,8 +14,10 @@ metadata tests pin it from the start.
 from __future__ import annotations
 
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentMeta,
+    SeatDeclaration,
     SeatPlan,
     SeatPlans,
 )
@@ -27,7 +29,12 @@ ENV_ID = "spades"
 PUBLISHED_EXAMPLES = ()
 
 SPADES_SEAT_PLANS = tuple(
-    SeatPlan(key=key, title=title, seats=seats) for key, title, seats in SEAT_PLAN_SPECS
+    SeatPlan(
+        key=key,
+        title=title,
+        seats=tuple(SeatDeclaration(players=players) for players in seats),
+    )
+    for key, title, seats in SEAT_PLAN_SPECS
 )
 
 META = EnvironmentMeta(
@@ -36,6 +43,10 @@ META = EnvironmentMeta(
     description=(
         "Four-player partnership Spades: bid the tricks you will take, then follow suit and play "
         "them out with spades trump. Your agent play in teams."
+    ),
+    builtin_agents=(
+        BuiltinAgent(name="naive", label="Naive agent"),
+        BuiltinAgent(name="cautious", label="Cautious bidder"),
     ),
     layout=SeatPlans(SPADES_SEAT_PLANS),
     human_players=("player_0", "player_1", "player_2", "player_3"),

@@ -122,8 +122,8 @@ test('Spades chat is filtered live and complete in replay', async ({
     // browser authenticates as the same admin actor that starts the session, so it owns and controls the
     // human seat (the composer and Stop).
     sessionId = await startSession(admin, SPADES_ENV_ID, {
-      seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
-      seat_1: { kind: 'builtin-agent' },
+      seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
     })
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
@@ -266,14 +266,17 @@ test('human Spades completes with seat-ranked results on partnership and solo pl
     const seats =
       seatPlan === 'partnership'
         ? {
-            seat_0: { kind: 'human' as const, companion: { kind: 'builtin-agent' as const } },
-            seat_1: { kind: 'builtin-agent' as const },
+            seat_0: {
+              kind: 'human' as const,
+              companion: { kind: 'builtin-agent' as const, name: 'naive' },
+            },
+            seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
           }
         : {
             seat_0: { kind: 'human' as const },
-            seat_1: { kind: 'builtin-agent' as const },
-            seat_2: { kind: 'builtin-agent' as const },
-            seat_3: { kind: 'builtin-agent' as const },
+            seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
+            seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
+            seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
           }
     const sessionId = await startSession(admin, SPADES_ENV_ID, seats, {
       seed: 0,
@@ -333,8 +336,8 @@ test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
   // The browser authenticates as the same admin actor that starts the session, so it owns and controls
   // the human seat's composer.
   const sessionId = await startSession(admin, SPADES_ENV_ID, {
-    seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
-    seat_1: { kind: 'builtin-agent' },
+    seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
+    seat_1: { kind: 'builtin-agent', name: 'naive' },
   })
   try {
     await authenticateBrowser(page.context(), admin)
@@ -388,9 +391,9 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, adm
       SPADES_ENV_ID,
       {
         seat_0: { kind: 'human' },
-        seat_1: { kind: 'builtin-agent' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
       {
         parameters: { seat_plan: 'solo' },
@@ -507,7 +510,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
     const humanBoard = page.locator('section.board', { hasText: 'Human Ratings' })
-    await expect(scoreboard.getByText('Naive baseline')).toBeVisible()
+    await expect(scoreboard.getByText('naive')).toBeVisible()
     for (const entry of ROSTER) {
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }

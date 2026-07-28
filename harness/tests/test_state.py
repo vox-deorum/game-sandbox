@@ -100,7 +100,13 @@ def test_header_builder_is_valid():
         build_header(
             environment="flappy",
             parameters=FLAPPY_PARAMETERS,
-            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            players={
+                "player_0": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                }
+            },
             layout=SINGLE_LAYOUT,
         )
     )
@@ -108,7 +114,13 @@ def test_header_builder_is_valid():
         build_header(
             environment="flappy",
             parameters=FLAPPY_PARAMETERS,
-            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            players={
+                "player_0": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                }
+            },
             layout=SINGLE_LAYOUT,
             created_at="2026-06-10T00:00:00Z",
             seed=9,
@@ -122,7 +134,11 @@ def test_header_builder_carries_player_attribution():
         parameters=FLAPPY_PARAMETERS,
         players={
             "player_0": {"kind": "human", "label": "alice", "user": "alice"},
-            "player_1": {"kind": "agent", "label": "Naive agent"},
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
         },
         layout=TWO_PLAYER_LAYOUT,
     )
@@ -137,7 +153,39 @@ def test_header_rejects_player_attribution_with_empty_label():
             build_header(
                 environment="flappy",
                 parameters=FLAPPY_PARAMETERS,
-                players={"player_0": {"kind": "agent", "label": ""}},
+                players={
+                    "player_0": {
+                        "kind": "agent",
+                        "builtin_name": "naive",
+                        "label": "",
+                    }
+                },
+                layout=SINGLE_LAYOUT,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "attribution",
+    [
+        {"kind": "agent", "label": "Agent"},
+        {
+            "kind": "agent",
+            "label": "Agent",
+            "submission_id": "submission-1",
+            "builtin_name": "naive",
+        },
+    ],
+)
+def test_header_rejects_agent_attribution_without_exactly_one_identity(
+    attribution: dict[str, str],
+):
+    with pytest.raises(SchemaValidationError):
+        validate_header(
+            build_header(
+                environment="flappy",
+                parameters=FLAPPY_PARAMETERS,
+                players={"player_0": attribution},  # type: ignore[dict-item]
                 layout=SINGLE_LAYOUT,
             )
         )

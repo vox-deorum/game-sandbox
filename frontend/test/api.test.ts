@@ -216,8 +216,8 @@ describe('api client', () => {
       seats: {
         seat_0: { kind: 'human' },
         seat_1: { kind: 'submission', submissionId: 'sub-1' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
     })
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
@@ -230,8 +230,8 @@ describe('api client', () => {
       seats: {
         seat_0: { kind: 'human' },
         seat_1: { kind: 'submission', submission_id: 'sub-1' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
     })
     expect(body).not.toHaveProperty('mode')
@@ -366,7 +366,7 @@ describe('api client', () => {
         agents: [],
       }),
     )
-    const batch = [{ agent: { kind: 'builtin-naive' as const }, score: 4 }]
+    const batch = [{ agent: { kind: 'builtin' as const, name: 'naive' }, score: 4 }]
     expect((await submitRatings('s1', batch)).ok).toBe(true)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/sessions/s1/ratings')

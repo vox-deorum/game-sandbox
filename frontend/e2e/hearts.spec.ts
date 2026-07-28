@@ -37,10 +37,10 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
 
 /** A four-seat, all-Naive Hearts session: no human seat, so it runs itself to completion (scripted). */
 const ALL_BUILTIN_SEATS = {
-  seat_0: { kind: 'builtin-agent' as const },
-  seat_1: { kind: 'builtin-agent' as const },
-  seat_2: { kind: 'builtin-agent' as const },
-  seat_3: { kind: 'builtin-agent' as const },
+  seat_0: { kind: 'builtin-agent' as const, name: 'naive' },
+  seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
+  seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
+  seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
 }
 
 /** Two distinct strategies are enough to exercise both ordered two-submission seatings. */
@@ -280,7 +280,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
     const humanBoard = page.locator('section.board', { hasText: 'Human Ratings' })
-    await expect(scoreboard.getByText('Naive baseline')).toBeVisible()
+    await expect(scoreboard.getByText('naive')).toBeVisible()
     for (const entry of ROSTER) {
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }
@@ -348,9 +348,9 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     const playerSummaries = await gameRows.locator('td:nth-child(2)').allInnerTexts()
     expect(playerSummaries).toEqual(
       expect.arrayContaining([
-        `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · Naive · Naive`,
-        `${HEARTS_OWNERS.moonshot} · ${HEARTS_OWNERS.oracle} · Naive · Naive`,
-        'Naive · Naive · Naive · Naive',
+        `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · naive · naive`,
+        `${HEARTS_OWNERS.moonshot} · ${HEARTS_OWNERS.oracle} · naive · naive`,
+        'naive · naive · naive · naive',
       ]),
     )
     await expect(matchups.getByRole('link', { name: 'Replay' }).first()).toBeVisible()
@@ -543,7 +543,7 @@ test('the watch seat dialog starts a session with the chosen seed reaching the s
   // Confirm every seat carries an agent: the four seat dropdowns (labelled "Seat 1".."Seat 4" through
   // their aria-labelledby) all default to the Naive baseline, so the composition is full and valid.
   for (let seat = 1; seat <= 4; seat++) {
-    await expect(page.getByLabel(`Seat ${seat}`)).toHaveValue('builtin')
+    await expect(page.getByLabel(`Seat ${seat}`)).toHaveValue('builtin:naive')
   }
 
   // A chosen, non-default seed entered into the dialog's seed field. The payload assertion below proves
@@ -594,9 +594,9 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
     HEARTS_ENV_ID,
     {
       seat_0: { kind: 'human' },
-      seat_1: { kind: 'builtin-agent' },
-      seat_2: { kind: 'builtin-agent' },
-      seat_3: { kind: 'builtin-agent' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
     },
     { seed: HEARTS_HUMAN_LEAD_SEED, humanTimeoutMs: 60_000 },
   )
@@ -691,9 +691,9 @@ test('a multi-agent Hearts recording replays with per-player attribution and tri
       HEARTS_ENV_ID,
       {
         seat_0: { kind: 'submission', submission_id: submissionId },
-        seat_1: { kind: 'builtin-agent' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
       { seed: HEARTS_HUMAN_LEAD_SEED },
     )

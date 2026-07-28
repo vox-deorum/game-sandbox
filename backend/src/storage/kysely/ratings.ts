@@ -68,6 +68,10 @@ export async function getRating(
     cols.agent_submission_id === null
       ? query.where('agent_submission_id', 'is', null)
       : query.where('agent_submission_id', '=', cols.agent_submission_id)
+  query =
+    cols.agent_builtin_name === null
+      ? query.where('agent_builtin_name', 'is', null)
+      : query.where('agent_builtin_name', '=', cols.agent_builtin_name)
   return await query.executeTakeFirst()
 }
 

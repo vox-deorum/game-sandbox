@@ -29,7 +29,7 @@ For each environment, only one season may have submissions open and only one may
 
 Each season defines:
 
-- Match design: which seats use submissions, built-in agents, or opponents, plus seeds and games per configuration.
+- Match design: one controller entry per resolved seat, valued as `submission` or `builtin-naive`, plus seeds and games per configuration.
 - Template dependency version.
 - Optional gameplay parameter overrides, including `players` for player-bounds environments or `seat_plan` for environments with declared plans. Every match's seat count must equal the number of seats in the resolved layout.
 - Optional step and episode limit overrides.
@@ -70,14 +70,14 @@ The displayed spread is the population standard deviation of each game's compute
 The operator-triggered workflow:
 
 - Expands the match design over eligible submissions into a balanced schedule.
-- Includes the built-in baseline on every board.
+- Includes named builtins as ordinary agents and the required `naive` baseline on every board.
 - Uses controlled seeded repetitions.
 - Runs matches sequentially on the same host for comparable timing.
 - Records every match.
 - Enforces step and episode limits.
 - Aggregates successful LLM usage by model, including authoritative weighted cost and estimated-call counts.
 
-When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The built-in baseline still fills every submission seat, giving each board a comparable reference row.
+When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The `naive` builtin fills every submission seat in the appended baseline game, giving each board a comparable reference row.
 
 The schedule expands over resolved seats, not players. A season run always freezes its schedule from a fresh transactionally consistent read.
 
@@ -92,4 +92,4 @@ Ratings use a 1 to 5 scale. Two optional prompts may guide one rating:
 - The operator's season prompt, applied to every agent.
 - The author's prompt, applied only to that agent.
 
-Users cannot rate their own submitted agents. The built-in baseline is rateable only in a session that also contains a submitted agent. See [Frontend](frontend.md).
+Users cannot rate their own submitted agents. A named builtin is rateable only in a session that also contains a submitted agent. Each builtin keeps a separate rating identity through its stable name. See [Frontend](frontend.md).

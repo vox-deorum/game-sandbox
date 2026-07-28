@@ -12,7 +12,7 @@ import { getSessionRatings, submitRatings } from '../src/api/client.js'
 import SessionRatings from '../src/components/SessionRatings.vue'
 
 function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): RateableAgent {
-  const fallback = overrides.agent.kind === 'builtin-naive' ? 'Naive baseline' : 'Agent 1'
+  const fallback = overrides.agent.kind === 'builtin' ? 'Naive baseline' : 'Agent 1'
   return {
     display_name: fallback,
     is_own: false,
@@ -34,7 +34,7 @@ function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Rating
 }
 
 const SUBMISSION: AgentRefWire = { kind: 'submission', submission_id: 'sub-eve' }
-const NAIVE: AgentRefWire = { kind: 'builtin-naive' }
+const NAIVE: AgentRefWire = { kind: 'builtin', name: 'naive' }
 
 function renderPanel() {
   return render(SessionRatings, { props: { sessionId: 's1' } })

@@ -12,7 +12,13 @@ from tempfile import TemporaryDirectory
 import pytest
 import websockets
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds, load_environment
+from game_sandbox_harness.environment import (
+    BuiltinAgent,
+    EnvironmentEntry,
+    EnvironmentMeta,
+    PlayerBounds,
+    load_environment,
+)
 from game_sandbox_harness.local_server import LocalServer
 
 
@@ -21,6 +27,7 @@ def _entry() -> EnvironmentEntry:
         env_id="fake",
         display_name="Fake",
         description="fake",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
         human_timeout_ms=None,

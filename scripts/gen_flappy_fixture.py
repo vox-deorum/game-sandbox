@@ -51,10 +51,9 @@ class GapChaserAgent:
 
 
 def main() -> int:
-    # A submitted-agent attribution for the single player so the fixture header carries a `players`
-    # block like the Hearts/Spades fixtures, without needing a live session.
+    # A submitted-agent attribution keeps the fixture header aligned with the agent that drives it.
     player_attribution: dict[str, PlayerAttribution] = {
-        "player_0": {"kind": "human", "label": "you"},
+        "player_0": {"kind": "agent", "submission_id": "local", "label": "Gap chaser"},
     }
     players = {"player_0": AgentPlayer(GapChaserAgent())}
     run_and_copy(

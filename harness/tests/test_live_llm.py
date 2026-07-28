@@ -11,6 +11,7 @@ import pytest
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentMeta,
     PlayerBounds,
@@ -89,6 +90,7 @@ def _entry(
             env_id="fake",
             display_name="Fake",
             description="A deterministic LLM fixture.",
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=PlayerBounds(1, 2),
             human_players=(),
             human_timeout_ms=None,
@@ -115,8 +117,8 @@ def _payload(llm: object = None) -> dict[str, Any]:
             "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
         },
         "players": {
-            "player_0": {"kind": "agent", "label": "Player 0"},
-            "player_1": {"kind": "agent", "label": "Player 1"},
+            "player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"},
+            "player_1": {"kind": "agent", "submission_id": "local-1", "label": "Player 1"},
         },
         "recording_dir": "/recordings",
     }
@@ -163,7 +165,7 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
         "player_1": {"kind": "external"},
     }
     payload["players"] = {
-        "player_0": {"kind": "agent", "label": "Player 0"},
+        "player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"},
         "player_1": {"kind": "human", "label": "Human"},
     }
     payload.update(fixture)
@@ -581,7 +583,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Pa
     )
     payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
     players = build_players(
         parse_config([json.dumps(payload)]),
@@ -647,7 +649,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
     )
     payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
     players = build_players(
         parse_config([json.dumps(payload)]),
@@ -716,7 +718,7 @@ def test_proxy_discount_fails_closed_and_is_nonnegative(
     )
     payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=500)
     players = build_players(
         parse_config([json.dumps(payload)]),
@@ -776,7 +778,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
     )
     payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=50)
     players = build_players(
         parse_config([json.dumps(payload)]),

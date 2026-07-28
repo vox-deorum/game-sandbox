@@ -27,6 +27,7 @@ from .session import (
     ScriptedSource,
     run_episode,
 )
+from .state import PlayerAttribution
 
 
 def _build_player(entry: EnvironmentEntry, agent_root: str | None, source: str | None) -> Player:
@@ -65,6 +66,11 @@ def main(argv: list[str] | None = None) -> int:
     # The single player is the environment's first human-capable player when one is declared.
     player_id = entry.meta.human_players[0] if entry.meta.human_players else "player_0"
     player = _build_player(entry, args.agent, args.source)
+    player_attribution: dict[str, PlayerAttribution] | None = (
+        {player_id: {"kind": "agent", "submission_id": "local", "label": "Local agent"}}
+        if args.agent is not None
+        else None
+    )
 
     store = FolderRecordingStore(args.record) if args.record else None
     result = run_episode(
@@ -75,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         store=store,
         clock=SystemClock(),
         max_steps=args.steps,
+        player_attribution=player_attribution,
     )
 
     print(f"environment : {args.env}")

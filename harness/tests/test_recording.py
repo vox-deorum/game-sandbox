@@ -22,7 +22,13 @@ def _header(**kwargs: object):
     return build_header(
         environment="flappy",
         parameters=FLAPPY_PARAMETERS,
-        players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        players={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            }
+        },
         layout=SINGLE_LAYOUT,
         **kwargs,
     )

@@ -32,6 +32,7 @@ function llmEnvironments(): EnvironmentRegistry {
         env_id: 'llm_env',
         display_name: 'LLM Environment',
         description: 'test env',
+        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
         layout: { kind: 'player_bounds', min: 1, max: 1 },
         human_players: [],
         human_timeout_ms: null,

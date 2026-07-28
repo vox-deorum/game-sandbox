@@ -360,13 +360,17 @@ class Episode:
         """Return the supplied attributions, or complete defaults for direct harness callers."""
         if self._player_attribution is not None:
             return dict(self._player_attribution)
-        return {
-            player_id: {
-                "kind": "human" if isinstance(player, ExternalPlayer) else "agent",
-                "label": "Human" if isinstance(player, ExternalPlayer) else "Agent",
-            }
-            for player_id, player in self._players.items()
-        }
+        players: dict[str, PlayerAttribution] = {}
+        for player_id, player in self._players.items():
+            if isinstance(player, ExternalPlayer):
+                players[player_id] = {"kind": "human", "label": "Human"}
+            else:
+                players[player_id] = {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                }
+        return players
 
     @property
     def done(self) -> bool:

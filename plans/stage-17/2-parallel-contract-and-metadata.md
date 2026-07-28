@@ -29,7 +29,7 @@ Metadata validation requires:
 
 `to_json()` emits the field. `schema/ts/src/environment.ts` adds the required string union and rejects missing or unknown values in `isEnvironmentMeta`. The generated backend environment catalog, backend metadata fixtures, frontend fixtures, and schema tests are regenerated or revised together.
 
-The backend and frontend may read the field for display and dispatch in later steps, but it is not a season override or gameplay parameter.
+The field is not a season override or gameplay parameter. The backend session boundary and harness `LiveConfig` parser reject a supplied human-timeout override for a simultaneous environment. `StartForm` and `SeatAssignmentDialog` hide that override and describe `pace_interval_ms` as the input window. Sequential paced environments retain their current form and launch behavior.
 
 ## AEC and parallel entry contract
 
@@ -42,6 +42,16 @@ The harness continues to use `Any` at the package boundary and does not import P
 
 Add `EnvironmentContractError`, carrying the environment ID, declared stepping mode, and missing or contradictory protocol fact.
 
+Game Sandbox adopts a stricter parallel subset than `parallel_api_test` enforces:
+
+- After reset, `env.agents`, observations, and infos exactly cover every resolved player in canonical order.
+- The active set is monotonic. A removed player never returns, and no player appears after reset.
+- Each `actions` mapping exactly covers the pre-step active set.
+- The returned observations, rewards, terminations, truncations, and infos each exactly cover that same pre-step active set, with no shared or extra keys.
+- Post-step `env.agents` is the canonical subsequence of pre-step players whose returned termination and truncation flags are both false.
+
+The exact return-key rule lets the harness record the terminal reward and final observation facts for a player removed by that step. The post-step observation mapping may contain a terminal player's final observation, but it is not carried into another tick.
+
 ## Validate the configured instance
 
 `load_environment()` remains discovery-only. It has no resolved gameplay parameters and does not call a factory.
@@ -52,7 +62,7 @@ Add `EnvironmentContractError`, carrying the environment ID, declared stepping m
 2. Check the constructed object's protocol surface against `meta.stepping`.
 3. Reset it with the episode seed.
 4. Verify its `possible_agents` against the resolved layout as today.
-5. Validate mode-specific reset facts needed by the selected episode path.
+5. For parallel mode, require the exact full resolved roster and reset mapping keys above.
 
 This order catches factories whose return shape depends on a selected player count or seat plan. A declared simultaneous factory returning AEC behavior, or a declared sequential factory returning parallel behavior, fails before a participant reset, recording writer, or live step begins.
 
@@ -65,16 +75,17 @@ Refactor `environments/test_conformance.py` into mode-specific helpers:
 - Sequential entries continue through `api_test` and the existing AEC rollout.
 - Simultaneous entries run `parallel_api_test` and a parallel rollout.
 
-The parallel rollout:
+The parallel rollout applies both PettingZoo conformance and the stricter product contract:
 
 1. Resets with a fixed seed and validates both returned mappings.
 2. Visits active players in canonical order.
 3. Validates every observation with that player's observation space.
 4. Builds one action mapping from `entry.default_action(env, player)` and validates each action.
 5. Calls one parallel step.
-6. Validates observation, reward, termination, truncation, and info key sets against PettingZoo's active-player transition rules.
-7. Validates and canonicalizes the post-step overlay.
-8. Repeats through termination.
+6. Requires observation, reward, termination, truncation, and info key sets to equal the pre-step active set.
+7. Requires post-step `env.agents` to equal the canonical nonterminal subsequence and rejects revival or newly appearing players.
+8. Validates and canonicalizes the post-step overlay.
+9. Repeats through termination.
 
 Two runs from the same seed compare canonical observation and overlay snapshots byte for byte. All leaves remain finite and JSON-safe under the existing canonical encoder.
 
@@ -109,6 +120,7 @@ At minimum, implementation covers:
 - `schema/ts/src/environment.ts` and `schema/ts/tests/environment.test.ts`;
 - the generated backend catalog and generated-code freshness;
 - backend and frontend metadata fixtures accepted by the structural guard;
+- backend request and orchestration validation, harness live-config parsing, and both human-timeout forms;
 - `environments/test_conformance.py`;
 - contributor environment and harness documentation;
 - [Environments](../../docs/specs/environment.md).
@@ -120,9 +132,14 @@ At minimum, implementation covers:
 - Simultaneous without a pace interval, with a nonpositive interval, or with a separate human timeout is rejected.
 - Every existing environment declares sequential and still passes AEC conformance and deterministic rollout.
 - Both declaration-versus-shape mismatches raise `EnvironmentContractError` at episode start using the actual resolved parameters.
+- Parallel reset rejects a missing, extra, reordered, or inactive resolved player and missing or extra observation or info keys.
+- Parallel stepping rejects missing or extra keys in any returned mapping, a revived or newly introduced player, and an active set that contradicts the returned terminal flags.
 - A partial contract failure closes the constructed environment and opens no recording.
 - The internal fixture passes `parallel_api_test`, the parallel deterministic rollout, overlay serialization, and active-player key checks.
 - The fixture remains absent from discovery and generated `environments.json`.
+- Jsdom coverage supplies simultaneous metadata to `StartForm` and `SeatAssignmentDialog`, verifies that neither offers a separate human-timeout override, and preserves the existing paced-sequential control.
+- A Playwright journey intercepts the environment catalog with the same simultaneous metadata and checks both start surfaces without registering or launching a public simultaneous environment.
+- The backend and harness reject a simultaneous human-timeout override supplied directly.
 
 ## Done when
 

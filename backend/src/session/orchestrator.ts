@@ -52,7 +52,7 @@ const MAX_HUMAN_PLAYERS = 1
 
 /** One ordinary agent binding accepted for a seat or a future human companion. */
 export type AgentSeatAssignment =
-  | { kind: 'builtin-agent' }
+  | { kind: 'builtin-agent'; name: string }
   | { kind: 'submission'; submissionId: string }
 
 /**
@@ -97,7 +97,7 @@ interface SubmissionBinding {
  * seat validation so no later stage repeats the choice.
  */
 type ResolvedAgentBinding =
-  | { kind: 'builtin-agent' }
+  | { kind: 'builtin-agent'; name: string; label: string }
   | { kind: 'submission'; submission: Submission }
 
 type ResolvedSeat =
@@ -533,7 +533,20 @@ export class Orchestrator {
     meta: EnvironmentMeta,
     playSeason: Season,
   ): Promise<ResolvedAgentBinding> {
-    if (assignment.kind === 'builtin-agent') return { kind: 'builtin-agent' }
+    if (assignment.kind === 'builtin-agent') {
+      const builtin = meta.builtin_agents.find((candidate) => candidate.name === assignment.name)
+      if (builtin === undefined) {
+        throw new OrchestratorError(
+          400,
+          `unknown built-in agent ${assignment.name} for environment ${meta.env_id}`,
+        )
+      }
+      return {
+        kind: 'builtin-agent',
+        name: assignment.name,
+        label: builtin.label,
+      }
+    }
     const submission = await this.storage.getSubmission(assignment.submissionId)
     if (submission === undefined) {
       throw new OrchestratorError(404, `no such submission ${assignment.submissionId}`)
@@ -703,7 +716,11 @@ export class Orchestrator {
                     path: submissionSeatPath(seat.seatId),
                     ...optionalField('ownerName', names.get(companion.submission.user_id)),
                   }
-                : { driver: 'naive' as const },
+                : {
+                    driver: 'builtin' as const,
+                    name: companion.name,
+                    label: companion.label,
+                  },
           ),
         })
       } else if (seat.kind === 'submission') {
@@ -715,7 +732,7 @@ export class Orchestrator {
           ...optionalField('ownerName', names.get(seat.submission.user_id)),
         })
       } else {
-        seats.set(seat.seatId, { driver: 'naive' })
+        seats.set(seat.seatId, { driver: 'builtin', name: seat.name, label: seat.label })
       }
     }
     const { playerBindings, players } = assembleLaunch(seats, layout)
@@ -773,12 +790,6 @@ export class Orchestrator {
   }
 }
 
-/**
- * Resolve the effective messaging rules for a session: enabled is the environment metadata AND the
- * season override (default when the override omits it), and the cap is the minimum of the metadata
- * cap and the override cap, so an override can only disable or tighten, never enable an opted-out
- * environment or loosen its cap.
- */
 function resolveMessaging(
   meta: EnvironmentMeta,
   override: { enabled?: boolean; message_cap?: number } | undefined,

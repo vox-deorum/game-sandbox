@@ -323,8 +323,7 @@ describe('buildSchedule - match composition', () => {
     // config marks 'submission' resolved to the builtin-naive ref.
     const isNaiveGame = (match: MatchConfig, game: (typeof schedule)[number]): boolean =>
       match.seats.every(
-        (seat, seatIndex) =>
-          seat !== 'submission' || game.seats[seatIndex]?.kind === 'builtin-naive',
+        (seat, seatIndex) => seat !== 'submission' || game.seats[seatIndex]?.kind === 'builtin',
       )
 
     const expectedPerMatch = matches.map((match, matchIndex) => {

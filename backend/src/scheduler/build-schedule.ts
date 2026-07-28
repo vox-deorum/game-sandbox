@@ -21,7 +21,7 @@ import type { MatchConfig, SeatSpec } from '../storage/season-config.js'
 export type { SubmissionRef } from '../storage/schema.js'
 
 /** The shared built-in baseline seat ref. It is not a submission row. */
-const NAIVE: AgentRef = { kind: 'builtin-naive' }
+const NAIVE: AgentRef = { kind: 'builtin', name: 'naive' }
 
 /** Inputs to {@link buildSchedule}: the match design, the live roster, and the seat-order capability. */
 export interface BuildScheduleInput {
@@ -92,7 +92,7 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
 /**
  * Resolve one concrete seat assignment from a match's seat specs and a chosen seating.
  *
- * `builtin-naive` specs take the baseline ref. `submission` specs are filled left-to-right from
+ * The compact `builtin-naive` spec takes the named naive baseline ref. `submission` specs are filled left-to-right from
  * `seating`; a `null` seating fills every submission seat with the baseline, which is how the
  * always-present Naive baseline row resolves. `buildSchedule` only ever passes a full-length seating
  * or `null`, since it enumerates distinct full seatings and emits the baseline separately.

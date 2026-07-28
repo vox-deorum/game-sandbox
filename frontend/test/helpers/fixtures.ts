@@ -12,6 +12,7 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'flappy_bird',
     display_name: 'Flappy Bird',
     description: 'A paced single-human clone.',
+    builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
     layout: { kind: 'player_bounds', min: 1, max: 1 },
     human_players: ['player_0'],
     human_timeout_ms: null,
@@ -59,6 +60,7 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'hearts',
     display_name: 'Hearts',
     description: 'Four-player trick-taking Hearts.',
+    builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
     layout: { kind: 'player_bounds', min: 4, max: 4 },
     human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
     human_timeout_ms: 60_000,
@@ -98,18 +100,23 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'spades',
     display_name: 'Spades',
     description: 'Four-player partnership Spades.',
+    builtin_agents: [
+      { name: 'naive', label: 'Naive agent' },
+      { name: 'cautious', label: 'Cautious bidder' },
+    ],
     layout: {
       kind: 'seat_plans',
       plans: [
         {
           key: 'partnership',
           title: 'Partnership',
-          seats: [
-            [0, 2],
-            [1, 3],
-          ],
+          seats: [{ players: [0, 2] }, { players: [1, 3] }],
         },
-        { key: 'solo', title: 'Solo', seats: [[0], [1], [2], [3]] },
+        {
+          key: 'solo',
+          title: 'Solo',
+          seats: [{ players: [0] }, { players: [1] }, { players: [2] }, { players: [3] }],
+        },
       ],
     },
     human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
@@ -149,7 +156,7 @@ export function flappyHeader(overrides: Partial<RecordingHeader> = {}): Recordin
     environment: 'flappy_bird',
     seed: 0,
     parameters: {},
-    players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+    players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
     seats: { seat_0: ['player_0'] },
     seat_plan: 'solo',
     ...overrides,
@@ -170,7 +177,7 @@ export function spadesPlayers(
     players[player] =
       player === humanPlayer
         ? { kind: 'human', label: humanLabel, user: 'dev' }
-        : { kind: 'agent', label: 'Naive agent' }
+        : { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' }
   }
   return players
 }
@@ -256,7 +263,9 @@ export function recordingText(
     seatPlan?: RecordingHeader['seat_plan']
   } = {},
 ): string {
-  const players = opts.players ?? { player_0: { kind: 'agent' as const, label: 'Naive agent' } }
+  const players = opts.players ?? {
+    player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
+  }
   const header: Record<string, unknown> = {
     schema_version: opts.schemaVersion ?? 1,
     environment: opts.environment ?? 'flappy_bird',

@@ -17,11 +17,8 @@ class Agent:
     """Play the lowest legal card every turn (the env's own timeout default)."""
 
     def reset(self, seed: int) -> None:
-        # Stateless: every legality question is answered by the per-step action mask.
         pass
 
     def act(self, observation: Any) -> int:
-        # The mask flags one bit per card id 0..51 (card = suit * 13 + rank); pick the legal card
-        # with the lowest rank (card % 13), ties broken by suit (card // 13).
         mask = observation["action_mask"]
         return min((card for card in range(52) if mask[card]), key=lambda c: (c % 13, c // 13))

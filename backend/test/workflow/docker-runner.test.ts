@@ -70,6 +70,7 @@ function makeEnvironments(playerCount = 1): EnvironmentRegistry {
         env_id: ENV_ID,
         display_name: 'Flappy Bird',
         description: 'test env',
+        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
         layout: { kind: 'player_bounds', min: 1, max: playerCount },
         human_players: Array.from({ length: playerCount }, (_, index) => `player_${index}`),
         human_timeout_ms: null,
@@ -117,24 +118,19 @@ function makeWideEnvironments(): EnvironmentRegistry {
         env_id: WIDE_ENV_ID,
         display_name: 'Synthetic Wide',
         description: 'test-only wide-seat environment',
+        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
         layout: {
           kind: 'seat_plans',
           plans: [
             {
               key: 'partnership',
               title: 'Partnership',
-              seats: [
-                [0, 2],
-                [1, 3],
-              ],
+              seats: [{ players: [0, 2] }, { players: [1, 3] }],
             },
             {
               key: 'adjacent',
               title: 'Adjacent',
-              seats: [
-                [0, 1],
-                [2, 3],
-              ],
+              seats: [{ players: [0, 1] }, { players: [2, 3] }],
             },
           ],
         },
@@ -279,7 +275,7 @@ function naiveGame(gameIndex: number, seed = 1): ScheduledGameInput {
     match_index: 0,
     game_index: gameIndex,
     seed,
-    seats: [{ kind: 'builtin-naive' }],
+    seats: [{ kind: 'builtin', name: 'naive' }],
     seat_plan: 'solo',
   }
 }
@@ -360,7 +356,7 @@ function emitRecording(
         players: Object.fromEntries(
           Array.from({ length: players }, (_, index) => [
             `player_${index}`,
-            { kind: 'agent', label: 'Naive agent' },
+            { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
           ]),
         ),
         seats: Object.fromEntries(
@@ -415,7 +411,7 @@ function emitHeader(process: FakeSessionProcess, seed: number): void {
       schema_version: 1,
       environment: ENV_ID,
       parameters: { players: 1 },
-      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
       seats: { seat_0: ['player_0'] },
       seat_plan: 'solo',
       seed,
@@ -699,7 +695,10 @@ describe('Docker-backed workflow runner', () => {
           match_index: 0,
           game_index: 0,
           seed: 7,
-          seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+          seats: [
+            { kind: 'builtin', name: 'naive' },
+            { kind: 'builtin', name: 'naive' },
+          ],
           seat_plan: 'partnership',
         },
       ],
@@ -747,7 +746,10 @@ describe('Docker-backed workflow runner', () => {
           match_index: 0,
           game_index: 0,
           seed: 7,
-          seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+          seats: [
+            { kind: 'builtin', name: 'naive' },
+            { kind: 'builtin', name: 'naive' },
+          ],
           seat_plan: 'partnership',
         },
       ],
@@ -793,7 +795,10 @@ describe('Docker-backed workflow runner', () => {
     const handle = makeRunner(storage, new FakeDriver(), {
       environments: makeWideEnvironments(),
     })
-    const naiveSeats = [{ kind: 'builtin-naive' as const }, { kind: 'builtin-naive' as const }]
+    const naiveSeats = [
+      { kind: 'builtin' as const, name: 'naive' },
+      { kind: 'builtin' as const, name: 'naive' },
+    ]
     const run = await makeRun(
       storage,
       [
@@ -821,7 +826,10 @@ describe('Docker-backed workflow runner', () => {
     const handle = makeRunner(storage, new FakeDriver(), {
       environments: makeWideEnvironments(),
     })
-    const naiveSeats = [{ kind: 'builtin-naive' as const }, { kind: 'builtin-naive' as const }]
+    const naiveSeats = [
+      { kind: 'builtin' as const, name: 'naive' },
+      { kind: 'builtin' as const, name: 'naive' },
+    ]
     const run = await makeRun(
       storage,
       [{ match_index: 0, game_index: 0, seed: 7, seats: naiveSeats, seat_plan: 'partnership' }],
@@ -1229,7 +1237,8 @@ describe('Docker-backed workflow runner', () => {
       expect(result.agent_compute_ms_total).toBe(45)
       expect(result.acted_tick_count).toBe(3)
       expect(result.failed).toBe(0)
-      expect(result.agent_kind).toBe('builtin-naive')
+      expect(result.agent_kind).toBe('builtin')
+      expect(result.agent_builtin_name).toBe('naive')
     }
 
     // The recording rows were registered (owner is the operator for a Naive game), each carrying the

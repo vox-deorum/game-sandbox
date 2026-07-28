@@ -39,7 +39,7 @@ const error = ref<string | null>(null)
 
 /** The stable wire key for an agent, matching the backend's, so a selection maps to one agent. */
 function wireKey(agent: AgentRefWire): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive'
+  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
 }
 
 type RateableView = SessionRatings['agents'][number]

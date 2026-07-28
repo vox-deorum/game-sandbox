@@ -7,10 +7,10 @@ import type { ChatEntry } from '../../src/lib/chat.js'
 
 // A four-player Spades roster: three agents sharing a label plus the viewer's human player.
 const PLAYERS = {
-  player_0: { kind: 'agent' as const, label: 'Naive agent' },
-  player_1: { kind: 'agent' as const, label: 'Naive agent' },
+  player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
+  player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
   player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
-  player_3: { kind: 'agent' as const, label: 'Naive agent' },
+  player_3: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
 }
 
 function decisions(): DecisionEntry[] {

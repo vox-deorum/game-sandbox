@@ -50,6 +50,8 @@ The backend keeps one base image per template dependency version. Each base cont
 
 A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission in separate locations so repositories with the same module name do not conflict. Each submission is staged once per seat. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs. [Environments](environment.md#players-and-seats) defines the per-player instances for a seat.
 
+Builtin agents are staged by environment and stable name at `/opt/agents/builtin/<environment>/<name>`. A launch binding names the builtin that drives the player, and the harness resolves that two-level path when no explicit path is present. Every environment ships `naive`, and every builtin declared in environment metadata must have a matching staged directory in the dependency image.
+
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
 ## Sandboxing

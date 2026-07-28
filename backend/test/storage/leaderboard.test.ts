@@ -27,7 +27,8 @@ import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV = 'flappy_bird'
-const NAIVE: AgentRef = { kind: 'builtin-naive' }
+const NAIVE: AgentRef = { kind: 'builtin', name: 'naive' }
+const CAUTIOUS: AgentRef = { kind: 'builtin', name: 'cautious' }
 
 function configWithMatch(depsVersion = 1): SeasonConfig {
   return {
@@ -522,6 +523,46 @@ describe('leaderboard storage on :memory:', () => {
     expect(await storage.listPlacementsByUser('alice')).toEqual([])
   })
 
+  it('keeps placements for two named builtins distinct within one season', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const run = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    await storage.replaceAutomatedPlacements(season.id, ENV, run.id, [
+      {
+        rank: 1,
+        agent: CAUTIOUS,
+        mean_score: 8,
+        mean_agent_compute_ms: 2,
+        failure_count: 0,
+        recording_id: 'cautious-recording',
+      },
+      {
+        rank: 2,
+        agent: NAIVE,
+        mean_score: 3,
+        mean_agent_compute_ms: 1,
+        failure_count: 0,
+        recording_id: 'naive-recording',
+      },
+    ])
+
+    expect(await storage.listPlacementsByAgent(CAUTIOUS, ENV)).toMatchObject([
+      {
+        agent_kind: 'builtin',
+        agent_builtin_name: 'cautious',
+        mean_score: 8,
+        recording_id: 'cautious-recording',
+      },
+    ])
+    expect(await storage.listPlacementsByAgent(NAIVE, ENV)).toMatchObject([
+      {
+        agent_kind: 'builtin',
+        agent_builtin_name: 'naive',
+        mean_score: 3,
+        recording_id: 'naive-recording',
+      },
+    ])
+  })
+
   // --- ratings ---
 
   it('upserts a 1-5 rating, overwrites on re-rate, rejects own-agent, and rates Naive', async () => {
@@ -584,9 +625,33 @@ describe('leaderboard storage on :memory:', () => {
       }),
     ).toMatchObject({ ok: true })
     const agg = await storage.aggregateRatingsByAgent(season.id)
-    const naiveAgg = agg.find((row) => row.agent.kind === 'builtin-naive')
+    const naiveAgg = agg.find((row) => row.agent.kind === 'builtin')
     // Ratings 4 and 2: mean 3, population std 1.
     expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, std: 1, count: 2 })
+  })
+
+  it('keeps ratings for two named builtins distinct within one season', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+
+    for (const [agent, score] of [
+      [NAIVE, 2],
+      [CAUTIOUS, 5],
+    ] as const) {
+      await storage.upsertRating({
+        season_id: season.id,
+        env_id: ENV,
+        rater_user_id: 'rater',
+        agent,
+        score,
+      })
+    }
+
+    expect(await storage.getRating(season.id, 'rater', NAIVE)).toMatchObject({ score: 2 })
+    expect(await storage.getRating(season.id, 'rater', CAUTIOUS)).toMatchObject({ score: 5 })
+    expect((await storage.aggregateRatingsByAgent(season.id)).map((row) => row.agent)).toEqual([
+      CAUTIOUS,
+      NAIVE,
+    ])
   })
 
   it('getHumanBoard ranks agents with three ratings and lists under-threshold agents unranked', async () => {
@@ -649,14 +714,14 @@ describe('leaderboard storage on :memory:', () => {
         match_index: 0,
         game_index: 0,
         seed: 1,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         seat_plan: 'solo',
       },
       {
         match_index: 0,
         game_index: 1,
         seed: 2,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         seat_plan: 'solo',
       },
     ]
@@ -728,7 +793,7 @@ describe('leaderboard storage on :memory:', () => {
     const aliceRow = board.find(
       (row) => row.agent.kind === 'submission' && row.agent.user_id === 'alice',
     )
-    const naiveRow = board.find((row) => row.agent.kind === 'builtin-naive')
+    const naiveRow = board.find((row) => row.agent.kind === 'builtin')
     expect(aliceRow?.author_prompt).toBe('Judge my dodging')
     expect(naiveRow?.author_prompt).toBeNull()
   })
@@ -787,14 +852,14 @@ describe('leaderboard storage on :memory:', () => {
         match_index: 0,
         game_index: 0,
         seed: 1,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         seat_plan: 'solo',
       },
       {
         match_index: 0,
         game_index: 1,
         seed: 2,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         seat_plan: 'solo',
       },
     ]
@@ -949,7 +1014,7 @@ describe('leaderboard storage on :memory:', () => {
         match_index: 0,
         game_index: 0,
         seed: 1,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         seat_plan: 'solo',
       },
     ]

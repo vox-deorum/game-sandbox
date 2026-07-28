@@ -29,7 +29,7 @@ export function headerHasSubmittedAgent(players: Players | undefined): boolean {
     return false
   }
   return Object.values(players).some(
-    (player) => player.kind === 'agent' && player.submission_id !== undefined,
+    (player) => player.kind === 'agent' && 'submission_id' in player,
   )
 }
 
@@ -61,11 +61,11 @@ export function isBlindRecording(
 export function maskPlayers(players: Players, callerId: string | undefined): Players {
   const masked: Players = {}
   for (const [playerId, player] of Object.entries(players)) {
-    if (player.user !== undefined && player.user === callerId) {
+    if ('user' in player && player.user === callerId) {
       masked[playerId] = player
     } else if (player.kind === 'human') {
       masked[playerId] = { kind: 'human', label: 'Human' }
-    } else if (player.submission_id !== undefined) {
+    } else if ('submission_id' in player) {
       masked[playerId] = {
         kind: 'agent',
         label: 'Agent',

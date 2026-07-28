@@ -286,7 +286,9 @@ export async function submitReadyAgent(
 /**
  * One agent binding on the session-start wire (snake-case `submission_id`).
  */
-type AgentAssignment = { kind: 'builtin-agent' } | { kind: 'submission'; submission_id: string }
+type AgentAssignment =
+  | { kind: 'builtin-agent'; name: string }
+  | { kind: 'submission'; submission_id: string }
 
 /** One seat assignment, including the companion seam for later wide seats. */
 type SeatAssignment = AgentAssignment | { kind: 'human'; companion?: AgentAssignment }

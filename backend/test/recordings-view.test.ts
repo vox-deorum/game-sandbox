@@ -45,9 +45,11 @@ describe('headerHasSubmittedAgent', () => {
   it('is true only when a submitted agent is present', () => {
     expect(headerHasSubmittedAgent(submittedPlayers)).toBe(true)
     expect(headerHasSubmittedAgent(undefined)).toBe(false)
-    expect(headerHasSubmittedAgent({ player_0: { kind: 'agent', label: 'Naive agent' } })).toBe(
-      false,
-    )
+    expect(
+      headerHasSubmittedAgent({
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      }),
+    ).toBe(false)
     expect(
       headerHasSubmittedAgent({ player_0: { kind: 'human', label: 'Bob', user: 'bob' } }),
     ).toBe(false)
@@ -90,7 +92,9 @@ describe('maskPlayers', () => {
   })
 
   it('leaves the ownerless Naive agent as-is', () => {
-    const players: Players = { player_0: { kind: 'agent', label: 'Naive agent' } }
+    const players: Players = {
+      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+    }
     expect(maskPlayers(players, 'anyone').player_0).toEqual(players.player_0)
   })
 })

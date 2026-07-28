@@ -51,7 +51,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
         match_index: 0,
         game_index: 1,
         seed: 1,
-        seats: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin', name: 'naive' }],
         status: 'pending',
         recording_id: null,
         started_at: null,
@@ -125,7 +125,7 @@ describe('RunDetailsPage', () => {
     // GamesTable never applies blind masking (admin run games), so the cell also carries the
     // submission's stable id as a tooltip.
     expect(playersCell).toHaveAttribute('title', 'alice')
-    const naiveCell = screen.getByText('Naive')
+    const naiveCell = screen.getByText('naive')
     expect(naiveCell).toBeInTheDocument()
     // An all-Naive seat list has no submission id to show, so its cell carries no tooltip.
     expect(naiveCell).not.toHaveAttribute('title')

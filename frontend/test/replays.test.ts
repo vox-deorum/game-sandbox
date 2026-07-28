@@ -33,7 +33,9 @@ function recording(
     schema_version: 1 as const,
     environment: 'flappy_bird',
     parameters: { players: 1, pipe_gap: 100 },
-    players: { player_0: { kind: 'agent' as const, label: 'Naive agent' } },
+    players: {
+      player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'Naive agent' },
+    },
     seats: { seat_0: ['player_0'] as [string] },
     seat_plan: 'solo',
   }
@@ -109,9 +111,9 @@ describe('ReplaysPage', () => {
           environment: 'flappy_bird',
           parameters: { players: 1, pipe_gap: 100 },
           players: {
-            player_0: { kind: 'agent', label: 'Naive agent' },
-            player_1: { kind: 'agent', label: 'Naive agent' },
-            player_2: { kind: 'agent', label: 'Naive agent' },
+            player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+            player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+            player_2: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
           },
           seats: {
             seat_0: ['player_0'],
@@ -169,9 +171,9 @@ describe('ReplaysPage', () => {
           environment: 'synthetic',
           parameters: { seat_plan: 'partners' },
           players: {
-            player_0: { kind: 'agent', label: "Alice's agent" },
-            player_1: { kind: 'agent', label: 'Naive agent' },
-            player_2: { kind: 'agent', label: "Alice's agent" },
+            player_0: { kind: 'agent', label: "Alice's agent", submission_id: 'sub-alice' },
+            player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+            player_2: { kind: 'agent', label: "Alice's agent", submission_id: 'sub-alice' },
           },
           seats: {
             seat_0: ['player_0', 'player_2'],

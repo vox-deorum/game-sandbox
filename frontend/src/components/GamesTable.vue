@@ -36,7 +36,7 @@ function gameStatus(gameIndex: number, persisted: GameStatus): GameStatus {
 
 /** A seat's agent label: the owner's display name (or id) for a submission, "Naive" for the builtin baseline. */
 function seatLabel(seat: BoardAgentRef): string {
-  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : 'Naive'
+  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : seat.name
 }
 
 /** A compact one-line summary of the agents in a game's seats, in seat order. */

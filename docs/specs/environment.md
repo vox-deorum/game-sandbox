@@ -19,11 +19,19 @@ A **player** is one PettingZoo position, identified as `player_N`. The environme
 | Layout declaration | Seats and player count |
 | --- | --- |
 | **Player bounds** | Every player has its own seat. The canonical layout is `solo`, and the `players` parameter selects a count within the declared bounds. |
-| **Seat plans** | Each named plan lists seats and the players they cover. It is a complete partition of its players, and the selected plan determines the player count. |
+| **Seat plans** | Each named plan lists seat declarations and the players they cover. It is a complete partition of its players, and the selected plan determines the player count. |
 
 An environment declares exactly one layout form. It cannot declare both player bounds and seat plans. Plans in one environment may cover different player counts, so an environment with wider or uneven seats declares every supported layout as a plan. Seat membership never depends on live state.
 
 A seat's score is the mean of its players' final scores. The environment still defines those player scores. For example, both Spades partners receive their partnership score, while independently scored players contribute their own scores. This keeps scores comparable across seat widths.
+
+### Builtin agents and restricted seats
+
+Every environment declares an ordered, nonempty set of builtin agents. Each builtin has a unique snake_case name and a nonempty display label. `naive` is always the first declaration and remains the common baseline that automated schedules use to fill submission positions.
+
+A seat-plan declaration contains its nonempty ordered player indexes and may name one `restricted_builtin`. At most one seat in a plan may set this field, the name must identify a builtin declared by the same environment, and at least one other seat in the plan must remain unrestricted. A restricted seat accepts a human when one of its players is human-capable, or its designated builtin. It never accepts a submission or another builtin.
+
+Player-bounds layouts synthesize interchangeable seats and cannot restrict one of them. Resolving any layout carries the nullable restricted-builtin name on each seat so scheduling, live sessions, and the website consume the same authoritative shape.
 
 ### Per-player agent instances
 
@@ -46,6 +54,7 @@ Game Sandbox metadata includes:
 
 - Display name and description.
 - Either minimum and maximum players, or the seat plans a season may choose between.
+- The ordered named builtin agents available to seats.
 - Typed gameplay parameter declarations and their environment defaults.
 - Human-capable players and their default timeout.
 - Recommended episode length.

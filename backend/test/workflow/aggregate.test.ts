@@ -10,8 +10,8 @@ describe('reducePlayersToSeats', () => {
         playerCount: 3,
         seatCount: 2,
         seats: [
-          { seatId: 'seat_0', players: ['player_0', 'player_2'] },
-          { seatId: 'seat_1', players: ['player_1'] },
+          { seatId: 'seat_0', players: ['player_0', 'player_2'], restrictedBuiltin: null },
+          { seatId: 'seat_1', players: ['player_1'], restrictedBuiltin: null },
         ],
       },
       [
@@ -39,7 +39,7 @@ describe('reducePlayersToSeats', () => {
           planKey: 'solo',
           playerCount: 1,
           seatCount: 1,
-          seats: [{ seatId: 'seat_0', players: ['player_0'] }],
+          seats: [{ seatId: 'seat_0', players: ['player_0'], restrictedBuiltin: null }],
         },
         [],
       ),
@@ -63,8 +63,12 @@ describe('reducePlayersToSeats', () => {
         playerCount: 4,
         seatCount: 2,
         seats: [
-          { seatId: 'seat_0', players: ['player_0'] },
-          { seatId: 'seat_1', players: ['player_1', 'player_2', 'player_3'] },
+          { seatId: 'seat_0', players: ['player_0'], restrictedBuiltin: null },
+          {
+            seatId: 'seat_1',
+            players: ['player_1', 'player_2', 'player_3'],
+            restrictedBuiltin: null,
+          },
         ],
       },
       [

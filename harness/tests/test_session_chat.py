@@ -15,6 +15,7 @@ import pytest
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     ChatPolicy,
     EnvironmentEntry,
     EnvironmentMeta,
@@ -108,6 +109,7 @@ def make_chat_entry(
         env_id="chat-fake",
         display_name="Chat Fake",
         description="A deterministic round-robin fake with messaging.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(len(players), len(players)),
         human_players=players,
         human_timeout_ms=None,

@@ -4,7 +4,7 @@
  * and the unique-constraint detector the idempotent/one-open invariants lean on.
  */
 import { MODEL_ALIASES } from '../../llm/types.js'
-import type { AgentColumns, AgentRef, LlmUsageByModel } from '../schema.js'
+import { type AgentColumns, type AgentRef, isAgentRef, type LlmUsageByModel } from '../schema.js'
 
 const LLM_USAGE_METRICS = [
   'calls',
@@ -103,38 +103,58 @@ export function encodeLlmWeightedCost(
   return value
 }
 
-/** Flatten an {@link AgentRef} to its three stored columns; null ids for the Naive baseline. */
+/** Flatten an {@link AgentRef} to its stored columns. */
 export function agentColumns(agent: AgentRef): AgentColumns {
+  if (!isAgentRef(agent)) {
+    throw new Error('agent reference has an invalid shape')
+  }
   if (agent.kind === 'submission') {
     return {
       agent_kind: 'submission',
+      agent_builtin_name: null,
       agent_submission_id: agent.submission_id,
       agent_user_id: agent.user_id,
     }
   }
-  return { agent_kind: 'builtin-naive', agent_submission_id: null, agent_user_id: null }
+  return {
+    agent_kind: 'builtin',
+    agent_builtin_name: agent.name,
+    agent_submission_id: null,
+    agent_user_id: null,
+  }
 }
 
 /** Reconstruct an {@link AgentRef} from a row's stored agent columns. */
 export function agentRefFromColumns(row: AgentColumns): AgentRef {
   if (row.agent_kind === 'submission') {
-    return {
+    const agent = {
       kind: 'submission',
-      submission_id: row.agent_submission_id ?? '',
-      user_id: row.agent_user_id ?? '',
+      submission_id: row.agent_submission_id,
+      user_id: row.agent_user_id,
     }
+    if (row.agent_builtin_name !== null || !isAgentRef(agent)) {
+      throw new Error('stored submission agent columns have an invalid identity')
+    }
+    return agent
   }
-  return { kind: 'builtin-naive' }
+  if (row.agent_kind === 'builtin') {
+    const agent = { kind: 'builtin', name: row.agent_builtin_name }
+    if (row.agent_submission_id !== null || row.agent_user_id !== null || !isAgentRef(agent)) {
+      throw new Error('stored builtin agent columns have an invalid identity')
+    }
+    return agent
+  }
+  throw new Error(`stored agent columns have unknown kind ${String(row.agent_kind)}`)
 }
 
 /** A stable grouping key for an agent across result/placement/rating rows. */
 export function agentKey(row: AgentColumns): string {
-  return `${row.agent_kind}:${row.agent_submission_id ?? ''}`
+  return agentRefKey(agentRefFromColumns(row))
 }
 
 /** The same stable key from an {@link AgentRef}, for deterministic ordering of board rows. */
 export function agentRefKey(agent: AgentRef): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive:'
+  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
 }
 
 /**

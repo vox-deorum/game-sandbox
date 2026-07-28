@@ -1,8 +1,8 @@
 """The frozen v1 built-in Flappy Bird agent.
 
-It reads the semantic Flappy observation object — a ``player`` dict and a nearest-first ``pipes``
-sequence of ``{"x", "gap_top", "gap_bottom"}`` in real screen pixels (y grows downward) — so it needs
-no dependency beyond the standard library (plus the frozen ``wcwidth`` extra the image pins).
+It reads the semantic Flappy observation object: a ``player`` dict and a nearest-first ``pipes``
+sequence of ``{"x", "gap_top", "gap_bottom"}`` in real screen pixels (y grows downward). It needs
+no dependency beyond the standard library plus the frozen ``wcwidth`` extra.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ class Agent:
 
     def act(self, observation: Any) -> int:
         pipes = observation["pipes"]
-        # Aim for the nearest pipe's gap center; with no pipe in view, hold mid-screen.
         if pipes:
             gap_center = (pipes[0]["gap_top"] + pipes[0]["gap_bottom"]) / 2.0
         else:

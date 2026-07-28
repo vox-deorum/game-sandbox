@@ -53,7 +53,7 @@ type LayoutFixtures = {
     parameters: Record<string, string | number>
     layout: {
       plan_key: string
-      seats: Array<{ seat_id: string; players: string[] }>
+      seats: Array<{ seat_id: string; players: string[]; restricted_builtin: string | null }>
       player_count: number
       seat_count: number
     }
@@ -72,6 +72,7 @@ const VALID: EnvironmentMeta = {
   env_id: 'flappy_bird',
   display_name: 'Flappy Bird',
   description: 'A paced single-human clone.',
+  builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
   layout: { kind: 'player_bounds', min: 1, max: 4 },
   human_players: ['player_0'],
   human_timeout_ms: null,
@@ -131,6 +132,28 @@ describe('isEnvironmentMeta', () => {
   it('rejects an entry without parameter declarations', () => {
     const { parameters: _omitted, ...withoutParameters } = VALID
     expect(isEnvironmentMeta(withoutParameters)).toBe(false)
+  })
+
+  it('requires unique named builtins with naive first and non-empty labels', () => {
+    expect(isEnvironmentMeta({ ...VALID, builtin_agents: [] })).toBe(false)
+    expect(
+      isEnvironmentMeta({ ...VALID, builtin_agents: [{ name: 'cautious', label: 'Cautious' }] }),
+    ).toBe(false)
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        builtin_agents: [
+          { name: 'naive', label: 'Naive' },
+          { name: 'naive', label: 'Again' },
+        ],
+      }),
+    ).toBe(false)
+    expect(isEnvironmentMeta({ ...VALID, builtin_agents: [{ name: 'naive', label: '' }] })).toBe(
+      false,
+    )
+    expect(
+      isEnvironmentMeta({ ...VALID, builtin_agents: [{ name: 'Not snake', label: 'Naive' }] }),
+    ).toBe(false)
   })
 
   it('rejects metadata without the synthesized players declaration', () => {
@@ -312,9 +335,9 @@ describe('resolveLayout', () => {
     expect(resolveLayout(VALID, { players: 3 })).toEqual({
       planKey: 'solo',
       seats: [
-        { seatId: 'seat_0', players: ['player_0'] },
-        { seatId: 'seat_1', players: ['player_1'] },
-        { seatId: 'seat_2', players: ['player_2'] },
+        { seatId: 'seat_0', players: ['player_0'], restrictedBuiltin: null },
+        { seatId: 'seat_1', players: ['player_1'], restrictedBuiltin: null },
+        { seatId: 'seat_2', players: ['player_2'], restrictedBuiltin: null },
       ],
       playerCount: 3,
       seatCount: 3,
@@ -356,6 +379,7 @@ describe('resolveLayout', () => {
           seats: resolved.seats.map((seat) => ({
             seat_id: seat.seatId,
             players: seat.players,
+            restricted_builtin: seat.restrictedBuiltin,
           })),
           player_count: resolved.playerCount,
           seat_count: resolved.seatCount,

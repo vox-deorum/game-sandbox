@@ -160,7 +160,7 @@ if TYPE_CHECKING:
             "schema_version": 1,
             "environment": "x",
             "parameters": {"players": 1},
-            "players": {"player_0": {"kind": "agent", "label": "Agent"}},
+            "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
             "seats": {"seat_0": ["player_0"]},
             "seat_plan": "solo",
         },

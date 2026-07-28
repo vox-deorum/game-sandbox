@@ -30,6 +30,8 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
             lines.append(f"{prefix}{json.dumps(value)},")
         elif key == "parameters":
             lines.append(f"{prefix}{_render_parameters(value)},")
+        elif key == "builtin_agents":
+            lines.append(f"{prefix}{_render_builtin_agents(value)},")
         elif isinstance(value, tuple):
             items = ", ".join(json.dumps(item) for item in value)
             trailing_comma = "," if len(value) == 1 else ""
@@ -49,6 +51,15 @@ def _render_parameters(value: object) -> str:
     return repr(value)
 
 
+def _render_builtin_agents(value: object) -> str:
+    """Render internal built-in declarations instead of their serialized dictionaries."""
+    from game_sandbox_harness.environment import BuiltinAgent
+
+    if not isinstance(value, tuple) or not all(isinstance(item, BuiltinAgent) for item in value):
+        raise TypeError("metadata builtin_agents must be a BuiltinAgent tuple")
+    return repr(value)
+
+
 def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: object) -> str:
     """Render the uniform ``sandbox/env/__init__.py`` surface."""
     from game_sandbox_harness.environment import EnvironmentMeta
@@ -56,6 +67,7 @@ def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: objec
     if not isinstance(meta, EnvironmentMeta):
         raise TypeError(f"expected EnvironmentMeta for {env_id!r}, got {type(meta).__name__}")
     metadata = meta.to_json()
+    metadata["builtin_agents"] = meta.builtin_agents
     metadata["layout"] = meta.layout
     metadata["human_players"] = tuple(metadata["human_players"])
     metadata["parameters"] = meta.parameters
@@ -74,11 +86,13 @@ stay environment-agnostic across template layers.
 """
 
 from sandbox.harness.environment import (
+    BuiltinAgent,
     EnvParameter,
     EnvParameterChoice,
     EnvironmentMeta,
     PlayerBounds,
     SeatPlan,
+    SeatDeclaration,
     SeatPlans,
 )
 

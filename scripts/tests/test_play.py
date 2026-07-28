@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 import pytest
 
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentMeta,
     EnvParameter,
     PlayerBounds,
+    SeatDeclaration,
     SeatPlan,
     SeatPlans,
 )
+from game_sandbox_harness.live import parse_config
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -36,6 +40,7 @@ def _entry() -> EnvironmentEntry:
             env_id="fixture",
             display_name="Fixture",
             description="fixture",
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=PlayerBounds(2, 2),
             human_players=("player_0", "player_1"),
             human_timeout_ms=1000,
@@ -60,10 +65,24 @@ def _wide_entry(*, human_players: tuple[str, ...] = ("player_0", "player_1", "pl
             env_id="fixture",
             display_name="Fixture",
             description="fixture",
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=SeatPlans(
                 (
-                    SeatPlan("partnership", "Partnership", ((0, 2), (1, 3))),
-                    SeatPlan("solo", "Solo", ((0,), (1,), (2,), (3,))),
+                    SeatPlan(
+                        "partnership",
+                        "Partnership",
+                        (SeatDeclaration((0, 2)), SeatDeclaration((1, 3))),
+                    ),
+                    SeatPlan(
+                        "solo",
+                        "Solo",
+                        (
+                            SeatDeclaration((0,)),
+                            SeatDeclaration((1,)),
+                            SeatDeclaration((2,)),
+                            SeatDeclaration((3,)),
+                        ),
+                    ),
                 )
             ),
             human_players=human_players,
@@ -95,7 +114,7 @@ def _wide_entry(*, human_players: tuple[str, ...] = ("player_0", "player_1", "pl
 
 def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
-    (play.BUILTIN_AGENT_ROOT / "fixture").mkdir(parents=True)
+    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
     config = play.local_config(
         _entry(),
         mode="human",
@@ -106,7 +125,11 @@ def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, m
     )
 
     assert config["player_bindings"] == {
-        "player_0": {"kind": "builtin-agent", "path": str(play.BUILTIN_AGENT_ROOT / "fixture")},
+        "player_0": {
+            "kind": "builtin-agent",
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
+        },
         "player_1": {"kind": "external"},
     }
     players = config["players"]
@@ -114,6 +137,7 @@ def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, m
     assert set(players) == {"player_0", "player_1"}
     assert config["llm"] is None
     assert config["start_paused"] is True
+    parse_config([json.dumps(config)], entry=_entry())
 
 
 def test_default_layout_exposes_players_and_singleton_seats():
@@ -185,7 +209,7 @@ def test_launch_browser_uses_the_local_server_and_browser_seam(monkeypatch, tmp_
 
 
 def test_builtin_agent_path_resolves_inside_this_checkout():
-    path = Path(play.builtin_agent_path("hearts"))
+    path = Path(play.builtin_agent_path("hearts", "naive"))
     assert path.is_relative_to(play.REPO_ROOT)
     assert (path / "manifest.json").is_file()
 
@@ -219,7 +243,7 @@ def test_agent_repo_without_a_mode_selects_agent_mode(monkeypatch, tmp_path: Pat
 
 def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
     monkeypatch.setattr(play, "load_environment", lambda _env_id: _entry())
-    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id: "builtin")
+    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id, _name: "builtin")
     captured: dict[str, object] = {}
 
     def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:
@@ -230,7 +254,7 @@ def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
 
     assert play.main(["fixture", "human", "--seat", "1", "--no-browser"]) == 0
     assert captured["player_bindings"] == {
-        "player_0": {"kind": "builtin-agent", "path": "builtin"},
+        "player_0": {"kind": "builtin-agent", "path": "builtin", "name": "naive"},
         "player_1": {"kind": "external"},
     }
 
@@ -241,7 +265,7 @@ def test_wide_human_seat_requires_and_expands_an_explicit_companion(
 ):
     entry = _wide_entry()
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
-    (play.BUILTIN_AGENT_ROOT / "fixture").mkdir(parents=True)
+    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
 
     with pytest.raises(RuntimeError, match="requires --companion"):
         play.local_config(
@@ -267,18 +291,25 @@ def test_wide_human_seat_requires_and_expands_an_explicit_companion(
         "player_0": {"kind": "external"},
         "player_2": {
             "kind": "builtin-agent",
-            "path": str(play.BUILTIN_AGENT_ROOT / "fixture"),
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
         },
         "player_1": {
             "kind": "builtin-agent",
-            "path": str(play.BUILTIN_AGENT_ROOT / "fixture"),
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
         },
         "player_3": {
             "kind": "builtin-agent",
-            "path": str(play.BUILTIN_AGENT_ROOT / "fixture"),
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
         },
     }
-    assert config["players"]["player_2"]["label"] == "Companion"  # type: ignore[index]
+    assert config["players"]["player_2"] == {  # type: ignore[index]
+        "kind": "agent",
+        "builtin_name": "naive",
+        "label": "Naive agent",
+    }
 
 
 def test_repeatable_typed_parameters_select_the_layout_and_validate_values():
@@ -299,7 +330,7 @@ def test_repeatable_typed_parameters_select_the_layout_and_validate_values():
 def test_companion_accepts_a_manifest_path(monkeypatch, tmp_path: Path):
     entry = _wide_entry()
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
-    (play.BUILTIN_AGENT_ROOT / "fixture").mkdir(parents=True)
+    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
     companion_repo = tmp_path / "companion"
     companion_repo.mkdir()
     manifest = companion_repo / "manifest.json"
@@ -323,7 +354,7 @@ def test_cli_applies_plan_parameter_before_validating_seat_and_companion(
 ):
     entry = _wide_entry()
     monkeypatch.setattr(play, "load_environment", lambda _env_id: entry)
-    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id: "builtin")
+    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id, _name: "builtin")
     captured: dict[str, object] = {}
 
     def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:

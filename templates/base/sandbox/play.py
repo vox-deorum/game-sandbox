@@ -211,10 +211,18 @@ def local_config(
             players[player_id] = {"kind": "human", "label": "You"}
         elif vs is not None and player_id in rivals:
             bindings[player_id] = {"kind": "builtin-agent", "path": str(vs)}
-            players[player_id] = {"kind": "agent", "label": _rival_label(vs)}
+            players[player_id] = {
+                "kind": "agent",
+                "submission_id": "local-rival",
+                "label": _rival_label(vs),
+            }
         else:
             bindings[player_id] = {"kind": "builtin-agent", "path": str(REPO_ROOT)}
-            players[player_id] = {"kind": "agent", "label": "Your agent"}
+            players[player_id] = {
+                "kind": "agent",
+                "submission_id": "local",
+                "label": "Your agent",
+            }
     config: dict[str, object] = {
         "env_id": META.env_id,
         "parameters": parameters,

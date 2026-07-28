@@ -11,7 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 from sandbox import evaluate, live_local, play
-from sandbox.harness.environment import PlayerBounds, SeatPlan, SeatPlans
+from sandbox.harness.environment import PlayerBounds, SeatDeclaration, SeatPlan, SeatPlans
+from sandbox.harness.live import parse_config
 
 
 def _rival_repo(tmp_path: Path) -> Path:
@@ -24,7 +25,15 @@ def _rival_repo(tmp_path: Path) -> Path:
 def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     players = ("player_0", "player_1", "player_2", "player_3")
     monkeypatch.setattr(play, "possible_players", lambda: players)
-    plans = SeatPlans((SeatPlan("partnership", "Partnership", ((0, 2), (1, 3))),))
+    plans = SeatPlans(
+        (
+            SeatPlan(
+                "partnership",
+                "Partnership",
+                (SeatDeclaration((0, 2)), SeatDeclaration((1, 3))),
+            ),
+        )
+    )
     monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
 
 
@@ -169,8 +178,17 @@ def test_vs_fills_every_opposing_player_in_a_one_player_per_seat_layout(monkeypa
     assert bindings["player_0"] == {"kind": "builtin-agent", "path": str(tmp_path / "repo")}
     for other in ("player_1", "player_2", "player_3"):
         assert bindings[other] == {"kind": "builtin-agent", "path": str(rival)}
-    assert config["players"]["player_0"] == {"kind": "agent", "label": "Your agent"}
-    assert config["players"]["player_1"] == {"kind": "agent", "label": "Rival (v1)"}
+    assert config["players"]["player_0"] == {
+        "kind": "agent",
+        "submission_id": "local",
+        "label": "Your agent",
+    }
+    assert config["players"]["player_1"] == {
+        "kind": "agent",
+        "submission_id": "local-rival",
+        "label": "Rival (v1)",
+    }
+    parse_config([json.dumps(config)], entry=play._entry())
 
 
 def test_vs_keeps_the_selected_seat_on_your_agent_in_a_partnership_layout(monkeypatch, tmp_path: Path):
@@ -200,7 +218,11 @@ def test_human_mode_vs_gives_the_partner_your_agent(monkeypatch, tmp_path: Path)
 
     assert config["player_bindings"]["player_0"] == {"kind": "external"}
     assert config["player_bindings"]["player_2"]["path"] == str(tmp_path / "repo")
-    assert config["players"]["player_2"] == {"kind": "agent", "label": "Your agent"}
+    assert config["players"]["player_2"] == {
+        "kind": "agent",
+        "submission_id": "local",
+        "label": "Your agent",
+    }
     assert config["player_bindings"]["player_1"]["path"] == str(rival)
     assert config["player_bindings"]["player_3"]["path"] == str(rival)
 
@@ -218,7 +240,11 @@ def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatc
             "kind": "builtin-agent",
             "path": str(tmp_path / "repo"),
         }
-        assert config["players"][player_id] == {"kind": "agent", "label": "Your agent"}
+        assert config["players"][player_id] == {
+            "kind": "agent",
+            "submission_id": "local",
+            "label": "Your agent",
+        }
 
 
 def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
@@ -238,7 +264,7 @@ def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
 
 def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_path: Path):
     monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1", "player_2"))
-    plans = SeatPlans((SeatPlan("coop", "Cooperative", ((0, 1, 2),)),))
+    plans = SeatPlans((SeatPlan("coop", "Cooperative", (SeatDeclaration((0, 1, 2)),)),))
     monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
 
     with pytest.raises(SystemExit) as error:

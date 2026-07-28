@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentLookupError,
     EnvironmentMeta,
@@ -15,6 +16,7 @@ from game_sandbox_harness.environment import (
     EnvParameterChoice,
     EnvParameterValueError,
     PlayerBounds,
+    SeatDeclaration,
     SeatPlan,
     SeatPlans,
     discover_environments,
@@ -32,6 +34,7 @@ def _meta() -> EnvironmentMeta:
         env_id="demo",
         display_name="Demo",
         description="A demo environment.",
+        builtin_agents=(BuiltinAgent("naive", "Naive"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
         human_timeout_ms=None,
@@ -51,6 +54,7 @@ def test_meta_to_json_round_trips():
     blob = json.dumps(meta.to_json())
     parsed = json.loads(blob)
     assert parsed["env_id"] == "demo"
+    assert parsed["builtin_agents"] == [{"name": "naive", "label": "Naive"}]
     assert parsed["human_players"] == ["player_0"]  # tuple serialized as a JSON array
     assert parsed["human_timeout_ms"] is None
     assert parsed["pace_interval_ms"] == 50
@@ -175,6 +179,29 @@ def test_parameter_declarations_reject_invalid_shapes():
         float_parameter.validate_value(10**1000)
 
 
+def test_builtin_agents_require_a_unique_naive_baseline_and_valid_entries():
+    with pytest.raises(ValueError, match="at least one"):
+        EnvironmentMeta(**{**_meta().__dict__, "builtin_agents": ()})
+    with pytest.raises(ValueError, match="first builtin"):
+        EnvironmentMeta(
+            **{
+                **_meta().__dict__,
+                "builtin_agents": (BuiltinAgent("cautious", "Cautious"),),
+            }
+        )
+    with pytest.raises(ValueError, match="unique"):
+        EnvironmentMeta(
+            **{
+                **_meta().__dict__,
+                "builtin_agents": (BuiltinAgent("naive", "Naive"), BuiltinAgent("naive", "Again")),
+            }
+        )
+    with pytest.raises(ValueError, match="snake_case"):
+        BuiltinAgent("Not snake", "Naive")
+    with pytest.raises(ValueError, match="non-empty"):
+        BuiltinAgent("naive", "")
+
+
 def test_layout_resolution_covers_player_bounds_and_uneven_seat_plans():
     bounds = EnvironmentMeta(**{**_meta().__dict__, "layout": PlayerBounds(1, 4)})
     resolved_bounds = resolve_layout(bounds, resolve_parameters(bounds, {"players": 3}))
@@ -188,7 +215,15 @@ def test_layout_resolution_covers_player_bounds_and_uneven_seat_plans():
     plans = EnvironmentMeta(
         **{
             **_meta().__dict__,
-            "layout": SeatPlans((SeatPlan("duo", "Duo", ((0,), (1, 2, 3))),)),
+            "layout": SeatPlans(
+                (
+                    SeatPlan(
+                        "duo",
+                        "Duo",
+                        (SeatDeclaration((0,)), SeatDeclaration((1, 2, 3))),
+                    ),
+                )
+            ),
         }
     )
     layout = resolve_layout(plans, resolve_parameters(plans))
@@ -202,9 +237,9 @@ def test_layout_resolution_covers_player_bounds_and_uneven_seat_plans():
     "layout",
     [
         SeatPlans(()),
-        SeatPlans((SeatPlan("x", "X", ((),)),)),
-        SeatPlans((SeatPlan("x", "X", ((0, 0),)),)),
-        SeatPlans((SeatPlan("x", "X", ((0, 2),)),)),
+        SeatPlans((SeatPlan("x", "X", (SeatDeclaration(()),)),)),
+        SeatPlans((SeatPlan("x", "X", (SeatDeclaration((0, 0)),)),)),
+        SeatPlans((SeatPlan("x", "X", (SeatDeclaration((0, 2)),)),)),
     ],
 )
 def test_layout_rejects_invalid_partitions(layout):
@@ -219,7 +254,13 @@ def _layout_from_fixture(raw: dict[str, object]) -> PlayerBounds | SeatPlans:
         SeatPlan(
             key=plan["key"],
             title=plan["title"],
-            seats=tuple(tuple(seat) for seat in plan["seats"]),
+            seats=tuple(
+                SeatDeclaration(
+                    players=tuple(seat["players"]),
+                    restricted_builtin=seat.get("restricted_builtin"),
+                )
+                for seat in plan["seats"]
+            ),
         )
         for plan in raw["plans"]  # type: ignore[union-attr]
     )
@@ -230,7 +271,14 @@ def _resolved_layout_json(meta: EnvironmentMeta, parameters: dict[str, object]) 
     layout = resolve_layout(meta, parameters)  # type: ignore[arg-type]
     return {
         "plan_key": layout.plan_key,
-        "seats": [{"seat_id": seat.seat_id, "players": list(seat.players)} for seat in layout.seats],
+        "seats": [
+            {
+                "seat_id": seat.seat_id,
+                "players": list(seat.players),
+                "restricted_builtin": seat.restricted_builtin,
+            }
+            for seat in layout.seats
+        ],
         "player_count": layout.player_count,
         "seat_count": layout.seat_count,
     }

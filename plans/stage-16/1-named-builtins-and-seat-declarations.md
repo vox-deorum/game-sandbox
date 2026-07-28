@@ -1,6 +1,6 @@
 # Stage 16.1: Named builtins and seat declarations
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 16](../stage-16-named-builtins.md), build-order step 1.
 
@@ -46,7 +46,7 @@ The session image moves from one flat directory per environment to one directory
 
 The source tree under `backend/images/session-base/deps-v1/builtin/` takes the same shape. In `backend/images/session-base/deps-v1/Dockerfile` the `COPY` into `/opt/agents/builtin` is unchanged, the build-time `load_agent` smoke test moves to the two-level paths, and the build fails when metadata names a builtin with no matching directory. `DEFAULT_BUILTIN_AGENT_BASE` resolution in `harness/src/game_sandbox_harness/live.py` appends the builtin name from the seat binding to the environment id instead of stopping at the environment.
 
-Spades declares a second builtin beside `naive`, so the two-level path, the named launch binding, distinct storage rows, and distinct labels are all exercised by a real environment inside the real image. `cautious` ("Cautious bidder"), a bidder that never bids nil and follows suit low, is the proposed name and behavior; confirm or replace it when work starts. Flappy Bird and Hearts keep `naive` alone.
+Spades declares a second builtin beside `naive`, so the two-level path, the named launch binding, distinct storage rows, and distinct labels are all exercised by a real environment inside the real image. `cautious` ("Cautious bidder") never bids nil and follows suit low. Flappy Bird and Hearts keep `naive` alone.
 
 No shipped environment restricts a seat until the role-playing environment arrives, so restricted-seat coverage comes from metadata fixtures in the Python, TypeScript, backend, and jsdom suites rather than from a production game.
 
@@ -66,7 +66,7 @@ export type AgentRef =
 
 `game_results`, `automated_placements`, and `ratings` each gain the column in `backend/src/storage/migrations.ts`. The aggregation in `getAutomatedBoard`, the lookups in `listPlacementsByAgent`, and the partial unique indexes key on kind together with the builtin name, so two builtins never overwrite or aggregate into one row.
 
-The same explicit name reaches scheduled games, `SeatBinding` in `backend/src/session/launch-config.ts` and its `driver` value, the builtin resolution in `backend/src/session/orchestrator.ts`, the builtin branch in `backend/src/workflow/workflow-runner.ts`, board and rating wires, frontend agent keys, and display-name enrichment. `builtin-naive` is removed in place from source and generated types.
+The same explicit name reaches scheduled games, `SeatBinding` in `backend/src/session/launch-config.ts` and its `driver` value, the builtin resolution in `backend/src/session/orchestrator.ts`, the builtin branch in `backend/src/workflow/workflow-runner.ts`, board and rating wires, frontend agent keys, and display-name enrichment. The concrete `AgentRef` variant `builtin-naive` is removed in place from source and generated types. The compact season-match token keeps that spelling until Step 16.2 widens the `SeatSpec` vocabulary.
 
 ## Recording
 

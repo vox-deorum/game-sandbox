@@ -16,6 +16,7 @@ import pytest
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentMeta,
     EnvParameter,
@@ -90,6 +91,7 @@ def make_entry(
         env_id="fake",
         display_name="Fake",
         description="A deterministic fake.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
         human_timeout_ms=human_timeout_ms,
@@ -165,11 +167,23 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
-        player_attribution={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            }
+        },
     )
     lines = (tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()
     header = json.loads(lines[0])
-    assert header["players"] == {"player_0": {"kind": "agent", "label": "Naive agent"}}
+    assert header["players"] == {
+        "player_0": {
+            "kind": "agent",
+            "builtin_name": "naive",
+            "label": "Naive agent",
+        }
+    }
     assert header["parameters"] == {"players": 1}
     assert header["seats"] == {"seat_0": ["player_0"]}
     assert header["seat_plan"] == "solo"
@@ -422,6 +436,7 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
         env_id="team",
         display_name="Team",
         description="A deterministic 3-player fake with a terminal payout.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(3, 3),
         human_players=("player_0", "player_1", "player_2"),
         human_timeout_ms=None,
@@ -566,6 +581,7 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
         env_id="masked",
         display_name="Masked",
         description="A 2-player fake with an action mask and illegal-move rejection.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(2, 2),
         human_players=("player_0", "player_1"),
         human_timeout_ms=None,

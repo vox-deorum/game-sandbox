@@ -12,7 +12,14 @@ import type { BoardAgentRef } from '@game-sandbox/schema/board'
 
 import { enrichAgentRef } from './auth/users.js'
 import { optionalField } from './optional-field.js'
-import type { AgentRef, PublicSeason, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'
+import {
+  type AgentRef,
+  isAgentRef,
+  type PublicSeason,
+  type Season,
+  type SeasonRun,
+  type SeasonRunGame,
+} from './storage/schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.js'
 
 /** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
@@ -25,13 +32,22 @@ const NO_NAMES: ReadonlyMap<string, string> = new Map()
 const seatsCache = new WeakMap<SeasonRunGame, AgentRef[]>()
 const snapshotCache = new WeakMap<SeasonRun, AgentRef[]>()
 
+/** Decode and validate one persisted array of canonical agent references. */
+function decodeAgentRefs(text: string, field: string): AgentRef[] {
+  const parsed: unknown = JSON.parse(text)
+  if (!Array.isArray(parsed) || !parsed.every(isAgentRef)) {
+    throw new Error(`stored ${field} must be an array of valid agent references`)
+  }
+  return parsed
+}
+
 /** Decode a scheduled game's `seats` JSON once per row object. */
 function decodeSeats(game: SeasonRunGame): AgentRef[] {
   const cached = seatsCache.get(game)
   if (cached !== undefined) {
     return cached
   }
-  const seats = JSON.parse(game.seats) as AgentRef[]
+  const seats = decodeAgentRefs(game.seats, 'season run game seats')
   seatsCache.set(game, seats)
   return seats
 }
@@ -42,7 +58,10 @@ function decodeSnapshot(run: SeasonRun): AgentRef[] {
   if (cached !== undefined) {
     return cached
   }
-  const snapshot = JSON.parse(run.submission_snapshot) as AgentRef[]
+  const snapshot = decodeAgentRefs(run.submission_snapshot, 'season run submission snapshot')
+  if (snapshot.some((ref) => ref.kind !== 'submission')) {
+    throw new Error('stored season run submission snapshot must contain only submissions')
+  }
   snapshotCache.set(run, snapshot)
   return snapshot
 }

@@ -160,7 +160,8 @@ export async function startSession(
       {
         kind: 'human' | 'builtin-agent' | 'submission'
         submission_id?: string
-        companion?: { kind: 'builtin-agent' | 'submission'; submission_id?: string }
+        name?: string
+        companion?: { kind: 'builtin-agent' | 'submission'; submission_id?: string; name?: string }
       }
     >
     parameters?: Record<string, unknown>

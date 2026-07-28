@@ -29,10 +29,10 @@ describe('GameOverCard', () => {
       environment: 'spades',
       parameters: { players: 4 },
       players: {
-        player_0: { kind: 'agent', label: 'Naive agent' },
-        player_1: { kind: 'agent', label: 'Naive agent' },
-        player_2: { kind: 'agent', label: 'Naive agent' },
-        player_3: { kind: 'agent', label: 'Naive agent' },
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_2: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_3: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       },
       seats: {
         seat_0: ['player_0'],
@@ -64,9 +64,9 @@ describe('GameOverCard', () => {
       environment: 'synthetic',
       parameters: { seat_plan: 'uneven' },
       players: {
-        player_0: { kind: 'agent', label: "Alice's agent" },
-        player_1: { kind: 'agent', label: 'Naive agent' },
-        player_2: { kind: 'agent', label: "Alice's agent" },
+        player_0: { kind: 'agent', label: "Alice's agent", submission_id: 'sub-alice' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_2: { kind: 'agent', label: "Alice's agent", submission_id: 'sub-alice' },
       },
       seats: {
         seat_0: ['player_0', 'player_2'],
@@ -93,8 +93,8 @@ describe('GameOverCard', () => {
       environment: 'synthetic',
       parameters: { players: 2 },
       players: {
-        player_0: { kind: 'agent', label: 'A' },
-        player_1: { kind: 'agent', label: 'B' },
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'A' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'B' },
       },
       seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
       seat_plan: 'solo',

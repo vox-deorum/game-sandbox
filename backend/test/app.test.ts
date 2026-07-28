@@ -91,7 +91,7 @@ describe('HTTP API', () => {
         method: 'POST',
         url: '/api/sessions',
         headers: alice,
-        payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+        payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
       })
       expect(res.statusCode).toBe(201)
       const { id } = res.json() as { id: string }
@@ -147,7 +147,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
     })
     expect(res.statusCode).toBe(201)
     const body = res.json() as { id: string; ws_path: string }
@@ -231,7 +231,7 @@ describe('HTTP API', () => {
       url: '/api/sessions',
       headers: alice,
       payload: startPayload({
-        seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
+        seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
       }),
     })
     expect(res.statusCode).toBe(400)
@@ -245,7 +245,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
     })
     expect(first.statusCode).toBe(201)
     const { id } = first.json() as { id: string }
@@ -253,7 +253,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
     })
     expect(second.statusCode).toBe(409)
     // The rejoin path reads the active session's id from the body, keyed by the stable code.
@@ -307,12 +307,15 @@ describe('HTTP API', () => {
 
   it('rejects a pending user starting a session with 403 not_active', async () => {
     const pending = await users.headersFor('newcomer', { status: 'pending' })
-    for (const kind of ['human', 'builtin-agent'] as const) {
+    for (const assignment of [
+      { kind: 'human' as const },
+      { kind: 'builtin-agent' as const, name: 'naive' },
+    ]) {
       const res = await app.inject({
         method: 'POST',
         url: '/api/sessions',
         headers: pending,
-        payload: startPayload({ seat_0: { kind } }),
+        payload: startPayload({ seat_0: assignment }),
       })
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({ code: 'not_active' })
@@ -323,7 +326,7 @@ describe('HTTP API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
     })
     expect(res.statusCode).toBe(401)
     expect(res.json()).toMatchObject({ code: 'auth_required' })
@@ -344,7 +347,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent', name: 'naive' } }),
     })
     const { id } = created.json() as { id: string }
 
@@ -378,7 +381,7 @@ describe('HTTP API', () => {
         environment: env,
         parameters: {},
         seed: 0,
-        players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+        players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
         seats: { seat_0: ['player_0'] },
         seat_plan: 'solo',
       })

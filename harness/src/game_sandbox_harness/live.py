@@ -25,6 +25,7 @@ import contextlib
 import json
 import math
 import os
+import re
 import sys
 import urllib.request
 from collections.abc import Iterable
@@ -57,10 +58,11 @@ from .session import REASON_STOPPED, AgentPlayer, Episode, ExternalPlayer, Playe
 from .state import PlayerAttribution
 
 #: Where the session base image stages the built-in agents the watch-style runs load, one
-#: per-environment directory beneath this base (``/opt/agents/builtin/<env_id>``). A player with no
-#: explicit overlay path takes the baseline for the session's own environment, since the Naive
-#: policy is environment-specific (see each baseline's ``agent.py``).
+#: per-environment and per-name directory beneath this base
+#: (``/opt/agents/builtin/<env_id>/<name>``). A player with no explicit overlay path takes its named
+#: agent from the session's own environment.
 DEFAULT_BUILTIN_AGENT_BASE = "/opt/agents/builtin"
+_BUILTIN_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 #: Cooperative wait granularity. Small enough that stop and resume stay responsive.
 _SLICE_MS = 5
 #: Tick markers are local control-plane requests and must never hold the participant loop open for
@@ -85,6 +87,7 @@ class PlayerBinding:
 
     kind: str
     path: str | None = None
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -190,7 +193,26 @@ def parse_config(
         path = binding.get("path")
         if path is not None and not isinstance(path, str):
             raise LiveConfigError(f"config player binding {player_id!r} 'path' must be a string when present")
-        player_bindings[player_id] = PlayerBinding(kind=kind, path=path)
+        name = binding.get("name")
+        if kind == "external":
+            if "name" in binding:
+                raise LiveConfigError(f"config external binding {player_id!r} must not name an agent")
+        else:
+            if name is not None and (not isinstance(name, str) or _BUILTIN_NAME.fullmatch(name) is None):
+                raise LiveConfigError(
+                    f"config player binding {player_id!r} 'name' must be a snake_case built-in name"
+                )
+            if path is None and name is None:
+                raise LiveConfigError(
+                    f"config built-in binding {player_id!r} without a path must name a built-in agent"
+                )
+            declared_names = {builtin.name for builtin in entry.meta.builtin_agents}
+            if name is not None and name not in declared_names:
+                raise LiveConfigError(
+                    f"config built-in binding {player_id!r} names {name!r}, "
+                    f"which environment {env_id!r} does not declare"
+                )
+        player_bindings[player_id] = PlayerBinding(kind=kind, path=path, name=cast("str | None", name))
 
     if "human_timeout_ms" not in config:
         human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT
@@ -339,9 +361,11 @@ def _parse_players(
         label = entry.get("label")
         if not isinstance(label, str) or not label:
             raise LiveConfigError(f"config player {player_id!r} 'label' must be a non-empty string")
-        for optional in ("user", "submission_id"):
+        if set(entry) - {"kind", "label", "user", "submission_id", "builtin_name"}:
+            raise LiveConfigError(f"config player {player_id!r} contains an unknown attribution field")
+        for optional in ("user", "submission_id", "builtin_name"):
             value = entry.get(optional)
-            if value is not None and not isinstance(value, str):
+            if optional in entry and not isinstance(value, str):
                 raise LiveConfigError(
                     f"config player {player_id!r} {optional!r} must be a string when present"
                 )
@@ -349,6 +373,31 @@ def _parse_players(
         if kind != expected_kind:
             raise LiveConfigError(
                 f"config player {player_id!r} has kind {kind!r}; expected {expected_kind!r} for its binding"
+            )
+        submission_id = entry.get("submission_id")
+        builtin_name = entry.get("builtin_name")
+        if kind == "human":
+            if submission_id is not None or builtin_name is not None:
+                raise LiveConfigError(f"config human player {player_id!r} cannot carry agent identity")
+        elif (submission_id is None) == (builtin_name is None):
+            raise LiveConfigError(
+                f"config agent player {player_id!r} must carry exactly one of submission_id or builtin_name"
+            )
+        elif submission_id == "":
+            raise LiveConfigError(f"config player {player_id!r} submission_id must be non-empty")
+        elif builtin_name is not None and _BUILTIN_NAME.fullmatch(cast("str", builtin_name)) is None:
+            raise LiveConfigError(
+                f"config player {player_id!r} builtin_name must be a snake_case built-in name"
+            )
+        elif builtin_name is not None and "user" in entry:
+            raise LiveConfigError(f"config built-in agent player {player_id!r} cannot carry user")
+        elif player_bindings[player_id].name is None and builtin_name is not None:
+            raise LiveConfigError(
+                f"config player {player_id!r} with a path-only binding must carry submission_id"
+            )
+        elif player_bindings[player_id].name is not None and builtin_name != player_bindings[player_id].name:
+            raise LiveConfigError(
+                f"config player {player_id!r} builtin_name must match its named built-in binding"
             )
         players[player_id] = cast("PlayerAttribution", entry)
     return players
@@ -512,7 +561,11 @@ def build_players(
                 message_source=source,
             )
         else:  # "builtin-agent" — parse_config rejects any other kind.
-            agent_path = binding.path or f"{DEFAULT_BUILTIN_AGENT_BASE}/{config.env_id}"
+            if binding.path is not None:
+                agent_path = binding.path
+            else:
+                assert binding.name is not None
+                agent_path = f"{DEFAULT_BUILTIN_AGENT_BASE}/{config.env_id}/{binding.name}"
             if execution_scope is not None:
                 # Manifest loading imports the participant module and constructs its agent, so this
                 # boundary must be activated before either operation can capture a client.

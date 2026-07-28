@@ -24,13 +24,16 @@ export interface PlayerAttribution {
   label: string
   user?: string
   submission_id?: string
+  builtin_name?: string
 }
 
 /** One player's binding in the session config argv: an external (human) source or a loaded agent. */
 export interface PlayerConfig {
   kind: 'external' | 'builtin-agent'
-  /** Where a `builtin-agent` player loads its code from; absent means the image's default Naive agent. */
+  /** Where a `builtin-agent` player loads its code from; absent selects a staged built-in agent. */
   path?: string
+  /** Stable built-in name when this binding uses the image's staged agent tree. */
+  name?: string
 }
 
 /**
@@ -59,7 +62,7 @@ export type SeatBinding =
 
 /** The seat drivers that load an agent, which is everything a companion is allowed to be. */
 export type AgentBinding =
-  | { driver: 'naive' }
+  | { driver: 'builtin'; name: string; label?: string }
   | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
 
 /** The two session-config blocks derived from a seat assignment, keyed by player id. */
@@ -103,12 +106,10 @@ export function assembleLlmLaunchConfig(
 
 /**
  * Map a player-id to a seat assignment onto the `player_bindings` and `players` blocks of the session
- * config. A human player is driven by the transport (`external`); a Naive or submitted player is a
- * `builtin-agent`,
- * the submitted one carrying the overlay path its code loads from. The attribution mirrors the seat:
- * the human's display name, the generic "Naive agent", or "<owner>'s agent" tagged with the
- * submission. `user` always carries the stable id; the label falls back to it when the caller
- * resolved no display name, so a recording stays attributable without joining mutable auth data.
+ * config. A human player is driven by the transport (`external`); a built-in or submitted player is a
+ * `builtin-agent`. The submitted one carries the overlay path its code loads from. Built-ins snapshot
+ * both their stable name and label in the recording, so replay rendering never needs an environment
+ * or season lookup.
  */
 export function assembleLaunch(
   seats: ReadonlyMap<string, SeatBinding>,
@@ -169,9 +170,9 @@ function addPlayer(
         user: seat.userId,
       }
       break
-    case 'naive':
-      playerBindings[playerId] = { kind: 'builtin-agent' }
-      players[playerId] = { kind: 'agent', label: 'Naive agent' }
+    case 'builtin':
+      playerBindings[playerId] = { kind: 'builtin-agent', name: seat.name }
+      players[playerId] = { kind: 'agent', builtin_name: seat.name, label: seat.label ?? seat.name }
       break
     case 'submission':
       playerBindings[playerId] = { kind: 'builtin-agent', path: seat.path }

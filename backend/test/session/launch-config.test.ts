@@ -7,7 +7,7 @@ import { assembleLaunch } from '../../src/session/launch-config.js'
 function layoutOf(seats: { seatId: string; players: string[] }[]): ResolvedLayout {
   return {
     planKey: 'test',
-    seats,
+    seats: seats.map((seat) => ({ ...seat, restrictedBuiltin: null })),
     seatCount: seats.length,
     playerCount: seats.reduce((total, seat) => total + seat.players.length, 0),
   }
@@ -20,11 +20,14 @@ const WIDE_LAYOUT = layoutOf([
 const SINGLETON_LAYOUT = layoutOf([{ seatId: 'seat_0', players: ['player_0'] }])
 
 describe('assembleLaunch', () => {
-  it('keeps a singleton attribution unchanged', () => {
-    const launch = assembleLaunch(new Map([['seat_0', { driver: 'naive' }]]), SINGLETON_LAYOUT)
+  it('snapshots a named built-in identity and label', () => {
+    const launch = assembleLaunch(
+      new Map([['seat_0', { driver: 'builtin', name: 'cautious', label: 'Cautious bidder' }]]),
+      SINGLETON_LAYOUT,
+    )
     expect(launch).toEqual({
-      playerBindings: { player_0: { kind: 'builtin-agent' } },
-      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      playerBindings: { player_0: { kind: 'builtin-agent', name: 'cautious' } },
+      players: { player_0: { kind: 'agent', builtin_name: 'cautious', label: 'Cautious bidder' } },
     })
   })
 
@@ -35,14 +38,14 @@ describe('assembleLaunch', () => {
           'seat_0',
           { driver: 'submission', submissionId: 'sub-1', userId: 'alice', path: '/agents/seat_0' },
         ],
-        ['seat_1', { driver: 'naive' }],
+        ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
       ]),
       WIDE_LAYOUT,
     )
 
     expect(launch.playerBindings).toEqual({
       player_0: { kind: 'builtin-agent', path: '/agents/seat_0' },
-      player_1: { kind: 'builtin-agent' },
+      player_1: { kind: 'builtin-agent', name: 'naive' },
       player_2: { kind: 'builtin-agent', path: '/agents/seat_0' },
     })
     expect(launch.players.player_2).toMatchObject({ submission_id: 'sub-1', user: 'alice' })
@@ -65,7 +68,7 @@ describe('assembleLaunch', () => {
             },
           },
         ],
-        ['seat_1', { driver: 'naive' }],
+        ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
       ]),
       WIDE_LAYOUT,
     )
@@ -87,7 +90,7 @@ describe('assembleLaunch', () => {
       assembleLaunch(
         new Map([
           ['seat_0', { driver: 'human', playerId: 'player_1', userId: 'person' }],
-          ['seat_1', { driver: 'naive' }],
+          ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         WIDE_LAYOUT,
       ),
@@ -99,7 +102,7 @@ describe('assembleLaunch', () => {
       assembleLaunch(
         new Map([
           ['seat_0', { driver: 'human', playerId: 'player_0', userId: 'person' }],
-          ['seat_1', { driver: 'naive' }],
+          ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         WIDE_LAYOUT,
       ),
@@ -111,9 +114,9 @@ describe('assembleLaunch', () => {
     expect(() =>
       assembleLaunch(
         new Map([
-          ['seat_0', { driver: 'naive' }],
-          ['seat_1', { driver: 'naive' }],
-          ['seat_2', { driver: 'naive' }],
+          ['seat_0', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
+          ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
+          ['seat_2', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         WIDE_LAYOUT,
       ),
@@ -124,8 +127,8 @@ describe('assembleLaunch', () => {
     expect(() =>
       assembleLaunch(
         new Map([
-          ['seat_0', { driver: 'naive' }],
-          ['seat_1', { driver: 'naive' }],
+          ['seat_0', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
+          ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         layoutOf([
           { seatId: 'seat_0', players: ['player_0'] },

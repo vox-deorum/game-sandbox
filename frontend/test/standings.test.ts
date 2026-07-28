@@ -80,10 +80,10 @@ describe('buildStandings', () => {
     const standings = buildStandings(
       state,
       header({
-        player_0: { kind: 'agent', label: 'North' },
-        player_1: { kind: 'agent', label: 'East' },
-        player_2: { kind: 'agent', label: 'South' },
-        player_3: { kind: 'agent', label: 'West' },
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'East' },
+        player_2: { kind: 'agent', builtin_name: 'naive', label: 'South' },
+        player_3: { kind: 'agent', builtin_name: 'naive', label: 'West' },
       }),
     )
 
@@ -102,10 +102,10 @@ describe('buildStandings', () => {
       state,
       header(
         {
-          player_0: { kind: 'agent', label: 'North' },
-          player_1: { kind: 'agent', label: 'East' },
-          player_2: { kind: 'agent', label: 'North' },
-          player_3: { kind: 'agent', label: 'East' },
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'East' },
+          player_2: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_3: { kind: 'agent', builtin_name: 'naive', label: 'East' },
         },
         { seat_0: ['player_0', 'player_2'], seat_1: ['player_1', 'player_3'] },
       ),
@@ -138,9 +138,9 @@ describe('buildStandings', () => {
       state,
       header(
         {
-          player_0: { kind: 'agent', label: 'Companion' },
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'Companion' },
           player_1: { kind: 'human', label: 'Ada', user: 'ada' },
-          player_2: { kind: 'agent', label: 'Companion' },
+          player_2: { kind: 'agent', builtin_name: 'naive', label: 'Companion' },
         },
         { seat_0: ['player_0', 'player_1', 'player_2'] },
       ),

@@ -172,6 +172,7 @@ const START_SESSION_SCHEMA = {
           properties: {
             kind: { type: 'string', enum: ['human', 'builtin-agent', 'submission'] },
             submission_id: { type: 'string', minLength: 1 },
+            name: { type: 'string', pattern: '^[a-z][a-z0-9_]*$' },
             companion: {
               type: 'object',
               required: ['kind'],
@@ -179,15 +180,18 @@ const START_SESSION_SCHEMA = {
               properties: {
                 kind: { type: 'string', enum: ['builtin-agent', 'submission'] },
                 submission_id: { type: 'string', minLength: 1 },
+                name: { type: 'string', pattern: '^[a-z][a-z0-9_]*$' },
               },
               oneOf: [
                 {
                   properties: { kind: { const: 'builtin-agent' } },
-                  not: { required: ['submission_id'] },
+                  required: ['name'],
+                  allOf: [{ not: { required: ['submission_id'] } }],
                 },
                 {
                   properties: { kind: { const: 'submission' } },
                   required: ['submission_id'],
+                  not: { required: ['name'] },
                 },
               ],
             },
@@ -195,17 +199,18 @@ const START_SESSION_SCHEMA = {
           oneOf: [
             {
               properties: { kind: { const: 'builtin-agent' } },
+              required: ['name'],
               not: { required: ['submission_id'] },
               allOf: [{ not: { required: ['companion'] } }],
             },
             {
               properties: { kind: { const: 'human' } },
-              not: { required: ['submission_id'] },
+              not: { anyOf: [{ required: ['submission_id'] }, { required: ['name'] }] },
             },
             {
               properties: { kind: { const: 'submission' } },
               required: ['submission_id'],
-              allOf: [{ not: { required: ['companion'] } }],
+              allOf: [{ not: { required: ['companion'] } }, { not: { required: ['name'] } }],
             },
           ],
         },
@@ -214,10 +219,9 @@ const START_SESSION_SCHEMA = {
   },
 } as const
 
-interface AgentSeatAssignmentBody {
-  kind: 'builtin-agent' | 'submission'
-  submission_id?: string
-}
+type AgentSeatAssignmentBody =
+  | { kind: 'builtin-agent'; name: string }
+  | { kind: 'submission'; submission_id: string }
 
 /** One seat assignment on the wire, including the optional future wide-seat companion. */
 type SeatAssignmentBody =
@@ -238,9 +242,9 @@ function toAgentSeatAssignment(
   body: AgentSeatAssignmentBody,
 ): Exclude<SeatAssignment, { kind: 'human' }> {
   if (body.kind === 'submission') {
-    return { kind: 'submission', submissionId: body.submission_id as string }
+    return { kind: 'submission', submissionId: body.submission_id }
   }
-  return { kind: body.kind }
+  return { kind: body.kind, name: body.name }
 }
 
 /** Map a wire seat assignment onto the orchestrator's discriminated union. */

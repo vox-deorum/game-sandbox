@@ -27,16 +27,16 @@ const DISABLED_POLICY: ResolvedLlm = {
 const CASES = [
   {
     envId: 'flappy_bird',
-    seats: { seat_0: { kind: 'builtin-agent' as const } },
+    seats: { seat_0: { kind: 'builtin-agent' as const, name: 'naive' } },
     messaging: { enabled: false, cap: null },
   },
   {
     envId: 'spades',
     seats: {
-      seat_0: { kind: 'builtin-agent' as const },
-      seat_1: { kind: 'builtin-agent' as const },
-      seat_2: { kind: 'builtin-agent' as const },
-      seat_3: { kind: 'builtin-agent' as const },
+      seat_0: { kind: 'builtin-agent' as const, name: 'naive' },
+      seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
+      seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
+      seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
     },
     messaging: { enabled: true, cap: 120 },
   },

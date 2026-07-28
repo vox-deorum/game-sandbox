@@ -24,7 +24,7 @@ const props = defineProps<{ board: Board; envId: string; ratingPrompt?: string |
 
 /** A stable key for an agent row, so v-for keys never collide across the Naive baseline and submissions. */
 function agentKey(agent: BoardAgentRef): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive'
+  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
 }
 
 /** The owner id a submitted-agent row links to; null for the ownerless Naive baseline. */
@@ -35,6 +35,11 @@ function ownerOf(agent: BoardAgentRef): string | null {
 /** The owner's display name for a submitted-agent row, falling back to the stable id. */
 function ownerNameOf(agent: BoardAgentRef): string | null {
   return agent.kind === 'submission' ? (agent.user_name ?? agent.user_id) : null
+}
+
+/** The stable built-in name for the ownerless board variant. */
+function builtinNameOf(agent: BoardAgentRef): string {
+  return agent.kind === 'builtin' ? agent.name : ''
 }
 </script>
 
@@ -83,7 +88,7 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>
                 <span v-else class="agent-naive">
-                  Naive baseline <UiBadge>Built-in</UiBadge>
+                  {{ builtinNameOf(row.agent) }} <UiBadge>Built-in</UiBadge>
                 </span>
                 <UiBadge
                   v-if="row.failure_count > 0"
@@ -178,7 +183,7 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>
                 <span v-else class="agent-naive">
-                  Naive baseline <UiBadge>Built-in</UiBadge>
+                  {{ builtinNameOf(row.agent) }} <UiBadge>Built-in</UiBadge>
                 </span>
                 <p
                   v-if="row.author_prompt"

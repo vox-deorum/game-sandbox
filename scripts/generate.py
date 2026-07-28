@@ -153,7 +153,7 @@ def generate_fixtures() -> None:
             environment="flappy",
             parameters={"players": 1, "pipe_gap": 100},
             seed=7,
-            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            players={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
             seats={"seat_0": ["player_0"]},
             seat_plan="solo",
         ),
@@ -165,10 +165,10 @@ def generate_fixtures() -> None:
     #    `messages` array (one targeted, one broadcast) and a `chat_ms` timing field, so the
     #    TypeScript read-back test pins those generated fields without a cast.
     spades_players = {
-        "player_0": {"kind": "agent", "label": "Signaler"},
-        "player_1": {"kind": "agent", "label": "Naive agent"},
-        "player_2": {"kind": "agent", "label": "Signaler"},
-        "player_3": {"kind": "agent", "label": "Naive agent"},
+        "player_0": {"kind": "agent", "submission_id": "submission-signaler", "label": "Signaler"},
+        "player_1": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
+        "player_2": {"kind": "agent", "submission_id": "submission-signaler", "label": "Signaler"},
+        "player_3": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
     }
     spades_plans = (
         (
@@ -240,7 +240,7 @@ def generate_fixtures() -> None:
             parameters={"players": 1, "pipe_gap": 100},
             seed=7,
             sidecars=[{"name": "future-telemetry", "path": "telemetry.jsonl"}],
-            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            players={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
             seats={"seat_0": ["player_0"]},
             seat_plan="solo",
         ),
@@ -255,7 +255,7 @@ def generate_fixtures() -> None:
         "schema_version": 2,
         "environment": "flappy",
         "parameters": {"players": 1, "pipe_gap": 100},
-        "players": {"player_0": {"kind": "agent", "label": "Naive agent"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
         "seats": {"seat_0": ["player_0"]},
         "seat_plan": "solo",
     }
@@ -418,6 +418,31 @@ def generate_fixtures() -> None:
         encoding="utf-8",
         newline="\n",
     )
+
+    def declared_seat(players: list[int], restricted_builtin: str | None = None) -> dict[str, object]:
+        seat: dict[str, object] = {"players": players}
+        if restricted_builtin is not None:
+            seat["restricted_builtin"] = restricted_builtin
+        return seat
+
+    def resolved_seat(
+        seat_id: str, players: list[str], restricted_builtin: str | None = None
+    ) -> dict[str, object]:
+        return {
+            "seat_id": seat_id,
+            "players": players,
+            "restricted_builtin": restricted_builtin,
+        }
+
+    def seat_plans(plans: list[dict[str, object]]) -> dict[str, object]:
+        return {"kind": "seat_plans", "plans": plans}
+
+    def plan(key: str, title: str, seats: list[dict[str, object]]) -> dict[str, object]:
+        return {"key": key, "title": title, "seats": seats}
+
+    def singleton_plan(seats: list[dict[str, object]]) -> dict[str, object]:
+        return seat_plans([plan("x", "X", seats)])
+
     layout_values = {
         "valid": [
             {
@@ -430,32 +455,47 @@ def generate_fixtures() -> None:
                 "layout": {
                     "plan_key": "solo",
                     "seats": [
-                        {"seat_id": "seat_0", "players": ["player_0"]},
-                        {"seat_id": "seat_1", "players": ["player_1"]},
-                        {"seat_id": "seat_2", "players": ["player_2"]},
+                        resolved_seat("seat_0", ["player_0"]),
+                        resolved_seat("seat_1", ["player_1"]),
+                        resolved_seat("seat_2", ["player_2"]),
                     ],
                     "player_count": 3,
                     "seat_count": 3,
                 },
             },
             {
-                "name": "uneven seat plan",
+                "name": "restricted uneven seat plan",
                 "meta": {
-                    "layout": {
-                        "kind": "seat_plans",
-                        "plans": [
-                            {"key": "duo", "title": "Duo", "seats": [[0], [1, 2, 3]]},
-                            {"key": "solo", "title": "Solo", "seats": [[0], [1], [2], [3]]},
-                        ],
-                    },
+                    "layout": seat_plans(
+                        [
+                            plan(
+                                "duo",
+                                "Duo",
+                                [
+                                    declared_seat([0], "naive"),
+                                    declared_seat([1, 2, 3]),
+                                ],
+                            ),
+                            plan(
+                                "solo",
+                                "Solo",
+                                [
+                                    declared_seat([0]),
+                                    declared_seat([1]),
+                                    declared_seat([2]),
+                                    declared_seat([3]),
+                                ],
+                            ),
+                        ]
+                    ),
                     "human_players": ["player_0"],
                 },
                 "parameters": {"seat_plan": "duo"},
                 "layout": {
                     "plan_key": "duo",
                     "seats": [
-                        {"seat_id": "seat_0", "players": ["player_0"]},
-                        {"seat_id": "seat_1", "players": ["player_1", "player_2", "player_3"]},
+                        resolved_seat("seat_0", ["player_0"], "naive"),
+                        resolved_seat("seat_1", ["player_1", "player_2", "player_3"]),
                     ],
                     "player_count": 4,
                     "seat_count": 2,
@@ -465,70 +505,39 @@ def generate_fixtures() -> None:
         "invalid": [
             {
                 "name": "duplicate plan key",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [
-                        {"key": "x", "title": "X", "seats": [[0]]},
-                        {"key": "x", "title": "Again", "seats": [[0]]},
-                    ],
-                },
+                "layout": seat_plans(
+                    [
+                        plan("x", "X", [declared_seat([0])]),
+                        plan("x", "Again", [declared_seat([0])]),
+                    ]
+                ),
             },
-            {"name": "empty plans", "layout": {"kind": "seat_plans", "plans": []}},
-            {
-                "name": "plan with no seats",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": []}],
-                },
-            },
-            {
-                "name": "empty seat",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[]]}],
-                },
-            },
-            {
-                "name": "duplicate index",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[0, 0]]}],
-                },
-            },
-            {
-                "name": "negative index",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[-1]]}],
-                },
-            },
+            {"name": "empty plans", "layout": seat_plans([])},
+            {"name": "plan with no seats", "layout": singleton_plan([])},
+            {"name": "empty seat", "layout": singleton_plan([declared_seat([])])},
+            {"name": "duplicate index", "layout": singleton_plan([declared_seat([0, 0])])},
+            {"name": "negative index", "layout": singleton_plan([declared_seat([-1])])},
             {
                 "name": "invalid plan key",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "Not Snake", "title": "X", "seats": [[0]]}],
-                },
+                "layout": seat_plans([plan("Not Snake", "X", [declared_seat([0])])]),
             },
             {
                 "name": "empty plan title",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "", "seats": [[0]]}],
-                },
+                "layout": seat_plans([plan("x", "", [declared_seat([0])])]),
+            },
+            {"name": "gap", "layout": singleton_plan([declared_seat([0, 2])])},
+            {"name": "nonzero start", "layout": singleton_plan([declared_seat([1])])},
+            {
+                "name": "undeclared restricted builtin",
+                "layout": singleton_plan([declared_seat([0], "cautious")]),
             },
             {
-                "name": "gap",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[0, 2]]}],
-                },
+                "name": "two restricted seats",
+                "layout": singleton_plan([declared_seat([0], "naive"), declared_seat([1], "naive")]),
             },
             {
-                "name": "nonzero start",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[1]]}],
-                },
+                "name": "only restricted seat",
+                "layout": singleton_plan([declared_seat([0], "naive")]),
             },
             {"name": "unknown kind", "layout": {"kind": "unknown"}},
             {"name": "missing kind", "layout": {"min": 1, "max": 2}},
@@ -537,13 +546,12 @@ def generate_fixtures() -> None:
                 "layout": {"kind": "player_bounds", "min": 1, "max": 2, "plans": []},
             },
             {
+                "name": "restriction on player bounds layout",
+                "layout": {"kind": "player_bounds", "min": 1, "max": 2, "restricted_builtin": "naive"},
+            },
+            {
                 "name": "foreign seat plans field",
-                "layout": {
-                    "kind": "seat_plans",
-                    "plans": [{"key": "x", "title": "X", "seats": [[0]]}],
-                    "min": 1,
-                    "max": 1,
-                },
+                "layout": {**singleton_plan([declared_seat([0])]), "min": 1, "max": 1},
             },
         ],
     }

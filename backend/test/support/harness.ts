@@ -285,6 +285,7 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     env_id: 'flappy_bird',
     display_name: 'Flappy Bird',
     description: 'test env',
+    builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
     layout: { kind: 'player_bounds', min: 1, max: 1 },
     human_players: ['player_0'],
     human_timeout_ms: null,

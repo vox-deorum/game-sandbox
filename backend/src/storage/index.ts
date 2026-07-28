@@ -10,6 +10,9 @@
 
 import type { ParameterValue } from '@game-sandbox/schema/environment'
 import type { ResolvedOfficialLlmPolicy } from '../llm/config.js'
+
+export { isAgentRef } from './schema.js'
+
 import type {
   AgentRatingPrompt,
   AgentRef,

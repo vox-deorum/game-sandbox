@@ -150,11 +150,13 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     deps_v1 = images / "deps-v1"
     _write(deps_v1 / "Dockerfile", _DOCKERFILE)
     _write(deps_v1 / "requirements.txt", freeze_requirements(_PIP_COMPILE, 1))
-    _write(deps_v1 / "builtin" / "flappy_bird" / "manifest.json", _manifest(1))
-    _write(deps_v1 / "builtin" / "flappy_bird" / "requirements.txt", "wcwidth==0.2.13\n")
-    _write(deps_v1 / "builtin" / "flappy_bird" / "agent.py", "# agent\n")
-    _write(deps_v1 / "builtin" / "hearts" / "manifest.json", _manifest(1))
-    _write(deps_v1 / "builtin" / "hearts" / "agent.py", "# agent\n")
+    _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "manifest.json", _manifest(1))
+    _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "requirements.txt", "wcwidth==0.2.13\n")
+    _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "agent.py", "# agent\n")
+    _write(deps_v1 / "builtin" / "hearts" / "naive" / "manifest.json", _manifest(1))
+    _write(deps_v1 / "builtin" / "hearts" / "naive" / "agent.py", "# agent\n")
+    _write(deps_v1 / "builtin" / "hearts" / "cautious" / "manifest.json", _manifest(1))
+    _write(deps_v1 / "builtin" / "hearts" / "cautious" / "agent.py", "# agent\n")
 
     for name in ("good", "bad-class"):
         _write(fixtures / name / "manifest.json", _manifest(1))
@@ -198,10 +200,15 @@ def test_apply_bumps_every_touchpoint(repo: Path):
 
     deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
     assert (deps_v2 / "requirements.txt").read_text().startswith("# Dependency set for the deps-v2")
-    assert '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "manifest.json").read_text()
+    assert '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "naive" / "manifest.json").read_text()
+    assert (
+        '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "cautious" / "manifest.json").read_text()
+    )
     # Non-manifest builtin files are copied verbatim.
-    assert (deps_v2 / "builtin" / "flappy_bird" / "requirements.txt").read_text() == "wcwidth==0.2.13\n"
-    assert (deps_v2 / "builtin" / "flappy_bird" / "agent.py").read_text() == "# agent\n"
+    assert (
+        deps_v2 / "builtin" / "flappy_bird" / "naive" / "requirements.txt"
+    ).read_text() == "wcwidth==0.2.13\n"
+    assert (deps_v2 / "builtin" / "flappy_bird" / "naive" / "agent.py").read_text() == "# agent\n"
 
 
 def test_apply_self_verifies_the_completed_bump(repo: Path, monkeypatch: pytest.MonkeyPatch):

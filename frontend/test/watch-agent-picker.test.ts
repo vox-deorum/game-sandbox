@@ -107,7 +107,7 @@ describe('WatchAgentPicker', () => {
       envId: 'flappy_bird',
       seasonId: 'season-1',
       parameters: { players: 1, pipe_gap: 100 },
-      seats: { seat_0: { kind: 'builtin-agent' } },
+      seats: { seat_0: { kind: 'builtin-agent', name: 'naive' } },
       seed: undefined,
       humanTimeoutMs: undefined,
     })

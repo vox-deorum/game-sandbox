@@ -62,10 +62,22 @@ export interface PlayerBoundsLayout {
   max: number
 }
 
+/** One named built-in agent an environment stages and exposes. */
+export interface BuiltinAgent {
+  name: string
+  label: string
+}
+
+/** One declared seat, its player indexes, and any designated built-in agent. */
+export interface SeatDeclaration {
+  players: number[]
+  restricted_builtin?: string
+}
+
 export interface SeatPlan {
   key: string
   title: string
-  seats: number[][]
+  seats: SeatDeclaration[]
 }
 
 export interface SeatPlansLayout {
@@ -80,6 +92,7 @@ export interface EnvironmentMeta {
   env_id: string
   display_name: string
   description: string
+  builtin_agents: BuiltinAgent[]
   layout: EnvironmentLayout
   human_players: string[]
   human_timeout_ms: number | null
@@ -117,6 +130,7 @@ export interface EnvironmentMeta {
 export interface ResolvedSeat {
   seatId: string
   players: string[]
+  restrictedBuiltin: string | null
 }
 
 export interface ResolvedLayout {
@@ -182,6 +196,19 @@ function isChoiceList(value: unknown): value is EnvParameterChoice[] {
     return false
   }
   return new Set(value.map((choice) => choice.value)).size === value.length
+}
+
+/** Structural guard for one named built-in agent. */
+export function isBuiltinAgent(value: unknown): value is BuiltinAgent {
+  if (typeof value !== 'object' || value === null) return false
+  const agent = value as Record<string, unknown>
+  return (
+    hasOnlyKeys(agent, ['name', 'label']) &&
+    typeof agent.name === 'string' &&
+    /^[a-z][a-z0-9_]*$/.test(agent.name) &&
+    typeof agent.label === 'string' &&
+    agent.label.length > 0
+  )
 }
 
 /**
@@ -378,6 +405,7 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
   }
   const m = value as Record<string, unknown>
   const parameters = m.parameters
+  const builtinAgents = m.builtin_agents
   if (
     !Array.isArray(parameters) ||
     !parameters.every(isEnvParameter) ||
@@ -385,7 +413,16 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
   ) {
     return false
   }
-  if (!isEnvironmentLayout(m.layout)) {
+  if (
+    !Array.isArray(builtinAgents) ||
+    builtinAgents.length === 0 ||
+    !builtinAgents.every(isBuiltinAgent) ||
+    builtinAgents[0]?.name !== 'naive' ||
+    new Set(builtinAgents.map((agent) => agent.name)).size !== builtinAgents.length
+  ) {
+    return false
+  }
+  if (!isEnvironmentLayout(m.layout, new Set(builtinAgents.map((agent) => agent.name)))) {
     return false
   }
   const reserved = parameters[0]
@@ -416,7 +453,10 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => keys.includes(key))
 }
 
-function isEnvironmentLayout(value: unknown): value is EnvironmentLayout {
+function isEnvironmentLayout(
+  value: unknown,
+  builtinNames: ReadonlySet<string>,
+): value is EnvironmentLayout {
   if (typeof value !== 'object' || value === null) return false
   const layout = value as Record<string, unknown>
   if (layout.kind === 'player_bounds') {
@@ -449,13 +489,27 @@ function isEnvironmentLayout(value: unknown): value is EnvironmentLayout {
       return false
     keys.add(plan.key)
     const players: number[] = []
-    for (const seat of plan.seats) {
-      if (!Array.isArray(seat) || seat.length === 0) return false
-      for (const player of seat) {
+    let restrictedSeats = 0
+    for (const rawSeat of plan.seats) {
+      if (typeof rawSeat !== 'object' || rawSeat === null) return false
+      const seat = rawSeat as Record<string, unknown>
+      if (
+        !hasOnlyKeys(seat, ['players', 'restricted_builtin']) ||
+        !Array.isArray(seat.players) ||
+        seat.players.length === 0 ||
+        (seat.restricted_builtin !== undefined && typeof seat.restricted_builtin !== 'string')
+      ) {
+        return false
+      }
+      if (seat.restricted_builtin !== undefined && !builtinNames.has(seat.restricted_builtin))
+        return false
+      if (seat.restricted_builtin !== undefined) restrictedSeats += 1
+      for (const player of seat.players) {
         if (typeof player !== 'number' || !Number.isSafeInteger(player) || player < 0) return false
         players.push(player)
       }
     }
+    if (restrictedSeats > 1 || restrictedSeats === plan.seats.length) return false
     return [...players].sort((a, b) => a - b).every((player, index) => player === index)
   })
 }
@@ -503,6 +557,7 @@ export function resolveLayout(
     const seats = Array.from({ length: players }, (_, index) => ({
       seatId: `seat_${index}`,
       players: [`player_${index}`],
+      restrictedBuiltin: null,
     }))
     return { planKey: 'solo', seats, playerCount: players, seatCount: players }
   }
@@ -511,14 +566,15 @@ export function resolveLayout(
   const plan = meta.layout.plans.find((candidate) => candidate.key === key)
   if (plan === undefined)
     throw new Error(`resolved parameters select unknown seat plan ${JSON.stringify(key)}`)
-  const seats = plan.seats.map((members, index) => ({
+  const seats = plan.seats.map((declaration, index) => ({
     seatId: `seat_${index}`,
-    players: members.map((player) => `player_${player}`),
+    players: declaration.players.map((player) => `player_${player}`),
+    restrictedBuiltin: declaration.restricted_builtin ?? null,
   }))
   return {
     planKey: plan.key,
     seats,
-    playerCount: plan.seats.flat().length,
+    playerCount: plan.seats.flatMap((declaration) => declaration.players).length,
     seatCount: seats.length,
   }
 }

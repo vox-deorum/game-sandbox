@@ -107,7 +107,7 @@ describe('recording LLM telemetry API', () => {
       schema_version: 1,
       environment: 'flappy_bird',
       parameters: {},
-      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
       seats: { seat_0: ['player_0'] },
       seat_plan: 'solo',
     }
@@ -136,7 +136,7 @@ describe('recording LLM telemetry API', () => {
       schema_version: 1,
       environment: 'flappy_bird',
       parameters: {},
-      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
       seats: { seat_0: ['player_0'] },
       seat_plan: 'solo',
     }

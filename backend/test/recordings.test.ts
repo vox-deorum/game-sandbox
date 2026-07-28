@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RecordingsStore } from '../src/recordings.js'
 
 const HEADER =
-  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"hearts","parameters":{"players":3},"players":{"player_0":{"kind":"agent","label":"Naive agent"},"player_1":{"kind":"agent","label":"Naive agent"},"player_2":{"kind":"agent","label":"Naive agent"}},"schema_version":1,"seat_plan":"solo","seats":{"seat_0":["player_0"],"seat_1":["player_1"],"seat_2":["player_2"]},"seed":0}'
+  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"hearts","parameters":{"players":3},"players":{"player_0":{"kind":"agent","builtin_name":"naive","label":"Naive agent"},"player_1":{"kind":"agent","builtin_name":"naive","label":"Naive agent"},"player_2":{"kind":"agent","builtin_name":"naive","label":"Naive agent"}},"schema_version":1,"seat_plan":"solo","seats":{"seat_0":["player_0"],"seat_1":["player_1"],"seat_2":["player_2"]},"seed":0}'
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const WIN_STATE = JSON.stringify({
   schema_version: 1,
@@ -80,7 +80,7 @@ describe('recordings store over the volume layout', () => {
       players: Object.fromEntries(
         Array.from({ length: 4 }, (_, index) => [
           `player_${index}`,
-          { kind: 'agent', label: 'Naive agent' },
+          { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
         ]),
       ),
       seats: { seat_0: ['player_0', 'player_2'], seat_1: ['player_1', 'player_3'] },

@@ -105,6 +105,21 @@ describe('parseStepState', () => {
 })
 
 describe('parseHeader', () => {
+  it('rejects an empty submitted-agent identity', () => {
+    expect(() =>
+      parseHeader({
+        schema_version: 1,
+        environment: 'flappy',
+        parameters: {},
+        players: {
+          player_0: { kind: 'agent', label: 'Submitted agent', submission_id: '' },
+        },
+        seats: { seat_0: ['player_0'] },
+        seat_plan: 'solo',
+      }),
+    ).toThrow(SchemaValidationError)
+  })
+
   it('rejects player attribution with an empty label', () => {
     expect(() =>
       parseHeader({

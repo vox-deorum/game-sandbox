@@ -209,7 +209,7 @@ describe('SeatAssignmentDialog', () => {
 
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'submission', submissionId: 'sub1' },
-      seat_1: { kind: 'builtin-agent' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
       seat_2: { kind: 'submission', submissionId: 'sub2' },
       seat_3: { kind: 'submission', submissionId: 'sub1' },
     })
@@ -222,15 +222,15 @@ describe('SeatAssignmentDialog', () => {
     // Seat 1 is the connected human (no dropdown); the other seats default to the Naive baseline.
     expect(screen.getByText('You')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Seat 1' })).toBeNull()
-    expect(seat('Seat 2').value).toBe('builtin')
+    expect(seat('Seat 2').value).toBe('builtin:naive')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     const payload = lastStart(emitted)
     expect(payload.seats).toEqual({
       seat_0: { kind: 'human' },
-      seat_1: { kind: 'builtin-agent' },
-      seat_2: { kind: 'builtin-agent' },
-      seat_3: { kind: 'builtin-agent' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
     // Exactly one human seat, and the unpaced move clock is prefilled from the metadata.
     expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
@@ -247,15 +247,15 @@ describe('SeatAssignmentDialog', () => {
 
     // Seat 3 is now the human; the vacated seat 1 falls back to a Naive dropdown (never blank).
     expect(screen.queryByRole('combobox', { name: 'Seat 3' })).toBeNull()
-    expect(seat('Seat 1').value).toBe('builtin')
+    expect(seat('Seat 1').value).toBe('builtin:naive')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     const payload = lastStart(emitted)
     expect(payload.seats).toEqual({
-      seat_0: { kind: 'builtin-agent' },
-      seat_1: { kind: 'builtin-agent' },
+      seat_0: { kind: 'builtin-agent', name: 'naive' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
       seat_2: { kind: 'human' },
-      seat_3: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
     expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
   })
@@ -297,7 +297,7 @@ describe('SeatAssignmentDialog', () => {
       seat_0: { kind: 'human' },
       seat_1: { kind: 'submission', submissionId: 'sub1' },
       seat_2: { kind: 'submission', submissionId: 'sub2' },
-      seat_3: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
   })
 
@@ -305,7 +305,13 @@ describe('SeatAssignmentDialog', () => {
     const meta = heartsMeta({
       layout: {
         kind: 'seat_plans',
-        plans: [{ key: 'uneven', title: 'Uneven', seats: [[0], [1, 2, 3]] }],
+        plans: [
+          {
+            key: 'uneven',
+            title: 'Uneven',
+            seats: [{ players: [0] }, { players: [1, 2, 3] }],
+          },
+        ],
       },
       human_players: ['player_2'],
       parameters: [
@@ -340,7 +346,7 @@ describe('SeatAssignmentDialog', () => {
     )
     await fireEvent.click(start)
     expect(lastStart(emitted).seats).toEqual({
-      seat_0: { kind: 'builtin-agent' },
+      seat_0: { kind: 'builtin-agent', name: 'naive' },
       seat_1: { kind: 'human', companion: { kind: 'submission', submissionId: 'sub1' } },
     })
   })
@@ -372,7 +378,7 @@ describe('SeatAssignmentDialog', () => {
           kind: 'human',
           companion: { kind: 'submission', submissionId: 'sub2' },
         },
-        seat_1: { kind: 'builtin-agent' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
       },
     })
   })
@@ -425,8 +431,8 @@ describe('SeatAssignmentDialog', () => {
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'human' },
       seat_1: { kind: 'submission', submissionId: 'sub2' },
-      seat_2: { kind: 'builtin-agent' },
-      seat_3: { kind: 'builtin-agent' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
 
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'partnership')

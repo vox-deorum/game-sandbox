@@ -16,7 +16,7 @@ One AEC step uses this order:
 
 1. Snapshot the acting observation and obtain the action.
 2. Atomically drain the designated human player's message FIFO.
-3. Resolve the pre-step recipient policy for the human sender and the acting agent sender, when present.
+3. Use the human policy published on the preceding live state and resolve the acting agent sender's current pre-step policy, when present.
 4. Validate the human batch, drain the acting agent's inbox, and run its optional `chat` hook.
 5. Apply the environment action and run the acting agent's optional `learn` hook.
 6. Record the accepted human and agent messages on the completed state.
@@ -30,19 +30,25 @@ Stage 17.3 reuses the same phases for a parallel tick. All actions finish first,
 
 ## Harness simplification
 
-`SessionControl` keeps the bounded per-player FIFO it already owns. `ExternalChatFrame`, the Python live-command parser, and `take_chat()` remove the compose tick. Queue capacity remains sixteen frames per external player.
+`SessionControl` keeps the bounded per-player FIFO it already owns. `ExternalChatFrame`, the Python live-command parser, and `take_chat()` remove the compose tick. Queue capacity remains sixteen frames for the designated external player.
 
-The acting-turn `ExternalChatCoordinator` is removed. It no longer needs to announce sender-and-tick opportunities, retain policy snapshots, or allow a one-drain grace period. `Episode` identifies the one designated `ExternalPlayer`, drains that source on every completed step regardless of the acting player, and sends the resulting `{"to", "text"}` batch through `ChatRouter.validate_outgoing()` with the human's current pre-step policy.
+Replace `configure_chat(enabled)` with configuration that carries the one designated external sender or disables chat. `SessionControl` rejects any other player ID before allocating a queue, so spoofed commands cannot retain memory for unknown players. A frame from the designated sender may still enter its bounded queue after that player becomes inactive; `Episode` drains and drops it at the next boundary. When the transition first makes the human inactive, `Episode` also drains and discards the queue immediately.
 
-`ChatRouter` remains the single policy and outgoing-message validator for agents and humans. Its batch limit is renamed from per-turn to per-boundary:
+The acting-turn `ExternalChatCoordinator` is removed. It no longer needs to announce sender-and-tick opportunities, retain a policy history, or allow a one-drain grace period. `Episode` identifies the one designated `ExternalPlayer`, drains that source on every completed step regardless of the acting player, and sends the resulting `{"to", "text"}` batch through `ChatRouter.validate_outgoing()` with the one currently published human policy.
+
+`ChatRouter` remains the single policy and outgoing-message validator for agents and humans. Its batch limit is renamed from per-turn to per-sender, per-boundary:
 
 - At most one direct message to each permitted recipient.
 - At most one broadcast.
 - The existing Unicode code-point text cap.
 
-Messages from an inactive or unknown sender, duplicate recipients, invalid text, and policy-disallowed targets are dropped with concise stderr diagnostics. They do not create state diagnostics, client rejection envelopes, illegal moves, or forfeits.
+Messages from an inactive or unknown sender, duplicate recipients from one sender, invalid text, and policy-disallowed targets are dropped with concise stderr diagnostics. They do not create state diagnostics, client rejection envelopes, illegal moves, or forfeits.
 
-The environment's `chat_policy(sender)` hook may be evaluated for the designated human even when another player is acting. Its fallback remains every other active player in canonical order with broadcast as the default. Agent policy is still evaluated for the agent whose `chat` hook runs.
+The environment's `chat_policy(sender)` hook may be evaluated for the designated human even when another player is acting. Logical active membership means `env.agents` minus players currently marked terminated or truncated, including AEC players awaiting required dead steps. Policy validation rejects recipients outside that set. Its fallback is every other logically active player in canonical order with broadcast as the default. Agent policy is still evaluated for the agent whose `chat` hook runs.
+
+`Episode` retains exactly one resolved human `ChatPolicy`: the policy published on the latest live state. The next human FIFO drain validates every queued frame against that cached value, then the completed environment transition resolves and publishes the following value. Required AEC dead steps never re-evaluate or replace it. This is current-state retention, not the retired history of sender-and-tick opportunities.
+
+One recorded batch has deterministic order: the human FIFO first, then agent batches in canonical player order, retaining each sender's returned order. The duplicate-recipient set resets for each sender. Every active player's inbox is drained once at that player's acting opportunity, including external and chat-less players whose drained value is discarded. After delivery, inboxes for players that became inactive on the transition are purged.
 
 ## Command and relay
 
@@ -71,7 +77,7 @@ While the designated human player remains active, every emitted live state carri
 - ordered `target_recipients`
 - `default_recipient`
 
-The opening AEC presentation state publishes the reset policy. Each completed state publishes the policy from its post-step world, which is the world in which the browser composes before the next boundary. A reconnect therefore receives a usable policy from the relay's existing latest-state replay without separate retained relay state.
+The opening AEC presentation state publishes and caches the reset policy. Each completed state publishes and caches the policy from its post-step world, using the post-transition logical active roster even when AEC dead players remain in `env.agents` awaiting housekeeping steps. This is the exact policy against which the next human boundary batch is admitted, even if later dead steps change `agent_selection` or other hook-visible state. A reconnect therefore receives a usable policy from the relay's existing latest-state replay without separate retained relay state.
 
 `frontend/src/composables/useLiveChat.ts` stops consuming a sender-and-tick opportunity when an action is sent. It derives availability from the active human sender and connection state. It retains the draft across ordinary state changes and resets the selected recipient only when the sender, ordered recipients, or default recipient changes.
 
@@ -100,9 +106,12 @@ Harness tests cover:
 - a human message queued while another player acts, admitted on the next boundary, recorded there, and delivered only on the recipient's later turn;
 - a frame arriving after the atomic drain waiting for the following boundary;
 - policy evaluation against the pre-step world;
-- an inactive sender, stale target, duplicate target, over-cap text, and full FIFO dropping diagnostically without a forfeit;
+- an unknown sender being rejected without queue allocation;
+- a designated sender becoming inactive, with its queued frames purged at the transition and later bounded frames dropped at the next boundary;
+- a stale target, duplicate target from one sender, over-cap text, and full FIFO dropping diagnostically without a forfeit;
+- independent per-sender duplicate limits and deterministic human-then-canonical-agent recording order;
 - agent and human messages sharing one recorded batch while neither is visible to a chat hook on that boundary;
-- an AEC player terminating individually and receiving no later chat hook or inbox growth;
+- an AEC player terminating individually and receiving no later chat hook or inbox growth, even while awaiting its dead step;
 - byte-identical non-messaging recordings before and after the refactor.
 
 Revise existing turn-gating coverage in:

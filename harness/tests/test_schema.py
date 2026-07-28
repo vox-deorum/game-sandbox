@@ -40,7 +40,13 @@ def test_valid_header_passes():
             environment="flappy",
             parameters={"players": 1, "pipe_gap": 100},
             seed=7,
-            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            players={
+                "player_0": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                }
+            },
             layout=SINGLE_LAYOUT,
         )
     )
@@ -57,7 +63,13 @@ def test_header_rejects_a_seat_partition_that_disagrees_with_players(seats: dict
     header = build_header(
         environment="flappy",
         parameters={"players": 1, "pipe_gap": 100},
-        players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        players={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            }
+        },
         layout=SINGLE_LAYOUT,
     )
     header["seats"] = seats
@@ -121,7 +133,8 @@ def test_relocated_package_loads_packaged_schema_resources():
                 "from sandbox.harness.schema import validate_header; "
                 "validate_header({'schema_version': 1, 'environment': 'fake', "
                 "'parameters': {'players': 1}, 'seed': 1, "
-                "'players': {'player_0': {'kind': 'agent', 'label': 'Agent'}}, "
+                "'players': {'player_0': {'kind': 'agent', 'builtin_name': 'naive', "
+                "'label': 'Naive agent'}}, "
                 "'seats': {'seat_0': ['player_0']}, 'seat_plan': 'solo'})",
             ],
             cwd=root,

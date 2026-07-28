@@ -68,7 +68,9 @@ export function registerRecordingLlmRoutes(
     const operator = caller?.status === 'admin'
     return {
       calls: calls.map((call) => {
-        const submissionId = header?.players?.[call.player]?.submission_id
+        const player = header?.players?.[call.player]
+        const submissionId =
+          player !== undefined && 'submission_id' in player ? player.submission_id : undefined
         const canReadBodies =
           operator ||
           (caller !== null &&
@@ -88,7 +90,7 @@ async function ownersForHeader(
   const ids = [
     ...new Set(
       Object.values(header?.players ?? {}).flatMap((player) =>
-        player.submission_id === undefined ? [] : [player.submission_id],
+        'submission_id' in player ? [player.submission_id] : [],
       ),
     ),
   ]

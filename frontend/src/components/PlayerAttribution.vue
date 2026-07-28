@@ -47,7 +47,7 @@ const items = computed(() => {
     // The stable id rides as a tooltip whenever this row's identity isn't blind-masked — on either
     // kind now, not just human. A masked row (someone else's identity hidden while the season plays)
     // gets no title at all; the viewer's own row (never masked) keeps it.
-    const title = masked ? undefined : player.user
+    const title = masked || !('user' in player) ? undefined : player.user
     // A masked human row already reads as the bare neutral "Human" (attributionLabel's blind branch),
     // so adding the "Human:" prefix here would double up into "Human: Human" — only add it once the
     // real name is showing.

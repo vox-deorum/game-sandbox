@@ -57,7 +57,7 @@ import { ensureRecordingsDir } from '../session/live-session.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
 import { decodeSeasonConfig, type LlmUsageByModel, type Storage } from '../storage/index.js'
 import type { ExecutionTelemetryStore, ExecutionUsageByModel } from '../storage/llm/index.js'
-import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
+import { type AgentRef, isAgentRef, type SeasonRun, type SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
@@ -484,7 +484,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         }
       }
       const sessionConfig = await this.sessionConfig(
-        envId,
+        meta,
         game.seed,
         seats,
         recordingId,
@@ -799,7 +799,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
   /** Build the headless session config: every player an agent, no human source, recording to the volume. */
   private async sessionConfig(
-    envId: string,
+    meta: EnvironmentMeta,
     seed: number,
     assignedSeats: readonly AgentRef[],
     recordingId: string,
@@ -826,12 +826,20 @@ class DockerWorkflowRunner implements WorkflowRunner {
           ...optionalField('ownerName', names.get(agent.user_id)),
         })
       } else {
-        seats.set(resolvedSeat.seatId, { driver: 'naive' })
+        const builtin = meta.builtin_agents.find((candidate) => candidate.name === agent.name)
+        if (builtin === undefined) {
+          throw new Error(`environment ${meta.env_id} does not declare built-in ${agent.name}`)
+        }
+        seats.set(resolvedSeat.seatId, {
+          driver: 'builtin',
+          name: builtin.name,
+          label: builtin.label,
+        })
       }
     }
     const { playerBindings, players } = assembleLaunch(seats, layout)
     return {
-      env_id: envId,
+      env_id: meta.env_id,
       seed,
       player_bindings: playerBindings,
       // No human players in a workflow match, so there is no human-player timeout to resolve.
@@ -985,7 +993,7 @@ function policyLimits(policy: ResolvedOfficialLlmPolicy): {
 /** A human-readable seat summary for the started-game log line. */
 function describeSeats(seats: readonly AgentRef[]): string {
   const labels = seats.map((agent) =>
-    agent.kind === 'submission' ? `submission ${agent.submission_id}` : 'Naive baseline',
+    agent.kind === 'submission' ? `submission ${agent.submission_id}` : `builtin ${agent.name}`,
   )
   return labels.join(' vs ')
 }
@@ -999,22 +1007,6 @@ function parseStoredSeats(value: string): AgentRef[] | null {
     return null
   }
   return Array.isArray(parsed) && parsed.every(isAgentRef) ? parsed : null
-}
-
-function isAgentRef(value: unknown): value is AgentRef {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const agent = value as Record<string, unknown>
-  if (agent.kind === 'builtin-naive') {
-    return Object.keys(agent).length === 1
-  }
-  return (
-    agent.kind === 'submission' &&
-    Object.keys(agent).length === 3 &&
-    typeof agent.submission_id === 'string' &&
-    agent.submission_id.length > 0 &&
-    typeof agent.user_id === 'string' &&
-    agent.user_id.length > 0
-  )
 }
 
 /** The recording's natural owner: the (single) submission seat's owner, else the run's operator. */

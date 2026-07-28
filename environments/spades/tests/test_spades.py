@@ -31,11 +31,12 @@ from spades import ENTRY, META, rules
 from spades.env import SEAT_PLAN_SPECS, IllegalMoveError, card_to_obj, default_action, make_env
 from spades.overlay import extract_overlay
 
-#: The frozen v1 built-in Spades baseline the session image stages and the harness loads for every
-#: Naive player (``backend/images/session-base/deps-v1/builtin/spades``), from this repo's root.
-BUILTIN_SPADES_AGENT_DIR = (
+#: The frozen v1 built-in Spades policies the session image stages and the harness loads.
+BUILTIN_SPADES_AGENT_ROOT = (
     Path(__file__).resolve().parents[3] / "backend/images/session-base/deps-v1/builtin/spades"
 )
+BUILTIN_SPADES_NAIVE_AGENT_DIR = BUILTIN_SPADES_AGENT_ROOT / "naive"
+BUILTIN_SPADES_CAUTIOUS_AGENT_DIR = BUILTIN_SPADES_AGENT_ROOT / "cautious"
 
 
 @pytest.mark.parametrize(
@@ -93,12 +94,13 @@ def test_metadata_defaults_to_partnership_and_resolves_explicit_solo():
 def test_declared_partnerships_match_the_rules_engine():
     assert isinstance(META.layout, SeatPlans)
     partnership = META.layout.plans[0]
-    for members in partnership.seats:
+    for seat in partnership.seats:
+        members = seat.players
         teams = {rules.team_of(player) for player in members}
         assert len(teams) == 1
         (team,) = teams
         assert rules.team_players(team) == members
-    assert rules.team_of(partnership.seats[0][0]) != rules.team_of(partnership.seats[1][0])
+    assert rules.team_of(partnership.seats[0].players[0]) != rules.team_of(partnership.seats[1].players[0])
 
 
 def test_chat_policy_puts_the_partner_first_and_defaults_to_it():
@@ -618,7 +620,7 @@ def test_builtin_suggested_bid_matches_the_rules_engine():
     # many dealt hands the two must agree exactly. If a future tune of rules.suggested_bid is not
     # mirrored into the builtin, the "a Naive-filled table behaves identically to a table of timed-out
     # players" promise silently breaks, and this catches it.
-    builtin = _load_builtin_agent_module(BUILTIN_SPADES_AGENT_DIR)
+    builtin = _load_builtin_agent_module(BUILTIN_SPADES_NAIVE_AGENT_DIR)
     for seed in range(200):
         state = rules.deal(random.Random(seed))
         for player in range(rules.NUM_PLAYERS):
@@ -626,20 +628,28 @@ def test_builtin_suggested_bid_matches_the_rules_engine():
             assert builtin._suggested_bid(hand) == rules.suggested_bid(hand)
 
 
-def test_builtin_spades_agent_plays_a_full_legal_game():
-    # The session image stages a per-environment Naive baseline at /opt/agents/builtin/<env_id>, and
-    # the harness loads it (through the manifest loader, as the container does) for every Naive player.
-    # Driving four copies to a clean terminal guards that the per-environment baseline exists, loads,
-    # and plays only legal bids and cards to the end of the hand.
-    players = {
-        f"player_{i}": AgentPlayer(load_agent(BUILTIN_SPADES_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)
-    }
+@pytest.mark.parametrize(
+    "agent_dir",
+    [BUILTIN_SPADES_NAIVE_AGENT_DIR, BUILTIN_SPADES_CAUTIOUS_AGENT_DIR],
+    ids=["naive", "cautious"],
+)
+def test_builtin_spades_agents_play_a_full_legal_game(agent_dir: Path):
+    # The session image stages each declared policy below /opt/agents/builtin/spades. Driving four
+    # copies to a clean terminal guards that each policy exists, loads, and makes only legal moves.
+    players = {f"player_{i}": AgentPlayer(load_agent(agent_dir)) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, players, parameters=resolve_parameters(ENTRY.meta), seed=0)
     assert result.reason == REASON_TERMINATED
     assert result.ticks == 56  # four bids plus fifty-two plays
 
+
+def test_builtin_spades_naive_agent_matches_timeout_defaults():
     # The baseline plays the env's own timeout default (a never-nil suggested bid, then the lowest
     # legal card), so a hand driven by that default must reach the identical deterministic finals.
+    players = {
+        f"player_{i}": AgentPlayer(load_agent(BUILTIN_SPADES_NAIVE_AGENT_DIR))
+        for i in range(rules.NUM_PLAYERS)
+    }
+    result = run_episode(ENTRY, players, parameters=resolve_parameters(ENTRY.meta), seed=0)
     env = make_env({"seat_plan": "partnership"})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: default_action(e, e.agent_selection))

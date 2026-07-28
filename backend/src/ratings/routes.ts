@@ -10,8 +10,8 @@
  * this module
  * is the one place it is translated into the `AgentRef` the rest of the stage stores — an `agent`
  * entry with a `submission_id` becomes a `submission` ref (its owner resolved server-side from the
- * submission, never trusted from the header), an `agent` entry without one becomes `builtin-naive`
- * (keyed on the absence of `submission_id`, not the display label), and `human` entries are skipped.
+ * submission, never trusted from the header), an `agent` entry with a `builtin_name` becomes a named
+ * built-in ref, and `human` entries are skipped.
  * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
 import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
@@ -20,6 +20,7 @@ import { z } from 'zod'
 
 import type { UserDirectory } from '../auth/users.js'
 import type { AuthUser, RequestIdentity } from '../identity.js'
+import { optionalField } from '../optional-field.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
 
@@ -37,7 +38,7 @@ export interface RatingDeps {
 /** The agent identity as it arrives on the wire: no `user_id`, which the route resolves server-side. */
 const AgentWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('submission'), submission_id: z.string().min(1) }),
-  z.strictObject({ kind: z.literal('builtin-naive') }),
+  z.strictObject({ kind: z.literal('builtin'), name: z.string().min(1) }),
 ])
 type AgentWire = z.infer<typeof AgentWireSchema>
 
@@ -79,6 +80,8 @@ interface RatingView {
 interface RateableAgent {
   ref: AgentRef
   wire: AgentWire
+  /** The recording's launch-time built-in label, absent for submitted agents. */
+  builtinLabel?: string
 }
 
 /** The session context the rating routes resolve before doing anything: the row, its season, agents. */
@@ -93,14 +96,14 @@ type ContextFailure = { status: number; code: string; error: string }
 
 /** The stable wire key for an agent ref, so a wire agent matches a resolved one deterministically. */
 function wireKey(agent: AgentWire): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive'
+  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
 }
 
 /** Strip a resolved {@link AgentRef} to its wire form (the owner `user_id` never leaves the server). */
 function toWire(ref: AgentRef): AgentWire {
   return ref.kind === 'submission'
     ? { kind: 'submission', submission_id: ref.submission_id }
-    : { kind: 'builtin-naive' }
+    : { kind: 'builtin', name: ref.name }
 }
 
 /**
@@ -154,19 +157,21 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
       ? undefined
       : await deps.recordings.readHeader(session.recording_id)
 
-  const candidates: Array<{ kind: 'submission'; id: string } | { kind: 'builtin-naive' }> = []
+  const candidates: Array<
+    { kind: 'submission'; id: string } | { kind: 'builtin'; name: string; label: string }
+  > = []
   if (header?.players !== undefined) {
     for (const entry of Object.values(header.players)) {
       if (entry.kind === 'human') {
         continue
       }
-      if (entry.submission_id !== undefined) {
+      if ('submission_id' in entry) {
         candidates.push({ kind: 'submission', id: entry.submission_id })
         continue
       }
-      // An agent player with no submission is the built-in Naive baseline, keyed on the absence of a
-      // submission id, never on the "Naive agent" display label, which is presentation-only.
-      candidates.push({ kind: 'builtin-naive' })
+      if ('builtin_name' in entry) {
+        candidates.push({ kind: 'builtin', name: entry.builtin_name, label: entry.label })
+      }
     }
   } else {
     // No readable header: recover submitted agents from the seat links.
@@ -185,8 +190,8 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
   )
   const refs: AgentRef[] = []
   for (const candidate of candidates) {
-    if (candidate.kind === 'builtin-naive') {
-      refs.push({ kind: 'builtin-naive' })
+    if (candidate.kind === 'builtin') {
+      refs.push({ kind: 'builtin', name: candidate.name })
       continue
     }
     const submission = submissions.get(candidate.id)
@@ -209,7 +214,14 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
       continue
     }
     seen.add(key)
-    agents.push({ ref, wire })
+    const candidate =
+      ref.kind === 'builtin'
+        ? candidates.find(
+            (entry): entry is { kind: 'builtin'; name: string; label: string } =>
+              entry.kind === 'builtin' && entry.name === ref.name,
+          )
+        : undefined
+    agents.push({ ref, wire, ...optionalField('builtinLabel', candidate?.label) })
   }
   // A baseline-only watch recording is useful as a replay, but there is no participant agent to give
   // feedback about. Mixed sessions still include the Naive baseline as a normal rateable agent.
@@ -250,7 +262,7 @@ async function buildRatingView(
     seasonRatings.map((rating) => [
       rating.agent_kind === 'submission'
         ? `submission:${rating.agent_submission_id ?? ''}`
-        : 'builtin-naive',
+        : `builtin:${rating.agent_builtin_name ?? ''}`,
       rating.score,
     ]),
   )
@@ -259,7 +271,14 @@ async function buildRatingView(
     const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
     return {
       agent: agent.wire,
-      display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers, names),
+      display_name: displayName(
+        agent.ref,
+        isOwn,
+        blind,
+        anonymousNumbers,
+        names,
+        agent.builtinLabel,
+      ),
       is_own: isOwn,
       author_prompt:
         agent.ref.kind === 'submission' ? emptyToNull(prompts.get(agent.ref.user_id)) : null,
@@ -282,9 +301,10 @@ function displayName(
   blind: boolean,
   anonymousNumbers: ReadonlyMap<string, number>,
   names: ReadonlyMap<string, string>,
+  builtinLabel: string | undefined,
 ): string {
-  if (ref.kind === 'builtin-naive') {
-    return 'Naive baseline'
+  if (ref.kind === 'builtin') {
+    return builtinLabel ?? ref.name
   }
   if (!blind) {
     // The owner's display name when the directory has one; the stable id is the visible fallback.

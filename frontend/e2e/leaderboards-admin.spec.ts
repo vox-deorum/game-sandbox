@@ -414,7 +414,7 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await expect(scoreboard.getByRole('columnheader', { name: 'LLM usage' })).toBeVisible()
     await expect(scoreboard.getByText('None').first()).toBeVisible()
     await expect(humanBoard.getByRole('columnheader', { name: 'LLM usage' })).toHaveCount(0)
-    await expect(scoreboard.getByText('Naive baseline')).toBeVisible()
+    await expect(scoreboard.getByText('naive')).toBeVisible()
     for (const owner of [OWNERS.glider, OWNERS.flapper, OWNERS.drifter]) {
       await expect(scoreboard.getByRole('link', { name: owner })).toBeVisible()
       await expect(humanBoard.getByRole('link', { name: owner })).toBeVisible()

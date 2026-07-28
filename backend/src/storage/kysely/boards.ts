@@ -125,6 +125,10 @@ export async function listPlacementsByAgent(
     cols.agent_submission_id === null
       ? query.where('agent_submission_id', 'is', null)
       : query.where('agent_submission_id', '=', cols.agent_submission_id)
+  query =
+    cols.agent_builtin_name === null
+      ? query.where('agent_builtin_name', 'is', null)
+      : query.where('agent_builtin_name', '=', cols.agent_builtin_name)
   if (envId !== undefined) {
     query = query.where('env_id', '=', envId)
   }
@@ -168,6 +172,7 @@ export async function getAutomatedBoard(
     .where('season_run_games.run_id', '=', resolved.id)
     .select([
       'game_results.agent_kind as agent_kind',
+      'game_results.agent_builtin_name as agent_builtin_name',
       'game_results.agent_submission_id as agent_submission_id',
       'game_results.agent_user_id as agent_user_id',
       'game_results.episode_score as episode_score',

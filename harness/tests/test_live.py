@@ -19,9 +19,11 @@ import pytest
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
+    BuiltinAgent,
     EnvironmentEntry,
     EnvironmentMeta,
     PlayerBounds,
+    SeatDeclaration,
     SeatPlan,
     SeatPlans,
     resolve_parameters,
@@ -100,6 +102,7 @@ def make_entry(
         env_id="fake",
         display_name="Fake",
         description="A deterministic fake.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
         human_timeout_ms=human_timeout_ms,
@@ -205,7 +208,16 @@ def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_fo
             env_id="wide",
             display_name="Wide",
             description="A synthetic wide layout.",
-            layout=SeatPlans((SeatPlan("uneven", "Uneven", ((0, 2), (1,))),)),
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
+            layout=SeatPlans(
+                (
+                    SeatPlan(
+                        "uneven",
+                        "Uneven",
+                        (SeatDeclaration((0, 2)), SeatDeclaration((1,))),
+                    ),
+                )
+            ),
             human_players=("player_0",),
             human_timeout_ms=None,
             recommended_episode_ticks=1,
@@ -224,14 +236,14 @@ def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_fo
         "env_id": "wide",
         "parameters": {"seat_plan": "uneven"},
         "player_bindings": {
-            "player_0": {"kind": "builtin-agent"},
-            "player_1": {"kind": "builtin-agent"},
-            "player_2": {"kind": "builtin-agent"},
+            "player_0": {"kind": "builtin-agent", "name": "naive"},
+            "player_1": {"kind": "builtin-agent", "name": "naive"},
+            "player_2": {"kind": "builtin-agent", "name": "naive"},
         },
         "players": {
-            "player_0": {"kind": "agent", "label": "A"},
-            "player_1": {"kind": "agent", "label": "B"},
-            "player_2": {"kind": "agent", "label": "A"},
+            "player_0": {"kind": "agent", "builtin_name": "naive", "label": "A"},
+            "player_1": {"kind": "agent", "builtin_name": "naive", "label": "B"},
+            "player_2": {"kind": "agent", "builtin_name": "naive", "label": "A"},
         },
         "recording_dir": "/r",
     }
@@ -243,7 +255,7 @@ def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_fo
     payload["player_bindings"].pop("player_2")
     with pytest.raises(LiveConfigError, match="missing players"):
         parse_config([json.dumps(payload)], entry=wide_entry)
-    payload["player_bindings"]["player_2"] = {"kind": "builtin-agent"}
+    payload["player_bindings"]["player_2"] = {"kind": "builtin-agent", "name": "naive"}
     payload["players"]["player_9"] = payload["players"].pop("player_2")
     with pytest.raises(LiveConfigError, match="unknown players"):
         parse_config([json.dumps(payload)], entry=wide_entry)
@@ -274,8 +286,8 @@ def test_parse_config_reads_workflow_overrides():
     payload = {
         "env_id": "flappy_bird",
         "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
-        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
         "recording_dir": "/r",
         "step_timeout_ms": 250,
         "episode_timeout_ms": 60_000,
@@ -291,8 +303,8 @@ def test_parse_config_reads_messaging_keys():
     payload = {
         "env_id": "flappy_bird",
         "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
-        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
         "recording_dir": "/r",
         "messaging_enabled": False,
         "message_cap": 80,
@@ -300,6 +312,142 @@ def test_parse_config_reads_messaging_keys():
     cfg = parse_config([json.dumps(payload)])
     assert cfg.messaging_enabled is False
     assert cfg.message_cap == 80
+
+
+@pytest.mark.parametrize(
+    "player",
+    [
+        {"kind": "agent", "label": "Ambiguous", "submission_id": "sub-1", "builtin_name": "naive"},
+        {"kind": "agent", "label": "Anonymous"},
+        {"kind": "agent", "label": "Owned builtin", "builtin_name": "naive", "user": "owner"},
+    ],
+)
+def test_parse_config_rejects_non_disjoint_player_attribution(player: dict[str, object]):
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
+        "players": {"player_0": player},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="exactly one|cannot carry"):
+        parse_config([json.dumps(payload)])
+
+
+@pytest.mark.parametrize(
+    "player",
+    [
+        {"kind": "agent", "label": "Empty", "submission_id": ""},
+        {"kind": "agent", "label": "Null", "submission_id": None},
+    ],
+)
+def test_parse_config_rejects_empty_or_null_submission_identity(player: dict[str, object]):
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": "/agent"}},
+        "players": {"player_0": player},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="submission_id"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_rejects_agent_identity_on_a_human_player():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "external"}},
+        "players": {"player_0": {"kind": "human", "label": "Alice", "builtin_name": "naive"}},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="cannot carry"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_requires_a_name_for_a_pathless_builtin_binding():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="must name a built-in agent"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_rejects_an_undeclared_builtin_name():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "unknown"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "unknown", "label": "Agent"}},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="does not declare"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_requires_binding_and_recording_builtin_names_to_match():
+    payload = {
+        "env_id": "spades",
+        "parameters": {"seat_plan": "solo"},
+        "player_bindings": {
+            player_id: {"kind": "builtin-agent", "name": "naive"}
+            for player_id in ("player_0", "player_1", "player_2", "player_3")
+        },
+        "players": {
+            player_id: {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
+            for player_id in ("player_0", "player_1", "player_2", "player_3")
+        },
+        "recording_dir": "/r",
+    }
+    payload["players"]["player_0"]["builtin_name"] = "cautious"
+    with pytest.raises(LiveConfigError, match="must match"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_accepts_a_declared_name_with_an_explicit_local_path():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {
+            "player_0": {
+                "kind": "builtin-agent",
+                "path": "/opt/agents/builtin/flappy_bird/naive",
+                "name": "naive",
+            }
+        },
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
+        "recording_dir": "/r",
+    }
+    config = parse_config([json.dumps(payload)])
+    assert config.player_bindings["player_0"].name == "naive"
+
+
+def test_parse_config_requires_submission_identity_for_a_path_only_binding():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": "/untrusted"}},
+        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="path-only binding must carry submission_id"):
+        parse_config([json.dumps(payload)])
+
+
+def test_parse_config_rejects_a_named_external_binding():
+    payload = {
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "external", "name": "naive"}},
+        "players": {"player_0": {"kind": "human", "label": "Human"}},
+        "recording_dir": "/r",
+    }
+    with pytest.raises(LiveConfigError, match="must not name an agent"):
+        parse_config([json.dumps(payload)])
 
 
 @pytest.mark.parametrize(
@@ -453,11 +601,9 @@ def test_build_players_builtin_agent_loads_through_manifest(tmp_path: Path):
     assert isinstance(players["player_0"], AgentPlayer)
 
 
-def test_build_players_builtin_agent_without_path_resolves_per_env_default(monkeypatch):
-    # A builtin-agent player with no explicit overlay path loads the per-environment baseline staged at
-    # /opt/agents/builtin/<env_id>. The directory is env-keyed because the Naive policy differs per
-    # environment (Hearts reads the legal-action mask; Flappy Bird reads a flat array), so a flat
-    # default would load the wrong baseline into a Hearts seat.
+def test_build_players_builtin_agent_without_path_resolves_the_named_env_default(monkeypatch):
+    # A builtin-agent player with no explicit overlay path loads its named agent from the staged
+    # /opt/agents/builtin/<env_id>/<name> tree.
     import game_sandbox_harness.live as live
 
     captured: list[str] = []
@@ -467,10 +613,16 @@ def test_build_players_builtin_agent_without_path_resolves_per_env_default(monke
     sleeper = AdvancingSleeper(ManualClock())
     entry = make_entry(3, pace_interval_ms=None)
     cfg = LiveConfig(
-        "hearts", 0, {"player_0": PlayerBinding("builtin-agent")}, None, "/r", None, {"players": 1}
+        "hearts",
+        0,
+        {"player_0": PlayerBinding("builtin-agent", name="cautious")},
+        None,
+        "/r",
+        None,
+        {"players": 1},
     )
     players = build_players(cfg, entry, control, clock, sleeper)
-    assert captured == ["/opt/agents/builtin/hearts"]
+    assert captured == ["/opt/agents/builtin/hearts/cautious"]
     assert isinstance(players["player_0"], AgentPlayer)
 
 
@@ -773,6 +925,7 @@ def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
         env_id="fake-chat",
         display_name="Fake Chat",
         description="A deterministic fake with messaging.",
+        builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
         human_timeout_ms=None,
@@ -929,7 +1082,7 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path: 
         "parameters": {"players": 1, "pipe_gap": 100},
         "seed": 0,
         "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
-        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
+        "players": {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
     }
@@ -980,7 +1133,7 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Pat
         "parameters": {"players": 1, "pipe_gap": 100},
         "seed": 0,
         "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
-        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
+        "players": {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
     }

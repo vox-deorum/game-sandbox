@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _envs  # noqa: E402
 import generate  # noqa: E402
 from _paths import REPO_ROOT  # noqa: E402
-from game_sandbox_harness.environment import EnvironmentMeta, PlayerBounds  # noqa: E402
+from game_sandbox_harness.environment import BuiltinAgent, EnvironmentMeta, PlayerBounds  # noqa: E402
 
 
 def _meta() -> EnvironmentMeta:
@@ -24,6 +24,7 @@ def _meta() -> EnvironmentMeta:
         env_id="example",
         display_name="Example",
         description="A complete metadata fixture.",
+        builtin_agents=(BuiltinAgent("naive", "Naive"),),
         layout=PlayerBounds(1, 2),
         human_players=("player_0", "player_1"),
         human_timeout_ms=50,

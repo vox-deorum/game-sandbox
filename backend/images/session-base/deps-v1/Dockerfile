@@ -35,13 +35,13 @@ COPY environments ./environments
 RUN pip install --no-cache-dir ./harness \
     && pip install --no-cache-dir --no-deps ./environments
 
-# 3. The versioned v1 built-in scripted agents, one per environment under
-#    /opt/agents/builtin/<env_id>, each loaded through the manifest loader a Stage 5 submission uses.
+# 3. The versioned v1 built-in scripted agents, one or more per environment under
+#    /opt/agents/builtin/<env_id>/<name>, each loaded through the manifest loader a Stage 5 submission uses.
 #    They may be regenerated with the matching template until template-v1 is published; publication
 #    freezes this snapshot beside the requirements. The Naive baseline is
 #    per-environment because the observation (and so the policy) differs: Flappy Bird's reads a flat
 #    array, Hearts' reads the legal-action mask. A seat with no explicit overlay path resolves to
-#    /opt/agents/builtin/<the session's env_id> (see harness `build_players`). Keeping the versioned copy
+#    /opt/agents/builtin/<the session's env_id>/<builtin name> (see harness `build_players`). Keeping the versioned copy
 #    here avoids composing from a later template whose requirements could upgrade the v1 set.
 #
 #    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with
@@ -54,12 +54,12 @@ RUN pip install --no-cache-dir ./harness \
 #    pulls an extra dependency (wcwidth); the Hearts baseline is standard-library only.
 COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
 RUN chmod -R a+rX /opt/agents/builtin \
-    && pip install --no-cache-dir -r /opt/agents/builtin/flappy_bird/requirements.txt
+    && pip install --no-cache-dir -r /opt/agents/builtin/flappy_bird/naive/requirements.txt
 
-# Fail the build, not a session, if the packages or a built-in agent cannot load: import each
-# environment and load every per-environment baseline through the manifest loader.
+# Fail the build, not a session, if the packages or a named built-in agent cannot load. Reading the
+# installed environment metadata makes a missing directory fail whenever a declaration adds an agent.
 RUN python -c "import game_sandbox_harness, flappy_bird, hearts, spades" \
-    && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin/flappy_bird'); load_agent('/opt/agents/builtin/hearts'); load_agent('/opt/agents/builtin/spades')"
+    && python -c "from game_sandbox_harness.environment import load_environment; from game_sandbox_harness.manifest import load_agent; [load_agent(f'/opt/agents/builtin/{env_id}/{builtin.name}') for env_id in ('flappy_bird', 'hearts', 'spades') for builtin in load_environment(env_id).meta.builtin_agents]"
 
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element
 # by the orchestrator. The recordings volume is mounted at /recordings and named in that config.

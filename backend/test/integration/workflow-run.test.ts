@@ -131,14 +131,14 @@ describe('workflow run end to end (Docker)', () => {
         match_index: 0,
         game_index: 2,
         seed: seeds[0] as number,
-        seats: [{ kind: 'builtin-naive' } as AgentRef],
+        seats: [{ kind: 'builtin', name: 'naive' } as AgentRef],
         seat_plan: 'solo',
       },
       {
         match_index: 0,
         game_index: 3,
         seed: seeds[1] as number,
-        seats: [{ kind: 'builtin-naive' } as AgentRef],
+        seats: [{ kind: 'builtin', name: 'naive' } as AgentRef],
         seat_plan: 'solo',
       },
     ]

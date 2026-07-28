@@ -210,12 +210,38 @@ class PlayerBounds:
 
 
 @dataclass(frozen=True)
+class BuiltinAgent:
+    """One named built-in agent an environment stages and exposes."""
+
+    name: str
+    label: str
+
+    def __post_init__(self) -> None:
+        if not _is_parameter_name(self.name):
+            raise ValueError("builtin agent name must be a snake_case identifier")
+        if not _is_nonempty_string(self.label):
+            raise ValueError("builtin agent label must be a non-empty string")
+
+    def to_json(self) -> dict[str, str]:
+        """Return the public wire representation."""
+        return {"name": self.name, "label": self.label}
+
+
+@dataclass(frozen=True)
+class SeatDeclaration:
+    """One declared seat, its player indexes, and any designated built-in agent."""
+
+    players: tuple[int, ...]
+    restricted_builtin: str | None = None
+
+
+@dataclass(frozen=True)
 class SeatPlan:
     """One named, complete assignment of PettingZoo players to seats."""
 
     key: str
     title: str
-    seats: tuple[tuple[int, ...], ...]
+    seats: tuple[SeatDeclaration, ...]
 
 
 @dataclass(frozen=True)
@@ -234,6 +260,7 @@ class ResolvedSeat:
 
     seat_id: str
     players: tuple[str, ...]
+    restricted_builtin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -317,6 +344,7 @@ class EnvironmentMeta:
     env_id: str
     display_name: str
     description: str
+    builtin_agents: tuple[BuiltinAgent, ...]
     layout: EnvironmentLayout
     human_players: tuple[str, ...]
     human_timeout_ms: int | None
@@ -348,7 +376,16 @@ class EnvironmentMeta:
     parameters: tuple[EnvParameter, ...] = ()
 
     def __post_init__(self) -> None:
-        _validate_layout(self.env_id, self.layout)
+        if not self.builtin_agents:
+            raise ValueError(f"environment {self.env_id!r} must declare at least one builtin agent")
+        if any(type(agent) is not BuiltinAgent for agent in self.builtin_agents):
+            raise ValueError(f"environment {self.env_id!r} builtin agents must be BuiltinAgent entries")
+        builtin_names = [agent.name for agent in self.builtin_agents]
+        if builtin_names[0] != "naive":
+            raise ValueError(f"environment {self.env_id!r} first builtin agent must be 'naive'")
+        if len(builtin_names) != len(set(builtin_names)):
+            raise ValueError(f"environment {self.env_id!r} builtin agent names must be unique")
+        _validate_layout(self.env_id, self.layout, frozenset(builtin_names))
         names = [parameter.name for parameter in self.parameters]
         if len(names) != len(set(names)):
             raise ValueError("environment parameter names must be unique")
@@ -362,6 +399,7 @@ class EnvironmentMeta:
             "env_id": self.env_id,
             "display_name": self.display_name,
             "description": self.description,
+            "builtin_agents": [agent.to_json() for agent in self.builtin_agents],
             "layout": _layout_to_json(self.layout),
             "human_players": list(self.human_players),
             "human_timeout_ms": self.human_timeout_ms,
@@ -431,11 +469,12 @@ def resolve_layout(meta: EnvironmentMeta, parameters: Mapping[str, ParameterValu
     seats = tuple(
         ResolvedSeat(
             seat_id=f"seat_{seat_index}",
-            players=tuple(f"player_{player_index}" for player_index in members),
+            players=tuple(f"player_{player_index}" for player_index in declaration.players),
+            restricted_builtin=declaration.restricted_builtin,
         )
-        for seat_index, members in enumerate(plan.seats)
+        for seat_index, declaration in enumerate(plan.seats)
     )
-    player_count = sum(len(members) for members in plan.seats)
+    player_count = sum(len(declaration.players) for declaration in plan.seats)
     return ResolvedLayout(plan.key, seats, player_count, len(seats))
 
 
@@ -445,13 +484,25 @@ def _layout_to_json(layout: EnvironmentLayout) -> dict[str, Any]:
     return {
         "kind": "seat_plans",
         "plans": [
-            {"key": plan.key, "title": plan.title, "seats": [list(seat) for seat in plan.seats]}
+            {
+                "key": plan.key,
+                "title": plan.title,
+                "seats": [
+                    {"players": list(declaration.players)}
+                    if declaration.restricted_builtin is None
+                    else {
+                        "players": list(declaration.players),
+                        "restricted_builtin": declaration.restricted_builtin,
+                    }
+                    for declaration in plan.seats
+                ],
+            }
             for plan in layout.plans
         ],
     }
 
 
-def _validate_layout(env_id: str, layout: object) -> None:
+def _validate_layout(env_id: str, layout: object, builtin_names: frozenset[str]) -> None:
     if isinstance(layout, PlayerBounds):
         if not is_json_safe_integer(layout.min) or layout.min <= 0:
             raise ValueError(f"environment {env_id!r} player bounds min must be a positive integer")
@@ -476,14 +527,27 @@ def _validate_layout(env_id: str, layout: object) -> None:
         if not plan.seats:
             raise ValueError(f"environment {env_id!r} plan {plan.key!r} must contain at least one seat")
         indices: list[int] = []
-        for seat in plan.seats:
-            if not seat:
+        restricted_seats = 0
+        for declaration in plan.seats:
+            if type(declaration) is not SeatDeclaration:
+                raise ValueError(f"environment {env_id!r} plan {plan.key!r} seats must be declarations")
+            if not declaration.players:
                 raise ValueError(f"environment {env_id!r} plan {plan.key!r} has an empty seat")
-            if not all(is_json_safe_integer(index) and index >= 0 for index in seat):
+            if not all(is_json_safe_integer(index) and index >= 0 for index in declaration.players):
                 raise ValueError(
                     f"environment {env_id!r} plan {plan.key!r} player indices must be non-negative integers"
                 )
-            indices.extend(seat)
+            indices.extend(declaration.players)
+            if declaration.restricted_builtin is not None:
+                if declaration.restricted_builtin not in builtin_names:
+                    raise ValueError(
+                        f"environment {env_id!r} plan {plan.key!r} restriction names an undeclared builtin"
+                    )
+                restricted_seats += 1
+        if restricted_seats > 1:
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} has more than one restricted seat")
+        if restricted_seats == len(plan.seats):
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} must have an unrestricted seat")
         if sorted(indices) != list(range(len(indices))):
             raise ValueError(
                 f"environment {env_id!r} plan {plan.key!r} must partition players from index 0 without gaps"

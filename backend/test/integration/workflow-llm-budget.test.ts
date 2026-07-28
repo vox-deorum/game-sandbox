@@ -205,9 +205,9 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     }
     const seats: AgentRef[] = [
       submissionRef,
-      { kind: 'builtin-naive' },
-      { kind: 'builtin-naive' },
-      { kind: 'builtin-naive' },
+      { kind: 'builtin', name: 'naive' },
+      { kind: 'builtin', name: 'naive' },
+      { kind: 'builtin', name: 'naive' },
     ]
     const run = await createRunOrFail(storage, season.id, 'operator', () => ({
       parametersSnapshot: { players: 4 },

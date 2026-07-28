@@ -12,10 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _template_gen as template_gen  # noqa: E402
 from _paths import TemplateEnvironmentSpec  # noqa: E402
 from game_sandbox_harness.environment import (  # noqa: E402
+    BuiltinAgent,
     EnvironmentMeta,
     EnvParameter,
     EnvParameterChoice,
     PlayerBounds,
+    SeatDeclaration,
+    SeatPlan,
+    SeatPlans,
 )
 
 
@@ -24,6 +28,7 @@ def _meta() -> EnvironmentMeta:
         env_id="example",
         display_name="Example",
         description="A complete metadata fixture.",
+        builtin_agents=(BuiltinAgent("naive", "Naive"),),
         layout=PlayerBounds(1, 2),
         human_players=("player_0", "player_1"),
         human_timeout_ms=50,
@@ -58,16 +63,50 @@ def test_write_env_package_copies_modules_and_renders_uniform_inits(
     assert (dest / "example" / "env.py").read_text(encoding="utf-8") == "VALUE = 1\n"
     rendered = (dest / "__init__.py").read_text(encoding="utf-8")
     assert "from sandbox.harness.environment import (" in rendered
-    for name in ("EnvParameter", "EnvParameterChoice", "EnvironmentMeta", "PlayerBounds"):
+    for name in (
+        "BuiltinAgent",
+        "EnvParameter",
+        "EnvParameterChoice",
+        "EnvironmentMeta",
+        "PlayerBounds",
+        "SeatDeclaration",
+    ):
         assert f"    {name}," in rendered
     assert "META = EnvironmentMeta(" in rendered
     assert '"layout": PlayerBounds(min=1, max=2),' in rendered
+    assert "\"builtin_agents\": (BuiltinAgent(name='naive', label='Naive'),)," in rendered
     for field in _meta().to_json():
         assert f'"{field}"' in rendered
     assert 'PLAYER_ID = "player_0"' in rendered
     assert '"PLAYER_ID",' in rendered
     assert '"META",' in rendered
     assert rendered.startswith("# GAME-SANDBOX-GENERATED-ENV: scripts/compose.py\n")
+
+
+def test_rendered_metadata_constructs_declared_seats() -> None:
+    meta = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "layout": SeatPlans(
+                (
+                    SeatPlan(
+                        key="duo",
+                        title="Duo",
+                        seats=(
+                            SeatDeclaration(players=(0,), restricted_builtin="naive"),
+                            SeatDeclaration((1,)),
+                        ),
+                    ),
+                )
+            ),
+        }
+    )
+    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
+
+    rendered = template_gen._render_sandbox_init("example", spec, meta)
+
+    assert "SeatDeclaration(players=(0,), restricted_builtin='naive')" in rendered
+    assert "SeatDeclaration(players=(1,), restricted_builtin=None)" in rendered
 
 
 def test_render_parameters_uses_evaluable_dataclass_representation() -> None:

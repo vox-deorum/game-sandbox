@@ -251,6 +251,7 @@ const initialSchema: Migration = {
       .addColumn('game_id', 'text', (col) => col.notNull())
       .addColumn('seat_index', 'integer', (col) => col.notNull())
       .addColumn('agent_kind', 'text', (col) => col.notNull())
+      .addColumn('agent_builtin_name', 'text')
       .addColumn('agent_submission_id', 'text')
       .addColumn('agent_user_id', 'text')
       .addColumn('episode_score', 'real', (col) => col.notNull())
@@ -265,7 +266,7 @@ const initialSchema: Migration = {
     await db.schema
       .createIndex('game_results_agent')
       .on('game_results')
-      .columns(['agent_kind', 'agent_submission_id'])
+      .columns(['agent_kind', 'agent_builtin_name', 'agent_submission_id'])
       .execute()
 
     // --- automated_placements: the per-agent placement snapshot. ---
@@ -277,6 +278,7 @@ const initialSchema: Migration = {
       .addColumn('run_id', 'text', (col) => col.notNull())
       .addColumn('rank', 'integer', (col) => col.notNull())
       .addColumn('agent_kind', 'text', (col) => col.notNull())
+      .addColumn('agent_builtin_name', 'text')
       .addColumn('agent_submission_id', 'text')
       .addColumn('agent_user_id', 'text')
       .addColumn('mean_score', 'real', (col) => col.notNull())
@@ -290,7 +292,7 @@ const initialSchema: Migration = {
     await db.schema
       .createIndex('automated_placements_agent_env')
       .on('automated_placements')
-      .columns(['agent_kind', 'agent_submission_id', 'env_id'])
+      .columns(['agent_kind', 'agent_builtin_name', 'agent_submission_id', 'env_id'])
       .execute()
     // The signed-in user's season summary reads all submitted-agent placements for one owner. Keep
     // that request on an owner-bounded index rather than scanning every environment's placements;
@@ -300,16 +302,16 @@ const initialSchema: Migration = {
       ON automated_placements (agent_user_id, season_id)
       WHERE agent_kind = 'submission'
     `.execute(db)
-    // Placement uniqueness: submitted agents key on the submission id; the null-submission Naive row
-    // gets a second partial index (SQLite treats nulls as distinct).
+    // Placement uniqueness: submitted agents key on the submission id, built-ins on their stable name.
     await sql`
       CREATE UNIQUE INDEX automated_placements_submission_unique
       ON automated_placements (season_id, agent_kind, agent_submission_id)
+      WHERE agent_kind = 'submission'
     `.execute(db)
     await sql`
-      CREATE UNIQUE INDEX automated_placements_naive_unique
-      ON automated_placements (season_id, agent_kind)
-      WHERE agent_kind = 'builtin-naive'
+      CREATE UNIQUE INDEX automated_placements_builtin_unique
+      ON automated_placements (season_id, agent_kind, agent_builtin_name)
+      WHERE agent_kind = 'builtin'
     `.execute(db)
 
     // --- ratings: one 1-5 human rating per user per agent per season. ---
@@ -320,6 +322,7 @@ const initialSchema: Migration = {
       .addColumn('env_id', 'text', (col) => col.notNull())
       .addColumn('rater_user_id', 'text', (col) => col.notNull())
       .addColumn('agent_kind', 'text', (col) => col.notNull())
+      .addColumn('agent_builtin_name', 'text')
       .addColumn('agent_submission_id', 'text')
       .addColumn('agent_user_id', 'text')
       .addColumn('score', 'integer', (col) => col.notNull())
@@ -329,18 +332,18 @@ const initialSchema: Migration = {
     await db.schema
       .createIndex('ratings_season_agent')
       .on('ratings')
-      .columns(['season_id', 'agent_kind', 'agent_submission_id'])
+      .columns(['season_id', 'agent_kind', 'agent_builtin_name', 'agent_submission_id'])
       .execute()
-    // Rating uniqueness: one effective rating per user per agent per season, with the Naive row
-    // covered by a second partial index for the same null-distinctness reason.
+    // Rating uniqueness: one effective rating per user per agent per season.
     await sql`
-      CREATE UNIQUE INDEX ratings_one_per_user_agent
+      CREATE UNIQUE INDEX ratings_one_per_user_submission
       ON ratings (season_id, rater_user_id, agent_kind, agent_submission_id)
+      WHERE agent_kind = 'submission'
     `.execute(db)
     await sql`
-      CREATE UNIQUE INDEX ratings_one_per_user_naive
-      ON ratings (season_id, rater_user_id, agent_kind)
-      WHERE agent_kind = 'builtin-naive'
+      CREATE UNIQUE INDEX ratings_one_per_user_builtin
+      ON ratings (season_id, rater_user_id, agent_kind, agent_builtin_name)
+      WHERE agent_kind = 'builtin'
     `.execute(db)
 
     // --- agent_rating_prompts: the author's per-season prompt (keyed by author, survives resubmit). ---

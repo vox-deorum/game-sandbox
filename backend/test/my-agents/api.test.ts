@@ -59,7 +59,7 @@ describe('my agents API', () => {
           match_index: 0,
           game_index: 0,
           seed: 1,
-          seats: [{ kind: 'builtin-naive' }],
+          seats: [{ kind: 'builtin', name: 'naive' }],
           seat_plan: 'solo',
         },
       ],

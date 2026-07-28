@@ -30,9 +30,9 @@ from hearts.env import IllegalMoveError, card_to_obj, default_action, make_env
 from hearts.overlay import extract_overlay
 
 #: The frozen v1 built-in Hearts baseline the session image stages and the harness loads for every
-#: Naive player (``backend/images/session-base/deps-v1/builtin/hearts``), from this repo's root.
+#: Naive player, from this repo's root.
 BUILTIN_HEARTS_AGENT_DIR = (
-    Path(__file__).resolve().parents[3] / "backend/images/session-base/deps-v1/builtin/hearts"
+    Path(__file__).resolve().parents[3] / "backend/images/session-base/deps-v1/builtin/hearts/naive"
 )
 
 
@@ -513,8 +513,8 @@ def test_run_episode_scores_credit_every_player():
 
 
 def test_builtin_hearts_agent_plays_a_full_legal_game():
-    # The session image stages a per-environment Naive baseline at /opt/agents/builtin/<env_id>, and
-    # the harness loads it (through the manifest loader, as the container does) for every Naive player.
+    # The session image stages this baseline at /opt/agents/builtin/hearts/naive, and the harness loads
+    # it through the manifest loader for every Naive player.
     # Driving four copies to a clean terminal is the regression guard for the KeyError the Flappy Bird
     # baseline raised when loaded into Hearts players: the per-environment baseline must exist, load, and
     # play only legal cards to the end of the hand.

@@ -227,7 +227,7 @@ def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
     if not builtin.is_dir():
         problems.append(f"{builtin} is missing")
     else:
-        for manifest in sorted(builtin.glob("*/manifest.json")):
+        for manifest in sorted(builtin.glob("*/*/manifest.json")):
             found = _read_manifest_version(manifest)
             if found != version:
                 problems.append(f"{manifest} has template_version {found}, expected {version}")
@@ -264,7 +264,7 @@ def _populate_deps_snapshot(prev: int, new: int, new_dir: Path) -> None:
         new_dir / "builtin",
         ignore=shutil.ignore_patterns("__pycache__"),
     )
-    for manifest in sorted((new_dir / "builtin").glob("*/manifest.json")):
+    for manifest in sorted((new_dir / "builtin").glob("*/*/manifest.json")):
         set_manifest_version(manifest, new)
 
 

@@ -167,8 +167,11 @@ describe('multi-agent Hearts session (Docker)', () => {
       expect(actions.get(playerId)?.length).toBe(PLAYS_PER_PLAYER)
       expect(decisions.get(playerId)?.length).toBe(PLAYS_PER_PLAYER)
       // Each player is attributed to its own submission in the recording header.
-      expect(header.players?.[playerId]?.kind).toBe('agent')
-      expect(header.players?.[playerId]?.submission_id).toBe(seats[`seat_${i}`]?.submission_id)
+      const player = header.players?.[playerId]
+      expect(player?.kind).toBe('agent')
+      expect(
+        player !== undefined && 'submission_id' in player ? player.submission_id : undefined,
+      ).toBe(seats[`seat_${i}`]?.submission_id)
     }
   })
 

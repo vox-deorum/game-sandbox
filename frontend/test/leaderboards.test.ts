@@ -73,7 +73,7 @@ function board(): Board {
         recording_id: 'rec-a',
       },
       {
-        agent: { kind: 'builtin-naive' },
+        agent: { kind: 'builtin', name: 'naive' },
         mean_score: 3,
         score_std: 0,
         mean_agent_compute_ms: 1,
@@ -96,7 +96,7 @@ function board(): Board {
         author_prompt: 'Reward smooth, human-like play.',
       },
       {
-        agent: { kind: 'builtin-naive' },
+        agent: { kind: 'builtin', name: 'naive' },
         mean: 3,
         std: 0,
         count: 2,
@@ -167,7 +167,7 @@ describe('LeaderboardsPage', () => {
     const aliceLink = screen.getAllByRole('link', { name: 'alice' })[0] as HTMLElement
     expect(aliceLink).toHaveAttribute('href', '/environments/flappy_bird/agents/alice')
     expect(aliceLink).toHaveAttribute('title', 'alice')
-    expect(screen.getAllByText('Naive baseline').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('naive').length).toBeGreaterThan(0)
 
     // The per-row replay deep-links the representative recording.
     const replay = screen.getAllByRole('link', { name: 'Replay' })[0] as HTMLElement

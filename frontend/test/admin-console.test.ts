@@ -1020,7 +1020,7 @@ describe('AdminConsolePage', () => {
     const board: Board = {
       automated: [
         {
-          agent: { kind: 'builtin-naive' },
+          agent: { kind: 'builtin', name: 'naive' },
           mean_score: 5,
           score_std: 0,
           mean_agent_compute_ms: 1,

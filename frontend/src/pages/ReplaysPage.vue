@@ -83,7 +83,7 @@ function playersTitle(replay: RecordingSummary): string | undefined {
     return undefined
   }
   const ids = Object.values(replay.header.players)
-    .map((player) => player.user)
+    .map((player) => ('user' in player ? player.user : undefined))
     .filter((id): id is string => id !== undefined)
   return ids.length > 0 ? ids.join(', ') : undefined
 }

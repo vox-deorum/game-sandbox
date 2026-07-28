@@ -104,7 +104,7 @@ function watch(agent: WatchAgentSummary): void {
 
 /** Watch the built-in Naive agent: a scripted run with no submission. */
 function watchBuiltin(): void {
-  chooseAgent({ kind: 'builtin-agent' }, BUILTIN_KEY, 'watch')
+  chooseAgent({ kind: 'builtin-agent', name: 'naive' }, BUILTIN_KEY, 'watch')
 }
 
 /**

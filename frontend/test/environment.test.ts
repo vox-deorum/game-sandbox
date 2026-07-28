@@ -373,9 +373,9 @@ describe('EnvironmentPage', () => {
       parameters: { players: 4 },
       seats: {
         seat_0: { kind: 'human' },
-        seat_1: { kind: 'builtin-agent' },
-        seat_2: { kind: 'builtin-agent' },
-        seat_3: { kind: 'builtin-agent' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
       seed: undefined,
       humanTimeoutMs: 60_000,

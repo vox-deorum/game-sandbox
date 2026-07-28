@@ -7,18 +7,22 @@
           {
             "key": "x",
             "seats": [
-              [
-                0
-              ]
+              {
+                "players": [
+                  0
+                ]
+              }
             ],
             "title": "X"
           },
           {
             "key": "x",
             "seats": [
-              [
-                0
-              ]
+              {
+                "players": [
+                  0
+                ]
+              }
             ],
             "title": "Again"
           }
@@ -53,7 +57,9 @@
           {
             "key": "x",
             "seats": [
-              []
+              {
+                "players": []
+              }
             ],
             "title": "X"
           }
@@ -68,10 +74,12 @@
           {
             "key": "x",
             "seats": [
-              [
-                0,
-                0
-              ]
+              {
+                "players": [
+                  0,
+                  0
+                ]
+              }
             ],
             "title": "X"
           }
@@ -86,9 +94,11 @@
           {
             "key": "x",
             "seats": [
-              [
-                -1
-              ]
+              {
+                "players": [
+                  -1
+                ]
+              }
             ],
             "title": "X"
           }
@@ -103,9 +113,11 @@
           {
             "key": "Not Snake",
             "seats": [
-              [
-                0
-              ]
+              {
+                "players": [
+                  0
+                ]
+              }
             ],
             "title": "X"
           }
@@ -120,9 +132,11 @@
           {
             "key": "x",
             "seats": [
-              [
-                0
-              ]
+              {
+                "players": [
+                  0
+                ]
+              }
             ],
             "title": ""
           }
@@ -137,10 +151,12 @@
           {
             "key": "x",
             "seats": [
-              [
-                0,
-                2
-              ]
+              {
+                "players": [
+                  0,
+                  2
+                ]
+              }
             ],
             "title": "X"
           }
@@ -155,15 +171,83 @@
           {
             "key": "x",
             "seats": [
-              [
-                1
-              ]
+              {
+                "players": [
+                  1
+                ]
+              }
             ],
             "title": "X"
           }
         ]
       },
       "name": "nonzero start"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              {
+                "players": [
+                  0
+                ],
+                "restricted_builtin": "cautious"
+              }
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "undeclared restricted builtin"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              {
+                "players": [
+                  0
+                ],
+                "restricted_builtin": "naive"
+              },
+              {
+                "players": [
+                  1
+                ],
+                "restricted_builtin": "naive"
+              }
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "two restricted seats"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              {
+                "players": [
+                  0
+                ],
+                "restricted_builtin": "naive"
+              }
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "only restricted seat"
     },
     {
       "layout": {
@@ -189,6 +273,15 @@
     },
     {
       "layout": {
+        "kind": "player_bounds",
+        "max": 2,
+        "min": 1,
+        "restricted_builtin": "naive"
+      },
+      "name": "restriction on player bounds layout"
+    },
+    {
+      "layout": {
         "kind": "seat_plans",
         "max": 1,
         "min": 1,
@@ -196,9 +289,11 @@
           {
             "key": "x",
             "seats": [
-              [
-                0
-              ]
+              {
+                "players": [
+                  0
+                ]
+              }
             ],
             "title": "X"
           }
@@ -218,18 +313,21 @@
             "players": [
               "player_0"
             ],
+            "restricted_builtin": null,
             "seat_id": "seat_0"
           },
           {
             "players": [
               "player_1"
             ],
+            "restricted_builtin": null,
             "seat_id": "seat_1"
           },
           {
             "players": [
               "player_2"
             ],
+            "restricted_builtin": null,
             "seat_id": "seat_2"
           }
         ]
@@ -259,6 +357,7 @@
             "players": [
               "player_0"
             ],
+            "restricted_builtin": "naive",
             "seat_id": "seat_0"
           },
           {
@@ -267,6 +366,7 @@
               "player_2",
               "player_3"
             ],
+            "restricted_builtin": null,
             "seat_id": "seat_1"
           }
         ]
@@ -281,39 +381,52 @@
             {
               "key": "duo",
               "seats": [
-                [
-                  0
-                ],
-                [
-                  1,
-                  2,
-                  3
-                ]
+                {
+                  "players": [
+                    0
+                  ],
+                  "restricted_builtin": "naive"
+                },
+                {
+                  "players": [
+                    1,
+                    2,
+                    3
+                  ]
+                }
               ],
               "title": "Duo"
             },
             {
               "key": "solo",
               "seats": [
-                [
-                  0
-                ],
-                [
-                  1
-                ],
-                [
-                  2
-                ],
-                [
-                  3
-                ]
+                {
+                  "players": [
+                    0
+                  ]
+                },
+                {
+                  "players": [
+                    1
+                  ]
+                },
+                {
+                  "players": [
+                    2
+                  ]
+                },
+                {
+                  "players": [
+                    3
+                  ]
+                }
               ],
               "title": "Solo"
             }
           ]
         }
       },
-      "name": "uneven seat plan",
+      "name": "restricted uneven seat plan",
       "parameters": {
         "seat_plan": "duo"
       }

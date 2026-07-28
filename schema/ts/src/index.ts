@@ -17,11 +17,13 @@ import type { RecordingHeader, StepState } from './generated/types.js'
 // built-ins, no Ajv) so the frontend can import them directly through the subpath exports; the
 // barrel re-exports them for the Node backend, which already pulls in the Ajv-backed readers below.
 export {
+  type BuiltinAgent,
   type EnvironmentLayout,
   type EnvironmentMeta,
   type EnvParameter,
   type EnvParameterChoice,
   type EnvParameterType,
+  isBuiltinAgent,
   isEnvironmentMeta,
   isEnvParameter,
   isEnvParameterChoice,
@@ -34,6 +36,7 @@ export {
   type ResolvedSeat,
   resolveLayout,
   resolveParameters,
+  type SeatDeclaration,
   type SeatPlan,
   type SeatPlansLayout,
   validateCompleteParameters,

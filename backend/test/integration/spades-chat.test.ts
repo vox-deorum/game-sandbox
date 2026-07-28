@@ -9,7 +9,7 @@
  *   and in the full recording (broadcast and targeted alike).
  * - A `chat` command frame written into the container's stdin by the owner of a human-mode session
  *   is routed by the harness and lands in the recording, attributed to the human player.
- * - The built-in `/opt/agents/builtin/spades` scripted baseline loads and plays a complete game when
+ * - The built-in `/opt/agents/builtin/spades/naive` scripted baseline loads and plays a complete game when
  *   every seat is `builtin-agent`.
  * - A season's `overrides.messaging.enabled = false` silences chatty agents with no code change (the
  *   made nil becomes a set nil, exactly the workflow's messaging-off path), and a season cap lower
@@ -290,17 +290,17 @@ describe('Spades chat (Docker)', () => {
     }
   }, 180_000)
 
-  it('loads the built-in /opt/agents/builtin/spades baseline under the explicit four-seat solo plan', async () => {
+  it('loads the built-in /opt/agents/builtin/spades/naive agent under the explicit four-seat solo plan', async () => {
     const { id } = await startSession(
       stack,
       {
         env_id: ENV_ID,
         parameters: { seat_plan: 'solo' },
         seats: {
-          seat_0: { kind: 'builtin-agent' },
-          seat_1: { kind: 'builtin-agent' },
-          seat_2: { kind: 'builtin-agent' },
-          seat_3: { kind: 'builtin-agent' },
+          seat_0: { kind: 'builtin-agent', name: 'naive' },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
+          seat_2: { kind: 'builtin-agent', name: 'naive' },
+          seat_3: { kind: 'builtin-agent', name: 'naive' },
         },
         seed: 42,
       },
