@@ -56,7 +56,6 @@ def test_publish_builds_once_and_replaces_bundle_in_every_output(
         "list_examples",
         lambda: [("flappy_bird", "hello"), ("hearts", "hidden"), ("hearts", "oracle")],
     )
-    monkeypatch.setattr(publisher, "_validate_example_refs", lambda _: None)
     monkeypatch.setattr(publisher, "compose_template", lambda env: outputs[env])
     monkeypatch.setattr(publisher, "compose_example", lambda env, name: outputs[f"{env}/{name}"])
     monkeypatch.setattr(publisher.subprocess, "run", fake_run)
@@ -117,28 +116,6 @@ def test_local_frontend_build_requires_local_html(tmp_path: Path, monkeypatch: p
         publisher._build_local_frontend()
 
     assert not bundle.exists()
-
-
-def test_invalid_example_ref_fails_before_any_composition(monkeypatch: pytest.MonkeyPatch):
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
-        calls.append(command)
-        return SimpleNamespace(returncode=1)
-
-    monkeypatch.setattr(publisher.subprocess, "run", fake_run)
-    monkeypatch.setattr(publisher, "list_envs", lambda: ["flappy_bird"])
-    monkeypatch.setattr(publisher, "list_published_examples", lambda: [("flappy_bird", ".hidden")])
-    monkeypatch.setattr(
-        publisher,
-        "_build_local_frontend",
-        lambda: pytest.fail("ref validation must happen before frontend build or composition"),
-    )
-
-    with pytest.raises(publisher.PublishError, match="invalid example publication ref"):
-        publisher.publish(version=7, sha="abc123", target_repo="owner/template", token=None, dry_run=True)
-
-    assert calls == [["git", "check-ref-format", "refs/heads/examples/flappy_bird/.hidden"]]
 
 
 def test_prune_stale_example_refs_is_scoped_sorted_and_idempotent(monkeypatch: pytest.MonkeyPatch):
@@ -206,7 +183,6 @@ def test_failed_desired_example_push_does_not_start_cleanup(tmp_path: Path, monk
     monkeypatch.setattr(publisher, "BUILD_DIR", tmp_path / "build")
     monkeypatch.setattr(publisher, "list_envs", lambda: ["flappy_bird"])
     monkeypatch.setattr(publisher, "list_published_examples", lambda: [("flappy_bird", "hello")])
-    monkeypatch.setattr(publisher, "_validate_example_refs", lambda _: None)
     monkeypatch.setattr(publisher, "_build_local_frontend", lambda: tmp_path / "bundle")
     monkeypatch.setattr(publisher, "compose_template", lambda _: template)
     monkeypatch.setattr(publisher, "compose_example", lambda *_: example)

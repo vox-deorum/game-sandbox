@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import fnmatch
 import importlib
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from _paths import ENVIRONMENT_PACKAGES_DIR, ENVIRONMENTS_IGNORE_FILE, TemplateEnvironmentSpec
+
+_PUBLISHED_EXAMPLE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,11 @@ def _published_examples(package_dir: Path, module: Any) -> tuple[str, ...]:
             raise RuntimeError(
                 f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES entry {name!r} must name an "
                 "immediate examples child directory"
+            )
+        if _PUBLISHED_EXAMPLE_NAME.fullmatch(name) is None or ".." in name or name.endswith((".lock", ".")):
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES entry {name!r} must use a "
+                "safe Git branch component"
             )
         if name in seen:
             raise RuntimeError(

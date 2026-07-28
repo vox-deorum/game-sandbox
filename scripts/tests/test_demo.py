@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 # The dev scripts are run as top-level modules (scripts/ on sys.path), so mirror that here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -36,29 +38,43 @@ def test_backend_env_opts_into_loopback_auth_defaults():
     assert env["PUBLIC_ORIGIN"].startswith(("http://localhost", "http://127.0.0.1"))
 
 
-def test_launch_prints_both_example_accounts(capsys, monkeypatch):
+def test_run_backend_returns_child_exit_code_after_keyboard_interrupt(monkeypatch):
+    class FakeProcess:
+        wait_calls = 0
+
+        def wait(self):
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise KeyboardInterrupt
+            return 130
+
+    process = FakeProcess()
+    monkeypatch.setattr(demo.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    assert demo.run_backend() == 130
+    assert process.wait_calls == 2
+
+
+def test_launch_prints_both_example_accounts(capsys):
     # The single demo launch prints both the bootstrap admin (role admin) and the ordinary member
-    # ada-lovelace ("student", role user) so either can be signed in with at /login — there is no
-    # separate member-only mode anymore. Pretend the member fixture is present so no "missing" note
-    # is added and the check does not touch the filesystem.
-    monkeypatch.setattr(demo, "_member_account_present", lambda: True)
+    # ada-lovelace ("student", role user) so either can be signed in with at /login. The static
+    # recovery guidance points at the command that rebuilds a stale or incomplete fixture.
     demo._print_credentials()
     out = capsys.readouterr().out
     assert demo._ADMIN_EMAIL in out
     assert demo._ADMIN_PASSWORD in out
     assert demo._MEMBER_EMAIL in out
     assert demo._MEMBER_PASSWORD in out
-
-
-def test_launch_flags_a_missing_member_without_failing(capsys, monkeypatch):
-    # When the reused e2e database lacks the member fixture (a partial run), her credentials are
-    # still printed but flagged with the rebuild hint; the launch does not abort, since the admin
-    # demo is unaffected.
-    monkeypatch.setattr(demo, "_member_account_present", lambda: False)
-    demo._print_credentials()
-    out = capsys.readouterr().out
-    assert demo._MEMBER_EMAIL in out
     assert "--rerun-e2e" in out
+
+
+def test_rerun_help_explains_stale_schema_recovery(capsys):
+    with pytest.raises(SystemExit):
+        demo.main(["--help"])
+
+    out = capsys.readouterr().out
+    assert "stale-" in out
+    assert "schema SQLite startup errors" in out
 
 
 def test_member_credentials_match_the_e2e_fixture():

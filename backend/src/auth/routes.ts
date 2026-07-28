@@ -31,9 +31,11 @@ export interface AuthRouteDeps {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): Promise<void> {
-  // The configured public origin (`createAuth` always sets `baseURL`); the fallback is unreachable
-  // defensive code that only guards against a future auth built without one.
-  const baseUrl = deps.auth.options.baseURL ?? 'http://localhost'
+  // The configured public origin. `createAuth` always sets `baseURL`.
+  const baseUrl = deps.auth.options.baseURL
+  if (baseUrl === undefined) {
+    throw new Error('Better Auth requires a configured base URL')
+  }
   await app.register(async (scope) => {
     scope.addContentTypeParser(
       'application/json',

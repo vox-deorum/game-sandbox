@@ -12,7 +12,7 @@ e2e data and demo play never mutates the ``main/`` fixture that local e2e runs r
 
 Forcing a rerun: the e2e job runs only when the database is missing, so a successful run is
 reused indefinitely. Pass ``--rerun-e2e`` (``npm run demo -- --rerun-e2e``) to rebuild the
-fixture from a fresh frontend-e2e run regardless of any prior result — the existing database is
+fixture from a fresh frontend-e2e run regardless of any prior result. The existing database is
 discarded and the suite is run again, picking up source changes since it was last built.
 
 Sign-in, not a baked identity: the backend embeds Better Auth (Stage 12), so there is no more
@@ -26,28 +26,21 @@ credentials for two example accounts to sign in with:
 - The bootstrap admin (``admin@example.com`` / ``admin-dev-password``), so signing in at /login
   shows the full surface including the admin console.
 - A fixed ordinary member (the "student" view): the e2e fixture's ``ada-lovelace`` (the glider
-  owner — the most data-rich member: a submitted agent, an author rating prompt, watch recordings,
+  owner, the most data-rich member: a submitted agent, an author rating prompt, watch recordings,
   and competition placements). Signing in as them shows the member experience with real data behind
-  every page, and the admin console stays correctly locked — their Better Auth role is ``user``,
+  every page, and the admin console stays correctly locked. Their Better Auth role is ``user``,
   never promoted to ``admin``.
 
-Schema drift: the backend keeps a single flat migration that is *not* re-run against a database
-that already recorded it (see backend/src/storage/migrations.ts). So if the schema has advanced
-since the e2e database was built, the reused copy is stale and the backend throws a SQLite
-"no such column"/"no such table" error during startup, before it begins listening. When that
-happens we rebuild the e2e database from scratch (the only way to pick up a schema change is to
-recreate it) and start once more.
+If the backend reports a stale-schema SQLite error during startup, run
+``npm run demo -- --rerun-e2e`` to rebuild the fixture.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import os
 import shutil
-import sqlite3
 import subprocess
-import sys
 
 from _paths import (
     DEMO_DATA_DIR,
@@ -58,7 +51,7 @@ from _paths import (
 )
 from ci import _NPM, _run, job_frontend_e2e
 
-# The bootstrap admin the backend seeds under AUTH_ALLOW_INSECURE_DEFAULTS — the published
+# The bootstrap admin the backend seeds under AUTH_ALLOW_INSECURE_DEFAULTS uses the published
 # development defaults (DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD in backend/src/config.ts). Must match
 # frontend/e2e/support/auth.ts's ADMIN_EMAIL / ADMIN_PASSWORD, which the e2e suite's bootstrap
 # admin signs in with as well.
@@ -67,25 +60,13 @@ _ADMIN_PASSWORD = "admin-dev-password"
 
 # ada-lovelace, the ordinary member (the "student" view) whose credentials the demo prints
 # alongside the admin's: a fixed e2e fixture account chosen as the most data-rich non-admin so the
-# most member-facing features have real content — a submitted agent (My Agents / agent profile), an
+# most member-facing features have real content: a submitted agent (My Agents / agent profile), an
 # author rating prompt, watch recordings, and competition placements all attach to it (see
 # frontend/e2e/support/names.ts). The e2e suite's fixtures create this as a real Better Auth account
 # with role `user`, never promoted to `admin`, so it stays an ordinary member here too. Must match
 # frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')` and `MEMBER_PASSWORD`.
 _MEMBER_EMAIL = "ada-lovelace@e2e.local"
 _MEMBER_PASSWORD = "e2e-member-password"
-
-# The backend logs this once startup succeeds and it is accepting connections.
-_LISTENING_MARKER = "backend listening on"
-# A reused database with a stale schema surfaces as one of these SQLite errors during the
-# startup queries (seedOpenSeasons, run reconciliation, submission re-enqueue). Matched only
-# before the listening marker, so a healthy server's later logs cannot trip the rebuild.
-_SCHEMA_ERROR_MARKERS = (
-    "no such column",
-    "no such table",
-    "has no column named",
-    "no such index",
-)
 
 
 def ensure_e2e_db() -> None:
@@ -95,32 +76,6 @@ def ensure_e2e_db() -> None:
         job_frontend_e2e()
     if not E2E_MAIN_DB.exists():
         raise SystemExit("e2e run did not produce frontend/e2e/.data/main/sandbox.db")
-
-
-def _member_account_present() -> bool:
-    """Whether the e2e database holds the ordinary-member ("student") account.
-
-    The bootstrap admin is reseeded on every backend boot (ensureAdminUser), so it is always
-    reachable, but ``ada-lovelace`` exists only if the frontend-e2e run that built the database
-    included the spec that creates her (leaderboards-admin.spec.ts). A partial run — a single unrelated
-    spec left behind under ``.data/main/`` — leaves a schema-valid database with no member to sign in
-    as, which ``run_backend``'s stale-schema retry cannot detect, so her printed credentials would
-    fail the real /login for no visible reason. Probe the Better Auth ``user`` table up front so the
-    printout can flag that case with an explanation instead.
-    """
-    if not E2E_MAIN_DB.exists():
-        return False
-    try:
-        # contextlib.closing, not a bare `with conn`: sqlite3's context manager only scopes a
-        # transaction and never closes the connection, and the leaked handle would pin the e2e
-        # database for the demo's whole lifetime — on Windows that blocks the e2e launcher's wipe
-        # of frontend/e2e/.data/main/ (EBUSY) while a demo is running.
-        with contextlib.closing(sqlite3.connect(f"file:{E2E_MAIN_DB}?mode=ro", uri=True)) as conn:
-            row = conn.execute("SELECT 1 FROM user WHERE email = ? LIMIT 1", (_MEMBER_EMAIL,)).fetchone()
-        return row is not None
-    except sqlite3.Error:
-        # No `user` table (a corrupt or pre-Better-Auth database) counts as the member being absent.
-        return False
 
 
 def rebuild_e2e_db() -> None:
@@ -173,38 +128,27 @@ def _print_credentials() -> None:
     a second launch.
 
     Recreating the demo database on every launch (see prepare_demo_data) invalidates any Better
-    Auth session cookie from a previous run — the session row it pointed at is gone — so a real
-    sign-in through the login page is required every time, not just the first.
+    Auth session cookie from a previous run, so a real sign-in through the login page is required
+    every time, not just the first.
 
-    The member only exists when the frontend-e2e run that built the reused database created her (a
-    partial run may not); when she is absent her credentials are still printed but flagged, since the
-    admin demo is unaffected and hard-failing the whole launch over the member would be heavy-handed.
     """
-    member_missing = not _member_account_present()
-    member_note = (
-        "\n"
-        "        (not found in the reused e2e database — likely a partial run; recreate the\n"
-        "         member fixtures with `npm run demo -- --rerun-e2e`)"
-        if member_missing
-        else ""
-    )
     print(
         "\n"
         "==========================================================================\n"
         "  Open http://localhost:8080/, go to /login, and sign in with either\n"
         "  example account:\n"
         "\n"
-        "    admin — the full surface, including the admin console:\n"
+        "    admin: the full surface, including the admin console:\n"
         f"        email:    {_ADMIN_EMAIL}\n"
         f"        password: {_ADMIN_PASSWORD}\n"
         "\n"
-        "    student — an ordinary member (ada-lovelace, the data-rich non-admin):\n"
+        "    student: an ordinary member (ada-lovelace, the data-rich non-admin):\n"
         f"        email:    {_MEMBER_EMAIL}\n"
-        f"        password: {_MEMBER_PASSWORD}"
-        f"{member_note}\n"
+        f"        password: {_MEMBER_PASSWORD}\n"
         "\n"
-        "  This demo database was just (re)created, so any cookie from a previous\n"
-        "  run is no longer valid — a real sign-in is required.\n"
+        "  This demo database was just (re)created. Any cookie from a previous run\n"
+        "  is no longer valid, so a real sign-in is required. If the fixture is\n"
+        "  stale or incomplete, run `npm run demo -- --rerun-e2e`.\n"
         "==========================================================================\n",
         flush=True,
     )
@@ -235,43 +179,15 @@ def _demo_env() -> dict[str, str]:
     return env
 
 
-def run_backend() -> tuple[int, bool]:
-    """Run the backend against the demo copy, streaming its output.
-
-    Returns ``(returncode, schema_drift)`` where ``schema_drift`` is True only when the process
-    exited having logged a stale-schema SQLite error before it started listening — the signal to
-    rebuild the e2e database and retry.
-    """
+def run_backend() -> int:
+    """Run the backend against the demo copy."""
     cmd = [_NPM, "run", "start", "--workspace", "@game-sandbox/backend"]
     print(f"$ {' '.join(cmd)}  (PORT=8080 DATA_DIR={DEMO_DATA_DIR})", flush=True)
-    # subprocess.Popen (not _run): we tee the child's output to watch startup for the schema
-    # signature while still showing the live server log. stderr is merged so console.error is seen.
-    proc = subprocess.Popen(
-        cmd,
-        cwd=REPO_ROOT,
-        env=_demo_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    listening = False
-    schema_error = False
-    assert proc.stdout is not None
+    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, env=_demo_env())
     try:
-        for line in proc.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            lowered = line.lower()
-            if _LISTENING_MARKER in lowered:
-                listening = True
-            elif not listening and any(m in lowered for m in _SCHEMA_ERROR_MARKERS):
-                schema_error = True
+        return proc.wait()
     except KeyboardInterrupt:
-        # Ctrl-C reaches the child too; let it shut down gracefully and report its own code.
-        pass
-    returncode = proc.wait()
-    return returncode, (schema_error and not listening)
+        return proc.wait()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -283,7 +199,8 @@ def main(argv: list[str] | None = None) -> None:
             "Force a fresh frontend-e2e run before starting, rebuilding the fixture database "
             "from scratch even when one already exists. By default an existing e2e database is "
             "reused as-is; with this flag the prior database is discarded and the suite is run "
-            "again regardless of any prior result. Invoke as `npm run demo -- --rerun-e2e`."
+            "again regardless of any prior result. Use it to recover from stale-schema SQLite "
+            "startup errors. Invoke as `npm run demo -- --rerun-e2e`."
         ),
     )
     args = parser.parse_args(argv)
@@ -301,21 +218,7 @@ def main(argv: list[str] | None = None) -> None:
     prepare_demo_data()
 
     _print_credentials()
-    returncode, schema_drift = run_backend()
-    if schema_drift:
-        print(
-            "demo backend hit a stale-schema SQLite error -> rebuilding the e2e DB from scratch",
-            flush=True,
-        )
-        # The frontend bundle is independent of the database (identity comes from a real sign-in,
-        # not anything baked in), so the build above still stands; only the e2e data needs
-        # recreating.
-        rebuild_e2e_db()
-        prepare_demo_data()
-        _print_credentials()
-        returncode, _ = run_backend()
-
-    raise SystemExit(returncode)
+    raise SystemExit(run_backend())
 
 
 if __name__ == "__main__":

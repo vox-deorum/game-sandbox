@@ -52,8 +52,6 @@ const CURATED_ORDER = ['getting-started', 'environments', 'agent-interface', 'su
 const SAFE_ENVIRONMENT_ID = /^[a-z0-9]+(?:_[a-z0-9]+)*$/
 const RESERVED_ENVIRONMENT_SLUGS = new Set(['agents', 'index', 'readme'])
 const MARKDOWN_LINK = /(?<!!)\]\(([^()\n]+)\)/g
-const MARKDOWN_IMAGE = /!\[[^\]\n]*\]\(([^()\n]+)\)/g
-const REFERENCE_DEFINITION = /^\s{0,3}\[[^\]\n]+\]:\s*(\S.*)$/gm
 export const ENVIRONMENT_CATALOG_PATH = 'students/environments/index.md'
 export const ENVIRONMENT_CATALOG_MARKER =
   '[environment-guide-catalog]: # "Populated dynamically from canonical environment guides."'
@@ -155,22 +153,18 @@ function docsRelativeTarget(
   canonicalDocsDir: string,
   source: string,
   target: string,
-): string {
+): string | null {
   if (
     [...target].some((character) => /\s/.test(character)) ||
     target.startsWith('<') ||
     target.includes('\\')
   ) {
-    throw new DocsEnvironmentGuideError(
-      `unsupported local link syntax ${JSON.stringify(target)} in ${source}; use a plain relative .md link`,
-    )
+    return null
   }
   const hash = target.indexOf('#')
   const pathText = hash === -1 ? target : target.slice(0, hash)
   if (isAbsolute(pathText) || pathText.includes('?') || !pathText.endsWith('.md')) {
-    throw new DocsEnvironmentGuideError(
-      `unsupported local link ${JSON.stringify(target)} in ${source}; use a plain relative documentation .md link`,
-    )
+    return null
   }
   const candidate = resolve(dirname(source), pathText)
   const relativeTarget = relative(resolve(canonicalDocsDir), candidate)
@@ -180,14 +174,10 @@ function docsRelativeTarget(
     relativeTarget.startsWith(`..${sep}`) ||
     isAbsolute(relativeTarget)
   ) {
-    throw new DocsEnvironmentGuideError(
-      `local link ${JSON.stringify(target)} in ${source} must resolve inside ${canonicalDocsDir}`,
-    )
+    return null
   }
   if (!existsSync(resolve(docsDir, relativeTarget))) {
-    throw new DocsEnvironmentGuideError(
-      `local documentation link ${JSON.stringify(target)} in ${source} does not exist`,
-    )
+    return null
   }
   const docsTarget = relativeTarget.split(sep).join('/')
   const fragment = hash === -1 ? '' : target.slice(hash)
@@ -201,26 +191,10 @@ function renderEnvironmentGuide(
   virtualPath: string,
 ): string {
   const markdown = readFileSync(source, 'utf8')
-  for (const match of markdown.matchAll(MARKDOWN_IMAGE)) {
-    const target = match[1]
-    if (target !== undefined && !isExternalOrFragment(target)) {
-      throw new DocsEnvironmentGuideError(
-        `local image ${JSON.stringify(target)} in ${source} is unsupported; use an externally hosted image`,
-      )
-    }
-  }
-  for (const match of markdown.matchAll(REFERENCE_DEFINITION)) {
-    const target = match[1]?.split(/\s+/, 1)[0]?.replace(/^<|>$/g, '')
-    if (target !== undefined && !isExternalOrFragment(target)) {
-      throw new DocsEnvironmentGuideError(
-        `local reference-style link ${JSON.stringify(target)} in ${source} is unsupported; use an inline relative .md link`,
-      )
-    }
-  }
-
   return markdown.replace(MARKDOWN_LINK, (original, rawTarget: string) => {
     if (isExternalOrFragment(rawTarget)) return original
     const target = docsRelativeTarget(docsDir, canonicalDocsDir, source, rawTarget)
+    if (target === null) return original
     const hash = target.indexOf('#')
     const docsPath = hash === -1 ? target : target.slice(0, hash)
     const fragment = hash === -1 ? '' : target.slice(hash)
@@ -231,8 +205,8 @@ function renderEnvironmentGuide(
 
 /**
  * Discover every immediate environment directory that owns `environment.md`. Discovery validates
- * all names, virtual paths, and guide links before returning any page, so a bad new environment
- * cannot leave only part of the documentation tree visible.
+ * all names and virtual paths before returning any page, so a bad new environment cannot leave only
+ * part of the documentation tree visible. Resolvable inline guide links are rebased to virtual paths.
  */
 function discoverEnvironmentGuides(docsDir: string, environmentsDir: string): EnvironmentGuide[] {
   let entries: import('node:fs').Dirent[]
@@ -280,17 +254,7 @@ function renderEnvironmentCatalog(docsDir: string, guides: EnvironmentGuide[]): 
     )
   }
   const entries = guides.map((guide) => {
-    const title = firstHeading(guide.content)
-    if (title === null) {
-      throw new DocsEnvironmentGuideError(
-        `environment guide at ${guide.source} must have an ATX H1 heading`,
-      )
-    }
-    if (title.includes('[') || title.includes(']')) {
-      throw new DocsEnvironmentGuideError(
-        `environment guide heading ${JSON.stringify(title)} in ${guide.source} cannot contain brackets`,
-      )
-    }
+    const title = titleForMarkdown(guide.content, guide.envId)
     return `- [${title}](${posix.basename(guide.path)})`
   })
   const listing = entries.length === 0 ? '_No environments are available._' : entries.join('\n')

@@ -9,14 +9,8 @@ export function sandboxResourcesForPlayers(
   resources: SandboxDefaults,
   playerCount: number,
 ): SandboxDefaults {
-  if (!Number.isSafeInteger(playerCount) || playerCount < 1) {
-    throw new Error(`player count must be a positive safe integer, got ${playerCount}`)
-  }
   const increment = resources.memoryPerPlayerMb * (playerCount - 1)
   const memoryMb = resources.memoryMb + increment
-  if (!Number.isSafeInteger(increment) || !Number.isSafeInteger(memoryMb) || memoryMb <= 0) {
-    throw new Error('sandbox memory quota is not a positive safe integer')
-  }
   return { ...resources, memoryMb }
 }
 

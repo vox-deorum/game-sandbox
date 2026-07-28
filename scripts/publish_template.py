@@ -150,21 +150,6 @@ def _example_ref(env: str, name: str) -> str:
     return f"refs/heads/examples/{env}/{name}"
 
 
-def _validate_example_refs(examples: list[tuple[str, str]]) -> None:
-    """Reject invalid example refs before composing or changing any remote branch."""
-    for env, name in examples:
-        ref = _example_ref(env, name)
-        result = subprocess.run(
-            ["git", "check-ref-format", ref],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode:
-            raise PublishError(f"invalid example publication ref {ref!r}")
-
-
 def _remote_example_refs(remote: str) -> list[str]:
     """Return existing example branch refs, without inspecting any other remote branch."""
     result = subprocess.run(
@@ -202,7 +187,6 @@ def publish(
             f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; found {envs or '(none)'}."
         )
     examples = list_published_examples()
-    _validate_example_refs(examples)
     local_bundle = _build_local_frontend()
     templates = {env: compose_template(env) for env in envs}
     composed = {(env, name): compose_example(env, name) for env, name in examples}

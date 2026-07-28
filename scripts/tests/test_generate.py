@@ -154,6 +154,9 @@ def test_published_example_declarations_require_valid_immediate_example_director
         (SimpleNamespace(PUBLISHED_EXAMPLES=["known"]), "must be a tuple"),
         (SimpleNamespace(PUBLISHED_EXAMPLES=("known", "known")), "duplicate"),
         (SimpleNamespace(PUBLISHED_EXAMPLES=("known/child",)), "immediate"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("a..b",)), "safe Git branch"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("a.lock",)), "safe Git branch"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("trailing.",)), "safe Git branch"),
         (SimpleNamespace(PUBLISHED_EXAMPLES=("missing",)), "has no directory"),
         (SimpleNamespace(PUBLISHED_EXAMPLES=(" ",)), "nonblank"),
     ]

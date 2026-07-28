@@ -95,17 +95,12 @@ async function resyncCredential(
     await linkCredential(ctx, BOOTSTRAP_ADMIN_ID, await ctx.password.hash(password))
     return false
   }
-  // A credential row with no stored hash should never occur — Better Auth only writes a credential
-  // account together with a password — but guard it by updating the existing row in place rather than
-  // linking a second one (`linkAccount` inserts unconditionally, which would leave two credential
-  // rows for one user). Nothing to rotate.
-  if (credential.password == null) {
-    await ctx.internalAdapter.updatePassword(BOOTSTRAP_ADMIN_ID, await ctx.password.hash(password))
-    return false
-  }
   // Salted hashes never compare equal, so detect an unchanged password by verifying it against the
   // stored hash rather than re-hashing and comparing strings.
-  if (await ctx.password.verify({ hash: credential.password, password })) {
+  if (
+    credential.password != null &&
+    (await ctx.password.verify({ hash: credential.password, password }))
+  ) {
     return false
   }
   await ctx.internalAdapter.updatePassword(BOOTSTRAP_ADMIN_ID, await ctx.password.hash(password))

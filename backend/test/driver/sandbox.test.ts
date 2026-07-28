@@ -12,14 +12,4 @@ describe('sandboxResourcesForPlayers', () => {
   ])('uses %i MB for %i players', (players, memoryMb) => {
     expect(sandboxResourcesForPlayers(base, players).memoryMb).toBe(memoryMb)
   })
-
-  it('rejects invalid and overflowing quotas', () => {
-    expect(() => sandboxResourcesForPlayers(base, 0)).toThrow(/positive safe integer/)
-    expect(() =>
-      sandboxResourcesForPlayers(
-        { ...base, memoryMb: Number.MAX_SAFE_INTEGER, memoryPerPlayerMb: 1 },
-        2,
-      ),
-    ).toThrow(/positive safe integer/)
-  })
 })

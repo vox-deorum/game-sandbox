@@ -10,7 +10,7 @@ Put the starting `agent.py`, `README.md`, student helper modules, and pin tests 
 
 Put each worked example overlay in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, README, tests, and optional `requirements.extra.txt`.
 
-Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when the environment has no examples to publish. Each name must identify an immediate child directory under that environment's `examples/` directory. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
+Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when the environment has no examples to publish. Each name must identify an immediate child directory under that environment's `examples/` directory. A name starts with a lowercase letter or digit, contains only lowercase letters, digits, dots, underscores, and hyphens, excludes `..`, and ends in neither a dot nor `.lock`. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
 
 The top-level `templates/` directory contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 

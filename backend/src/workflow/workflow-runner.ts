@@ -358,8 +358,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         }
         preparedGames.push({ game, seats })
       }
-      // Derived here rather than per game so an unusable bound refuses the run instead of throwing
-      // after a container is already live, which would strand that game at `running`.
+      // Derive the watchdog once per run so every game uses the same effective bound.
       const watchdogMs = gameWatchdogMs(
         meta,
         config.overrides,
@@ -1137,16 +1136,7 @@ export function gameWatchdogMs(
   graceMs: number,
 ): number {
   const episodeLimit = overrides?.episode_timeout_ms ?? meta.episode_limit_ms
-  const watchdogMs = episodeLimit * playerCount + graceMs
-  if (
-    !Number.isSafeInteger(playerCount) ||
-    playerCount < 1 ||
-    !Number.isSafeInteger(watchdogMs) ||
-    watchdogMs <= 0
-  ) {
-    throw new Error('workflow watchdog is not a positive safe integer')
-  }
-  return watchdogMs
+  return episodeLimit * playerCount + graceMs
 }
 
 /**

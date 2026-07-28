@@ -105,7 +105,7 @@ Change the workflow chargeable-wall-clock watchdog to:
 effective episode limit per player * resolved player count + workflow watchdog grace
 ```
 
-The effective episode limit is the frozen season override when present, otherwise `EnvironmentMeta.episode_limit_ms`. Use checked safe-integer arithmetic and refuse the run on an overflow or nonpositive derived value. Every term is run-level, so derive the bound once when the run starts and pass it to each game. Deriving it per game would place the check after a container is already live, where a rejection strands that game mid-flight. The per-player harness episode and step budgets remain unchanged. `SESSION_MAX_DURATION_MS` remains the fixed live-session wall-clock backstop for browser sessions, including time spent waiting for a human, and is not presented as a compute guarantee.
+The effective episode limit is the frozen season override when present, otherwise `EnvironmentMeta.episode_limit_ms`. The calculation uses that published value, the resolved player count, and the runner's grace directly. Every term is run-level, so derive the bound once when the run starts and pass it to each game. The per-player harness episode and step budgets remain unchanged. `SESSION_MAX_DURATION_MS` remains the fixed live-session wall-clock backstop for browser sessions, including time spent waiting for a human, and is not presented as a compute guarantee.
 
 Keep this scaling in small pure helpers covered independently from Docker launch. The launch tests assert the exact profile and watchdog values for one-player and multi-player layouts.
 
@@ -147,7 +147,7 @@ Pure reducer tests pin:
 
 Storage and board tests assert one row per seat, correct `seat_index`, no double counting for a wide submission, and unchanged singleton boards. Recording tests round-trip distinct `players` and `seats` objects, including mixed human and companion attribution, verify the materialized plan key and the player count derived from the seat map, and reject a header missing either field. Backend and frontend replay tests distinguish a decisive partnership winner from a true tie and render the player membership detail.
 
-Resource tests cover the exact derived memory for one, two, and four players, including that a one-player session matches today's value exactly, plus watchdog arithmetic, season episode-limit overrides, safe-integer overflow rejection, and the unchanged live session backstop.
+Resource tests cover the exact derived memory for one, two, and four players, including that a one-player session matches today's value exactly, plus watchdog arithmetic, season episode-limit overrides, and the unchanged live session backstop.
 
 ## Done when
 

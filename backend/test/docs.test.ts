@@ -191,6 +191,32 @@ describe('docs module', () => {
       expect(page?.content).not.toContain('../../docs/')
     })
 
+    it('leaves an unresolvable canonical link unchanged', () => {
+      writeFileSync(
+        join(environmentsDir, 'flappy_bird', 'environment.md'),
+        '# Flappy Bird\n\n[Missing guide](../../docs/students/missing.md)\n',
+      )
+
+      const page = readDocsPage(docsDir, environmentsDir, 'students/environments/flappy-bird.md')
+      expect(page?.content).toContain('[Missing guide](../../docs/students/missing.md)')
+    })
+
+    it('uses the environment id as the title when a guide has no H1', () => {
+      const source = join(environmentsDir, 'new_game')
+      mkdirSync(source)
+      writeFileSync(join(source, 'environment.md'), 'Play a new game.\n')
+
+      const section = buildDocsManifest(docsDir, environmentsDir).pages.find(
+        (page) => page.path === 'students/environments/index.md',
+      )
+      const catalog = readDocsPage(docsDir, environmentsDir, 'students/environments/index.md')
+      expect(section?.children).toContainEqual({
+        path: 'students/environments/new-game.md',
+        title: 'New game',
+      })
+      expect(catalog?.content).toContain('- [New game](new-game.md)')
+    })
+
     it('rejects an environment catalog without the dynamic marker', () => {
       writeFileSync(
         join(docsDir, 'students', 'environments', 'index.md'),
