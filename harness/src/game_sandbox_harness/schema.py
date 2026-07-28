@@ -21,6 +21,7 @@ SCHEMA_VERSION = 1
 
 _STEP_STATE_FILE = "step-state.schema.json"
 _RECORDING_HEADER_FILE = "recording-header.schema.json"
+_ENVIRONMENT_META_FILE = "environment-meta.schema.json"
 
 
 class SchemaValidationError(ValueError):
@@ -42,6 +43,7 @@ def _build_validator(filename: str) -> Draft202012Validator:
 # profile, fastjsonschema can replace the implementation behind these same functions.
 _step_validator = _build_validator(_STEP_STATE_FILE)
 _header_validator = _build_validator(_RECORDING_HEADER_FILE)
+_environment_meta_validator = _build_validator(_ENVIRONMENT_META_FILE)
 
 
 def _validate(validator: Draft202012Validator, payload: Any, label: str) -> None:
@@ -60,6 +62,18 @@ def _validate(validator: Draft202012Validator, payload: Any, label: str) -> None
 def validate_step(payload: Any) -> None:
     """Validate a per-step state object, raising :class:`SchemaValidationError` on failure."""
     _validate(_step_validator, payload, "step state")
+
+
+def validate_environment_meta(payload: Any) -> None:
+    """Validate one environment's public metadata, raising :class:`SchemaValidationError` on failure.
+
+    This is a conformance check beside :meth:`EnvironmentMeta.__post_init__` in
+    ``environment.py``, not a replacement for it. The dataclass gives environment authors
+    immediate, readable, ``env_id``-specific errors at import time; this validates the same
+    ``to_json()`` shape against the schema TypeScript and the frontend also validate against, so a
+    drift between the two languages' rules shows up as a failure here rather than silently.
+    """
+    _validate(_environment_meta_validator, payload, "environment metadata")
 
 
 def validate_header(payload: Any) -> None:

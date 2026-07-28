@@ -1,21 +1,21 @@
 /**
  * Typed guards and parsers over the Game Sandbox state schema.
  *
- * Reads need no hand-written casts: each parser narrows through an Ajv validate-function
- * type guard generated from the same canonical schema the Python harness validates
- * against. The generated `types.ts` is the structural shape; Ajv is the runtime check.
+ * Reads need no hand-written casts: each parser narrows through the zod schema that is the canonical
+ * definition of the contract. `schema/*.schema.json` is generated from those same schemas, and the
+ * Python harness validates against the generated copy, so both sides answer to one definition.
  */
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js'
-import addFormats from 'ajv-formats'
+import type { z } from 'zod'
 
-import type { RecordingHeader, StepState } from './generated/types.js'
+import { type RecordingHeader, RecordingHeaderSchema } from './schemas/recording-header.js'
+import { type StepState, StepStateSchema } from './schemas/step-state.js'
 
+// parseCommand is Node-only (it imports zod), so it lives in ./command.js rather than the
+// dependency-free ./protocol.js the browser imports directly; Command and CommandParse follow it.
+export { type Command, type CommandParse, parseCommand } from './command.js'
 // The shared wire shapes the browser also speaks. These modules are dependency-free (no Node
-// built-ins, no Ajv) so the frontend can import them directly through the subpath exports; the
-// barrel re-exports them for the Node backend, which already pulls in the Ajv-backed readers below.
+// built-ins, no zod) so the frontend can import them directly through the subpath exports; the
+// barrel re-exports them for the Node backend, which already pulls in the zod-backed readers below.
 export {
   type BuiltinAgent,
   type EnvironmentLayout,
@@ -23,10 +23,6 @@ export {
   type EnvParameter,
   type EnvParameterChoice,
   type EnvParameterType,
-  isBuiltinAgent,
-  isEnvironmentMeta,
-  isEnvParameter,
-  isEnvParameterChoice,
   type ParameterIssue,
   type ParameterValidation,
   type ParameterValue,
@@ -42,59 +38,65 @@ export {
   validateCompleteParameters,
   validateParameterValue,
 } from './environment.js'
-export type { AgentStep, Message, RecordingHeader, StepState } from './generated/types.js'
 export type { LlmModelUsage, LlmUsageByModel, ModelAlias } from './llm.js'
 export {
-  type Command,
-  type CommandParse,
   classifyOutbound,
   type OutboundLine,
-  parseCommand,
   RESULT_KIND,
   SESSION_KIND,
   serializeCommand,
   sessionEnvelope,
 } from './protocol.js'
+// The structural guards are zod-backed, so they live in ./schemas/environment.js rather than the
+// dependency-free ./environment.js above; re-exporting a value from there would pull zod into that
+// module's graph. The barrel already imports zod for the readers below, so this adds nothing new.
+export {
+  isBuiltinAgent,
+  isEnvironmentMeta,
+  isEnvParameter,
+  isEnvParameterChoice,
+} from './schemas/environment.js'
+export type { RecordingHeader } from './schemas/recording-header.js'
+export type {
+  AgentStep,
+  ChatOptions,
+  Message,
+  StepState,
+  StepTiming,
+} from './schemas/step-state.js'
 export { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from './seasons.js'
 // The code-point counter for the messaging cap, shared by the relay pre-gate and the panel counter.
 export { codePointLength } from './text.js'
-// The schema version lives in a dependency-free module so the browser can import it without Ajv.
+// The schema version lives in a dependency-free module so the browser can import it without zod.
 export { SCHEMA_VERSION } from './version.js'
 
 /** Thrown when a payload does not match the schema, or a recording is incoherent. */
 export class SchemaValidationError extends Error {}
 
-// The canonical schema lives at the repo's schema/ directory, two levels above src/.
-const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-function loadSchema(filename: string): object {
-  return JSON.parse(readFileSync(join(SCHEMA_DIR, filename), 'utf-8'))
-}
-
-// One Ajv instance per process, formats added once, validators compiled once.
-const ajv = new Ajv2020({ allErrors: true, strict: false })
-addFormats(ajv)
-
-const validateStepState = ajv.compile<StepState>(loadSchema('step-state.schema.json'))
-const validateHeader = ajv.compile<RecordingHeader>(loadSchema('recording-header.schema.json'))
-
-function narrow<T>(validate: ValidateFunction<T>, value: unknown, label: string): T {
-  if (validate(value)) {
-    return value
+/**
+ * Narrow a value through a schema, reporting the first issue in the same shape the readers have
+ * always used: the JSON-pointer-style location of the offending value, then what was wrong with it.
+ */
+function narrow<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
+  const result = schema.safeParse(value)
+  if (result.success) {
+    return result.data
   }
-  const first = validate.errors?.[0]
-  const where = first?.instancePath || '<root>'
+  const first = result.error.issues[0]
+  const where =
+    first === undefined || first.path.length === 0 ? '<root>' : `/${first.path.join('/')}`
   const message = first?.message ?? 'did not match schema'
   throw new SchemaValidationError(`${label} invalid at ${where}: ${message}`)
 }
 
 /** Parse and validate one per-step state object, narrowing to {@link StepState}. */
 export function parseStepState(value: unknown): StepState {
-  return narrow(validateStepState, value, 'step state')
+  return narrow(StepStateSchema, value, 'step state')
 }
 
 /** Parse and validate one recording header, narrowing to {@link RecordingHeader}. */
 export function parseHeader(value: unknown): RecordingHeader {
-  const header = narrow(validateHeader, value, 'recording header')
+  const header = narrow(RecordingHeaderSchema, value, 'recording header')
   const attributedPlayers = Object.keys(header.players)
   const seatedPlayers = Object.values(header.seats).flat()
   if (

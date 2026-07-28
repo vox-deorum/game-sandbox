@@ -55,13 +55,16 @@ export function isBlindRecording(
 /**
  * Mask a header's `players` for a blind viewer: a non-own human player becomes the neutral "Human", a
  * non-own submitted agent keeps its opaque `submission_id` but loses the owner `user` id and its
- * "<owner>'s agent" label, and the built-in Naive agent (no owner) is left as-is. The viewer's own player
- * (matched by the stable `user` id) is returned untouched so they can still recognize it.
+ * "<owner>'s agent" label, and a built-in agent (which has no owner) is left as-is. The viewer's own
+ * player (matched by the stable `user` id) is returned untouched so they can still recognize it.
  */
 export function maskPlayers(players: Players, callerId: string | undefined): Players {
   const masked: Players = {}
   for (const [playerId, player] of Object.entries(players)) {
-    if ('user' in player && player.user === callerId) {
+    // The `user !== undefined` check is load-bearing: an anonymous caller has no id, and matching
+    // an absent owner against it would hand back the unmasked row. `frontend/src/lib/attribution.ts`
+    // makes the same check, and the two must compose to the same result.
+    if ('user' in player && player.user !== undefined && player.user === callerId) {
       masked[playerId] = player
     } else if (player.kind === 'human') {
       masked[playerId] = { kind: 'human', label: 'Human' }

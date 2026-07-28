@@ -7,11 +7,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# The canonical JSON Schema files are generated from the zod definitions under
+# schema/ts/src/schemas/. They are outputs, not inputs: edit the zod source and regenerate.
 SCHEMA_DIR = REPO_ROOT / "schema"
-SCHEMA_FILES = ("step-state.schema.json", "recording-header.schema.json")
+SCHEMA_FILES = ("step-state.schema.json", "recording-header.schema.json", "environment-meta.schema.json")
 
-TS_GENERATED_DIR = SCHEMA_DIR / "ts" / "src" / "generated"
-TS_GENERATED_TYPES = TS_GENERATED_DIR / "types.ts"
+SCHEMA_TS_DIR = SCHEMA_DIR / "ts"
 
 HARNESS_SCHEMA_DATA = REPO_ROOT / "harness" / "src" / "game_sandbox_harness" / "schema_data"
 FIXTURES_DIR = SCHEMA_DIR / "fixtures"

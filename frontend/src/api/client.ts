@@ -12,11 +12,7 @@
 
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
-import {
-  type EnvironmentMeta,
-  isEnvironmentMeta,
-  type ParameterValue,
-} from '@game-sandbox/schema/environment'
+import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 import type {
   ModelAlias,
   LlmModelUsage as SchemaLlmModelUsage,
@@ -200,10 +196,16 @@ export type StartSessionResult =
 /** The environment metadata that drives the Home cards and the Environment page. */
 export async function getEnvironments(): Promise<EnvironmentMeta[]> {
   const data = await json(await request('/environments'), 'GET /environments')
-  if (!Array.isArray(data) || !data.every(isEnvironmentMeta)) {
+  // The catalog is this backend's own response, already validated at startup by
+  // EnvironmentRegistry.parse (backend/src/environments.ts). The frontend trusts the backend
+  // everywhere else (see the comment in frontend/src/replay/parse.ts), so this keeps only the
+  // cheap array-shape sanity check, which guards a real failure mode (an error body or an
+  // unexpected envelope landing here instead of the list), rather than re-running the full
+  // per-entry structural guard against data this process did not need to distrust.
+  if (!Array.isArray(data)) {
     throw new ApiError(200, 'environment list has an unexpected shape')
   }
-  return data
+  return data as EnvironmentMeta[]
 }
 
 /** Load the season id and complete resolved parameter map that a start request must echo. */

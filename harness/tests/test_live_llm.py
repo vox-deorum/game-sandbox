@@ -459,6 +459,18 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
         store=store,
         recording_id="model-wait",
         clock=clock,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     steps = list(store.open("model-wait").steps())
@@ -603,6 +615,13 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Pa
         recording_id="separate-hooks",
         clock=clock,
         cpu_clock_ms=lambda: 0,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     timing = next(store.open("separate-hooks").steps())["agents"]["player_0"]["timing"]
@@ -669,6 +688,13 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
         recording_id="failed-snapshot",
         clock=clock,
         cpu_clock_ms=lambda: 0,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     timing = next(store.open("failed-snapshot").steps())["agents"]["player_0"]["timing"]
@@ -738,6 +764,13 @@ def test_proxy_discount_fails_closed_and_is_nonnegative(
         recording_id="proxy-discount",
         clock=clock,
         cpu_clock_ms=lambda: 0,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     timing = next(store.open("proxy-discount").steps())["agents"]["player_0"]["timing"]
@@ -799,6 +832,13 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
         clock=clock,
         cpu_clock_ms=lambda: next(cpu_snapshots),
         episode_limit_ms=50,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     step = next(store.open("overlapping-cpu").steps())

@@ -3,8 +3,13 @@
  * mapping (used wherever an {@link AgentRef} is stored or grouped — results, placements, ratings)
  * and the unique-constraint detector the idempotent/one-open invariants lean on.
  */
+import { agentRefKey } from '@game-sandbox/schema/board'
+
 import { MODEL_ALIASES } from '../../llm/types.js'
 import { type AgentColumns, type AgentRef, isAgentRef, type LlmUsageByModel } from '../schema.js'
+
+/** The stable `kind:id` key for an agent reference; the one definition, shared with the browser. */
+export { agentRefKey }
 
 const LLM_USAGE_METRICS = [
   'calls',
@@ -150,11 +155,6 @@ export function agentRefFromColumns(row: AgentColumns): AgentRef {
 /** A stable grouping key for an agent across result/placement/rating rows. */
 export function agentKey(row: AgentColumns): string {
   return agentRefKey(agentRefFromColumns(row))
-}
-
-/** The same stable key from an {@link AgentRef}, for deterministic ordering of board rows. */
-export function agentRefKey(agent: AgentRef): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
 }
 
 /**

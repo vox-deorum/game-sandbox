@@ -72,7 +72,7 @@ describe('api client', () => {
     })
   })
 
-  it('returns validated environments and sends no identity header (same-origin cookie)', async () => {
+  it('returns the environment list and sends no identity header (same-origin cookie)', async () => {
     const fetchMock = stubFetch(async () => jsonResponse([META]))
     const envs = await getEnvironments()
     expect(envs).toEqual([META])
@@ -103,8 +103,11 @@ describe('api client', () => {
     expect(adminSeasonDownloadUrl('iter-1')).toBe('/api/admin/seasons/iter-1/submissions/download')
   })
 
-  it('throws ApiError when the environment list has the wrong shape', async () => {
-    stubFetch(async () => jsonResponse([{ env_id: 'x' }]))
+  it('throws ApiError when the environment list response is not an array', async () => {
+    // getEnvironments no longer revalidates each entry's shape (the backend already validated the
+    // catalog at startup via EnvironmentRegistry.parse), so this only covers the one check that
+    // remains: the response envelope itself must be an array.
+    stubFetch(async () => jsonResponse({ not: 'an array' }))
     await expect(getEnvironments()).rejects.toBeInstanceOf(ApiError)
   })
 

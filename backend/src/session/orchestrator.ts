@@ -671,10 +671,10 @@ export class Orchestrator {
 
   /**
    * Build the session config the container reads from argv from the validated seat assignments. Each
-   * player maps to its seat: a connected human (driven by the transport), the built-in Naive
-   * baseline, or a submitted agent carrying the overlay path the harness loads its code from. The
-   * shared seam produces the `player_bindings`/`players` wire blocks the headless workflow runner
-   * builds the same way.
+   * player maps to its seat: a connected human (driven by the transport), a built-in agent, or a
+   * submitted agent carrying the overlay path the harness loads its code from. The shared seam
+   * produces the `player_bindings`/`players` wire blocks the headless workflow runner builds the same
+   * way.
    * Environment facts (pace, limits, the default human timeout) live in the in-image registry, so only
    * the overrides travel here.
    */

@@ -9,12 +9,13 @@
  */
 
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
+import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 
 import { enrichAgentRef } from './auth/users.js'
 import { optionalField } from './optional-field.js'
 import {
   type AgentRef,
-  isAgentRef,
+  AgentRefArraySchema,
   type PublicSeason,
   type Season,
   type SeasonRun,
@@ -35,10 +36,11 @@ const snapshotCache = new WeakMap<SeasonRun, AgentRef[]>()
 /** Decode and validate one persisted array of canonical agent references. */
 function decodeAgentRefs(text: string, field: string): AgentRef[] {
   const parsed: unknown = JSON.parse(text)
-  if (!Array.isArray(parsed) || !parsed.every(isAgentRef)) {
+  const result = AgentRefArraySchema.safeParse(parsed)
+  if (!result.success) {
     throw new Error(`stored ${field} must be an array of valid agent references`)
   }
-  return parsed
+  return result.data
 }
 
 /** Decode a scheduled game's `seats` JSON once per row object. */
@@ -113,12 +115,16 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
 /** A scheduled game with its `seats` JSON decoded into resolved {@link BoardAgentRef}s. */
 export type RunGameView = Omit<SeasonRunGame, 'seats'> & { seats: BoardAgentRef[] }
 
-/** Decode a scheduled game's `seats` JSON for the wire, attaching owner display names when resolved. */
+/**
+ * Decode a scheduled game's `seats` JSON for the wire, attaching owner display names when resolved
+ * and, when the caller passes the game's environment metadata, each built-in seat's declared label.
+ */
 export function runGameView(
   game: SeasonRunGame,
   names: ReadonlyMap<string, string> = NO_NAMES,
+  meta?: EnvironmentMeta,
 ): RunGameView {
-  return { ...game, seats: decodeSeats(game).map((seat) => enrichAgentRef(seat, names)) }
+  return { ...game, seats: decodeSeats(game).map((seat) => enrichAgentRef(seat, names, meta)) }
 }
 
 /** A run with its frozen snapshots decoded and its scheduled games attached, for the admin status view. */
@@ -130,18 +136,22 @@ export type RunView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'>
   games: RunGameView[]
 }
 
-/** Decode a run's snapshots and attach its (already-ordered) scheduled games. */
+/**
+ * Decode a run's snapshots and attach its (already-ordered) scheduled games. `meta`, when passed,
+ * carries the run's environment's declared built-in labels through to every enriched agent ref.
+ */
 export function runView(
   run: SeasonRun,
   games: SeasonRunGame[],
   names: ReadonlyMap<string, string> = NO_NAMES,
+  meta?: EnvironmentMeta,
 ): RunView {
   return {
     ...run,
     ...optionalField('requested_by_name', names.get(run.requested_by)),
     config_snapshot: decodeSeasonConfig(run.config_snapshot),
-    submission_snapshot: decodeSnapshot(run).map((ref) => enrichAgentRef(ref, names)),
-    games: games.map((game) => runGameView(game, names)),
+    submission_snapshot: decodeSnapshot(run).map((ref) => enrichAgentRef(ref, names, meta)),
+    games: games.map((game) => runGameView(game, names, meta)),
   }
 }
 

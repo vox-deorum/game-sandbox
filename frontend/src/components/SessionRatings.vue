@@ -15,6 +15,7 @@
   expanding downward reveal, making the new post-session action visible above the canvas.
 -->
 <script setup lang="ts">
+import { agentRefKey } from '@game-sandbox/schema/board'
 import { computed, onMounted, ref } from 'vue'
 
 import {
@@ -36,11 +37,6 @@ const selections = ref<Record<string, number>>({})
 const saving = ref(false)
 const saved = ref(false)
 const error = ref<string | null>(null)
-
-/** The stable wire key for an agent, matching the backend's, so a selection maps to one agent. */
-function wireKey(agent: AgentRefWire): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
-}
 
 type RateableView = SessionRatings['agents'][number]
 
@@ -67,7 +63,7 @@ function seedSelections(view: SessionRatings): void {
   const seeded: Record<string, number> = {}
   for (const agent of view.agents) {
     if (agent.your_rating !== null) {
-      seeded[wireKey(agent.agent)] = agent.your_rating
+      seeded[agentRefKey(agent.agent)] = agent.your_rating
     }
   }
   selections.value = seeded
@@ -77,12 +73,12 @@ function select(agent: AgentRefWire, score: number): void {
   if (ratings.value?.read_only === true) {
     return
   }
-  selections.value = { ...selections.value, [wireKey(agent)]: score }
+  selections.value = { ...selections.value, [agentRefKey(agent)]: score }
   saved.value = false
 }
 
 function selectionFor(agent: AgentRefWire): number | undefined {
-  return selections.value[wireKey(agent)]
+  return selections.value[agentRefKey(agent)]
 }
 
 /** Whether the caller has chosen at least one score to save. */
@@ -143,7 +139,7 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
           </p>
 
           <ul class="agent-list">
-            <li v-for="agent in agents" :key="wireKey(agent.agent)" class="agent">
+            <li v-for="agent in agents" :key="agentRefKey(agent.agent)" class="agent">
               <div class="agent-head">
                 <span class="agent-name">{{ agent.display_name }}</span>
                 <!-- The caller's own agent is shown for context but carries no control. -->

@@ -69,6 +69,16 @@ def _play(players, seed: int, tmp_path: Path, *, messaging=None):
     rewards are credited to every player but recorded only on the acting player's line, so the recording
     alone cannot report a non-actor's terminal (for example nil) score."""
     store = FolderRecordingStore(tmp_path)
+    # A recording names who drove each player. These are colocated example agents loaded by path, which
+    # is the submission-shaped case, so each player is attributed to its own example id.
+    attribution = {
+        player_id: {
+            "kind": "agent",
+            "label": f"{player_id} example",
+            "submission_id": f"example-{player_id}",
+        }
+        for player_id in players
+    }
     result = run_episode(
         ENTRY,
         players,
@@ -77,6 +87,7 @@ def _play(players, seed: int, tmp_path: Path, *, messaging=None):
         store=store,
         recording_id="r",
         messaging=messaging,
+        player_attribution=attribution,
     )
     return list(store.open("r").steps()), result
 

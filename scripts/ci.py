@@ -50,7 +50,8 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
-    TS_GENERATED_DIR,
+    SCHEMA_DIR,
+    SCHEMA_FILES,
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
@@ -120,7 +121,9 @@ def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
     # Fail if schema, registry, or packaging regeneration changed tracked output.
     targets = [
-        str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
+        # The canonical schema files are emitted from the zod definitions, so drift between the
+        # zod source and the committed JSON is exactly what this job exists to catch.
+        *(str((SCHEMA_DIR / name).relative_to(REPO_ROOT)) for name in SCHEMA_FILES),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),

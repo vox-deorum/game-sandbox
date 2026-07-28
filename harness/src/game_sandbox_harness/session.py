@@ -357,19 +357,24 @@ class Episode:
             raise
 
     def _recording_players(self) -> dict[str, PlayerAttribution]:
-        """Return the supplied attributions, or complete defaults for direct harness callers."""
+        """Return the supplied attributions, or a human-only default for direct harness callers.
+
+        A replay names who drove each player from the recording alone, so the header has to be true.
+        An external player is fully described by the fact that a person drove it, which is why the
+        default covers that case. An agent player is not: the harness holds a loaded callable and
+        cannot tell which submission or built-in it came from, and guessing would write a false
+        identity into an artifact that is later read as authoritative. Recording one therefore
+        requires the caller to say what it is.
+        """
         if self._player_attribution is not None:
             return dict(self._player_attribution)
         players: dict[str, PlayerAttribution] = {}
         for player_id, player in self._players.items():
-            if isinstance(player, ExternalPlayer):
-                players[player_id] = {"kind": "human", "label": "Human"}
-            else:
-                players[player_id] = {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                }
+            if not isinstance(player, ExternalPlayer):
+                raise ValueError(
+                    f"recording agent player {player_id!r} requires player_attribution naming it"
+                )
+            players[player_id] = {"kind": "human", "label": "Human"}
         return players
 
     @property

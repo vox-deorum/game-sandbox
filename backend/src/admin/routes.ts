@@ -56,6 +56,7 @@ import type { Storage, Submission } from '../storage/index.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
+import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
 
 /** Everything the admin routes need beyond the Fastify instance. */
@@ -740,17 +741,20 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
           ...gameOwnerIds(completedGames),
         ])
+        // The season's environment metadata, so a built-in agent ref is enriched with its declared
+        // label the same way a submission ref is enriched with its owner's display name.
+        const meta = deps.environments.get(season.env_id)
         return reply.code(200).send({
           season: seasonView(season),
           eligible_submission_count: eligibleSubmissionCount,
-          latest_run: latest === undefined ? null : runView(latest, games, names),
+          latest_run: latest === undefined ? null : runView(latest, games, names, meta),
           board: {
             automated: automated.map((row) => ({
               ...row,
-              agent: enrichAgentRef(row.agent, names),
+              agent: enrichAgentRef(row.agent, names, meta),
             })),
-            human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
-            games: completedGames.map((game) => runGameView(game, names)),
+            human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
+            games: completedGames.map((game) => runGameView(game, names, meta)),
           },
         })
       })
@@ -787,7 +791,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             run.requested_by,
             ...ownerIdsForRun(run, games),
           ])
-          return reply.code(200).send(runView(run, games, names))
+          // The run's environment metadata, so a built-in seat is enriched with its declared label.
+          const season = await deps.storage.getSeason(run.season_id)
+          const meta = season === undefined ? undefined : deps.environments.get(season.env_id)
+          return reply.code(200).send(runView(run, games, names, meta))
         },
       )
 
@@ -882,16 +889,6 @@ function validateSeatCounts(
 /** Parse the `?force=` query flag; the console sends it after a destructive-edit confirmation. */
 function parseForce(raw: string | undefined): boolean {
   return raw === 'true' || raw === '1' || raw === 'yes'
-}
-
-/** A compact, stable explanation of the first zod issue for 400 responses. */
-function zodReason(error: z.ZodError): string {
-  const issue = error.issues[0]
-  if (issue === undefined) {
-    return 'invalid request body'
-  }
-  const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-  return `${path}: ${issue.message}`
 }
 
 /** Reject a season declaration/configuration that names no deployable base image. */

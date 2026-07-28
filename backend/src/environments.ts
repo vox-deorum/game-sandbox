@@ -15,9 +15,12 @@ import { fileURLToPath } from 'node:url'
 
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema'
 
-// The metadata shape and its guard now live in @game-sandbox/schema so the browser shares one
-// declaration; this module keeps the backend-only registry and the generated-JSON loader. Re-export
-// the type so existing backend imports of `EnvironmentMeta` from this module keep working.
+// The metadata shape lives in the dependency-free ./environment module so the browser shares one
+// declaration, but its structural guard is now zod-backed and Node-only, so it lives beside the
+// other zod schemas instead; both are re-exported through this barrel import, which this
+// backend-only module already needs for the guard. This module keeps the backend-only registry and
+// the generated-JSON loader. Re-export the type so existing backend imports of `EnvironmentMeta`
+// from this module keep working.
 export type { EnvironmentMeta } from '@game-sandbox/schema'
 
 /** Thrown when the generated metadata file is missing or does not match the expected shape. */

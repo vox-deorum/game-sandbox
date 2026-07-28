@@ -14,6 +14,7 @@
  * built-in ref, and `human` entries are skipped.
  * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
+import { agentRefKey } from '@game-sandbox/schema/board'
 import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
@@ -23,6 +24,7 @@ import type { AuthUser, RequestIdentity } from '../identity.js'
 import { optionalField } from '../optional-field.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
+import { agentKey } from '../storage/kysely/shared.js'
 
 /** Everything the rating routes need beyond the Fastify instance. */
 export interface RatingDeps {
@@ -93,11 +95,6 @@ interface RatingContext {
 
 /** A typed refusal mapped onto an HTTP status and a stable machine code the client branches on. */
 type ContextFailure = { status: number; code: string; error: string }
-
-/** The stable wire key for an agent ref, so a wire agent matches a resolved one deterministically. */
-function wireKey(agent: AgentWire): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
-}
 
 /** Strip a resolved {@link AgentRef} to its wire form (the owner `user_id` never leaves the server). */
 function toWire(ref: AgentRef): AgentWire {
@@ -209,7 +206,7 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
   const agents: RateableAgent[] = []
   for (const ref of refs) {
     const wire = toWire(ref)
-    const key = wireKey(wire)
+    const key = agentRefKey(wire)
     if (seen.has(key)) {
       continue
     }
@@ -258,14 +255,7 @@ async function buildRatingView(
   const anonymousNumbers = new Map(
     activeSubmissions.map((submission, index) => [submission.id, index + 1]),
   )
-  const ratings = new Map(
-    seasonRatings.map((rating) => [
-      rating.agent_kind === 'submission'
-        ? `submission:${rating.agent_submission_id ?? ''}`
-        : `builtin:${rating.agent_builtin_name ?? ''}`,
-      rating.score,
-    ]),
-  )
+  const ratings = new Map(seasonRatings.map((rating) => [agentKey(rating), rating.score]))
   const prompts = new Map(seasonPrompts.map((prompt) => [prompt.user_id, prompt.prompt]))
   const agentViews = agents.map((agent): RateableAgentView => {
     const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
@@ -282,7 +272,7 @@ async function buildRatingView(
       is_own: isOwn,
       author_prompt:
         agent.ref.kind === 'submission' ? emptyToNull(prompts.get(agent.ref.user_id)) : null,
-      your_rating: isOwn ? null : (ratings.get(wireKey(agent.wire)) ?? null),
+      your_rating: isOwn ? null : (ratings.get(agentRefKey(agent.wire)) ?? null),
     }
   })
   return {
@@ -376,7 +366,7 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
           env_id: context.season.env_id,
           rater_user_id: callerId,
           agent: accepted,
-          score: validated.scores.get(wireKey(toWire(accepted))) ?? 0,
+          score: validated.scores.get(agentRefKey(toWire(accepted))) ?? 0,
         })
       }
       return reply.code(200).send(await buildRatingView(deps, context, user))
@@ -463,14 +453,14 @@ function validatePayload(
   context: RatingContext,
   callerId: string,
 ): PayloadValidation {
-  const byKey = new Map(context.agents.map((agent) => [wireKey(agent.wire), agent]))
+  const byKey = new Map(context.agents.map((agent) => [agentRefKey(agent.wire), agent]))
   const accepted: AgentRef[] = []
   const scores = new Map<string, number>()
   for (const rating of ratings) {
     if (!Number.isInteger(rating.score) || rating.score < 1 || rating.score > 5) {
       return { ok: false, code: 'invalid_score', error: 'a score must be an integer from 1 to 5' }
     }
-    const key = wireKey(rating.agent)
+    const key = agentRefKey(rating.agent)
     const match = byKey.get(key)
     if (match === undefined) {
       return {

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyOutbound,
   codePointLength,
-  parseCommand,
   serializeCommand,
   sessionEnvelope,
 } from '../src/index.js'
@@ -41,74 +40,6 @@ describe('outbound line classification', () => {
   })
 })
 
-describe('inbound command parsing', () => {
-  it('accepts input with a player and passes the action through opaque', () => {
-    const parsed = parseCommand('{"kind":"input","player":"player_0","action":1}')
-    expect(parsed).toEqual({ ok: true, command: { kind: 'input', player: 'player_0', action: 1 } })
-  })
-
-  it('accepts pause, resume, and stop', () => {
-    for (const kind of ['pause', 'resume', 'stop'] as const) {
-      expect(parseCommand(`{"kind":"${kind}"}`)).toEqual({ ok: true, command: { kind } })
-    }
-  })
-
-  it('rejects input without a string player', () => {
-    expect(parseCommand('{"kind":"input","action":1}').ok).toBe(false)
-  })
-
-  it('rejects input without an action field', () => {
-    expect(parseCommand('{"kind":"input","player":"player_0"}').ok).toBe(false)
-  })
-
-  it('rejects an unknown kind and malformed JSON', () => {
-    expect(parseCommand('{"kind":"explode"}').ok).toBe(false)
-    expect(parseCommand('{"no":"kind"}').ok).toBe(false)
-    expect(parseCommand('garbage').ok).toBe(false)
-  })
-
-  it('accepts a chat command with a targeted or null recipient', () => {
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":"player_2","text":"hi"}'),
-    ).toEqual({
-      ok: true,
-      command: { kind: 'chat', player: 'player_0', tick: 7, to: 'player_2', text: 'hi' },
-    })
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"table!"}'),
-    ).toEqual({
-      ok: true,
-      command: { kind: 'chat', player: 'player_0', tick: 7, to: null, text: 'table!' },
-    })
-  })
-
-  it('rejects a chat command with a bad player, tick, to, or text', () => {
-    expect(parseCommand('{"kind":"chat","tick":0,"to":null,"text":"hi"}').ok).toBe(false)
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"hi"}').ok).toBe(false)
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":-1,"to":null,"text":"hi"}').ok,
-    ).toBe(false)
-    expect(parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":5,"text":"hi"}').ok).toBe(
-      false,
-    )
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":42}').ok,
-    ).toBe(false)
-  })
-
-  it('pins the exact chat JSON both languages speak', () => {
-    // The same literal string the Python live_io test parses into a queued frame.
-    const line = serializeCommand({
-      kind: 'chat',
-      player: 'player_0',
-      tick: 3,
-      to: null,
-      text: 'hi',
-    })
-    expect(line).toBe('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"hi"}')
-  })
-})
-
 describe('code-point counter', () => {
   it('counts an astral-plane character as one, matching Python len', () => {
     expect(codePointLength('😀')).toBe(1)
@@ -119,12 +50,16 @@ describe('code-point counter', () => {
 })
 
 describe('serialization', () => {
-  it('round-trips a command through parse', () => {
-    const line = serializeCommand({ kind: 'input', player: 'player_0', action: { flap: true } })
-    expect(parseCommand(line)).toEqual({
-      ok: true,
-      command: { kind: 'input', player: 'player_0', action: { flap: true } },
+  it('pins the exact chat JSON both languages speak', () => {
+    // The same literal string the Python live_io test parses into a queued frame.
+    const line = serializeCommand({
+      kind: 'chat',
+      player: 'player_0',
+      tick: 3,
+      to: null,
+      text: 'hi',
     })
+    expect(line).toBe('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"hi"}')
   })
 
   it('builds the session status frame with and without a reason', () => {

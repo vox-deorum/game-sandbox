@@ -56,6 +56,13 @@ const me = useMe()
 // from any real submission id.
 const BUILTIN_KEY = '__builtin__'
 
+// The pinned built-in's declared display label, the same metadata-driven resolution the seat dialog
+// uses (`agent.label` in `SeatAssignmentDialog.vue`), falling back to its stable name when the
+// environment does not declare it.
+const naiveLabel = computed(
+  () => props.meta.builtin_agents.find((agent) => agent.name === 'naive')?.label ?? 'naive',
+)
+
 const startError = ref<string | null>(null)
 // The submission a watch run is being started for, so only its button shows the loading state. Only
 // the single-seat immediate-start path uses it; the multi-seat path starts from the dialog instead.
@@ -168,7 +175,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
            submitted agent (a scripted run with no submission). It has no owner profile. -->
       <li class="agent-row agent-row--builtin">
         <div class="agent-id">
-          <span class="agent-name">Naive agent</span>
+          <span class="agent-name">{{ naiveLabel }}</span>
           <UiBadge>Built-in</UiBadge>
         </div>
         <UiButton

@@ -12,6 +12,7 @@
 
 import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
+import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import type BetterSqlite3 from 'better-sqlite3'
 
 import type { AgentRef } from '../storage/schema.js'
@@ -116,10 +117,21 @@ export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirecto
   }
 }
 
-/** Attach the owner's display name to a submission ref when the directory resolved one. */
-export function enrichAgentRef(ref: AgentRef, names: ReadonlyMap<string, string>): BoardAgentRef {
+/**
+ * Attach the owner's display name to a submission ref when the directory resolved one, or a built-in
+ * ref's declared label when the caller passes the owning environment's metadata (its `builtin_agents`
+ * is the same declaration `session/orchestrator.ts` resolves a built-in's label from at launch). A
+ * builtin ref with no `meta`, or naming a builtin the environment does not declare, passes through
+ * unchanged; the renderer falls back to the stable name in both cases.
+ */
+export function enrichAgentRef(
+  ref: AgentRef,
+  names: ReadonlyMap<string, string>,
+  meta?: EnvironmentMeta,
+): BoardAgentRef {
   if (ref.kind !== 'submission') {
-    return ref
+    const label = meta?.builtin_agents.find((candidate) => candidate.name === ref.name)?.label
+    return label === undefined ? ref : { ...ref, label }
   }
   const name = names.get(ref.user_id)
   return name === undefined ? ref : { ...ref, user_name: name }

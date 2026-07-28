@@ -3,18 +3,20 @@
 The per-step state is the contract between Python, TypeScript, live transport, and replay:
 
 ```text
-JSON Schema → Python validation
-            → generated TypeScript types
-            → live state lines
-            → recording state lines
+zod schemas → TypeScript types and validation
+            → JSON Schema → Python validation
+                          → live state lines
+                          → recording state lines
 ```
 
-The source uses JSON Schema draft 2020-12 under `schema/`. This page defines versioning and sidecar compatibility. See [Execution](../runtime/execution.md) and [Recordings](recordings.md).
+The source is the zod definitions under `schema/ts/src/schemas/`. They render to JSON Schema draft 2020-12 under `schema/`, which is what the Python harness validates against. This page defines versioning and sidecar compatibility. See [Execution](../runtime/execution.md) and [Recordings](recordings.md).
 
-## The two files
+## The two definitions
 
-- `schema/step-state.schema.json` defines the state at one step: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names use snake case because it is natural in Python and conventional in JSON. The generated TypeScript types keep the same names.
-- `schema/recording-header.schema.json` defines the recording header: `schema_version`, `environment`, the normalized gameplay `parameters` map, optional `seed` and `created_at` fields, the `sidecars` array, and the required `players`, `seats`, and `seat_plan` fields. `players` assigns each player id to a human or agent with `{kind, label, user?, submission_id?}`. `seats` forms an exact nonempty partition of those player ids, and `seat_plan` records the canonical plan key. The header remains open (`additionalProperties: true`) while each attribution entry remains closed (`additionalProperties: false`). Running `scripts/generate.py` refreshes the TypeScript type.
+- `schema/ts/src/schemas/step-state.ts` defines the state at one step: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names use snake case because it is natural in Python and conventional in JSON. The TypeScript types come from `z.infer`, so they keep the same names.
+- `schema/ts/src/schemas/recording-header.ts` defines the recording header: `schema_version`, `environment`, the normalized gameplay `parameters` map, optional `seed` and `created_at` fields, the `sidecars` array, and the required `players`, `seats`, and `seat_plan` fields. `players` assigns each player id to one of three closed variants: a human, a submitted agent carrying `submission_id`, or a built-in agent carrying `builtin_name`. An agent entry with both identity fields or neither is invalid. `seats` forms an exact nonempty partition of those player ids, and `seat_plan` records the canonical plan key. The header stays open while each attribution entry stays closed.
+
+Running `scripts/generate.py` re-emits `schema/step-state.schema.json` and `schema/recording-header.schema.json` from these definitions. Do not edit that JSON by hand.
 
 Closed regions use `additionalProperties: false` so validation catches accidental changes. `overlay` is the designated open extension for environment-specific display data.
 

@@ -97,6 +97,22 @@ describe('parseStepState', () => {
     ).toThrow(SchemaValidationError)
   })
 
+  it('rejects duplicate direct-message recipients', () => {
+    expect(() =>
+      parseStepState({
+        schema_version: 1,
+        tick: 0,
+        agents: {},
+        chat_options: {
+          sender: 'player_0',
+          target_recipients: ['player_1', 'player_1'],
+          default_recipient: 'player_1',
+        },
+        timing: { started_at: 0, duration_ms: 0 },
+      }),
+    ).toThrow(SchemaValidationError)
+  })
+
   it('tolerates a truncated trailing line as the end of the prefix', () => {
     const text = `${fixture('two-step').trimEnd()}\n{"schema_version":1,"tick":2,"age`
     const { states } = readRecording(text)
@@ -105,6 +121,19 @@ describe('parseStepState', () => {
 })
 
 describe('parseHeader', () => {
+  it('rejects empty player attribution and seat maps', () => {
+    expect(() =>
+      parseHeader({
+        schema_version: 1,
+        environment: 'flappy',
+        parameters: {},
+        players: {},
+        seats: {},
+        seat_plan: 'solo',
+      }),
+    ).toThrow(SchemaValidationError)
+  })
+
   it('rejects an empty submitted-agent identity', () => {
     expect(() =>
       parseHeader({

@@ -304,6 +304,18 @@ def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     recording = store.open("r")
     for state in recording.steps():
@@ -328,6 +340,18 @@ def test_chat_ms_lands_in_recorded_timing(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=clock,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     recording = store.open("r")
     first = next(recording.steps())
@@ -420,6 +444,17 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "human",
+                "label": "Human",
+            },
+        },
     )
     recording = store.open("r")
     states = list(recording.steps())
@@ -455,6 +490,17 @@ def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drai
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "human",
+                "label": "Human",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     episode.start()
     episode.step_once()
@@ -518,6 +564,17 @@ def test_human_queue_is_not_drained_on_an_agent_turn(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "human",
+                "label": "Human",
+            },
+        },
     )
     recording = store.open("r")
     first = next(recording.steps())
@@ -582,6 +639,22 @@ def test_human_chat_checks_sender_tick_and_announced_policy_at_drain(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "human",
+                "label": "Human",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_2": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     first = next(store.open("r").steps())
     assert [message["text"] for message in first["messages"]] == ["partner", "table"]
@@ -629,6 +702,22 @@ def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "human",
+                "label": "Human",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_2": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     episode.start()
@@ -679,6 +768,22 @@ def test_external_chat_grace_uses_each_announced_policy(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "human",
+                "label": "Human",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_2": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     episode.start()
@@ -737,6 +842,23 @@ def test_agent_output_uses_the_same_live_recipient_policy(tmp_path: Path, capsys
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_2": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     first = next(store.open("r").steps())
     assert [message["text"] for message in first["messages"]] == ["allowed", "broadcast"]
@@ -768,6 +890,18 @@ def test_raising_policy_hook_uses_the_generic_default_without_failing(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
 
     first = next(store.open("r").steps())
@@ -802,6 +936,17 @@ def test_malformed_policy_falls_back_for_agent_output_and_external_options(
         store=FolderRecordingStore(tmp_path),
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "human",
+                "label": "Human",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     episode.start()
     opening = episode.opening_state()
@@ -868,6 +1013,18 @@ def _run_recording(root: Path, *, messaging_meta: bool, messaging_cfg: bool | No
         recording_id="r",
         clock=ManualClock(),
         messaging=messaging_cfg,
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     return (root / "r" / "recording.jsonl").read_bytes()
 
@@ -895,6 +1052,18 @@ def test_enabled_but_chatless_is_byte_identical_to_disabled(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     enabled_chatless = (tmp_path / "on" / "r" / "recording.jsonl").read_bytes()
     assert enabled_chatless == disabled
@@ -938,6 +1107,18 @@ def test_documented_chat_contract_runs_against_the_real_harness(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     # The message the documented agent returned was accepted and recorded verbatim on its sending tick.
     first = next(store.open("r").steps())

@@ -145,6 +145,13 @@ def test_same_seed_same_agent_byte_identical_recordings(tmp_path: Path):
             store=store,
             recording_id="r",
             clock=ManualClock(),
+            player_attribution={
+                "player_0": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                },
+            },
         )
         return root / "r" / "recording.jsonl"
 
@@ -716,6 +723,23 @@ def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_1": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+            "player_2": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            },
+        },
     )
     with pytest.raises(RuntimeError, match="reset boom"):
         episode.start()
@@ -773,6 +797,23 @@ def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path
             store=store,
             recording_id="r",
             clock=ManualClock(),
+            player_attribution={
+                "player_0": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                },
+                "player_1": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                },
+                "player_2": {
+                    "kind": "agent",
+                    "builtin_name": "naive",
+                    "label": "Naive agent",
+                },
+            },
         )
 
     assert len(made) == 1

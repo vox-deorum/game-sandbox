@@ -15,6 +15,7 @@ import websocket from '@fastify/websocket'
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { ParameterValue } from '@game-sandbox/schema/environment'
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
+import { z } from 'zod'
 
 import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
@@ -49,6 +50,7 @@ import type { ExecutionTelemetryStore } from './storage/llm/execution-telemetry.
 import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
+import { zodReason } from './util/zod-error.js'
 import type { WorkflowRunner } from './workflow/runner.js'
 
 // Isolated buildApp tests may omit deployment wiring. Runtime startup always passes the validated
@@ -138,104 +140,55 @@ export interface AppDeps {
   officialTelemetry?: Pick<ExecutionTelemetryStore, 'readAssociatedCalls'>
 }
 
+/** A seat filled by a named built-in bot, or by a participant's named submission. */
+const BuiltinAgentSeatSchema = z.strictObject({
+  kind: z.literal('builtin-agent'),
+  name: z.string().regex(/^[a-z][a-z0-9_]*$/),
+})
+const SubmissionAgentSeatSchema = z.strictObject({
+  kind: z.literal('submission'),
+  submission_id: z.string().min(1),
+})
+
+/** The two-way agent union a human seat's optional companion carries (a future wide seat). */
+const AgentSeatAssignmentSchema = z.discriminatedUnion('kind', [
+  BuiltinAgentSeatSchema,
+  SubmissionAgentSeatSchema,
+])
+type AgentSeatAssignmentBody = z.infer<typeof AgentSeatAssignmentSchema>
+
 /**
- * JSON-schema body for POST /api/sessions; Fastify 400s before the handler runs. The body is an
- * explicit per-seat assignment keyed by seat id; each value names what fills the seat (human,
- * built-in Naive, or a named submission), with `submission_id` required exactly for a `submission`
- * seat. The orchestrator derives the mode and validates the composition.
+ * One seat assignment on the wire: a three-way union on `kind`, plus the optional companion a
+ * `human` seat may carry. `submission_id` is required exactly for a `submission` seat and `name`
+ * exactly for a `builtin-agent` seat; neither field, nor a `companion`, is accepted anywhere else.
  */
-const START_SESSION_SCHEMA = {
-  body: {
-    type: 'object',
-    required: ['env_id', 'season_id', 'parameters', 'seats'],
-    additionalProperties: false,
-    properties: {
-      env_id: { type: 'string', minLength: 1 },
-      season_id: { type: 'string', minLength: 1 },
-      seed: { type: 'integer', minimum: 0 },
-      human_timeout_ms: { type: 'integer', minimum: 0 },
-      // Only the shape is checked here. Which values a parameter accepts is the environment's own
-      // contract, and the orchestrator answers it against the live declarations with a typed
-      // `invalid_parameters` reason. Restating the value types in JSON Schema would duplicate that
-      // rule in a weaker form, and Ajv's request coercion would rewrite values on the way through
-      // (a union branch happily turns the integer 1 into the boolean true) before the real validator
-      // ever saw them.
-      parameters: { type: 'object' },
-      seats: {
-        type: 'object',
-        minProperties: 1,
-        propertyNames: { pattern: '^seat_[0-9]+$' },
-        additionalProperties: {
-          type: 'object',
-          required: ['kind'],
-          additionalProperties: false,
-          properties: {
-            kind: { type: 'string', enum: ['human', 'builtin-agent', 'submission'] },
-            submission_id: { type: 'string', minLength: 1 },
-            name: { type: 'string', pattern: '^[a-z][a-z0-9_]*$' },
-            companion: {
-              type: 'object',
-              required: ['kind'],
-              additionalProperties: false,
-              properties: {
-                kind: { type: 'string', enum: ['builtin-agent', 'submission'] },
-                submission_id: { type: 'string', minLength: 1 },
-                name: { type: 'string', pattern: '^[a-z][a-z0-9_]*$' },
-              },
-              oneOf: [
-                {
-                  properties: { kind: { const: 'builtin-agent' } },
-                  required: ['name'],
-                  allOf: [{ not: { required: ['submission_id'] } }],
-                },
-                {
-                  properties: { kind: { const: 'submission' } },
-                  required: ['submission_id'],
-                  not: { required: ['name'] },
-                },
-              ],
-            },
-          },
-          oneOf: [
-            {
-              properties: { kind: { const: 'builtin-agent' } },
-              required: ['name'],
-              not: { required: ['submission_id'] },
-              allOf: [{ not: { required: ['companion'] } }],
-            },
-            {
-              properties: { kind: { const: 'human' } },
-              not: { anyOf: [{ required: ['submission_id'] }, { required: ['name'] }] },
-            },
-            {
-              properties: { kind: { const: 'submission' } },
-              required: ['submission_id'],
-              allOf: [{ not: { required: ['companion'] } }, { not: { required: ['name'] } }],
-            },
-          ],
-        },
-      },
-    },
-  },
-} as const
+const SeatAssignmentSchema = z.discriminatedUnion('kind', [
+  BuiltinAgentSeatSchema,
+  SubmissionAgentSeatSchema,
+  z.strictObject({ kind: z.literal('human'), companion: AgentSeatAssignmentSchema.optional() }),
+])
+type SeatAssignmentBody = z.infer<typeof SeatAssignmentSchema>
 
-type AgentSeatAssignmentBody =
-  | { kind: 'builtin-agent'; name: string }
-  | { kind: 'submission'; submission_id: string }
-
-/** One seat assignment on the wire, including the optional future wide-seat companion. */
-type SeatAssignmentBody =
-  | AgentSeatAssignmentBody
-  | { kind: 'human'; companion?: AgentSeatAssignmentBody }
-
-interface StartBody {
-  env_id: string
-  season_id: string
-  seed?: number
-  human_timeout_ms?: number
-  parameters: Record<string, ParameterValue>
-  seats: Record<string, SeatAssignmentBody>
-}
+/**
+ * Body for POST /api/sessions: an explicit per-seat assignment keyed by seat id, each value naming
+ * what fills the seat (human, built-in Naive, or a named submission). The orchestrator derives the
+ * mode and validates the composition.
+ */
+const StartSessionBodySchema = z.strictObject({
+  env_id: z.string().min(1),
+  season_id: z.string().min(1),
+  seed: z.int().nonnegative().optional(),
+  human_timeout_ms: z.int().nonnegative().optional(),
+  // Only the shape is checked here. Which values a parameter accepts is the environment's own
+  // contract: the orchestrator resolves this map against the live declarations and answers with a
+  // typed `invalid_parameters` reason when a value is out of bounds or the wrong type. Restating
+  // those value types here would duplicate that contract in a weaker, easily-drifting form.
+  parameters: z.record(z.string(), z.unknown()),
+  seats: z
+    .record(z.string().regex(/^seat_[0-9]+$/), SeatAssignmentSchema)
+    .refine((seats) => Object.keys(seats).length > 0, { message: 'at least one seat is required' }),
+})
+type StartBody = z.infer<typeof StartSessionBodySchema>
 
 /** Map one ordinary wire agent assignment onto the orchestrator shape. */
 function toAgentSeatAssignment(
@@ -259,36 +212,23 @@ function toSeatAssignment(body: SeatAssignmentBody): SeatAssignment {
 
 /** The source fields shared by the reachability pre-check and the submit body. */
 const SOURCE_PROPERTIES = {
-  repo_url: { type: 'string' },
-  ref: { type: ['string', 'null'] },
-  local_path: { type: 'string' },
-} as const
+  repo_url: z.string().optional(),
+  ref: z.string().nullable().optional(),
+  local_path: z.string().optional(),
+}
 
-/** JSON-schema body for POST /api/submissions/reachability. */
-const REACHABILITY_SCHEMA = {
-  body: { type: 'object', additionalProperties: false, properties: SOURCE_PROPERTIES },
-} as const
-
-/** JSON-schema body for POST /api/submissions; the source is validated in the handler. */
-const SUBMIT_SCHEMA = {
-  body: {
-    type: 'object',
-    required: ['env_id'],
-    additionalProperties: false,
-    properties: { env_id: { type: 'string', minLength: 1 }, ...SOURCE_PROPERTIES },
-  },
-} as const
+/** Body for POST /api/submissions/reachability. */
+const ReachabilityBodySchema = z.strictObject(SOURCE_PROPERTIES)
 
 /** A participant's source as it arrives on the wire: a git repo (+ optional ref) or a local folder. */
-interface SourceBody {
-  repo_url?: string
-  ref?: string | null
-  local_path?: string
-}
+type SourceBody = z.infer<typeof ReachabilityBodySchema>
 
-interface SubmitBody extends SourceBody {
-  env_id: string
-}
+/** Body for POST /api/submissions; the source is validated in the handler. */
+const SubmitBodySchema = z.strictObject({
+  env_id: z.string().min(1),
+  ...SOURCE_PROPERTIES,
+})
+type SubmitBody = z.infer<typeof SubmitBodySchema>
 
 /** How many recent recordings the agent profile lists per submission; older runs stay queryable. */
 const PROFILE_REPLAY_LIMIT = 10
@@ -435,35 +375,42 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
   })
 
-  app.post<{ Body: StartBody }>(
-    '/api/sessions',
-    { schema: START_SESSION_SCHEMA },
-    async (request, reply) => {
-      const user = await identity.requireActive(request, reply)
-      if (user === undefined) {
-        return
-      }
-      try {
-        const result = await deps.orchestrator.start({
-          userId: user.id,
-          envId: request.body.env_id,
-          seasonId: request.body.season_id,
-          seed: request.body.seed,
-          humanTimeoutMs: request.body.human_timeout_ms,
-          parameters: request.body.parameters,
-          seats: Object.fromEntries(
-            Object.entries(request.body.seats).map(([seatId, assignment]) => [
-              seatId,
-              toSeatAssignment(assignment),
-            ]),
-          ),
-        })
-        return reply.code(201).send({ id: result.id, ws_path: result.wsPath })
-      } catch (error) {
-        return replyError(reply, error)
-      }
-    },
-  )
+  app.post<{ Body: unknown }>('/api/sessions', async (request, reply) => {
+    const user = await identity.requireActive(request, reply)
+    if (user === undefined) {
+      return
+    }
+    const parsed = StartSessionBodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'invalid session request',
+        code: 'invalid_request',
+        reason: zodReason(parsed.error),
+      })
+    }
+    const body: StartBody = parsed.data
+    try {
+      const result = await deps.orchestrator.start({
+        userId: user.id,
+        envId: body.env_id,
+        seasonId: body.season_id,
+        seed: body.seed,
+        humanTimeoutMs: body.human_timeout_ms,
+        // `parameters` stays opaque at the wire boundary (see the schema above); the orchestrator is
+        // the one place that gives it a typed shape, against the environment's live declarations.
+        parameters: body.parameters as Record<string, ParameterValue>,
+        seats: Object.fromEntries(
+          Object.entries(body.seats).map(([seatId, assignment]) => [
+            seatId,
+            toSeatAssignment(assignment),
+          ]),
+        ),
+      })
+      return reply.code(201).send({ id: result.id, ws_path: result.wsPath })
+    } catch (error) {
+      return replyError(reply, error)
+    }
+  })
 
   app.get<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
     const session = await deps.orchestrator.getSession(request.params.id)
@@ -624,66 +571,75 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // The cheap pre-accept reachability check: verify the repo (and ref) before a row is written, the
   // explicit frontend requirement. A local source is refused here when the dev gate is off, before
   // the source seam is touched, matching step 2's gating.
-  app.post<{ Body: SourceBody }>(
-    '/api/submissions/reachability',
-    { schema: REACHABILITY_SCHEMA },
-    async (request, reply) => {
-      const user = await identity.requireActive(request, reply)
-      if (user === undefined) {
-        return
-      }
-      const input = admitSubmissionSource(request.body, deps.allowLocalSubmissions, reply)
-      if (input === undefined) {
-        return
-      }
-      return reply.code(200).send(await deps.submissionSource.verifyReachable(input))
-    },
-  )
+  app.post<{ Body: unknown }>('/api/submissions/reachability', async (request, reply) => {
+    const user = await identity.requireActive(request, reply)
+    if (user === undefined) {
+      return
+    }
+    const parsed = ReachabilityBodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'invalid reachability request',
+        code: 'invalid_request',
+        reason: zodReason(parsed.error),
+      })
+    }
+    const input = admitSubmissionSource(parsed.data, deps.allowLocalSubmissions, reply)
+    if (input === undefined) {
+      return
+    }
+    return reply.code(200).send(await deps.submissionSource.verifyReachable(input))
+  })
 
   // Submit: resolve the open season, create the pending row under the resolved identity, enqueue
   // the validate-and-build job, and return 202 — the pipeline never runs inline. The submitter is
   // never read from the client. Resubmission supersedes the prior active row inside createSubmission.
-  app.post<{ Body: SubmitBody }>(
-    '/api/submissions',
-    { schema: SUBMIT_SCHEMA },
-    async (request, reply) => {
-      const user = await identity.requireActive(request, reply)
-      if (user === undefined) {
-        return
+  app.post<{ Body: unknown }>('/api/submissions', async (request, reply) => {
+    const user = await identity.requireActive(request, reply)
+    if (user === undefined) {
+      return
+    }
+    const parsed = SubmitBodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'invalid submission request',
+        code: 'invalid_request',
+        reason: zodReason(parsed.error),
+      })
+    }
+    const body: SubmitBody = parsed.data
+    const input = admitSubmissionSource(body, deps.allowLocalSubmissions, reply)
+    if (input === undefined) {
+      return
+    }
+    const season = await deps.storage.getOpenSubmissionSeason(body.env_id)
+    if (season === undefined) {
+      return reply
+        .code(409)
+        .send({ error: 'submissions are closed for this environment', code: 'no_open_season' })
+    }
+    try {
+      const submission = await deps.storage.createSubmission({
+        season_id: season.id,
+        env_id: body.env_id,
+        user_id: user.id,
+        source_kind: input.kind,
+        repo_url: input.kind === 'git' ? input.repoUrl : null,
+        commit_sha: null,
+        local_path: input.kind === 'local' ? input.localPath : null,
+        ref: input.kind === 'git' ? input.ref : null,
+        created_at: new Date().toISOString(),
+      })
+      deps.validationWorker.enqueue(submission.id)
+      return reply.code(202).send({ id: submission.id, status: submission.status })
+    } catch (error) {
+      if (error instanceof SubmissionConflictError) {
+        // A concurrent resubmit became active; the client may retry.
+        return reply.code(409).send({ error: error.message, code: 'resubmit_conflict' })
       }
-      const input = admitSubmissionSource(request.body, deps.allowLocalSubmissions, reply)
-      if (input === undefined) {
-        return
-      }
-      const season = await deps.storage.getOpenSubmissionSeason(request.body.env_id)
-      if (season === undefined) {
-        return reply
-          .code(409)
-          .send({ error: 'submissions are closed for this environment', code: 'no_open_season' })
-      }
-      try {
-        const submission = await deps.storage.createSubmission({
-          season_id: season.id,
-          env_id: request.body.env_id,
-          user_id: user.id,
-          source_kind: input.kind,
-          repo_url: input.kind === 'git' ? input.repoUrl : null,
-          commit_sha: null,
-          local_path: input.kind === 'local' ? input.localPath : null,
-          ref: input.kind === 'git' ? input.ref : null,
-          created_at: new Date().toISOString(),
-        })
-        deps.validationWorker.enqueue(submission.id)
-        return reply.code(202).send({ id: submission.id, status: submission.status })
-      } catch (error) {
-        if (error instanceof SubmissionConflictError) {
-          // A concurrent resubmit became active; the client may retry.
-          return reply.code(409).send({ error: error.message, code: 'resubmit_conflict' })
-        }
-        throw error
-      }
-    },
-  )
+      throw error
+    }
+  })
 
   // The current user's submissions (including superseded history), newest first, optionally one
   // environment. The agent profile (step 6) reads this; the form reads the single submission below.
@@ -860,6 +816,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     storage: deps.storage,
     identity,
     userDirectory: deps.userDirectory,
+    environments: deps.environments,
   })
   // Participant ratings and the author's per-season rating prompt are attributed to the resolved
   // identity. Rating writes require an active user; reads require any signed-in user.

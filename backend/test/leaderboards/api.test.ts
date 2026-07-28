@@ -323,6 +323,55 @@ describe('public leaderboard API', () => {
     expect(gameSeats.find((s) => s?.user_id === 'ghost-user')?.user_name).toBeUndefined()
   })
 
+  it("carries a built-in agent's declared label beside its stable name", async () => {
+    const season = await declare()
+    await storage.setReleaseStatus(season.id, 'released')
+    const naive = { kind: 'builtin', name: 'naive' } as const
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
+      parametersSnapshot: { players: 1 },
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, seats: [naive], seat_plan: 'solo' },
+      ],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    const game = (await storage.listRunGames(run.id))[0]
+    if (game === undefined) {
+      throw new Error('expected the scheduled baseline game')
+    }
+    await storage.recordGameResult({
+      game_id: game.id,
+      seat_index: 0,
+      agent: naive,
+      episode_score: 1,
+      agent_compute_ms_total: 10,
+      acted_tick_count: 2,
+      failed: false,
+    })
+    await storage.setRunStatus(run.id, 'completed')
+
+    const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
+    expect(res.statusCode).toBe(200)
+    const board = (
+      res.json() as {
+        current: {
+          board: {
+            automated: Array<{ agent: Record<string, unknown> }>
+            games: Array<{ seats: Array<Record<string, unknown>> }>
+          }
+        }
+      }
+    ).current.board
+
+    // The label is the one the environment declares, so a board row reads "Naive agent" rather than
+    // the stable snake_case name the storage columns key on.
+    expect(board.automated[0]?.agent).toMatchObject({
+      kind: 'builtin',
+      name: 'naive',
+      label: 'Naive agent',
+    })
+    expect(board.games[0]?.seats[0]).toMatchObject({ name: 'naive', label: 'Naive agent' })
+  })
+
   it('serves a specific released season board and 404s an unreleased one', async () => {
     const unreleased = await declare()
     const released = await declare()

@@ -11,6 +11,7 @@
   three ratings appears unranked (the backend leaves its `rank` null).
 -->
 <script setup lang="ts">
+import { agentRefKey } from '@game-sandbox/schema/board'
 import { RouterLink } from 'vue-router'
 
 import type { Board, BoardAgentRef } from '../api/client.js'
@@ -22,12 +23,7 @@ import UiEmptyState from './ui/UiEmptyState.vue'
 
 const props = defineProps<{ board: Board; envId: string; ratingPrompt?: string | null }>()
 
-/** A stable key for an agent row, so v-for keys never collide across the Naive baseline and submissions. */
-function agentKey(agent: BoardAgentRef): string {
-  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : `builtin:${agent.name}`
-}
-
-/** The owner id a submitted-agent row links to; null for the ownerless Naive baseline. */
+/** The owner id a submitted-agent row links to; null for an ownerless built-in row. */
 function ownerOf(agent: BoardAgentRef): string | null {
   return agent.kind === 'submission' ? agent.user_id : null
 }
@@ -37,9 +33,9 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
   return agent.kind === 'submission' ? (agent.user_name ?? agent.user_id) : null
 }
 
-/** The stable built-in name for the ownerless board variant. */
-function builtinNameOf(agent: BoardAgentRef): string {
-  return agent.kind === 'builtin' ? agent.name : ''
+/** A built-in row's declared display label, falling back to its stable name when none resolved. */
+function builtinLabelOf(agent: BoardAgentRef): string {
+  return agent.kind === 'builtin' ? (agent.label ?? agent.name) : ''
 }
 </script>
 
@@ -75,7 +71,7 @@ function builtinNameOf(agent: BoardAgentRef): string {
           <tbody>
             <tr
               v-for="(row, index) in props.board.automated"
-              :key="agentKey(row.agent)"
+              :key="agentRefKey(row.agent)"
             >
               <td class="rank">{{ index + 1 }}</td>
               <td>
@@ -88,7 +84,7 @@ function builtinNameOf(agent: BoardAgentRef): string {
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>
                 <span v-else class="agent-naive">
-                  {{ builtinNameOf(row.agent) }} <UiBadge>Built-in</UiBadge>
+                  {{ builtinLabelOf(row.agent) }} <UiBadge>Built-in</UiBadge>
                 </span>
                 <UiBadge
                   v-if="row.failure_count > 0"
@@ -164,7 +160,7 @@ function builtinNameOf(agent: BoardAgentRef): string {
           <tbody>
             <tr
               v-for="row in props.board.human"
-              :key="agentKey(row.agent)"
+              :key="agentRefKey(row.agent)"
               :class="{ unranked: row.rank === null }"
             >
               <td class="rank">
@@ -183,7 +179,7 @@ function builtinNameOf(agent: BoardAgentRef): string {
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>
                 <span v-else class="agent-naive">
-                  {{ builtinNameOf(row.agent) }} <UiBadge>Built-in</UiBadge>
+                  {{ builtinLabelOf(row.agent) }} <UiBadge>Built-in</UiBadge>
                 </span>
                 <p
                   v-if="row.author_prompt"

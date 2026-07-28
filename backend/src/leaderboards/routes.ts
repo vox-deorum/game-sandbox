@@ -9,6 +9,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
+import type { EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import {
   agentOwnerIds,
@@ -26,6 +27,8 @@ export interface LeaderboardDeps {
   identity: RequestIdentity
   /** The display-name directory; board rows and matchup seats batch owner ids through it. */
   userDirectory: UserDirectory
+  /** The environment registry, read to enrich a built-in agent ref with its declared label. */
+  environments: EnvironmentRegistry
 }
 
 /**
@@ -35,7 +38,7 @@ export interface LeaderboardDeps {
  * multi-seat matchup — each with its seats and its own replay link. Every submitted agent ref is
  * enriched with its owner's display name (one batched lookup per read) beside the stable id.
  */
-async function boardsFor(deps: LeaderboardDeps, seasonId: string) {
+async function boardsFor(deps: LeaderboardDeps, envId: string, seasonId: string) {
   // Resolve the latest completed run once and feed it into the board read: the board aggregates that
   // run and its games carry the per-matchup replay links, so passing the run keeps both on the
   // identical run and avoids resolving it twice. The human board derives its replay links from the
@@ -48,10 +51,13 @@ async function boardsFor(deps: LeaderboardDeps, seasonId: string) {
     ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
     ...gameOwnerIds(rawGames),
   ])
+  // The environment's declared built-in labels, when the registry is wired in; a built-in ref falls
+  // back to its stable name otherwise.
+  const meta = deps.environments?.get(envId)
   return {
-    automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
-    human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
-    games: rawGames.map((game) => runGameView(game, names)),
+    automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
+    human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
+    games: rawGames.map((game) => runGameView(game, names, meta)),
   }
 }
 
@@ -113,7 +119,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
             ? null
             : {
                 season: seasonView(released),
-                board: await boardsFor(deps, released.id),
+                board: await boardsFor(deps, envId, released.id),
               },
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
@@ -136,7 +142,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
       }
       return reply.code(200).send({
         season: seasonView(season),
-        board: await boardsFor(deps, season.id),
+        board: await boardsFor(deps, season.env_id, season.id),
       })
     },
   )

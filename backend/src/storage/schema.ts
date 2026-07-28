@@ -17,6 +17,7 @@ import type {
   LlmUsageByModel as SchemaLlmUsageByModel,
 } from '@game-sandbox/schema/llm'
 import type { Insertable, Selectable, Updateable } from 'kysely'
+import { z } from 'zod'
 
 /** Whether a session is human-controlled or runs the built-in scripted agent. */
 export type SessionMode = 'human' | 'scripted'
@@ -146,40 +147,37 @@ export type GameStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timed
 /** Which kind of agent occupied a seat: a participant submission or a named built-in agent. */
 export type AgentKind = 'submission' | 'builtin'
 
+const BUILTIN_AGENT_NAME = /^[a-z][a-z0-9_]*$/
+
 /**
  * The one agent-identity shape this stage stores or returns everywhere a seat, result, placement,
  * rating, or board row names an agent. Tables that filter or group on it store the three concrete
  * columns below ({@link AgentColumns}) rather than this opaque JSON; JSON payloads (scheduled seats,
  * board/rating responses) carry it directly. A built-in carries its stable name and null submission
- * and user ids; a submitted agent carries the inverse.
+ * and user ids; a submitted agent carries the inverse. `z.strictObject` rejects an object with extra
+ * or missing keys, so this is also the one place that shape is enforced.
  */
-export type AgentRef =
-  | { kind: 'submission'; submission_id: string; user_id: string }
-  | { kind: 'builtin'; name: string }
+export const AgentRefSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('submission'),
+    submission_id: z.string().min(1),
+    user_id: z.string().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal('builtin'),
+    name: z.string().regex(BUILTIN_AGENT_NAME),
+  }),
+])
 
-const BUILTIN_AGENT_NAME = /^[a-z][a-z0-9_]*$/
+/** The one agent-identity shape; see {@link AgentRefSchema}. */
+export type AgentRef = z.infer<typeof AgentRefSchema>
+
+/** An array of agent references, as every seats/roster JSON column stores them. */
+export const AgentRefArraySchema = z.array(AgentRefSchema)
 
 /** Validate the one persisted agent-reference shape accepted in schedules and storage JSON. */
 export function isAgentRef(value: unknown): value is AgentRef {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false
-  }
-  const agent = value as Record<string, unknown>
-  if (agent.kind === 'builtin') {
-    return (
-      Object.keys(agent).length === 2 &&
-      typeof agent.name === 'string' &&
-      BUILTIN_AGENT_NAME.test(agent.name)
-    )
-  }
-  return (
-    agent.kind === 'submission' &&
-    Object.keys(agent).length === 3 &&
-    typeof agent.submission_id === 'string' &&
-    agent.submission_id.length > 0 &&
-    typeof agent.user_id === 'string' &&
-    agent.user_id.length > 0
-  )
+  return AgentRefSchema.safeParse(value).success
 }
 
 /** The submitted-agent variant of {@link AgentRef}; the only kind a submission snapshot carries. */

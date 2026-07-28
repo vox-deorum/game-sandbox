@@ -57,7 +57,12 @@ import { ensureRecordingsDir } from '../session/live-session.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
 import { decodeSeasonConfig, type LlmUsageByModel, type Storage } from '../storage/index.js'
 import type { ExecutionTelemetryStore, ExecutionUsageByModel } from '../storage/llm/index.js'
-import { type AgentRef, isAgentRef, type SeasonRun, type SeasonRunGame } from '../storage/schema.js'
+import {
+  type AgentRef,
+  AgentRefArraySchema,
+  type SeasonRun,
+  type SeasonRunGame,
+} from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
@@ -432,7 +437,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       `game ${game.game_index} started: seed ${game.seed}, ${describeSeats(seats)}`,
     )
 
-    // Resolve the launch image: the one submission seat's overlay, or the base image for an all-Naive
+    // Resolve the launch image: the one submission seat's overlay, or the base image for an all-built-in
     // game. An image-resolution failure is an infrastructure fault, not an agent fault.
     let image: ImageRef
     try {
@@ -998,7 +1003,15 @@ function describeSeats(seats: readonly AgentRef[]): string {
   return labels.join(' vs ')
 }
 
-/** Decode one stored assignment at the run boundary, rejecting malformed or foreign agent shapes. */
+/**
+ * Decode one stored assignment at the run boundary, rejecting malformed or foreign agent shapes.
+ * Unlike `season-views.ts`'s `decodeAgentRefs` (the same `z.array(AgentRefSchema)` check over the same
+ * kind of stored column), this returns null on failure instead of throwing. That difference is
+ * deliberate: `season-views.ts` reads trusted storage state a caller already committed to serving, so
+ * a decode failure there is a bug worth throwing over; this reads a run's schedule before execution,
+ * so a bad column here is funneled into one clean run-level failure (see the caller) rather than an
+ * unhandled throw. Do not unify the two policies.
+ */
 function parseStoredSeats(value: string): AgentRef[] | null {
   let parsed: unknown
   try {
@@ -1006,7 +1019,8 @@ function parseStoredSeats(value: string): AgentRef[] | null {
   } catch {
     return null
   }
-  return Array.isArray(parsed) && parsed.every(isAgentRef) ? parsed : null
+  const result = AgentRefArraySchema.safeParse(parsed)
+  return result.success ? result.data : null
 }
 
 /** The recording's natural owner: the (single) submission seat's owner, else the run's operator. */

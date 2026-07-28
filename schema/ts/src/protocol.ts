@@ -11,26 +11,27 @@
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
  * (browser → backend → container) the command envelopes are `input` (with a player and action),
  * `pause`, `resume`, `stop`, and `chat` (a human message: a player, the state tick it was composed
- * against, a recipient `to` or null for a broadcast, and plain text). The backend validates a
- * command's shape and the sender's authority, then forwards it, and never interprets an action,
- * because the container is authoritative.
+ * against, a recipient `to` or null for a broadcast, and plain text). This module defines the
+ * `Command` shape and how the browser serializes one; parsing and shape-validating an untrusted
+ * inbound line is `./command.js`'s job, since that needs zod and this module must not.
  *
  * This module is dependency-free on purpose: the browser imports it directly (no Node built-ins, no
- * Ajv) so the line-classification rule lives in exactly one place for both sides of the socket.
+ * zod) so the line-classification rule and the `Command` type live in one dependency-free place for
+ * both sides of the socket.
  */
+import type { Command } from './command.js'
+
+/**
+ * A validated inbound command, ready to forward to the container or echo to clients. Defined in
+ * `./command.js`, which owns parsing one; re-exported here as a type only, which erases at build
+ * time, so this module stays dependency-free.
+ */
+export type { Command }
 
 /** The single outbound event-envelope kind the container emits, once, at session end. */
 export const RESULT_KIND = 'result'
 /** The backend-originated status frame sent to browsers on attach and at end. */
 export const SESSION_KIND = 'session'
-
-/** A validated inbound command, ready to forward to the container or echo to clients. */
-export type Command =
-  | { kind: 'input'; player: string; action: unknown }
-  | { kind: 'chat'; player: string; tick: number; to: string | null; text: string }
-  | { kind: 'pause' }
-  | { kind: 'resume' }
-  | { kind: 'stop' }
 
 /**
  * The result of classifying one outbound line from the container. The `recording` variant carries
@@ -46,10 +47,6 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.hasOwn(object, key)
 }
 
 /**
@@ -72,72 +69,6 @@ export function classifyOutbound(raw: string): OutboundLine {
     return { type: 'envelope', kind: object.kind, raw, value: object }
   }
   return { type: 'recording', raw, value: object }
-}
-
-/** The outcome of parsing an inbound command line from a client. */
-export type CommandParse = { ok: true; command: Command } | { ok: false; reason: string }
-
-/**
- * Parse and shape-validate one inbound command line. Unknown kinds and malformed lines are
- * rejected (the caller logs and ignores them); the action of an `input` is passed through opaque,
- * because only the container interprets it.
- */
-export function parseCommand(raw: string): CommandParse {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return { ok: false, reason: 'not valid JSON' }
-  }
-  const object = asObject(parsed)
-  if (object === null || typeof object.kind !== 'string') {
-    return { ok: false, reason: 'missing a string kind' }
-  }
-  switch (object.kind) {
-    case 'input': {
-      if (typeof object.player !== 'string') {
-        return { ok: false, reason: 'input command needs a string player' }
-      }
-      if (!hasOwn(object, 'action')) {
-        return { ok: false, reason: 'input command needs an action' }
-      }
-      return { ok: true, command: { kind: 'input', player: object.player, action: object.action } }
-    }
-    case 'chat': {
-      if (typeof object.player !== 'string') {
-        return { ok: false, reason: 'chat command needs a string player' }
-      }
-      if (
-        typeof object.tick !== 'number' ||
-        !Number.isSafeInteger(object.tick) ||
-        object.tick < 0
-      ) {
-        return { ok: false, reason: 'chat command needs a non-negative safe-integer tick' }
-      }
-      if (object.to !== null && typeof object.to !== 'string') {
-        return { ok: false, reason: 'chat command needs a string or null to' }
-      }
-      if (typeof object.text !== 'string') {
-        return { ok: false, reason: 'chat command needs string text' }
-      }
-      return {
-        ok: true,
-        command: {
-          kind: 'chat',
-          player: object.player,
-          tick: object.tick,
-          to: object.to,
-          text: object.text,
-        },
-      }
-    }
-    case 'pause':
-    case 'resume':
-    case 'stop':
-      return { ok: true, command: { kind: object.kind } }
-    default:
-      return { ok: false, reason: `unknown command kind ${object.kind}` }
-  }
 }
 
 /** Serialize a validated command to the canonical line the container parses. */

@@ -34,9 +34,10 @@ function gameStatus(gameIndex: number, persisted: GameStatus): GameStatus {
   return props.liveStatus[gameIndex] ?? persisted
 }
 
-/** A seat's agent label: the owner's display name (or id) for a submission, "Naive" for the builtin baseline. */
+/** A seat's agent label: the owner's display name (or id) for a submission, the declared label (or
+ *  stable name) for a built-in. */
 function seatLabel(seat: BoardAgentRef): string {
-  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : seat.name
+  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : (seat.label ?? seat.name)
 }
 
 /** A compact one-line summary of the agents in a game's seats, in seat order. */
@@ -46,7 +47,7 @@ function playersSummary(seats: BoardAgentRef[]): string {
 
 /** The stable ids behind a game's submission seats, joined for a tooltip. Blind masking never
  *  applies to GamesTable's payloads (admin run games and released-season matchup tables), so plain
- *  ids are fine; undefined when no seat is a submission (an all-Naive game). */
+ *  ids are fine; undefined when no seat is a submission (an all-built-in game). */
 function playersTitle(seats: BoardAgentRef[]): string | undefined {
   const ids = seats.filter((seat) => seat.kind === 'submission').map((seat) => seat.user_id)
   return ids.length > 0 ? ids.join(' · ') : undefined
