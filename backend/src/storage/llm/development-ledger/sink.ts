@@ -21,8 +21,5 @@ export function createDevelopmentRecordSink(
         latencyMs: record.latencyMs,
       })
     },
-    probeHealth(): void {
-      store.probeHealth(seasonId)
-    },
   }
 }

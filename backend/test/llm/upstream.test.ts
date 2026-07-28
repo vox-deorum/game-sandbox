@@ -2,7 +2,7 @@ import { APIConnectionError, APIConnectionTimeoutError, APIError } from 'openai'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { LlmChatCompletion } from '../../src/llm/types.js'
-import { UpstreamCaller } from '../../src/llm/upstream.js'
+import { UpstreamCaller, upstreamRequestAllowanceMs } from '../../src/llm/upstream.js'
 
 const success = {
   id: 'c',
@@ -22,70 +22,81 @@ function statusError(status: number): APIError {
 }
 
 describe('UpstreamCaller', () => {
-  it('owns exact exponential retries and includes backoff in latency', async () => {
+  it.each([
+    [30_000, 0, 30_000],
+    [30_000, 1, 60_500],
+    [30_000, 2, 91_500],
+    [30_000, 6, 233_500],
+  ])('bounds a %d ms timeout with %d SDK retries at %d ms', (timeoutMs, maxRetries, expected) => {
+    expect(upstreamRequestAllowanceMs(timeoutMs, maxRetries)).toBe(expected)
+  })
+
+  it('passes the per-request timeout to the SDK client and measures one logical call', async () => {
     let now = 0
-    const client = {
-      create: vi
-        .fn()
-        .mockRejectedValueOnce(statusError(429))
-        .mockRejectedValueOnce(statusError(500))
-        .mockResolvedValueOnce(success),
-    }
-    const sleeps: number[] = []
+    const client = { create: vi.fn().mockImplementation(async () => success) }
     const caller = new UpstreamCaller({
       baseURL: 'http://unused',
       timeoutMs: 50,
       maxRetries: 2,
-      retryIntervalMs: 10,
       client,
-      now: () => now,
-      sleep: async (delay) => {
-        sleeps.push(delay)
-        now += delay
-      },
+      now: () => (now += 17),
     })
     const result = await caller.call({ model: 'm', messages: [] })
-    expect(client.create).toHaveBeenCalledTimes(3)
-    expect(client.create).toHaveBeenLastCalledWith(expect.anything(), {
+    expect(client.create).toHaveBeenCalledOnce()
+    expect(client.create).toHaveBeenCalledWith(expect.anything(), {
       timeout: 50,
-      maxRetries: 0,
     })
-    expect(sleeps).toEqual([10, 20])
-    expect(result.latencyMs).toBe(30)
+    expect(result.latencyMs).toBe(17)
   })
 
-  it('returns a non-retryable 4xx immediately and normalizes exhausted timeouts to 502', async () => {
+  it('settles promptly when the caller aborts while the client remains pending', async () => {
+    const client = { create: vi.fn(() => new Promise<LlmChatCompletion>(() => {})) }
+    const caller = new UpstreamCaller({
+      baseURL: 'http://unused',
+      timeoutMs: 50,
+      maxRetries: 2,
+      client,
+    })
+    const controller = new AbortController()
+    const pending = caller.call({ model: 'm', messages: [] }, controller.signal)
+    const reason = new Error('session ended')
+
+    controller.abort(reason)
+
+    await expect(pending).rejects.toBe(reason)
+    expect(client.create).toHaveBeenCalledOnce()
+    expect(client.create).toHaveBeenCalledWith(expect.anything(), {
+      timeout: 50,
+      signal: controller.signal,
+    })
+  })
+
+  it('normalizes SDK client errors without retrying injected clients itself', async () => {
     const bad = { create: vi.fn().mockRejectedValue(statusError(400)) }
-    const noWait = vi.fn(async () => {})
     const terminal = new UpstreamCaller({
       baseURL: 'http://unused',
       timeoutMs: 1,
       maxRetries: 3,
-      retryIntervalMs: 1,
       client: bad,
-      sleep: noWait,
     })
     await expect(terminal.call({ model: 'm', messages: [] })).rejects.toMatchObject({
       status: 400,
       code: 'e400',
     })
     expect(bad.create).toHaveBeenCalledTimes(1)
-    expect(noWait).not.toHaveBeenCalled()
 
     const timeout = { create: vi.fn().mockRejectedValue(new APIConnectionTimeoutError()) }
-    const exhausted = new UpstreamCaller({
+    const caller = new UpstreamCaller({
       baseURL: 'http://unused',
       timeoutMs: 1,
       maxRetries: 1,
-      retryIntervalMs: 1,
       client: timeout,
-      sleep: noWait,
     })
-    await expect(exhausted.call({ model: 'm', messages: [] })).rejects.toMatchObject({
+    await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({
       status: 502,
       code: 'upstream_timeout',
     })
-    expect(timeout.create).toHaveBeenCalledTimes(2)
+    expect(timeout.create).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -100,21 +111,15 @@ describe('UpstreamCaller', () => {
     ['429', () => statusError(429), 429, 'e429'],
     ['500', () => statusError(500), 500, 'e500'],
     ['503', () => statusError(503), 503, 'e503'],
-  ])('exhausts every retry for %s', async (_name, makeError, status, code) => {
+  ])('normalizes every SDK failure for %s', async (_name, makeError, status, code) => {
     const client = { create: vi.fn().mockImplementation(() => Promise.reject(makeError())) }
-    const sleeps: number[] = []
     const caller = new UpstreamCaller({
       baseURL: 'http://unused',
       timeoutMs: 10,
       maxRetries: 2,
-      retryIntervalMs: 2,
       client,
-      sleep: async (delay) => {
-        sleeps.push(delay)
-      },
     })
     await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({ status, code })
-    expect(client.create).toHaveBeenCalledTimes(3)
-    expect(sleeps).toEqual([2, 4])
+    expect(client.create).toHaveBeenCalledOnce()
   })
 })

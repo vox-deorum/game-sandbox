@@ -53,7 +53,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     roots.push(root)
     const store = new ExecutionTelemetryStore(root)
     stores.push(store)
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const meter = new LlmMeter()
     const tick: OfficialTickMarkerRef = { current: initialTick }
     const grant: LlmGrant = {
       kind: 'official',
@@ -75,9 +75,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       baseURL: 'http://stub.invalid',
       timeoutMs: 50,
       maxRetries,
-      retryIntervalMs: 1,
       client,
-      sleep: async () => {},
     })
     const handler = new LlmHandler({
       meter,
@@ -88,9 +86,9 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     return { client, grant, handler, meter, store, tick }
   }
 
-  it('retries to one success, one durable charge, and one telemetry row', async () => {
+  it('records one SDK-returned success and one telemetry row', async () => {
     const client = {
-      create: vi.fn().mockRejectedValueOnce(statusError(429)).mockResolvedValueOnce(completion()),
+      create: vi.fn().mockResolvedValue(completion()),
     }
     const { grant, handler, meter, store } = pipeline(client)
 
@@ -102,7 +100,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       usage: { prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 },
     })
 
-    expect(client.create).toHaveBeenCalledTimes(2)
+    expect(client.create).toHaveBeenCalledOnce()
     expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, PLAYER)).toEqual({
       small: {
         calls: 1,
@@ -138,7 +136,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
 
   it.each([
     ['non-retryable response', 400, 3, 1],
-    ['exhausted retryable response', 500, 1, 2],
+    ['retryable response returned by the SDK', 500, 1, 1],
   ])('leaves no durable charge or row after a %s', async (_name, status, maxRetries, attempts) => {
     const client = { create: vi.fn().mockRejectedValue(statusError(status)) }
     const { grant, handler, meter, store } = pipeline(client, maxRetries)

@@ -12,9 +12,9 @@ export interface KeyRegistryOptions {
   now?: () => number
   /**
    * Upper bound on how much a single in-flight request may contribute to {@link KeyRegistry.inFlightMs},
-   * matching the upstream caller's worst-case wall time. Defense-in-depth against an SDK per-attempt
-   * timeout that never fires, so outer watchdog discounting can rely on a stuck request's
-   * contribution being bounded.
+   * matching its configured attempt timeouts and default SDK retry waits. Provider-directed waits
+   * beyond this allowance and a per-attempt timeout that never fires remain capped, so outer
+   * watchdog discounting can rely on a stuck request's contribution being bounded.
    */
   maxRequestMs?: number
 }

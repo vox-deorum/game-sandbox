@@ -33,8 +33,8 @@ Browser
 | `src/admin/` | Operator-only season and workflow API |
 | `src/leaderboards/` | Public season and leaderboard reads |
 | `src/ratings/` | Session ratings and author prompts |
-| `src/llm/` | OpenAI-compatible proxy, scoped grants, admission, retries, token estimation, and circuit breaking |
-| `src/storage/llm/` | Execution-scoped successful-call telemetry and accounting health checks |
+| `src/llm/` | OpenAI-compatible proxy, scoped grants, admission, retries, token estimation, and scope availability |
+| `src/storage/llm/` | Execution-scoped successful-call telemetry and development ledgers |
 | `src/workflow/` | Workflow runner interface, events, and recovery |
 | `src/recordings.ts` | Recording reads and deletion |
 | `src/retention.ts` | Recording metadata, pinning, and eviction |

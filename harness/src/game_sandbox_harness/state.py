@@ -22,9 +22,9 @@ class StepTiming(TypedDict):
 
 
 class AgentTiming(TypedDict, total=False):
-    """Per-agent chargeable timing. Official LLM sessions discount verified proxy time when both
-    hook snapshots succeed, with calling-thread CPU time as a lower bound; otherwise values remain
-    at least full wall-clock hook times. ``decision_ms`` is ``act`` time, ``learn_ms`` is optional
+    """Per-agent chargeable timing. Official LLM sessions compare fresh proxy-time readings around
+    each hook and discount their non-negative change, clamped at zero. A missing or invalid reading
+    charges the full wall-clock hook time. ``decision_ms`` is ``act`` time, ``learn_ms`` is optional
     learn-hook time, and ``chat_ms`` is optional chat-hook time. The leaderboard compute column sums
     all three."""
 

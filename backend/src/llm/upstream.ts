@@ -3,10 +3,13 @@ import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError } from 
 import { LlmError, type LlmErrorBody } from './errors.js'
 import type { LlmChatCompletion, LlmChatRequest } from './types.js'
 
+const SDK_INITIAL_RETRY_DELAY_MS = 500
+const SDK_MAX_RETRY_DELAY_MS = 8_000
+
 export interface UpstreamChatClient {
   create(
     request: LlmChatRequest,
-    options: { timeout: number; maxRetries: 0; signal?: AbortSignal },
+    options: { timeout: number; signal?: AbortSignal },
   ): Promise<LlmChatCompletion>
 }
 
@@ -15,15 +18,25 @@ export interface UpstreamCallerOptions {
   apiKey?: string
   timeoutMs: number
   maxRetries: number
-  retryIntervalMs: number
   client?: UpstreamChatClient
-  sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
 }
 
 export interface UpstreamSuccess {
   completion: LlmChatCompletion
   latencyMs: number
+}
+
+/**
+ * Bound one SDK-managed logical request by all attempt timeouts and the default retry-delay ceiling.
+ * A longer provider Retry-After value may extend the request, but watchdog credit remains capped.
+ */
+export function upstreamRequestAllowanceMs(timeoutMs: number, maxRetries: number): number {
+  let retryDelayMs = 0
+  for (let retry = 0; retry < maxRetries; retry++) {
+    retryDelayMs += Math.min(SDK_INITIAL_RETRY_DELAY_MS * 2 ** retry, SDK_MAX_RETRY_DELAY_MS)
+  }
+  return timeoutMs * (maxRetries + 1) + retryDelayMs
 }
 
 /** A final upstream response retains its status and compatible body for the listener. */
@@ -41,10 +54,9 @@ export class UpstreamError extends LlmError {
   }
 }
 
-/** One explicit retry loop around an SDK client whose own retries are disabled. */
+/** One SDK-backed upstream request with SDK-managed retries and a per-request timeout. */
 export class UpstreamCaller {
   private readonly client: UpstreamChatClient
-  private readonly sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>
   private readonly now: () => number
 
   constructor(private readonly options: UpstreamCallerOptions) {
@@ -54,7 +66,7 @@ export class UpstreamCaller {
       const sdk = new OpenAI({
         apiKey: options.apiKey ?? 'unused-no-upstream-credential',
         baseURL: options.baseURL,
-        maxRetries: 0,
+        maxRetries: options.maxRetries,
         // Some OpenAI-compatible local endpoints are deliberately unauthenticated. The SDK requires
         // an apiKey constructor value, then this explicit null suppresses its generated bearer header.
         ...(options.apiKey === undefined ? { defaultHeaders: { Authorization: null } } : {}),
@@ -64,56 +76,37 @@ export class UpstreamCaller {
           sdk.chat.completions.create(request, requestOptions) as Promise<LlmChatCompletion>,
       }
     }
-    this.sleep = options.sleep ?? abortableSleep
     this.now = options.now ?? Date.now
   }
 
   async call(request: LlmChatRequest, signal?: AbortSignal): Promise<UpstreamSuccess> {
     const started = this.now()
-    let finalError: unknown
-    for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
-      signal?.throwIfAborted()
-      try {
-        const completion = await this.client.create(request, {
-          timeout: this.options.timeoutMs,
-          maxRetries: 0,
-          ...(signal === undefined ? {} : { signal }),
-        })
-        return { completion, latencyMs: elapsed(started, this.now()) }
-      } catch (error) {
-        finalError = error
-        if (!retryable(error) || attempt === this.options.maxRetries) break
-        const retryNumber = attempt + 1
-        await this.sleep(this.options.retryIntervalMs * 2 ** (retryNumber - 1), signal)
-      }
+    signal?.throwIfAborted()
+    try {
+      const pending = this.client.create(request, {
+        timeout: this.options.timeoutMs,
+        ...(signal === undefined ? {} : { signal }),
+      })
+      const completion = signal === undefined ? await pending : await raceWithAbort(pending, signal)
+      return { completion, latencyMs: elapsed(started, this.now()) }
+    } catch (error) {
+      if (signal?.aborted === true) throw signal.reason
+      throw normalizeUpstreamError(error)
     }
-    throw normalizeUpstreamError(finalError)
   }
 }
 
-/** Default retry sleep that revocation can interrupt without waiting for the next attempt. */
-function abortableSleep(delayMs: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted === true) {
-      reject(signal.reason)
-      return
-    }
-    const timer = setTimeout(resolve, delayMs)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
+/** Settle the caller promptly when its lifecycle ends, even while the SDK is in a retry sleep. */
+function raceWithAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  let onAbort: (() => void) | undefined
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
   })
-}
-
-function retryable(error: unknown): boolean {
-  if (error instanceof APIConnectionError || error instanceof APIConnectionTimeoutError) return true
-  if (!(error instanceof APIError) || error.status === undefined) return false
-  return [408, 409, 429].includes(error.status) || error.status >= 500
+  return Promise.race([pending, aborted]).finally(() => {
+    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort)
+  })
 }
 
 function normalizeUpstreamError(error: unknown): UpstreamError {

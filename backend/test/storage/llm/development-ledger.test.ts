@@ -39,24 +39,20 @@ describe('DevelopmentLedgerStore', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('creates the versioned schema, user index, and startup write-health row', () => {
+  it('creates the versioned schema and user index', () => {
     store.open('season-1')
     const db = new BetterSqlite3(join(root, 'season-1.sqlite'), { readonly: true })
 
     expect(db.pragma('user_version', { simple: true })).toBe(DEVELOPMENT_LEDGER_SCHEMA_VERSION)
     expect(
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all(),
-    ).toEqual(['calls', 'meter_health'])
+    ).toEqual(['calls'])
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'calls_user'")
         .pluck()
         .get(),
     ).toBe('calls_user')
-    expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
-      id: 1,
-      checked_at: '2026-07-15T12:34:56.000Z',
-    })
     db.close()
   })
 

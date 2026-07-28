@@ -42,13 +42,13 @@ describe('ExecutionTelemetryStore', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('creates the versioned schema and completes startup write health', () => {
+  it('creates the versioned schema', () => {
     store.open('scope-1')
     const db = new BetterSqlite3(join(root, 'scope-1.sqlite'), { readonly: true })
     expect(db.pragma('user_version', { simple: true })).toBe(EXECUTION_TELEMETRY_SCHEMA_VERSION)
     expect(
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all(),
-    ).toEqual(['calls', 'meter_health'])
+    ).toEqual(['calls'])
     expect(
       db
         .prepare(
@@ -57,10 +57,6 @@ describe('ExecutionTelemetryStore', () => {
         .pluck()
         .all(),
     ).toEqual(['calls_created_at', 'calls_session_player'])
-    expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
-      id: 1,
-      checked_at: '2026-07-15T12:34:56.000Z',
-    })
     db.close()
   })
 
@@ -157,9 +153,8 @@ describe('ExecutionTelemetryStore', () => {
     expect(store.readSessionUsageByModel('run', 'missing', 'player_0')).toEqual({})
   })
 
-  it('probes health, closes before deleting, and recreates a clean scope', () => {
+  it('closes before deleting and recreates a clean scope', () => {
     store.insert('delete-me', CALL)
-    expect(() => store.probeHealth('delete-me')).not.toThrow()
     const path = store.pathForScope('delete-me')
     store.deleteScope('delete-me')
     expect(existsSync(path)).toBe(false)

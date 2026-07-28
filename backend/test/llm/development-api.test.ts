@@ -94,8 +94,7 @@ describe('development LLM API', () => {
     cleanups.push(() => rmSync(root, { recursive: true, force: true }))
     const ledger = new DevelopmentLedgerStore(join(root, 'ledger'))
     cleanups.push(() => ledger.close())
-    const meter = new LlmMeter({ recoveryIntervalMs: 5 })
-    cleanups.push(() => meter.close())
+    const meter = new LlmMeter()
     const statuses = new Map<string, UserStatus | null>()
     const environments = llmEnvironments()
     const baseLlm = makeTestLlmOptions()
@@ -340,7 +339,7 @@ describe('development LLM API', () => {
     })
   })
 
-  it('opens and recovers only the failing participant-season breaker after accounting failure', async () => {
+  it('keeps only the failing participant-season unavailable after accounting failure', async () => {
     const { testApp, ledger, meter, upstream, statuses } = await fixture()
     const seasonId = await enabledSeason(testApp)
     const aliceKey = await issue(testApp, statuses, seasonId, 'alice')
@@ -364,8 +363,7 @@ describe('development LLM API', () => {
     expect(failed.statusCode).toBe(503)
     expect(failed.json()).toMatchObject({ error: { code: 'meter_unavailable' } })
     expect(meter.inspect(`development:${seasonId}:${aliceId}`)).toMatchObject({
-      breakerOpen: true,
-      debt: { weightedTokens: 11 },
+      unavailable: true,
     })
     const upstreamCalls = upstream.call.mock.calls.length
     expect((await call(aliceKey)).statusCode).toBe(503)
@@ -380,13 +378,8 @@ describe('development LLM API', () => {
         outputTokens: 4,
       },
     })
-    expect(meter.inspect(`development:${seasonId}:${bobId}`).breakerOpen).toBe(false)
-
-    await vi.waitFor(
-      () => expect(meter.inspect(`development:${seasonId}:${aliceId}`).breakerOpen).toBe(false),
-      { timeout: 500 },
-    )
-    expect(meter.inspect(`development:${seasonId}:${aliceId}`).debt.weightedTokens).toBe(11)
+    expect(meter.inspect(`development:${seasonId}:${bobId}`).unavailable).toBe(false)
+    expect(meter.inspect(`development:${seasonId}:${aliceId}`).unavailable).toBe(true)
   })
 
   it('keeps closed-season history readable without an upstream handler', async () => {

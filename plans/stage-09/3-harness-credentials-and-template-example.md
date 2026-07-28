@@ -49,7 +49,7 @@ Use a small synchronous standard-library HTTP helper with a bounded local timeou
 
 Calls made during setup carry a null tick in execution-scope SQLite. Calls made during a turn carry the marked tick. Durable scope and session IDs on recording metadata associate those rows with replays.
 
-The harness compares proxy-time snapshots around each `act`, `chat`, or `learn` hook. It subtracts the non-negative change from the hook's wall time while retaining the hook's own calling-thread CPU time. A failed or invalid snapshot leaves the full wall time chargeable. Module load, construction, and `reset` are setup work with null tick attribution and occur before turn timing.
+The harness reads the cumulative proxy-time counter immediately before and after each `act`, `chat`, or `learn` hook. It subtracts a valid non-negative change from the hook's wall time. A failed or invalid read leaves the full wall time chargeable. An opponent's overlapping proxy request can also advance the cumulative counter and reduce the acting player's chargeable time. Module load, construction, and `reset` are setup work with null tick attribution and occur before turn timing.
 
 ## Template command and environment file
 

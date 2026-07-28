@@ -3,7 +3,7 @@
 Most tests run against a synthetic repo tree built under ``tmp_path`` with the module's path
 constants monkeypatched onto it (the pattern ``test_compose.py`` uses), so a bump can be applied and
 re-applied without touching the real repo. One test runs ``check()`` against the live checkout, which
-is exactly what CI runs — but nothing here asserts byte-equality between a fresh freeze and the real
+is exactly what CI runs, but nothing here asserts byte-equality between a fresh freeze and the real
 ``deps-v1/requirements.txt``, because the live template set may legitimately drift after a release.
 """
 
@@ -202,8 +202,6 @@ def test_apply_bumps_every_touchpoint(repo: Path):
     # Non-manifest builtin files are copied verbatim.
     assert (deps_v2 / "builtin" / "flappy_bird" / "requirements.txt").read_text() == "wcwidth==0.2.13\n"
     assert (deps_v2 / "builtin" / "flappy_bird" / "agent.py").read_text() == "# agent\n"
-    # check() agrees the bumped tree is consistent.
-    assert bump.check() == []
 
 
 def test_apply_is_idempotent(repo: Path):
@@ -234,36 +232,48 @@ def test_apply_can_skip_versions(repo: Path):
     assert "deps-v1/Dockerfile" in ts  # old entry retained
 
 
-# --- escape hatch -----------------------------------------------------------------------------
+# --- existing snapshots ------------------------------------------------------------------------
 
 
-def test_apply_keeps_a_valid_hand_crafted_snapshot(repo: Path):
-    # A maintainer pre-creates deps-v2/ with a recipe change (an extra RUN line). apply must keep it.
+def test_apply_refuses_an_existing_snapshot(repo: Path):
     deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
-    hand_dockerfile = (
-        "# dependency-set version 2, deps-v2\n"
-        "FROM python:3.12-slim\n"
-        "RUN echo hand-crafted\n"
-        "COPY backend/images/session-base/deps-v2/requirements.txt ./requirements.txt\n"
-        "COPY backend/images/session-base/deps-v2/builtin /opt/agents/builtin\n"
-    )
-    _write(deps_v2 / "Dockerfile", hand_dockerfile)
-    _write(deps_v2 / "requirements.txt", freeze_requirements(_PIP_COMPILE, 2))
-    _write(deps_v2 / "builtin" / "hearts" / "manifest.json", _manifest(2))
+    deps_v2.mkdir(parents=True)
 
-    bump.apply(2)
-    assert (deps_v2 / "Dockerfile").read_text() == hand_dockerfile  # untouched
-
-
-def test_apply_rejects_an_inconsistent_hand_crafted_snapshot(repo: Path):
-    deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
-    # Its Dockerfile still names deps-v1 paths — a stale hand-crafted snapshot.
-    _write(deps_v2 / "Dockerfile", _DOCKERFILE)
-    _write(deps_v2 / "requirements.txt", freeze_requirements(_PIP_COMPILE, 2))
-    _write(deps_v2 / "builtin" / "hearts" / "manifest.json", _manifest(2))
-
-    with pytest.raises(BumpError, match="not a valid deps-v2 snapshot"):
+    with pytest.raises(BumpError, match="target snapshot .* already exists"):
         bump.apply(2)
+
+    assert bump.current_version() == 1
+    fixture = repo / "frontend" / "e2e" / "fixtures" / "submission" / "good" / "manifest.json"
+    assert '"template_version": 1' in fixture.read_text()
+    deps_ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    assert "export const DEPS_VERSION = 1" in deps_ts
+    assert "deps-v2/Dockerfile" not in deps_ts
+
+
+def test_apply_refuses_a_dangling_snapshot_symlink(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
+    original_exists = Path.exists
+    original_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path: False if path == deps_v2 else original_exists(path),
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == deps_v2 else original_is_symlink(path),
+    )
+
+    with pytest.raises(BumpError, match="target snapshot .* already exists"):
+        bump.apply(2)
+
+    assert bump.current_version() == 1
+    fixture = repo / "frontend" / "e2e" / "fixtures" / "submission" / "good" / "manifest.json"
+    assert '"template_version": 1' in fixture.read_text()
+    deps_ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    assert "export const DEPS_VERSION = 1" in deps_ts
+    assert "deps-v2/Dockerfile" not in deps_ts
 
 
 # --- check() catches each single divergence ---------------------------------------------------

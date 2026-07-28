@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { LlmSuccessfulRecord, OfficialTickMarkerRef } from '../../../src/llm/types.js'
 import { ExecutionTelemetryStore } from '../../../src/storage/llm/execution-telemetry.js'
@@ -97,8 +97,7 @@ describe('createOfficialRecordSink', () => {
     ])
   })
 
-  it('writes the record and delegates health to the same scope', () => {
-    const probe = vi.spyOn(store, 'probeHealth')
+  it('writes the record to the bound scope', () => {
     const sink = createOfficialRecordSink(store, {
       scopeId: 'live-session',
       sessionId: 'live-session',
@@ -107,14 +106,11 @@ describe('createOfficialRecordSink', () => {
     })
 
     sink.record(SUCCESS)
-    sink.probeHealth()
 
     expect(store.listCalls('live-session')[0]).toMatchObject({
       sessionId: 'live-session',
       player: 'player_0',
       model: 'medium',
     })
-    expect(probe).toHaveBeenCalledOnce()
-    expect(probe).toHaveBeenCalledWith('live-session')
   })
 })

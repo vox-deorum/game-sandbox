@@ -203,10 +203,6 @@ function initializeSchema(db: BetterSqlite3.Database): void {
         );
         CREATE INDEX calls_session_player ON calls (session_id, player);
         CREATE INDEX calls_created_at ON calls (created_at);
-        CREATE TABLE meter_health (
-          id         INTEGER PRIMARY KEY CHECK (id = 1),
-          checked_at TEXT NOT NULL
-        );
       `)
       db.pragma('user_version = 1')
     }).immediate()
@@ -219,21 +215,6 @@ export class TelemetryUnavailableError extends Error {
     super(message, options)
     this.name = 'TelemetryUnavailableError'
   }
-}
-
-function writeHealth(db: BetterSqlite3.Database, checkedAt: string): void {
-  db.transaction(() => {
-    db.prepare(
-      `INSERT INTO meter_health (id, checked_at) VALUES (1, ?)
-       ON CONFLICT (id) DO UPDATE SET checked_at = excluded.checked_at`,
-    ).run(checkedAt)
-    const row = db.prepare('SELECT checked_at FROM meter_health WHERE id = 1').get() as
-      | { checked_at: string }
-      | undefined
-    if (row?.checked_at !== checkedAt) {
-      throw new Error('LLM telemetry write-health readback did not match')
-    }
-  }).immediate()
 }
 
 /** Owns cached handles for all official execution-scope telemetry files under one root directory. */
@@ -253,7 +234,7 @@ export class ExecutionTelemetryStore {
     return join(this.rootDir, `${scopeId}.sqlite`)
   }
 
-  /** Open, initialize, and write-probe a scope before returning it to admission or query code. */
+  /** Open and initialize a scope before returning it to admission or query code. */
   open(scopeId: string): void {
     this.handle(scopeId)
   }
@@ -386,12 +367,7 @@ export class ExecutionTelemetryStore {
     )
   }
 
-  /** Verify that the scope can still commit and read back a write transaction. */
-  probeHealth(scopeId: string): void {
-    writeHealth(this.handle(scopeId).db, this.now().toISOString())
-  }
-
-  /** Close a cached handle. A later operation safely reopens and probes the same file. */
+  /** Close a cached handle. A later operation safely reopens the same file. */
   closeScope(scopeId: string): void {
     validateScopeId(scopeId)
     const handle = this.handles.get(scopeId)
@@ -447,7 +423,6 @@ export class ExecutionTelemetryStore {
     try {
       db.pragma('journal_mode = WAL')
       initializeSchema(db)
-      writeHealth(db, this.now().toISOString())
       const handle: ScopeHandle = {
         db,
         insertCall: db.prepare(`

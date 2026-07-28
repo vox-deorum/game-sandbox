@@ -104,9 +104,8 @@ export class DevelopmentKeyService {
     try {
       this.deps.ledger.open(row.season_id)
     } catch {
-      // The shared meter owns single-flight, pair-scoped recovery. Breaker admission happens before
-      // its durable read, so a broken season ledger cannot leak a raw storage error to this request.
-      this.deps.meter.markUnavailable(scope, sink)
+      // Admission fails before the durable read once an unavailable ledger is observed.
+      this.deps.meter.markUnavailable(scope)
     }
     return {
       kind: 'development',

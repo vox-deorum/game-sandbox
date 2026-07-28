@@ -99,7 +99,7 @@ Streaming completions are not supported. Use a normal request with `stream=False
 
 Even if your code is correct, LLM calls may fail. Therefore, keep the fallback even after you improve the prompt or response parsing.
 
-Only successful calls spend the budget. If the service temporarily cannot track usage, calls fail with `meter_unavailable` until it recovers. Other failures may include `budget_exceeded`, `model_not_allowed`, and request or response errors. The runner handles retries, so there is no need to do your own retry loop.
+Only successful calls spend the budget. If the service cannot track usage, calls for that meter fail with `meter_unavailable` until the backend restarts. Other failures may include `budget_exceeded`, `model_not_allowed`, and request or response errors. The runner handles retries, so there is no need to do your own retry loop.
 
 ## Tracing Your LLM Usage
 

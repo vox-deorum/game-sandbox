@@ -23,7 +23,7 @@ const LOCAL_BRIDGE = `uv run python ${JSON.stringify(fileURLToPath(new URL('./e2
 const MAIN_PORT = 8090
 
 /**
- * The renderer needs a WebGL context (PixiJS skips its app entirely without one — see
+ * The renderer needs a WebGL context (PixiJS skips its app entirely without one, see
  * PixiRenderer.hasWebGL), but headless Chromium on a GPU-less CI runner has no hardware GL. These
  * flags route GL through ANGLE's SwiftShader software backend so the canvas mounts as it does on a
  * desktop. `--enable-unsafe-swiftshader` opts in to SwiftShader after recent Chromium versions began
@@ -88,12 +88,10 @@ export default defineConfig({
         LLM_MAX_OUTPUT_TOKENS: '32',
         LLM_UPSTREAM_TIMEOUT_MS: '5000',
         LLM_UPSTREAM_MAX_RETRIES: '2',
-        LLM_UPSTREAM_RETRY_INTERVAL_MS: '10',
         LLM_TIKTOKEN_ENCODING: 'cl100k_base',
         // This suite already reserves MAIN_PORT and permits only one local run at a time. Keep the
         // internal listener fixed under that same constraint so Docker relays have one known target.
         LLM_INTERNAL_PORT: '9472',
-        LLM_METER_RECOVERY_INTERVAL_MS: '50',
       }),
       url: `http://127.0.0.1:${MAIN_PORT}/api/me`,
       // Never reattach to a leftover backend: the launcher just wiped the database for a fresh run, so

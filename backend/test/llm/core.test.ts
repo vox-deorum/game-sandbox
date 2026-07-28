@@ -56,7 +56,6 @@ function fixture(
       record: (record) => {
         records.push(record)
       },
-      probeHealth: () => {},
     } satisfies LlmGrant['recordSink'])
   const grant: LlmGrant = {
     kind: 'official',
@@ -79,7 +78,7 @@ function fixture(
       latencyMs: 17,
     })),
   }
-  const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+  const meter = new LlmMeter()
   const handler = new LlmHandler({
     meter,
     tokenizer,
@@ -292,7 +291,6 @@ describe('LLM registry, handler, and listener', () => {
           await finalizerGate
           finalized = true
         },
-        probeHealth: () => {},
       },
     })
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(2))
@@ -632,14 +630,14 @@ describe('LLM registry, handler, and listener', () => {
   })
 })
 
-describe('generic admission and recovery', () => {
+describe('generic admission and unavailable scopes', () => {
   afterEach(() => vi.useRealTimers())
 
   it.each([
     ['token', { tokenBudget: 10, requestsPerMinute: 10 }, 3, 3],
     ['rate', { tokenBudget: 100, requestsPerMinute: 1 }, 2, 3],
   ])('makes concurrent %s reservations observe one atomic budget', async (_kind, limits, input, output) => {
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const meter = new LlmMeter()
     const accountingScope: LlmAccountingScope = {
       key: `concurrent:${_kind}`,
       limits,
@@ -664,7 +662,7 @@ describe('generic admission and recovery', () => {
   })
 
   it('weights mixed committed usage and pending large-model capacity at the exact boundary', async () => {
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const meter = new LlmMeter()
     const scope: LlmAccountingScope = {
       key: 'weighted:mixed',
       limits: { tokenBudget: 20, requestsPerMinute: 10 },
@@ -684,7 +682,7 @@ describe('generic admission and recovery', () => {
   })
 
   it('carries a fractional weight through reservation arithmetic without rounding it away', async () => {
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const meter = new LlmMeter()
     const scope: LlmAccountingScope = {
       key: 'weighted:fractional',
       limits: { tokenBudget: 10, requestsPerMinute: 10 },
@@ -706,10 +704,10 @@ describe('generic admission and recovery', () => {
     meter.release(admitted)
   })
 
-  it('charges weighted debt without losing release precision', async () => {
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+  it('marks an accounting scope unavailable without affecting reservation release', async () => {
+    const meter = new LlmMeter()
     const scope: LlmAccountingScope = {
-      key: 'weighted:debt',
+      key: 'weighted:unavailable',
       limits: { tokenBudget: 100, requestsPerMinute: 10 },
       weights: { large: 4, small: 1 },
       readCommittedUsage: () => ({
@@ -718,12 +716,15 @@ describe('generic admission and recovery', () => {
       }),
     }
     const reservation = await meter.reserve(scope, 'large', 1, 2)
-    meter.chargeConservativeDebt(reservation, { record: () => {}, probeHealth: () => {} })
+    meter.release(reservation)
+    meter.markUnavailable(scope)
     expect(meter.inspect(scope.key)).toMatchObject({
       reservedWeightedTokens: 0,
-      debt: { weightedTokens: 12 },
+      unavailable: true,
     })
-    meter.close()
+    await expect(meter.reserve(scope, 'small', 1, 1)).rejects.toMatchObject({
+      code: 'meter_unavailable',
+    })
   })
 
   it.each([
@@ -738,7 +739,7 @@ describe('generic admission and recovery', () => {
   })
 
   it('keeps official player and development-shaped accounting keys independent', async () => {
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const meter = new LlmMeter()
     const makeScope = (key: string): LlmAccountingScope => ({
       key,
       limits: { tokenBudget: 100, requestsPerMinute: 1 },
@@ -767,7 +768,7 @@ describe('generic admission and recovery', () => {
 
   it('retains successful request starts in time order when concurrent requests finish out of order', async () => {
     let now = 1_000
-    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-order',
       limits: { tokenBudget: 100, requestsPerMinute: 2 },
@@ -792,7 +793,7 @@ describe('generic admission and recovery', () => {
 
   it('keeps a later success when an earlier concurrent request fails', async () => {
     let now = 1_000
-    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-rollback',
       limits: { tokenBudget: 100, requestsPerMinute: 2 },
@@ -818,7 +819,7 @@ describe('generic admission and recovery', () => {
 
   it('expires pending rate capacity when its request start leaves the sliding window', async () => {
     let now = 1_000
-    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-expiry',
       limits: { tokenBudget: 100, requestsPerMinute: 1 },
@@ -838,7 +839,7 @@ describe('generic admission and recovery', () => {
 
   it('retains no event for a success whose start left the window even without an intervening prune', async () => {
     let now = 1_000
-    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-late-success',
       limits: { tokenBudget: 100, requestsPerMinute: 1 },
@@ -856,7 +857,7 @@ describe('generic admission and recovery', () => {
 
   it('ignores a duplicate record on a live reservation and throws on a finalized one', async () => {
     let now = 1_000
-    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-finalized',
       limits: { tokenBudget: 100, requestsPerMinute: 5 },
@@ -905,15 +906,10 @@ describe('generic admission and recovery', () => {
     expect(upstream.call).toHaveBeenCalledTimes(1)
   })
 
-  it('moves a failed record reservation to debt and closes the breaker only after health recovers', async () => {
-    vi.useFakeTimers()
-    let healthy = false
+  it('keeps a failed record scope unavailable for the process lifetime', async () => {
     const sink = {
       record: vi.fn(() => {
         throw new Error('disk full')
-      }),
-      probeHealth: vi.fn(() => {
-        if (!healthy) throw new Error('still full')
       }),
     }
     const { grant, handler, meter, upstream } = fixture({ sink })
@@ -922,32 +918,17 @@ describe('generic admission and recovery', () => {
     })
     const key = grant.accountingScope.key
     expect(meter.inspect(key)).toMatchObject({
-      breakerOpen: true,
-      debt: { weightedTokens: 11 },
+      unavailable: true,
+      reservedWeightedTokens: 0,
     })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
     })
     expect(upstream.call).toHaveBeenCalledTimes(1)
-
-    await vi.advanceTimersByTimeAsync(10)
-    expect(sink.probeHealth).toHaveBeenCalledTimes(1)
-    expect(meter.inspect(key).breakerOpen).toBe(true)
-    healthy = true
-    await vi.advanceTimersByTimeAsync(10)
-    expect(sink.probeHealth).toHaveBeenCalledTimes(2)
-    expect(meter.inspect(key).breakerOpen).toBe(false)
-    expect(meter.inspect(key).debt.weightedTokens).toBe(11)
-    grant.accountingScope.limits.tokenBudget = 11
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'budget_exceeded',
-    })
-    expect(upstream.call).toHaveBeenCalledTimes(1)
   })
 
-  it('retains debt and opens the breaker when estimation fails after upstream success', async () => {
-    vi.useFakeTimers()
-    const sink = { record: vi.fn(), probeHealth: vi.fn() }
+  it('marks a scope unavailable when estimation fails after upstream success', async () => {
+    const sink = { record: vi.fn() }
     const tokenizer: LlmTokenCounter = {
       countRequest: () => 3,
       countCompletion: () => {
@@ -964,25 +945,35 @@ describe('generic admission and recovery', () => {
     const key = grant.accountingScope.key
     expect(sink.record).not.toHaveBeenCalled()
     expect(meter.inspect(key)).toMatchObject({
-      breakerOpen: true,
+      unavailable: true,
       reservedWeightedTokens: 0,
-      debt: { weightedTokens: 11 },
     })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
     })
     expect(upstream.call).toHaveBeenCalledOnce()
-    meter.close()
   })
 
-  it('opens the scope breaker and charges conservative token debt after a sink failure', async () => {
-    vi.useFakeTimers()
+  it('logs an unavailable scope only once after repeated marks', async () => {
+    const log = vi.fn()
+    const meter = new LlmMeter({ log })
+    const scope: LlmAccountingScope = {
+      key: 'session:unavailable:player_0',
+      limits: { tokenBudget: 100, requestsPerMinute: 10 },
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
+    }
+    meter.markUnavailable(scope)
+    meter.markUnavailable(scope)
+
+    expect(meter.inspect(scope.key).unavailable).toBe(true)
+    expect(log).toHaveBeenCalledOnce()
+  })
+
+  it('marks the scope unavailable after a sink failure', async () => {
     const sink = {
       record: vi.fn(() => {
         throw new Error('disk full')
-      }),
-      probeHealth: vi.fn(() => {
-        throw new Error('still full')
       }),
     }
     const { grant, handler, meter } = fixture({ sink })
@@ -992,41 +983,8 @@ describe('generic admission and recovery', () => {
     })
 
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
-      breakerOpen: true,
+      unavailable: true,
       reservedWeightedTokens: 0,
-      debt: { weightedTokens: 11 },
     })
-    meter.close()
-  })
-
-  it('keeps a startup-shaped recovery probe single-flight until it resolves', async () => {
-    vi.useFakeTimers()
-    let resolveProbe: (() => void) | undefined
-    const pendingProbe = new Promise<void>((resolve) => {
-      resolveProbe = resolve
-    })
-    const sink = { record: vi.fn(), probeHealth: vi.fn(() => pendingProbe) }
-    const scope: LlmAccountingScope = {
-      key: 'session:startup:player_0',
-      limits: { tokenBudget: 100, requestsPerMinute: 10 },
-      weights: { small: 1 },
-      readCommittedUsage: () => ({}),
-    }
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
-    meter.markUnavailable(scope, sink)
-
-    vi.advanceTimersByTime(10)
-    await Promise.resolve()
-    expect(sink.probeHealth).toHaveBeenCalledOnce()
-    expect(meter.inspect(scope.key).breakerOpen).toBe(true)
-    vi.advanceTimersByTime(100)
-    await Promise.resolve()
-    expect(sink.probeHealth).toHaveBeenCalledOnce()
-
-    resolveProbe?.()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(meter.inspect(scope.key).breakerOpen).toBe(false)
-    meter.close()
   })
 })

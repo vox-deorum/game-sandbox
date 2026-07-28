@@ -96,8 +96,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     cleanup.push(() => storage.close())
     const telemetry = new ExecutionTelemetryStore(resolve(root, 'llm'))
     cleanup.push(() => telemetry.close())
-    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
-    cleanup.push(() => meter.close())
+    const meter = new LlmMeter()
     const tokenizer = new TiktokenCounter('cl100k_base')
     cleanup.push(() => tokenizer.close())
     const tokenBudget = budgetForSuccessfulCalls(tokenizer)
@@ -110,7 +109,6 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
         apiKey: 'upstream-secret',
         timeoutMs: 10_000,
         maxRetries: 2,
-        retryIntervalMs: 20,
       }),
       options: { defaultMaxOutputTokens: 1, maxOutputTokens: 8 },
     })

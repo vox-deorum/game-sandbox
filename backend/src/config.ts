@@ -109,11 +109,9 @@ export interface LlmOptions {
   models: Partial<Record<ModelAlias, LlmModelConfig>>
   upstreamTimeoutMs: number
   upstreamMaxRetries: number
-  upstreamRetryIntervalMs: number
   tiktokenEncoding: TiktokenEncoding
   defaultMaxOutputTokens: number
   maxOutputTokens: number
-  meterRecoveryIntervalMs: number
   sessionLimits: LlmLimits
   developmentLimits: LlmLimits
 }
@@ -142,7 +140,7 @@ export interface Config {
    */
   siteName: string
   /**
-   * A compact brand for space-sensitive or space-hostile contexts — the mobile bar, and anywhere a
+   * A compact brand for space-sensitive or space-hostile contexts: the mobile bar, and anywhere a
    * name with spaces is awkward. Defaults to {@link Config.siteName} (so it is `Game Sandbox` out of
    * the box, and mirrors a customized `SITE_NAME` unless overridden); set `SITE_SHORT_NAME` for a
    * distinct short form.
@@ -177,7 +175,7 @@ export interface Config {
   /**
    * The built frontend bundle the backend serves at the root in production, so one process and one
    * command launch the whole stack. Vite serves the app in development (and proxies `/api` here), and
-   * the tests never build a bundle, so this is omitted in both — serving is wired only when the
+   * the tests never build a bundle, so this is omitted in both. Serving is wired only when the
    * directory is present. Defaults to `frontend/dist`; override with `FRONTEND_DIST`.
    */
   frontendDir?: string
@@ -346,9 +344,9 @@ const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /**
  * Parse a public origin: a valid absolute `http(s)` URL with no path, query, or fragment. We reject
- * anything else here rather than let `.origin` paper over it — a non-`http(s)` scheme yields the
+ * anything else here rather than let `.origin` paper over it. A non-`http(s)` scheme yields the
  * string `"null"` as its origin, and a URL with a path (`https://host/sandbox`) silently drops the
- * path — both of which would then flow undetected into Better Auth's `baseURL`/`trustedOrigins`.
+ * path, both of which would then flow undetected into Better Auth's `baseURL`/`trustedOrigins`.
  */
 function parseOrigin(name: string, raw: string): URL {
   let url: URL
@@ -612,11 +610,9 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
       models,
       upstreamTimeoutMs: boundedIntVar(env, 'LLM_UPSTREAM_TIMEOUT_MS', 1, 600_000),
       upstreamMaxRetries: boundedIntVar(env, 'LLM_UPSTREAM_MAX_RETRIES', 0, 10),
-      upstreamRetryIntervalMs: boundedIntVar(env, 'LLM_UPSTREAM_RETRY_INTERVAL_MS', 1, 60_000),
       tiktokenEncoding: tiktokenEncoding.data,
       defaultMaxOutputTokens,
       maxOutputTokens,
-      meterRecoveryIntervalMs: boundedIntVar(env, 'LLM_METER_RECOVERY_INTERVAL_MS', 1, 3_600_000),
       sessionLimits: {
         tokenBudget: positiveIntVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
         requestsPerMinute: positiveIntVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),

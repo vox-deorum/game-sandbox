@@ -20,19 +20,18 @@ Two modes:
 
 What a bump touches, all to the same ``N``:
 
-1. ``templates/base/manifest.json`` ``template_version`` — the canonical value every composed
+1. ``templates/base/manifest.json`` ``template_version``: the canonical value every composed
    template and example inherits.
-2. Each ``frontend/e2e/fixtures/submission/*/manifest.json`` — these are submitted against seasons
+2. Each ``frontend/e2e/fixtures/submission/*/manifest.json``: these are submitted against seasons
    the backend seeds at the current ``DEPS_VERSION``, so a stale value would fail the e2e suite.
-3. ``backend/src/deps-version.ts`` — the ``DEPS_VERSION`` constant and a new ``SESSION_BASE_IMAGES``
+3. ``backend/src/deps-version.ts``: the ``DEPS_VERSION`` constant and a new ``SESSION_BASE_IMAGES``
    registry entry pointing at the new image directory (old entries are never removed; a released
    version stays buildable forever).
-4. ``backend/images/session-base/deps-v<N>/`` — a fresh frozen snapshot: ``requirements.txt`` frozen
+4. ``backend/images/session-base/deps-v<N>/``: a fresh frozen snapshot: ``requirements.txt`` frozen
    from the *current* ``templates/base/requirements.txt``, the previous version's ``Dockerfile`` with
    its ``deps-v<prev>`` paths and version prose rewritten, and its ``builtin/`` agents copied with
-   their manifests bumped. **Escape hatch:** if ``deps-v<N>/`` already exists in the checkout (a
-   maintainer hand-crafted it in a PR because the image recipe itself changed), it is left untouched
-   and only validated, so the deliberate snapshot always wins over the mechanical copy.
+   their manifests bumped. A target snapshot directory must not already exist. This keeps each bump
+   mechanical and prevents an existing snapshot from being silently retained.
 """
 
 from __future__ import annotations
@@ -231,21 +230,20 @@ def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
     return problems
 
 
-def create_deps_snapshot(prev: int, new: int) -> bool:
-    """Create ``deps-v<new>/`` from ``deps-v<prev>`` and the current requirements. Escape hatch aware.
-
-    Returns ``True`` if it wrote the snapshot, ``False`` if a hand-crafted one already existed (in which
-    case it is only validated). Raises :class:`BumpError` if an existing snapshot is inconsistent.
-    """
+def _snapshot_target(new: int) -> Path:
+    """Return the new snapshot path, or refuse it when it already exists."""
     new_dir = SESSION_BASE_IMAGES_DIR / f"deps-v{new}"
-    if new_dir.exists():
-        problems = _validate_snapshot(new_dir, new)
-        if problems:
-            raise BumpError(
-                f"{new_dir} already exists but is not a valid deps-v{new} snapshot:\n  "
-                + "\n  ".join(problems)
-            )
-        return False
+    if new_dir.exists() or new_dir.is_symlink():
+        raise BumpError(f"cannot create deps-v{new}: target snapshot {new_dir} already exists.")
+    return new_dir
+
+
+def create_deps_snapshot(prev: int, new: int) -> None:
+    """Create ``deps-v<new>/`` from ``deps-v<prev>`` and the current requirements.
+
+    Raises :class:`BumpError` when the target snapshot directory already exists.
+    """
+    new_dir = _snapshot_target(new)
 
     prev_dir = SESSION_BASE_IMAGES_DIR / f"deps-v{prev}"
     if not prev_dir.is_dir():
@@ -267,7 +265,6 @@ def create_deps_snapshot(prev: int, new: int) -> bool:
     )
     for manifest in sorted((new_dir / "builtin").glob("*/manifest.json")):
         set_manifest_version(manifest, new)
-    return True
 
 
 def _fixture_manifests() -> list[Path]:
@@ -310,7 +307,7 @@ def check() -> list[str]:
 
 
 def apply(new: int) -> None:
-    """Move the whole repo to version ``new`` (or verify it is already there for a no-op ``new``)."""
+    """Move the whole repo to version ``new``, or validate an already-current version."""
     prev = current_version()
     if new < prev:
         raise BumpError(
@@ -326,6 +323,7 @@ def apply(new: int) -> None:
         print(f"already at template version {new}; no changes.")
         return
 
+    _snapshot_target(new)
     print(f"bumping template version {prev} -> {new}")
 
     set_manifest_version(TEMPLATE_BASE_MANIFEST, new)
@@ -339,17 +337,8 @@ def apply(new: int) -> None:
     DEPS_VERSION_TS.write_text(bump_deps_version_ts(ts_text, prev, new), encoding="utf-8")
     print(f"  set {DEPS_VERSION_TS} DEPS_VERSION = {new} and registered deps-v{new}")
 
-    if create_deps_snapshot(prev, new):
-        print(f"  created {SESSION_BASE_IMAGES_DIR / f'deps-v{new}'} from deps-v{prev}")
-    else:
-        print(f"  kept the existing hand-crafted deps-v{new} snapshot (validated)")
-
-    problems = check()
-    if problems:
-        raise BumpError(
-            "bump completed but the result is inconsistent (this is a bug in the bump script):\n  "
-            + "\n  ".join(problems)
-        )
+    create_deps_snapshot(prev, new)
+    print(f"  created {SESSION_BASE_IMAGES_DIR / f'deps-v{new}'} from deps-v{prev}")
     print(f"bumped to template version {new}.")
 
 

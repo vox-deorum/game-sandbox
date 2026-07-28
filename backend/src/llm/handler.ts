@@ -82,9 +82,8 @@ export class LlmHandler {
     }
 
     try {
-      // Convert the pending rate capacity ahead of durable accounting: the event survives a later
-      // accounting failure, and any throw from here on lands in the debt-charging catch below
-      // rather than refunding a reservation the provider has already spent.
+      // Convert pending rate capacity before durable accounting so a successful upstream request
+      // remains rate-limited even if accounting becomes unavailable.
       this.deps.meter.recordRateEvent(reservation)
       const completion = redactCompletion(result.completion, alias)
       const resolved = resolveUsage(accepted, completion, this.deps.tokenizer)
@@ -101,10 +100,11 @@ export class LlmHandler {
       })
       return completion
     } catch (error) {
-      // A sink failure already converted the reservation to debt inside commit. Any other failure
-      // after upstream success must do the same because the provider has already consumed spend.
+      // A commit failure has already released the reservation and blocked its scope. Any other
+      // failure after upstream success must also block the scope because the provider spent tokens.
       if (reservation.active) {
-        this.deps.meter.chargeConservativeDebt(reservation, grant.recordSink)
+        this.deps.meter.release(reservation)
+        this.deps.meter.markUnavailable(grant.accountingScope)
         throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
       }
       throw error

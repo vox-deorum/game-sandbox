@@ -49,9 +49,10 @@ class PausableClock:
     """A :class:`~game_sandbox_harness.clock.Clock` that subtracts accumulated paused time.
 
     Wraps any base clock, including ``ManualClock``, and reports ``base - total_paused``.
-    Wall-clock timing and realtime cadence freeze while paused. The official LLM calling-thread
-    CPU floor uses a separate clock and remains chargeable. Thread-safe: the stepping thread reads
-    ``now_ms`` while the command pump calls :meth:`pause`/:meth:`resume`.
+    Wall-clock timing and realtime cadence freeze while paused. Official LLM hooks compare fresh
+    proxy-time readings before and after each callback, charging full wall time when either reading
+    is unavailable. Thread-safe: the stepping thread reads ``now_ms`` while the command pump calls
+    :meth:`pause`/:meth:`resume`.
     """
 
     def __init__(self, base: Clock) -> None:
@@ -114,10 +115,10 @@ class SessionControl:
         Normally a line is exactly one JSON command. The Docker attach hijack is the exception: it
         prepends its options object to the very first command with no separating newline. docker-modem
         carries a hijacked attach by writing the attach options as the request body, and that body is
-        also the only thing that flushes the upgrade — so it cannot be suppressed; on the hijacked
+        also the only thing that flushes the upgrade, so it cannot be suppressed; on the hijacked
         stream those bytes land at the head of the container's stdin (see ``DockerSessionProcess``).
         A line may therefore carry more than one JSON value. Decode them all and dispatch each instead
-        of dropping the whole line — that is what stops the first real input from being lost with the
+        of dropping the whole line. This stops the first real input from being lost with the
         transport preamble. A multi-value line is, in practice, only ever that preamble fused with the
         real command, so its leading kind-less object is skipped quietly; a lone kind-less line is a
         client error and still earns a diagnostic.
@@ -300,8 +301,8 @@ class TransportSource:
     cadence instant, so the source returns the latched input (or ``None``) immediately and the
     loop's pacing does the waiting. With no pace interval the player is turn-based: the source
     blocks in short slices until an input arrives, the human-player deadline passes, or a stop is
-    requested. Either way a ``None`` return routes through ``ExternalPlayer``'s existing default —
-    noop for Flappy Bird — with no agent-timeout accounting.
+    requested. Either way, a ``None`` return routes through ``ExternalPlayer``'s existing default, a
+    noop for Flappy Bird, with no agent-timeout accounting.
     """
 
     def __init__(
@@ -350,8 +351,8 @@ class ProtocolStream:
     """The single-writer outbound protocol sink, owned by the stepping thread.
 
     Recording lines reach it pre-serialized through :meth:`emit_raw` (the tee mirror), and event
-    envelopes through :meth:`emit_envelope`. Only the stepping thread writes here — the command
-    pump reads stdin and never touches this — so no lock is needed.
+    envelopes through :meth:`emit_envelope`. Only the stepping thread writes here. The command pump
+    reads stdin and never touches this, so no lock is needed.
     """
 
     def __init__(self, handle: IO[str]) -> None:
@@ -391,7 +392,7 @@ def build_tee_store(recordings_root: str, protocol: ProtocolStream) -> FolderRec
 def result_envelope(result: EpisodeResult) -> dict[str, Any]:
     """Build the outbound ``result`` envelope from an :class:`EpisodeResult`.
 
-    Emitted once at session end. Never written to the recording — it carries a top-level
+    Emitted once at session end. Never written to the recording: it carries a top-level
     ``kind``, which the state schema forbids, so the classification rule keeps it out.
     """
     return {

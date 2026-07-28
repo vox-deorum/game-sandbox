@@ -29,6 +29,7 @@ import {
   LlmMeter,
   TiktokenCounter,
   UpstreamCaller,
+  upstreamRequestAllowanceMs,
 } from './llm/index.js'
 import { RecordingsStore } from './recordings.js'
 import { Retention, reclaimOrphanedOfficialTelemetry } from './retention.js'
@@ -56,13 +57,13 @@ async function main(): Promise<void> {
     config.llm.upstreamUrl !== undefined && Object.keys(config.llm.models).length > 0
   // The meter and durable stores also serve development history and official recording reads. Keep
   // them available when active upstream calling is not configured.
-  const llmMeter = new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
+  const llmMeter = new LlmMeter({ log })
   const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
-  // The worst-case wall time of one logical upstream request: every attempt plus its exponential
-  // backoff. It caps one active call's contribution to the outer watchdog discount.
-  const upstreamMaxRequestMs =
-    config.llm.upstreamTimeoutMs * (config.llm.upstreamMaxRetries + 1) +
-    config.llm.upstreamRetryIntervalMs * (2 ** config.llm.upstreamMaxRetries - 1)
+  // Cap one active call's watchdog discount by configured SDK attempt timeouts and retry waits.
+  const upstreamMaxRequestMs = upstreamRequestAllowanceMs(
+    config.llm.upstreamTimeoutMs,
+    config.llm.upstreamMaxRetries,
+  )
   const llmRegistry = llmConfigured
     ? new KeyRegistry(undefined, { maxRequestMs: upstreamMaxRequestMs })
     : undefined
@@ -76,7 +77,6 @@ async function main(): Promise<void> {
             apiKey: config.llm.upstreamKey,
             timeoutMs: config.llm.upstreamTimeoutMs,
             maxRetries: config.llm.upstreamMaxRetries,
-            retryIntervalMs: config.llm.upstreamRetryIntervalMs,
           }),
           options: {
             defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
@@ -291,7 +291,6 @@ async function main(): Promise<void> {
       // aborts requests that remain safely cancellable and drains every reservation finalizer.
       await Promise.all([workflowRunner.shutdown(), orchestrator.shutdown()])
       await llmListener?.close()
-      llmMeter.close()
       llmTokenizer?.close()
       await validationWorker.whenIdle()
       officialTelemetry.close()

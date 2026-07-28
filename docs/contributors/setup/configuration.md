@@ -86,11 +86,9 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_COST_WEIGHT_SMALL` | `1` | Budget units consumed by each input or completion token from the `small` tier; positive and at most 1000000 |
 | `LLM_UPSTREAM_TIMEOUT_MS` | `30000` | Per-attempt timeout, bounded from 1 through 600000 milliseconds |
 | `LLM_UPSTREAM_MAX_RETRIES` | `2` | Retry attempts after the initial attempt, bounded from 0 through 10 |
-| `LLM_UPSTREAM_RETRY_INTERVAL_MS` | `250` | Initial exponential-backoff interval, bounded from 1 through 60000 milliseconds |
 | `LLM_TIKTOKEN_ENCODING` | `cl100k_base` | Tiktoken encoding used over canonical JSON for admission and fallback estimates; participant strings are always ordinary content, including text resembling special tokens |
 | `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | `1024` | Enforced output maximum when a request supplies neither supported maximum field |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | Hard ceiling for explicit and default output maxima, bounded from 1 through 1000000 |
-| `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |
 | `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per official session player |
 | `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Successful logical requests per minute per official session player; an in-flight request reserves window capacity until it resolves or its start leaves the window |
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |

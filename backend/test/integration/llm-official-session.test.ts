@@ -41,7 +41,7 @@ describe('official LLM session grant lifecycle', () => {
     upstream = createLlmUpstreamStub()
     const upstreamAddress = await upstream.listen()
     telemetry = new ExecutionTelemetryStore(join(root, 'telemetry'))
-    meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    meter = new LlmMeter()
     tokenizer = new TiktokenCounter('cl100k_base')
     const registry = new KeyRegistry()
     listener = await buildLlmListener({
@@ -54,7 +54,6 @@ describe('official LLM session grant lifecycle', () => {
           apiKey: 'upstream-secret',
           timeoutMs: 2_000,
           maxRetries: 2,
-          retryIntervalMs: 5,
         }),
         options: { defaultMaxOutputTokens: 4, maxOutputTokens: 8 },
       }),
@@ -68,7 +67,6 @@ describe('official LLM session grant lifecycle', () => {
     await Promise.all(leases.splice(0).map((lease) => lease.revoke()))
     await listener.close()
     tokenizer.close()
-    meter.close()
     telemetry.close()
     await upstream.close()
     rmSync(root, { recursive: true, force: true })

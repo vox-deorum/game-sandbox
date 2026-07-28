@@ -11,7 +11,8 @@ and the per-player accounting, and advances exactly one PettingZoo cycle per
 :meth:`Episode.step_once`. :func:`run_episode` is a thin loop over it
 (``while not episode.done: episode.step_once()``),
 and Stage 3's live runner is a second thin loop over the *same* ``step_once`` that adds wall-clock
-pacing and pause/stop handling around it — one code path, the pace interval the only branch. The
+pacing and pause/stop handling around it. There is one code path, and the pace interval is the only
+branch. The
 Stage 2 determinism fixtures are the regression gate for this split: a recording produced through
 :class:`Episode` is byte-identical to the pre-refactor loop.
 
@@ -26,7 +27,6 @@ from __future__ import annotations
 
 import contextlib
 import sys
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -240,7 +240,6 @@ class Episode:
         store: RecordingStore | None = None,
         recording_id: str | None = None,
         clock: Clock | None = None,
-        cpu_clock_ms: Callable[[], float] | None = None,
         step_limit_ms: int | None = None,
         episode_limit_ms: int | None = None,
         max_steps: int | None = None,
@@ -256,7 +255,6 @@ class Episode:
         self._recording_id = recording_id
         self._player_attribution = player_attribution
         self._clock = clock or SystemClock()
-        self._cpu_clock_ms = cpu_clock_ms or (lambda: time.thread_time_ns() / 1_000_000)
         self._step_limit = step_limit_ms if step_limit_ms is not None else entry.meta.step_limit_ms
         self._episode_limit = (
             episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
@@ -291,7 +289,6 @@ class Episode:
         self._tick = 0
         self._stopped = False
         self._failed_player: str | None = None
-        self._inflight_snapshots: dict[str, int] = {}
         self._opening_chat_options: ChatOptions | None = None
 
     def start(self) -> None:
@@ -608,38 +605,21 @@ class Episode:
     ) -> tuple[Any, float]:
         """Measure a hook while discounting verified official proxy request time.
 
-        A valid post-hook snapshot becomes the next hook's baseline. Failed reads and hook errors
-        clear that cache, so no discount crosses an unknown interval. Calling-thread CPU is always
-        a lower bound.
+        Each hook uses fresh proxy snapshots at its boundaries. A missing or invalid reading leaves
+        the full wall time chargeable. A verified discount cannot make the charge negative.
         """
         if scope is None:
             started = self._clock.now_ms()
             return callback(), self._clock.now_ms() - started
 
-        before = self._inflight_snapshots.pop(player_id, None)
-        if before is None:
-            before = scope.inflight_ms(player_id)
+        before = scope.inflight_ms(player_id)
         started = self._clock.now_ms()
-        cpu_started = self._cpu_clock_ms()
-        try:
-            value = callback()
-        except Exception:
-            self._inflight_snapshots.pop(player_id, None)
-            raise
-        # Thread CPU is independent of the pausable wall clock, so local work remains chargeable.
-        cpu_ms = max(0.0, self._cpu_clock_ms() - cpu_started)
+        value = callback()
         raw_ms = self._clock.now_ms() - started
         after = scope.inflight_ms(player_id)
-        if after is not None:
-            self._inflight_snapshots[player_id] = after
-        else:
-            self._inflight_snapshots.pop(player_id, None)
         if before is None or after is None:
-            return value, max(cpu_ms, raw_ms)
-        # A background request can overlap the hook's own computation. Never let proxy wall time
-        # erase CPU consumed by the calling agent thread while the request was in flight. Thread CPU
-        # avoids charging the acting player for an opponent's background work in this shared process.
-        return value, max(cpu_ms, raw_ms - max(0, after - before))
+            return value, raw_ms
+        return value, max(0, raw_ms - max(0, after - before))
 
     def _record_step(self, context: _StepContext) -> None:
         """Persist the completed cycle before accepted messages mutate recipient inboxes."""
@@ -725,7 +705,6 @@ def run_episode(
     store: RecordingStore | None = None,
     recording_id: str | None = None,
     clock: Clock | None = None,
-    cpu_clock_ms: Callable[[], float] | None = None,
     step_limit_ms: int | None = None,
     episode_limit_ms: int | None = None,
     max_steps: int | None = None,
@@ -749,7 +728,6 @@ def run_episode(
         store=store,
         recording_id=recording_id,
         clock=clock,
-        cpu_clock_ms=cpu_clock_ms,
         step_limit_ms=step_limit_ms,
         episode_limit_ms=episode_limit_ms,
         max_steps=max_steps,
@@ -769,13 +747,13 @@ def _illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any
     Environment-agnostic, built only on the two standard PettingZoo legality signals and never on any
     environment-specific knowledge:
 
-    * the player's action space decides membership — an action the space does not contain is illegal,
+    * the player's action space decides membership: an action the space does not contain is illegal,
       since the agent contract is that ``act`` returns an action in the environment's action space; and
     * for an environment that follows the AEC illegal-move convention, the ``action_mask`` decides
-      per-action legality — an in-range index the mask flags ``0`` is illegal.
+      per-action legality: an in-range index the mask flags ``0`` is illegal.
 
-    Anything this cannot disprove — an environment exposing no action space or publishing no mask, or
-    an action that does not index the mask — is deliberately left for ``env.step`` to judge, so a
+    Anything this cannot disprove, including an environment exposing no action space or publishing no
+    mask, or an action that does not index the mask, is deliberately left for ``env.step`` to judge, so a
     genuine fault on an otherwise-legal action stays owned by no player rather than blamed on this one.
     """
     space_fn: Any = getattr(env, "action_space", None)

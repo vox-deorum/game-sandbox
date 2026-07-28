@@ -15,11 +15,9 @@ export function makeTestLlmOptions(): LlmOptions {
     models: {},
     upstreamTimeoutMs: 30_000,
     upstreamMaxRetries: 2,
-    upstreamRetryIntervalMs: 250,
     tiktokenEncoding: 'cl100k_base',
     defaultMaxOutputTokens: 1_024,
     maxOutputTokens: 4_096,
-    meterRecoveryIntervalMs: 5_000,
     sessionLimits: { tokenBudget: 100_000, requestsPerMinute: 60 },
     developmentLimits: { tokenBudget: 100_000, requestsPerMinute: 30 },
   }

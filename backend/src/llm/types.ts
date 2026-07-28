@@ -54,10 +54,9 @@ export interface LlmSuccessfulRecord {
   latencyMs: number
 }
 
-/** Durable recording and write-health operations supplied by an authenticated grant. */
+/** Durable successful-call recording supplied by an authenticated grant. */
 export interface LlmRecordSink {
   record: (record: LlmSuccessfulRecord) => MaybePromise<void>
-  probeHealth: () => MaybePromise<void>
 }
 
 /**

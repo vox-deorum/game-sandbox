@@ -2,7 +2,6 @@ import Fastify, { type FastifyInstance } from 'fastify'
 
 /** One request observed by the deterministic local OpenAI-compatible test upstream. */
 export interface StubUpstreamRequest {
-  readonly arrivedAt: number
   readonly authorization: string | undefined
   readonly body: Record<string, unknown>
   readonly logicalRequestId: string | undefined
@@ -60,7 +59,6 @@ export function createLlmUpstreamStub(options: { delayMs?: number } = {}): LlmUp
     const selection = scenarioFor(body)
     const { scenario, logicalRequestId } = selection
     const entry: StubUpstreamRequest = {
-      arrivedAt: Date.now(),
       authorization: request.headers.authorization,
       body,
       logicalRequestId,

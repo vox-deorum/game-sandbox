@@ -103,15 +103,13 @@ describe('development LLM HTTP wiring (integration)', () => {
     const root = mkdtempSync(join(tmpdir(), 'gs-development-integration-'))
     cleanup.push(() => rmSync(root, { recursive: true, force: true }))
     const ledger = new DevelopmentLedgerStore(join(root, 'ledger'))
-    const meter = new LlmMeter({ recoveryIntervalMs: 5 })
+    const meter = new LlmMeter()
     cleanup.push(() => ledger.close())
-    cleanup.push(() => meter.close())
     const llm = {
       ...makeTestLlmOptions(),
       upstreamUrl: `${upstreamAddress}/v1`,
       upstreamKey: 'upstream-secret',
       upstreamMaxRetries: 2,
-      upstreamRetryIntervalMs: 20,
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
       developmentLimits: { tokenBudget: 100, requestsPerMinute: 10 },
     }
@@ -141,7 +139,6 @@ describe('development LLM HTTP wiring (integration)', () => {
         apiKey: llm.upstreamKey,
         timeoutMs: 5_000,
         maxRetries: llm.upstreamMaxRetries,
-        retryIntervalMs: llm.upstreamRetryIntervalMs,
       }),
       options: { defaultMaxOutputTokens: 3, maxOutputTokens: 8 },
     })
@@ -181,12 +178,6 @@ describe('development LLM HTTP wiring (integration)', () => {
       (request) => request.logicalRequestId === 'alice-a-1',
     )
     expect(retryRequests).toHaveLength(RETRY_SUCCESS_ATTEMPTS)
-    const firstRetryInterval =
-      (retryRequests.at(1)?.arrivedAt ?? 0) - (retryRequests.at(0)?.arrivedAt ?? 0)
-    const secondRetryInterval =
-      (retryRequests.at(2)?.arrivedAt ?? 0) - (retryRequests.at(1)?.arrivedAt ?? 0)
-    expect(firstRetryInterval).toBeGreaterThanOrEqual(15)
-    expect(secondRetryInterval).toBeGreaterThanOrEqual(35)
 
     expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
       small: { calls: 1 },

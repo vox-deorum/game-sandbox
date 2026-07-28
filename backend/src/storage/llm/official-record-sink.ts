@@ -36,8 +36,5 @@ export function createOfficialRecordSink(
         latencyMs: record.latencyMs,
       })
     },
-    probeHealth(): void {
-      store.probeHealth(scope.scopeId)
-    },
   }
 }

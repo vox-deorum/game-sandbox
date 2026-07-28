@@ -120,26 +120,10 @@ function migrate(db: BetterSqlite3.Database): void {
           created_at TEXT NOT NULL
         );
         CREATE INDEX calls_user ON calls (user_id, id);
-        CREATE TABLE meter_health (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          checked_at TEXT NOT NULL
-        );
       `)
       db.pragma('user_version = 1')
     }).immediate()
   }
-}
-
-function writeHealth(db: BetterSqlite3.Database, checkedAt: string): void {
-  db.transaction(() => {
-    db.prepare(`INSERT INTO meter_health (id, checked_at) VALUES (1, ?)
-      ON CONFLICT (id) DO UPDATE SET checked_at = excluded.checked_at`).run(checkedAt)
-    const row = db.prepare('SELECT checked_at FROM meter_health WHERE id = 1').get() as
-      | { checked_at: string }
-      | undefined
-    if (row?.checked_at !== checkedAt)
-      throw new Error('LLM development write-health readback failed')
-  }).immediate()
 }
 
 function decodeCall(row: CallRow): DevelopmentCall {
@@ -284,10 +268,6 @@ export class DevelopmentLedgerStore {
     return row !== undefined
   }
 
-  probeHealth(seasonId: string): void {
-    writeHealth(this.handle(seasonId).db, this.now().toISOString())
-  }
-
   close(): void {
     const handles = [...this.handles.values()]
     this.handles.clear()
@@ -302,7 +282,6 @@ export class DevelopmentLedgerStore {
     try {
       db.pragma('journal_mode = WAL')
       migrate(db)
-      writeHealth(db, this.now().toISOString())
       const handle: LedgerHandle = {
         db,
         insertCall: db.prepare(`INSERT INTO calls (

@@ -157,22 +157,17 @@ CREATE TABLE calls (
   created_at       TEXT NOT NULL
 );
 CREATE INDEX calls_user ON calls (user_id, id);
-
-CREATE TABLE meter_health (
-  id         INTEGER PRIMARY KEY CHECK (id = 1),
-  checked_at TEXT NOT NULL
-);
 ```
 
 The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
 
 The development meter uses `(seasonId, userId)` as one accounting scope for weighted-token and rate limits. It sums successful rows by model for that pair and prices them with the current resolved season values, then combines them with temporary in-flight weighted-token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
 
-After authentication, current effective-configuration resolution, request validation, breaker checks, and successful token reservation, admission reserves one pending slot in that pair's rate window before the first upstream attempt. A successful response converts that slot into one event stamped at the request's start, unless the start has already left the window. A non-retryable upstream error or exhausted retry sequence releases the pending slot and records no event. Backend retries are attempts within the same logical request and reserve no additional slots. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, reserve no slot.
+After authentication, current effective-configuration resolution, request validation, availability checks, and successful token reservation, admission reserves one pending slot in that pair's rate window before the first upstream attempt. A successful response converts that slot into one event stamped at the request's start, unless the start has already left the window. A non-retryable upstream error or exhausted retry sequence releases the pending slot and records no event. Backend retries are attempts within the same logical request and reserve no additional slots. Requests rejected locally before upstream admission, including rate, budget, and unavailable-scope rejections, reserve no slot.
 
 A successful logical request writes one full row using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs can identify estimates. Every unsuccessful upstream path releases its token and pending rate reservations and leaves the ledger unchanged.
 
-Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter moves the conservative token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
+Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter releases the reservation, marks `(seasonId, userId)` unavailable, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the unavailable flag never reach the upstream. The flag is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows.
 
 Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, or ticks.
 
@@ -201,7 +196,7 @@ Docker-free backend and frontend tests cover:
 - Immediate application of changed season models and limits to an existing development key.
 - One successful development request adding one rate event, with non-retryable failures and exhausted retries releasing pending capacity, backend retry attempts adding no capacity, and pre-admission rejections reserving none.
 - Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
-- A post-upstream development-accounting failure retaining conservative debt, returning `meter_unavailable`, and blocking that participant and season until the automatic recovery loop commits a successful write-health check, without blocking another participant or season.
+- A post-upstream development-accounting failure returning `meter_unavailable` and blocking that participant and season until restart without blocking another participant or season.
 - Complete isolation between official meters and development meters.
 - A fresh application database creates the development-key table and nullable recording associations from the flat initial schema, and live LLM recording registration stores the session scope and session filter IDs.
 - Local application databases containing stored `call_budget` values in season configs or `llm_policy_snapshot` rows are recreated. Strict decoders do not accept the removed field.
@@ -220,5 +215,5 @@ Docker integration covers:
 - An active participant can rotate one indexed key ID and secret for a submission-open season and call the public backend proxy with the returned base URL and credential. Closing submissions blocks key rotation and existing-key use until the window reopens.
 - Development token and admitted-request rate usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
 - Successful development calls create full private ledger rows that identify estimated token usage. Unsuccessful calls create no row and consume no token budget.
-- A post-upstream development-accounting failure returns no completion and opens a pair-scoped circuit breaker until verified storage recovery closes it automatically.
+- A post-upstream development-accounting failure returns no completion and makes that pair unavailable until the backend restarts.
 - Docker-free and Docker-gated tests prove the authorization, isolation, lifecycle, and network contracts.
