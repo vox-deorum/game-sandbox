@@ -192,7 +192,7 @@ The finalizer stores the result, notifies clients, kills the container if needed
 
 `python -m game_sandbox_harness.live` uses the same `Episode.step_once` path as headless execution.
 
-For an official LLM-enabled session, the launch configuration supplies `inflight_url` alongside the model endpoint and tick-marker URL. The harness subtracts verified proxy time from hook timing. If a reading fails, it charges the full hook time. Module loading, construction, and `reset` are setup work outside turn timing. Live-session and workflow watchdogs use the same bounded credit, while idle timeout remains wall-clock time.
+For an official LLM-enabled session, the launch configuration supplies `inflight_url` alongside the model endpoint and tick-marker URL. The harness subtracts that player's verified proxy-time change around each `act`, `chat`, and `learn` hook. It reuses a valid post-hook reading as the next baseline, so the steady-state path makes one synchronous bounded read per hook and a request still in flight between two hooks is discounted from the later one. Calling-thread CPU remains chargeable, which bounds that discount. If a required reading fails, it charges the full hook time. Module loading, construction, and `reset` are setup work outside turn timing. Live-session and workflow watchdogs use the same per-request bounded credit, while idle timeout remains wall-clock time.
 
 The only pacing branch reads environment metadata:
 

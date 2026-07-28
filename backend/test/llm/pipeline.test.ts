@@ -44,11 +44,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
   })
 
-  function pipeline(
-    client: { create: ReturnType<typeof vi.fn> },
-    maxRetries = 1,
-    initialTick: number | null = 7,
-  ) {
+  function pipeline(client: { create: ReturnType<typeof vi.fn> }, initialTick: number | null = 7) {
     const root = mkdtempSync(join(tmpdir(), 'gs-llm-pipeline-'))
     roots.push(root)
     const store = new ExecutionTelemetryStore(root)
@@ -74,7 +70,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     const upstream = new UpstreamCaller({
       baseURL: 'http://stub.invalid',
       timeoutMs: 50,
-      maxRetries,
+      maxRetries: 1,
       client,
     })
     const handler = new LlmHandler({
@@ -122,7 +118,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
 
   it('attributes successful setup and turn calls to the current tick marker', async () => {
     const client = { create: vi.fn().mockResolvedValue(completion()) }
-    const { grant, handler, store, tick } = pipeline(client, 1, null)
+    const { grant, handler, store, tick } = pipeline(client, null)
 
     await handler.handle(grant, { model: 'small', messages: [] })
     tick.current = 12
@@ -135,17 +131,17 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
   })
 
   it.each([
-    ['non-retryable response', 400, 3, 1],
-    ['retryable response returned by the SDK', 500, 1, 1],
-  ])('leaves no durable charge or row after a %s', async (_name, status, maxRetries, attempts) => {
+    ['non-retryable response', 400],
+    ['retryable response returned by the SDK', 500],
+  ])('leaves no durable charge or row after a %s', async (_name, status) => {
     const client = { create: vi.fn().mockRejectedValue(statusError(status)) }
-    const { grant, handler, meter, store } = pipeline(client, maxRetries)
+    const { grant, handler, meter, store } = pipeline(client)
 
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       status,
     })
 
-    expect(client.create).toHaveBeenCalledTimes(attempts)
+    expect(client.create).toHaveBeenCalledOnce()
     expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, PLAYER)).toEqual({})
     expect(store.listCalls(SESSION_ID)).toEqual([])
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({

@@ -8,7 +8,6 @@ import type { LlmDevelopmentKey, Season } from '../storage/schema.js'
 import { decodeSeasonConfig } from '../storage/season-config.js'
 import { type EncodedLlmLimits, encodeLimits, type ResolvedLlm, resolveLlm } from './config.js'
 import { LlmError } from './errors.js'
-import type { LlmMeter } from './meter.js'
 import type { LlmGrant, ModelAlias } from './types.js'
 import { MODEL_ALIASES, modelCostWeights } from './types.js'
 
@@ -30,7 +29,6 @@ export interface DevelopmentKeyServiceDeps {
   storage: DevelopmentKeyStorage
   environments: EnvironmentRegistry
   llm: LlmOptions
-  meter: LlmMeter
   ledger: DevelopmentLedgerStore
   publicOrigin: string
   readUserStatus: (userId: string) => Promise<UserStatus | null>
@@ -98,15 +96,10 @@ export class DevelopmentKeyService {
       key: `development:${row.season_id}:${row.user_id}`,
       limits: resolved.development,
       weights: modelCostWeights(resolved.models),
+      verifyWritable: () => this.deps.ledger.open(row.season_id),
       readCommittedUsage: () => this.deps.ledger.readUserUsageByModel(row.season_id, row.user_id),
     }
     const sink = createDevelopmentRecordSink(this.deps.ledger, row.season_id, row.user_id)
-    try {
-      this.deps.ledger.open(row.season_id)
-    } catch {
-      // Admission fails before the durable read once an unavailable ledger is observed.
-      this.deps.meter.markUnavailable(scope)
-    }
     return {
       kind: 'development',
       models: resolved.models,

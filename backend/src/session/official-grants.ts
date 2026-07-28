@@ -60,6 +60,7 @@ export function createOfficialGrantIssuer(
               key: `official:${input.sessionId}:${playerId}`,
               limits: input.limits,
               weights,
+              verifyWritable: () => telemetry.open(input.scopeId),
               readCommittedUsage: () =>
                 telemetry.readSessionUsageByModel(input.scopeId, input.sessionId, playerId),
             },

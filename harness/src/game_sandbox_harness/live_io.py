@@ -49,10 +49,9 @@ class PausableClock:
     """A :class:`~game_sandbox_harness.clock.Clock` that subtracts accumulated paused time.
 
     Wraps any base clock, including ``ManualClock``, and reports ``base - total_paused``.
-    Wall-clock timing and realtime cadence freeze while paused. Official LLM hooks compare fresh
-    proxy-time readings before and after each callback, charging full wall time when either reading
-    is unavailable. Thread-safe: the stepping thread reads ``now_ms`` while the command pump calls
-    :meth:`pause`/:meth:`resume`.
+    Wall-clock timing and realtime cadence freeze while paused. The official LLM calling-thread CPU
+    floor uses a separate clock and remains chargeable during a pause. Thread-safe: the stepping
+    thread reads ``now_ms`` while the command pump calls :meth:`pause`/:meth:`resume`.
     """
 
     def __init__(self, base: Clock) -> None:

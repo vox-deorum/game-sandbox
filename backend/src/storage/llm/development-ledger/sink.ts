@@ -7,19 +7,17 @@ export function createDevelopmentRecordSink(
   seasonId: string,
   userId: string,
 ): LlmRecordSink {
-  return {
-    record(record: LlmSuccessfulRecord): void {
-      store.record(seasonId, {
-        userId,
-        model: record.model,
-        request: record.request,
-        completion: record.completion,
-        inputTokens: record.usage.inputTokens,
-        reasoningTokens: record.usage.reasoningTokens,
-        outputTokens: record.usage.outputTokens,
-        usageEstimated: record.usageEstimated,
-        latencyMs: record.latencyMs,
-      })
-    },
+  return (record: LlmSuccessfulRecord): void => {
+    store.record(seasonId, {
+      userId,
+      model: record.model,
+      request: record.request,
+      completion: record.completion,
+      inputTokens: record.usage.inputTokens,
+      reasoningTokens: record.usage.reasoningTokens,
+      outputTokens: record.usage.outputTokens,
+      usageEstimated: record.usageEstimated,
+      latencyMs: record.latencyMs,
+    })
   }
 }

@@ -22,11 +22,11 @@ class StepTiming(TypedDict):
 
 
 class AgentTiming(TypedDict, total=False):
-    """Per-agent chargeable timing. Official LLM sessions compare fresh proxy-time readings around
-    each hook and discount their non-negative change, clamped at zero. A missing or invalid reading
-    charges the full wall-clock hook time. ``decision_ms`` is ``act`` time, ``learn_ms`` is optional
-    learn-hook time, and ``chat_ms`` is optional chat-hook time. The leaderboard compute column sums
-    all three."""
+    """Per-agent chargeable timing. Official LLM sessions compare proxy-time readings around each
+    hook and discount their non-negative change, with calling-thread CPU time as a lower bound. A
+    valid post-hook reading is reused as the next baseline. A missing or invalid reading charges the
+    full wall-clock hook time. ``decision_ms`` is ``act`` time, ``learn_ms`` is optional learn-hook
+    time, and ``chat_ms`` is optional chat-hook time. The leaderboard compute column sums all three."""
 
     decision_ms: float
     learn_ms: float

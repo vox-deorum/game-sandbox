@@ -49,7 +49,7 @@ Use a small synchronous standard-library HTTP helper with a bounded local timeou
 
 Calls made during setup carry a null tick in execution-scope SQLite. Calls made during a turn carry the marked tick. Durable scope and session IDs on recording metadata associate those rows with replays.
 
-The harness reads the cumulative proxy-time counter immediately before and after each `act`, `chat`, or `learn` hook. It subtracts a valid non-negative change from the hook's wall time. A failed or invalid read leaves the full wall time chargeable. An opponent's overlapping proxy request can also advance the cumulative counter and reduce the acting player's chargeable time. Module load, construction, and `reset` are setup work with null tick attribution and occur before turn timing.
+The harness reads that player's cumulative proxy-time counter around each `act`, `chat`, or `learn` hook. It reuses a valid post-hook reading as the next baseline, giving the steady-state path one synchronous read per hook. It subtracts a valid non-negative change from the hook's wall time while retaining the hook's own calling-thread CPU time. A failed or invalid required read leaves the full wall time chargeable. Model calls and local work remain on the calling thread. Module load, construction, and `reset` are setup work with null tick attribution and occur before turn timing.
 
 ## Template command and environment file
 
@@ -107,7 +107,7 @@ Docker-free Python tests cover:
 - Setup and per-tick markers use the explicit tick URL and matching slot key, and precede the participant hooks they describe.
 - A failed marker request emits a diagnostic and does not stop the episode.
 - Setup calls persist with null ticks, and per-turn calls persist with the marked tick.
-- Proxy time, including retries, is discounted from `act`, `chat`, and `learn` only when both boundary snapshots are valid. An unavailable snapshot charges full wall time.
+- Proxy time, including retries, is discounted from `act`, `chat`, and `learn` only when both boundary snapshots are valid. Valid post-hook snapshots become the next baseline. Calling-thread CPU remains chargeable, and an unavailable snapshot charges full wall time.
 - The oracle follows a valid completion and uses its legal fallback for malformed output, `budget_exceeded`, a non-retryable API error, and an exhausted-retry error.
 - A retryable upstream failure followed by backend success reaches the oracle as one successful response.
 - Dispatcher help lists `llm`, dispatches `python -m sandbox llm` to `sandbox.llm_example`, forwards extra arguments, and selects the LLM-specific dependency probe. Both a current interpreter and a pre-existing `.venv` with game dependencies but without `openai` or `dotenv` take the repair path before dispatch.

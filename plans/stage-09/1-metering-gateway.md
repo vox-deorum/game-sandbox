@@ -66,7 +66,7 @@ Official keys remain in memory because a backend restart reaps the containers th
 
 ## Successful-call admission and metering
 
-`LlmLimits` contains a weighted-token budget and a logical-requests-per-minute limit. Each model token consumes its resolved price in weighted units. Limits exist in exactly two scopes: the agent slot within a session and the development `(participant, season)` pair. The shared handler does not encode official session or run identities. Each authenticated grant supplies exactly one accounting scope containing a stable accounting key, its limits, model prices, and a committed per-model usage reader. The grant separately supplies the one durable record sink used after success. Official grants construct the accounting key for the slot within a session. Step 2 constructs one development key for the participant within the season.
+`LlmLimits` contains a weighted-token budget and a logical-requests-per-minute limit. Each model token consumes its resolved price in weighted units. Limits exist in exactly two scopes: the agent slot within a session and the development `(participant, season)` pair. The shared handler does not encode official session or run identities. Each authenticated grant supplies exactly one accounting scope containing a stable accounting key, its limits, model prices, a durable write preflight, and a committed per-model usage reader. The grant separately supplies the one durable record sink used after success. Official grants construct the accounting key for the slot within a session. Step 2 constructs one development key for the participant within the season.
 
 Token accounting combines committed successful usage from the scope's SQLite store with temporary in-memory reservations. Rate accounting combines pending capacity reservations with an in-memory sliding window of successful logical requests for each accounting key. Committed-usage reads, all scope checks, and the reservation mutation run in one synchronous event-loop section, so a completed durable commit cannot disappear between the committed snapshot and the in-memory reservation. Reservations, pending rate capacity, successful rate events, and unavailable flags are all keyed by the same generic accounting key, so official and development grants use the same admission algorithm without sharing allowance.
 
@@ -76,7 +76,7 @@ Admission runs in this order:
 2. Validate the model tier.
 3. Reject streaming.
 4. Reject a request that supplies both `max_tokens` and `max_completion_tokens`, or a maximum above the deployment hard ceiling.
-5. Check scope availability and committed token usage plus in-flight reservations.
+5. Check scope availability, run the scope's write preflight, then read committed token usage plus in-flight reservations.
 6. Atomically reserve the request's estimated input and enforced maximum output usage and one pending rate-capacity slot after checking the scope's successful events plus pending rate reservations.
 
 Input reservation uses the configured tiktoken encoding over the accepted request. Request and completion JSON are encoded as ordinary text, so participant content that spells a tokenizer special token remains data and cannot trigger a tokenizer control-token error. Output reservation recognizes either `max_tokens` or `max_completion_tokens`. The two fields are mutually exclusive. An explicit value must not exceed `LLM_MAX_OUTPUT_TOKENS`; when both are absent, the proxy uses `LLM_DEFAULT_MAX_OUTPUT_TOKENS`. The proxy forwards exactly one maximum-output field carrying the enforced value, and admission rejects the request with `budget_exceeded` when the current model price multiplied by estimated input plus that value does not fit the scope's remaining weighted-token allowance. This makes the configured maximum, rather than an input-size heuristic or an upstream default, the bound on completion overshoot.
@@ -85,7 +85,7 @@ Each admitted logical inbound request reserves one pending slot in its scope's r
 
 An eventual success first retains its rate event, constructs the canonical completion described under model tiers and upstream mappings, then validates its usage object. Valid counts commit with `usage_estimated = 0`. When usage is absent or malformed, the proxy estimates input tokens from the accepted request and output tokens from that same canonical completion with the configured tiktoken encoding, preserves an independently exposed non-negative reasoning-token count or uses zero, and commits with `usage_estimated = 1`. Both cases consume their committed token counts in full. Subsequent requests see the committed total, and the successful response is never discarded merely because actual usage crosses the reservation through tokenizer variance. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases its token and pending rate reservations and commits nothing. Budget rejection returns `400 budget_exceeded`.
 
-The telemetry transaction must commit before the proxy returns a successful completion. Once the upstream returns success, any later failure before durable accounting completes, including usage validation, fallback estimation, completion normalization, or the SQLite transaction, marks the scope unavailable and returns `503 meter_unavailable` instead of the completion. The reservation is released so teardown can settle. Requests rejected by an unavailable scope never reach the upstream.
+The telemetry transaction must commit before the proxy returns a successful completion. A SQLite transaction failure marks the scope unavailable and returns `503 meter_unavailable` instead of the completion. Usage resolution and completion normalization failures are backend faults rather than storage faults, so they release the reservation, leave the scope available, log the unaccounted provider spend without bodies or credentials, and return `500 internal_error`. The successful rate event remains in either case. Requests rejected by an unavailable scope never reach the upstream.
 
 The unavailable transition is logged once without request bodies or secrets. The flag remains set for the life of the backend process, which prevents repeated unaccounted calls. A trusted operator restart clears it together with reservations and rate windows.
 
@@ -124,13 +124,17 @@ CREATE TABLE calls (
 );
 CREATE INDEX calls_session_slot ON calls (session_id, slot);
 CREATE INDEX calls_created_at ON calls (created_at);
+CREATE TABLE meter_health (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  checked_at TEXT NOT NULL
+);
 ```
 
 The proxy stores the full accepted request and the canonical successful completion returned to the caller. Rows contain no failure status or error field. `usage_estimated` is 0 for validated upstream usage and 1 for tokenizer fallback, and row codecs and aggregates preserve that distinction. The successful insert is a transaction that commits before the proxy returns the response. Slot limits query by `(session_id, slot)`. Rate windows remain in memory and never infer successful events from telemetry rows.
 
-Scope IDs are validated opaque identifiers and never interpolated into SQL. `PRAGMA user_version` versions the file schema, and startup applies explicit migrations before queries run. The store manages file creation, prepared statements, connection reuse, and closure. It closes a cached handle before retention deletes the file. Step 5 connects file retention to the session, run, and recording lifecycle and removes orphan files during startup.
+Scope IDs are validated opaque identifiers and never interpolated into SQL. `PRAGMA user_version` versions the file schema, and startup applies explicit migrations before queries run. Version 1 includes the one-row `meter_health` table. Every explicit scope open performs a transactional marker write and readback before provider admission, including for a cached handle. The store manages file creation, prepared statements, connection reuse, and closure. It closes a cached handle before retention deletes the file. Step 5 connects file retention to the session, run, and recording lifecycle and removes orphan files during startup.
 
-`POST /internal/tick` authenticates an official key and updates only that key's marker: `{"phase":"setup"}` sets a null tick and `{"tick":N}` sets the active tick. `POST /internal/inflight` uses the same key and returns cumulative proxy milliseconds for its accounting scope. Completed requests contribute their admission-to-response duration, including retries and terminal failures. An active request contributes a capped partial duration. These control reads do not contribute to the counter.
+`POST /internal/tick` authenticates an official key and updates only that key's marker: `{"phase":"setup"}` sets a null tick and `{"tick":N}` sets the active tick. `POST /internal/inflight` uses the same key and returns cumulative proxy milliseconds for its accounting scope. Completed and active requests contribute their admission-to-response duration, including retries and terminal failures, up to the configured per-request allowance. These control reads do not contribute to the counter.
 
 Step 3 sends the markers. Step 4 queries execution-scope SQLite for game-result aggregation. Step 5 resolves recordings to their session or run scope and serves matching rows through the recording API.
 
@@ -185,9 +189,9 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - Generic accounting keys keep two session slots and development-shaped `(participant, season)` fixtures in independent sliding windows, reservation totals, and availability state.
 - Tick markers and the inflight route are isolated per grant. The inflight route reports completed proxy time plus a capped active partial.
 - Session and model aggregation queries return exact sums from successful rows and exact counts of estimated rows.
-- File creation sets the current `user_version`, migrations advance older fixtures, and retention closes cached handles before deletion.
+- File creation sets the current `user_version`, every explicit open verifies a committed write and readback, and retention closes cached handles before deletion.
 - Accepted request and canonical completion bodies round-trip through the SQLite row codec.
-- A forced post-upstream estimation or telemetry transaction failure releases the reservation, returns `meter_unavailable`, marks every affected scope unavailable, and prevents repeated requests from reaching the upstream for the rest of the process.
+- A forced telemetry transaction failure releases the reservation, returns `meter_unavailable`, marks every affected scope unavailable, and prevents repeated requests from reaching the upstream for the rest of the process. Forced usage-resolution and completion-normalization failures release the reservation without blocking the scope, log the unaccounted spend, and answer with a compatible `internal_error`.
 
 ## Done when
 
@@ -197,6 +201,6 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - Official grants enforce model, per-slot budget, and rate boundaries and can be revoked by session.
 - Explicit and default output maxima are normalized, hard-capped, forwarded, and included in admission so they cannot bypass remaining token allowance.
 - SQLite rows contain the full accepted request, canonical completion, and authoritative session, slot, tick, model, token, estimated-usage, and latency fields.
-- Missing or malformed upstream usage is estimated with tiktoken and surfaced as estimated, while every post-upstream accounting failure makes its scope unavailable until restart before returning an error.
+- Missing or malformed upstream usage is estimated with tiktoken and surfaced as estimated, while a durable-record failure makes its scope unavailable until restart before returning an error.
 - The backend manifest and root lockfile pin the OpenAI client and tiktoken runtime dependencies used by the implementation.
 - Docker-free tests cover every retry class, reservation release, compatible error shape, and successful-only accounting rule.

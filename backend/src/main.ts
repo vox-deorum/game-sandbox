@@ -82,6 +82,7 @@ async function main(): Promise<void> {
             defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
             maxOutputTokens: config.llm.maxOutputTokens,
           },
+          log,
         })
       : undefined
   const llmListener =
@@ -126,7 +127,6 @@ async function main(): Promise<void> {
     storage,
     environments,
     llm: config.llm,
-    meter: llmMeter,
     ledger: developmentLedger,
     publicOrigin: config.auth.publicOrigin,
     readUserStatus,

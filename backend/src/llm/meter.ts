@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 
-import { LlmError } from './errors.js'
+import { describeError, LlmError } from './errors.js'
 import {
   type LlmAccountingScope,
   type LlmRecordSink,
@@ -66,10 +66,15 @@ export class LlmMeter {
     const state = this.state(scope.key)
     this.pruneRateWindows(state, now)
     if (state.unavailable) {
-      throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
+      throw new LlmError(
+        503,
+        'meter_unavailable',
+        'Usage accounting is unavailable until the backend restarts.',
+      )
     }
-    // Never touch a known-unavailable store. Once admitted to the read, the durable reader is
-    // synchronous, so no commit can land before reservation.
+    // Never touch a known-unavailable store. The preflight and the committed read are both
+    // synchronous, so no commit can land between them and the reservation below.
+    this.preflight(scope)
     const usage = scope.readCommittedUsage()
     if (state.rateEvents.length + state.pendingRateEvents.size >= scope.limits.requestsPerMinute) {
       throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
@@ -133,17 +138,37 @@ export class LlmMeter {
   ): Promise<void> {
     if (!reservation.active) throw new Error('LLM reservation was already finalized')
     try {
-      await sink.record(record)
+      await sink(record)
       this.release(reservation)
     } catch {
+      // The provider was already paid. Keep the scope closed rather than admit further work this
+      // process can never record.
       this.release(reservation)
       this.markUnavailable(reservation.scope)
+      throw new LlmError(
+        503,
+        'meter_unavailable',
+        'Usage accounting is unavailable until the backend restarts.',
+      )
+    }
+  }
+
+  /**
+   * Prove the scope's durable store can commit before any provider spend. A failure rejects only
+   * this request, so the next one retries the same preflight.
+   */
+  private preflight(scope: LlmAccountingScope): void {
+    if (scope.verifyWritable === undefined) return
+    try {
+      scope.verifyWritable()
+    } catch (error) {
+      this.log(`LLM meter ${scope.key}: storage preflight failed: ${describeError(error)}`)
       throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
     }
   }
 
   /** Block a scope after an accounting failure until this process restarts. */
-  markUnavailable(scope: LlmAccountingScope): void {
+  private markUnavailable(scope: LlmAccountingScope): void {
     const state = this.state(scope.key)
     if (state.unavailable) return
     state.unavailable = true

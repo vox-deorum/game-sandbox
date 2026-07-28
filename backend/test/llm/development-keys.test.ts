@@ -81,7 +81,6 @@ describe('DevelopmentKeyService', () => {
     cleanups.push(async () => handle.storage.close())
     const ledger = new DevelopmentLedgerStore(join(root, 'ledger'))
     cleanups.push(() => ledger.close())
-    const meter = new LlmMeter()
     const season = await handle.storage.createSeason({ env_id: 'llm_env', deps_version: 1 })
     await handle.storage.updateSeasonConfig(season.id, enabledConfig())
     await handle.storage.setSubmissionStatus(season.id, 'open')
@@ -99,7 +98,6 @@ describe('DevelopmentKeyService', () => {
             medium: { upstream: 'provider-medium', costWeight: 2 },
           },
         },
-        meter,
         ledger,
         publicOrigin: 'https://sandbox.test',
         readUserStatus: async () => 'normal',
@@ -154,7 +152,6 @@ describe('DevelopmentKeyService', () => {
     cleanups.push(() => handle.storage.close())
     const ledger = new DevelopmentLedgerStore(join(root, 'ledger'))
     cleanups.push(() => ledger.close())
-    const meter = new LlmMeter()
     const season = await handle.storage.createSeason({ env_id: 'llm_env', deps_version: 1 })
     await handle.storage.updateSeasonConfig(season.id, enabledConfig())
     let status: UserStatus | null = 'normal'
@@ -176,7 +173,6 @@ describe('DevelopmentKeyService', () => {
       storage,
       environments: llmEnvironments(),
       llm,
-      meter,
       ledger,
       publicOrigin: 'https://sandbox.test',
       readUserStatus: async () => status,
@@ -271,7 +267,6 @@ describe('DevelopmentKeyService', () => {
           medium: { upstream: 'provider-medium', costWeight: 2 },
         },
       },
-      meter,
       ledger,
       publicOrigin: 'https://sandbox.test',
       readUserStatus: async () => 'normal',

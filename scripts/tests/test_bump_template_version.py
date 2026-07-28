@@ -204,6 +204,73 @@ def test_apply_bumps_every_touchpoint(repo: Path):
     assert (deps_v2 / "builtin" / "flappy_bird" / "agent.py").read_text() == "# agent\n"
 
 
+def test_apply_self_verifies_the_completed_bump(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    original_check = bump.check
+    checks = 0
+
+    def tracked_check() -> list[str]:
+        nonlocal checks
+        checks += 1
+        return original_check()
+
+    monkeypatch.setattr(bump, "check", tracked_check)
+    bump.apply(2)
+
+    assert checks == 1
+
+
+def test_apply_restores_the_tree_when_snapshot_creation_fails(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    before = _snapshot_tree(repo)
+
+    def fail_after_partial_snapshot(prev: int, new: int, target: Path) -> None:
+        _write(target / "requirements.txt", "partial\n")
+        raise BumpError("snapshot failed")
+
+    monkeypatch.setattr(bump, "_populate_deps_snapshot", fail_after_partial_snapshot)
+
+    with pytest.raises(BumpError, match="snapshot failed"):
+        bump.apply(2)
+
+    assert _snapshot_tree(repo) == before
+    assert not (repo / "backend" / "images" / "session-base" / "deps-v2").exists()
+
+
+def test_apply_preserves_a_competing_target_created_before_publish(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    original_populate = bump._populate_deps_snapshot
+    target = repo / "backend" / "images" / "session-base" / "deps-v2"
+
+    def populate_while_another_writer_publishes(prev: int, new: int, staging: Path) -> None:
+        original_populate(prev, new, staging)
+        target.mkdir()
+
+    monkeypatch.setattr(
+        bump,
+        "_populate_deps_snapshot",
+        populate_while_another_writer_publishes,
+    )
+
+    with pytest.raises(OSError):
+        bump.apply(2)
+
+    assert bump.current_version() == 1
+    assert target.is_dir()
+    assert list(target.iterdir()) == []
+    assert "export const DEPS_VERSION = 1" in bump.DEPS_VERSION_TS.read_text(encoding="utf-8")
+
+
+def test_apply_restores_the_tree_when_final_verification_fails(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    before = _snapshot_tree(repo)
+    monkeypatch.setattr(bump, "check", lambda: ["forced inconsistency"])
+
+    with pytest.raises(BumpError, match="forced inconsistency"):
+        bump.apply(2)
+
+    assert _snapshot_tree(repo) == before
+    assert not (repo / "backend" / "images" / "session-base" / "deps-v2").exists()
+
+
 def test_apply_is_idempotent(repo: Path):
     bump.apply(2)
     after_first = _snapshot_tree(repo)
@@ -250,20 +317,12 @@ def test_apply_refuses_an_existing_snapshot(repo: Path):
     assert "deps-v2/Dockerfile" not in deps_ts
 
 
-def test_apply_refuses_a_dangling_snapshot_symlink(repo: Path, monkeypatch: pytest.MonkeyPatch):
+def test_apply_refuses_a_dangling_snapshot_symlink(repo: Path):
     deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
-    original_exists = Path.exists
-    original_is_symlink = Path.is_symlink
-    monkeypatch.setattr(
-        Path,
-        "exists",
-        lambda path: False if path == deps_v2 else original_exists(path),
-    )
-    monkeypatch.setattr(
-        Path,
-        "is_symlink",
-        lambda path: True if path == deps_v2 else original_is_symlink(path),
-    )
+    try:
+        deps_v2.symlink_to(repo / "missing-snapshot", target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"directory symlinks are unavailable: {error}")
 
     with pytest.raises(BumpError, match="target snapshot .* already exists"):
         bump.apply(2)

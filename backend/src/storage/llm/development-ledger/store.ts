@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import BetterSqlite3 from 'better-sqlite3'
 
 import type { LlmUsage } from '../../../llm/types.js'
+import { createMeterHealthTable, verifyMeterWritable } from '../write-health.js'
 
 const CURRENT_SCHEMA_VERSION = 1
 const SEASON_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -121,6 +122,7 @@ function migrate(db: BetterSqlite3.Database): void {
         );
         CREATE INDEX calls_user ON calls (user_id, id);
       `)
+      createMeterHealthTable(db)
       db.pragma('user_version = 1')
     }).immediate()
   }
@@ -158,7 +160,9 @@ export class DevelopmentLedgerStore {
   }
 
   open(seasonId: string): void {
-    this.handle(seasonId)
+    const wasCached = this.handles.has(seasonId)
+    const handle = this.handle(seasonId)
+    if (wasCached) verifyMeterWritable(handle.db, this.now().toISOString())
   }
 
   record(seasonId: string, input: DevelopmentCallInput): number {
@@ -282,6 +286,7 @@ export class DevelopmentLedgerStore {
     try {
       db.pragma('journal_mode = WAL')
       migrate(db)
+      verifyMeterWritable(db, this.now().toISOString())
       const handle: LedgerHandle = {
         db,
         insertCall: db.prepare(`INSERT INTO calls (

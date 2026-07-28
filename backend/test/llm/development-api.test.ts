@@ -127,7 +127,6 @@ describe('development LLM API', () => {
       storage: keyStorage,
       environments,
       llm,
-      meter,
       ledger,
       publicOrigin: 'https://sandbox.test',
       readUserStatus: async (userId) => statuses.get(userId) ?? null,
@@ -336,6 +335,41 @@ describe('development LLM API', () => {
     expect(meter.inspect(`development:${seasonId}:${userId}`)).toMatchObject({
       rateEvents: [],
       reservedWeightedTokens: 0,
+    })
+  })
+
+  it('retries a development-ledger preflight failure without poisoning the meter scope', async () => {
+    const { testApp, ledger, meter, upstream, statuses } = await fixture()
+    const seasonId = await enabledSeason(testApp)
+    const key = await issue(testApp, statuses, seasonId, 'alice')
+    const userId = testApp.users.idOf('alice')
+    const open = vi.spyOn(ledger, 'open').mockImplementationOnce(() => {
+      throw new Error('storage temporarily unavailable')
+    })
+    const call = () =>
+      testApp.app.inject({
+        method: 'POST',
+        url: '/api/llm/v1/chat/completions',
+        headers: { authorization: `Bearer ${key}` },
+        payload: { model: 'small', messages: [] },
+      })
+
+    const failed = await call()
+    expect(failed.statusCode).toBe(503)
+    expect(failed.json()).toMatchObject({ error: { code: 'meter_unavailable' } })
+    expect(upstream.call).not.toHaveBeenCalled()
+    expect(meter.inspect(`development:${seasonId}:${userId}`).unavailable).toBe(false)
+
+    expect((await call()).statusCode).toBe(200)
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(upstream.call).toHaveBeenCalledOnce()
+    expect(ledger.readUserUsageByModel(seasonId, userId)).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 2,
+        reasoningTokens: 0,
+        outputTokens: 4,
+      },
     })
   })
 

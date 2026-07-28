@@ -55,9 +55,9 @@ describe('createOfficialRecordSink', () => {
       tick,
     })
 
-    sink.record(SUCCESS)
+    sink(SUCCESS)
     tick.current = 14
-    sink.record({ ...SUCCESS, usageEstimated: false, latencyMs: 20 })
+    sink({ ...SUCCESS, usageEstimated: false, latencyMs: 20 })
 
     expect(store.listCalls('run-1')).toEqual([
       {
@@ -105,7 +105,7 @@ describe('createOfficialRecordSink', () => {
       tick: { current: null },
     })
 
-    sink.record(SUCCESS)
+    sink(SUCCESS)
 
     expect(store.listCalls('live-session')[0]).toMatchObject({
       sessionId: 'live-session',

@@ -36,6 +36,11 @@ export interface LlmAccountingScope {
   limits: LlmLimits
   /** Token-budget cost for each model alias enabled on this scope. */
   weights: Partial<Record<ModelAlias, number>>
+  /**
+   * Prove synchronously that this grant's durable store can still commit, before the request may
+   * reach the provider. Omitted by scopes with no durable store to verify.
+   */
+  verifyWritable?: () => void
   /** Must synchronously read the durable store written by this grant's record sink. */
   readCommittedUsage: () => LlmCommittedUsageByModel
 }
@@ -55,9 +60,7 @@ export interface LlmSuccessfulRecord {
 }
 
 /** Durable successful-call recording supplied by an authenticated grant. */
-export interface LlmRecordSink {
-  record: (record: LlmSuccessfulRecord) => MaybePromise<void>
-}
+export type LlmRecordSink = (record: LlmSuccessfulRecord) => MaybePromise<void>
 
 /**
  * Everything the shared handler needs after authentication, without official identity fields.

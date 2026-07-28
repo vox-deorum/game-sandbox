@@ -11,6 +11,7 @@ import BetterSqlite3 from 'better-sqlite3'
 
 import type { LlmUsage } from '../../llm/types.js'
 import { totalTokens } from '../../llm/types.js'
+import { createMeterHealthTable, verifyMeterWritable } from './write-health.js'
 
 const CURRENT_SCHEMA_VERSION = 1
 const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -204,6 +205,7 @@ function initializeSchema(db: BetterSqlite3.Database): void {
         CREATE INDEX calls_session_player ON calls (session_id, player);
         CREATE INDEX calls_created_at ON calls (created_at);
       `)
+      createMeterHealthTable(db)
       db.pragma('user_version = 1')
     }).immediate()
   }
@@ -236,7 +238,9 @@ export class ExecutionTelemetryStore {
 
   /** Open and initialize a scope before returning it to admission or query code. */
   open(scopeId: string): void {
-    this.handle(scopeId)
+    const wasCached = this.handles.has(scopeId)
+    const handle = this.handle(scopeId)
+    if (wasCached) verifyMeterWritable(handle.db, this.now().toISOString())
   }
 
   /** Commit one successful logical request in a transaction and return its durable row id. */
@@ -423,6 +427,7 @@ export class ExecutionTelemetryStore {
     try {
       db.pragma('journal_mode = WAL')
       initializeSchema(db)
+      verifyMeterWritable(db, this.now().toISOString())
       const handle: ScopeHandle = {
         db,
         insertCall: db.prepare(`

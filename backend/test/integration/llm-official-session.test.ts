@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LlmHandler } from '../../src/llm/handler.js'
 import { KeyRegistry } from '../../src/llm/key-registry.js'
@@ -70,6 +70,7 @@ describe('official LLM session grant lifecycle', () => {
     telemetry.close()
     await upstream.close()
     rmSync(root, { recursive: true, force: true })
+    vi.restoreAllMocks()
   })
 
   let issuer: ReturnType<typeof createOfficialGrantIssuer>
@@ -158,5 +159,37 @@ describe('official LLM session grant lifecycle', () => {
       rateEvents: [],
       reservedWeightedTokens: 0,
     })
+  })
+
+  it('retries a recovered telemetry preflight without spending provider tokens on failure', async () => {
+    const originalOpen = telemetry.open.bind(telemetry)
+    let failNextOpen = false
+    vi.spyOn(telemetry, 'open').mockImplementation((scopeId) => {
+      if (failNextOpen) {
+        failNextOpen = false
+        throw new Error('storage temporarily unavailable')
+      }
+      originalOpen(scopeId)
+    })
+    const key = await issue()
+    failNextOpen = true
+
+    const failed = await request(key, {
+      model: 'small',
+      messages: [{ role: 'user', content: '[stub:success] rejected before provider' }],
+    })
+
+    expect(failed.status).toBe(503)
+    expect(await failed.json()).toMatchObject({ error: { code: 'meter_unavailable' } })
+    expect(upstream.requests).toEqual([])
+    expect(meter.inspect(`official:${SCOPE_ID}:${PLAYER}`).unavailable).toBe(false)
+
+    const recovered = await request(key, {
+      model: 'small',
+      messages: [{ role: 'user', content: '[stub:success] recovered preflight' }],
+    })
+    expect(recovered.status).toBe(200)
+    expect(upstream.requests).toHaveLength(1)
+    expect(telemetry.listCalls(SCOPE_ID)).toHaveLength(1)
   })
 })

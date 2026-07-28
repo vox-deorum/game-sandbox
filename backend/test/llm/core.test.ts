@@ -9,6 +9,7 @@ import { LlmMeter } from '../../src/llm/meter.js'
 import type { LlmTokenCounter } from '../../src/llm/tokenizer.js'
 import {
   type LlmAccountingScope,
+  type LlmChatCompletion,
   type LlmChatRequest,
   type LlmGrant,
   type LlmSuccessfulRecord,
@@ -52,11 +53,9 @@ function fixture(
   }
   const sink =
     overrides.sink ??
-    ({
-      record: (record) => {
-        records.push(record)
-      },
-    } satisfies LlmGrant['recordSink'])
+    ((record: LlmSuccessfulRecord) => {
+      records.push(record)
+    })
   const grant: LlmGrant = {
     kind: 'official',
     models: { [model.tier]: { upstream: model.upstream, costWeight: model.costWeight } },
@@ -78,14 +77,19 @@ function fixture(
       latencyMs: 17,
     })),
   }
-  const meter = new LlmMeter()
+  const logs: string[] = []
+  const log = (message: string): void => {
+    logs.push(message)
+  }
+  const meter = new LlmMeter({ log })
   const handler = new LlmHandler({
     meter,
     tokenizer,
     upstream,
     options: { defaultMaxOutputTokens: 8, maxOutputTokens: 20 },
+    log,
   })
-  return { grant, handler, meter, records, tokenizer, upstream }
+  return { grant, handler, logs, meter, records, tokenizer, upstream }
 }
 
 describe('LLM registry, handler, and listener', () => {
@@ -285,12 +289,10 @@ describe('LLM registry, handler, and listener', () => {
     })
     let finalized = false
     const { grant, handler, meter } = fixture({
-      sink: {
-        record: async () => {
-          startFinalizer()
-          await finalizerGate
-          finalized = true
-        },
+      sink: async () => {
+        startFinalizer()
+        await finalizerGate
+        finalized = true
       },
     })
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(2))
@@ -501,8 +503,9 @@ describe('LLM registry, handler, and listener', () => {
     expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(15)
 
     first.release()
-    // Released work moves to the cumulative counter and the remaining active request stays indexed.
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(65)
+    // Released work remains capped when it moves to the cumulative counter. The other active
+    // request contributes its own capped partial.
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
     const revocation = registry.revokeSession('s1')
     second.release()
     await revocation
@@ -704,29 +707,6 @@ describe('generic admission and unavailable scopes', () => {
     meter.release(admitted)
   })
 
-  it('marks an accounting scope unavailable without affecting reservation release', async () => {
-    const meter = new LlmMeter()
-    const scope: LlmAccountingScope = {
-      key: 'weighted:unavailable',
-      limits: { tokenBudget: 100, requestsPerMinute: 10 },
-      weights: { large: 4, small: 1 },
-      readCommittedUsage: () => ({
-        large: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
-        small: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
-      }),
-    }
-    const reservation = await meter.reserve(scope, 'large', 1, 2)
-    meter.release(reservation)
-    meter.markUnavailable(scope)
-    expect(meter.inspect(scope.key)).toMatchObject({
-      reservedWeightedTokens: 0,
-      unavailable: true,
-    })
-    await expect(meter.reserve(scope, 'small', 1, 1)).rejects.toMatchObject({
-      code: 'meter_unavailable',
-    })
-  })
-
   it.each([
     'retired',
     'constructor',
@@ -907,11 +887,9 @@ describe('generic admission and unavailable scopes', () => {
   })
 
   it('keeps a failed record scope unavailable for the process lifetime', async () => {
-    const sink = {
-      record: vi.fn(() => {
-        throw new Error('disk full')
-      }),
-    }
+    const sink = vi.fn(() => {
+      throw new Error('disk full')
+    })
     const { grant, handler, meter, upstream } = fixture({ sink })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
@@ -927,64 +905,94 @@ describe('generic admission and unavailable scopes', () => {
     expect(upstream.call).toHaveBeenCalledTimes(1)
   })
 
-  it('marks a scope unavailable when estimation fails after upstream success', async () => {
-    const sink = { record: vi.fn() }
+  it('releases without blocking the scope when estimation fails after upstream success', async () => {
+    const sink = vi.fn()
     const tokenizer: LlmTokenCounter = {
       countRequest: () => 3,
       countCompletion: () => {
         throw new Error('estimator failed')
       },
     }
-    const { grant, handler, meter, upstream } = fixture({ sink, tokenizer })
+    const { grant, handler, logs, meter, upstream } = fixture({ sink, tokenizer })
     upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
 
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'meter_unavailable',
-    })
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toThrow(
+      'estimator failed',
+    )
 
     const key = grant.accountingScope.key
-    expect(sink.record).not.toHaveBeenCalled()
+    // The provider was paid for work no row will ever describe, so the operator gets a diagnostic.
+    expect(logs).toEqual([`LLM handler ${key}: small spend was not accounted: estimator failed`])
+    expect(sink).not.toHaveBeenCalled()
     expect(meter.inspect(key)).toMatchObject({
-      unavailable: true,
+      unavailable: false,
       reservedWeightedTokens: 0,
     })
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'meter_unavailable',
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).resolves.toMatchObject({
+      model: 'small',
     })
-    expect(upstream.call).toHaveBeenCalledOnce()
+    expect(upstream.call).toHaveBeenCalledTimes(2)
+    expect(sink).toHaveBeenCalledOnce()
   })
 
-  it('logs an unavailable scope only once after repeated marks', async () => {
-    const log = vi.fn()
-    const meter = new LlmMeter({ log })
-    const scope: LlmAccountingScope = {
-      key: 'session:unavailable:player_0',
-      limits: { tokenBudget: 100, requestsPerMinute: 10 },
-      weights: { small: 1 },
-      readCommittedUsage: () => ({}),
-    }
-    meter.markUnavailable(scope)
-    meter.markUnavailable(scope)
-
-    expect(meter.inspect(scope.key).unavailable).toBe(true)
-    expect(log).toHaveBeenCalledOnce()
-  })
-
-  it('marks the scope unavailable after a sink failure', async () => {
-    const sink = {
-      record: vi.fn(() => {
-        throw new Error('disk full')
+  it('releases without blocking the scope when completion redaction fails', async () => {
+    const { grant, handler, meter, records, upstream } = fixture()
+    const malformed = {
+      ...completion({
+        prompt_tokens: 2,
+        completion_tokens: 4,
+        total_tokens: 6,
       }),
-    }
-    const { grant, handler, meter } = fixture({ sink })
+      moderation: {
+        input: { model: 'provider-secret', results: null },
+        output: { model: 'provider-secret', results: [] },
+      },
+    } as unknown as LlmChatCompletion
+    upstream.call.mockResolvedValueOnce({ completion: malformed, latencyMs: 1 })
 
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'meter_unavailable',
-    })
-
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toThrow()
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
-      unavailable: true,
+      unavailable: false,
       reservedWeightedTokens: 0,
     })
+
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).resolves.toMatchObject({
+      model: 'small',
+    })
+    expect(upstream.call).toHaveBeenCalledTimes(2)
+    expect(records).toHaveLength(1)
+  })
+
+  it('answers an unresolvable usage failure with a compatible internal error', async () => {
+    const tokenizer: LlmTokenCounter = {
+      countRequest: () => 3,
+      countCompletion: () => {
+        throw new Error('estimator failed')
+      },
+    }
+    const { grant, handler, logs, meter, upstream } = fixture({ sink: vi.fn(), tokenizer })
+    upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(9))
+    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const app = await buildLlmListener({ registry, handler })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({
+      error: {
+        message: 'The LLM proxy encountered an internal error.',
+        type: 'server_error',
+        code: 'internal_error',
+      },
+    })
+    expect(meter.inspect(grant.accountingScope.key).unavailable).toBe(false)
+    expect(logs).toHaveLength(1)
+    await app.close()
   })
 })

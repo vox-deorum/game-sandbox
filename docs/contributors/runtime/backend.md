@@ -72,7 +72,9 @@ The backend exposes an OpenAI-compatible proxy when the deployment configures an
 
 Official sessions reach the proxy only through their isolated relay network. The harness reads the internal timing endpoint around an agent hook so verified proxy time is excluded from the hook budget. Development keys and usage belong to an active participant in an open, LLM-enabled season.
 
-The durable telemetry store retains public usage metadata and costs. Request and completion bodies are available only to an operator or the owner of the controlling submission. Product behavior, accounting guarantees, and error codes are defined in the [LLM specification](../../specs/llm.md). See [Configuration](../setup/configuration.md#llm-proxy) for deployment settings and the [LLM source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/llm) for the implementation.
+The durable telemetry store retains public usage metadata and costs. Each official scope and development ledger performs a transactional write/readback preflight before every provider admission, including when an existing handle is reused. A pre-upstream failure rejects the current request and is retried by the next request. A durable-record failure after provider success makes only that accounting scope unavailable until the backend restarts. Completion-normalization and usage-resolution failures release their reservations, leave the scope available, and log the unaccounted provider spend.
+
+Request and completion bodies are available only to an operator or the owner of the controlling submission. Product behavior, accounting guarantees, and error codes are defined in the [LLM specification](../../specs/llm.md). See [Configuration](../setup/configuration.md#llm-proxy) for deployment settings and the [LLM source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/llm) for the implementation.
 
 ## Static frontend
 

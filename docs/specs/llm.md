@@ -30,7 +30,7 @@ Session containers cannot reach the general internet. When LLM access is enabled
 
 The backend uses the OpenAI client retry policy for eligible upstream failures. The deployment sets the retry count, and the client applies its built-in backoff. A failure that cannot be retried, or a sequence that exhausts its retries, returns an OpenAI-compatible error and is not a successful call.
 
-Streaming is unsupported. A rate-limit refusal returns `429 rate_limit_exceeded`. A request over budget returns `400 budget_exceeded`. An accounting failure after an upstream success returns `503 meter_unavailable`.
+Streaming is unsupported. A rate-limit refusal returns `429 rate_limit_exceeded`. A request over budget returns `400 budget_exceeded`. A durable-record failure after an upstream success returns `503 meter_unavailable`.
 
 ## Successful-call accounting
 
@@ -40,9 +40,12 @@ The proxy finalizes one logical request at most once, including all of its retri
 | --- | --- | --- |
 | Rejected before upstream, or upstream never succeeds | No token usage or call telemetry is committed. Pending capacity is released. | OpenAI-compatible error |
 | Upstream succeeds and accounting commits | Actual or estimated usage consumes budget and produces telemetry. | Canonical completion |
-| Upstream succeeds but accounting cannot commit | No partial success row is written. Further calls in that scope fail closed until the backend restarts. | `503 meter_unavailable` |
+| Upstream succeeds but the durable record cannot commit | No partial success row is written. Further calls in that scope fail closed until the backend restarts. | `503 meter_unavailable` |
+| Upstream succeeds but the completion cannot be normalized or its usage resolved | No row is written and no budget is consumed. The scope stays available and the unaccounted spend is logged. | `500 internal_error` |
 
-The backend commits accounting before returning a completion. An accounting failure makes that scope unavailable for the rest of the backend process.
+The backend commits accounting before returning a completion. A durable-record failure makes that scope unavailable for the rest of the backend process. A completion-normalization or usage-resolution failure is a backend fault rather than a storage fault, so it releases the request and leaves the scope available.
+
+Before each admission can reach the provider, the backing telemetry store completes a write/readback preflight. A preflight failure rejects that request with `503 meter_unavailable`; the next request retries the preflight because no provider spend occurred.
 
 The backend uses valid usage counts from the successful response. Otherwise it estimates input and output tokens from the accepted request and canonical completion. It preserves a reported reasoning-token count when available and uses zero otherwise. Estimated calls and every aggregate derived from them are marked as estimated and consume budget normally.
 
@@ -68,7 +71,7 @@ Budgets, rate limits, and telemetry stay keyed per player rather than per seat, 
 
 Each admitted request holds one pending unit in its player's sliding rate window. Retries belong to that unit. An eventual success records one rate event at the request's start unless the pending unit has already expired from the window. A request that never succeeds releases the unit without an event. Recorded events and active pending units together determine whether another request is admitted.
 
-Rate events are separate from durable successful-call telemetry. A request that outlives the rate window can lose its rate event and still commit its successful call and token usage. An accounting failure blocks that scope for the rest of the backend process.
+Rate events are separate from durable successful-call telemetry. A request that outlives the rate window can lose its rate event and still commit its successful call and token usage. A durable-record failure blocks that scope for the rest of the backend process.
 
 An upstream-successful request records its rate event, unless the pending unit expired, even when durable accounting later fails and the caller receives `503 meter_unavailable`.
 
@@ -82,8 +85,8 @@ Successful development calls record the participant, model, token counts, estima
 
 A seed does not make a model response deterministic. Seeded repetitions reduce the effect of stochastic policies but do not remove it.
 
-In an official session, chargeable time for `act`, `chat`, and `learn` excludes verified time in the backend proxy, including retry waits. If either proxy-time reading around a hook is unavailable or invalid, the full hook time is charged. The cumulative counter can include an opponent's overlapping proxy request, which can reduce the acting player's chargeable time.
+In an official session, chargeable time for `act`, `chat`, and `learn` excludes verified time in the backend proxy for that player, including retry waits. Calling-thread CPU time remains chargeable. A valid post-hook proxy reading becomes the next hook's baseline, which keeps the steady-state path to one synchronous read per hook and means a request still in flight between two hooks is discounted from the later one. If a required reading is unavailable or invalid, the full hook time is charged. Model calls and local work must remain on that thread.
 
-Live-session and leaderboard-run timeouts also exclude verified proxy time after they start. The extra allowance for an active request is bounded, so a stuck request cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
+Live-session and leaderboard-run timeouts also exclude verified proxy time after they start. Each request's allowance is bounded, so a stuck request or long provider-directed retry wait cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
 
 Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing. The automated board reports successful-call counts and token use by model. See [Leaderboards](leaderboard.md).

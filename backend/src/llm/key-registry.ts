@@ -48,7 +48,7 @@ export interface OfficialRequestAdmission {
 export class KeyRegistry {
   private readonly official = new Map<string, OfficialKeyEntry>()
   private readonly sessions = new Map<string, OfficialSessionState>()
-  /** Cumulative completed in-flight ms per accounting-scope key, spanning success and failure alike. */
+  /** Cumulative capped in-flight ms per accounting-scope key, spanning success and failure alike. */
   private readonly inFlightByScope = new Map<string, number>()
   /** Active requests by accounting scope, used by the hook-timing control read. */
   private readonly activeRequestsByScope = new Map<string, Set<OfficialRequestState>>()
@@ -105,9 +105,9 @@ export class KeyRegistry {
       release: () => {
         if (released) return
         released = true
-        // The whole logical request, from admission to final response and across every retry, counts,
-        // whether it succeeded or failed, so timing authority stays with the proxy.
-        const elapsed = Math.max(0, Math.round(this.now() - requestState.startedAt))
+        // The logical request counts across every retry whether it succeeded or failed. Apply the
+        // same per-request cap before moving its active partial into the cumulative counter.
+        const elapsed = this.activeRequestMs(requestState, this.now())
         const scopeKey = requestState.scopeKey
         this.inFlightByScope.set(scopeKey, (this.inFlightByScope.get(scopeKey) ?? 0) + elapsed)
         state.activeRequests.delete(requestState)

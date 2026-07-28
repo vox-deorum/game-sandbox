@@ -157,9 +157,13 @@ CREATE TABLE calls (
   created_at       TEXT NOT NULL
 );
 CREATE INDEX calls_user ON calls (user_id, id);
+CREATE TABLE meter_health (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  checked_at TEXT NOT NULL
+);
 ```
 
-The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
+The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry. Version 1 includes the one-row `meter_health` table. The pair's accounting scope opens the season ledger and completes a transactional marker write and readback during admission, before any provider work, including when the handle is cached. A failed preflight returns `503 meter_unavailable` for the current request, and the next request retries it because no provider spend occurred.
 
 The development meter uses `(seasonId, userId)` as one accounting scope for weighted-token and rate limits. It sums successful rows by model for that pair and prices them with the current resolved season values, then combines them with temporary in-flight weighted-token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
 
@@ -167,7 +171,7 @@ After authentication, current effective-configuration resolution, request valida
 
 A successful logical request writes one full row using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs can identify estimates. Every unsuccessful upstream path releases its token and pending rate reservations and leaves the ledger unchanged.
 
-Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter releases the reservation, marks `(seasonId, userId)` unavailable, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the unavailable flag never reach the upstream. The flag is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows.
+Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. A durable commit failure releases the reservation, marks `(seasonId, userId)` unavailable, and returns `503 meter_unavailable` instead of the completion. Normalization and usage-resolution failures release the reservation without marking the ledger unavailable. Requests rejected by the unavailable flag never reach the upstream. The flag is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows.
 
 Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, or ticks.
 
@@ -197,6 +201,7 @@ Docker-free backend and frontend tests cover:
 - One successful development request adding one rate event, with non-retryable failures and exhausted retries releasing pending capacity, backend retry attempts adding no capacity, and pre-admission rejections reserving none.
 - Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
 - A post-upstream development-accounting failure returning `meter_unavailable` and blocking that participant and season until restart without blocking another participant or season.
+- A pre-upstream development-ledger preflight failure making no provider attempt, leaving the pair available, and succeeding when the next request's preflight recovers.
 - Complete isolation between official meters and development meters.
 - A fresh application database creates the development-key table and nullable recording associations from the flat initial schema, and live LLM recording registration stores the session scope and session filter IDs.
 - Local application databases containing stored `call_budget` values in season configs or `llm_policy_snapshot` rows are recreated. Strict decoders do not accept the removed field.

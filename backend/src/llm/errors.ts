@@ -37,6 +37,11 @@ export function asLlmError(error: unknown): LlmError {
   )
 }
 
+/** A short diagnostic description of an unexpected failure, never a request or completion body. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** Parse a request's bearer credential, shared by every key-authenticated LLM route. */
 export function readBearer(header: string | undefined): string {
   const match = /^Bearer ([^\s]+)$/i.exec(header ?? '')

@@ -28,10 +28,12 @@ const CALL: DevelopmentCallInput = {
 describe('DevelopmentLedgerStore', () => {
   let root: string
   let store: DevelopmentLedgerStore
+  let now: Date
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'gs-llm-development-'))
-    store = new DevelopmentLedgerStore(root, () => new Date('2026-07-15T12:34:56.000Z'))
+    now = new Date('2026-07-15T12:34:56.000Z')
+    store = new DevelopmentLedgerStore(root, () => now)
   })
 
   afterEach(() => {
@@ -39,21 +41,46 @@ describe('DevelopmentLedgerStore', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('creates the versioned schema and user index', () => {
+  it('creates the versioned schema, user index, and startup write check', () => {
     store.open('season-1')
     const db = new BetterSqlite3(join(root, 'season-1.sqlite'), { readonly: true })
 
     expect(db.pragma('user_version', { simple: true })).toBe(DEVELOPMENT_LEDGER_SCHEMA_VERSION)
     expect(
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all(),
-    ).toEqual(['calls'])
+    ).toEqual(['calls', 'meter_health'])
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'calls_user'")
         .pluck()
         .get(),
     ).toBe('calls_user')
+    expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
+      id: 1,
+      checked_at: '2026-07-15T12:34:56.000Z',
+    })
     db.close()
+  })
+
+  it('rechecks writes when admission explicitly opens a cached ledger', () => {
+    store.open('season-1')
+    now = new Date('2026-07-15T12:35:56.000Z')
+    store.open('season-1')
+
+    const db = new BetterSqlite3(join(root, 'season-1.sqlite'), { readonly: true })
+    expect(db.prepare('SELECT checked_at FROM meter_health WHERE id = 1').pluck().get()).toBe(
+      '2026-07-15T12:35:56.000Z',
+    )
+    db.close()
+  })
+
+  it('refuses a cached ledger whose durable write no longer commits', () => {
+    store.open('season-1')
+    const broken = new BetterSqlite3(join(root, 'season-1.sqlite'))
+    broken.exec('DROP TABLE meter_health')
+    broken.close()
+
+    expect(() => store.open('season-1')).toThrow('meter_health')
   })
 
   it('round-trips every call field and keeps usage and estimates isolated by participant', () => {

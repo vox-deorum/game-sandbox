@@ -1,4 +1,4 @@
-import { invalidRequest, LlmError } from './errors.js'
+import { describeError, invalidRequest, LlmError } from './errors.js'
 import type { LlmMeter } from './meter.js'
 import type { LlmTokenCounter } from './tokenizer.js'
 import type { LlmChatCompletion, LlmChatRequest, LlmGrant, ModelAlias } from './types.js'
@@ -17,6 +17,8 @@ export interface LlmHandlerDeps {
   tokenizer: LlmTokenCounter
   upstream: Pick<UpstreamCaller, 'call'>
   options: LlmHandlerOptions
+  /** Diagnostic sink for provider spend this process could not account for. */
+  log?: (message: string) => void
 }
 
 export interface LlmRequestLifecycle {
@@ -100,12 +102,14 @@ export class LlmHandler {
       })
       return completion
     } catch (error) {
-      // A commit failure has already released the reservation and blocked its scope. Any other
-      // failure after upstream success must also block the scope because the provider spent tokens.
+      // A commit failure has already released the reservation and blocked its scope. Completion
+      // normalization and usage-resolution failures do not prove that storage is unavailable, so the
+      // scope stays open. The provider was still paid, so the unaccounted spend is worth a record.
       if (reservation.active) {
         this.deps.meter.release(reservation)
-        this.deps.meter.markUnavailable(grant.accountingScope)
-        throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
+        this.deps.log?.(
+          `LLM handler ${grant.accountingScope.key}: ${alias} spend was not accounted: ${describeError(error)}`,
+        )
       }
       throw error
     }

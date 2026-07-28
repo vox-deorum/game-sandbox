@@ -31,7 +31,10 @@ What a bump touches, all to the same ``N``:
    from the *current* ``templates/base/requirements.txt``, the previous version's ``Dockerfile`` with
    its ``deps-v<prev>`` paths and version prose rewritten, and its ``builtin/`` agents copied with
    their manifests bumped. A target snapshot directory must not already exist. This keeps each bump
-   mechanical and prevents an existing snapshot from being silently retained.
+   mechanical and prevents an existing snapshot from being silently retained. To preserve intentional
+   snapshot edits, move the target aside, create the mechanical snapshot, reapply the edits, and run
+   ``--check``. A failed apply restores every version touchpoint and discards only snapshot paths it
+   created.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ import json
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from _paths import (
@@ -234,22 +238,19 @@ def _snapshot_target(new: int) -> Path:
     """Return the new snapshot path, or refuse it when it already exists."""
     new_dir = SESSION_BASE_IMAGES_DIR / f"deps-v{new}"
     if new_dir.exists() or new_dir.is_symlink():
-        raise BumpError(f"cannot create deps-v{new}: target snapshot {new_dir} already exists.")
+        raise BumpError(
+            f"cannot create deps-v{new}: target snapshot {new_dir} already exists. Move it aside, "
+            "rerun the bump, reapply intentional snapshot edits, and run --check."
+        )
     return new_dir
 
 
-def create_deps_snapshot(prev: int, new: int) -> None:
-    """Create ``deps-v<new>/`` from ``deps-v<prev>`` and the current requirements.
-
-    Raises :class:`BumpError` when the target snapshot directory already exists.
-    """
-    new_dir = _snapshot_target(new)
-
+def _populate_deps_snapshot(prev: int, new: int, new_dir: Path) -> None:
+    """Populate an empty owned directory with the mechanical ``deps-v<new>`` snapshot."""
     prev_dir = SESSION_BASE_IMAGES_DIR / f"deps-v{prev}"
     if not prev_dir.is_dir():
         raise BumpError(f"cannot derive deps-v{new}: previous snapshot {prev_dir} does not exist.")
 
-    new_dir.mkdir(parents=True)
     frozen = freeze_requirements(TEMPLATE_BASE_REQUIREMENTS.read_text(encoding="utf-8"), new)
     (new_dir / "requirements.txt").write_text(frozen, encoding="utf-8")
 
@@ -323,22 +324,56 @@ def apply(new: int) -> None:
         print(f"already at template version {new}; no changes.")
         return
 
-    _snapshot_target(new)
+    new_dir = _snapshot_target(new)
+    fixture_manifests = _fixture_manifests()
+    touched_files = [TEMPLATE_BASE_MANIFEST, *fixture_manifests, DEPS_VERSION_TS]
+    original_files = {path: path.read_bytes() for path in touched_files}
     print(f"bumping template version {prev} -> {new}")
 
-    set_manifest_version(TEMPLATE_BASE_MANIFEST, new)
-    print(f"  set {TEMPLATE_BASE_MANIFEST} template_version = {new}")
+    staging_dir: Path | None = None
+    claimed_snapshot = False
+    try:
+        staging_dir = Path(tempfile.mkdtemp(prefix=f".deps-v{new}-", dir=SESSION_BASE_IMAGES_DIR))
+        _populate_deps_snapshot(prev, new, staging_dir)
+        snapshot_problems = _validate_snapshot(staging_dir, new)
+        if snapshot_problems:
+            raise BumpError(f"generated deps-v{new} is inconsistent:\n  " + "\n  ".join(snapshot_problems))
 
-    for manifest in _fixture_manifests():
-        set_manifest_version(manifest, new)
-        print(f"  set {manifest} template_version = {new}")
+        # mkdir is the cross-platform exclusive claim. The current version still points at the
+        # previous snapshot while the validated staging children move into this owned directory.
+        new_dir.mkdir()
+        claimed_snapshot = True
+        for child in staging_dir.iterdir():
+            child.rename(new_dir / child.name)
+        staging_dir.rmdir()
+        staging_dir = None
 
-    ts_text = DEPS_VERSION_TS.read_text(encoding="utf-8")
-    DEPS_VERSION_TS.write_text(bump_deps_version_ts(ts_text, prev, new), encoding="utf-8")
-    print(f"  set {DEPS_VERSION_TS} DEPS_VERSION = {new} and registered deps-v{new}")
+        set_manifest_version(TEMPLATE_BASE_MANIFEST, new)
+        print(f"  set {TEMPLATE_BASE_MANIFEST} template_version = {new}")
 
-    create_deps_snapshot(prev, new)
-    print(f"  created {SESSION_BASE_IMAGES_DIR / f'deps-v{new}'} from deps-v{prev}")
+        for manifest in fixture_manifests:
+            set_manifest_version(manifest, new)
+            print(f"  set {manifest} template_version = {new}")
+
+        ts_text = DEPS_VERSION_TS.read_text(encoding="utf-8")
+        DEPS_VERSION_TS.write_text(bump_deps_version_ts(ts_text, prev, new), encoding="utf-8")
+        print(f"  set {DEPS_VERSION_TS} DEPS_VERSION = {new} and registered deps-v{new}")
+
+        print(f"  created {new_dir} from deps-v{prev}")
+        problems = check()
+        if problems:
+            raise BumpError(
+                f"bump to version {new} left inconsistent touchpoints:\n  " + "\n  ".join(problems)
+            )
+    except Exception:
+        for path, contents in original_files.items():
+            path.write_bytes(contents)
+        if claimed_snapshot:
+            shutil.rmtree(new_dir)
+        if staging_dir is not None and staging_dir.is_dir():
+            shutil.rmtree(staging_dir)
+        print(f"  restored version {prev} after the failed bump")
+        raise
     print(f"bumped to template version {new}.")
 
 

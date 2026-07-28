@@ -125,7 +125,6 @@ describe('development LLM HTTP wiring (integration)', () => {
       storage: keyStorage,
       environments: environments(),
       llm,
-      meter,
       ledger,
       publicOrigin: 'https://sandbox.test',
       readUserStatus: async (id) => statuses.get(id) ?? null,
@@ -178,6 +177,13 @@ describe('development LLM HTTP wiring (integration)', () => {
       (request) => request.logicalRequestId === 'alice-a-1',
     )
     expect(retryRequests).toHaveLength(RETRY_SUCCESS_ATTEMPTS)
+    const firstRetryInterval =
+      (retryRequests.at(1)?.arrivedAt ?? 0) - (retryRequests.at(0)?.arrivedAt ?? 0)
+    const secondRetryInterval =
+      (retryRequests.at(2)?.arrivedAt ?? 0) - (retryRequests.at(1)?.arrivedAt ?? 0)
+    // The SDK jitters each exponential delay down by at most 25 percent.
+    expect(firstRetryInterval).toBeGreaterThanOrEqual(350)
+    expect(secondRetryInterval).toBeGreaterThanOrEqual(700)
 
     expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
       small: { calls: 1 },

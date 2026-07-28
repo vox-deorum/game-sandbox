@@ -16,7 +16,7 @@ The workflow runner reads `runId`, the resolved tier-to-model map with its per-t
 
 Each workflow grant has one session-and-slot accounting scope. It synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, and its record sink writes that same file, capturing the run ID as the file scope plus the game session and slot written on every successful row. Every workflow game is a new session, so each slot's allowance covers one game, and a submission's total spend in a run is bounded by the frozen per-slot budget times the games it plays. There is no run-level allowance. A rerun receives a new run ID and a new scope file.
 
-Admission, reservation, commit, release, and post-upstream failure behavior for this scope follow Step 1 exactly: one temporary token reservation per admitted request, one committed row with validated or explicitly estimated usage on success, nothing committed on local rejection or terminal upstream failure, and a sticky unavailable scope after a post-upstream accounting failure.
+Admission, reservation, commit, release, and post-upstream failure behavior for this scope follow Step 1 exactly: one temporary token reservation per admitted request, one committed row with validated or explicitly estimated usage on success, nothing committed on local rejection or terminal upstream failure, and a sticky unavailable scope after a durable-record failure.
 
 ## Workflow runner
 
@@ -47,7 +47,7 @@ type LlmUsageByModel = Partial<Record<ModelAlias, LlmModelUsage>>
 
 Add this column directly to the flat initial application schema. Stage 9 adds no forward application-database migration because the project has no persistent production database yet; contributors recreate older local databases when this schema lands.
 
-`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. It also writes `llm_weighted_cost` as the run snapshot's price for each tier multiplied by that tier's input plus output tokens. The value is null exactly when usage is null. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and accounting failures without a row contribute no telemetry aggregate or stored cost.
+`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. It also writes `llm_weighted_cost` as the run snapshot's price for each tier multiplied by that tier's input plus output tokens. The value is null exactly when usage is null. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and failed requests without a row contribute no telemetry aggregate or stored cost.
 
 `getAutomatedBoard` sums per-game values into each agent's `llm_usage_by_model`, including `estimated_calls`, and sums each non-null `llm_weighted_cost`. The data reports successful model use and does not affect score, score spread, timing tie-breaks, or rank.
 
@@ -68,7 +68,7 @@ Docker-free workflow and storage tests cover:
 - A retryable sequence that succeeds committing once.
 - Valid upstream usage and tokenizer-estimated usage aggregating into the same token totals while only estimated rows increment `estimated_calls`.
 - Local rejection, non-retryable upstream failure, and exhausted retries committing nothing.
-- A post-upstream accounting failure making the slot unavailable before any second request reaches the upstream.
+- A durable-record failure making the slot unavailable before any second request reaches the upstream.
 - Run creation persisting a fully resolved official LLM policy, and workflow games continuing to use it after deployment defaults or the season configuration change.
 - Workflow recording registration persisting the run scope and game-session filter IDs.
 - Normal exit, crash, setup or launch failure, cancellation, and explicit stop closing grant admission, aborting or draining active requests, and awaiting reservation finalizers before the first telemetry query or per-game aggregate write.
