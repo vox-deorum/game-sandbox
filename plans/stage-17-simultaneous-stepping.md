@@ -4,7 +4,7 @@ Status: not started.
 
 ## Goal
 
-An environment can declare simultaneous stepping: every pace tick, every live agent decides against the same pre-tick world, the human contributes through the input latch, the environment applies all actions together, and the harness streams and records exactly one state per tick. Messaging becomes one asynchronous buffered model shared by every environment, and agents get a cross-tick LLM pattern that fits real-time ticks. Together with pinned seats, this completes the platform work the future role-playing environment needs.
+An environment can declare simultaneous stepping: every pace tick, every live agent decides against the same pre-tick world, the human contributes through the input latch, the environment applies all actions together, and the harness streams and records exactly one state per tick. Messaging becomes one asynchronous buffered model shared by every environment, and agents get a cross-tick LLM pattern that fits real-time ticks. Together with named builtins and the restricted seat, this completes the platform work the future role-playing environment needs.
 
 ## Scope
 
