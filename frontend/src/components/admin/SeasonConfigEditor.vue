@@ -90,6 +90,18 @@ const messagingDefaultLabel = computed(() =>
     ? 'Environment default'
     : `Environment default (${props.environment.messaging ? 'on' : 'off'})`,
 )
+/**
+ * What an empty timeout field falls back to: the environment's own limit, named as a number so the
+ * operator sees what leaving the field blank actually means. Stays the bare word until the
+ * environment metadata arrives, since there is no number to show yet.
+ */
+function timeoutPlaceholder(limit: number | undefined): string {
+  return limit === undefined ? 'default' : `default ${limit}`
+}
+const stepTimeoutPlaceholder = computed(() => timeoutPlaceholder(props.environment?.step_limit_ms))
+const episodeTimeoutPlaceholder = computed(() =>
+  timeoutPlaceholder(props.environment?.episode_limit_ms),
+)
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
 const llmModelsMode = ref<'all' | 'custom'>('all')
 const llmModels = ref<LlmModelAlias[]>([])
@@ -229,14 +241,10 @@ watch(
 )
 
 function parameterHint(parameter: EnvParameter): string {
-  const seatsHint =
-    parameter.name === 'players' || parameter.name === 'seat_plan'
-      ? " Every match's seat count must match the resolved layout."
-      : ''
   if (parameter.type === 'int' || parameter.type === 'float') {
-    return `${parameter.description} ${parameter.min}–${parameter.max}.${seatsHint}`
+    return `${parameter.description} ${parameter.min}–${parameter.max}.`
   }
-  return `${parameter.description}${seatsHint}`
+  return `${parameter.description}`
 }
 
 function updateParameter(name: string, value: unknown): void {
@@ -523,7 +531,6 @@ watch(confirmOpen, (open) => {
         </div>
 
         <div class="seats">
-          <span class="seats-label">Seats</span>
           <div
             v-for="(spec, seatIndex) in match.seats"
             :key="seatIndex"
@@ -577,7 +584,13 @@ watch(confirmOpen, (open) => {
       <div class="match-fields">
       <UiField label="Step timeout (ms)">
         <template #default="{ id }">
-          <UiInput :id="id" v-model.number="stepTimeout" type="number" min="1" placeholder="default" />
+          <UiInput
+            :id="id"
+            v-model.number="stepTimeout"
+            type="number"
+            min="1"
+            :placeholder="stepTimeoutPlaceholder"
+          />
         </template>
       </UiField>
       <UiField label="Per-player timeout (ms)">
@@ -587,13 +600,12 @@ watch(confirmOpen, (open) => {
             v-model.number="episodeTimeout"
             type="number"
             min="1"
-            placeholder="default"
+            :placeholder="episodeTimeoutPlaceholder"
           />
         </template>
       </UiField>
       <UiField
         label="Messaging"
-        hint="Use the environment's setting, or turn messaging off for this season."
       >
         <template #default="{ id }">
           <UiSelect :id="id" v-model="messagingEnabled">
@@ -785,6 +797,8 @@ watch(confirmOpen, (open) => {
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>
       <span v-if="dirty" class="config-dirty" role="status">● Unsaved changes</span>
       <span v-else-if="saved" class="config-saved" role="status">Saved ✓</span>
+      <!-- The run controls join this row: a run uses the configuration last saved from it. -->
+      <slot name="actions" />
       <span v-if="error" class="config-error" role="alert">{{ error }}</span>
     </div>
 
@@ -851,11 +865,6 @@ watch(confirmOpen, (open) => {
   gap: var(--space-2);
   flex-wrap: wrap;
   margin-bottom: var(--space-3);
-}
-
-.seats-label {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
 }
 
 .seat {
@@ -925,7 +934,9 @@ watch(confirmOpen, (open) => {
   color: var(--color-accent);
 }
 
+/* A full basis takes the whole line of the action row, so the message sits under the buttons. */
 .config-error {
+  flex-basis: 100%;
   font-size: var(--text-sm);
   color: var(--color-danger);
 }

@@ -21,6 +21,7 @@ import {
   resolveLayout,
 } from '@game-sandbox/schema/environment'
 import {
+  type MatchScheduleProjection,
   projectSchedule,
   type ScheduleMatchConfig,
   type ScheduleProjection,
@@ -53,7 +54,10 @@ const resolvedLayout = computed(() => {
   }
 })
 
-const seatCount = computed(() => resolvedLayout.value?.seatCount ?? null)
+/** "1 seat", "3 seats": a count with its noun, pluralized by adding an s. */
+function count(value: number, noun: string): string {
+  return `${value.toLocaleString()} ${value === 1 ? noun : `${noun}s`}`
+}
 
 /** Phrase one typed projection failure for an operator reading the match design. */
 function errorMessage(error: ScheduleProjectionError, seats: number): string {
@@ -103,6 +107,20 @@ const state = computed<{ projection: ScheduleProjection | null; error: string | 
 
 const projection = computed(() => state.value.projection)
 const blocked = computed(() => state.value.error ?? props.blockedReason ?? null)
+
+/** The total, with the two inputs that decide it. */
+const headline = computed(() => {
+  const total = projection.value?.totalGames
+  const seats = resolvedLayout.value?.seatCount
+  if (total === undefined || seats === undefined) return ''
+  return `Projected games: ${total.toLocaleString()} (${count(seats, 'seat')}, ${count(props.eligibleSubmissionCount, 'submission')})`
+})
+
+/** One match's contribution: the assignments it seats, and how many times each one runs. */
+function matchSummary(matchProjection: MatchScheduleProjection, matchIndex: number): string {
+  const games = props.matches[matchIndex]?.games ?? 0
+  return `Match ${matchIndex + 1}: ${count(matchProjection.submittedAssignments, 'submitted assignment')} and ${count(matchProjection.naiveAssignments, 'all-Naive assignment')}, ${count(games, 'game')} each.`
+}
 </script>
 
 <template>
@@ -111,26 +129,12 @@ const blocked = computed(() => state.value.error ?? props.blockedReason ?? null)
     <span v-if="$slots.default" class="blocked-action"><slot /></span>
   </UiEmptyState>
   <div v-else-if="projection !== null" class="schedule-projection" aria-live="polite">
-    <strong>Projected games: {{ projection.totalGames.toLocaleString() }}</strong>
-    <span v-if="seatCount !== null">
-      Resolved layout: {{ seatCount }} {{ seatCount === 1 ? 'seat' : 'seats' }}.
-    </span>
+    <strong>{{ headline }}</strong>
     <span
       v-for="(matchProjection, matchIndex) in projection.matches"
       :key="matchIndex"
       data-testid="match-projection"
-    >
-      Match {{ matchIndex + 1 }}:
-      {{ matchProjection.submittedAssignments.toLocaleString() }} submitted assignments and
-      {{ matchProjection.naiveAssignments }} all-Naive assignment;
-      {{ matchProjection.submittedGames.toLocaleString() }} submitted games and
-      {{ matchProjection.naiveGames.toLocaleString() }} all-Naive games.
-    </span>
-    <span>
-      Uses {{ eligibleSubmissionCount.toLocaleString() }} eligible
-      {{ eligibleSubmissionCount === 1 ? 'submission' : 'submissions' }} as of page load. A run
-      freezes a fresh roster when triggered.
-    </span>
+    >{{ matchSummary(matchProjection, matchIndex) }}</span>
   </div>
 </template>
 

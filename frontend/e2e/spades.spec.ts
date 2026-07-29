@@ -524,7 +524,9 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     await page.goto(`/environments/${SPADES_ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SPADES_SEASON) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SPADES_SEASON}` })).toBeVisible()
-    await expect(page.getByText('Projected games: 7', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('Projected games: 7 (2 seats, 3 submissions)', { exact: true }),
+    ).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow' }).click()
     await expect(page).toHaveURL(
       new RegExp(`/environments/${SPADES_ENV_ID}/admin/seasons/${season.id}/runs/`),

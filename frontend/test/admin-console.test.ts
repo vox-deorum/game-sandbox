@@ -235,18 +235,22 @@ describe('AdminConsolePage', () => {
     )
     await renderConsole()
 
-    expect(await screen.findByText('Projected games: 762')).toBeInTheDocument()
-    expect(screen.getByText('Resolved layout: 2 seats.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Projected games: 762 (2 seats, 20 submissions)'),
+    ).toBeInTheDocument()
+    // Assignments and games coincide only when a match runs one game each, so the row states the
+    // repetition once rather than restating both counts.
     expect(screen.getByTestId('match-projection')).toHaveTextContent(
-      '380 submitted assignments and 1 all-Naive assignment',
+      'Match 1: 380 submitted assignments and 1 all-Naive assignment, 2 games each.',
     )
-    expect(screen.getByText(/20 eligible submissions as of page load/)).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
     const match = screen.getByTestId('match')
     expect(within(match).getAllByTestId('seat')).toHaveLength(4)
     expect(screen.queryByRole('button', { name: 'Match the layout' })).toBeNull()
-    expect(screen.getByText('Projected games: 232,562')).toBeInTheDocument()
+    expect(
+      screen.getByText('Projected games: 232,562 (4 seats, 20 submissions)'),
+    ).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
 
     await fireEvent.update(within(match).getByRole('spinbutton', { name: 'Games' }), '0')
@@ -272,10 +276,12 @@ describe('AdminConsolePage', () => {
       adminView({ season: configured, eligible_submission_count: 20 }),
     )
     await renderConsole()
-    expect(await screen.findByText('Projected games: 762')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Projected games: 762 (2 seats, 20 submissions)'),
+    ).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Dependency-set version'), '0')
-    expect(screen.getByText('Projected games: 762')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 762 (2 seats, 20 submissions)')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
@@ -328,7 +334,7 @@ describe('AdminConsolePage', () => {
     expect(within(secondSeat).getByRole('option', { name: 'Cautious bidder' })).toHaveValue(
       'builtin:cautious',
     )
-    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 4 (2 seats, 3 submissions)')).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
     expect(within(pair).getAllByTestId('seat')).toHaveLength(4)
@@ -336,7 +342,7 @@ describe('AdminConsolePage', () => {
     expect(fourthSeat).toHaveValue('builtin:cautious')
     expect(fourthSeat).toBeDisabled()
     await fireEvent.update(within(pair).getByRole('combobox', { name: 'Seat 2' }), 'builtin:naive')
-    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 4 (4 seats, 3 submissions)')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
@@ -442,9 +448,6 @@ describe('AdminConsolePage', () => {
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
     expect(screen.getByLabelText('Pipe gap override')).toHaveValue(90)
-    expect(
-      screen.getByText(/Every match's seat count must match the resolved layout/),
-    ).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
@@ -481,11 +484,13 @@ describe('AdminConsolePage', () => {
   it('shows a blank numeric override error and refuses to save it', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
     await renderConsole()
-    expect(await screen.findByText('Projected games: 1')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Projected games: 1 (1 seat, 0 submissions)'),
+    ).toBeInTheDocument()
     await fireEvent.update(await screen.findByLabelText('Pipe gap'), 'override')
     await fireEvent.update(screen.getByLabelText('Pipe gap override'), '')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('Projected games: 1')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 1 (1 seat, 0 submissions)')).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
@@ -749,7 +754,7 @@ describe('AdminConsolePage', () => {
 
     await fireEvent.click(within(blocked).getByRole('button', { name: 'Match the layout' }))
     expect(within(match).getByRole('combobox', { name: 'Seat 1' })).toHaveValue('builtin:cautious')
-    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 4 (2 seats, 3 submissions)')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
@@ -931,9 +936,7 @@ describe('AdminConsolePage', () => {
     await renderConsole()
 
     const textarea = await screen.findByLabelText('Season description')
-    expect(
-      screen.getByText(/After line-ending normalization, use up to 2,000 characters/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Up to 2,000 characters/)).toBeInTheDocument()
     expect(textarea).toHaveAttribute('maxlength', String(SEASON_DESCRIPTION_MAX))
     await fireEvent.update(textarea, 'Practice **timing**.')
     await fireEvent.click(screen.getByRole('button', { name: 'Save description' }))
@@ -1119,7 +1122,7 @@ describe('AdminConsolePage', () => {
     )
   })
 
-  it('places the run actions after Save configuration and lists past runs at the end', async () => {
+  it('puts the run actions in the Save configuration row and lists past runs at the end', async () => {
     vi.mocked(listRuns).mockResolvedValue([
       {
         id: 'run-1',
@@ -1137,8 +1140,12 @@ describe('AdminConsolePage', () => {
     const save = await screen.findByRole('button', { name: 'Save configuration' })
     const trigger = screen.getByRole('button', { name: 'Run workflow' })
     const board = screen.getByRole('button', { name: 'Check leaderboard' })
-    // The run controls close the Run Configuration section, after its save button
+    // One action row closes the Run Configuration section: the save button, then the run controls
     // (DOCUMENT_POSITION_FOLLOWING = 4).
+    const actions = save.closest('.config-actions')
+    expect(actions).not.toBeNull()
+    expect(trigger.closest('.config-actions')).toBe(actions)
+    expect(board.closest('.config-actions')).toBe(actions)
     expect(save.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(trigger.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(trigger.closest('section')).toBe(

@@ -469,8 +469,7 @@ onUnmounted(() => {
                   @changed="refresh"
                 >
                   <p>
-                    Shown on public Season cards. After line-ending normalization, use up to
-                    {{ SEASON_DESCRIPTION_MAX.toLocaleString() }} characters in one paragraph. Inline
+                    Up to {{ SEASON_DESCRIPTION_MAX.toLocaleString() }} characters. Inline
                     Markdown supports emphasis, strong text, inline code, and HTTP or HTTPS links.
                   </p>
                 </OperatorSeasonTextEditor>
@@ -485,15 +484,19 @@ onUnmounted(() => {
                 :environment="meta ?? undefined"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
-              />
-              <RunActions
-                :season="view.season"
-                :latest-run="view.latest_run"
-                :env-id="envId"
-                :board-available="boardAvailable"
-                :config-dirty="configDirty"
-                @changed="loadDetail"
-              />
+              >
+                <!-- The run controls share the editor's action row, next to Save configuration. -->
+                <template #actions>
+                  <RunActions
+                    :season="view.season"
+                    :latest-run="view.latest_run"
+                    :env-id="envId"
+                    :board-available="boardAvailable"
+                    :config-dirty="configDirty"
+                    @changed="loadDetail"
+                  />
+                </template>
+              </SeasonConfigEditor>
             </section>
 
             <section class="admin-section">

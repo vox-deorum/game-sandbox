@@ -1,7 +1,9 @@
 <!--
   The run controls of the operator console: trigger or re-run the workflow, cancel an in-flight run,
-  and jump to the leaderboard. They close the run-configuration section, directly after its save
-  button, because a run always uses the configuration that was last saved there. This is the console's
+  and jump to the leaderboard. They render into the configuration editor's action row, next to
+  "Save configuration", because a run always uses the configuration that was last saved there. The
+  component carries no wrapper of its own for that reason: it expects to sit in that flex row, and its
+  messages take a full line of it so they read below the buttons. This is the console's
   control surface only: the per-run telemetry (games and the live container-log stream) lives on the
   run-details page (RunDetailsPage.vue). Triggering a run navigates straight to that page so the
   operator watches it stream; cancelling stays here and emits `changed` so the console reloads the
@@ -114,63 +116,47 @@ async function cancel(): Promise<void> {
 </script>
 
 <template>
-  <div class="run-actions-panel">
-    <div class="run-actions">
-      <UiButton :loading="triggering" :disabled="inProgress" @click="requestTrigger">
-        {{ triggerLabel }}
-      </UiButton>
-      <UiButton v-if="inProgress" variant="danger" :loading="cancelling" @click="cancel">
-        Cancel run
-      </UiButton>
-      <UiButton
-        v-if="boardAvailable"
-        variant="secondary"
-        :to="`/environments/${envId}/leaderboards/${season.id}`"
-      >
-        Check leaderboard
-      </UiButton>
-      <UiButton v-else variant="secondary" disabled>Check leaderboard</UiButton>
-      <RouterLink
-        v-if="latestRun !== null"
-        class="run-status-link"
-        :to="`/environments/${envId}/admin/seasons/${season.id}/runs/${latestRun.id}`"
-      >
-        <UiStatusBadge :tone="STATUS_TONE[latestRun.status]" :label="`${latestRun.status}`" />
-      </RouterLink>
-    </div>
+  <UiButton :loading="triggering" :disabled="inProgress" @click="requestTrigger">
+    {{ triggerLabel }}
+  </UiButton>
+  <UiButton v-if="inProgress" variant="danger" :loading="cancelling" @click="cancel">
+    Cancel run
+  </UiButton>
+  <UiButton
+    v-if="boardAvailable"
+    variant="secondary"
+    :to="`/environments/${envId}/leaderboards/${season.id}`"
+  >
+    Check leaderboard
+  </UiButton>
+  <UiButton v-else variant="secondary" disabled>Check leaderboard</UiButton>
+  <RouterLink
+    v-if="latestRun !== null"
+    class="run-status-link"
+    :to="`/environments/${envId}/admin/seasons/${season.id}/runs/${latestRun.id}`"
+  >
+    <UiStatusBadge :tone="STATUS_TONE[latestRun.status]" :label="`${latestRun.status}`" />
+  </RouterLink>
 
-    <p v-if="error" class="run-error" role="alert">{{ error }}</p>
-    <p v-if="latestRun?.error" class="run-error">{{ latestRun.error }}</p>
+  <p v-if="error" class="run-error" role="alert">{{ error }}</p>
+  <p v-if="latestRun?.error" class="run-error">{{ latestRun.error }}</p>
 
-    <UiDialog v-model:open="unsavedOpen" title="Run with unsaved configuration?">
-      <p class="run-confirm-text">
-        The configuration above has edits that are not saved. A run always uses the last saved
-        configuration, so those edits will not apply to it. Cancel and save them first if the run
-        should use them.
-      </p>
-      <UiDialogActions>
-        <UiButton :loading="triggering" @click="triggerUnsaved">Run anyway</UiButton>
-        <UiButton variant="ghost" :disabled="triggering" @click="unsavedOpen = false">
-          Cancel
-        </UiButton>
-      </UiDialogActions>
-    </UiDialog>
-  </div>
+  <UiDialog v-model:open="unsavedOpen" title="Run with unsaved configuration?">
+    <p class="run-confirm-text">
+      The configuration above has edits that are not saved. A run always uses the last saved
+      configuration, so those edits will not apply to it. Cancel and save them first if the run
+      should use them.
+    </p>
+    <UiDialogActions>
+      <UiButton :loading="triggering" @click="triggerUnsaved">Run anyway</UiButton>
+      <UiButton variant="ghost" :disabled="triggering" @click="unsavedOpen = false">
+        Cancel
+      </UiButton>
+    </UiDialogActions>
+  </UiDialog>
 </template>
 
 <style scoped>
-/* The panel follows the config editor's own action row, so it keeps that row's rhythm. */
-.run-actions-panel {
-  margin-top: var(--space-4);
-}
-
-.run-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
 .run-status-link {
   text-decoration: none;
   color: inherit;
@@ -181,8 +167,10 @@ async function cancel(): Promise<void> {
   text-decoration: underline;
 }
 
+/* A full basis takes the whole line of the action row, so a message sits under the buttons. */
 .run-error {
-  margin: var(--space-2) 0 0;
+  flex-basis: 100%;
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
