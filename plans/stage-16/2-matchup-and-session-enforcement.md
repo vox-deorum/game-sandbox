@@ -1,6 +1,6 @@
 # Stage 16.2: Matchup and session enforcement
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 16](../stage-16-named-builtins.md), build-order step 2.
 
@@ -33,12 +33,12 @@ These are invalid:
 
 ## One environment-aware validator, two call sites
 
-Structure-only decoding accepts a well-formed compact string. The environment-aware checks resolve the selected seat plan and then require that every builtin name is declared, that each row has exactly one entry per resolved seat, and that a restricted seat carries its designated builtin.
+Structure-only decoding accepts a well-formed compact string. The environment-aware checks take the resolved layout as a parameter and require that every builtin name is declared, that each row has exactly one entry per resolved seat, and that a restricted seat carries its designated builtin. Each call site resolves the layout once from the parameters it already holds and passes it in, so one resolution governs both the validation and whatever the call site does next.
 
-The seat-count half of that already exists as the private `validateSeatCounts` in `backend/src/admin/routes.ts`, called only from the config `PUT`. Stage 16 lifts it into one exported validator, adds the builtin-name and restricted-seat checks beside it, and calls it from two places:
+The seat-count half of that already exists as the private `validateSeatCounts` in `backend/src/admin/routes.ts`, called only from the config `PUT`. Stage 16 lifts it into one exported validator, `validateSeasonMatches`, adds the builtin-name and restricted-seat checks beside it, and calls it from two places:
 
-- the config `PUT`, where `validateSeatCounts` runs today.
-- the run trigger in `POST /seasons/:id/runs`, which resolves parameters and the layout only to obtain `layout.planKey` for `buildSchedule` and performs no config check of its own.
+- the config `PUT`, where `validateSeatCounts` runs today, resolving the layout from the season's parameters immediately before the call.
+- the run trigger in `POST /seasons/:id/runs`, which already resolves parameters and the layout to obtain `layout.planKey` for `buildSchedule`; that same resolved layout now feeds the validator too, before scheduling.
 
 A season saved before a metadata change therefore cannot freeze an illegal matchup into a run.
 
@@ -57,14 +57,14 @@ The change is confined to `resolveSeats`, whose else branch currently treats any
 
 ## Live-session enforcement
 
-The public assignment wire uses `{ kind: "builtin", name }`. After resolving the request's complete parameters, `validateSeatShape` in `backend/src/session/orchestrator.ts` applies the metadata rule at the same boundary that enforces `human_players` today:
+The public assignment wire uses `{ kind: "builtin", name }`. After resolving the request's complete parameters, `validateSeatShape` in `backend/src/session/orchestrator.ts` applies the shape and restriction rule at the same boundary that enforces `human_players` today:
 
 - An unrestricted seat keeps its existing legal Human, submission, and builtin assignments.
 - A restricted seat accepts `{ kind: "builtin", name }` when the name equals `restricted_builtin`.
 - It accepts Human when at least one player in the seat is human-capable.
 - Anything else returns a 400 naming the seat and its allowed controllers.
 
-Every builtin assignment, including one on an unrestricted seat and a companion the client picks for an ordinary wide Human seat, must name an agent the environment declares. Unknown names fail before session insertion and before any container work, rather than falling through to image loading.
+One gate decides whether a builtin name is declared: `resolveAgentBinding`, which runs once per resolved seat and once per human companion. It rejects an undeclared name on an unrestricted seat's assignment exactly as on a wide Human seat's companion, before the session row is created and before any container work, so an unknown name never reaches image loading.
 
 A wide restricted seat assigned to Human takes no client companion. Launch assembly derives one instance of the designated builtin for each remaining player, the way it already expands the baseline. Ordinary wide Human seats keep their explicit companion selection.
 

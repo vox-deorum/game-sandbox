@@ -62,7 +62,9 @@ Human players have a timeout separate from agent compute limits. In real-time ga
 
 ## Human play
 
-A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat. The move clock applies only on the designated human player's turns. Step and episode compute limits remain per agent-controlled player. See [Environments](environment.md#players-and-seats).
+A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider unrestricted seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat.
+
+A restricted seat accepts only its designated builtin, or a human when one of its players is human-capable. A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies only on the designated human player's turns. Step and episode compute limits remain per agent-controlled player. See [Environments](environment.md#players-and-seats).
 
 ## Starting watch and play sessions
 
@@ -73,6 +75,8 @@ The browser retains hidden parameter values, applies visible player edits, and s
 Because the submitted map already carries the season layer, session start validates that map against the current declarations and applies no further layer beneath it. The player is answerable for the values they submitted and for nothing else.
 
 Parameter validation happens before seat-assignment validation. Only a valid `players` or `seat_plan` value changes the resolved seats. New seats use the flow's default assignment. An assignment that is not valid in the new layout is cleared, and the session cannot start until every required seat is assigned again.
+
+The backend resolves the selected layout from installed environment metadata before accepting assignments. It rejects an undeclared builtin anywhere, including a wide-seat companion. It also rejects a submission, another builtin, or a client-supplied companion on a restricted seat before creating the session or starting container work.
 
 ## Human input
 

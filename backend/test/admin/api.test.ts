@@ -23,7 +23,7 @@ import type {
   Storage,
   Submission,
 } from '../../src/storage/index.js'
-import type { SeasonConfig } from '../../src/storage/season-config.js'
+import type { MatchConfig, SeasonConfig } from '../../src/storage/season-config.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
@@ -38,6 +38,7 @@ import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 import { StubWorkflowRunner } from '../support/stub-runner.js'
 
 const ENV_ID = 'flappy_bird'
+const RESTRICTED_ENV_ID = 'restricted'
 /** Cookie headers for an admin session and a non-admin (normal) session, minted per test in `build`. */
 let OPERATOR: Record<string, string>
 let STRANGER: Record<string, string>
@@ -150,10 +151,10 @@ describe('admin API', () => {
   }
 
   /** Declare a season over HTTP and return its id. */
-  async function declare(): Promise<string> {
+  async function declare(envId = ENV_ID): Promise<string> {
     const res = await app.inject({
       method: 'POST',
-      url: `/api/admin/environments/${ENV_ID}/seasons`,
+      url: `/api/admin/environments/${envId}/seasons`,
       headers: OPERATOR,
       payload: {},
     })
@@ -517,7 +518,7 @@ describe('admin API', () => {
         headers: OPERATOR,
         payload: {
           deps_version: 1,
-          matches: [{ seats: ['submission', 'builtin-naive'], seeds: [1], games: 1 }],
+          matches: [{ seats: ['submission', 'builtin:naive'], seeds: [1], games: 1 }],
         },
       })
       expect(res.statusCode).toBe(400)
@@ -525,6 +526,62 @@ describe('admin API', () => {
       expect((res.json() as { reason: string }).reason).toMatch(
         /must equal the resolved layout count/,
       )
+    })
+
+    it('accepts declared named builtins and rejects malformed, unknown, restricted, and wrong-width rows', async () => {
+      const valid = {
+        deps_version: 1,
+        matches: [{ seats: ['builtin:scripted_hero', 'submission'], seeds: [1], games: 1 }],
+      }
+      const accepted = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${await declare(RESTRICTED_ENV_ID)}/config`,
+        headers: OPERATOR,
+        payload: valid,
+      })
+      expect(accepted.statusCode).toBe(200)
+
+      const cases: Array<[string, Record<string, unknown>, RegExp]> = [
+        [
+          'malformed builtin name',
+          {
+            ...valid,
+            matches: [{ ...valid.matches[0], seats: ['builtin:Scripted', 'submission'] }],
+          },
+          /builtin:<snake_case>/,
+        ],
+        [
+          'undeclared builtin',
+          {
+            ...valid,
+            matches: [{ ...valid.matches[0], seats: ['builtin:unknown', 'submission'] }],
+          },
+          /not declared/,
+        ],
+        [
+          'wrong builtin on restricted seat',
+          { ...valid, matches: [{ ...valid.matches[0], seats: ['builtin:naive', 'submission'] }] },
+          /must use builtin:scripted_hero/,
+        ],
+        [
+          'wrong row width',
+          { ...valid, matches: [{ ...valid.matches[0], seats: ['builtin:scripted_hero'] }] },
+          /resolved layout count/,
+        ],
+      ]
+      for (const [name, payload, reason] of cases) {
+        const res = await app.inject({
+          method: 'PUT',
+          url: `/api/admin/seasons/${await declare(RESTRICTED_ENV_ID)}/config`,
+          headers: OPERATOR,
+          payload,
+        })
+        expect(res.statusCode, name).toBe(400)
+        expect(res.json()).toMatchObject({
+          code: 'invalid_config',
+          reason: expect.stringMatching(reason),
+        })
+      }
     })
 
     it('400s a config whose dependency version has no deployment image definition', async () => {
@@ -981,7 +1038,7 @@ describe('admin API', () => {
         deps_version: 1,
         matches: [
           {
-            seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+            seats: ['submission', 'submission', 'builtin:naive', 'builtin:naive'],
             seeds: [1],
             games: 1,
           },
@@ -1000,6 +1057,34 @@ describe('admin API', () => {
       // Ordered P(2,2) = 2 submitted seatings + 1 Naive baseline = 3 games. Unordered C(2,2) = 1
       // seating + baseline would give 2, so this count is the seat-order regression guard.
       expect(await storage.listRunGames(runId)).toHaveLength(3)
+    })
+
+    it.each<[string, MatchConfig['seats'], RegExp]>([
+      ['undeclared builtin', ['builtin:unknown', 'submission'], /not declared/],
+      [
+        'wrong restricted builtin',
+        ['builtin:naive', 'submission'],
+        /must use builtin:scripted_hero/,
+      ],
+      ['wrong row width', ['builtin:scripted_hero'], /resolved layout count/],
+    ])('rejects a stored %s matchup before creating a run', async (_name, seats, reason) => {
+      const id = await declare(RESTRICTED_ENV_ID)
+      await storage.updateSeasonConfig(id, {
+        deps_version: 1,
+        matches: [{ seats, seeds: [1], games: 1 }],
+      })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/admin/seasons/${id}/runs`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({
+        code: 'invalid_config',
+        reason: expect.stringMatching(reason),
+      })
+      expect(await storage.listRunsBySeason(id)).toEqual([])
     })
 
     it('rejects an empty schedule with 409 empty_schedule', async () => {

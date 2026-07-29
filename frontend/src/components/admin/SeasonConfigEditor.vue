@@ -1,27 +1,32 @@
 <!--
   The match-design config editor of the operator console (Stage 6.7). It edits the season's whole
-  SeasonConfig: the match design (each match's seat composition of builtin-naive / submission seats,
+  SeasonConfig: the match design (each match's seat composition of builtin:<name> / submission seats,
   its seeds, and its game count), the deps_version (defaulted to the current release at declaration),
   and the override blocks. The per-step / per-episode timeout, messaging, and LLM fields all map to
   the backend's strict season codec. Official and development LLM limits remain separate because
   they apply to different accounting scopes.
 
-  Two guards, mirroring the step-3 contract:
-  - A match with zero seats is never saved (the editor refuses it before the request).
-  - A config edit once runs exist, or a deps_version change once submissions exist, is destructive. The
-    first save attempt goes without `force`; the backend refuses it with a typed conflict, and the
-    editor opens a confirmation dialog spelling out exactly what will be deleted before re-sending with
-    `force`. Without that confirmation the edit does not happen. The environment seat-count errors come
-    back as `invalid_config` and render inline.
+  Match rows follow the resolved seat layout: one selector per seat the row holds, and a restricted seat
+  set to its designated built-in and disabled. Changing the seat plan or player count carries every row to
+  the newly resolved layout. Nothing else rewrites a row, so opening a season and the environment
+  metadata arriving both leave the stored seats exactly as saved. A row saved under an earlier layout
+  keeps its seats until the operator conforms it with "Match the layout".
+
+  A config edit once runs exist, or a deps_version change once submissions exist, is destructive. The
+  first save attempt goes without `force`; the backend refuses it with a typed conflict, and the editor
+  opens a confirmation dialog spelling out exactly what will be deleted before re-sending with `force`.
+  Without that confirmation the edit does not happen. The environment seat-count errors come back as
+  `invalid_config` and render inline.
 -->
 <script setup lang="ts">
 import {
   type EnvironmentMeta,
   type EnvParameter,
   type ParameterValue,
+  resolveLayout,
 } from '@game-sandbox/schema/environment'
 import { MODEL_ALIASES } from '@game-sandbox/schema/llm'
-import { type ScheduleMatchConfig, SEAT_SPECS } from '@game-sandbox/schema/schedule'
+import { type ScheduleMatchConfig } from '@game-sandbox/schema/schedule'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -97,10 +102,68 @@ const parameterValues = ref<Record<string, ParameterValue>>({})
 const parameterValidation = computed(() =>
   validateParameters(environmentParameters.value, parameterValues.value),
 )
+const resolvedSeats = computed(() => {
+  if (props.environment === undefined || Object.keys(parameterValidation.value.errors).length > 0) {
+    return null
+  }
+  try {
+    return resolveLayout(props.environment, parameterValidation.value.values).seats
+  } catch {
+    return null
+  }
+})
+const seatOptions = computed<{ value: SeatSpec; label: string }[]>(() => [
+  { value: 'submission', label: 'Submission' },
+  ...(props.environment?.builtin_agents ?? []).map((builtin) => ({
+    value: `builtin:${builtin.name}` as SeatSpec,
+    label: builtin.label,
+  })),
+])
+/** A stable key for the resolved layout: each seat's restriction in order, so both a width change and
+ *  a restriction change move it. */
+const layoutKey = computed(
+  () => resolvedSeats.value?.map((seat) => seat.restrictedBuiltin ?? '').join('|') ?? null,
+)
 /** The draft rows the schedule preview projects over: seat composition and game count only. */
 const draftMatches = computed<ScheduleMatchConfig[]>(() =>
   matches.value.map((match) => ({ seats: match.seats, games: match.games })),
 )
+
+/**
+ * The seats a match holds under the resolved layout: the layout's width, every restricted seat forced
+ * to its designated built-in, every other seat kept at its current spec. Null when no layout resolves,
+ * since there is then nothing to conform to. This is the one definition of a conformed row, shared by
+ * drift detection, the conform action, a layout parameter change, and a newly added match.
+ */
+function conformedSeats(seats: readonly SeatSpec[]): SeatSpec[] | null {
+  const layout = resolvedSeats.value
+  if (layout === null) return null
+  return layout.map((seat, index) =>
+    seat.restrictedBuiltin === null
+      ? (seats[index] ?? 'submission')
+      : (`builtin:${seat.restrictedBuiltin}` as SeatSpec),
+  )
+}
+
+/**
+ * Whether any match row disagrees with the resolved layout in width or in a restricted seat. A season
+ * saved under an earlier layout carries this until the operator resolves it, so opening the season and
+ * the environment metadata arriving both leave the stored rows exactly as they are.
+ */
+const drifted = computed(() =>
+  matches.value.some((match) => {
+    const conformed = conformedSeats(match.seats)
+    return conformed !== null && conformed.join() !== match.seats.join()
+  }),
+)
+
+/** Conform every match row to the resolved layout. Reached only from an operator action. */
+function conformLayout(): void {
+  for (const match of matches.value) {
+    const conformed = conformedSeats(match.seats)
+    if (conformed !== null) match.seats.splice(0, match.seats.length, ...conformed)
+  }
+}
 
 const saving = ref(false)
 const saved = ref(false)
@@ -177,23 +240,19 @@ function parameterHint(parameter: EnvParameter): string {
 }
 
 function updateParameter(name: string, value: unknown): void {
+  const before = layoutKey.value
   parameterValues.value = { ...parameterValues.value, [name]: value as ParameterValue }
+  // An edit that moves the resolved layout carries the match rows with it. Any other parameter edit
+  // leaves them alone, so a row that already drifted stays drifted until the operator conforms it.
+  if (layoutKey.value !== before) conformLayout()
 }
 
 function addMatch(): void {
-  matches.value.push({ seats: ['submission'], seedsText: '0', games: 1 })
+  matches.value.push({ seats: conformedSeats([]) ?? ['submission'], seedsText: '0', games: 1 })
 }
 
 function removeMatch(index: number): void {
   matches.value.splice(index, 1)
-}
-
-function addSeat(match: MatchDraft): void {
-  match.seats.push('submission')
-}
-
-function removeSeat(match: MatchDraft, seatIndex: number): void {
-  match.seats.splice(seatIndex, 1)
 }
 
 /** Parse a free-text seed list ("0, 1 2") into a de-duplicated list of integers. */
@@ -231,9 +290,6 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
   for (let i = 0; i < matches.value.length; i++) {
     const match = matches.value[i]!
-    if (match.seats.length === 0) {
-      return { error: `Match ${i + 1} has no seats. Every match must assign at least one seat.` }
-    }
     const seeds = parseSeeds(match.seedsText)
     if (seeds.length === 0) {
       return { error: `Match ${i + 1} needs at least one integer seed.` }
@@ -469,19 +525,23 @@ watch(confirmOpen, (open) => {
         <div class="seats">
           <span class="seats-label">Seats</span>
           <div
-            v-for="(seat, seatIndex) in match.seats"
+            v-for="(spec, seatIndex) in match.seats"
             :key="seatIndex"
             class="seat"
             data-testid="seat"
           >
-            <select v-model="match.seats[seatIndex]" class="seat-select" aria-label="Seat">
-              <option v-for="spec in SEAT_SPECS" :key="spec" :value="spec">
-                {{ spec }}
+            <span class="seat-number">Seat {{ seatIndex + 1 }}</span>
+            <UiSelect
+              :model-value="spec"
+              :aria-label="`Seat ${seatIndex + 1}`"
+              :disabled="resolvedSeats?.[seatIndex]?.restrictedBuiltin != null"
+              @update:model-value="(value) => (match.seats[seatIndex] = value as SeatSpec)"
+            >
+              <option v-for="option in seatOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
               </option>
-            </select>
-            <UiButton variant="ghost" size="tight" @click="removeSeat(match, seatIndex)">×</UiButton>
+            </UiSelect>
           </div>
-          <UiButton variant="secondary" size="tight" @click="addSeat(match)">Add seat</UiButton>
         </div>
 
         <div class="match-fields">
@@ -503,7 +563,12 @@ watch(confirmOpen, (open) => {
       :environment="environment"
       :parameter-values="parameterValidation.values"
       :eligible-submission-count="eligibleSubmissionCount"
-    />
+      :blocked-reason="drifted ? 'A match no longer matches the resolved seat layout.' : null"
+    >
+      <UiButton v-if="drifted" variant="secondary" size="tight" @click="conformLayout">
+        Match the layout
+      </UiButton>
+    </SchedulePreview>
       <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
     </UiCard>
 
@@ -799,13 +864,9 @@ watch(confirmOpen, (open) => {
   gap: var(--space-1);
 }
 
-.seat-select {
-  font: inherit;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
+.seat-number {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .match-fields {

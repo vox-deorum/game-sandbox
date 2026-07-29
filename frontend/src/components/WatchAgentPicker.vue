@@ -52,17 +52,6 @@ const props = defineProps<{
 const router = useRouter()
 const me = useMe()
 
-// The built-in Naive agent has no submission id, so a sentinel keys its loading state distinctly
-// from any real submission id.
-const BUILTIN_KEY = '__builtin__'
-
-// The pinned built-in's declared display label, the same metadata-driven resolution the seat dialog
-// uses (`agent.label` in `SeatAssignmentDialog.vue`), falling back to its stable name when the
-// environment does not declare it.
-const naiveLabel = computed(
-  () => props.meta.builtin_agents.find((agent) => agent.name === 'naive')?.label ?? 'naive',
-)
-
 const startError = ref<string | null>(null)
 // The submission a watch run is being started for, so only its button shows the loading state. Only
 // the single-seat immediate-start path uses it; the multi-seat path starts from the dialog instead.
@@ -109,9 +98,9 @@ function watch(agent: WatchAgentSummary): void {
   )
 }
 
-/** Watch the built-in Naive agent: a scripted run with no submission. */
-function watchBuiltin(): void {
-  chooseAgent({ kind: 'builtin-agent', name: 'naive' }, BUILTIN_KEY, 'watch')
+/** Watch one declared built-in agent: a scripted run with no submission. */
+function watchBuiltin(name: string): void {
+  chooseAgent({ kind: 'builtin-agent', name }, `builtin:${name}`, 'watch')
 }
 
 /**
@@ -171,19 +160,22 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
   <UiEmptyState v-if="agents === null">Loading agents…</UiEmptyState>
   <template v-else>
     <ul class="agent-list">
-      <!-- The environment's built-in Naive agent, pinned at the top and watchable like a
-           submitted agent (a scripted run with no submission). It has no owner profile. -->
-      <li class="agent-row agent-row--builtin">
+      <!-- Declared built-ins are pinned above submitted agents. They have no owner profile. -->
+      <li
+        v-for="builtin in meta.builtin_agents"
+        :key="builtin.name"
+        class="agent-row agent-row--builtin"
+      >
         <div class="agent-id">
-          <span class="agent-name">{{ naiveLabel }}</span>
+          <span class="agent-name">{{ builtin.label }}</span>
           <UiBadge>Built-in</UiBadge>
         </div>
         <UiButton
           v-if="anonymous || canParticipate(me.me)"
           size="tight"
           variant="secondary"
-          :loading="starting === BUILTIN_KEY"
-          @click="watchBuiltin()"
+          :loading="starting === `builtin:${builtin.name}`"
+          @click="watchBuiltin(builtin.name)"
         >
           Watch
         </UiButton>

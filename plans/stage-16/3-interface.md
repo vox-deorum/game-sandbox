@@ -1,6 +1,6 @@
 # Stage 16.3: Play, Rate, Watch, and admin interface
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 16](../stage-16-named-builtins.md), build-order step 3.
 
@@ -14,7 +14,9 @@ The environment page, `WatchAgentPicker.vue`, and `SeatAssignmentDialog.vue` rec
 
 - **Play:** a human-capable restricted seat starts as Human, and its only alternative is the designated builtin. If the user sits in another capable seat, the restricted seat returns to its builtin. A restricted seat with no human-capable player is a locked builtin assignment. A wide restricted Human seat shows the derived builtin as explanatory text and offers no companion picker.
 - **Watch:** the restricted seat is locked to its designated builtin. Every unrestricted seat keeps the ordinary builtin and submission choices.
-- **Rate:** the intended agent fills every unrestricted seat. A human-capable restricted seat starts as Human and exposes the only enabled assignment choice, Human or its designated builtin. A non-human-capable restricted seat is locked to its builtin. Parameters, seed, timeout, and unrestricted assignments stay locked.
+- **Rate:** the intended agent fills every unrestricted seat. A human-capable restricted seat starts as Human and exposes the only enabled assignment choice, Human or its designated builtin. A non-human-capable restricted seat is locked to its builtin. Parameters, seed, timeout, and unrestricted assignments stay locked. A rating run that leaves the restricted seat on Human is a session the viewer plays, so the intro names that seat.
+
+In every mode the start button follows the composition rather than the flow: it reads `Start playing` when a human seat is occupied and `Start watching` when none is.
 
 Rate places the intended agent in unrestricted seats only, so `WatchAgentPicker.vue`, the dialog prefill, payload assembly, and the frontend API types all read the resolved restriction. Metadata guarantees at least one unrestricted seat, so a restricted layout always opens the multi-seat dialog and always has somewhere legal to put the intended agent. The single-seat direct Watch and Rate path stays valid for player-bounds layouts and one-seat plans, which the same guarantee keeps unrestricted.
 
@@ -34,7 +36,7 @@ Seat 1        [Naive agent                 ]
 `SeatAssignmentDialog.vue` moves `.player-count` out of `.seat-control`, whose `flex-wrap` is what pushes the count under the selector today, and into a heading wrapper below `.seat-label`. Two constraints come with the move:
 
 - The `id` that the seat's `aria-labelledby` points at stays on the `Seat N` text rather than moving to the new wrapper, so a seat's accessible name does not become `Seat 1 2 players`.
-- `.seat-row` is `grid-template-columns: auto minmax(0, 1fr)`, so the heading column would otherwise size to the longest count string and shift the selectors between a `1 player` seat and a `10 players` seat. The heading column takes a fixed minimum width.
+- `.seat-row` is `grid-template-columns: auto minmax(0, 1fr)`, so the heading column would otherwise size to the longest count string and shift the selectors between a `1 player` seat and a `10 players` seat. The heading wrapper takes a local literal `min-width`, following the existing precedent for layout dimensions.
 
 The right column continues to hold the assignment control and, where applicable, the companion field beneath it. The layout applies in Play, Watch, and Rate, at narrow and wide viewports, for singular and plural counts. It uses the existing semantic tokens and UI primitives, and the style guide changes only if a new primitive variant turns out to be needed.
 
@@ -42,7 +44,7 @@ The right column continues to hold the assignment control and, where applicable,
 
 `SeasonConfigEditor.vue` builds each match-seat selector from `submission` plus every declared `builtin:<name>`, replacing its current iteration over the fixed `SEAT_SPECS` array. The display text uses builtin labels, such as `Scripted hero`, while the saved string stays `builtin:scripted_hero`.
 
-Once the selected parameters resolve a seat plan, the restricted seat's selector is set to its designated builtin and disabled. The row keeps all resolved seats and their canonical numbering. Changing `seat_plan` rebuilds the row when its width or its restriction changes, then validates before save.
+Once the selected parameters resolve a seat plan, the restricted seat's selector is set to its designated builtin and disabled. The row keeps all resolved seats and their canonical numbering. Changing the seat plan or the player count conforms every row to the newly resolved layout: its width, and every restricted seat's designated builtin. That operator edit is the only thing that rewrites a row, so loading the editor and environment metadata arriving both leave a season's stored seats exactly as saved. When a row disagrees with the resolved layout in width or in a restricted seat, the schedule preview shows the reason in place of its counts and carries a "Match the layout" action that conforms every row in one click. The preview's own typed failure is the more specific message, so it is the one shown when both apply. A row's width follows the resolved layout alone, so the editor carries no per-seat add or remove control, and it validates before save.
 
 For a three-seat plan restricted at `seat_0`, the editor shows:
 

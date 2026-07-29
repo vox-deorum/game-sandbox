@@ -381,6 +381,37 @@ export function makeEnvironments(): EnvironmentRegistry {
           },
         ],
       }),
+      meta({
+        env_id: 'restricted',
+        builtin_agents: [
+          { name: 'naive', label: 'Naive agent' },
+          { name: 'scripted_hero', label: 'Scripted hero' },
+        ],
+        layout: {
+          kind: 'seat_plans',
+          plans: [
+            {
+              key: 'adventure',
+              title: 'Adventure',
+              seats: [{ players: [0], restricted_builtin: 'scripted_hero' }, { players: [1] }],
+            },
+          ],
+        },
+        human_players: ['player_0', 'player_1'],
+        pace_interval_ms: null,
+        renderer: 'fake',
+        seat_order_matters: true,
+        parameters: [
+          {
+            name: 'seat_plan',
+            title: 'Seat plan',
+            description: 'Seat-to-player layout for each game.',
+            type: 'choice',
+            default: 'adventure',
+            choices: [{ value: 'adventure', label: 'Adventure' }],
+          },
+        ],
+      }),
     ]),
   )
 }

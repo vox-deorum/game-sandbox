@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  parseSeatSpec,
   projectSchedule,
   type ScheduleMatchConfig,
   ScheduleProjectionError,
 } from '../src/schedule.js'
+
+describe('parseSeatSpec', () => {
+  it('accepts submission and snake_case builtin names only', () => {
+    expect(parseSeatSpec('submission')).toBe('submission')
+    expect(parseSeatSpec('builtin:scripted_hero')).toBe('builtin:scripted_hero')
+    expect(parseSeatSpec('builtin:ScriptedHero')).toBeUndefined()
+    expect(parseSeatSpec('builtin:')).toBeUndefined()
+    expect(parseSeatSpec('builtin-naive')).toBeUndefined()
+  })
+})
 
 describe('projectSchedule', () => {
   it('matches ordered all-submission Spades counts for both declared layouts', () => {
@@ -76,8 +87,8 @@ describe('projectSchedule', () => {
   it('counts mixed and baseline-only rows across multiple matches', () => {
     const projection = projectSchedule({
       matches: [
-        { seats: ['submission', 'builtin-naive'], games: 2 },
-        { seats: ['builtin-naive', 'builtin-naive'], games: 3 },
+        { seats: ['submission', 'builtin:scripted_hero'], games: 2 },
+        { seats: ['builtin:naive', 'builtin:naive'], games: 3 },
       ],
       eligibleSubmissionCount: 3,
       seatCount: 2,
@@ -175,7 +186,7 @@ describe('projectSchedule', () => {
     // Only the sum across the two matches overflows, so the failure belongs to the projection as a
     // whole rather than to either match.
     const hugeBaseline: ScheduleMatchConfig = {
-      seats: ['builtin-naive'],
+      seats: ['builtin:naive'],
       games: Number.MAX_SAFE_INTEGER,
     }
 

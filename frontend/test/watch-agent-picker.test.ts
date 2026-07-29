@@ -1,9 +1,9 @@
 import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
-import { fireEvent, screen } from '@testing-library/vue'
+import { fireEvent, screen, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WatchAgentSummary } from '../src/api/client.js'
-import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
+import { flappyMeta, heartsMeta, spadesMeta } from './helpers/fixtures.js'
 import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
@@ -112,6 +112,22 @@ describe('WatchAgentPicker', () => {
       humanTimeoutMs: undefined,
     })
     expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
+  })
+
+  it('lists every declared builtin and preselects the clicked builtin by name', async () => {
+    await renderPicker(spadesMeta(), [])
+    const naiveRow = screen
+      .getByText('Naive agent', { selector: '.agent-name' })
+      .closest('.agent-row') as HTMLElement
+    await fireEvent.click(within(naiveRow).getByRole('button', { name: 'Watch' }))
+    expect(screen.getByRole('combobox', { name: 'Seat 1' })).toHaveValue('builtin:naive')
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    const cautiousRow = screen
+      .getByText('Cautious bidder', { selector: '.agent-name' })
+      .closest('.agent-row') as HTMLElement
+    await fireEvent.click(cautiousRow.querySelector('button') as HTMLButtonElement)
+    expect(screen.getByRole('combobox', { name: 'Seat 1' })).toHaveValue('builtin:cautious')
+    expect(screen.getByRole('combobox', { name: 'Seat 2' })).toHaveValue('builtin:cautious')
   })
 
   it('hides actions for a still-pending viewer but still lists anonymous agents', async () => {

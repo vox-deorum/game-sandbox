@@ -28,9 +28,9 @@ function subs(n: number): SubmissionRef[] {
 }
 
 /** Compact a resolved seats array into a readable token list for assertions. */
-function ids(seats: readonly { kind: string; submission_id?: string }[]): string[] {
+function ids(seats: readonly { kind: string; name?: string; submission_id?: string }[]): string[] {
   return seats.map((seat) =>
-    seat.kind === 'submission' ? (seat.submission_id as string) : 'naive',
+    seat.kind === 'submission' ? (seat.submission_id as string) : (seat.name as string),
   )
 }
 
@@ -107,8 +107,8 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
     expect(schedule.slice(0, 5).map((g) => g.seed)).toEqual([10, 20, 10, 20, 10])
   })
 
-  it('fills accompanying builtin-naive seats while expanding the submission seat', () => {
-    const mixed: MatchConfig = { seats: ['submission', 'builtin-naive'], seeds: [1], games: 1 }
+  it('fills accompanying builtin:naive seats while expanding the submission seat', () => {
+    const mixed: MatchConfig = { seats: ['submission', 'builtin:naive'], seeds: [1], games: 1 }
     const schedule = buildSchedule({
       matches: [mixed],
       submissions: subs(2),
@@ -121,12 +121,32 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
       ['naive', 'naive'], // baseline
     ])
   })
+
+  it('preserves named builtin positions while consuming submissions only at submission seats', () => {
+    const mixed: MatchConfig = {
+      seats: ['builtin:scripted_hero', 'submission', 'builtin:naive'],
+      seeds: [1],
+      games: 1,
+    }
+    const schedule = buildSchedule({
+      matches: [mixed],
+      submissions: subs(2),
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+    })
+
+    expect(schedule.map((game) => ids(game.seats))).toEqual([
+      ['scripted_hero', 's1', 'naive'],
+      ['scripted_hero', 's2', 'naive'],
+      ['scripted_hero', 'naive', 'naive'],
+    ])
+  })
 })
 
 describe('buildSchedule - multi-seat expansion', () => {
   // The agreed Hearts shape: two submission seats and two fixed Naive seats.
   const hearts: MatchConfig = {
-    seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+    seats: ['submission', 'submission', 'builtin:naive', 'builtin:naive'],
     seeds: [7, 8],
     games: 2,
   }
@@ -299,9 +319,9 @@ describe('buildSchedule - match composition', () => {
     true,
   ])('matches the shared projection for each mixed match when seat order matters is %s', (seatOrderMatters) => {
     const matches: MatchConfig[] = [
-      { seats: ['submission', 'builtin-naive'], seeds: [1, 2], games: 2 },
+      { seats: ['builtin:scripted_hero', 'submission'], seeds: [1, 2], games: 2 },
       { seats: ['submission', 'submission'], seeds: [3], games: 1 },
-      { seats: ['builtin-naive', 'builtin-naive'], seeds: [4, 5], games: 3 },
+      { seats: ['builtin:naive', 'builtin:naive'], seeds: [4, 5], games: 3 },
     ]
     const schedule = buildSchedule({
       matches,
@@ -320,7 +340,7 @@ describe('buildSchedule - match composition', () => {
     // trusting projectSchedule's own totalGames, so a wrong split that happens to preserve the total
     // still fails this test. buildSchedule appends exactly one all-Naive assignment per match, after
     // its submitted rows, and a game is that appended assignment exactly when every seat the match
-    // config marks 'submission' resolved to the builtin-naive ref.
+    // config marks 'submission' resolved to the builtin:naive ref.
     const isNaiveGame = (match: MatchConfig, game: (typeof schedule)[number]): boolean =>
       match.seats.every(
         (seat, seatIndex) => seat !== 'submission' || game.seats[seatIndex]?.kind === 'builtin',
@@ -363,7 +383,7 @@ describe('buildSchedule - match composition', () => {
   })
 
   it('treats a no-submission-seat match as a single baseline run per game count', () => {
-    const pure: MatchConfig = { seats: ['builtin-naive'], seeds: [5, 6], games: 2 }
+    const pure: MatchConfig = { seats: ['builtin:naive'], seeds: [5, 6], games: 2 }
     const schedule = buildSchedule({
       matches: [pure],
       submissions: subs(3),
@@ -376,7 +396,7 @@ describe('buildSchedule - match composition', () => {
 
   it('numbers game_index globally across multiple matches', () => {
     const m1: MatchConfig = { seats: ['submission'], seeds: [1], games: 1 }
-    const m2: MatchConfig = { seats: ['builtin-naive'], seeds: [1], games: 1 }
+    const m2: MatchConfig = { seats: ['builtin:naive'], seeds: [1], games: 1 }
     const schedule = buildSchedule({
       matches: [m1, m2],
       submissions: subs(2),

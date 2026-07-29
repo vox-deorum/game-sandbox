@@ -29,7 +29,7 @@ For each environment, only one season may have submissions open and only one may
 
 Each season defines:
 
-- Match design: one controller entry per resolved seat, valued as `submission` or `builtin-naive`, plus seeds and games per configuration.
+- Match design: one controller entry per resolved seat, valued as `submission` or `builtin:<name>`, plus seeds and games per configuration. Each builtin name must be declared by the environment, and a restricted seat must name its designated builtin.
 - Template dependency version.
 - Optional gameplay parameter overrides, including `players` for player-bounds environments or `seat_plan` for environments with declared plans. Every match's seat count must equal the number of seats in the resolved layout.
 - Optional step and episode limit overrides.
@@ -40,7 +40,7 @@ Each season defines:
 
 A season's gameplay parameters, step and episode compute limits, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. Players may tweak gameplay parameters for one live session, while automated games always use the season values. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
 
-Creating an automated run freezes the season config, resolved gameplay parameters, resolved official LLM policy, eligible ready submissions, and concrete schedule from one transactionally consistent read. An empty resolved schedule creates no run, and neither does a stored parameter override that the environment's current declarations reject; both are reported to the operator with a typed reason. Every game in a run therefore uses the same frozen season-wide parameters and roster even if the operator edits the season or a participant resubmits afterward.
+Creating an automated run freezes the season config, resolved gameplay parameters, resolved official LLM policy, eligible ready submissions, and concrete schedule from one transactionally consistent read. Before freezing, it validates every match against the environment's current resolved seats and builtin declarations. An empty resolved schedule, a stored parameter override that the current declarations reject, or a matchup that no longer fits the resolved layout creates no run. Each failure is reported to the operator with a typed reason. Every game in a run therefore uses the same frozen season-wide parameters and roster even if the operator edits the season or a participant resubmits afterward.
 
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season with no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation. The API refuses to delete related historical activity. The backend runs these workflows and streams logs to the console.
 
@@ -77,7 +77,7 @@ The operator-triggered workflow:
 - Enforces step and episode limits.
 - Aggregates successful LLM usage by model, including authoritative weighted cost and estimated-call counts.
 
-When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The `naive` builtin fills every submission seat in the appended baseline game, giving each board a comparable reference row.
+When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. Configured builtins stay in their declared seats throughout expansion. The `naive` builtin fills every `submission` seat in the appended baseline game, giving each board a comparable reference row without replacing another configured builtin.
 
 The schedule expands over resolved seats, not players. A season run always freezes its schedule from a fresh transactionally consistent read.
 

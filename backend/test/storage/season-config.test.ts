@@ -26,7 +26,9 @@ function validConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
 describe('SeasonConfig codec', () => {
   it('round-trips a valid document through encode/decode', () => {
     const config = validConfig({
-      matches: [{ seats: ['builtin-naive', 'builtin-naive', 'submission'], seeds: [7], games: 2 }],
+      matches: [
+        { seats: ['builtin:scripted_hero', 'builtin:naive', 'submission'], seeds: [7], games: 2 },
+      ],
       overrides: { step_timeout_ms: 50, episode_timeout_ms: 30_000 },
     })
     expect(decodeSeasonConfig(encodeSeasonConfig(config))).toEqual(config)
@@ -76,6 +78,21 @@ describe('SeasonConfig codec', () => {
         validConfig({ matches: [{ seats: ['robot' as never], seeds: [1], games: 1 }] }),
       ),
     ).toThrow(SeasonConfigError)
+  })
+
+  it('rejects malformed builtin seat specs while leaving declared names to environment validation', () => {
+    for (const seat of ['builtin:ScriptedHero', 'builtin:', 'builtin-naive']) {
+      expect(() =>
+        parseSeasonConfig(
+          validConfig({ matches: [{ seats: [seat as never], seeds: [1], games: 1 }] }),
+        ),
+      ).toThrow(SeasonConfigError)
+    }
+    expect(() =>
+      parseSeasonConfig(
+        validConfig({ matches: [{ seats: ['builtin:undeclared'], seeds: [1], games: 1 }] }),
+      ),
+    ).not.toThrow()
   })
 
   it('rejects a non-integer deps_version', () => {

@@ -62,7 +62,7 @@ export interface SessionRow {
 
 /** One match design entry, mirroring the backend's MatchConfig codec. */
 export interface MatchConfig {
-  seats: ('builtin-naive' | 'submission')[]
+  seats: ('submission' | `builtin:${string}`)[]
   seeds: number[]
   games: number
 }

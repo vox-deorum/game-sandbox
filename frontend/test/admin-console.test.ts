@@ -243,15 +243,9 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/20 eligible submissions as of page load/)).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
-    expect(screen.queryByText(/Projected games:/)).toBeNull()
-    expect(screen.getByTestId('projection-error')).toHaveTextContent(
-      'Match 1 has 2 seats, but the resolved layout has 4',
-    )
-
     const match = screen.getByTestId('match')
-    const addSeat = within(match).getByRole('button', { name: 'Add seat' })
-    await fireEvent.click(addSeat)
-    await fireEvent.click(addSeat)
+    expect(within(match).getAllByTestId('seat')).toHaveLength(4)
+    expect(screen.queryByRole('button', { name: 'Match the layout' })).toBeNull()
     expect(screen.getByText('Projected games: 232,562')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
 
@@ -283,6 +277,77 @@ describe('AdminConsolePage', () => {
     await fireEvent.update(screen.getByLabelText('Dependency-set version'), '0')
     expect(screen.getByText('Projected games: 762')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
+  })
+
+  it('builds named builtin seats from metadata and conforms restricted rows on plan changes', async () => {
+    const meta = spadesMeta({
+      env_id: 'flappy_bird',
+      layout: {
+        kind: 'seat_plans',
+        plans: [
+          {
+            key: 'partnership',
+            title: 'Partnership',
+            seats: [{ players: [0, 2], restricted_builtin: 'cautious' }, { players: [1, 3] }],
+          },
+          {
+            key: 'solo',
+            title: 'Solo',
+            seats: [
+              { players: [0] },
+              { players: [1] },
+              { players: [2] },
+              { players: [3], restricted_builtin: 'cautious' },
+            ],
+          },
+        ],
+      },
+    })
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['builtin:cautious', 'submission'], seeds: [0], games: 1 }],
+        overrides: { parameters: { seat_plan: 'partnership' } },
+      },
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([meta])
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: configured, eligible_submission_count: 3 }),
+    )
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+
+    const pair = await screen.findByTestId('match')
+    const firstSeat = within(pair).getByRole('combobox', { name: 'Seat 1' })
+    expect(firstSeat).toHaveValue('builtin:cautious')
+    expect(firstSeat).toBeDisabled()
+    const secondSeat = within(pair).getByRole('combobox', { name: 'Seat 2' })
+    expect(within(secondSeat).getByRole('option', { name: 'Naive agent' })).toHaveValue(
+      'builtin:naive',
+    )
+    expect(within(secondSeat).getByRole('option', { name: 'Cautious bidder' })).toHaveValue(
+      'builtin:cautious',
+    )
+    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+
+    await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
+    expect(within(pair).getAllByTestId('seat')).toHaveLength(4)
+    const fourthSeat = within(pair).getByRole('combobox', { name: 'Seat 4' })
+    expect(fourthSeat).toHaveValue('builtin:cautious')
+    expect(fourthSeat).toBeDisabled()
+    await fireEvent.update(within(pair).getByRole('combobox', { name: 'Seat 2' }), 'builtin:naive')
+    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1]).toMatchObject({
+      matches: [
+        {
+          seats: ['builtin:cautious', 'builtin:naive', 'submission', 'builtin:cautious'],
+        },
+      ],
+      overrides: { parameters: { seat_plan: 'solo' } },
+    })
   })
 
   it('shows development totals and opens the shared history dialog from a participant row', async () => {
@@ -367,6 +432,9 @@ describe('AdminConsolePage', () => {
     await renderConsole()
     expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Environment Parameters' })).toBeNull()
+    const unresolvedMatch = screen.getByTestId('match')
+    expect(within(unresolvedMatch).getByRole('combobox', { name: 'Seat 1' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Match the layout' })).toBeNull()
 
     resolveMeta?.([configurableMeta()])
     expect(
@@ -606,13 +674,83 @@ describe('AdminConsolePage', () => {
     expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
   })
 
-  it('refuses to save a match with zero seats', async () => {
+  it('keeps a resolved match at its declared full width', async () => {
     await renderConsole()
-    // Remove the match's only seat, then attempt to save.
-    await fireEvent.click(await screen.findByRole('button', { name: '×' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
-    expect(await screen.findByText(/has no seats/)).toBeInTheDocument()
-    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+    const match = await screen.findByTestId('match')
+    expect(within(match).getAllByTestId('seat')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Match the layout' })).toBeNull()
+  })
+
+  // Reopening a season must never repair its stored design behind the operator's back: the rows stay
+  // as saved, nothing looks edited, and the one preview box carries the reason and the way to fix it.
+  it('leaves a stored design of the wrong width alone until the operator conforms it', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ env_id: 'flappy_bird' })])
+    const stale = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
+        overrides: { parameters: { seat_plan: 'partnership' } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: stale }))
+    await renderConsole()
+
+    const match = await screen.findByTestId('match')
+    expect(within(match).getAllByTestId('seat')).toHaveLength(1)
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull()
+    // The projection names the mismatch precisely, so the box says it once and carries the action.
+    const blocked = screen.getByTestId('projection-error')
+    expect(blocked).toHaveTextContent('Match 1 has 1 seats, but the resolved layout has 2')
+    expect(blocked).not.toHaveTextContent('no longer matches the resolved seat layout')
+
+    await fireEvent.click(within(blocked).getByRole('button', { name: 'Match the layout' }))
+    expect(within(match).getAllByTestId('seat')).toHaveLength(2)
+    expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument()
+    expect(screen.queryByTestId('projection-error')).toBeNull()
+  })
+
+  // A restricted seat holding the wrong spec keeps the row's width, so the projection cannot see it.
+  // The same box reports it instead of the counts, which would be computed from an unrunnable design.
+  it('reports a restricted seat that lost its designated builtin and conforms it on request', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([
+      spadesMeta({
+        env_id: 'flappy_bird',
+        layout: {
+          kind: 'seat_plans',
+          plans: [
+            {
+              key: 'partnership',
+              title: 'Partnership',
+              seats: [{ players: [0, 2], restricted_builtin: 'cautious' }, { players: [1, 3] }],
+            },
+          ],
+        },
+      }),
+    ])
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({
+        season: season({
+          config: {
+            deps_version: 1,
+            matches: [{ seats: ['submission', 'submission'], seeds: [0], games: 1 }],
+            overrides: { parameters: { seat_plan: 'partnership' } },
+          },
+        }),
+        eligible_submission_count: 3,
+      }),
+    )
+    await renderConsole()
+
+    const match = await screen.findByTestId('match')
+    expect(within(match).getByRole('combobox', { name: 'Seat 1' })).toHaveValue('submission')
+    expect(screen.queryByText(/Projected games:/)).toBeNull()
+    const blocked = screen.getByTestId('projection-error')
+    expect(blocked).toHaveTextContent('A match no longer matches the resolved seat layout.')
+
+    await fireEvent.click(within(blocked).getByRole('button', { name: 'Match the layout' }))
+    expect(within(match).getByRole('combobox', { name: 'Seat 1' })).toHaveValue('builtin:cautious')
+    expect(screen.getByText('Projected games: 4')).toBeInTheDocument()
+    expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
   it('prompts the force confirmation when runs exist and re-sends with force', async () => {
@@ -899,7 +1037,7 @@ describe('AdminConsolePage', () => {
     expect(screen.queryByText('Saved')).toBeNull()
     expect(vi.mocked(listSeasons)).toHaveBeenCalledTimes(1)
   })
-  it('surfaces run_in_progress and empty_schedule from a trigger', async () => {
+  it('surfaces typed trigger failures from a trigger', async () => {
     vi.mocked(triggerRun).mockResolvedValue({
       ok: false,
       reason: 'run_in_progress',
@@ -916,6 +1054,30 @@ describe('AdminConsolePage', () => {
     })
     await fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }))
     expect(await screen.findByText(/match design/)).toBeInTheDocument()
+
+    vi.mocked(triggerRun).mockResolvedValue({
+      ok: false,
+      reason: 'invalid_config',
+      message: 'Match 1 must equal the resolved layout count of 4',
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }))
+    expect(
+      await screen.findByText(
+        'The saved configuration is invalid. Match 1 must equal the resolved layout count of 4. Update it, save it, then try again.',
+      ),
+    ).toBeInTheDocument()
+
+    vi.mocked(triggerRun).mockResolvedValue({
+      ok: false,
+      reason: 'invalid_parameters',
+      message: 'overrides.parameters.pipe_gap: must be at least 60',
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }))
+    expect(
+      await screen.findByText(
+        'The saved configuration is invalid. overrides.parameters.pipe_gap: must be at least 60. Update it, save it, then try again.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('prompts before running while the configuration has unsaved edits', async () => {

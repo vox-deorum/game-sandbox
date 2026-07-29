@@ -15,13 +15,12 @@
  * remains inert (validated to be an object and round-tripped unchanged) until Stage 9 gives it a
  * concrete shape.
  */
-import { SEAT_SPECS, type SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
+import { parseSeatSpec, type SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
 import { z } from 'zod'
 
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '../llm/types.js'
 
-/** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
-export { SEAT_SPECS }
+/** One seat in a match composition: a named built-in scripted agent, or a participant submission. */
 export type SeatSpec = SharedSeatSpec
 
 /**
@@ -30,7 +29,13 @@ export type SeatSpec = SharedSeatSpec
  * At least one seat and at least one seed are required; `games` is a positive integer.
  */
 export const MatchConfigSchema = z.strictObject({
-  seats: z.array(z.enum(SEAT_SPECS)).min(1),
+  seats: z
+    .array(
+      z.string().refine((value): value is SeatSpec => parseSeatSpec(value) !== undefined, {
+        message: 'must be submission or builtin:<snake_case>',
+      }),
+    )
+    .min(1),
   seeds: z.array(z.int()).min(1),
   games: z.int().positive(),
 })

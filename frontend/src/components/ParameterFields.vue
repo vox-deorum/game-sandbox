@@ -8,7 +8,7 @@ import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 import UiSelect from './ui/UiSelect.vue'
 
-const props = defineProps<{ declarations: readonly EnvParameter[] }>()
+const props = defineProps<{ declarations: readonly EnvParameter[]; disabled?: boolean }>()
 const model = defineModel<Record<string, ParameterValue>>({ required: true })
 const emit = defineEmits<{ validity: [boolean] }>()
 const visible = computed(() => visibleParameters(props.declarations))
@@ -47,6 +47,7 @@ function numericHint(parameter: Extract<EnvParameter, { type: 'int' | 'float' }>
             :max="parameter.type === 'string' ? undefined : parameter.max"
             :step="parameter.type === 'float' ? 'any' : undefined"
             :invalid="invalid"
+            :disabled="disabled"
             :aria-describedby="describedby"
             @update:model-value="(value) => update(parameter.name, parameter.type === 'string' || value === '' ? value : Number(value))"
           />
@@ -57,6 +58,7 @@ function numericHint(parameter: Extract<EnvParameter, { type: 'int' | 'float' }>
           <UiSelect
             :id="id"
             :model-value="model[parameter.name] === true ? 'on' : 'off'"
+            :disabled="disabled"
             :aria-describedby="describedby"
             @update:model-value="(value) => update(parameter.name, value === 'on')"
           >
@@ -66,7 +68,7 @@ function numericHint(parameter: Extract<EnvParameter, { type: 'int' | 'float' }>
       </UiField>
       <UiField v-else-if="parameter.type === 'choice'" :label="parameter.title" :hint="parameter.description">
         <template #default="{ id, describedby }">
-          <UiSelect :id="id" :model-value="String(model[parameter.name] ?? '')" :aria-describedby="describedby" @update:model-value="(value) => update(parameter.name, value)">
+          <UiSelect :id="id" :model-value="String(model[parameter.name] ?? '')" :disabled="disabled" :aria-describedby="describedby" @update:model-value="(value) => update(parameter.name, value)">
             <option v-for="choice in parameter.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
           </UiSelect>
         </template>
@@ -77,6 +79,7 @@ function numericHint(parameter: Extract<EnvParameter, { type: 'int' | 'float' }>
         :options="parameter.choices"
         :hint="parameter.description"
         :error="validation.errors[parameter.name]"
+        :disabled="disabled"
         :model-value="Array.isArray(model[parameter.name]) ? model[parameter.name] as string[] : []"
         @update:model-value="(value) => update(parameter.name, value)"
       />

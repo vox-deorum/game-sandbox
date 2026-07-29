@@ -4,16 +4,19 @@
   every required seat. It is the multi-seat replacement for the Stage 5 single-agent watch start, used
   only for environments with more than one seat; a single-seat environment keeps its minimal forms.
 
-  Every non-human seat always holds a concrete agent — there is no empty seat state. The built-in Naive
-  baseline is the default agent (always available, even with no submissions), so a full, valid
-  assignment always exists and Start stays enabled.
+  Every non-human seat always holds a concrete agent. Unrestricted seats default to the built-in Naive
+  baseline in Play, while restricted seats retain their designated built-in, so a full assignment
+  always exists.
 
-  - Rate mode: every seat is preselected to the intended agent and all configuration stays disabled.
-  - Watch mode: every seat is an agent dropdown. Opening from an agent row preselects that agent into
-    every seat (the parent passes it as `preselect`); the user may change individual seats.
-  - Play mode: the connected human seats at the first human-capable seat by default and the rest default
-    to Naive. Each non-human row has a "Sit here" button that moves the human to it, exactly one human
-    at a time; the vacated row falls back to the Naive default agent.
+  - Rate mode: every unrestricted seat is preselected to the intended agent. A human-capable restricted
+    seat defaults to Human, and only Human and its designated built-in agent remain enabled. A restricted
+    seat with no human-capable player is locked. Session setting controls stay disabled.
+    A rating run that seats the person is a session they play, so the intro and the start button say so.
+  - Watch mode: every unrestricted seat is an agent dropdown preselected from the clicked agent row.
+    Restricted seats stay locked to their designated built-in.
+  - Play mode: the connected human defaults to the human-capable restricted seat when one exists, then
+    to the first human-capable seat. Other unrestricted seats default to Naive, while restricted seats
+    retain their designated built-in. "Sit here" moves the human and restores the vacated seat's default.
 
   It is presentational: the parent owns the UiDialog, the `startSession` call, navigation, and errors.
   It emits `start` with the resolved `seats` and the supported session overrides, and `cancel`.
@@ -48,7 +51,7 @@ const props = defineProps<{
   agents: WatchAgentSummary[]
   /** Rate locks one intended agent; watch assigns agents; play seats one connected human. */
   mode: 'rate' | 'watch' | 'play'
-  /** The clicked agent to preselect into every seat (watch only); defaults to the Naive baseline. */
+  /** The clicked agent to preselect into unrestricted seats (Watch and Rate); defaults to Naive. */
   preselect?: AgentAssignmentInput
   /** Operators see owner/source labels for submitted agents; everyone else sees anonymous numbers. */
   isOperator?: boolean
@@ -61,9 +64,9 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-// Each seat's agent is a string (a <select> only carries strings): the Naive baseline or
-// `submission:<id>`. The connected human seat is tracked separately by `humanSeat`, so a seat is never
-// in an ambiguous "human-or-agent" string state. Decoded back to the wire union on Start.
+// Each seat's agent is a string because a <select> only carries strings: `builtin:<name>` or
+// `submission:<id>`. The connected human seat is tracked separately by `humanSeat`, so a seat is
+// never in an ambiguous "human-or-agent" string state. Decoded back to the wire union on Start.
 const BUILTIN_PREFIX = 'builtin:'
 const NAIVE_BUILTIN = `${BUILTIN_PREFIX}naive`
 
@@ -107,24 +110,47 @@ const humanCapableSeats = computed(
     ),
 )
 
-// Every seat carries a concrete agent under it; the human (play only) simply overrides whichever seat
-// `humanSeat` names. Watch preselects the clicked agent into every seat; play defaults every seat to
-// the Naive baseline and seats the human at the first human-capable seat. A seat goes blank only when
-// its chosen agent stops being offered, and `sanitizeChoices` then makes the operator pick again.
-const defaultAgent =
-  props.mode === 'play'
-    ? NAIVE_BUILTIN
-    : encodeAgent(props.preselect ?? { kind: 'builtin-agent', name: 'naive' })
+function restrictedBuiltin(seatId: string): string | null {
+  return seatsById.value.get(seatId)?.restrictedBuiltin ?? null
+}
+
+function fallbackAgent(seatId: string): string {
+  const restricted = restrictedBuiltin(seatId)
+  return restricted === null ? NAIVE_BUILTIN : `${BUILTIN_PREFIX}${restricted}`
+}
+
+function initialAgent(seatId: string): string {
+  if (props.mode === 'play') return fallbackAgent(seatId)
+  return restrictedBuiltin(seatId) === null
+    ? encodeAgent(props.preselect ?? { kind: 'builtin-agent', name: 'naive' })
+    : fallbackAgent(seatId)
+}
+
+// Every seat carries a concrete agent under it. A connected human overrides whichever seat
+// `humanSeat` names. Restricted seats always retain their designated built-in when not human.
 const agentChoice = reactive<Record<string, string>>(
-  Object.fromEntries(seatIds.value.map((seatId) => [seatId, defaultAgent])),
+  Object.fromEntries(seatIds.value.map((seatId) => [seatId, initialAgent(seatId)])),
 )
 // A companion must be an explicit choice. Keep it separately from the ordinary assignment beneath
 // the human seat, because the two values have different wire meanings and different default rules.
 const companionChoice = reactive<Record<string, string>>({})
+
+/**
+ * The seat a connected human takes by default: a human-capable restricted seat first, since a
+ * restricted seat has no other human-capable home, then any human-capable seat in Play. Rate stops at
+ * the restricted seat, because a rating run without one is an ordinary all-agent session.
+ */
+function defaultHumanSeat(ids: readonly string[]): string | null {
+  const restricted = ids.find(
+    (seatId) => restrictedBuiltin(seatId) !== null && humanCapableSeats.value.has(seatId),
+  )
+  if (restricted !== undefined) return restricted
+  if (props.mode !== 'play') return null
+  return ids.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null
+}
+
 const humanSeat = ref<string | null>(
-  props.mode === 'play'
-    ? (seatIds.value.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null)
-    : null,
+  props.mode === 'watch' ? null : defaultHumanSeat(seatIds.value),
 )
 
 function isHuman(seatId: string): boolean {
@@ -136,6 +162,18 @@ function canSitHere(seatId: string): boolean {
   return props.mode === 'play' && humanCapableSeats.value.has(seatId)
 }
 
+function isRestricted(seatId: string): boolean {
+  return restrictedBuiltin(seatId) !== null
+}
+
+function isRestrictedHumanChoice(seatId: string): boolean {
+  return props.mode === 'rate' && isRestricted(seatId) && humanCapableSeats.value.has(seatId)
+}
+
+function isSeatLocked(seatId: string): boolean {
+  return props.mode === 'rate' ? !isRestrictedHumanChoice(seatId) : isRestricted(seatId)
+}
+
 // The strict index check types `agentChoice[seatId]` as `string | undefined`, but a seat always has a
 // value, so this read keeps the dropdown binding and the payload typed.
 function seatValue(seatId: string): string {
@@ -144,6 +182,15 @@ function seatValue(seatId: string): string {
 
 function setSeat(seatId: string, value: string): void {
   agentChoice[seatId] = value
+}
+
+function setRateRestrictedSeat(seatId: string, value: string): void {
+  if (value === 'human') {
+    humanSeat.value = seatId
+    return
+  }
+  humanSeat.value = null
+  agentChoice[seatId] = fallbackAgent(seatId)
 }
 
 function companionValue(seatId: string): string {
@@ -163,10 +210,20 @@ function playerCountHint(seatId: string): string {
   return `${count} ${count === 1 ? 'player' : 'players'}`
 }
 
-/** Move the connected human to a seat; the seat it leaves falls back to the Naive default agent. */
+/** The seat's displayed name, the same one-based numbering the seat list renders. */
+function seatName(seatId: string): string {
+  return `Seat ${seatIds.value.indexOf(seatId) + 1}`
+}
+
+function restrictedBuiltinLabel(seatId: string): string {
+  const name = restrictedBuiltin(seatId)
+  return props.meta.builtin_agents.find((agent) => agent.name === name)?.label ?? name ?? ''
+}
+
+/** Move the connected human, restoring the vacated seat's Naive or designated-builtin default. */
 function sitHere(target: string): void {
   if (humanSeat.value !== null) {
-    agentChoice[humanSeat.value] = NAIVE_BUILTIN
+    agentChoice[humanSeat.value] = fallbackAgent(humanSeat.value)
   }
   humanSeat.value = target
   sanitizeChoices()
@@ -191,15 +248,12 @@ function agentOptionLabel(agent: WatchAgentSummary): string {
   return maskedSubmissionLabel(agent.anonymous_number)
 }
 
-// Stage 16.1 names the existing Naive choice on the wire. Stage 16.3 adds the remaining declared
-// builtins alongside the restricted-seat behavior. There is no empty option: a seat always names a
-// concrete agent.
+// There is no empty option: a seat always names a concrete agent.
 const agentOptions = computed<{ value: string; label: string }[]>(() => [
   ...props.meta.builtin_agents
-    .filter((agent) => agent.name === 'naive')
     .map((agent) => ({
-    value: `${BUILTIN_PREFIX}${agent.name}`,
-    label: agent.label,
+      value: `${BUILTIN_PREFIX}${agent.name}`,
+      label: agent.label,
     })),
   ...props.agents.map((agent) => ({
     value: `submission:${agent.submission_id}`,
@@ -213,12 +267,15 @@ function sanitizeChoices(
   legal = legalAgentValues.value,
 ): void {
   const ids = resolved.seats.map((seat) => seat.seatId)
-  // A seat added by a growing count gets the same default as the seats present at open, so a watch or
-  // rate dialog still has its chosen agent in every seat rather than Naive in the new ones.
-  for (const seatId of ids) if (agentChoice[seatId] === undefined) agentChoice[seatId] = defaultAgent
+  // A seat added by a growing count gets the same mode default as the seats present at open.
+  for (const seatId of ids) if (agentChoice[seatId] === undefined) agentChoice[seatId] = initialAgent(seatId)
   for (const seatId of Object.keys(agentChoice)) if (!ids.includes(seatId)) delete agentChoice[seatId]
   for (const [seatId, value] of Object.entries(agentChoice)) {
-    if (!legal.has(value)) agentChoice[seatId] = ''
+    if (isRestricted(seatId) && !isHuman(seatId)) {
+      agentChoice[seatId] = fallbackAgent(seatId)
+    } else if (!legal.has(value)) {
+      agentChoice[seatId] = ''
+    }
   }
   for (const seatId of Object.keys(companionChoice)) {
     const seat = resolved.seats.find((candidate) => candidate.seatId === seatId)
@@ -227,6 +284,7 @@ function sanitizeChoices(
       seat === undefined ||
       !isHuman(seatId) ||
       seat.players.length === 1 ||
+      isRestricted(seatId) ||
       !legal.has(value ?? '')
     ) {
       delete companionChoice[seatId]
@@ -236,13 +294,16 @@ function sanitizeChoices(
 
 watch([layout, legalAgentValues], ([resolved, legal]) => {
   const ids = resolved.seats.map((seat) => seat.seatId)
+  // Only play keeps exactly one human seat at all times, so only play re-seats after a layout change.
+  // Rate has no such invariant: a rating run may have no human seat, and a null one there is the
+  // rater's own choice of the designated builtin rather than a seat waiting to be filled.
   if (
     props.mode === 'play' &&
     (humanSeat.value === null ||
       !ids.includes(humanSeat.value) ||
       !humanCapableSeats.value.has(humanSeat.value))
   ) {
-    humanSeat.value = ids.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null
+    humanSeat.value = defaultHumanSeat(ids)
   }
   sanitizeChoices(resolved, legal)
 })
@@ -261,6 +322,7 @@ const canStart = computed(() => {
       }
       return (
         seatPlayerCount(seatId) === 1 ||
+        isRestricted(seatId) ||
         legalAgentValues.value.has(companionValue(seatId))
       )
     })
@@ -282,13 +344,18 @@ const timeout = ref<string | number>(
 
 const intro = computed(() => {
   if (props.mode === 'rate') {
-    return 'This rating run uses the selected agent and season settings.'
+    const seated = humanSeat.value
+    return seated === null
+      ? 'This rating run uses the selected agent and season settings.'
+      : `This rating run uses the selected agent and season settings. You play ${seatName(seated)}.`
   }
   return props.mode === 'watch'
     ? 'Assign an agent to each seat.'
     : 'Pick your seat; assign agents to the rest.'
 })
-const startLabel = computed(() => (props.mode === 'play' ? 'Start playing' : 'Start watching'))
+// A session with a seated human is one the person plays, whichever flow opened this dialog. Rate can
+// seat them on a human-capable restricted seat, so the label follows the composition, not the mode.
+const startLabel = computed(() => (humanSeat.value === null ? 'Start watching' : 'Start playing'))
 const timeoutLabel = computed(() => (isPaced ? 'Per-step input window (ms)' : 'Move time limit (ms)'))
 const timeoutHint = computed(() =>
   isPaced
@@ -313,7 +380,7 @@ function onSubmit(): void {
     }
     const companion = companionValue(seatId)
     seats[seatId] =
-      seatPlayerCount(seatId) === 1
+      seatPlayerCount(seatId) === 1 || isRestricted(seatId)
         ? { kind: 'human' }
         : { kind: 'human', companion: decodeAgent(companion) }
   }
@@ -331,23 +398,33 @@ function onSubmit(): void {
   <form class="seat-form" @submit.prevent="onSubmit">
     <p class="seat-intro">{{ intro }}</p>
 
-    <fieldset
-      class="seat-configuration"
-      :disabled="configurationLocked"
-      aria-label="Session configuration"
-    >
+    <fieldset class="seat-configuration" aria-label="Session configuration">
       <ParameterFields
         v-model="parameters"
         :declarations="meta.parameters"
+        :disabled="configurationLocked"
         @validity="parametersValid = $event"
       />
 
       <ul class="seat-list">
         <li v-for="(seatId, index) in seatIds" :key="seatId" class="seat-row">
-          <span :id="`${seatId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
+          <div class="seat-heading">
+            <span :id="`${seatId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
+            <span class="player-count">{{ playerCountHint(seatId) }}</span>
+          </div>
           <div class="seat-body">
             <div class="seat-control">
-              <template v-if="isHuman(seatId)">
+              <template v-if="isRestrictedHumanChoice(seatId)">
+                <UiSelect
+                  :model-value="isHuman(seatId) ? 'human' : fallbackAgent(seatId)"
+                  :aria-labelledby="`${seatId}-label`"
+                  @update:model-value="(value: string) => setRateRestrictedSeat(seatId, value)"
+                >
+                  <option value="human">Human</option>
+                  <option :value="fallbackAgent(seatId)">{{ restrictedBuiltinLabel(seatId) }}</option>
+                </UiSelect>
+              </template>
+              <template v-else-if="isHuman(seatId)">
                 <span class="seat-you">You</span>
                 <span class="seat-seated">seated</span>
               </template>
@@ -355,6 +432,7 @@ function onSubmit(): void {
                 <UiSelect
                   :model-value="seatValue(seatId)"
                   :aria-labelledby="`${seatId}-label`"
+                  :disabled="isSeatLocked(seatId)"
                   @update:model-value="(value: string) => setSeat(seatId, value)"
                 >
                   <option v-if="seatValue(seatId) === ''" value="" disabled>Select an agent</option>
@@ -372,10 +450,9 @@ function onSubmit(): void {
                   Sit here
                 </UiButton>
               </template>
-              <span class="player-count">{{ playerCountHint(seatId) }}</span>
             </div>
             <UiField
-              v-if="isHuman(seatId) && seatPlayerCount(seatId) > 1"
+              v-if="isHuman(seatId) && seatPlayerCount(seatId) > 1 && !isRestricted(seatId)"
               :label="`Companion agent for Seat ${index + 1}`"
               hint="Required. A separate instance controls each remaining player."
             >
@@ -394,6 +471,12 @@ function onSubmit(): void {
                 </UiSelect>
               </template>
             </UiField>
+            <p
+              v-else-if="isHuman(seatId) && seatPlayerCount(seatId) > 1 && isRestricted(seatId)"
+              class="derived-companion"
+            >
+              {{ restrictedBuiltinLabel(seatId) }} controls the other players.
+            </p>
           </div>
         </li>
       </ul>
@@ -406,6 +489,7 @@ function onSubmit(): void {
             type="number"
             min="0"
             placeholder="random"
+            :disabled="configurationLocked"
             :aria-describedby="describedby"
           />
         </template>
@@ -419,6 +503,7 @@ function onSubmit(): void {
             type="number"
             min="0"
             :placeholder="isPaced ? String(meta.pace_interval_ms) : 'default'"
+            :disabled="configurationLocked"
             :aria-describedby="describedby"
           />
         </template>
@@ -470,6 +555,12 @@ function onSubmit(): void {
   gap: var(--space-3);
 }
 
+.seat-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 5.5rem;
+}
+
 .seat-label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -504,6 +595,12 @@ function onSubmit(): void {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   white-space: nowrap;
+}
+
+.derived-companion {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 .seat-form-actions {

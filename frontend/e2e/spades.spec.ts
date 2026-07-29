@@ -43,6 +43,40 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
 const BROADCAST = 'good luck everyone'
 const TARGETED = 'partner, cover the ace'
 
+test('narrow Play keeps wide-seat player counts in the heading column', async ({ page, admin }) => {
+  await authenticateBrowser(page.context(), admin)
+  await page.setViewportSize({ width: 480, height: 900 })
+  await page.goto(`/environments/${SPADES_ENV_ID}`)
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+
+  const firstSeat = page.locator('.seat-row').first()
+  await expect(firstSeat.locator('.seat-heading')).toContainText(/Seat 1\s*2 players/)
+  await expect(firstSeat.locator('.seat-control .player-count')).toHaveCount(0)
+
+  const seatLabel = firstSeat.locator('.seat-label')
+  const playerCount = firstSeat.locator('.player-count')
+  const assignmentControl = firstSeat.locator('.seat-control')
+  const [seatLabelBox, playerCountBox, assignmentControlBox] = await Promise.all([
+    seatLabel.boundingBox(),
+    playerCount.boundingBox(),
+    assignmentControl.boundingBox(),
+  ])
+  if (seatLabelBox === null) throw new Error('narrow Play seat label has no bounding box')
+  if (playerCountBox === null) throw new Error('narrow Play player count has no bounding box')
+  if (assignmentControlBox === null) {
+    throw new Error('narrow Play assignment control has no bounding box')
+  }
+
+  expect(
+    playerCountBox.y,
+    'narrow Play player count is below its seat label',
+  ).toBeGreaterThanOrEqual(seatLabelBox.y + seatLabelBox.height)
+  expect(
+    playerCountBox.x + playerCountBox.width,
+    'narrow Play player count ends before the assignment control',
+  ).toBeLessThan(assignmentControlBox.x)
+})
+
 /** Click the bid-1 chip in the Spades renderer's fixed 960 by 720 internal coordinate space. */
 async function bidOne(canvas: Locator): Promise<void> {
   const box = await canvas.boundingBox()

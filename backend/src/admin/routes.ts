@@ -19,7 +19,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
-import { resolveLayout } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  type ResolvedLayout,
+  resolveLayout,
+} from '@game-sandbox/schema/environment'
 import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
@@ -54,7 +58,7 @@ import {
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage, Submission } from '../storage/index.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
-import { SeasonConfigSchema } from '../storage/season-config.js'
+import { type MatchConfig, SeasonConfigSchema, type SeatSpec } from '../storage/season-config.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
@@ -441,15 +445,16 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 reason: `overrides.parameters.${resolved.issue.name}: ${resolved.issue.message}`,
               })
             }
-            const seatIssue = validateSeatCounts(
+            const matchIssue = validateSeasonMatches(
+              meta,
               parsed.data.matches,
-              resolveLayout(meta, resolved.values).seatCount,
+              resolveLayout(meta, resolved.values),
             )
-            if (seatIssue !== null) {
+            if (matchIssue !== null) {
               return reply.code(400).send({
                 error: 'invalid season config',
                 code: 'invalid_config',
-                reason: seatIssue,
+                reason: matchIssue,
               })
             }
           }
@@ -651,6 +656,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
               }
             }
             const layout = resolveLayout(meta, parameters.values)
+            const matchIssue = validateSeasonMatches(meta, frozen.matches, layout)
+            if (matchIssue !== null) {
+              return { ok: false, code: 'invalid_config', reason: matchIssue }
+            }
             const schedule = buildSchedule({
               matches: frozen.matches,
               submissions,
@@ -872,15 +881,33 @@ async function attachLogStream(
   closeable.on('close', () => unsubscribe())
 }
 
-/** Validate each match's seat count against the resolved environment layout. */
-function validateSeatCounts(
-  matches: ReadonlyArray<{ seats: readonly string[] }>,
-  resolvedSeats: number,
+/**
+ * Validate each match against the environment's fully resolved layout. This gate belongs outside the
+ * structure-only season codec because declared builtins and restricted seats are environment facts.
+ */
+export function validateSeasonMatches(
+  meta: EnvironmentMeta,
+  matches: readonly MatchConfig[],
+  layout: ResolvedLayout,
 ): string | null {
-  for (let i = 0; i < matches.length; i++) {
-    const count = matches[i]?.seats.length ?? 0
-    if (count !== resolvedSeats) {
-      return `matches.${i}.seats: ${count} seats must equal the resolved layout count of ${resolvedSeats}`
+  const builtinNames = new Set(meta.builtin_agents.map((builtin) => builtin.name))
+  for (const [matchIndex, match] of matches.entries()) {
+    if (match.seats.length !== layout.seatCount) {
+      return `matches.${matchIndex}.seats: ${match.seats.length} seats must equal the resolved layout count of ${layout.seatCount}`
+    }
+    for (const [seatIndex, seat] of layout.seats.entries()) {
+      // The width check above pairs every layout seat with a spec.
+      const spec = match.seats[seatIndex] as SeatSpec
+      const where = `matches.${matchIndex}.seats.${seatIndex}`
+      if (spec !== 'submission') {
+        const name = spec.slice('builtin:'.length)
+        if (!builtinNames.has(name)) {
+          return `${where}: builtin ${name} is not declared by environment ${meta.env_id}`
+        }
+      }
+      if (seat.restrictedBuiltin !== null && spec !== `builtin:${seat.restrictedBuiltin}`) {
+        return `${where}: ${seat.seatId} must use builtin:${seat.restrictedBuiltin}`
+      }
     }
   }
   return null

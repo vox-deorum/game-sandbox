@@ -247,7 +247,7 @@ export interface FrozenRunInput {
 }
 
 /** Why a season's frozen inputs produce no run. The trigger route sends these back as typed codes. */
-export type RunRejectionCode = 'empty_schedule' | 'invalid_parameters'
+export type RunRejectionCode = 'empty_schedule' | 'invalid_config' | 'invalid_parameters'
 
 export type FrozenRunPlan =
   | {

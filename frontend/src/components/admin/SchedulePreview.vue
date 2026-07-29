@@ -7,6 +7,10 @@
   blanks the preview. `projectSchedule` reports every structural problem in the draft itself with a
   typed reason, which this renders as an inline message rather than silently showing nothing.
 
+  One box carries the counts or the reason there are none, never both. `blockedReason` covers what the
+  arithmetic cannot see, such as a seat that no longer holds its designated builtin, and the default
+  slot holds the action that fixes it.
+
   The count is arithmetic over the current draft, not a materialized schedule: triggering a run
   freezes a fresh eligible roster, so the number here is a page-load estimate.
 -->
@@ -33,6 +37,9 @@ const props = defineProps<{
   /** The validated parameter values that select the seat layout. */
   parameterValues: Readonly<Record<string, ParameterValue>>
   eligibleSubmissionCount: number
+  /** A reason the design cannot run that the projection arithmetic cannot see. The projection's own
+   *  typed failure is the more specific message, so it wins when both apply. */
+  blockedReason?: string | null
 }>()
 
 const resolvedLayout = computed(() => {
@@ -95,11 +102,15 @@ const state = computed<{ projection: ScheduleProjection | null; error: string | 
 })
 
 const projection = computed(() => state.value.projection)
-const projectionError = computed(() => state.value.error)
+const blocked = computed(() => state.value.error ?? props.blockedReason ?? null)
 </script>
 
 <template>
-  <div v-if="projection !== null" class="schedule-projection" aria-live="polite">
+  <UiEmptyState v-if="blocked !== null" tone="danger" role="alert" data-testid="projection-error">
+    {{ blocked }}
+    <span v-if="$slots.default" class="blocked-action"><slot /></span>
+  </UiEmptyState>
+  <div v-else-if="projection !== null" class="schedule-projection" aria-live="polite">
     <strong>Projected games: {{ projection.totalGames.toLocaleString() }}</strong>
     <span v-if="seatCount !== null">
       Resolved layout: {{ seatCount }} {{ seatCount === 1 ? 'seat' : 'seats' }}.
@@ -121,14 +132,6 @@ const projectionError = computed(() => state.value.error)
       freezes a fresh roster when triggered.
     </span>
   </div>
-  <UiEmptyState
-    v-else-if="projectionError !== null"
-    tone="danger"
-    role="alert"
-    data-testid="projection-error"
-  >
-    {{ projectionError }}
-  </UiEmptyState>
 </template>
 
 <style scoped>
@@ -144,5 +147,9 @@ const projectionError = computed(() => state.value.error)
 .schedule-projection strong {
   color: var(--color-text);
   font-size: var(--text-md);
+}
+
+.blocked-action {
+  margin-left: var(--space-2);
 }
 </style>

@@ -21,6 +21,7 @@ const START_CONTEXT = { seasonId: 'season-1', parameters: { players: 4 } }
 
 interface StartPayload {
   seats: Record<string, SeatAssignmentInput>
+  parameters?: Record<string, unknown>
   seed?: number
   humanTimeoutMs?: number
 }
@@ -38,6 +39,33 @@ function lastStart(emitted: () => Record<string, unknown[]>): StartPayload {
   }
   return calls[calls.length - 1]?.[0] as StartPayload
 }
+
+function restrictedMeta() {
+  return spadesMeta({
+    layout: {
+      kind: 'seat_plans',
+      plans: [
+        {
+          key: 'restricted',
+          title: 'Restricted',
+          seats: [{ players: [0, 2], restricted_builtin: 'cautious' }, { players: [1, 3] }],
+        },
+      ],
+    },
+    parameters: [
+      {
+        name: 'seat_plan',
+        title: 'Seat plan',
+        description: 'Seat-to-player layout.',
+        type: 'choice',
+        default: 'restricted',
+        choices: [{ value: 'restricted', label: 'Restricted' }],
+      },
+    ],
+  })
+}
+
+const RESTRICTED_CONTEXT = { seasonId: 'season-1', parameters: { seat_plan: 'restricted' } }
 
 describe('SeatAssignmentDialog', () => {
   it('watch: preselects the clicked agent into every seat and enables Start', async () => {
@@ -115,6 +143,20 @@ describe('SeatAssignmentDialog', () => {
     const firstSeat = seat('Seat 1')
     expect(within(firstSeat).getByRole('option', { name: 'Agent 1' })).toBeInTheDocument()
     expect(within(firstSeat).getByRole('option', { name: 'Agent 2' })).toBeInTheDocument()
+  })
+
+  it('offers every declared builtin by stable value and label in unrestricted seats', () => {
+    render(SeatAssignmentDialog, {
+      props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'watch' },
+    })
+
+    const unrestricted = seat('Seat 2')
+    expect(within(unrestricted).getByRole('option', { name: 'Naive agent' })).toHaveValue(
+      'builtin:naive',
+    )
+    expect(within(unrestricted).getByRole('option', { name: 'Cautious bidder' })).toHaveValue(
+      'builtin:cautious',
+    )
   })
 
   it('shows operator names or short submission ids while retaining the complete selected id', async () => {
@@ -203,7 +245,7 @@ describe('SeatAssignmentDialog', () => {
       },
     })
     // Reassign seat 2 to the Naive baseline and seat 3 to the other submission; the rest stay sub1.
-    await fireEvent.update(seat('Seat 2'), 'builtin')
+    await fireEvent.update(seat('Seat 2'), 'builtin:naive')
     await fireEvent.update(seat('Seat 3'), 'submission:sub2')
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
 
@@ -381,6 +423,144 @@ describe('SeatAssignmentDialog', () => {
         seat_1: { kind: 'builtin-agent', name: 'naive' },
       },
     })
+  })
+
+  it('keeps a restricted play seat human by default, then restores its designated builtin', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'play' },
+    })
+    const rows = screen.getAllByRole('listitem')
+    expect(within(rows[0] as HTMLElement).getByText('You')).toBeInTheDocument()
+    expect(screen.getByText('Cautious bidder controls the other players.')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Companion agent for Seat 1' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+    })
+
+    await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    const restricted = seat('Seat 1')
+    expect(restricted).toHaveValue('builtin:cautious')
+    expect(restricted).toBeDisabled()
+  })
+
+  it('locks restricted watch seats and leaves unrestricted seats editable', () => {
+    render(SeatAssignmentDialog, {
+      props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'watch' },
+    })
+    expect(seat('Seat 1')).toHaveValue('builtin:cautious')
+    expect(seat('Seat 1')).toBeDisabled()
+    expect(seat('Seat 2')).not.toBeDisabled()
+  })
+
+  it('locks a non-human-capable restricted seat to its designated builtin', () => {
+    const meta = restrictedMeta()
+    meta.human_players = ['player_1', 'player_3']
+    render(SeatAssignmentDialog, {
+      props: { ...RESTRICTED_CONTEXT, meta, agents: AGENTS, mode: 'play' },
+    })
+    expect(seat('Seat 1')).toHaveValue('builtin:cautious')
+    expect(seat('Seat 1')).toBeDisabled()
+    expect(within(seat('Seat 1')).queryByRole('option', { name: 'Human' })).toBeNull()
+  })
+
+  // A rating run that leaves the restricted seat at its Human default is a session the rater plays, so
+  // the copy has to say so rather than describing a watch.
+  it('rate: says the rater plays when the restricted seat keeps its human default', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        ...RESTRICTED_CONTEXT,
+        meta: restrictedMeta(),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
+      },
+    })
+
+    expect(
+      screen.getByText(
+        'This rating run uses the selected agent and season settings. You play Seat 1.',
+      ),
+    ).toBeInTheDocument()
+    expect(seat('Seat 1')).toHaveValue('human')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+    })
+  })
+
+  it('rate keeps the intended agent in unrestricted seats and exposes only the restricted choice', async () => {
+    const meta = restrictedMeta()
+    meta.parameters = [
+      ...meta.parameters,
+      {
+        name: 'rounds',
+        title: 'Rounds',
+        description: 'Rounds per game.',
+        type: 'int',
+        default: 3,
+        min: 1,
+        max: 5,
+      },
+      {
+        name: 'rules',
+        title: 'Rules',
+        description: 'Optional rules.',
+        type: 'multi_choice',
+        default: ['wind'],
+        choices: [
+          { value: 'wind', label: 'Wind' },
+          { value: 'night', label: 'Night' },
+        ],
+      },
+    ]
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'restricted', rounds: 3, rules: ['wind'] },
+        meta,
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
+      },
+    })
+    const restricted = seat('Seat 1')
+    expect(restricted).not.toBeDisabled()
+    expect(within(restricted).getAllByRole('option')).toHaveLength(2)
+    expect(seat('Seat 2')).toHaveValue('submission:sub1')
+    expect(seat('Seat 2')).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'Rounds' })).toBeDisabled()
+    expect(screen.getByRole('group', { name: 'Rules' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Wind' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Wind' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Night' })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
+
+    await fireEvent.update(restricted, 'builtin:cautious')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'builtin-agent', name: 'cautious' },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+    })
+    expect(lastStart(emitted).parameters).toEqual({
+      seat_plan: 'restricted',
+      rounds: 3,
+      rules: ['wind'],
+    })
+  })
+
+  it('keeps the player count in the seat heading without changing the select name', () => {
+    render(SeatAssignmentDialog, {
+      props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'watch' },
+    })
+    const heading = screen.getByText('Seat 1').parentElement
+    expect(heading).toHaveClass('seat-heading')
+    expect(within(heading as HTMLElement).getByText('2 players')).toBeInTheDocument()
+    expect(heading?.parentElement?.querySelector('.seat-control .player-count')).toBeNull()
+    expect(seat('Seat 1')).toHaveAccessibleName('Seat 1')
   })
 
   it('removes a wide-seat companion when the human moves away and does not restore it later', async () => {

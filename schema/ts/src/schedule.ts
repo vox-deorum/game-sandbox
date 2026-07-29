@@ -6,11 +6,20 @@
  * exact number of assignments and games its current draft would create.
  */
 
-/** The canonical seat-spec literals used by season match configurations. */
-export const SEAT_SPECS = ['builtin-naive', 'submission'] as const
-
 /** A single resolved seat in a season match configuration. */
-export type SeatSpec = (typeof SEAT_SPECS)[number]
+export type SeatSpec = 'submission' | `builtin:${string}`
+
+const BUILTIN_SEAT_SPEC = /^builtin:([a-z][a-z0-9_]*)$/
+
+/**
+ * Parse one compact season seat spec. Builtin names use the same snake_case vocabulary as
+ * environment metadata, while `submission` remains the sole non-builtin controller token.
+ */
+export function parseSeatSpec(value: unknown): SeatSpec | undefined {
+  if (value === 'submission') return value
+  if (typeof value === 'string' && BUILTIN_SEAT_SPEC.test(value)) return value as SeatSpec
+  return undefined
+}
 
 /** The portion of a validated match configuration needed for schedule projection. */
 export interface ScheduleMatchConfig {

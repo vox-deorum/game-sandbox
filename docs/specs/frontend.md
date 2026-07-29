@@ -51,7 +51,7 @@ An operator may set an optional **Season description** as display-only Markdown 
 
 A Season description is one inline Markdown paragraph of at most 2,000 characters after line endings are normalized and surrounding whitespace is trimmed. Soft-wrapped lines are allowed, but a blank line that creates a second paragraph is rejected. The description supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, relative links, and other link schemes remain inactive. Links open in a new tab with safe external-link attributes.
 
-The built-in **Naive agent** is always available to watch. Ready submissions for the play-open season are the other choices.
+Every builtin declared by the environment is available to watch under its display label. Ready submissions for the play-open season are the other choices.
 
 The replay viewer shows the visible gameplay settings and seed used by the episode.
 
@@ -83,20 +83,26 @@ See [Submissions](submission.md).
 
 | Flow | Configuration |
 | --- | --- |
-| Rate | Intended agent in every resolved seat, season gameplay parameters, and random seed, all locked |
+| Rate | Intended agent in every unrestricted seat; a restricted seat offers only Human or its designated builtin when human-capable; all other settings are locked |
 | Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
 | Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
 | Play | Human-capable seat assignment, companion agent for a wide human seat, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
 
-Any built-in or submitted agent opens the same seat-assignment flow. The selected agent is preselected, every seat can be reassigned, and all required seats must be filled before a multi-agent session starts. The flow shows how many players each seat covers.
+Any named builtin or submitted agent opens the same seat-assignment flow. The selected agent is preselected in each unrestricted seat, every editable seat can be reassigned, and all required seats must be filled before a multi-agent session starts. Agent controls use stable builtin names as values and show their declared labels.
 
-Selecting **Human** is allowed when the seat contains a human-capable player. The environment's declared member order chooses the first human-capable member for the person. A wide human seat then reveals a required **Companion agent** control populated from the same built-in and ready-submission choices used by ordinary agent seats. One selected companion drives every remaining player through separate instances. The user must choose it explicitly before starting. A singleton human seat has no companion control. See [Environments](environment.md#players-and-seats).
+Selecting **Human** is allowed when the seat contains a human-capable player. The environment's declared member order chooses the first human-capable member for the person. A wide unrestricted human seat then reveals a required **Companion agent** control populated from the same named-builtin and ready-submission choices used by ordinary agent seats. One selected companion drives every remaining player through separate instances. The user must choose it explicitly before starting. A singleton human seat has no companion control.
 
-The **Rate** action is the exception: its configuration is locked as the table shows, and the viewer rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
+A restricted seat accepts only Human or its designated builtin. Play and Rate default a human-capable restricted seat to Human. Watch always assigns its builtin. If the person chooses another seat during Play, the restricted seat returns to its builtin. A restricted seat with no human-capable player stays locked to the builtin. A wide restricted human seat explains that its designated builtin controls the other players and shows no companion picker. See [Environments](environment.md#players-and-seats).
+
+The **Rate** action is the exception: the intended agent fills every unrestricted seat, and those assignments and all ordinary session settings are locked. A human-capable restricted seat keeps its Human-or-designated-builtin control enabled, and when it is set to Human the rating run becomes a session the viewer plays. The viewer rates the intended agent after the session. **Watch again** and ordinary watch actions keep each unrestricted assignment and ordinary setting editable.
+
+Each seat row keeps its name and player count together in a two-line heading to the left of the assignment control. The player count uses singular or plural wording, and the assignment control's accessible name remains the seat name alone. The heading column has a fixed minimum width so controls align when player counts have different text widths, including on a narrow viewport.
 
 Start forms render visible effective environment parameters, including the synthesized `players` or `seat_plan` parameter, with labelled controls appropriate to their types. A numeric parameter is hidden when its minimum equals its maximum, and a `choice` is hidden when it has one option. A non-empty `multi_choice` remains visible because choosing none differs from choosing its one declared option. Invalid values show a field error and prevent starting. Hidden parameters stay in the complete submitted map. A single-seat watch starts immediately when it has no visible configuration.
 
-The season config editor lists every effective parameter, including the synthesized layout parameter and values hidden from players. Each value either inherits the environment default or supplies an override, so an empty string remains valid. The editor validates and canonicalizes values before saving and serializes only current effective parameter names. It reports the resolved seat count and projected game count for the match design, or a typed reason when the layout cannot accommodate it.
+The season config editor lists every effective parameter, including the synthesized layout parameter and values hidden from players. Each value either inherits the environment default or supplies an override, so an empty string remains valid. The editor validates and canonicalizes values before saving and serializes only current effective parameter names.
+
+Each matchup row keeps one selector per seat it holds. A selector offers `submission` plus every builtin declared by the environment, displayed by label and saved as `builtin:<name>`. A seat the resolved layout restricts is set to its designated builtin and disabled. Changing the seat plan or the player count conforms every row to the newly resolved layout: its width, and every restricted seat's designated builtin. A row saved under an earlier layout keeps its stored seats until the operator conforms it. The editor reports the resolved seat count and projected game count for the match design, or in their place one reason the design cannot run, which carries a "Match the layout" action whenever a row's width or restricted seats disagree with the resolved layout.
 
 ## On-demand live play
 
@@ -114,7 +120,7 @@ The interface prevents:
 - Rating after play closes.
 - Rating a pure built-in-only session.
 
-The built-in baseline may be rated in a mixed session. Ratings affect only the human-feedback board.
+A named builtin may be rated in a mixed session. Ratings affect only the human-feedback board.
 
 The rating panel appears after the session ends. It may show the operator's season instructions and the author's instructions for an agent. Both guide the same score.
 

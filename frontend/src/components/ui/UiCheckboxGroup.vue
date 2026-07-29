@@ -6,6 +6,7 @@ const props = defineProps<{
   options: readonly { value: string; label: string }[]
   hint?: string
   error?: string
+  disabled?: boolean
 }>()
 const model = defineModel<string[]>({ required: true })
 const id = useId()
@@ -25,7 +26,12 @@ function toggle(value: string, checked: boolean): void {
 </script>
 
 <template>
-  <fieldset class="ui-checkbox-group" :aria-describedby="describedby" :aria-invalid="error ? true : undefined">
+  <fieldset
+    class="ui-checkbox-group"
+    :disabled="disabled"
+    :aria-describedby="describedby"
+    :aria-invalid="error ? true : undefined"
+  >
     <legend>{{ legend }}</legend>
     <label v-for="option in options" :key="option.value" class="ui-checkbox-option">
       <input

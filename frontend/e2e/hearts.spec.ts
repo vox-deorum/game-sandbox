@@ -130,7 +130,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     // seats produce both ordered seatings, followed by the Naive-only baseline.
     await configureMatches(admin, season.id, [
       {
-        seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+        seats: ['submission', 'submission', 'builtin:naive', 'builtin:naive'],
         seeds: [0],
         games: 1,
       },
@@ -348,9 +348,9 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     const playerSummaries = await gameRows.locator('td:nth-child(2)').allInnerTexts()
     expect(playerSummaries).toEqual(
       expect.arrayContaining([
-        `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · naive · naive`,
-        `${HEARTS_OWNERS.moonshot} · ${HEARTS_OWNERS.oracle} · naive · naive`,
-        'naive · naive · naive · naive',
+        `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · Naive agent · Naive agent`,
+        `${HEARTS_OWNERS.moonshot} · ${HEARTS_OWNERS.oracle} · Naive agent · Naive agent`,
+        'Naive agent · Naive agent · Naive agent · Naive agent',
       ]),
     )
     await expect(matchups.getByRole('link', { name: 'Replay' }).first()).toBeVisible()

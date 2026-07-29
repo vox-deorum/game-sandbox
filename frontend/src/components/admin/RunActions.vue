@@ -8,8 +8,9 @@
   latest-run status and the freshly settled boards.
 
   A `409 run_in_progress` surfaces as "a run is already in progress"; a `409 empty_schedule` points
-  back at the match design. Unsaved config edits prompt rather than block: a run reads the persisted
-  config, so the operator confirms that the pending draft will not apply before the run starts.
+  back at the match design. A saved configuration rejected at trigger time shows the backend's detail
+  so the operator can correct it. Unsaved config edits prompt rather than block: a run reads the
+  persisted config, so the operator confirms that the pending draft will not apply before the run starts.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -86,6 +87,8 @@ async function trigger(): Promise<void> {
   } else if (result.reason === 'empty_schedule') {
     error.value =
       'This season resolves to an empty schedule. Add at least one match in the match design before running.'
+  } else if (result.reason === 'invalid_config' || result.reason === 'invalid_parameters') {
+    error.value = `The saved configuration is invalid. ${result.message}. Update it, save it, then try again.`
   } else {
     error.value = 'Could not start the run. Please try again.'
   }

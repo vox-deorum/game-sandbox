@@ -155,7 +155,10 @@ function wideEnvironments(): EnvironmentRegistry {
         env_id: WIDE_ENV_ID,
         display_name: 'Synthetic wide',
         description: 'A four-player synthetic layout for orchestrator tests.',
-        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
+        builtin_agents: [
+          { name: 'naive', label: 'Naive agent' },
+          { name: 'scripted_hero', label: 'Scripted hero' },
+        ],
         layout: {
           kind: 'seat_plans',
           plans: [
@@ -163,6 +166,14 @@ function wideEnvironments(): EnvironmentRegistry {
               key: 'uneven',
               title: 'Uneven',
               seats: [{ players: [0, 2, 3] }, { players: [1] }],
+            },
+            {
+              key: 'restricted',
+              title: 'Restricted',
+              seats: [
+                { players: [0, 2, 3], restricted_builtin: 'scripted_hero' },
+                { players: [1] },
+              ],
             },
           ],
         },
@@ -186,7 +197,10 @@ function wideEnvironments(): EnvironmentRegistry {
             description: 'Seat-to-player layout for each game.',
             type: 'choice',
             default: 'uneven',
-            choices: [{ value: 'uneven', label: 'Uneven' }],
+            choices: [
+              { value: 'uneven', label: 'Uneven' },
+              { value: 'restricted', label: 'Restricted' },
+            ],
           },
         ],
       },
@@ -528,8 +542,7 @@ describe('orchestrator', () => {
         issued = input
       })
       const submission = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
-      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
-      if (season === undefined) throw new Error('synthetic wide season was not created')
+      const season = await storage.ensureOpenSeason(WIDE_ENV_ID, 1)
 
       const result = await orch.start({
         userId: 'alice',
@@ -658,6 +671,111 @@ describe('orchestrator', () => {
       expect(await storage.listSessionSubmissions(result.id)).toMatchObject([
         { submission_id: companion.id, seat_id: 'seat_0' },
       ])
+      await orch.stop(result.id, 'alice')
+    })
+
+    it('enforces the designated builtin on a restricted seat before session launch', async () => {
+      const source = new FakeSource()
+      const orch = makeWideOrchestrator(source, () => undefined)
+      const submission = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
+      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
+      if (season === undefined) throw new Error('synthetic wide season was not created')
+      const startRestricted = (seat_0: SeatAssignment): Promise<{ id: string; wsPath: string }> =>
+        orch.start({
+          userId: 'alice',
+          envId: WIDE_ENV_ID,
+          seasonId: season.id,
+          parameters: { seat_plan: 'restricted' },
+          seats: { seat_0, seat_1: { kind: 'builtin-agent', name: 'naive' } },
+        })
+
+      await expect(startRestricted({ kind: 'builtin-agent', name: 'naive' })).rejects.toMatchObject(
+        {
+          status: 400,
+          message: expect.stringContaining('only accepts a human or built-in agent scripted_hero'),
+        },
+      )
+      await expect(
+        startRestricted({ kind: 'submission', submissionId: submission.id }),
+      ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+
+      const result = await startRestricted({ kind: 'builtin-agent', name: 'scripted_hero' })
+      const launch = driver.lastLaunch()
+      const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        player_bindings: Record<string, unknown>
+      }
+      expect(config.player_bindings).toMatchObject({
+        player_0: { kind: 'builtin-agent', name: 'scripted_hero' },
+        player_2: { kind: 'builtin-agent', name: 'scripted_hero' },
+        player_3: { kind: 'builtin-agent', name: 'scripted_hero' },
+      })
+      await orch.stop(result.id, 'alice')
+    })
+
+    it('derives restricted human companions and rejects a client companion or undeclared ordinary companion', async () => {
+      const source = new FakeSource()
+      let issued: IssueOfficialGrantsInput | undefined
+      const orch = makeWideOrchestrator(source, (input) => {
+        issued = input
+      })
+      const season = await storage.ensureOpenSeason(WIDE_ENV_ID, 1)
+      const base = {
+        userId: 'alice',
+        envId: WIDE_ENV_ID,
+        seasonId: season.id,
+      }
+
+      await expect(
+        orch.start({
+          ...base,
+          parameters: { seat_plan: 'restricted' },
+          seats: {
+            seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
+            seat_1: { kind: 'builtin-agent', name: 'naive' },
+          },
+        }),
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('derives') })
+      await expect(
+        orch.start({
+          ...base,
+          parameters: { seat_plan: 'uneven' },
+          seats: {
+            seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'unknown' } },
+            seat_1: { kind: 'builtin-agent', name: 'naive' },
+          },
+        }),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining('unknown built-in agent'),
+      })
+      expect(driver.launches).toHaveLength(0)
+
+      const result = await orch.start({
+        ...base,
+        parameters: { seat_plan: 'restricted' },
+        seats: {
+          seat_0: { kind: 'human' },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
+        },
+      })
+      const launch = driver.lastLaunch()
+      const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        player_bindings: Record<string, unknown>
+        players: Record<string, unknown>
+      }
+      expect(config.player_bindings).toEqual({
+        player_0: { kind: 'external' },
+        player_2: { kind: 'builtin-agent', name: 'scripted_hero' },
+        player_3: { kind: 'builtin-agent', name: 'scripted_hero' },
+        player_1: { kind: 'builtin-agent', name: 'naive' },
+      })
+      expect(config.players.player_2).toEqual({
+        kind: 'agent',
+        builtin_name: 'scripted_hero',
+        label: 'Scripted hero',
+      })
+      expect(issued?.agentPlayers).toEqual(['player_2', 'player_3', 'player_1'])
       await orch.stop(result.id, 'alice')
     })
 

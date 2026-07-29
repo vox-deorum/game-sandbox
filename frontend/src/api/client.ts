@@ -1455,7 +1455,16 @@ export async function unreleaseSeason(seasonId: string): Promise<SeasonView> {
 /** The outcome of triggering a run: the new run id, or a typed refusal the console surfaces. */
 export type TriggerRunResult =
   | { ok: true; id: string; status: RunStatus }
-  | { ok: false; reason: 'run_in_progress' | 'empty_schedule' | 'failed'; message: string }
+  | {
+      ok: false
+      reason:
+        | 'run_in_progress'
+        | 'empty_schedule'
+        | 'invalid_config'
+        | 'invalid_parameters'
+        | 'failed'
+      message: string
+    }
 
 /** Trigger (or re-run) the workflow. Non-blocking; returns the new run id immediately. */
 export async function triggerRun(seasonId: string): Promise<TriggerRunResult> {
@@ -1466,10 +1475,19 @@ export async function triggerRun(seasonId: string): Promise<TriggerRunResult> {
     const body = (await res.json()) as { id: string; status: RunStatus }
     return { ok: true, id: body.id, status: body.status }
   }
-  const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string }
+  const body = (await res.json().catch(() => ({}))) as {
+    code?: string
+    reason?: string
+    error?: string
+  }
   const reason =
-    body.code === 'run_in_progress' || body.code === 'empty_schedule' ? body.code : 'failed'
-  return { ok: false, reason, message: body.error ?? res.statusText }
+    body.code === 'run_in_progress' ||
+    body.code === 'empty_schedule' ||
+    body.code === 'invalid_config' ||
+    body.code === 'invalid_parameters'
+      ? body.code
+      : 'failed'
+  return { ok: false, reason, message: body.reason ?? body.error ?? res.statusText }
 }
 
 /** The outcome of a cancel request: accepted, or a typed refusal for an already-terminal run. */

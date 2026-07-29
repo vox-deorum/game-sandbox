@@ -42,10 +42,10 @@ export interface BuildScheduleInput {
 /**
  * Expand a match design over its live submissions into the ordered, fully-resolved game list.
  *
- * For each match, the fixed `builtin-naive` seats keep the baseline ref and the `submission` seats
+ * For each match, fixed named builtin seats keep their refs and the `submission` seats
  * are filled from the sorted snapshot: `P(N, K)` ordered seatings when `seatOrderMatters`, else
  * `C(N, K)` unordered rosters. Each seating emits `games` runs with seeds cycling by run index. The
- * Naive baseline (every submission seat filled with `builtin-naive`) is always appended once, so the
+ * Naive baseline (every submission seat filled with `builtin:naive`) is always appended once, so the
  * board has a comparable baseline row even with zero ready submissions. A match with no submission
  * seat is just that baseline. `game_index` is a single deterministic counter across the whole run.
  * Keep enumeration changes aligned with `projectSchedule`; the shared-projection test in
@@ -92,12 +92,12 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
 /**
  * Resolve one concrete seat assignment from a match's seat specs and a chosen seating.
  *
- * The compact `builtin-naive` spec takes the named naive baseline ref. `submission` specs are filled left-to-right from
- * `seating`; a `null` seating fills every submission seat with the baseline, which is how the
+ * A compact `builtin:<name>` spec takes its named builtin ref. `submission` specs are filled left-to-right
+ * from `seating`; a `null` seating fills every submission seat with the baseline, which is how the
  * always-present Naive baseline row resolves. `buildSchedule` only ever passes a full-length seating
  * or `null`, since it enumerates distinct full seatings and emits the baseline separately.
  *
- * Repeated refs are intentional and never deduped or rejected: the baseline repeats `builtin-naive`
+ * Repeated refs are intentional and never deduped or rejected: the baseline repeats `builtin:naive`
  * across every submission seat, and a self-play seating may repeat one submission across seats. The
  * downstream image build and harness (Stage 7.5) load an independent instance per seat.
  */
@@ -107,7 +107,7 @@ export function resolveSeats(
 ): AgentRef[] {
   let submissionIndex = 0
   return seats.map((spec) => {
-    if (spec === 'builtin-naive') return NAIVE
+    if (spec !== 'submission') return { kind: 'builtin', name: spec.slice('builtin:'.length) }
     return seating?.[submissionIndex++] ?? NAIVE
   })
 }

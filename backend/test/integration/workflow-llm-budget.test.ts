@@ -168,7 +168,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       deps_version: DEPS_VERSION,
       matches: [
         {
-          seats: ['submission', 'builtin-naive', 'builtin-naive', 'builtin-naive'],
+          seats: ['submission', 'builtin:naive', 'builtin:naive', 'builtin:naive'],
           seeds,
           games: 2,
         },

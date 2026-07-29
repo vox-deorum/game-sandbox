@@ -109,6 +109,8 @@ interface ValidatedSeatAssignment {
   assignment: SeatAssignment
   /** Set only for a human assignment: the seat's first human-capable member, in declared order. */
   humanPlayer?: string
+  /** The designated builtin that fills nonhuman members of a restricted wide human seat. */
+  derivedCompanion?: AgentSeatAssignment
 }
 
 /** What the HTTP layer returns to a client that started a session. */
@@ -467,6 +469,22 @@ export class Orchestrator {
       if (assignment === undefined) {
         throw new OrchestratorError(400, `missing assignment for required seat ${seat.seatId}`)
       }
+      const restrictedBuiltin = seat.restrictedBuiltin
+      if (restrictedBuiltin !== null) {
+        if (assignment.kind === 'human') {
+          if (assignment.companion !== undefined) {
+            throw new OrchestratorError(
+              400,
+              `restricted seat ${seat.seatId} derives its builtin companion`,
+            )
+          }
+        } else if (assignment.kind !== 'builtin-agent' || assignment.name !== restrictedBuiltin) {
+          throw new OrchestratorError(
+            400,
+            `seat ${seat.seatId} only accepts a human or built-in agent ${restrictedBuiltin}`,
+          )
+        }
+      }
       if (assignment.kind === 'human') {
         const humanPlayer = seat.players.find((candidate) => humanCapable.has(candidate))
         if (humanPlayer === undefined) {
@@ -478,11 +496,22 @@ export class Orchestrator {
         if (seat.players.length === 1 && assignment.companion !== undefined) {
           throw new OrchestratorError(400, `singleton seat ${seat.seatId} cannot have a companion`)
         }
-        if (seat.players.length > 1 && assignment.companion === undefined) {
+        if (
+          seat.players.length > 1 &&
+          assignment.companion === undefined &&
+          restrictedBuiltin === null
+        ) {
           throw new OrchestratorError(400, `wide seat ${seat.seatId} requires a companion`)
         }
         humanCount += 1
-        return { seatId: seat.seatId, assignment, humanPlayer }
+        return {
+          seatId: seat.seatId,
+          assignment,
+          humanPlayer,
+          ...(restrictedBuiltin === null || seat.players.length === 1
+            ? {}
+            : { derivedCompanion: { kind: 'builtin-agent' as const, name: restrictedBuiltin } }),
+        }
       }
       return { seatId: seat.seatId, assignment }
     })
@@ -506,15 +535,16 @@ export class Orchestrator {
     playSeason: Season,
   ): Promise<ResolvedSeat[]> {
     const resolved: ResolvedSeat[] = []
-    for (const { seatId, assignment, humanPlayer } of assignments) {
+    for (const { seatId, assignment, humanPlayer, derivedCompanion } of assignments) {
       if (assignment.kind === 'human') {
         if (humanPlayer === undefined) {
           throw new Error(`human seat ${seatId} was validated without a player`)
         }
+        const companionAssignment = derivedCompanion ?? assignment.companion
         const companion =
-          assignment.companion === undefined
+          companionAssignment === undefined
             ? undefined
-            : await this.resolveAgentBinding(assignment.companion, meta, playSeason)
+            : await this.resolveAgentBinding(companionAssignment, meta, playSeason)
         resolved.push({
           seatId,
           kind: 'human',
@@ -528,6 +558,7 @@ export class Orchestrator {
     return resolved
   }
 
+  /** The single place that rejects a builtin name the environment does not declare. */
   private async resolveAgentBinding(
     assignment: AgentSeatAssignment,
     meta: EnvironmentMeta,

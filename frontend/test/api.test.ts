@@ -537,7 +537,7 @@ describe('api client', () => {
     })
   })
 
-  it('maps the trigger-run conflicts (run_in_progress, empty_schedule)', async () => {
+  it('maps typed trigger-run failures and preserves validation details', async () => {
     stubFetch(async () => jsonResponse({ error: 'busy', code: 'run_in_progress' }, 409))
     expect(await triggerRun('iter-1')).toEqual({
       ok: false,
@@ -551,6 +551,40 @@ describe('api client', () => {
       ok: false,
       reason: 'empty_schedule',
       message: 'empty',
+    })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () =>
+      jsonResponse(
+        {
+          error: 'invalid season config',
+          code: 'invalid_config',
+          reason: 'Match 1 must equal the resolved layout count of 4',
+        },
+        400,
+      ),
+    )
+    expect(await triggerRun('iter-1')).toEqual({
+      ok: false,
+      reason: 'invalid_config',
+      message: 'Match 1 must equal the resolved layout count of 4',
+    })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () =>
+      jsonResponse(
+        {
+          error: 'invalid season parameters',
+          code: 'invalid_parameters',
+          reason: 'overrides.parameters.pipe_gap: must be at least 60',
+        },
+        400,
+      ),
+    )
+    expect(await triggerRun('iter-1')).toEqual({
+      ok: false,
+      reason: 'invalid_parameters',
+      message: 'overrides.parameters.pipe_gap: must be at least 60',
     })
 
     vi.unstubAllGlobals()
