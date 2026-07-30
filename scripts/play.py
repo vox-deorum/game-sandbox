@@ -180,6 +180,7 @@ def local_config(
         "seed": seed,
         "player_bindings": bindings,
         "players": players,
+        "external_chat_player": human_player,
         "recording_dir": str(recording_dir),
         "recording_id": "local",
         "llm": None,

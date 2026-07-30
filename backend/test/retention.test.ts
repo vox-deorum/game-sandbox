@@ -108,6 +108,7 @@ describe('retention', () => {
         createdAt: ago(0),
         process,
         externalPlayers: ['player_0'],
+        externalChatPlayer: 'player_0',
         messaging: { enabled: true, cap: 120 },
         deps: {
           storage,

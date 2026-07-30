@@ -1,6 +1,6 @@
 # Stage 17.1: Unified asynchronous messaging
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 17](../stage-17-simultaneous-stepping.md), build-order step 1.
 
@@ -32,7 +32,7 @@ Stage 17.3 reuses the same phases for a parallel tick. All actions finish first,
 
 `SessionControl` keeps the bounded per-player FIFO it already owns. `ExternalChatFrame`, the Python live-command parser, and `take_chat()` remove the compose tick. Queue capacity remains sixteen frames for the designated external player.
 
-Replace `configure_chat(enabled)` with configuration that carries the one designated external sender or disables chat. `SessionControl` rejects any other player ID before allocating a queue, so spoofed commands cannot retain memory for unknown players. A frame from the designated sender may still enter its bounded queue after that player becomes inactive; `Episode` drains and drops it at the next boundary. When the transition first makes the human inactive, `Episode` also drains and discards the queue immediately.
+Replace `configure_chat(enabled)` with configuration that carries the one designated external sender or disables chat. `SessionControl` rejects any other player ID before allocating a queue, so spoofed commands cannot retain memory for unknown players. A frame from the designated sender may still enter its bounded queue after that player becomes inactive; `Episode` drains and drops it at the next boundary, which the transport's own bound is enough to make safe.
 
 The acting-turn `ExternalChatCoordinator` is removed. It no longer needs to announce sender-and-tick opportunities, retain a policy history, or allow a one-drain grace period. `Episode` identifies the one designated `ExternalPlayer`, drains that source on every completed step regardless of the acting player, and sends the resulting `{"to", "text"}` batch through `ChatRouter.validate_outgoing()` with the one currently published human policy.
 
@@ -44,11 +44,11 @@ The acting-turn `ExternalChatCoordinator` is removed. It no longer needs to anno
 
 Messages from an inactive or unknown sender, duplicate recipients from one sender, invalid text, and policy-disallowed targets are dropped with concise stderr diagnostics. They do not create state diagnostics, client rejection envelopes, illegal moves, or forfeits.
 
-The environment's `chat_policy(sender)` hook may be evaluated for the designated human even when another player is acting. Logical active membership means `env.agents` minus players currently marked terminated or truncated, including AEC players awaiting required dead steps. Policy validation rejects recipients outside that set. Its fallback is every other logically active player in canonical order with broadcast as the default. Agent policy is still evaluated for the agent whose `chat` hook runs.
+The environment's `chat_policy(sender)` hook may be evaluated for the designated human even when another player is acting. Logical active membership means `env.agents` minus players currently marked terminated or truncated, including AEC players awaiting required dead steps. Policy validation removes recipients outside that set, and a default that goes with them falls back to broadcast, so a narrow policy is never widened to the fallback by a player leaving. Its fallback is every other logically active player in canonical order with broadcast as the default. Agent policy is still evaluated for the agent whose `chat` hook runs.
 
 `Episode` retains exactly one resolved human `ChatPolicy`: the policy published on the latest live state. The next human FIFO drain validates every queued frame against that cached value, then the completed environment transition resolves and publishes the following value. Required AEC dead steps never re-evaluate or replace it. This is current-state retention, not the retired history of sender-and-tick opportunities.
 
-One recorded batch has deterministic order: the human FIFO first, then agent batches in canonical player order, retaining each sender's returned order. The duplicate-recipient set resets for each sender. Every active player's inbox is drained once at that player's acting opportunity, including external and chat-less players whose drained value is discarded. After delivery, inboxes for players that became inactive on the transition are purged.
+One recorded batch has deterministic order: the human FIFO first, then agent batches in canonical player order, retaining each sender's returned order. The duplicate-recipient set resets for each sender. Every active player's inbox is drained once at that player's acting opportunity, including external and chat-less players whose drained value is discarded. A completed transition discards the inbox of every player that left on it, and delivery skips a recipient that left the same way.
 
 ## Command and relay
 
@@ -107,7 +107,7 @@ Harness tests cover:
 - a frame arriving after the atomic drain waiting for the following boundary;
 - policy evaluation against the pre-step world;
 - an unknown sender being rejected without queue allocation;
-- a designated sender becoming inactive, with its queued frames purged at the transition and later bounded frames dropped at the next boundary;
+- a designated sender becoming inactive, with its queued frames drained and dropped at each following boundary;
 - a stale target, duplicate target from one sender, over-cap text, and full FIFO dropping diagnostically without a forfeit;
 - independent per-sender duplicate limits and deterministic human-then-canonical-agent recording order;
 - agent and human messages sharing one recorded batch while neither is visible to a chat hook on that boundary;

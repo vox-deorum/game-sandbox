@@ -55,11 +55,10 @@ describe('serialization', () => {
     const line = serializeCommand({
       kind: 'chat',
       player: 'player_0',
-      tick: 3,
       to: null,
       text: 'hi',
     })
-    expect(line).toBe('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"hi"}')
+    expect(line).toBe('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
   })
 
   it('builds the session status frame with and without a reason', () => {

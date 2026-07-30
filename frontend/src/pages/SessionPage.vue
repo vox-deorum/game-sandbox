@@ -144,6 +144,7 @@ const {
   buffering,
   endReason,
   finalResult,
+  latestState,
   connect,
   togglePause,
   stop,
@@ -182,7 +183,7 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
 const liveChatEnabled = computed(() => row.value?.mode === 'human' && status.value === 'running')
 const { chatProps, sendInput, sendChat } = useLiveChat({
-  state: lastState,
+  state: latestState,
   controlledPlayers,
   enabled: liveChatEnabled,
   connection,

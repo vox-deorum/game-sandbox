@@ -77,33 +77,66 @@ test('narrow Play keeps wide-seat player counts in the heading column', async ({
   ).toBeLessThan(assignmentControlBox.x)
 })
 
+function decisionRows(page: Page): Locator {
+  return page.locator('.decision-log tbody:last-of-type tr')
+}
+
+function humanDecisionRows(page: Page): Locator {
+  return decisionRows(page).filter({ hasText: 'P0', hasNotText: '—' })
+}
+
 /** Click the bid-1 chip in the Spades renderer's fixed 960 by 720 internal coordinate space. */
-async function bidOne(canvas: Locator): Promise<void> {
+async function bidOne(page: Page, canvas: Locator): Promise<void> {
   const box = await canvas.boundingBox()
   expect(box, 'Spades canvas bounding box').not.toBeNull()
   if (box === null) {
     throw new Error('no Spades canvas bounding box')
   }
+  const humanDecisions = humanDecisionRows(page)
+  const before = await humanDecisions.count()
   await canvas.click({
     position: {
       x: (372 / 960) * box.width,
       y: (330 / 720) * box.height,
     },
   })
+  await expect(humanDecisions).toHaveCount(before + 1, { timeout: 30_000 })
 }
 
 /** Play one currently legal card from the controlled player's raised hand. */
 async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Promise<void> {
+  // Trick winners can reorder the next lead, so a variable number of agent rows may separate P0's
+  // decisions. Once the row stream has stayed still longer than the 900 ms live cadence, the agents
+  // are done and the harness is waiting for P0. This replaces the old turn-gated chat signal.
+  const rows = decisionRows(page)
+  let observedCount = -1
+  let unchangedSince = Date.now()
+  await expect
+    .poll(
+      async () => {
+        const count = await rows.count()
+        if (count !== observedCount) {
+          observedCount = count
+          unchangedSince = Date.now()
+        }
+        return Date.now() - unchangedSince
+      },
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThanOrEqual(1_500)
+
   const box = await canvas.boundingBox()
   expect(box, 'Spades canvas bounding box').not.toBeNull()
   if (box === null) {
     throw new Error('no Spades canvas bounding box')
   }
   const { startX, step } = handFanGeometry(cardCount)
-  const composer = page.getByRole('group', { name: 'Chat', exact: true })
+  const humanDecisions = humanDecisionRows(page)
+  const before = await humanDecisions.count()
 
   // Legal cards are raised to internal y=600 while illegal cards begin at y=610. Clicking y=604
-  // therefore reaches only a legal card, without duplicating the rules in the test.
+  // therefore reaches only a legal card, without duplicating the rules in the test. Chat now remains
+  // available across every turn, so the new P0 decision row is the proof that a click advanced play.
   for (let index = 0; index < cardCount; index += 1) {
     await canvas.click({
       position: {
@@ -112,7 +145,7 @@ async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Pr
       },
     })
     try {
-      await composer.waitFor({ state: 'detached', timeout: 1_200 })
+      await expect(humanDecisions).toHaveCount(before + 1, { timeout: 1_200 })
       return
     } catch {
       // This card was not raised, so the renderer emitted no action. Try the next card.
@@ -125,15 +158,14 @@ async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Pr
 async function completeHumanSpadesHand(page: Page, canvas: Locator): Promise<void> {
   const composer = page.getByRole('group', { name: 'Chat', exact: true })
   await expect(composer).toBeVisible({ timeout: 30_000 })
-  await bidOne(canvas)
-  await expect(composer).toHaveCount(0)
+  await bidOne(page, canvas)
+  await expect(composer).toBeVisible()
 
   for (let cardCount = 13; cardCount >= 1; cardCount -= 1) {
-    await expect(composer).toBeVisible({ timeout: 30_000 })
-    // The chat contract follows the newest state immediately, while the canvas finishes the prior
-    // opponent card's 900 ms live animation. Wait for that documented cadence before hit-testing.
-    await page.waitForTimeout(1_000)
     await playLegalCard(page, canvas, cardCount)
+    if (cardCount > 1) {
+      await expect(composer).toBeVisible()
+    }
   }
 }
 
@@ -211,13 +243,21 @@ test('Spades chat is filtered live and complete in replay', async ({
     await expect(controllerChat.getByText(BROADCAST)).toHaveCount(0)
     await expect(controllerChat.getByText(TARGETED)).toHaveCount(0)
 
-    await bidOne(canvas)
+    await bidOne(page, canvas)
+    await expect(controllerChat).toBeVisible()
     await expect(controllerChat.getByText(BROADCAST)).toBeVisible({ timeout: 30_000 })
     await expect(controllerChat.getByText(TARGETED)).toBeVisible()
     await expect(controllerChat.getByText('from you')).toHaveCount(2)
     // Both messages queued before the human's first action, so both ride the opening tick 0 — the
     // ChatPanel's tick badge is the browser-observable proof of which recorded state carried them.
     await expect(controllerChat.locator('.chat-tick')).toHaveText(['tick 0', 'tick 0'])
+
+    // Opponent states continue after the bid, but the designated human policy remains present on each
+    // one. The composer stays mounted and ordinary state churn does not erase an unsent draft.
+    await message.fill('draft across opponent turns')
+    await page.waitForTimeout(1_200)
+    await expect(controllerChat).toBeVisible()
+    await expect(message).toHaveValue('draft across opponent turns')
 
     await expect(spectatorChat.getByText(BROADCAST)).toBeVisible()
     await expect(spectatorChat.getByText(TARGETED)).toHaveCount(0)

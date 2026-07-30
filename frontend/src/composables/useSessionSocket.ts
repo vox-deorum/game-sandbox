@@ -71,6 +71,10 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const paused = ref(false)
   const endReason = ref<string | null>(null)
   const finalResult = ref<{ score: string | null; ticks: number | null } | null>(null)
+  // Transport-authoritative state advances on receipt, before optional visual pacing. Interactive
+  // policy such as chat must follow the harness immediately even while the renderer animates older
+  // queued frames.
+  const latestState = shallowRef<StepState | null>(null)
   // True while playout has begun but the jitter buffer has run dry awaiting more frames, so the page
   // can show a waiting indicator over the held last frame. Only ever set in buffered (watch) mode.
   const buffering = ref(false)
@@ -199,6 +203,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
       onHeader: frames.onHeader,
       onState: (state) => {
+        latestState.value = state
         if (pacing) {
           frameQueue.push(state)
           maybeStart(false)
@@ -283,6 +288,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     buffering,
     endReason,
     finalResult,
+    latestState,
     connect,
     send,
     togglePause,

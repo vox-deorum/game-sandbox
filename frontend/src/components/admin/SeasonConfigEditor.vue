@@ -12,6 +12,11 @@
   metadata arriving both leave the stored seats exactly as saved. A row saved under an earlier layout
   keeps its seats until the operator conforms it with "Match the layout".
 
+  The projection counts exactly what the draft would create: a total beside the resolved seat and
+  roster sizes, and each match's own share in its heading. One box carries the total or the single
+  reason there is none, never both. Only the roster makes it an estimate, since triggering a run
+  freezes a fresh one.
+
   A config edit once runs exist, or a deps_version change once submissions exist, is destructive. The
   first save attempt goes without `force`; the backend refuses it with a typed conflict, and the editor
   opens a confirmation dialog spelling out exactly what will be deleted before re-sending with `force`.
@@ -26,7 +31,11 @@ import {
   resolveLayout,
 } from '@game-sandbox/schema/environment'
 import { MODEL_ALIASES } from '@game-sandbox/schema/llm'
-import { type ScheduleMatchConfig } from '@game-sandbox/schema/schedule'
+import {
+  projectSchedule,
+  type ScheduleProjection,
+  ScheduleProjectionError,
+} from '@game-sandbox/schema/schedule'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -40,7 +49,6 @@ import {
   type SeatSpec,
 } from '../../api/client.js'
 import { formatParameterValue, initializeParameters, validateParameters } from '../../lib/parameters.js'
-import SchedulePreview from './SchedulePreview.vue'
 import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
@@ -114,16 +122,24 @@ const parameterValues = ref<Record<string, ParameterValue>>({})
 const parameterValidation = computed(() =>
   validateParameters(environmentParameters.value, parameterValues.value),
 )
-const resolvedSeats = computed(() => {
-  if (props.environment === undefined || Object.keys(parameterValidation.value.errors).length > 0) {
-    return null
-  }
+/** The layout the current parameter values select, or null when they select none. */
+const resolvedLayout = computed(() => {
+  if (props.environment === undefined) return null
   try {
-    return resolveLayout(props.environment, parameterValidation.value.values).seats
+    return resolveLayout(props.environment, parameterValidation.value.values)
   } catch {
     return null
   }
 })
+/**
+ * The layout's seats, and only while every parameter is valid: conforming a row to a layout derived
+ * from a value the declarations rejected would write the wrong seats.
+ */
+const resolvedSeats = computed(() =>
+  Object.keys(parameterValidation.value.errors).length > 0
+    ? null
+    : (resolvedLayout.value?.seats ?? null),
+)
 const seatOptions = computed<{ value: SeatSpec; label: string }[]>(() => [
   { value: 'submission', label: 'Submission' },
   ...(props.environment?.builtin_agents ?? []).map((builtin) => ({
@@ -136,10 +152,72 @@ const seatOptions = computed<{ value: SeatSpec; label: string }[]>(() => [
 const layoutKey = computed(
   () => resolvedSeats.value?.map((seat) => seat.restrictedBuiltin ?? '').join('|') ?? null,
 )
-/** The draft rows the schedule preview projects over: seat composition and game count only. */
-const draftMatches = computed<ScheduleMatchConfig[]>(() =>
-  matches.value.map((match) => ({ seats: match.seats, games: match.games })),
-)
+/** "1 seat", "3 seats": a count with its noun, pluralized by adding an s. */
+function count(value: number, noun: string): string {
+  return `${value.toLocaleString()} ${value === 1 ? noun : `${noun}s`}`
+}
+
+/** Phrase one typed projection failure for an operator reading the match design. */
+function projectionMessage(error: ScheduleProjectionError, seats: number): string {
+  const index = error.matchIndex
+  const match = index === null ? 'this design' : `Match ${index + 1}`
+  switch (error.reason) {
+    case 'seat_count_mismatch': {
+      const drafted = index === null ? 0 : (matches.value[index]?.seats.length ?? 0)
+      return `Schedule projection unavailable: ${match} has ${count(drafted, 'seat')}, but the resolved layout has ${seats}.`
+    }
+    case 'unsafe_integer':
+      return `Schedule projection unavailable: ${match} creates too many games to count safely.`
+    case 'invalid_games':
+      return `Schedule projection unavailable: ${match} has an invalid game count.`
+    case 'invalid_eligible_submission_count':
+      return 'Schedule projection unavailable: the eligible submission count is invalid.'
+    case 'invalid_seat_count':
+      return 'Schedule projection unavailable: the resolved seat count is invalid.'
+  }
+}
+
+/**
+ * The exact size of the run this draft would create, or the typed reason it cannot be counted. The
+ * arithmetic reads only the seat composition, the game counts, and the resolved layout, so an invalid
+ * field elsewhere in the editor never blanks it. It is an estimate in one respect: triggering a run
+ * freezes a fresh eligible roster, so the roster it counts is the one loaded with the page.
+ */
+const projection = computed<{ totals: ScheduleProjection | null; error: string | null }>(() => {
+  const layout = resolvedLayout.value
+  const environment = props.environment
+  if (layout === null || environment === undefined) return { totals: null, error: null }
+  try {
+    return {
+      totals: projectSchedule({
+        matches: matches.value.map((match) => ({ seats: match.seats, games: match.games })),
+        eligibleSubmissionCount: props.eligibleSubmissionCount,
+        seatCount: layout.seatCount,
+        seatOrderMatters: environment.seat_order_matters,
+      }),
+      error: null,
+    }
+  } catch (error) {
+    if (error instanceof ScheduleProjectionError) {
+      return { totals: null, error: projectionMessage(error, layout.seatCount) }
+    }
+    throw error
+  }
+})
+
+/** The projected total, with the two inputs that decide it. Empty until the draft projects. */
+const headline = computed(() => {
+  const total = projection.value.totals?.totalGames
+  const seats = resolvedLayout.value?.seatCount
+  if (total === undefined || seats === undefined) return ''
+  return `Projected games: ${total.toLocaleString()} (${count(seats, 'seat')}, ${count(props.eligibleSubmissionCount, 'submission')})`
+})
+
+/** One match's own share of the projected games, shown in its heading. Empty until the draft projects. */
+function matchGames(matchIndex: number): string {
+  const total = projection.value.totals?.matches[matchIndex]?.totalGames
+  return total === undefined ? '' : ` (${count(total, 'game')})`
+}
 
 /**
  * The seats a match holds under the resolved layout: the layout's width, every restricted seat forced
@@ -167,6 +245,16 @@ const drifted = computed(() =>
     const conformed = conformedSeats(match.seats)
     return conformed !== null && conformed.join() !== match.seats.join()
   }),
+)
+
+/**
+ * The one reason the draft has no projected size, or null when it has one. The projection's own typed
+ * failure is the more specific message, so it wins over drift when both apply.
+ */
+const blocked = computed(
+  () =>
+    projection.value.error ??
+    (drifted.value ? 'A match no longer matches the resolved seat layout.' : null),
 )
 
 /** Conform every match row to the resolved layout. Reached only from an operator action. */
@@ -524,7 +612,7 @@ watch(confirmOpen, (open) => {
     <ol class="match-list">
       <li v-for="(match, matchIndex) in matches" :key="matchIndex" class="match" data-testid="match">
         <div class="match-head">
-          <span class="match-label">Match {{ matchIndex + 1 }}</span>
+          <span class="match-label">Match {{ matchIndex + 1 }}{{ matchGames(matchIndex) }}</span>
           <UiButton variant="ghost" size="tight" @click="removeMatch(matchIndex)">
             Remove match
           </UiButton>
@@ -565,18 +653,22 @@ watch(confirmOpen, (open) => {
         </div>
       </li>
     </ol>
-    <SchedulePreview
-      :matches="draftMatches"
-      :environment="environment"
-      :parameter-values="parameterValidation.values"
-      :eligible-submission-count="eligibleSubmissionCount"
-      :blocked-reason="drifted ? 'A match no longer matches the resolved seat layout.' : null"
-    >
-      <UiButton v-if="drifted" variant="secondary" size="tight" @click="conformLayout">
+    <UiEmptyState v-if="blocked !== null" tone="danger" role="alert" data-testid="projection-error">
+      {{ blocked }}
+      <UiButton
+        v-if="drifted"
+        variant="secondary"
+        size="tight"
+        class="blocked-action"
+        @click="conformLayout"
+      >
         Match the layout
       </UiButton>
-    </SchedulePreview>
-      <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
+    </UiEmptyState>
+    <p v-else-if="headline !== ''" class="schedule-projection" aria-live="polite">
+      <strong>{{ headline }}</strong>
+    </p>
+    <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
     </UiCard>
 
     <UiCard aria-labelledby="session-behavior-title">
@@ -876,6 +968,15 @@ watch(confirmOpen, (open) => {
 .seat-number {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+.schedule-projection {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+.blocked-action {
+  margin-left: var(--space-2);
 }
 
 .match-fields {

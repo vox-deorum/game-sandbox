@@ -30,6 +30,7 @@ describe('relay (LiveSession)', () => {
     mode: SessionMode = 'human',
     options: {
       externalPlayers?: readonly string[]
+      externalChatPlayer?: string | null
       messaging?: { enabled: boolean; cap: number | null }
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
@@ -44,6 +45,7 @@ describe('relay (LiveSession)', () => {
     process: FakeSessionProcess
   } {
     const process = new FakeSessionProcess()
+    const externalPlayers = options.externalPlayers ?? (mode === 'human' ? ['player_0'] : [])
     const session = new LiveSession({
       id: 'sess-1',
       userId: 'alice',
@@ -52,7 +54,11 @@ describe('relay (LiveSession)', () => {
       recordingId: 'flappy_bird-sess-1',
       createdAt: '2026-06-11T00:00:00.000Z',
       process,
-      externalPlayers: options.externalPlayers ?? (mode === 'human' ? ['player_0'] : []),
+      externalPlayers,
+      externalChatPlayer:
+        options.externalChatPlayer === undefined
+          ? (externalPlayers[0] ?? null)
+          : options.externalChatPlayer,
       messaging: options.messaging ?? { enabled: true, cap: 120 },
       llmEnabled: options.llmEnabled,
       deps: {
@@ -238,6 +244,7 @@ describe('relay (LiveSession)', () => {
       createdAt: '2026-06-11T00:00:00.000Z',
       process,
       externalPlayers: ['player_0'],
+      externalChatPlayer: 'player_0',
       messaging: { enabled: true, cap: 120 },
       deps: {
         storage,
@@ -430,7 +437,7 @@ describe('relay (LiveSession)', () => {
   // --- inbound chat authorization ---
 
   describe('inbound chat authorization', () => {
-    const CHAT = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"hi"}'
+    const CHAT = '{"kind":"chat","player":"player_0","to":null,"text":"hi"}'
 
     it('forwards an authorized chat frame to the container', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
@@ -439,10 +446,10 @@ describe('relay (LiveSession)', () => {
       expect(process.sent).toEqual([CHAT])
     })
 
-    it('drops a chat frame without the required composed-against tick', () => {
+    it('rejects a retired compose tick instead of forwarding the chat frame', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
-      owner.handleMessage('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+      owner.handleMessage('{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"hi"}')
       expect(process.sent).toEqual([])
     })
 
@@ -453,10 +460,26 @@ describe('relay (LiveSession)', () => {
       expect(process.sent).toEqual([])
     })
 
-    it('drops a chat frame for a player outside externalPlayers', () => {
-      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
+    // The designated sender is the whole chat gate: it is always drawn from externalPlayers, so a
+    // player outside that set fails this check too and needs no separate case.
+    it('drops a chat frame forged as a non-designated external player', () => {
+      const { session, process } = makeSession('human', {
+        externalPlayers: ['player_0', 'player_1'],
+        externalChatPlayer: 'player_0',
+      })
       const owner = session.attach(new FakeSocket(), true)
-      owner.handleMessage('{"kind":"chat","player":"player_1","tick":7,"to":null,"text":"hi"}')
+      owner.handleMessage('{"kind":"input","player":"player_1","action":1}')
+      owner.handleMessage('{"kind":"chat","player":"player_1","to":null,"text":"hi"}')
+      expect(process.sent).toEqual(['{"kind":"input","player":"player_1","action":1}'])
+    })
+
+    it('drops chat when no external sender is designated', () => {
+      const { session, process } = makeSession('human', {
+        externalPlayers: ['player_0'],
+        externalChatPlayer: null,
+      })
+      const owner = session.attach(new FakeSocket(), true)
+      owner.handleMessage(CHAT)
       expect(process.sent).toEqual([])
     })
 
@@ -484,8 +507,8 @@ describe('relay (LiveSession)', () => {
       })
       const owner = session.attach(new FakeSocket(), true)
       // An emoji is one code point; three fit, four do not.
-      const atCap = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"😀😀😀"}'
-      const overCap = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"😀😀😀😀"}'
+      const atCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀"}'
+      const overCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀😀"}'
       owner.handleMessage(overCap)
       expect(process.sent).toEqual([])
       owner.handleMessage(atCap)

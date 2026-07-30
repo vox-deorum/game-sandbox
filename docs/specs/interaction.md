@@ -28,7 +28,7 @@ The harness emits one state object per step. It is both the live wire format and
 - Acting player, action, reward, cumulative score, and timing.
 - Environment-specific overlay data needed for rendering, including semantic legal choices when a human can act.
 - Messages sent on that tick.
-- Chat options when the state announces the next external player's turn.
+- Chat options for the designated human player while that player remains active.
 - Optional observations and action details when an environment chooses to expose them.
 
 The renderer cannot inspect the live environment. Anything needed on screen must appear in state.
@@ -95,6 +95,8 @@ Object-shaped overlay data works the same way for rendering. The renderer direct
 
 When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and targeted messages sent to or from the connected user's designated human player.
 
-When a state announces the next external turn, it carries chat options for that player: the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient. The panel is enabled only when that sender is the session's designated human player. It resets its selection when the turn changes, sends the sender and that tick with the message, and becomes unavailable as soon as the player sends the turn's action.
+Every live state is self-contained for human chat while the designated human player remains active. It carries that sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient.
 
-The browser state is an interface hint, not the authority. The harness validates each message's sender, compose tick, and recipients before delivering it with the turn that drains its queue, as [Communication](communication.md#delivery-and-visibility) defines.
+The panel stays available across every active player's turn. It becomes unavailable only when messaging is disabled, the connection is unavailable, the session ends, the designated human becomes inactive, or the current state offers no human policy. Sending an action does not consume or close the composer. An unsent draft survives ordinary state changes and reconnects. The selected recipient resets only when the sender, ordered recipients, or default recipient changes.
+
+The browser sends the sender, recipient, and text without a compose tick. Its state remains an interface hint rather than the authority. The harness admits each frame at an atomic pre-step queue drain and validates it against the human policy published on the preceding live state, as [Communication](communication.md#delivery-and-visibility) defines.

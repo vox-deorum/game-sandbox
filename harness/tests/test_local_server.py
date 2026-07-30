@@ -228,12 +228,16 @@ def test_local_server_forwards_commands_and_orders_terminal_frames() -> None:
             root = Path(raw)
             (root / "local.html").write_text("local", encoding="utf-8")
             child = (
+                "import json\n"
                 "import sys\n"
                 'print(\'{\\"schema_version\\":1,\\"environment\\":\\"fake\\"}\', flush=True)\n'
                 "for raw in sys.stdin:\n"
                 '    if raw.strip() == \'{\\"kind\\":\\"stop\\"}\':\n'
                 "        break\n"
-                "    print(raw.strip(), flush=True)\n"
+                '    if json.loads(raw).get("kind") == "chat":\n'
+                '        message = {"schema_version": 1, "tick": 0, "agents": {},\n'
+                '                   "chat": json.loads(raw)}\n'
+                "        print(json.dumps(message), flush=True)\n"
                 'print(\'{\\"kind\\":\\"result\\",\\"reason\\":\\"stopped\\"}\', flush=True)\n'
             )
             async with LocalServer(
@@ -252,6 +256,14 @@ def test_local_server_forwards_commands_and_orders_terminal_frames() -> None:
                     assert await second.recv() == '{"kind":"pause"}'
                     await first.send('{"kind":"resume"}')
                     assert await first.recv() == '{"kind":"resume"}'
+                    await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+                    forwarded = json.loads(await first.recv())
+                    assert forwarded["chat"] == {
+                        "kind": "chat",
+                        "player": "player_0",
+                        "to": None,
+                        "text": "hello",
+                    }
                     await first.send('{"kind":"stop"}')
                     terminal = [await first.recv(), await first.recv()]
                     assert terminal[0] == '{"kind":"result","reason":"stopped"}'

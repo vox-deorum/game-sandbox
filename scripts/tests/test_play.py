@@ -132,6 +132,7 @@ def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, m
         },
         "player_1": {"kind": "external"},
     }
+    assert config["external_chat_player"] == "player_1"
     players = config["players"]
     assert isinstance(players, dict)
     assert set(players) == {"player_0", "player_1"}
@@ -239,6 +240,7 @@ def test_agent_repo_without_a_mode_selects_agent_mode(monkeypatch, tmp_path: Pat
         "player_0": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
         "player_1": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
     }
+    assert captured["external_chat_player"] is None
 
 
 def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
@@ -257,6 +259,7 @@ def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
         "player_0": {"kind": "builtin-agent", "path": "builtin", "name": "naive"},
         "player_1": {"kind": "external"},
     }
+    assert captured["external_chat_player"] == "player_1"
 
 
 def test_wide_human_seat_requires_and_expands_an_explicit_companion(
@@ -305,6 +308,7 @@ def test_wide_human_seat_requires_and_expands_an_explicit_companion(
             "name": "naive",
         },
     }
+    assert config["external_chat_player"] == "player_0"
     assert config["players"]["player_2"] == {  # type: ignore[index]
         "kind": "agent",
         "builtin_name": "naive",

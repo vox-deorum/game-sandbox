@@ -235,7 +235,7 @@ describe('Spades chat (Docker)', () => {
     // is on and the frame is well within the Spades cap (120), so the relay's pre-gate forwards it to
     // container stdin and the harness accepts it. The recording is the observable proof the frame
     // reached the harness queue: a message attributed from player_0 to player_2 can only exist if the
-    // frame traversed stdin -> command pump -> chat queue -> router (per-turn inbox delivery itself is
+    // frame traversed stdin -> command pump -> chat queue -> router (delayed inbox delivery itself is
     // covered by the harness's own unit tests, which can inspect the in-process queue this test cannot).
     const companion = await seedExample('signaler_companion', 'signaler')
     const opponent = await seedExample('signaler_opponent', 'signaler')
@@ -261,18 +261,15 @@ describe('Spades chat (Docker)', () => {
       (await stack.users.headersFor('dev-user')).cookie,
     )
     try {
-      // Send against the live human turn, carrying that state tick. The harness validates the tick
-      // when it drains the queue, so an earlier opening frame is not enough.
+      // The active human policy identifies the designated sender. The harness admits the frame at
+      // its next boundary, independent of the state that caused the browser to render this policy.
       await owner.waitFor(
         () => owner.states().some((state) => chatOptions(state)?.sender === 'player_0'),
         30_000,
       )
-      const chatState = owner.states().find((state) => chatOptions(state)?.sender === 'player_0')
-      if (chatState === undefined) throw new Error('expected a human chat opportunity')
       owner.send({
         kind: 'chat',
         player: 'player_0',
-        tick: chatState.tick,
         to: 'player_2',
         text: 'partner, watch the spades',
       })

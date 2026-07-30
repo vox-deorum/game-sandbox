@@ -150,80 +150,86 @@ def test_fused_control_commands_on_one_line_all_apply(capsys: Any):
     assert capsys.readouterr().err == ""
 
 
-# --- chat: the bounded per-player FIFO queue --------------------------------------------
+# --- chat: the bounded designated-sender FIFO queue ------------------------------------
 
 
 def test_chat_frames_queue_in_fifo_order_and_take_clears():
     control = SessionControl()
-    control.configure_chat(True)
-    # The exact wire shape the TypeScript protocol pins, three in a row to prove order is preserved.
-    control.handle_line('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"one"}')
-    control.handle_line('{"kind":"chat","player":"player_0","tick":3,"to":"player_1","text":"two"}')
-    control.handle_line('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"three"}')
+    control.configure_chat("player_0")
+    for command in (
+        '{"kind":"chat","player":"player_0","to":null,"text":"one"}',
+        '{"kind":"chat","player":"player_0","to":"player_1","text":"two"}',
+        '{"kind":"chat","player":"player_0","to":null,"text":"three"}',
+    ):
+        control.handle_line(command)
     assert control.take_chat("player_0") == [
-        {"player": "player_0", "tick": 3, "to": None, "text": "one"},
-        {"player": "player_0", "tick": 3, "to": "player_1", "text": "two"},
-        {"player": "player_0", "tick": 3, "to": None, "text": "three"},
+        {"to": None, "text": "one"},
+        {"to": "player_1", "text": "two"},
+        {"to": None, "text": "three"},
     ]
-    # Draining clears the queue: messages are not re-delivered.
     assert control.take_chat("player_0") == []
 
 
 def test_chat_never_touches_the_input_latch_and_vice_versa():
     control = SessionControl()
-    control.configure_chat(True)
-    control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hi"}')
+    control.configure_chat("player_0")
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
     control.handle_line('{"kind":"input","player":"player_0","action":5}')
-    # Each channel keeps its own value.
     assert control.take("player_0") == 5
-    assert control.take_chat("player_0") == [{"player": "player_0", "tick": 0, "to": None, "text": "hi"}]
+    assert control.take_chat("player_0") == [{"to": None, "text": "hi"}]
 
 
-def test_chat_wire_pin_parses_to_the_queued_shape():
+def test_chat_rejects_an_unauthorized_sender_before_allocating_a_queue(capsys: Any):
     control = SessionControl()
-    control.configure_chat(True)
-    control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hi"}')
-    assert control.take_chat("player_0") == [{"player": "player_0", "tick": 0, "to": None, "text": "hi"}]
+    control.configure_chat("player_0")
+    control.handle_line('{"kind":"chat","player":"player_9","to":null,"text":"spoof"}')
+    assert control.take_chat("player_9") == []
+    assert control.take_chat("player_0") == []
+    assert control._chat_queue == []
+    diagnostic = capsys.readouterr().err
+    assert "dropping chat command from 'player_9'" in diagnostic
+    assert "the designated sender is 'player_0'" in diagnostic
 
 
 def test_seventeenth_chat_frame_is_dropped_and_sixteen_survive(capsys: Any):
     control = SessionControl()
-    control.configure_chat(True)
+    control.configure_chat("player_0")
     for i in range(17):
-        control.handle_line(f'{{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"m{i}"}}')
+        control.handle_line(f'{{"kind":"chat","player":"player_0","to":null,"text":"m{i}"}}')
     queued = control.take_chat("player_0")
     assert len(queued) == 16
-    assert [m["text"] for m in queued] == [f"m{i}" for i in range(16)]  # the first sixteen survive
+    assert [m["text"] for m in queued] == [f"m{i}" for i in range(16)]
     assert "queue full" in capsys.readouterr().err
 
 
 def test_chat_is_dropped_with_a_diagnostic_when_messaging_disabled(capsys: Any):
-    control = SessionControl()  # chat defaults to disabled
-    control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hi"}')
+    control = SessionControl()
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
     assert control.take_chat("player_0") == []
-    assert "messaging disabled" in capsys.readouterr().err
+    # No configured sender is how messaging-off reaches the transport, so the diagnostic says so.
+    assert "the designated sender is None" in capsys.readouterr().err
 
 
 def test_chat_with_malformed_player_or_text_is_dropped(capsys: Any):
     control = SessionControl()
-    control.configure_chat(True)
-    control.handle_line('{"kind":"chat","tick":0,"to":null,"text":"no player"}')
-    control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":42}')
-    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"no tick"}')
+    control.configure_chat("player_0")
+    control.handle_line('{"kind":"chat","to":null,"text":"no player"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":42}')
+    control.handle_line('{"kind":"chat","player":"player_0","text":"no recipient"}')
     assert control.take_chat("player_0") == []
     err = capsys.readouterr().err
     assert "without a string player" in err
     assert "without string text" in err
-    assert "safe-integer tick" in err
+    assert "without a string or null to" in err
 
 
 def test_transport_source_take_messages_drains_the_control_queue():
     control = SessionControl()
-    control.configure_chat(True)
+    control.configure_chat("player_0")
     clock = PausableClock(ManualClock())
     source = TransportSource(control, clock=clock, paced=True)
-    control.handle_line('{"kind":"chat","player":"player_0","tick":8,"to":null,"text":"hi"}')
-    assert source.take_messages("player_0") == [{"player": "player_0", "tick": 8, "to": None, "text": "hi"}]
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+    assert source.take_messages("player_0") == [{"to": None, "text": "hi"}]
     assert source.take_messages("player_0") == []
 
 

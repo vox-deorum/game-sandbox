@@ -11,9 +11,9 @@ The line shapes are defined in the Stage 3 transport plan. Outbound: recording l
 (header + per-step states, never carrying a top-level ``kind``) and event envelopes (a
 top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes carry a
 ``kind`` and, where applicable, a ``player`` and ``action`` or ``text``: ``input``, ``pause``,
-``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``tick`` + ``to`` + ``text``). Unknown
+``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``to`` + ``text``). Unknown
 kinds and malformed lines are logged and ignored, so the container never dies because a
-client sent garbage. Human ``chat`` frames enter a bounded per-player FIFO queue, not the input
+client sent garbage. Human ``chat`` frames enter one bounded designated-sender FIFO, not the input
 latch: inputs coalesce to the latest value, but messages must not swallow each other.
 """
 
@@ -27,14 +27,13 @@ from collections.abc import Iterable, Mapping
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from .clock import Clock
-from .environment import is_json_safe_integer
 from .recording.local import FolderRecordingStore
 from .session import EpisodeResult, ExternalChatFrame
 
 #: The single outbound event-envelope kind this stage defines.
 RESULT_KIND = "result"
 _DEFAULT_SLICE_MS = 5
-#: The most human ``chat`` frames a single player may have queued at once. When it is full the
+#: The most human ``chat`` frames the designated sender may have queued at once. When it is full the
 #: incoming frame is dropped with a diagnostic, so a client flooding the socket costs at most a
 #: fixed amount of memory, the same drop-with-diagnostic rule every other rejection follows.
 CHAT_QUEUE_LIMIT = 16
@@ -92,21 +91,22 @@ class SessionControl:
     def __init__(self, clock: PausableClock | None = None) -> None:
         self._lock = threading.Lock()
         self._latched: dict[str, Any] = {}
-        self._chat_queues: dict[str, list[ExternalChatFrame]] = {}
-        self._chat_enabled = False
+        self._chat_queue: list[ExternalChatFrame] = []
+        self._chat_sender: str | None = None
         self._paused = False
         self._stopping = False
         self._clock = clock
 
-    def configure_chat(self, enabled: bool) -> None:
-        """Enable or disable acceptance of human ``chat`` frames for this session.
+    def configure_chat(self, sender: str | None) -> None:
+        """Configure the one external sender authorized to enqueue human ``chat`` frames.
 
         Called once by the live runner after the effective messaging config is known (the metadata
         AND the session config, resolved in :class:`~game_sandbox_harness.session.Episode`). With
-        messaging off, ``chat`` frames are dropped with a diagnostic, matching every other rejection.
+        messaging off or without a designated sender, ``chat`` frames are dropped with a diagnostic.
         """
         with self._lock:
-            self._chat_enabled = enabled
+            self._chat_sender = sender
+            self._chat_queue = []
 
     def handle_line(self, raw: str) -> None:
         """Parse and dispatch the inbound command(s) on one line; malformed/unknown lines are ignored.
@@ -145,22 +145,24 @@ class SessionControl:
         """Queue a human ``chat`` frame into its player's bounded FIFO, or drop it with a diagnostic.
 
         :func:`parse_commands` is the shared shape gate for stdin and the local relay. This method only
-        applies the enabled and queue-capacity checks. Recipient legality, the text cap, and per-turn
+        applies the sender and queue-capacity checks. Recipient legality, the text cap, and per-boundary
         limits are enforced once at the harness validation point shared with agent messages.
         """
         player_id = cast("str", command["player"])
         with self._lock:
-            if not self._chat_enabled:
-                _diag(f"live: dropping chat command (messaging disabled): {source!r}")
+            # One check covers both rejections: with messaging off the designated sender is None, so
+            # every frame fails it, and the diagnostic names who may send instead of guessing why.
+            if player_id != self._chat_sender:
+                _diag(
+                    f"live: dropping chat command from {player_id!r}; the designated sender is "
+                    f"{self._chat_sender!r}: {source!r}"
+                )
                 return
-            queue = self._chat_queues.setdefault(player_id, [])
-            if len(queue) >= CHAT_QUEUE_LIMIT:
+            if len(self._chat_queue) >= CHAT_QUEUE_LIMIT:
                 _diag(f"live: dropping chat command (queue full for {player_id!r}): {source!r}")
                 return
-            queue.append(
+            self._chat_queue.append(
                 {
-                    "player": player_id,
-                    "tick": cast("int", command["tick"]),
                     "to": cast("str | None", command["to"]),
                     "text": cast("str", command["text"]),
                 }
@@ -180,14 +182,13 @@ class SessionControl:
         """Return and clear the human ``chat`` frames queued for ``player_id`` in FIFO order.
 
         Unlike :meth:`take`, this is a queue, not a latch: every queued frame is returned in the
-        order it arrived, because messages must not swallow each other. Drained once per stepped
-        tick by the session loop and passed through the same validator as agent messages.
+        order it arrived, because messages must not swallow each other. Drained at each completed
+        boundary by the session loop and passed through the same validator as agent messages.
         """
         with self._lock:
-            queue = self._chat_queues.get(player_id)
-            if not queue:
+            if player_id != self._chat_sender or not self._chat_queue:
                 return []
-            self._chat_queues[player_id] = []
+            queue, self._chat_queue = self._chat_queue, []
             return queue
 
     def pause(self) -> None:
@@ -218,10 +219,10 @@ class SessionControl:
 def _chat_command_error(command: dict[str, Any]) -> str | None:
     """Return the reason a ``chat`` command envelope is malformed, or ``None`` when it is well-shaped.
 
-    Checked in one place so the four distinct shape rules (player, text, ``to``, ``tick``) each
-    keep their own diagnostic without repeating the ``kind == "chat"`` guard four times. This is
+    Checked in one place so the three distinct shape rules (player, text, ``to``) each
+    keep their own diagnostic without repeating the ``kind == "chat"`` guard three times. This is
     only the shape gate shared by stdin and the local relay: recipient legality, the text cap, and
-    per-turn limits are enforced once at the harness validation point shared with agent messages.
+    per-boundary limits are enforced once at the harness validation point shared with agent messages.
     """
     if not isinstance(command.get("player"), str):
         return "a string player"
@@ -230,9 +231,6 @@ def _chat_command_error(command: dict[str, Any]) -> str | None:
     to = command.get("to")
     if "to" not in command or (to is not None and not isinstance(to, str)):
         return "a string or null to"
-    tick = command.get("tick")
-    if not is_json_safe_integer(tick) or tick < 0:
-        return "a non-negative safe-integer tick"
     return None
 
 
@@ -339,7 +337,7 @@ class TransportSource:
         """Return the human ``chat`` frames queued for ``player_id`` since the last drain.
 
         Detected by presence on the source, like the action-source protocol: the session loop finds
-        this method with ``getattr`` and drains it once per stepped tick, so it never needs to know
+        this method with ``getattr`` and drains it at each completed boundary, so it never needs to know
         about :class:`SessionControl`. Non-transport sources (noop, scripted) have no such method and
         are skipped, so a message can only originate from a real external player.
         """

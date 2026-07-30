@@ -36,13 +36,14 @@ from .agent import has_chat, has_learn
 from .chat import ChatRouter
 from .clock import Clock, SystemClock
 from .environment import (
+    ChatPolicy,
     EnvironmentEntry,
     ParameterValue,
     ResolvedLayout,
+    canonical_player_order,
     resolve_layout,
     validate_complete_parameters,
 )
-from .external_chat import ExternalChatCoordinator
 from .recording import RecordingStore
 from .state import (
     ChatOptions,
@@ -94,10 +95,8 @@ class MessageSource(Protocol):
 
 
 class ExternalChatFrame(TypedDict):
-    """One tick-bound human chat frame queued by the live transport."""
+    """One human chat frame queued by the live transport."""
 
-    player: str
-    tick: int
     to: str | None
     text: str
 
@@ -248,6 +247,7 @@ class Episode:
         messaging: bool | None = None,
         message_cap: int | None = None,
         layout: ResolvedLayout | None = None,
+        external_chat_player: str | None = None,
     ) -> None:
         self._entry = entry
         self._players = players
@@ -281,7 +281,14 @@ class Episode:
         self._chat: ChatRouter | None = (
             ChatRouter(players.keys(), self._message_cap) if self._messaging else None
         )
-        self._external_chat = None if self._chat is None else ExternalChatCoordinator(self._chat)
+        # Action control may span several external players, but chat authority is always explicit.
+        if external_chat_player is not None and not isinstance(
+            players.get(external_chat_player), ExternalPlayer
+        ):
+            raise ValueError("external_chat_player must name an external player binding")
+        self._external_chat_sender = external_chat_player
+        #: The policy the latest live state published for the human, and what the next drain enforces.
+        self._human_chat_policy: ChatPolicy | None = None
 
         self._state = {player_id: _PlayerState() for player_id in players}
         self._env: Any = None
@@ -323,7 +330,7 @@ class Episode:
                     "environment factory produced possible_agents "
                     f"{env.possible_agents!r}, expected {expected_players!r} from resolved layout"
                 )
-            self._opening_chat_options = self._announce_external_chat(tick=0)
+            self._opening_chat_options = self._refresh_chat_state()
 
             if self._store is not None:
                 created_at_ms = self._clock.now_ms()
@@ -405,6 +412,11 @@ class Episode:
         single authority rather than being recomputed.
         """
         return self._messaging
+
+    @property
+    def external_chat_sender(self) -> str | None:
+        """The one external player authorized to submit chat, when messaging is effective."""
+        return self._external_chat_sender if self._chat is not None else None
 
     def opening_state(self) -> StepState | None:
         """The pre-action "opening" frame: the dealt overlay with no agent having acted yet.
@@ -533,10 +545,36 @@ class Episode:
             )
             context.action = self._entry.default_action(context.env, context.player_id)
 
+    def _logical_active_players(self) -> tuple[str, ...]:
+        """Return players in ``env.agents`` that are not marked terminal, including live AEC players."""
+        return tuple(
+            player_id
+            for player_id in canonical_player_order(self._env.agents)
+            if not self._env.terminations.get(player_id, False)
+            and not self._env.truncations.get(player_id, False)
+        )
+
+    def _drain_human_messages(self) -> list[Message]:
+        """Atomically drain the designated human FIFO under the policy its last live state published.
+
+        This drain is the boundary's admission cutoff: a frame that arrives after it waits for the
+        next completed step. An inactive sender's frames are drained the same way and then dropped by
+        the validator, which is also what keeps the queue from holding them once nobody can send.
+        """
+        sender = self._external_chat_sender
+        if self._chat is None or sender is None:
+            return []
+        binding = self._players[sender]
+        if not isinstance(binding, ExternalPlayer) or binding.message_source is None:
+            return []
+        queued = binding.message_source.take_messages(sender)
+        return self._chat.validate_outgoing(sender, queued, self._human_chat_policy)
+
     def _collect_messages(self, context: _StepContext) -> None:
-        """Drain and validate chat after action selection but before the environment step."""
+        """Run the pre-step chat phases after action selection and before the environment step."""
         if self._chat is None:
             return
+        context.messages.extend(self._drain_human_messages())
         inbox = self._chat.drain(context.player_id)
         binding = context.binding
         if isinstance(binding, AgentPlayer) and has_chat(binding.agent):
@@ -554,24 +592,31 @@ class Episode:
             context.player.budget_used_ms += context.chat_ms
             context.messages.extend(self._chat.validate_outgoing(context.player_id, outgoing, policy))
 
-        if isinstance(binding, ExternalPlayer) and binding.message_source is not None:
-            assert self._external_chat is not None
-            queued = binding.message_source.take_messages(context.player_id)
-            context.messages.extend(self._external_chat.drain(context.player_id, queued))
+    def _refresh_chat_state(self) -> ChatOptions | None:
+        """Adopt this transition's active players and republish the designated human's policy.
 
-    def _announce_external_chat(self, tick: int) -> ChatOptions | None:
-        """Open the next actor's messaging opportunity, when that actor is a live external player."""
-        if self._external_chat is None or not self._env.agents:
+        Called once at reset and once per completed step, so the active set the router validates
+        everything against changes in exactly one place. Required AEC dead steps do not reach here,
+        which is why the human drain re-checks recipient activity against the set this leaves behind.
+        """
+        if self._chat is None:
             return None
-        sender = self._env.agent_selection
-        if not isinstance(self._players.get(sender), ExternalPlayer):
+        active_players = self._logical_active_players()
+        self._chat.set_active(active_players)
+        sender = self._external_chat_sender
+        if sender is None or sender not in active_players:
+            self._human_chat_policy = None
             return None
-        if self._env.terminations.get(sender, False) or self._env.truncations.get(sender, False):
-            return None
-        return self._external_chat.announce(self._env, sender, tick)
+        policy = self._chat.policy_from(self._env, sender)
+        self._human_chat_policy = policy
+        return {
+            "sender": sender,
+            "target_recipients": list(policy.target_recipients),
+            "default_recipient": policy.default_recipient,
+        }
 
     def _apply_environment_step(self, context: _StepContext) -> None:
-        """Apply the action, credit rewards, and publish the next external chat opportunity."""
+        """Apply the action, credit rewards, and publish the following human policy."""
         context.env.step(context.action)
         context.reward = float(context.env.rewards[context.player_id])
         # Terminal rewards in an AEC environment can be published for every player on the final
@@ -580,7 +625,7 @@ class Episode:
             rewarded_state = self._state.get(rewarded_player)
             if rewarded_state is not None:
                 rewarded_state.score += float(player_reward)
-        context.chat_options = self._announce_external_chat(self._tick)
+        context.chat_options = self._refresh_chat_state()
 
     def _run_learning(self, context: _StepContext) -> None:
         """Run the post-step learning hook and finish per-step compute accounting."""
@@ -741,6 +786,7 @@ def run_episode(
     player_attribution: Mapping[str, PlayerAttribution] | None = None,
     messaging: bool | None = None,
     message_cap: int | None = None,
+    external_chat_player: str | None = None,
 ) -> EpisodeResult:
     """Play one seeded episode of ``entry`` with the given player bindings.
 
@@ -765,6 +811,7 @@ def run_episode(
         player_attribution=player_attribution,
         messaging=messaging,
         message_cap=message_cap,
+        external_chat_player=external_chat_player,
         parameters=parameters,
     ) as episode:
         while not episode.done:

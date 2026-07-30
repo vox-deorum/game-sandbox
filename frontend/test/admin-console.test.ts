@@ -238,11 +238,8 @@ describe('AdminConsolePage', () => {
     expect(
       await screen.findByText('Projected games: 762 (2 seats, 20 submissions)'),
     ).toBeInTheDocument()
-    // Assignments and games coincide only when a match runs one game each, so the row states the
-    // repetition once rather than restating both counts.
-    expect(screen.getByTestId('match-projection')).toHaveTextContent(
-      'Match 1: 380 submitted assignments and 1 all-Naive assignment, 2 games each.',
-    )
+    // Each match carries its own share of the total in its heading, so the totals need no second line.
+    expect(screen.getByText('Match 1 (762 games)')).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
     const match = screen.getByTestId('match')
@@ -705,7 +702,7 @@ describe('AdminConsolePage', () => {
     expect(screen.queryByText(/Unsaved changes/)).toBeNull()
     // The projection names the mismatch precisely, so the box says it once and carries the action.
     const blocked = screen.getByTestId('projection-error')
-    expect(blocked).toHaveTextContent('Match 1 has 1 seats, but the resolved layout has 2')
+    expect(blocked).toHaveTextContent('Match 1 has 1 seat, but the resolved layout has 2')
     expect(blocked).not.toHaveTextContent('no longer matches the resolved seat layout')
 
     await fireEvent.click(within(blocked).getByRole('button', { name: 'Match the layout' }))

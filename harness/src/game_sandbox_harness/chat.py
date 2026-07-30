@@ -59,12 +59,26 @@ class ChatRouter:
         self._player_order = canonical_player_order(player_ids)
         self._players = frozenset(self._player_order)
         self._cap = cap
+        self._active = self._players
         self._inboxes: dict[str, list[dict[str, Any]]] = {player_id: [] for player_id in self._players}
 
+    def set_active(self, active_players: Iterable[str]) -> None:
+        """Adopt the logically active players and discard the inboxes of everyone else.
+
+        Every rule below is stated against this set, so the episode updates it once per completed
+        transition and the router never has to be told again. A player that left can no longer act,
+        so it will never drain its own inbox; clearing here is what keeps that inbox bounded.
+        """
+        self._active = frozenset(active_players)
+        for player_id in self._players - self._active:
+            self._inboxes[player_id] = []
+
     def default_policy(self, sender: str) -> ChatPolicy:
-        """Allow every other resolved player in canonical order, defaulting to broadcast."""
+        """Allow every other logically active player in canonical order, defaulting to broadcast."""
         return ChatPolicy(
-            target_recipients=tuple(player for player in self._player_order if player != sender),
+            target_recipients=tuple(
+                player for player in self._player_order if player != sender and player in self._active
+            ),
             default_recipient=None,
         )
 
@@ -100,7 +114,12 @@ class ChatRouter:
             return self.default_policy(sender)
         return checked
 
-    def _checked_policy(self, sender: str, recipients: object, default_recipient: object) -> ChatPolicy | str:
+    def _checked_policy(
+        self,
+        sender: str,
+        recipients: object,
+        default_recipient: object,
+    ) -> ChatPolicy | str:
         """Return the validated policy, or a phrase naming the first defect that makes it unusable."""
         if isinstance(recipients, (str, bytes)) or not isinstance(recipients, Sequence):
             return "declares target_recipients that is not a sequence"
@@ -115,11 +134,15 @@ class ChatRouter:
                 return "declares the sender as one of its own recipients"
             if recipient not in self._players:
                 return f"declares unknown recipient {recipient!r}"
-        if default_recipient is None:
-            return ChatPolicy(named, None)
-        if not isinstance(default_recipient, str) or default_recipient not in named:
+        if default_recipient is not None and (
+            not isinstance(default_recipient, str) or default_recipient not in named
+        ):
             return f"defaults to {default_recipient!r}, which it does not offer"
-        return ChatPolicy(named, default_recipient)
+        # A recipient who left mid-episode is dropped from the declared list rather than voiding it:
+        # treating that as a defect would widen a narrow policy to the default at the very moment a
+        # player goes inactive. A default that leaves with them falls back to broadcast, always legal.
+        offered = tuple(recipient for recipient in named if recipient in self._active)
+        return ChatPolicy(offered, default_recipient if default_recipient in offered else None)
 
     def validate_outgoing(
         self,
@@ -130,10 +153,14 @@ class ChatRouter:
         """Validate one batch an agent or human returned, stamping ``from`` with ``sender``.
 
         Returns the accepted messages in order. Every rejected message is dropped with a stderr
-        diagnostic and never raises. Enforced, in order: the recipient is a known player other than
-        the sender or ``None`` for broadcast; a direct recipient is permitted by the active policy;
-        the text is a ``str`` within the code-point cap; and a batch carries at most one message per
-        distinct recipient plus one broadcast.
+        diagnostic and never raises. Enforced, in order: the sender is a known, active player; the
+        recipient is a known active player other than the sender or ``None`` for broadcast; a direct
+        recipient is permitted by ``policy``; the text is a ``str`` within the code-point cap; and the
+        batch carries at most one message per distinct recipient plus one broadcast.
+
+        ``policy`` is the one resolved for this sender and boundary. The human path passes the policy
+        its last live state published, which can name a recipient who has since left, so recipient
+        activity is checked here as well as when the policy was built.
         """
         # "returns messages or nothing": None or an empty batch is silent, not an error.
         if batch is None:
@@ -141,34 +168,28 @@ class ChatRouter:
         if isinstance(batch, (str, bytes)) or not isinstance(batch, Sequence):
             diag(f"chat: {sender} returned a non-list batch {type(batch).__name__}; dropping it")
             return []
+        if sender not in self._players:
+            diag(f"chat: dropping unknown sender {sender!r}")
+            return []
+        if sender not in self._active:
+            diag(f"chat: dropping inactive sender {sender!r}")
+            return []
 
-        active_policy = policy or self.default_policy(sender)
-        items = ((raw_item, active_policy) for raw_item in cast("Sequence[object]", batch))
-        return self.validate_outgoing_items(sender, items)
-
-    def validate_outgoing_items(
-        self,
-        sender: str,
-        items: Iterable[tuple[object, ChatPolicy]],
-    ) -> list[Message]:
-        """Validate one ordered batch whose items may carry different announced policies.
-
-        External frames can span the current opportunity and its one-drain grace predecessor. Their
-        policies differ, but arrival order and the batch-wide duplicate-recipient limit still apply
-        once across the drain.
-        """
+        allowed_direct = frozenset((policy or self.default_policy(sender)).target_recipients)
         accepted: list[Message] = []
         seen: set[str | None] = set()
-        for raw_item, active_policy in items:
+        for raw_item in cast("Sequence[object]", batch):
             if not isinstance(raw_item, Mapping):
                 diag(f"chat: {sender} sent a non-object message {raw_item!r}; dropping it")
                 continue
             item = cast("Mapping[str, object]", raw_item)
-            allowed_direct = frozenset(active_policy.target_recipients)
             to = item.get("to")
             # A bool is an int, never a str, so a bool recipient falls through the str check below.
             if to is not None and (not isinstance(to, str) or to not in self._players):
                 diag(f"chat: {sender} sent to unknown recipient {to!r}; dropping it")
+                continue
+            if to is not None and to not in self._active:
+                diag(f"chat: {sender} sent to inactive recipient {to!r}; dropping it")
                 continue
             if to == sender:
                 diag(f"chat: {sender} sent to itself; dropping it")
@@ -186,7 +207,7 @@ class ChatRouter:
                 continue
             if to in seen:
                 where = "broadcast" if to is None else f"message to {to}"
-                diag(f"chat: {sender} sent a second {where} in one turn; dropping it")
+                diag(f"chat: {sender} sent a second {where} in one boundary; dropping it")
                 continue
             seen.add(to)
             accepted.append({"from": sender, "to": to, "text": text})
@@ -195,19 +216,20 @@ class ChatRouter:
     def deliver(self, messages: list[Message], tick: int) -> None:
         """Deliver a tick's accepted messages to pending inboxes, stamping each with ``tick``.
 
-        A targeted message reaches its recipient's inbox; a broadcast reaches every player except the
-        sender. Called at the end of the sending tick, after the acting agent's inbox was drained,
-        so a message sent on tick T is first seen strictly after T.
+        A targeted message reaches its recipient's inbox; a broadcast reaches every other active
+        player. A recipient that went inactive on this very transition is skipped, because it has no
+        later acting opportunity to read on. Called at the end of the sending tick, after the acting
+        agent's inbox was drained, so a message sent on tick T is first seen strictly after T.
         """
         for message in messages:
             sender = message["from"]
             recipient = message["to"]
             item = {**message, "tick": tick}
             if recipient is None:
-                for player_id in self._players:
+                for player_id in self._active:
                     if player_id != sender:
                         self._inboxes[player_id].append(dict(item))
-            else:
+            elif recipient in self._active:
                 self._inboxes[recipient].append(item)
 
     def drain(self, player_id: str) -> list[dict[str, Any]]:

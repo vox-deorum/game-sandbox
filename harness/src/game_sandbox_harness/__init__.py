@@ -58,7 +58,6 @@ from .session import (
     AgentPlayer,
     Episode,
     EpisodeResult,
-    ExternalChatFrame,
     ExternalPlayer,
     MessageSource,
     NoopSource,
@@ -134,7 +133,6 @@ __all__ = [
     # session
     "ActionSource",
     "MessageSource",
-    "ExternalChatFrame",
     "AgentPlayer",
     "ExternalPlayer",
     "NoopSource",

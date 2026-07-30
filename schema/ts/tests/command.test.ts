@@ -30,46 +30,29 @@ describe('inbound command parsing', () => {
   })
 
   it('accepts a chat command with a targeted or null recipient', () => {
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":"player_2","text":"hi"}'),
-    ).toEqual({
-      ok: true,
-      command: { kind: 'chat', player: 'player_0', tick: 7, to: 'player_2', text: 'hi' },
-    })
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"table!"}'),
-    ).toEqual({
-      ok: true,
-      command: { kind: 'chat', player: 'player_0', tick: 7, to: null, text: 'table!' },
-    })
-  })
-
-  it('rejects a chat command with a bad player, tick, to, or text', () => {
-    expect(parseCommand('{"kind":"chat","tick":0,"to":null,"text":"hi"}').ok).toBe(false)
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"hi"}').ok).toBe(false)
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":-1,"to":null,"text":"hi"}').ok,
-    ).toBe(false)
-    expect(parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":5,"text":"hi"}').ok).toBe(
-      false,
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":"player_2","text":"hi"}')).toEqual(
+      {
+        ok: true,
+        command: { kind: 'chat', player: 'player_0', to: 'player_2', text: 'hi' },
+      },
     )
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":42}').ok,
-    ).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"table!"}')).toEqual({
+      ok: true,
+      command: { kind: 'chat', player: 'player_0', to: null, text: 'table!' },
+    })
   })
 
-  it('rejects a chat command with a missing to, a non-integer tick, or an unsafe tick', () => {
-    expect(parseCommand('{"kind":"chat","player":"player_0","tick":0,"text":"hi"}').ok).toBe(false)
-    expect(
-      parseCommand('{"kind":"chat","player":"player_0","tick":1.5,"to":null,"text":"hi"}').ok,
-    ).toBe(false)
-    expect(
-      parseCommand(`{"kind":"chat","player":"player_0","tick":${2 ** 60},"to":null,"text":"hi"}`)
-        .ok,
-    ).toBe(false)
+  it('rejects a chat command with a bad player, to, or text', () => {
+    expect(parseCommand('{"kind":"chat","to":null,"text":"hi"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":5,"text":"hi"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":42}').ok).toBe(false)
   })
 
-  it('ignores an unrecognized field rather than rejecting the command for carrying one', () => {
+  it('rejects a chat command with a missing recipient', () => {
+    expect(parseCommand('{"kind":"chat","player":"player_0","text":"hi"}').ok).toBe(false)
+  })
+
+  it('ignores an unrecognized field on non-chat commands', () => {
     expect(parseCommand('{"kind":"input","player":"player_0","action":1,"extra":"field"}')).toEqual(
       { ok: true, command: { kind: 'input', player: 'player_0', action: 1 } },
     )
@@ -77,6 +60,12 @@ describe('inbound command parsing', () => {
       ok: true,
       command: { kind: 'pause' },
     })
+  })
+
+  it('rejects an unrecognized field on a chat command', () => {
+    expect(
+      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"hi"}'),
+    ).toEqual({ ok: false, reason: 'chat command has an invalid shape' })
   })
 
   it('rejects a non-object and an array', () => {

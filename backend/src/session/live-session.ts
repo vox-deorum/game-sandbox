@@ -74,10 +74,12 @@ export interface LiveSessionInit {
   createdAt: string
   process: SessionProcess
   /**
-   * The players whose resolved binding is actually a connected human this session. Input, message
-   * visibility, and the inbound chat gate authorize against these exact players.
+   * The players whose resolved binding is actually a connected human this session. Input and message
+   * visibility authorize against these exact players.
    */
   externalPlayers: readonly string[]
+  /** The one designated external sender permitted to compose chat, drawn from `externalPlayers`. */
+  externalChatPlayer: string | null
   /** The effective messaging rules resolved once by the orchestrator (metadata AND season override). */
   messaging: { enabled: boolean; cap: number | null }
   /** Stored on the session and copied into the recording's durable telemetry association. */
@@ -99,6 +101,7 @@ export class LiveSession {
 
   private readonly process: SessionProcess
   private readonly externalPlayers: ReadonlySet<string>
+  private readonly externalChatPlayer: string | null
   private readonly messaging: { enabled: boolean; cap: number | null }
   private readonly llmEnabled: boolean
   private readonly deps: LiveSessionDeps
@@ -128,6 +131,7 @@ export class LiveSession {
     this.createdAt = init.createdAt
     this.process = init.process
     this.externalPlayers = new Set(init.externalPlayers)
+    this.externalChatPlayer = init.externalChatPlayer
     this.messaging = init.messaging
     this.llmEnabled = init.llmEnabled ?? false
     this.deps = init.deps
@@ -374,13 +378,13 @@ export class LiveSession {
       }
     }
     if (command.kind === 'chat') {
-      // Forward a human chat only from the controller of a human-mode session, for a player it actually
-      // controls, when messaging is effectively enabled, and within the effective cap counted in code
-      // points. The pre-gate keeps junk off container stdin; the harness stays authoritative and
-      // validates again. A dropped frame is logged like every other rejection.
+      // Forward a human chat only from the controller of a human-mode session, as the one designated
+      // sender (always drawn from `externalPlayers`, so it is the narrower of the two), when messaging
+      // is effectively enabled, and within the effective cap counted in code points. The pre-gate keeps
+      // junk off container stdin; the harness stays authoritative and validates again.
       if (
         this.mode !== 'human' ||
-        !this.externalPlayers.has(command.player) ||
+        command.player !== this.externalChatPlayer ||
         !this.messaging.enabled
       ) {
         return

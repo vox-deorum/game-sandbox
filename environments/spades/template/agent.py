@@ -72,10 +72,10 @@ class Agent:
     # after act and before the trick resolves, the harness calls chat with messages sent to you since
     # your last turn. Return messages with a recipient and text. Use None as the recipient to broadcast
     # to the whole table, or a player ID such as "player_2" to send directly. You may send one message
-    # per recipient and one broadcast per turn. By default, text is limited to 120 characters as counted
-    # by the system. cards.partner_player(observation) returns your partner's number during act; format
-    # that number as f"player_{number}" for a direct message. Every message is recorded and shown in
-    # replays, so nothing you send is ever secret. Return nothing to stay silent.
+    # per recipient and one broadcast at each acting opportunity. By default, text is limited to 120
+    # characters as counted by the system. cards.partner_player(observation) returns your partner's
+    # number during act; format that number as f"player_{number}" for a direct message. Every message is
+    # recorded and shown in replays, so nothing you send is ever secret. Return nothing to stay silent.
     #
     # def chat(self, inbox: list[dict]) -> list[dict] | None:
     #     ...

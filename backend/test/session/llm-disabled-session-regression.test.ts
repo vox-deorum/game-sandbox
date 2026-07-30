@@ -129,6 +129,7 @@ describe('disabled LLM session regression', () => {
       recording_id: `${envId}-${started.id}`,
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
+      external_chat_player: null,
     })
     // The public launch config has no hook-order field. Its ordinary player/messaging/recording
     // shape is therefore the observable contract this test can pin without inventing a hook seam.

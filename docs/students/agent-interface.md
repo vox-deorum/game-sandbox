@@ -98,7 +98,7 @@ An agent can implement `chat` when its environment supports messaging. On your t
 
 To send messages, return a list such as `[{"to": "player_0", "text": "hi partner"}]`, or return nothing to stay silent. Use `None` as the recipient to send a message to every other player.
 
-On each turn, your agent can send one message to each recipient and one broadcast. The environment sets the maximum message length, and a season can lower it. A message that breaks any of these limits is dropped without an error, so a message that never arrived probably broke a limit. A message arrives on the recipient's next turn. Every message appears in replays, so do not treat messages as secret. See the [communication specification](../specs/communication.md) for the complete rules.
+At each acting opportunity, your agent can send one message to each recipient and one broadcast. The environment sets the maximum message length, and a season can lower it. A message that breaks any of these limits is dropped without an error, so a message that never arrived probably broke a limit. Messages are recorded on the completed step and become readable only at a later acting opportunity. Every message appears in replays, so do not treat messages as secret. See the [communication specification](../specs/communication.md) for the complete rules.
 
 ### LLM calls
 

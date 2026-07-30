@@ -11,7 +11,7 @@ def chat(self, inbox):
     ...
 ```
 
-On the agent's turn, the harness calls `chat` immediately after `act` and before the environment applies the action. The agent therefore knows its chosen action, but not the outcome of the step. `inbox` contains messages addressed to that player since its previous turn. Each inbox item includes its sender, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. See [Submissions](submission.md).
+On the agent's acting opportunity, the harness calls `chat` immediately after `act` and before the environment applies the action. The agent therefore knows its chosen action, but not the outcome of the step. `inbox` contains messages addressed to that player since its previous acting opportunity. Each inbox item includes its sender, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. Its inbox is still drained so unread messages remain bounded. See [Submissions](submission.md).
 
 ## Messages
 
@@ -23,34 +23,47 @@ A recorded message object contains:
 
 Its sent tick is the tick of the state line that contains it. An inbox item adds that tick as an explicit `tick` field.
 
-Messages address players rather than seats. A direct message is valid only when the environment's current recipient policy allows that target for the acting sender. Message volume scales with the player count rather than the seat count.
+Messages address players rather than seats. A direct message is valid only when the environment's current recipient policy allows that target for its sender. Message volume scales with the player count rather than the seat count.
 
-A human sends only as the one designated human player and only while that player is acting. An agent sends as the player whose turn invoked its `chat` hook. The harness enforces the acting sender for both paths rather than trusting a browser-provided player id. See [Interaction](interaction.md#chat).
+A human sends only as the session's designated human player and may compose while that player remains active. An agent sends as the player whose acting opportunity invoked its `chat` hook. The harness enforces both sender identities rather than trusting a browser-provided player ID. See [Interaction](interaction.md#chat).
 
-An environment may provide a live-state policy for the acting player. It returns ordered, unique direct recipients from the resolved layout, excluding the sender, and a default recipient. A direct default must be in that set; broadcast is also a valid default. The policy may change as the game advances. Without it, every other player is permitted in canonical player order and broadcast is the default. An invalid result falls back to those defaults and records a diagnostic.
+An environment may provide a live-state policy for a sender. It returns ordered, unique direct recipients, excluding the sender, and a default recipient. A direct default must be in that set; broadcast is also a valid default. The policy may change as the game advances. Without it, every other logically active player is permitted in canonical order and broadcast is the default. An invalid result falls back to those defaults and writes a standard-error diagnostic.
 
-Broadcast is always available and is represented by a null recipient. An environment can restrict or reorder direct recipients but cannot remove broadcast. The same policy validates messages returned by an agent's `chat` hook and messages submitted by a human. A message that breaks the policy, the text limit, or the per-turn limits is dropped and recorded as a diagnostic.
+A named recipient who is no longer logically active is removed from the policy, and a default that leaves with it becomes broadcast. Naming a departed player is therefore not a defect, so a narrow policy never widens to the permissive default at the moment a player leaves.
 
-On each turn, an acting player may send at most one message to each recipient and one broadcast. The environment sets the text limit in Unicode code points, matching `len(text)` in Python. A season may lower the limit or disable messaging. Binary payloads and structured side channels are not supported.
+Broadcast is always available and is represented by a null recipient. An environment can restrict or reorder direct recipients but cannot remove broadcast. The same policy validates messages returned by an agent's `chat` hook and messages submitted by a human. A message that breaks the policy, the text limit, or the per-boundary limits is dropped with a standard-error diagnostic.
+
+Each sender may contribute at most one direct message to each permitted recipient and one broadcast to one completed step boundary. These limits reset independently for every sender and boundary. The environment sets the text limit in Unicode code points, matching `len(text)` in Python. A season may lower the limit or disable messaging. Binary payloads and structured side channels are not supported.
+
+A logically active player is present in `env.agents` and is not marked terminated or truncated. This excludes an AEC player awaiting a required dead step. The set is resolved once per completed transition, and every rule above is stated against it. An inactive or unknown sender, an inactive recipient, a duplicate recipient, invalid text, and a policy-disallowed target are dropped with concise standard-error diagnostics. Messaging rejection never creates a state diagnostic, client rejection envelope, illegal move, or forfeit.
 
 ## Delivery and visibility
 
 ```text
-Sender → harness → recipient inbox on its next turn
-             └──→ recording
+human FIFO ─┐
+            ├─→ validate → environment step → recording → recipient inboxes
+agent chat ─┘
 ```
 
-Accepted messages enter pending inboxes at the end of their enclosing state tick. A message is first seen on the recipient's next turn. Its inbox item includes that sent tick.
+One completed step uses this messaging order:
 
-Agents never communicate directly. Human messages travel through the session WebSocket to a bounded first-in, first-out queue for the active external player. They do not use the coalescing input latch. Each message names its sender and compose tick, the announced tick of the turn it was written against.
+1. Snapshot the acting observation and obtain the action.
+2. Atomically drain the designated human player's message queue.
+3. Use the human policy published on the preceding live state and resolve the acting agent's current pre-step policy.
+4. Validate the human batch, drain the acting player's inbox, and run its optional `chat` hook.
+5. Apply the environment action and run the acting agent's optional `learn` hook.
+6. Record the accepted human and agent messages on the completed state.
+7. Deliver that batch to recipient inboxes.
 
-The harness drains only the acting player's queue and admits each message by its compose tick:
+The atomic queue drain is the admission cutoff. A browser frame accepted before the drain joins that boundary. A later frame waits for the next completed step. Wall-clock arrival and client-provided ticks do not assign a message to a boundary.
 
-- The current announced tick is accepted.
-- The immediately previous announced tick is accepted for one drain.
-- Older or never-announced ticks, and messages from a sender who is no longer active, are dropped.
+Human messages travel through the session WebSocket to one bounded first-in, first-out queue for the designated human player. They do not use the coalescing action-input latch. The command carries the sender, recipient, and text. The transport rejects another sender before allocating queue storage.
 
-An accepted message uses the recipient policy cached for its compose tick and must meet the text and per-turn limits for agent output. Failures are dropped and recorded as diagnostics. A message sent on the drain step is recorded with that enclosing state tick and delivers that same tick to the recipient inbox.
+The episode retains the human policy published on the latest live state. Every queued human message at the next boundary is validated against that cached pre-step policy, including when another player acts. The completed transition publishes the next policy while the human remains active. Required AEC dead steps neither publish nor replace it.
+
+Accepted messages are recorded on their admitted boundary and delivered only afterward. A message recorded on tick T cannot be read by any `chat` hook on tick T. Its inbox item includes T as the sent tick, and the recipient first reads it at a later acting opportunity. One recorded batch lists the human FIFO first, followed by agent batches in canonical player order while retaining each sender's returned order.
+
+A completed transition discards the inbox of every player that left on it, and delivery skips a recipient that left the same way, because neither has a later acting opportunity to read on. Once the designated human is inactive, its queued frames are still drained at each boundary and dropped there, so the transport's bound is all that holds them.
 
 Broadcasts are visible to every player and spectator. During live play, a targeted message is shown only to the clients controlling its recipient or sender. The sender also receives the message so its chat panel can render recorded state instead of a local copy. This reveals nothing the sender did not write. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
 

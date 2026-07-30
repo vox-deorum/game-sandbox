@@ -1,6 +1,6 @@
 # Stage 17: Simultaneous stepping
 
-Status: not started.
+Status: in progress.
 
 ## Goal
 

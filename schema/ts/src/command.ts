@@ -19,22 +19,24 @@ const InputCommandSchema = z.object({
   action: z.unknown(),
 })
 
-const ChatCommandSchema = z.object({
-  kind: z.literal('chat'),
-  player: z.string(),
-  tick: z.int().nonnegative(),
-  to: z.string().nullable(),
-  text: z.string(),
-})
+const ChatCommandSchema = z
+  .object({
+    kind: z.literal('chat'),
+    player: z.string(),
+    to: z.string().nullable(),
+    text: z.string(),
+  })
+  .strict()
 
 const PauseCommandSchema = z.object({ kind: z.literal('pause') })
 const ResumeCommandSchema = z.object({ kind: z.literal('resume') })
 const StopCommandSchema = z.object({ kind: z.literal('stop') })
 
 /**
- * The full command shape, keyed on `kind`. Each branch uses zod's default object mode, which strips
- * an unrecognized property instead of rejecting the command for carrying one: a client sending a
- * field this build does not know about yet should not lose its command over it.
+ * The full command shape, keyed on `kind`. Chat commands are strict because they cross the
+ * asynchronous message boundary as one exact protocol shape. Other branches use zod's default
+ * object mode, which strips an unrecognized property instead of rejecting the command for carrying
+ * one.
  */
 const CommandSchema = z.discriminatedUnion('kind', [
   InputCommandSchema,
@@ -64,7 +66,6 @@ const REASON_BY_FIELD: Record<string, Record<string, string>> = {
   },
   chat: {
     player: 'chat command needs a string player',
-    tick: 'chat command needs a non-negative safe-integer tick',
     to: 'chat command needs a string or null to',
     text: 'chat command needs string text',
   },

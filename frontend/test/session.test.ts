@@ -880,6 +880,55 @@ describe('SessionPage', () => {
     }
   })
 
+  it('applies the newest chat policy before a throttled opponent state renders', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(spadesHeader())
+      handlers.onSessionStatus?.('running')
+      handlers.onConnectionChange?.('open')
+      handlers.onState(
+        playerState(0, {
+          chatOptions: {
+            sender: 'player_0',
+            target_recipients: ['player_2'],
+            default_recipient: 'player_2',
+          },
+        }),
+      )
+      await nextTick()
+
+      const input = screen.getByRole('textbox') as HTMLInputElement
+      await fireEvent.update(input, 'keep this draft')
+      expect(screen.getByRole('combobox')).toHaveValue('player_2')
+      expect(drawn).toHaveLength(1)
+
+      // This opponent frame remains visually queued for the live cadence, but its chat policy is
+      // transport authority and must take effect immediately.
+      handlers.onState(
+        playerState(1, {
+          chatOptions: {
+            sender: 'player_0',
+            target_recipients: ['player_1'],
+            default_recipient: 'player_1',
+          },
+        }),
+      )
+      await nextTick()
+
+      expect(drawn).toHaveLength(1)
+      expect(screen.getByRole('combobox')).toHaveValue('player_1')
+      expect(input.value).toBe('keep this draft')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows "No such session" when the row is missing', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(undefined)
@@ -887,7 +936,7 @@ describe('SessionPage', () => {
     expect(await screen.findByText('No such session.')).toBeInTheDocument()
   })
 
-  it('mounts chat for the designated sender and closes it once that turn sends an action', async () => {
+  it('keeps chat available across actions and ordinary state changes', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
@@ -924,16 +973,18 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({
       kind: 'chat',
       player: 'player_0',
-      tick: 8,
       to: 'player_2',
       text: 'lead low',
     })
 
-    await fireEvent.update(input, 'draft from the previous turn')
+    await fireEvent.update(input, 'draft across opponent turns')
     mountCtx?.sendAction?.('player_0', 12)
     await nextTick()
-    expect(screen.queryByRole('textbox')).toBeNull()
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(
+      'draft across opponent turns',
+    )
 
     handlers.onState(
       playerState(12, {
@@ -945,10 +996,10 @@ describe('SessionPage', () => {
       }),
     )
     const nextInput = (await screen.findByRole('textbox')) as HTMLInputElement
-    expect(nextInput.value).toBe('')
+    expect(nextInput.value).toBe('draft across opponent turns')
   })
 
-  it('does not consume the chat opportunity when a reconnect drops a renderer action', async () => {
+  it('restores the preserved chat draft after reconnect and never consumes it on an action', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
@@ -970,27 +1021,22 @@ describe('SessionPage', () => {
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
     await fireEvent.update(input, 'lead low')
 
-    // The socket drops: a send silently no-ops, so the composer must not clear the draft into one.
+    // A disconnected composer is unavailable, but the mounted panel retains its draft.
     handlers.onConnectionChange?.('reconnecting')
     await nextTick()
-    const send = screen.getByRole('button', { name: 'Send' })
-    expect(send).toBeDisabled()
-    await fireEvent.click(send)
+    expect(screen.queryByRole('textbox')).toBeNull()
     expect(sent).toHaveLength(0)
-    expect(input.value).toBe('lead low')
 
-    // Renderer input takes the same path as chat. A reconnect drops the action, so it must not close
-    // this turn's composer or consume its opportunity.
+    // Renderer input still fails closed while the socket is unavailable.
     mountCtx?.sendAction?.('player_0', 12)
     await nextTick()
     expect(sent).toHaveLength(0)
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
-    expect(input.value).toBe('lead low')
 
-    // Once the socket is open, the same renderer action forwards and closes the composer.
+    // The latest self-contained policy reactivates the composer with the unsent draft.
     handlers.onConnectionChange?.('open')
     await nextTick()
-    expect(send).toBeEnabled()
+    const restored = screen.getByRole('textbox') as HTMLInputElement
+    expect(restored.value).toBe('lead low')
     mountCtx?.sendAction?.('player_0', 12)
     await nextTick()
     expect(sent).toContainEqual({
@@ -998,7 +1044,8 @@ describe('SessionPage', () => {
       player: 'player_0',
       action: 12,
     })
-    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(restored.value).toBe('lead low')
   })
 
   it('keys the character counter off the row cap, not the metadata', async () => {

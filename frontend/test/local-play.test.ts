@@ -185,7 +185,7 @@ describe('LocalPlayPage', () => {
     expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
   })
 
-  it('sends local chat and closes the composer once that turn sends an action', async () => {
+  it('sends tick-free local chat and keeps the composer available across actions', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     await renderLocal()
     handlers.onHeader(spadesHeader())
@@ -207,30 +207,30 @@ describe('LocalPlayPage', () => {
     expect(sent).toContainEqual({
       kind: 'chat',
       player: 'player_0',
-      tick: 9,
       to: 'player_2',
       text: 'cover the ace',
     })
 
-    await fireEvent.update(input, 'draft from the previous turn')
+    await fireEvent.update(input, 'draft across opponent turns')
     mountContext?.sendAction?.('player_0', 12)
-    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
 
     handlers.onState(
       playerState(13, {
         chatOptions: {
           sender: 'player_0',
-          target_recipients: ['player_2'],
-          default_recipient: 'player_2',
+          target_recipients: ['player_1'],
+          default_recipient: 'player_1',
         },
       }),
     )
     const nextInput = (await screen.findByRole('textbox')) as HTMLInputElement
-    expect(nextInput.value).toBe('')
+    expect(screen.getByRole('combobox')).toHaveValue('player_1')
+    expect(nextInput.value).toBe('draft across opponent turns')
   })
 
-  it('does not consume local chat when a reconnect drops a renderer action', async () => {
+  it('restores the local chat draft after reconnect and never consumes it on an action', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     await renderLocal()
     handlers.onHeader(spadesHeader())
@@ -252,13 +252,14 @@ describe('LocalPlayPage', () => {
 
     mountContext?.sendAction?.('player_0', 12)
     await waitFor(() => expect(sent).toHaveLength(0))
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
-    expect(input.value).toBe('cover the ace')
+    expect(screen.queryByRole('textbox')).toBeNull()
 
     handlers.onConnectionChange?.('open')
+    const restored = (await screen.findByRole('textbox')) as HTMLInputElement
+    expect(restored.value).toBe('cover the ace')
     mountContext?.sendAction?.('player_0', 12)
-    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
 
   it('shows an error when the bridge metadata is absent', async () => {

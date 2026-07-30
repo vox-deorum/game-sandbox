@@ -132,6 +132,8 @@ class LiveConfig:
     #: can only disable or tighten, never enable messaging on an environment that opted out.
     messaging_enabled: bool | None = None
     message_cap: int | None = None
+    #: The one external binding authorized to send chat. ``None`` disables human chat acceptance.
+    external_chat_player: str | None = None
     #: Workflow containers set this to run as fast as the agents compute, without live pacing.
     headless: bool = False
     #: Absent for ordinary sessions. The key map covers agent players exactly and excludes humans.
@@ -253,6 +255,14 @@ def parse_config(
     expected_players = {player_id for seat in layout.seats for player_id in seat.players}
     _validate_player_ids("player_bindings", set(player_bindings), expected_players)
 
+    external_chat_player = config.get("external_chat_player")
+    if external_chat_player is not None and not isinstance(external_chat_player, str):
+        raise LiveConfigError("config 'external_chat_player' must be a player id string or null")
+    if external_chat_player is not None:
+        binding = player_bindings.get(external_chat_player)
+        if binding is None or binding.kind != "external":
+            raise LiveConfigError("config 'external_chat_player' must name an external player binding")
+
     players = _parse_players(config.get("players"), player_bindings, expected_players)
     step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
     episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
@@ -283,6 +293,7 @@ def parse_config(
         episode_timeout_ms=episode_timeout_ms,
         messaging_enabled=messaging_enabled,
         message_cap=message_cap,
+        external_chat_player=external_chat_player,
         headless=headless,
         llm=llm,
         start_paused=start_paused,
@@ -658,11 +669,12 @@ def run(
             max_steps=config.max_steps,
             parameters=config.parameters,
             layout=config.layout,
+            external_chat_player=config.external_chat_player,
         )
         # The effective messaging decision (metadata AND config) is resolved once inside the episode;
         # reuse it to gate the human chat queue, so a frame is accepted only when the loop will route
         # it. The command pump starts only after this gate has been configured.
-        control.configure_chat(episode.messaging_enabled)
+        control.configure_chat(episode.external_chat_sender)
         with episode:
             # Stream the opening deal frame (turn-based envs only) so a human who must act first sees
             # the table before the loop blocks for their move. It is streamed, never recorded.

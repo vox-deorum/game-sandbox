@@ -261,6 +261,60 @@ def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_fo
         parse_config([json.dumps(payload)], entry=wide_entry)
 
 
+def test_parse_config_accepts_only_an_external_designated_chat_player():
+    entry = EnvironmentEntry(
+        meta=EnvironmentMeta(
+            env_id="two-humans",
+            display_name="Two humans",
+            description="A parser-only two-external fixture.",
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
+            layout=PlayerBounds(2, 2),
+            human_players=("player_0", "player_1"),
+            human_timeout_ms=None,
+            recommended_episode_ticks=1,
+            pace_interval_ms=None,
+            step_limit_ms=1000,
+            episode_limit_ms=1000,
+            messaging=True,
+            message_cap=None,
+            llm=False,
+            renderer="fake",
+        ),
+        make=lambda _parameters: FakeEnv(1),
+        default_action=lambda _env, _player_id: DEFAULT_ACTION,
+    )
+    payload = {
+        "env_id": "two-humans",
+        "parameters": {"players": 2},
+        "player_bindings": {"player_0": {"kind": "external"}, "player_1": {"kind": "external"}},
+        "players": {
+            "player_0": {"kind": "human", "label": "A"},
+            "player_1": {"kind": "human", "label": "B"},
+        },
+        "recording_dir": "/r",
+        "external_chat_player": "player_1",
+    }
+    assert parse_config([json.dumps(payload)], entry=entry).external_chat_player == "player_1"
+
+    payload["external_chat_player"] = None
+    assert parse_config([json.dumps(payload)], entry=entry).external_chat_player is None
+
+    payload["external_chat_player"] = "player_9"  # not a bound player at all
+    with pytest.raises(LiveConfigError, match="external player binding"):
+        parse_config([json.dumps(payload)], entry=entry)
+
+    # Bound, but to an agent: chat authority belongs to a human seat, not merely to a named player.
+    payload["player_bindings"]["player_1"] = {"kind": "builtin-agent", "name": "naive"}
+    payload["players"]["player_1"] = {"kind": "agent", "builtin_name": "naive", "label": "B"}
+    payload["external_chat_player"] = "player_1"
+    with pytest.raises(LiveConfigError, match="external player binding"):
+        parse_config([json.dumps(payload)], entry=entry)
+
+    payload["external_chat_player"] = 7
+    with pytest.raises(LiveConfigError, match="player id string or null"):
+        parse_config([json.dumps(payload)], entry=entry)
+
+
 def test_parse_config_defaults_seed_and_optional_fields():
     payload = {
         "env_id": "flappy_bird",
@@ -975,14 +1029,36 @@ def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
         recording_id="r",
         clock=clock,
         messaging=None,
+        external_chat_player="player_0",
     ) as episode:
-        control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hello table"}')
+        control.configure_chat(episode.external_chat_sender)
+        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello table"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # The broadcast the human queued was validated and recorded on the first stepped tick.
     per_tick = _messages_in(tmp_path / "r" / "recording.jsonl")
     assert per_tick[0] == [{"from": "player_0", "to": None, "text": "hello table"}]
+
+
+def test_explicit_null_chat_sender_does_not_fall_back_to_the_only_external_player():
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    source = TransportSource(control, clock=clock, paced=True, sleeper=AdvancingSleeper(base))
+    entry = _messaging_entry(1, messaging=True)
+    episode = Episode(
+        entry,
+        {"player_0": ExternalPlayer(source, message_source=source)},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+        external_chat_player=None,
+    )
+
+    assert episode.external_chat_sender is None
+    control.configure_chat(episode.external_chat_sender)
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+    assert control.take_chat("player_0") == []
 
 
 def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path: Path):
@@ -1006,8 +1082,8 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
         clock=clock,
         messaging=False,  # config disables what the metadata allowed
     ) as episode:
-        control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hello"}')
+        control.configure_chat(episode.external_chat_sender)
+        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # Messaging off: no message line was ever written.

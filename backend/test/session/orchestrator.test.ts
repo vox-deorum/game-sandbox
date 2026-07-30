@@ -1342,7 +1342,11 @@ describe('orchestrator', () => {
     it('carries the metadata messaging block into the config and persists it on the row', async () => {
       const orch = makeOrchestrator()
       const { id, config } = await start(orch, chattyRequest())
-      expect(config).toMatchObject({ messaging_enabled: true, message_cap: 120 })
+      expect(config).toMatchObject({
+        messaging_enabled: true,
+        message_cap: 120,
+        external_chat_player: 'player_0',
+      })
       // Persisted (SQLite 0/1) so the payload answers identically live and after end.
       expect(await storage.getSession(id)).toMatchObject({ messaging_enabled: 1, message_cap: 120 })
     })

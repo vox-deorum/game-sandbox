@@ -145,3 +145,50 @@ def test_non_object_item_is_dropped(capsys):
     router = _router()
     assert router.validate_outgoing("player_0", ["not an object"]) == []
     assert "non-object message" in capsys.readouterr().err
+
+
+def test_inactive_senders_and_recipients_are_dropped(capsys):
+    router = _router()
+    router.set_active(("player_0", "player_1"))
+    assert router.validate_outgoing("player_2", [{"to": "player_0", "text": "late"}]) == []
+    assert router.validate_outgoing("player_0", [{"to": "player_2", "text": "late"}]) == []
+    diagnostics = capsys.readouterr().err
+    assert "inactive sender" in diagnostics
+    assert "inactive recipient" in diagnostics
+
+
+def test_set_active_discards_the_inbox_of_a_player_that_left():
+    router = _router()
+    router.deliver(router.validate_outgoing("player_0", [{"to": "player_2", "text": "queued"}]), tick=0)
+    router.set_active(("player_0", "player_1"))
+    assert router.drain("player_2") == []
+    # The players still active keep everything they were holding.
+    router.deliver(router.validate_outgoing("player_0", [{"to": "player_1", "text": "kept"}]), tick=1)
+    router.set_active(("player_0", "player_1"))
+    assert router.drain("player_1") == [{"from": "player_0", "to": "player_1", "text": "kept", "tick": 1}]
+
+
+def test_delivery_skips_a_recipient_that_left_on_this_transition():
+    router = _router()
+    accepted = router.validate_outgoing("player_0", [{"to": None, "text": "table!"}])
+    router.set_active(("player_0", "player_1"))
+    router.deliver(accepted, tick=2)
+    assert router.drain("player_1") == [{"from": "player_0", "to": None, "text": "table!", "tick": 2}]
+    for gone in ("player_2", "player_3"):
+        assert router.drain(gone) == []
+
+
+def test_a_policy_naming_an_inactive_recipient_is_filtered_rather_than_voided(capsys):
+    """An environment naming a departed player must not have its whole policy widened to the default."""
+    router = _router()
+    router.set_active(("player_0", "player_1"))
+    policy = router.validate_policy(
+        "player_0",
+        {"target_recipients": ("player_1", "player_2"), "default_recipient": "player_2"},
+    )
+    # player_2 is gone, so it leaves the list, and the default it held falls back to broadcast. The
+    # surviving restriction still excludes player_3, which the default policy would have permitted.
+    assert policy.target_recipients == ("player_1",)
+    assert policy.default_recipient is None
+    assert capsys.readouterr().err == ""
+    assert router.validate_outgoing("player_0", [{"to": "player_3", "text": "nope"}], policy) == []

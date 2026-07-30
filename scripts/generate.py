@@ -194,9 +194,9 @@ def generate_fixtures() -> None:
                         {"from": "player_0", "to": "player_2", "text": "strong:hearts"},
                         {"from": "player_0", "to": None, "text": "good luck"},
                     ],
-                    # This compact schema fixture intentionally puts sent messages and the next
-                    # chat opportunity on one synthetic tick. A real episode collects messages
-                    # before the step and publishes options for the following actor after it.
+                    # This compact schema fixture puts sent messages and the current designated
+                    # human's chat policy on one synthetic state. A live episode publishes that
+                    # current policy on every eligible state.
                     chat_options=(
                         {
                             "sender": "player_0",

@@ -47,6 +47,7 @@ const {
   paused,
   buffering,
   endReason,
+  latestState,
   connect,
   send,
   togglePause,
@@ -89,7 +90,7 @@ const stageLoading = computed(() => meta.value === null || (aspectRatio.value ==
 const messagingEnabled = computed(() => meta.value?.messaging === true)
 const liveChatEnabled = computed(() => status.value === 'running')
 const { chatProps, sendInput, sendChat } = useLiveChat({
-  state: lastState,
+  state: latestState,
   controlledPlayers,
   enabled: liveChatEnabled,
   connection,

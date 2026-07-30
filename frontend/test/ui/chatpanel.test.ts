@@ -12,15 +12,13 @@ const PLAYERS = {
   player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
   player_3: { kind: 'agent' as const, label: "maya's agent", user: 'maya', submission_id: 'sub-1' },
 }
-// One published external turn: the state names the sender, the tick it was published on, the
-// recipients the environment allows, and the recipient selected by default.
-const OPPORTUNITY = {
+// The self-contained policy each live state publishes for the designated human sender.
+const POLICY = {
   sender: 'player_2',
-  tick: 7,
   targetRecipients: ['player_0', 'player_1', 'player_3'],
   defaultRecipient: 'player_0',
 }
-const TURN = { opportunity: OPPORTUNITY }
+const LIVE_POLICY = { policy: POLICY }
 
 describe('ChatPanel', () => {
   it('badges broadcasts, to-you, from-you, and blind-labels senders', () => {
@@ -71,7 +69,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 3,
-        ...TURN,
+        ...LIVE_POLICY,
       },
     })
     const input = screen.getByRole('textbox')
@@ -98,7 +96,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
-        ...TURN,
+        ...LIVE_POLICY,
       },
     })
     const recipient = screen.getByRole('combobox')
@@ -108,9 +106,7 @@ describe('ChatPanel', () => {
     await fireEvent.update(recipient, 'player_0')
     await fireEvent.update(input, 'hello')
     await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(emitted('send')?.[0]).toEqual([
-      { sender: 'player_2', tick: 7, to: 'player_0', text: 'hello' },
-    ])
+    expect(emitted('send')?.[0]).toEqual([{ sender: 'player_2', to: 'player_0', text: 'hello' }])
     // No optimistic echo: the draft clears and the panel waits for the recorded line.
     expect(input.value).toBe('')
 
@@ -118,40 +114,35 @@ describe('ChatPanel', () => {
     await fireEvent.update(recipient, '')
     await fireEvent.update(input, 'table!')
     await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(emitted('send')?.[1]).toEqual([
-      { sender: 'player_2', tick: 7, to: null, text: 'table!' },
-    ])
+    expect(emitted('send')?.[1]).toEqual([{ sender: 'player_2', to: null, text: 'table!' }])
   })
 
-  it('disables Send and keeps the draft while the transport is disconnected', async () => {
+  it('keeps the draft while the composer is temporarily unavailable', async () => {
     const props = {
       entries: [] as ChatEntry[],
       players: PLAYERS,
       viewerPlayers: ['player_2'],
       sendable: true,
-      connected: false,
       messageCap: 120,
-      ...TURN,
+      ...LIVE_POLICY,
     }
-    const { container, emitted, rerender } = render(ChatPanel, { props })
+    const { emitted, rerender } = render(ChatPanel, { props })
     const input = screen.getByRole('textbox') as HTMLInputElement
     await fireEvent.update(input, 'lead low')
 
-    // A dropped connection: the socket would silently no-op a send, so Send is disabled and submitting
-    // is a no-op that must never clear the typed draft into a lost message.
-    const send = screen.getByRole('button', { name: 'Send' })
-    expect(send).toBeDisabled()
-    await fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+    await rerender({ ...props, sendable: false })
+    expect(screen.queryByRole('textbox')).toBeNull()
     expect(emitted('send')).toBeUndefined()
-    expect(input.value).toBe('lead low')
 
-    // When the connection returns, the preserved draft is sendable.
-    await rerender({ ...props, connected: true })
+    // The component remains mounted while its form is unavailable, so restoring the same policy also
+    // restores the unsent draft.
+    await rerender(props)
+    const restored = screen.getByRole('textbox') as HTMLInputElement
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(restored.value).toBe('lead low')
     expect(send).toBeEnabled()
     await fireEvent.click(send)
-    expect(emitted('send')?.[0]).toEqual([
-      { sender: 'player_2', tick: 7, to: 'player_0', text: 'lead low' },
-    ])
+    expect(emitted('send')?.[0]).toEqual([{ sender: 'player_2', to: 'player_0', text: 'lead low' }])
   })
 
   it('tells same-labelled players apart by player number in options and sender lines', () => {
@@ -170,7 +161,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
-        ...TURN,
+        ...LIVE_POLICY,
       },
     })
 
@@ -183,16 +174,15 @@ describe('ChatPanel', () => {
     expect(container.querySelector('.chat-player')?.textContent).toBe('P0')
   })
 
-  it('renders only policy recipients and resets composer state on a new opportunity', async () => {
+  it('resets only the recipient when the policy changes', async () => {
     const props = {
       entries: [] as ChatEntry[],
       players: PLAYERS,
       viewerPlayers: ['player_2'],
       sendable: true,
       messageCap: 120,
-      opportunity: {
+      policy: {
         sender: 'player_2',
-        tick: 7,
         targetRecipients: ['player_0', 'player_3'],
         defaultRecipient: 'player_0',
       },
@@ -207,38 +197,34 @@ describe('ChatPanel', () => {
     expect(recipient).toHaveValue('player_0')
 
     await fireEvent.update(recipient, '')
-    await fireEvent.update(input, 'message for the previous turn')
-    await rerender({ ...props, sendable: false })
-    expect(screen.queryByRole('textbox')).toBeNull()
+    await fireEvent.update(input, 'keep this draft')
+    await rerender({ ...props, entries: [{ tick: 8, from: 'player_0', to: null, text: 'hi' }] })
+    expect(recipient).toHaveValue('')
+    expect(input.value).toBe('keep this draft')
+
     await rerender({
       ...props,
-      sendable: true,
-      opportunity: {
+      policy: {
         sender: 'player_2',
-        tick: 11,
         targetRecipients: ['player_1'],
         defaultRecipient: 'player_1',
       },
     })
     expect(screen.getByRole('combobox')).toHaveValue('player_1')
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('keep this draft')
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
 
-  // The opening frame and the first recorded step both carry tick 0, so a tick alone does not name
-  // an opportunity. Resetting on the sender and tick together keeps one player's draft and recipient
-  // from carrying into another player's turn.
-  it('resets when a new sender is announced on the same tick', async () => {
+  it('resets the recipient but retains the draft when the designated sender changes', async () => {
     const props = {
       entries: [] as ChatEntry[],
       players: PLAYERS,
       viewerPlayers: ['player_2'],
       sendable: true,
       messageCap: 120,
-      opportunity: {
+      policy: {
         sender: 'player_2',
-        tick: 0,
         targetRecipients: ['player_0'],
         defaultRecipient: 'player_0',
       },
@@ -249,14 +235,13 @@ describe('ChatPanel', () => {
 
     await rerender({
       ...props,
-      opportunity: {
+      policy: {
         sender: 'player_3',
-        tick: 0,
         targetRecipients: ['player_1'],
         defaultRecipient: 'player_1',
       },
     })
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('meant for player_2')
     expect(screen.getByRole('combobox')).toHaveValue('player_1')
   })
 })

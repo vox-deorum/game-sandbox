@@ -19,7 +19,7 @@ import type { RecordingHeader } from '@game-sandbox/schema'
 import { codePointLength } from '@game-sandbox/schema/text'
 import { computed, ref, useId, watch } from 'vue'
 
-import type { LiveChatOpportunity } from '../composables/useLiveChat.js'
+import type { LiveChatPolicy } from '../composables/useLiveChat.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
 import { formatPlayer } from '../lib/format.js'
@@ -41,14 +41,10 @@ const props = withDefaults(
     viewerPlayers?: string[]
     /** Show the composer. The page decides (owner + human mode + running + controls a player). */
     sendable?: boolean
-    /** Whether the transport can actually carry a send right now. False during a reconnect, when the
-     *  socket silently no-ops: the composer stays mounted (the draft is preserved) but Send is disabled,
-     *  so a typed message is never cleared into a dropped send. */
-    connected?: boolean
     /** Effective code-point cap from the session row; null is uncapped. */
     messageCap?: number | null
-    /** This turn's messaging choices, straight from the state that published them. Null off-turn. */
-    opportunity?: LiveChatOpportunity | null
+    /** The designated human sender's current policy, published with the latest live state. */
+    policy?: LiveChatPolicy | null
   }>(),
   {
     players: undefined,
@@ -57,14 +53,13 @@ const props = withDefaults(
     anonymousNumbers: undefined,
     viewerPlayers: () => [],
     sendable: false,
-    connected: true,
     messageCap: null,
-    opportunity: null,
+    policy: null,
   },
 )
 
 const emit = defineEmits<{
-  send: [payload: { sender: string; tick: number; to: string | null; text: string }]
+  send: [payload: { sender: string; to: string | null; text: string }]
 }>()
 
 const attributionCtx = computed(() => ({
@@ -96,7 +91,7 @@ const rows = computed(() =>
 // The recipient options come verbatim from the live policy, labelled by compact player id ("P1").
 // "Everyone" (a broadcast) remains available independently of that ordered direct-recipient list.
 const recipientOptions = computed(() =>
-  (props.opportunity?.targetRecipients ?? []).map((playerId) => ({
+  (props.policy?.targetRecipients ?? []).map((playerId) => ({
     value: playerId,
     label: formatPlayer(playerId),
   })),
@@ -106,11 +101,11 @@ const recipient = ref('') // '' is the "Everyone" broadcast option.
 const draft = ref('')
 const count = computed(() => codePointLength(draft.value))
 const overCap = computed(() => props.messageCap !== null && count.value > props.messageCap)
-// The draft is sendable only when the transport can carry it: gating on `connected` here means a
-// reconnect (when the socket silently no-ops) both disables Send and blocks the submit path, so the
-// draft is never cleared into a dropped send.
+// `sendable` is the page's single answer to "may this composer send right now", and it goes false the
+// instant the socket drops. Gating on it here, not just on the form's `v-if`, means a click that races
+// a reconnect cannot clear the draft into a send the socket silently swallows.
 const canSend = computed(
-  () => count.value > 0 && !overCap.value && props.connected && props.opportunity !== null,
+  () => props.sendable && count.value > 0 && !overCap.value && props.policy !== null,
 )
 // The code-point count against the cap, shown on the composer's action row. Bare when uncapped.
 const counterText = computed(() =>
@@ -121,26 +116,33 @@ const counterText = computed(() =>
 const counterId = useId()
 
 function submit(): void {
-  const turn = props.opportunity
-  if (!canSend.value || turn === null || turn === undefined) {
+  const current = props.policy
+  if (!canSend.value || current === null || current === undefined) {
     return
   }
   emit('send', {
-    sender: turn.sender,
-    tick: turn.tick,
+    sender: current.sender,
     to: recipient.value === '' ? null : recipient.value,
     text: draft.value,
   })
   draft.value = ''
 }
 
-// Reset when the sender or tick changes, so a choice made for the previous player never leaks into
-// the next human turn. Watching the tick alone would miss a new sender announced on the same tick.
+// Recipient selection follows policy changes. The draft is independent of state churn and survives
+// reconnects, opponent actions, and a changed policy until the person sends it.
+const policyKey = computed(() =>
+  props.policy === null
+    ? null
+    : JSON.stringify([
+        props.policy.sender,
+        props.policy.targetRecipients,
+        props.policy.defaultRecipient,
+      ]),
+)
 watch(
-  [() => props.opportunity?.sender, () => props.opportunity?.tick],
+  policyKey,
   () => {
-    recipient.value = props.opportunity?.defaultRecipient ?? ''
-    draft.value = ''
+    recipient.value = props.policy?.defaultRecipient ?? ''
   },
   { immediate: true },
 )

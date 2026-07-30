@@ -417,15 +417,13 @@ def test_action_source_is_not_implicitly_used_as_a_message_source():
     assert source._drained is False
 
 
-def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_path: Path):
-    # A human player (player_1) queues a message against the state published after player_0 acts. It is
-    # drained only when player_1 becomes the current external actor, then delivered on player_0's turn.
+def test_human_queue_is_drained_on_an_agent_boundary_and_delivered_later(tmp_path: Path):
+    # The designated human may compose during player_0's turn. The next completed boundary admits
+    # it, records it, then delays visibility until the recipient acts later.
     receiver = ChattyAgent()
     source = QueueSource(
         [
             {
-                "player": "player_1",
-                "tick": 0,
                 "to": "player_0",
                 "text": "from the human",
             }
@@ -444,6 +442,7 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_1",
         player_attribution={
             "player_0": {
                 "kind": "agent",
@@ -458,20 +457,20 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
     )
     recording = store.open("r")
     states = list(recording.steps())
-    assert "messages" not in states[0]
+    assert states[0]["messages"] == [{"from": "player_1", "to": "player_0", "text": "from the human"}]
     assert states[0]["chat_options"] == {
         "sender": "player_1",
         "target_recipients": ["player_0"],
         "default_recipient": None,
     }
-    # The human message is recorded on its own turn, then delivered to the agent on tick 2.
-    assert states[1]["messages"] == [{"from": "player_1", "to": "player_0", "text": "from the human"}]
+    # The human frame was invisible to player_0's hook on this boundary and reaches it next turn.
+    assert receiver.inboxes[0] == []
     assert receiver.inboxes[1] == [
-        {"from": "player_1", "to": "player_0", "text": "from the human", "tick": 1}
+        {"from": "player_1", "to": "player_0", "text": "from the human", "tick": 0}
     ]
 
 
-def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drain(
+def test_human_frame_arriving_after_the_atomic_drain_waits_for_the_next_boundary(
     tmp_path: Path,
     capsys: Any,
 ):
@@ -490,6 +489,7 @@ def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drai
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_0",
         player_attribution={
             "player_0": {
                 "kind": "human",
@@ -506,8 +506,6 @@ def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drai
     episode.step_once()
     source.queue(
         {
-            "player": "player_0",
-            "tick": 0,
             "to": "player_1",
             "text": "arrived after the drain",
         }
@@ -515,11 +513,9 @@ def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drai
     episode.step_once()
     episode.step_once()
 
-    # The one-drain grace is consumed there. Replaying the same tick afterward remains stale.
+    # The first agent boundary drains the frame and admits it. A later frame is a separate batch.
     source.queue(
         {
-            "player": "player_0",
-            "tick": 0,
             "to": "player_1",
             "text": "arrived two drains late",
         }
@@ -529,28 +525,30 @@ def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drai
     episode.close()
 
     states = list(store.open("r").steps())
-    assert states[2]["messages"] == [
+    assert states[1]["messages"] == [
         {
             "from": "player_0",
             "to": "player_1",
             "text": "arrived after the drain",
         }
     ]
-    assert "messages" not in states[4]
+    assert states[3]["messages"] == [
+        {"from": "player_0", "to": "player_1", "text": "arrived two drains late"}
+    ]
     assert receiver.inboxes[1] == [
         {
             "from": "player_0",
             "to": "player_1",
             "text": "arrived after the drain",
-            "tick": 2,
+            "tick": 1,
         }
     ]
-    assert "stale external message" in capsys.readouterr().err
+    assert "chat:" not in capsys.readouterr().err
 
 
-def test_human_queue_is_not_drained_on_an_agent_turn(tmp_path: Path):
+def test_human_and_agent_messages_share_one_boundary_in_human_then_agent_order(tmp_path: Path):
     sender = ChattyAgent([[{"to": None, "text": "agent says"}]])
-    source = QueueSource([{"player": "player_1", "tick": 0, "to": None, "text": "human says"}])
+    source = QueueSource([{"to": None, "text": "human says"}])
     store = FolderRecordingStore(tmp_path)
     entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=1)
     run_episode(
@@ -564,6 +562,7 @@ def test_human_queue_is_not_drained_on_an_agent_turn(tmp_path: Path):
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_1",
         player_attribution={
             "player_0": {
                 "kind": "agent",
@@ -578,8 +577,8 @@ def test_human_queue_is_not_drained_on_an_agent_turn(tmp_path: Path):
     )
     recording = store.open("r")
     first = next(recording.steps())
-    assert [m["text"] for m in first["messages"]] == ["agent says"]
-    assert source._drained is False
+    assert [m["text"] for m in first["messages"]] == ["human says", "agent says"]
+    assert source._drained is True
 
 
 def test_no_hook_chat_options_use_canonical_recipients_and_broadcast_default():
@@ -595,6 +594,7 @@ def test_no_hook_chat_options_use_canonical_recipients_and_broadcast_default():
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
+        external_chat_player="player_0",
     )
     episode.start()
     assert episode.opening_state()["chat_options"] == {  # type: ignore[index]
@@ -605,17 +605,92 @@ def test_no_hook_chat_options_use_canonical_recipients_and_broadcast_default():
     episode.close()
 
 
-def test_human_chat_checks_sender_tick_and_announced_policy_at_drain(
+def test_explicit_designated_sender_allows_chat_with_multiple_external_players():
+    first_source = QueueSource([{"to": None, "text": "not designated"}])
+    designated_source = QueueSource([{"to": "player_0", "text": "designated"}])
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=1)
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(first_source, message_source=first_source),
+            "player_1": ExternalPlayer(designated_source, message_source=designated_source),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+        external_chat_player="player_1",
+    )
+    episode.start()
+    assert episode.external_chat_sender == "player_1"
+    assert episode.opening_state()["chat_options"]["sender"] == "player_1"  # type: ignore[index]
+    episode.step_once()
+    episode.close()
+    assert first_source._drained is False
+    assert designated_source._drained is True
+
+
+def test_an_inactive_human_sender_has_its_queue_drained_and_dropped(capsys: Any):
+    """Once the human can no longer act, its frames are drained and dropped at each boundary.
+
+    The queue is bounded by the transport, so nothing needs draining eagerly on the transition. What
+    matters is that no frame from a departed sender is ever admitted, and that each drop says so.
+    """
+    source = QueueSource()
+
+    class HumanTerminatingEnv(RoundRobinEnv):
+        def step(self, action: Any) -> None:
+            if self.agent_selection == "player_0" and not self.terminations["player_1"]:
+                self.terminations["player_1"] = True
+                source.queue({"to": "player_0", "text": "queued during transition"})
+            super().step(action)
+
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=3)
+    entry = EnvironmentEntry(
+        meta=entry.meta,
+        make=lambda _parameters: HumanTerminatingEnv(["player_0", "player_1"], 3),
+        default_action=entry.default_action,
+        overlay=entry.overlay,
+    )
+    episode = Episode(
+        entry,
+        {
+            "player_0": AgentPlayer(SilentAgent()),
+            "player_1": ExternalPlayer(source, message_source=source),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+        external_chat_player="player_1",
+    )
+    episode.start()
+    # player_0 acts and terminates player_1 on the way out, so this boundary's drain ran before the
+    # frame existed. The recorded step carries nothing from the human.
+    episode.step_once()
+    assert source._drained is True
+    assert source._frames == [{"to": "player_0", "text": "queued during transition"}]
+
+    source.queue({"to": "player_0", "text": "queued after transition"})
+    # player_1's required dead step neither drains the queue nor republishes a policy.
+    episode.step_once()
+    assert len(source._frames) == 2
+
+    # The next completed boundary drains everything the departed sender left and drops all of it.
+    episode.step_once()
+    episode.close()
+    assert source._frames == []
+    assert "dropping inactive sender 'player_1'" in capsys.readouterr().err
+
+
+def test_human_chat_uses_the_cached_policy_and_per_boundary_validation(
     tmp_path: Path,
     capsys: Any,
 ):
     source = QueueSource(
         [
-            {"player": "player_0", "tick": 0, "to": "player_1", "text": "partner"},
-            {"player": "player_0", "tick": 0, "to": None, "text": "table"},
-            {"player": "player_0", "tick": 9, "to": "player_1", "text": "stale"},
-            {"player": "player_2", "tick": 0, "to": "player_1", "text": "spoofed"},
-            {"player": "player_0", "tick": 0, "to": "player_2", "text": "disallowed"},
+            {"to": "player_1", "text": "partner"},
+            {"to": None, "text": "table"},
+            {"to": "player_1", "text": "duplicate"},
+            {"to": "player_2", "text": "disallowed"},
         ]
     )
     store = FolderRecordingStore(tmp_path)
@@ -639,6 +714,7 @@ def test_human_chat_checks_sender_tick_and_announced_policy_at_drain(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_0",
         player_attribution={
             "player_0": {
                 "kind": "human",
@@ -659,12 +735,11 @@ def test_human_chat_checks_sender_tick_and_announced_policy_at_drain(
     first = next(store.open("r").steps())
     assert [message["text"] for message in first["messages"]] == ["partner", "table"]
     diagnostic = capsys.readouterr().err
-    assert "stale external message" in diagnostic
-    assert "spoofed or inactive" in diagnostic
+    assert "second message to player_1" in diagnostic
     assert "policy-disallowed" in diagnostic
 
 
-def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
+def test_external_chat_enforces_the_cached_policy_once(
     tmp_path: Path,
     capsys: Any,
 ):
@@ -680,8 +755,8 @@ def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
 
     source = QueueSource(
         [
-            {"player": "player_0", "tick": 0, "to": "player_1", "text": "announced"},
-            {"player": "player_0", "tick": 0, "to": "player_2", "text": "would be next"},
+            {"to": "player_1", "text": "announced"},
+            {"to": "player_2", "text": "would be next"},
         ]
     )
     store = FolderRecordingStore(tmp_path)
@@ -702,6 +777,7 @@ def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_0",
         player_attribution={
             "player_0": {
                 "kind": "human",
@@ -735,7 +811,7 @@ def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
     assert "policy-disallowed recipient 'player_2'" in capsys.readouterr().err
 
 
-def test_external_chat_grace_uses_each_announced_policy(
+def test_external_chat_uses_one_cached_policy_for_the_whole_boundary(
     tmp_path: Path,
     capsys: Any,
 ):
@@ -768,6 +844,7 @@ def test_external_chat_grace_uses_each_announced_policy(
         store=store,
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_0",
         player_attribution={
             "player_0": {
                 "kind": "human",
@@ -790,24 +867,23 @@ def test_external_chat_grace_uses_each_announced_policy(
     episode.step_once()
     episode.step_once()
     episode.step_once()
-    source.queue({"player": "player_0", "tick": 2, "to": "player_2", "text": "new allowed"})
-    source.queue({"player": "player_0", "tick": 0, "to": "player_1", "text": "old allowed"})
-    source.queue({"player": "player_0", "tick": 2, "to": "player_1", "text": "new denied"})
-    source.queue({"player": "player_0", "tick": 0, "to": "player_2", "text": "old denied"})
-    source.queue({"player": "player_0", "tick": 2, "to": None, "text": "new broadcast"})
-    source.queue({"player": "player_0", "tick": 0, "to": None, "text": "old broadcast"})
+    source.queue({"to": "player_2", "text": "allowed"})
+    source.queue({"to": "player_1", "text": "denied"})
+    source.queue({"to": "player_2", "text": "duplicate"})
+    source.queue({"to": None, "text": "broadcast"})
+    source.queue({"to": None, "text": "second broadcast"})
     episode.step_once()
     episode.close()
 
     states = list(store.open("r").steps())
     assert [message["text"] for message in states[3]["messages"]] == [
-        "new allowed",
-        "old allowed",
-        "new broadcast",
+        "allowed",
+        "broadcast",
     ]
-    assert calls == ["player_0", "player_0"]
+    assert len(calls) == 4
     diagnostic = capsys.readouterr().err
-    assert diagnostic.count("policy-disallowed") == 2
+    assert diagnostic.count("policy-disallowed") == 1
+    assert "second message to player_2" in diagnostic
     assert "sent a second broadcast" in diagnostic
 
 
@@ -936,6 +1012,7 @@ def test_malformed_policy_falls_back_for_agent_output_and_external_options(
         store=FolderRecordingStore(tmp_path),
         recording_id="r",
         clock=ManualClock(),
+        external_chat_player="player_0",
         player_attribution={
             "player_0": {
                 "kind": "human",
@@ -984,6 +1061,7 @@ def test_malformed_policy_objects_never_end_the_episode(policy: object, capsys: 
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
+        external_chat_player="player_0",
     )
     episode.start()
     assert episode.opening_state()["chat_options"] == {  # type: ignore[index]

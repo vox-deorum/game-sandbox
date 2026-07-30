@@ -286,6 +286,11 @@ export class Orchestrator {
     const externalPlayers = resolvedSeats.flatMap((seat) =>
       seat.kind === 'human' ? [seat.playerId] : [],
     )
+    // Live sessions currently permit one human. Keep the full set for input and visibility while
+    // retaining the authoritative human-seat selection as the one chat sender Stage 17.1 authorizes.
+    const designatedExternalSeat = resolvedSeats.find((seat) => seat.kind === 'human')
+    const externalChatPlayer =
+      designatedExternalSeat?.kind === 'human' ? designatedExternalSeat.playerId : null
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -362,6 +367,7 @@ export class Orchestrator {
         overrides,
         resolvedParameters.values,
         messaging,
+        externalChatPlayer,
         llmLease?.keys ?? {},
       )
       await ensureRecordingsDir(this.recordingsHostDir())
@@ -420,6 +426,7 @@ export class Orchestrator {
       createdAt,
       process,
       externalPlayers,
+      externalChatPlayer,
       messaging,
       llmEnabled: llm.enabled,
       deps: {
@@ -720,6 +727,7 @@ export class Orchestrator {
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
     messaging: { enabled: boolean; cap: number | null },
+    externalChatPlayer: string | null,
     llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
@@ -780,6 +788,7 @@ export class Orchestrator {
       // double application is idempotent (AND and min).
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
+      external_chat_player: externalChatPlayer,
       ...assembleLlmLaunchConfig(this.config.llm.internalPort, llmKeys),
       // The owner decision: the play-open season's overrides now reach live sessions too, exactly as
       // the workflow runner already spreads them into scheduled games.
