@@ -38,7 +38,7 @@ Revise `EnvironmentEntry` and its contributor documentation so `make(parameters)
 - `sequential` returns an AEC environment with `agent_selection`, `last()`, scalar `step(action)`, and the ordinary agent, reward, termination, and truncation mappings.
 - `simultaneous` returns a parallel environment whose `reset()` supplies observation and info mappings and whose `step(actions)` consumes and returns player-keyed mappings.
 
-The harness continues to use `Any` at the package boundary and does not import PettingZoo in production. Small runtime-checkable protocols document the surfaces the two episode paths use.
+The harness continues to use `Any` at the package boundary, does not import PettingZoo in production, and takes a declaration at its word rather than proving which protocol an object implements.
 
 Add `EnvironmentContractError`, carrying the environment ID, declared stepping mode, and missing or contradictory protocol fact.
 
@@ -59,12 +59,11 @@ The exact return-key rule lets the harness record the terminal reward and final 
 `Episode.start()` performs the configured contract check:
 
 1. Call `entry.make()` with the complete parameters already validated by `Episode`.
-2. Check the constructed object's protocol surface against `meta.stepping`.
-3. Reset it with the episode seed.
-4. Verify its `possible_agents` against the resolved layout as today.
-5. For parallel mode, require the exact full resolved roster and reset mapping keys above.
+2. Reset it with the episode seed.
+3. Verify its `possible_agents` against the resolved layout as today.
+4. Check the reset surface the declared episode path uses: the AEC mappings and `agent_selection` for sequential mode, and the exact full resolved roster and reset mapping keys above for parallel mode.
 
-This order catches factories whose return shape depends on a selected player count or seat plan. A declared simultaneous factory returning AEC behavior, or a declared sequential factory returning parallel behavior, fails before a participant reset, recording writer, or live step begins.
+One post-reset check is the whole boundary, and it catches factories whose return shape depends on a selected player count or seat plan. Both mislabelled directions fail there, because a parallel environment never populates the AEC mappings and an AEC `reset()` never returns the observation and info mappings. A declared simultaneous factory returning AEC behavior, or a declared sequential factory returning parallel behavior, fails before a participant reset, recording writer, or live step begins.
 
 Closing remains best-effort on every partial-start failure, and the typed contract error remains an infrastructure error rather than an attributable participant failure.
 
@@ -105,7 +104,7 @@ Add a minimal `ParallelEnv` fixture under harness test support, not `environment
 - a legal default-action provider;
 - optional messaging policy whose permitted recipients follow the active player set.
 
-The fixture is not an entry point, has no renderer or student guide, and never appears in generated environment metadata. Direct tests run `parallel_api_test`, the shared parallel rollout helper, and the Stage 17.3 tick path against its `EnvironmentEntry`.
+The fixture module also declares the fixture's `EnvironmentEntry` once and shares it with the registered conformance suite, so a later metadata field lands in one place. The fixture is not an entry point, has no renderer or student guide, and never appears in generated environment metadata. Direct tests run `parallel_api_test`, the shared parallel rollout helper, and the Stage 17.3 tick path against its `EnvironmentEntry`.
 
 The registered conformance branch is also tested by injecting the fixture entry into the mode-specific helper rather than registering a test-only environment.
 
@@ -133,7 +132,7 @@ At minimum, implementation covers:
 - Every existing environment declares sequential and still passes AEC conformance and deterministic rollout.
 - Both declaration-versus-shape mismatches raise `EnvironmentContractError` at episode start using the actual resolved parameters.
 - Parallel reset rejects a missing, extra, reordered, or inactive resolved player and missing or extra observation or info keys.
-- Parallel stepping rejects missing or extra keys in any returned mapping, a revived or newly introduced player, and an active set that contradicts the returned terminal flags.
+- Parallel stepping rejects missing or extra keys in any returned mapping, a duplicated active player, a revived or newly introduced player, and an active set that contradicts the returned terminal flags.
 - A partial contract failure closes the constructed environment and opens no recording.
 - The internal fixture passes `parallel_api_test`, the parallel deterministic rollout, overlay serialization, and active-player key checks.
 - The fixture remains absent from discovery and generated `environments.json`.

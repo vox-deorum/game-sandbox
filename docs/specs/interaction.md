@@ -37,10 +37,16 @@ A turn-based live session may also emit one opening presentation state after res
 
 ## Session loop
 
-One PettingZoo agent-environment cycle supports real-time, turn-based, single-agent, and multi-agent environments:
+One PettingZoo agent-environment cycle supports real-time, turn-based, single-agent, and multi-agent environments. A sequential environment advances one acting player at a time:
 
 ```text
 Choose acting player → obtain action or default → step environment → emit state → repeat
+```
+
+A simultaneous environment advances every active player in the same step:
+
+```text
+Collect each active player's action or default → step environment once → emit state → repeat
 ```
 
 The server is authoritative. The browser never simulates ahead. Human inputs include the controlled player ID.
@@ -51,8 +57,9 @@ The environment's [metadata](environment.md) selects timing:
 
 | Mode | Pace interval | Advance rule |
 | --- | --- | --- |
-| Turn-based | None | Advance when the action arrives or the move clock expires. |
-| Real-time | Set | Advance on each cadence, using the latest input or the default action. |
+| Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. |
+| Sequential real-time | Set | Advance on each cadence, using the latest input or the default action. |
+| Simultaneous | Set (required) | Advance on each cadence with one action per active player, using each player's latest input or its default action. |
 
 Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
 
