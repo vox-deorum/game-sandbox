@@ -460,7 +460,9 @@
     "pace_interval_ms": {
       "anyOf": [
         {
-          "type": "number"
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
         },
         {
           "type": "null"
@@ -490,6 +492,13 @@
       "minimum": -9007199254740991,
       "type": "integer"
     },
+    "stepping": {
+      "enum": [
+        "sequential",
+        "simultaneous"
+      ],
+      "type": "string"
+    },
     "view_interval_ms": {
       "anyOf": [
         {
@@ -511,6 +520,7 @@
     "human_timeout_ms",
     "recommended_episode_ticks",
     "pace_interval_ms",
+    "stepping",
     "step_limit_ms",
     "episode_limit_ms",
     "messaging",

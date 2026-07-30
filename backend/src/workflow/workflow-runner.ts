@@ -848,7 +848,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       seed,
       player_bindings: playerBindings,
       // No human players in a workflow match, so there is no human-player timeout to resolve.
-      human_timeout_ms: null,
+      ...optionalField('human_timeout_ms', meta.stepping === 'simultaneous' ? undefined : null),
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
       parameters,

@@ -280,7 +280,7 @@ export function makeSubmissionDeps(
 }
 
 /** A field-complete environment metadata entry, overridable. */
-function meta(overrides: Record<string, unknown>): Record<string, unknown> {
+export function meta(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
     env_id: 'flappy_bird',
     display_name: 'Flappy Bird',
@@ -291,6 +291,7 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     human_timeout_ms: null,
     recommended_episode_ticks: 1000,
     pace_interval_ms: 50,
+    stepping: 'sequential',
     step_limit_ms: 1000,
     episode_limit_ms: 120_000,
     messaging: false,
@@ -335,6 +336,7 @@ export function makeEnvironments(): EnvironmentRegistry {
   return EnvironmentRegistry.parse(
     JSON.stringify([
       meta({}),
+      meta({ env_id: 'simultaneous', stepping: 'simultaneous' }),
       meta({ env_id: 'turn_based', pace_interval_ms: null, human_timeout_ms: 5000 }),
       meta({ env_id: 'watch_only', human_players: [] }),
       meta({

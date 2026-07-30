@@ -90,6 +90,7 @@ def _entry(
             env_id="fake",
             display_name="Fake",
             description="A deterministic LLM fixture.",
+            stepping="sequential",
             builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=PlayerBounds(1, 2),
             human_players=(),

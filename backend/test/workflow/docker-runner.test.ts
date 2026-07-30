@@ -63,7 +63,10 @@ function enabledLlmPolicy(): ResolvedOfficialLlmPolicy {
 }
 
 /** A field-complete player-bounds registry, like the shared harness but local to this suite. */
-function makeEnvironments(playerCount = 1): EnvironmentRegistry {
+function makeEnvironments(
+  playerCount = 1,
+  stepping: 'sequential' | 'simultaneous' = 'sequential',
+): EnvironmentRegistry {
   return EnvironmentRegistry.parse(
     JSON.stringify([
       {
@@ -76,6 +79,7 @@ function makeEnvironments(playerCount = 1): EnvironmentRegistry {
         human_timeout_ms: null,
         recommended_episode_ticks: 1000,
         pace_interval_ms: 50,
+        stepping,
         step_limit_ms: 1000,
         episode_limit_ms: 120_000,
         messaging: false,
@@ -138,6 +142,7 @@ function makeWideEnvironments(): EnvironmentRegistry {
         human_timeout_ms: null,
         recommended_episode_ticks: 4,
         pace_interval_ms: null,
+        stepping: 'sequential',
         step_limit_ms: 1000,
         episode_limit_ms: 120_000,
         messaging: false,
@@ -217,15 +222,16 @@ function makeRunner(
     officialTelemetry?: WorkflowRunnerDeps['officialTelemetry']
     llmInternalPort?: number
     playerCount?: number
+    stepping?: 'sequential' | 'simultaneous'
     environments?: EnvironmentRegistry
     source?: SubmissionSource
   } = {},
 ): RunnerHandle {
-  const { playerCount, environments, source, ...runnerOptions } = options
+  const { playerCount, stepping, environments, source, ...runnerOptions } = options
   const runner = createWorkflowRunner({
     driver,
     storage,
-    environments: environments ?? makeEnvironments(playerCount),
+    environments: environments ?? makeEnvironments(playerCount, stepping),
     source: source ?? unusedSource,
     snapshots: unusedSnapshots,
     sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
@@ -1355,6 +1361,20 @@ describe('Docker-backed workflow runner', () => {
       network: 'none',
       mounts: [{ hostPath: './data/recordings', containerPath: '/recordings', readOnly: false }],
     })
+  })
+
+  it('omits the human timeout from simultaneous workflow launch configs', async () => {
+    const handle = makeRunner(storage, new FakeDriver(), { stepping: 'simultaneous' })
+    const run = await makeRun(storage, [naiveGame(0, 13)])
+    let config: Record<string, unknown> | null = null
+    handle.driver.onLaunch = (launch): void => {
+      config = JSON.parse(launch.spec.argv[0] ?? '{}') as Record<string, unknown>
+      emitRecording(launch.process, { seed: config.seed as number })
+    }
+
+    await runToTerminal(handle, run.id)
+
+    expect(config).not.toHaveProperty('human_timeout_ms')
   })
 
   it('spreads the messaging override into the workflow session config', async () => {

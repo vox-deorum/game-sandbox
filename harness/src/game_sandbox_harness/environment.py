@@ -4,7 +4,7 @@ These types live in the harness, not the environments package, because the harne
 the Stage 3 container consume them while the environments package already depends on the
 harness; putting them the other way round would be an import cycle. The harness itself never
 imports the environments package or PettingZoo — environments are discovered through Python
-entry points and their AEC envs are used duck-typed (hence the ``Any`` factory return).
+entry points and their AEC or parallel envs are used duck-typed (hence the ``Any`` factory return).
 
 :class:`EnvironmentMeta` is pure, serialisable data — the layer the backend serves to the
 frontend verbatim. :class:`EnvironmentEntry` adds the non-serialisable hooks (the factory,
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import InitVar, dataclass
 from importlib.metadata import entry_points
 from typing import Any, Literal, Protocol, TypeGuard, cast, runtime_checkable
@@ -32,9 +32,22 @@ _RESERVED_PARAMETER_NAMES = frozenset({"players", "seat_plan"})
 type ParameterValue = bool | int | float | str | list[str]
 """A JSON-safe environment parameter value."""
 
+type SteppingMode = Literal["sequential", "simultaneous"]
+"""The PettingZoo stepping contract an environment declares."""
+
 
 class EnvParameterValueError(ValueError):
     """Raised when a parameter value does not satisfy its declaration."""
+
+
+class EnvironmentContractError(ValueError):
+    """Raised when a constructed environment contradicts its declared contract."""
+
+    def __init__(self, environment_id: str, stepping: SteppingMode, fact: str) -> None:
+        self.environment_id = environment_id
+        self.stepping = stepping
+        self.fact = fact
+        super().__init__(f"environment {environment_id!r} declares {stepping} stepping, but {fact}")
 
 
 @dataclass(frozen=True)
@@ -272,6 +285,11 @@ class ResolvedLayout:
     player_count: int
     seat_count: int
 
+    @property
+    def players(self) -> tuple[str, ...]:
+        """Every resolved player id in canonical order, however the seats group them."""
+        return canonical_player_order(player for seat in self.seats for player in seat.players)
+
 
 def canonical_player_order(player_ids: Iterable[str]) -> tuple[str, ...]:
     """Sort player ids into their canonical numeric order.
@@ -344,6 +362,7 @@ class EnvironmentMeta:
     env_id: str
     display_name: str
     description: str
+    stepping: SteppingMode
     builtin_agents: tuple[BuiltinAgent, ...]
     layout: EnvironmentLayout
     human_players: tuple[str, ...]
@@ -376,6 +395,19 @@ class EnvironmentMeta:
     parameters: tuple[EnvParameter, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.stepping not in {"sequential", "simultaneous"}:
+            raise ValueError(f"environment {self.env_id!r} stepping must be 'sequential' or 'simultaneous'")
+        if self.pace_interval_ms is not None and not is_json_safe_integer(self.pace_interval_ms):
+            raise ValueError(
+                f"environment {self.env_id!r} pace_interval_ms must be a JSON-safe integer or None"
+            )
+        if self.stepping == "simultaneous":
+            if self.pace_interval_ms is None or self.pace_interval_ms <= 0:
+                raise ValueError(
+                    f"simultaneous environment {self.env_id!r} pace_interval_ms must be a positive integer"
+                )
+            if self.human_timeout_ms is not None:
+                raise ValueError(f"simultaneous environment {self.env_id!r} human_timeout_ms must be None")
         if not self.builtin_agents:
             raise ValueError(f"environment {self.env_id!r} must declare at least one builtin agent")
         if any(type(agent) is not BuiltinAgent for agent in self.builtin_agents):
@@ -399,6 +431,7 @@ class EnvironmentMeta:
             "env_id": self.env_id,
             "display_name": self.display_name,
             "description": self.description,
+            "stepping": self.stepping,
             "builtin_agents": [agent.to_json() for agent in self.builtin_agents],
             "layout": _layout_to_json(self.layout),
             "human_players": list(self.human_players),
@@ -423,8 +456,9 @@ class EnvironmentEntry:
     """A full environment registration: metadata plus the harness-facing hooks.
 
     - ``meta`` is the pure data above.
-    - ``make`` receives a fully resolved parameter map and returns a fresh AEC env; the seed
-      arrives at ``reset``, not here, so a factory can be called once per episode.
+    - ``make`` receives a fully resolved parameter map and returns a fresh AEC or parallel env
+      selected by ``meta.stepping``. The seed arrives at ``reset``, not here, so a factory can
+      be called once per episode.
     - ``default_action(env, player_id)`` returns the concrete legal action, in that env's action
       space, the loop applies on every timeout path. Passing the live env lets a provider read
       current state (Hearts' lowest legal card, Spades' suggested bid) so the recording holds the
@@ -436,6 +470,159 @@ class EnvironmentEntry:
     make: Callable[[Mapping[str, ParameterValue]], Any]
     default_action: Callable[[Any, str], Any]
     overlay: Callable[[Any], dict[str, Any]] | None = None
+
+
+def validate_configured_environment(
+    entry: EnvironmentEntry,
+    env: object,
+    expected_players: Sequence[str],
+    reset_result: object,
+) -> None:
+    """Validate a reset environment against its declaration and resolved canonical roster.
+
+    The one contract boundary an episode crosses. An environment's declared stepping mode is taken
+    at its word, so this checks the reset surface the declared episode path actually uses rather
+    than proving which PettingZoo protocol the object implements. That still catches either
+    mislabelled direction: a sequential declaration needs the AEC mappings a parallel environment
+    never populates, and a simultaneous one needs the observation and info mappings an AEC
+    ``reset()`` never returns. The checks stay duck-typed so the harness keeps its one-way
+    dependency on environment packages and does not import PettingZoo in production.
+    """
+    meta = entry.meta
+    if meta.stepping == "sequential":
+        _validate_possible_agents(meta, env, expected_players)
+        _validate_aec_reset_surface(meta, env)
+        return
+    validate_parallel_reset(meta, env, expected_players, reset_result)
+
+
+def validate_parallel_reset(
+    meta: EnvironmentMeta,
+    env: object,
+    expected_players: Sequence[str],
+    reset_result: object,
+) -> tuple[Mapping[str, object], Mapping[str, object]]:
+    """Validate the strict Game Sandbox parallel reset subset and return its two mappings."""
+    expected = list(expected_players)
+    _validate_possible_agents(meta, env, expected)
+    agents = getattr(env, "agents", None)
+    if agents != expected:
+        raise EnvironmentContractError(
+            meta.env_id, meta.stepping, f"reset agents is {agents!r}, expected {expected!r}"
+        )
+    if not isinstance(reset_result, tuple) or len(cast("tuple[object, ...]", reset_result)) != 2:
+        raise EnvironmentContractError(
+            meta.env_id, meta.stepping, "reset() must return an observations and infos tuple"
+        )
+    observations, infos = cast("tuple[object, object]", reset_result)
+    _validate_player_mapping(meta, "reset observations", observations, expected, ordered=True)
+    _validate_player_mapping(meta, "reset infos", infos, expected, ordered=True)
+    return cast("Mapping[str, object]", observations), cast("Mapping[str, object]", infos)
+
+
+def validate_parallel_step(
+    meta: EnvironmentMeta,
+    env: object,
+    active_players: Sequence[str],
+    actions: object,
+    step_result: object,
+) -> tuple[
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+    Mapping[str, object],
+]:
+    """Validate one strict parallel transition for the later simultaneous tick path.
+
+    The parallel API permits looser mappings. Game Sandbox requires exact pre-step active-player
+    coverage in the action mapping and every returned mapping so terminal rewards and final
+    observations remain recordable. Roster sequences remain canonical; mapping insertion order
+    is not part of the contract.
+    """
+    expected = list(active_players)
+    if tuple(expected) != canonical_player_order(expected):
+        raise EnvironmentContractError(
+            meta.env_id, meta.stepping, "pre-step active players are not canonical"
+        )
+    _validate_player_mapping(meta, "actions", actions, expected, ordered=False)
+    if not isinstance(step_result, tuple) or len(cast("tuple[object, ...]", step_result)) != 5:
+        raise EnvironmentContractError(
+            meta.env_id,
+            meta.stepping,
+            "step(actions) must return observations, rewards, terminations, truncations, and infos",
+        )
+    observations, rewards, terminations, truncations, infos = cast(
+        "tuple[object, object, object, object, object]", step_result
+    )
+    for label, mapping in (
+        ("step observations", observations),
+        ("step rewards", rewards),
+        ("step terminations", terminations),
+        ("step truncations", truncations),
+        ("step infos", infos),
+    ):
+        _validate_player_mapping(meta, label, mapping, expected, ordered=False)
+    expected_agents = [
+        player_id
+        for player_id in expected
+        if not cast("Mapping[str, object]", terminations)[player_id]
+        and not cast("Mapping[str, object]", truncations)[player_id]
+    ]
+    agents = getattr(env, "agents", None)
+    if agents != expected_agents:
+        raise EnvironmentContractError(
+            meta.env_id,
+            meta.stepping,
+            f"post-step agents is {agents!r}, expected nonterminal players {expected_agents!r}",
+        )
+    return (
+        cast("Mapping[str, object]", observations),
+        cast("Mapping[str, object]", rewards),
+        cast("Mapping[str, object]", terminations),
+        cast("Mapping[str, object]", truncations),
+        cast("Mapping[str, object]", infos),
+    )
+
+
+def _validate_aec_reset_surface(meta: EnvironmentMeta, env: object) -> None:
+    for name in ("agents", "rewards", "terminations", "truncations", "agent_selection"):
+        if not hasattr(env, name):
+            raise EnvironmentContractError(meta.env_id, meta.stepping, f"reset leaves out AEC {name}")
+
+
+def _validate_possible_agents(meta: EnvironmentMeta, env: object, expected_players: Sequence[str]) -> None:
+    possible_agents = getattr(env, "possible_agents", None)
+    expected = list(expected_players)
+    if possible_agents != expected:
+        raise EnvironmentContractError(
+            meta.env_id,
+            meta.stepping,
+            f"possible_agents is {possible_agents!r}, expected {expected!r} from resolved layout",
+        )
+
+
+def _validate_player_mapping(
+    meta: EnvironmentMeta,
+    label: str,
+    value: object,
+    expected_players: Sequence[str],
+    *,
+    ordered: bool,
+) -> None:
+    if not isinstance(value, Mapping):
+        raise EnvironmentContractError(meta.env_id, meta.stepping, f"{label} is not a player-keyed mapping")
+    actual = list(cast("Mapping[str, object]", value))
+    expected = list(expected_players)
+    # Sorted rather than set comparison so a caller passing a duplicated player id fails here, with
+    # the mapping named, instead of surviving into the active-set arithmetic below.
+    matches = actual == expected if ordered else sorted(actual) == sorted(expected)
+    if not matches:
+        raise EnvironmentContractError(
+            meta.env_id,
+            meta.stepping,
+            f"{label} keys are {actual!r}, expected {expected!r}",
+        )
 
 
 def effective_parameters(meta: EnvironmentMeta) -> tuple[EnvParameter, ...]:

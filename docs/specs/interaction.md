@@ -58,7 +58,7 @@ Real-time input takes effect after a network round trip, so supported games use 
 
 Live sessions may pause, which freezes stepping, cadence, and in-harness action and episode timing. Pausing does not stop the backend session-duration or idle timers. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
 
-Human players have a timeout separate from agent compute limits. In real-time games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default. The interface shows the active value whenever it affects play.
+Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a move clock and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate human-timeout override. The interface shows the active value whenever it affects play.
 
 ## Human play
 

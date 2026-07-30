@@ -78,6 +78,7 @@ const VALID: EnvironmentMeta = {
   human_timeout_ms: null,
   recommended_episode_ticks: 1000,
   pace_interval_ms: 50,
+  stepping: 'sequential',
   step_limit_ms: 1000,
   episode_limit_ms: 120_000,
   messaging: false,
@@ -107,12 +108,43 @@ describe('isEnvironmentMeta', () => {
     ).toBe(true)
   })
 
+  it('accepts simultaneous metadata with a positive input window and no human timeout', () => {
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'simultaneous', pace_interval_ms: 50 })).toBe(
+      true,
+    )
+  })
+
+  it('requires an explicit known stepping mode', () => {
+    const { stepping: _omitted, ...withoutStepping } = VALID
+    expect(isEnvironmentMeta(withoutStepping)).toBe(false)
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'turn_based' })).toBe(false)
+  })
+
+  it('rejects simultaneous metadata without a positive pace interval or with a human timeout', () => {
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'simultaneous', pace_interval_ms: null })).toBe(
+      false,
+    )
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'simultaneous', pace_interval_ms: 0 })).toBe(
+      false,
+    )
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'simultaneous', pace_interval_ms: -1 })).toBe(
+      false,
+    )
+    expect(isEnvironmentMeta({ ...VALID, stepping: 'simultaneous', human_timeout_ms: 5000 })).toBe(
+      false,
+    )
+  })
+
   it('rejects a non-numeric view_interval_ms', () => {
     expect(isEnvironmentMeta({ ...VALID, view_interval_ms: '2000' })).toBe(false)
   })
 
   it('rejects a non-numeric live_interval_ms', () => {
     expect(isEnvironmentMeta({ ...VALID, live_interval_ms: '900' })).toBe(false)
+  })
+
+  it('rejects a fractional pace interval in any stepping mode', () => {
+    expect(isEnvironmentMeta({ ...VALID, pace_interval_ms: 16.5 })).toBe(false)
   })
 
   it('rejects a non-object', () => {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import type { EnvironmentRegistry } from '../../src/environments.js'
 import type { UserStatus } from '../../src/identity.js'
 import {
   DevelopmentKeyService,
@@ -15,46 +15,11 @@ import type { Storage } from '../../src/storage/index.js'
 import { DevelopmentLedgerStore } from '../../src/storage/llm/development-ledger/index.js'
 import type { SeasonConfig } from '../../src/storage/season-config.js'
 import { openSqlite } from '../../src/storage/sqlite.js'
-import { makeTestLlmOptions } from '../support/llm-options.js'
+import { llmEnvironments, llmMeta, makeTestLlmOptions } from '../support/llm-options.js'
 
-function llmEnvironments(): EnvironmentRegistry {
-  const environment = {
-    env_id: 'llm_env',
-    display_name: 'LLM Environment',
-    description: 'test env',
-    builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
-    layout: { kind: 'player_bounds', min: 1, max: 1 },
-    human_players: [],
-    human_timeout_ms: null,
-    recommended_episode_ticks: 100,
-    pace_interval_ms: null,
-    step_limit_ms: 1_000,
-    episode_limit_ms: 60_000,
-    messaging: false,
-    message_cap: null,
-    llm: true,
-    renderer: 'test',
-    seat_order_matters: false,
-    view_interval_ms: null,
-    live_interval_ms: null,
-    parameters: [
-      {
-        name: 'players',
-        title: 'Players',
-        description: 'Number of players.',
-        type: 'int',
-        default: 1,
-        min: 1,
-        max: 1,
-      },
-    ],
-  }
-  return EnvironmentRegistry.parse(
-    JSON.stringify([
-      environment,
-      { ...environment, env_id: 'llm_env_2', display_name: 'LLM Environment 2' },
-    ]),
-  )
+/** The two-season fixture the cross-season meter-scope test needs: `llm_env` plus `llm_env_2`. */
+function twoSeasonEnvironments(): EnvironmentRegistry {
+  return llmEnvironments(llmMeta({ env_id: 'llm_env_2', display_name: 'LLM Environment 2' }))
 }
 
 function enabledConfig(
@@ -259,7 +224,7 @@ describe('DevelopmentKeyService', () => {
     let byte = 0
     const service = new DevelopmentKeyService({
       storage: handle.storage,
-      environments: llmEnvironments(),
+      environments: twoSeasonEnvironments(),
       llm: {
         ...makeTestLlmOptions(),
         upstreamUrl: 'https://provider.test/v1',

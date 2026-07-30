@@ -28,6 +28,7 @@ def _meta() -> EnvironmentMeta:
         env_id="example",
         display_name="Example",
         description="A complete metadata fixture.",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive"),),
         layout=PlayerBounds(1, 2),
         human_players=("player_0", "player_1"),

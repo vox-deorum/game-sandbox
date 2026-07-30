@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { EnvironmentRegistry } from '../../src/environments.js'
+import type { EnvironmentRegistry } from '../../src/environments.js'
 import {
   DevelopmentKeyService,
   type DevelopmentKeyStorage,
@@ -19,75 +19,13 @@ import { UpstreamCaller } from '../../src/llm/upstream.js'
 import type { Storage } from '../../src/storage/index.js'
 import { DevelopmentLedgerStore } from '../../src/storage/llm/development-ledger/index.js'
 import { makeConfig, openTestApp, type TestApp } from '../support/harness.js'
-import { makeTestLlmOptions } from '../support/llm-options.js'
+import { llmEnvironments, llmMeta, makeTestLlmOptions } from '../support/llm-options.js'
 import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-upstream.js'
 
+/** The second season's environment (`llm_env_other`) alongside the shared `llm_env` fixture. */
 function environments(): EnvironmentRegistry {
-  return EnvironmentRegistry.parse(
-    JSON.stringify([
-      {
-        env_id: 'llm_env',
-        display_name: 'LLM Environment',
-        description: 'test env',
-        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
-        layout: { kind: 'player_bounds', min: 1, max: 1 },
-        human_players: [],
-        human_timeout_ms: null,
-        recommended_episode_ticks: 100,
-        pace_interval_ms: null,
-        step_limit_ms: 1_000,
-        episode_limit_ms: 60_000,
-        messaging: false,
-        message_cap: null,
-        llm: true,
-        renderer: 'test',
-        seat_order_matters: false,
-        view_interval_ms: null,
-        live_interval_ms: null,
-        parameters: [
-          {
-            name: 'players',
-            title: 'Players',
-            description: 'Number of players.',
-            type: 'int',
-            default: 1,
-            min: 1,
-            max: 1,
-          },
-        ],
-      },
-      {
-        env_id: 'llm_env_other',
-        display_name: 'Other LLM Environment',
-        description: 'test env',
-        builtin_agents: [{ name: 'naive', label: 'Naive agent' }],
-        layout: { kind: 'player_bounds', min: 1, max: 1 },
-        human_players: [],
-        human_timeout_ms: null,
-        recommended_episode_ticks: 100,
-        pace_interval_ms: null,
-        step_limit_ms: 1_000,
-        episode_limit_ms: 60_000,
-        messaging: false,
-        message_cap: null,
-        llm: true,
-        renderer: 'test',
-        seat_order_matters: false,
-        view_interval_ms: null,
-        live_interval_ms: null,
-        parameters: [
-          {
-            name: 'players',
-            title: 'Players',
-            description: 'Number of players.',
-            type: 'int',
-            default: 1,
-            min: 1,
-            max: 1,
-          },
-        ],
-      },
-    ]),
+  return llmEnvironments(
+    llmMeta({ env_id: 'llm_env_other', display_name: 'Other LLM Environment' }),
   )
 }
 

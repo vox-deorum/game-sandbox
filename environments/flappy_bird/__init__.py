@@ -34,6 +34,7 @@ META = EnvironmentMeta(
         "A Flappy Bird style single-agent game: tap to flap and steer the bird through the "
         "gaps between pipes. Brought in through the single-agent compatibility wrapper."
     ),
+    stepping="sequential",
     builtin_agents=(BuiltinAgent(name="naive", label="Naive agent"),),
     layout=PlayerBounds(min=1, max=1),
     human_players=("player_0",),

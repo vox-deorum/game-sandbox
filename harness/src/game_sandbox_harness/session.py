@@ -43,6 +43,7 @@ from .environment import (
     canonical_player_order,
     resolve_layout,
     validate_complete_parameters,
+    validate_configured_environment,
 )
 from .recording import RecordingStore
 from .state import (
@@ -323,13 +324,8 @@ class Episode:
         try:
             env = self._entry.make(self._parameters)
             self._env = env
-            env.reset(seed=self._seed)
-            expected_players = [f"player_{index}" for index in range(self._layout.player_count)]
-            if env.possible_agents != expected_players:
-                raise ValueError(
-                    "environment factory produced possible_agents "
-                    f"{env.possible_agents!r}, expected {expected_players!r} from resolved layout"
-                )
+            reset_result = env.reset(seed=self._seed)
+            validate_configured_environment(self._entry, env, self._layout.players, reset_result)
             self._opening_chat_options = self._refresh_chat_state()
 
             if self._store is not None:
@@ -547,6 +543,8 @@ class Episode:
 
     def _logical_active_players(self) -> tuple[str, ...]:
         """Return players in ``env.agents`` that are not marked terminal, including live AEC players."""
+        if self._entry.meta.stepping == "simultaneous":
+            return canonical_player_order(self._env.agents)
         return tuple(
             player_id
             for player_id in canonical_player_order(self._env.agents)

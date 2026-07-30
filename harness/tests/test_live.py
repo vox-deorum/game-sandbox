@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +103,7 @@ def make_entry(
         env_id="fake",
         display_name="Fake",
         description="A deterministic fake.",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
@@ -202,12 +204,28 @@ def test_parse_config_requires_players():
         parse_config([json.dumps(payload)])
 
 
+@pytest.mark.parametrize("human_timeout_ms", [None, 5000])
+def test_parse_config_rejects_any_simultaneous_human_timeout_override(human_timeout_ms: int | None):
+    sequential = make_entry(1, pace_interval_ms=50)
+    entry = replace(sequential, meta=replace(sequential.meta, stepping="simultaneous"))
+    payload: dict[str, Any] = {
+        "env_id": "fake",
+        "parameters": PARAMETERS,
+        "player_bindings": {"player_0": {"kind": "external"}},
+        "recording_dir": "/r",
+        "human_timeout_ms": human_timeout_ms,
+    }
+    with pytest.raises(LiveConfigError, match="simultaneous.*human_timeout_ms"):
+        parse_config([json.dumps(payload)], entry=entry)
+
+
 def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_foreign_players():
     wide_entry = EnvironmentEntry(
         meta=EnvironmentMeta(
             env_id="wide",
             display_name="Wide",
             description="A synthetic wide layout.",
+            stepping="sequential",
             builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=SeatPlans(
                 (
@@ -267,6 +285,7 @@ def test_parse_config_accepts_only_an_external_designated_chat_player():
             env_id="two-humans",
             display_name="Two humans",
             description="A parser-only two-external fixture.",
+            stepping="sequential",
             builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=PlayerBounds(2, 2),
             human_players=("player_0", "player_1"),
@@ -979,6 +998,7 @@ def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
         env_id="fake-chat",
         display_name="Fake Chat",
         description="A deterministic fake with messaging.",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),

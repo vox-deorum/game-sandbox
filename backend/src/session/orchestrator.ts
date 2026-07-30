@@ -222,6 +222,13 @@ export class Orchestrator {
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
     }
+    if (meta.stepping === 'simultaneous' && request.humanTimeoutMs !== undefined) {
+      throw new OrchestratorError(
+        400,
+        'simultaneous environments use their pace interval as the input window',
+        'human_timeout_not_allowed',
+      )
+    }
     // Every session attaches to a play-open season. Ratings hang off it, and each submitted seat must
     // reference an active `ready` submission on it — so a play-closed environment never starts an
     // unattributable session. Resolve and require it once, before any submission or image work.
@@ -779,7 +786,10 @@ export class Orchestrator {
       env_id: meta.env_id,
       seed,
       player_bindings: playerBindings,
-      human_timeout_ms: humanTimeoutMs,
+      ...optionalField(
+        'human_timeout_ms',
+        meta.stepping === 'simultaneous' ? undefined : humanTimeoutMs,
+      ),
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
       parameters,

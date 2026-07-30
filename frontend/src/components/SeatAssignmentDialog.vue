@@ -40,6 +40,7 @@ import { shortId } from '../lib/format.js'
 import { optionalNumber } from '../lib/forms.js'
 import { initializeParameters, validateParameters } from '../lib/parameters.js'
 import ParameterFields from './ParameterFields.vue'
+import SimultaneousWindowField from './SimultaneousWindowField.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
@@ -330,9 +331,10 @@ const canStart = computed(() => {
 })
 
 const isPaced = props.meta.pace_interval_ms !== null
+const isSimultaneous = props.meta.stepping === 'simultaneous'
 const configurationLocked = computed(() => props.mode === 'rate')
 // The move clock is meaningful only with a connected human, so watch (all-agent) shows seed alone.
-const showTimeout = props.mode === 'play'
+const showTimeout = props.mode === 'play' && !isSimultaneous
 
 const seed = ref<string | number>('')
 // Prefill an unpaced environment's move clock from its metadata; a paced one starts blank.
@@ -389,7 +391,7 @@ function onSubmit(): void {
     parameters: checked.values,
     seats,
     seed: optionalNumber(seed.value),
-    humanTimeoutMs: props.mode === 'play' ? optionalNumber(timeout.value) : undefined,
+    humanTimeoutMs: showTimeout ? optionalNumber(timeout.value) : undefined,
   })
 }
 </script>
@@ -508,6 +510,11 @@ function onSubmit(): void {
           />
         </template>
       </UiField>
+
+      <SimultaneousWindowField
+        v-else-if="isSimultaneous && humanSeat !== null"
+        :pace-interval-ms="meta.pace_interval_ms"
+      />
     </fieldset>
 
     <div class="seat-form-actions">

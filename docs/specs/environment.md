@@ -58,6 +58,7 @@ Game Sandbox metadata includes:
 - Typed gameplay parameter declarations and their environment defaults.
 - Human-capable players and their default timeout.
 - Recommended episode length.
+- Required stepping mode: `sequential` or `simultaneous`.
 - Pace interval, or no interval for turn-based play.
 - Default step and episode compute limits.
 - Messaging availability and message cap.
@@ -69,7 +70,20 @@ A season may override gameplay parameters, step and episode compute limits, mess
 
 A messaging environment may also implement the optional live-state recipient hook described in [Communication](communication.md). The hook belongs to the running environment because it may inspect current game state. It is not serialized in environment metadata.
 
-The **pace interval** is the only distinction between real-time and turn-based stepping. When an interval is set, the environment advances on a wall-clock schedule. With no interval, it advances when the acting player provides an action. See [Interaction](interaction.md).
+The **pace interval** selects cadence within an environment's declared stepping mode. A sequential environment with an interval advances on a wall-clock schedule. Without an interval, it advances when its acting player provides an action. A simultaneous environment always declares a positive interval. That interval is each human player's input window, not a separate configurable timeout. See [Interaction](interaction.md).
+
+## Stepping contract
+
+Every environment explicitly declares `stepping` in its metadata. The declaration is required and has no fallback value.
+
+| Stepping mode | Factory result | PettingZoo conformance |
+| --- | --- | --- |
+| `sequential` | An AEC environment with `agent_selection`, `last()`, and scalar `step(action)`. | `api_test` |
+| `simultaneous` | A parallel environment whose `reset()` returns observation and info mappings, and whose `step(actions)` accepts and returns player-keyed mappings. | `parallel_api_test` |
+
+The harness creates the environment only after it resolves the session parameters. It checks the constructed instance against the declared mode before participant reset, recording creation, or live stepping. Discovery does not construct an environment, because default parameters can describe a different roster from the selected layout.
+
+Parallel environments use a stricter subset of the PettingZoo parallel API. After reset, `env.agents`, observations, and infos exactly cover the resolved players in canonical order. The active set only shrinks. Each joint action and every returned observation, reward, termination, truncation, and info mapping exactly cover the players active before that step. After a step, `env.agents` is the canonical nonterminal subsequence of that earlier active set. A removed player cannot return and a new player cannot appear.
 
 **Seat order** records whether swapping two agents between seats creates a meaningfully different game. A positional game enables this setting. For example, in a trick-taking card game where play follows a fixed order, seating agent A before B differs from seating B before A. A symmetric game leaves it disabled because only the set of participants matters. The leaderboard scheduler reads this field when it expands a match design across submissions, enumerating over seats rather than players. See [Leaderboards](leaderboard.md).
 
@@ -112,4 +126,4 @@ Actions remain flat integers accepted by a `Discrete` space. `env.step()` valida
 
 ### PettingZoo conformance
 
-Every environment passes PettingZoo's `api_test`, and `observation_space.contains()` validates the full composite observation throughout an episode.
+Sequential environments pass PettingZoo's `api_test`. Simultaneous environments pass `parallel_api_test`. The shared conformance suite also runs a deterministic rollout for the declared mode, validates each observation and legal default action, and checks that overlays are finite and JSON-safe. `observation_space.contains()` validates the full composite observation throughout an episode.

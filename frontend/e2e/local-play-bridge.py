@@ -20,6 +20,7 @@ META = EnvironmentMeta(
     env_id="flappy_bird",
     display_name="Flappy Bird",
     description="A deterministic local browser test environment.",
+    stepping="sequential",
     builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
     layout=PlayerBounds(min=1, max=1),
     human_players=("player_0",),

@@ -49,4 +49,6 @@ reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
 testpaths = ["harness/tests", "environments", "scripts/tests"]
+# The parallel contract fixture in harness/tests is shared with the environments conformance suite.
+pythonpath = ["harness/tests"]
 norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "template", "examples"]

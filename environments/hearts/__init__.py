@@ -24,6 +24,7 @@ META = EnvironmentMeta(
         "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of "
         "spades. Or, shoot the moon by taking them all to flip the score!"
     ),
+    stepping="sequential",
     builtin_agents=(BuiltinAgent(name="naive", label="Naive agent"),),
     layout=PlayerBounds(min=4, max=4),
     human_players=("player_0", "player_1", "player_2", "player_3"),

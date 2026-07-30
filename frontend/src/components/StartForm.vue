@@ -4,9 +4,11 @@
   instead, so this form is human-play only. The timeout control's meaning follows the pace interval,
   per interaction.md:
 
-  - Paced environment (Flappy Bird): the per-step deadline IS the pace interval — a step with no input
+  - Sequential paced environment (Flappy Bird): the per-step deadline is the pace interval. A step with no input
     gets the noop. The hint states this; an entered value is still sent as an override (the Stage 3 API
     resolves and forwards it), which is the override seam even though the paced loop never consults it.
+  - Simultaneous environment: the pace interval is the input window. It has no separate human-timeout
+    override, so the form displays the interval without an editable control.
   - Unpaced environment (a later turn-based game): the same control is the move clock, prefilled from
     the metadata's human_timeout_ms and overridable.
 
@@ -21,6 +23,7 @@ import type { StartPayload } from '../api/client.js'
 import { optionalNumber } from '../lib/forms.js'
 import { initializeParameters, validateParameters } from '../lib/parameters.js'
 import ParameterFields from './ParameterFields.vue'
+import SimultaneousWindowField from './SimultaneousWindowField.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
@@ -37,6 +40,7 @@ const emit = defineEmits<{
 }>()
 
 const isPaced = props.meta.pace_interval_ms !== null
+const isSimultaneous = props.meta.stepping === 'simultaneous'
 
 // Vue casts a `type="number"` input to a number (and leaves an empty field the empty string), so
 // these hold `string | number`; the optional-number parse below turns a blank into "no value".
@@ -67,7 +71,7 @@ function onSubmit(): void {
     seasonId: props.seasonId,
     parameters: checked.values,
     seed: optionalNumber(seed.value),
-    humanTimeoutMs: optionalNumber(timeout.value),
+    humanTimeoutMs: isSimultaneous ? undefined : optionalNumber(timeout.value),
   })
 }
 </script>
@@ -88,7 +92,9 @@ function onSubmit(): void {
       </template>
     </UiField>
 
-    <UiField :label="timeoutLabel" :hint="timeoutHint">
+    <SimultaneousWindowField v-if="isSimultaneous" :pace-interval-ms="meta.pace_interval_ms" />
+
+    <UiField v-else :label="timeoutLabel" :hint="timeoutHint">
       <template #default="{ id, describedby }">
         <UiInput
           :id="id"

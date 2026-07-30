@@ -34,6 +34,7 @@ def _meta() -> EnvironmentMeta:
         env_id="demo",
         display_name="Demo",
         description="A demo environment.",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),
@@ -54,6 +55,7 @@ def test_meta_to_json_round_trips():
     blob = json.dumps(meta.to_json())
     parsed = json.loads(blob)
     assert parsed["env_id"] == "demo"
+    assert parsed["stepping"] == "sequential"
     assert parsed["builtin_agents"] == [{"name": "naive", "label": "Naive"}]
     assert parsed["human_players"] == ["player_0"]  # tuple serialized as a JSON array
     assert parsed["human_timeout_ms"] is None
@@ -77,6 +79,35 @@ def test_flappy_bird_is_discoverable():
 def test_load_environment_unknown_id_raises():
     with pytest.raises(EnvironmentLookupError, match="no environment registered as 'nope'"):
         load_environment("nope")
+
+
+def test_stepping_is_required_and_simultaneous_timing_is_coherent():
+    values = dict(_meta().__dict__)
+    values.pop("stepping")
+    with pytest.raises(TypeError, match="stepping"):
+        EnvironmentMeta(**values)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="sequential.*simultaneous"):
+        EnvironmentMeta(**{**_meta().__dict__, "stepping": "unknown"})  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="pace_interval_ms"):
+        EnvironmentMeta(**{**_meta().__dict__, "stepping": "simultaneous", "pace_interval_ms": None})
+    with pytest.raises(ValueError, match="positive"):
+        EnvironmentMeta(**{**_meta().__dict__, "stepping": "simultaneous", "pace_interval_ms": 0})
+    with pytest.raises(ValueError, match="human_timeout_ms"):
+        EnvironmentMeta(
+            **{
+                **_meta().__dict__,
+                "stepping": "simultaneous",
+                "human_timeout_ms": 1000,
+            }
+        )
+
+
+@pytest.mark.parametrize("pace_interval_ms", [1.5, True])
+def test_sequential_pace_rejects_non_integer_wire_values(pace_interval_ms: object):
+    with pytest.raises(ValueError, match="JSON-safe integer"):
+        EnvironmentMeta(
+            **{**_meta().__dict__, "pace_interval_ms": pace_interval_ms}  # type: ignore[arg-type]
+        )
 
 
 def test_discovery_rejects_name_envid_mismatch(monkeypatch):

@@ -109,6 +109,7 @@ def make_chat_entry(
         env_id="chat-fake",
         display_name="Chat Fake",
         description="A deterministic round-robin fake with messaging.",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(len(players), len(players)),
         human_players=players,

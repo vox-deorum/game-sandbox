@@ -313,7 +313,8 @@ export const EnvironmentMetaSchema = z
     human_players: z.array(z.string()),
     human_timeout_ms: z.number().nullable(),
     recommended_episode_ticks: z.int(),
-    pace_interval_ms: z.number().nullable(),
+    pace_interval_ms: z.int().nullable(),
+    stepping: z.enum(['sequential', 'simultaneous']),
     step_limit_ms: z.int(),
     episode_limit_ms: z.int(),
     messaging: z.boolean(),
@@ -326,6 +327,23 @@ export const EnvironmentMetaSchema = z
     parameters: z.array(EnvParameterSchema).min(1),
   })
   .superRefine((meta, ctx) => {
+    if (meta.stepping === 'simultaneous') {
+      if (meta.pace_interval_ms === null || meta.pace_interval_ms <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'simultaneous stepping requires a positive pace_interval_ms',
+          path: ['pace_interval_ms'],
+        })
+      }
+      if (meta.human_timeout_ms !== null) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'simultaneous stepping has no separate human_timeout_ms',
+          path: ['human_timeout_ms'],
+        })
+      }
+    }
+
     const names = meta.parameters.map((parameter) => parameter.name)
     if (new Set(names).size !== names.length) {
       ctx.addIssue({

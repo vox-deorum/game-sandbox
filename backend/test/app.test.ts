@@ -16,6 +16,7 @@ describe('HTTP API', () => {
   let dir: string
   let alice: Record<string, string>
   let playSeasonId: string
+  let simultaneousSeasonId: string
 
   beforeEach(async () => {
     fixture = await openTestApp()
@@ -27,6 +28,7 @@ describe('HTTP API', () => {
     // Plain public sessions attach to the environment's play-open season; seed it so the start
     // routes are exercised against a normal play-open environment.
     playSeasonId = (await storage.ensureOpenSeason('flappy_bird', 1)).id
+    simultaneousSeasonId = (await storage.ensureOpenSeason('simultaneous', 1)).id
   })
 
   afterEach(async () => {
@@ -167,6 +169,25 @@ describe('HTTP API', () => {
     // Attribution carries the Better Auth id, not a fabricated dev identity.
     expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
     expect((await storage.getSession(body.id))?.parameters).toEqual({ players: 1, pipe_gap: 100 })
+  })
+
+  it('rejects a direct simultaneous human-timeout override before creating a session', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      headers: alice,
+      payload: {
+        env_id: 'simultaneous',
+        season_id: simultaneousSeasonId,
+        parameters: { players: 1, pipe_gap: 100 },
+        human_timeout_ms: 2000,
+        seats: { seat_0: { kind: 'human' } },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({ code: 'human_timeout_not_allowed' })
+    expect(await storage.listSessions()).toEqual([])
   })
 
   it('omits the session detail user_name when the owner id has no user row', async () => {

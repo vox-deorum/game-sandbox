@@ -1,6 +1,6 @@
 # Stage 17.2: Parallel contract and stepping metadata
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 17](../stage-17-simultaneous-stepping.md), build-order step 2.
 

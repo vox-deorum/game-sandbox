@@ -48,6 +48,7 @@
     "renderer": "flappy-bird",
     "seat_order_matters": false,
     "step_limit_ms": 1000,
+    "stepping": "sequential",
     "view_interval_ms": null
   },
   {
@@ -93,6 +94,7 @@
     "renderer": "hearts",
     "seat_order_matters": true,
     "step_limit_ms": 1000,
+    "stepping": "sequential",
     "view_interval_ms": 3000
   },
   {
@@ -194,6 +196,7 @@
     "renderer": "spades",
     "seat_order_matters": true,
     "step_limit_ms": 1000,
+    "stepping": "sequential",
     "view_interval_ms": 3000
   }
 ]

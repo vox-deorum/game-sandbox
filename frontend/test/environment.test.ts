@@ -335,6 +335,29 @@ describe('EnvironmentPage', () => {
     })
   })
 
+  it('shows a simultaneous input window without offering or submitting a human timeout override', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getEnvironments).mockResolvedValue([flappyMeta({ stepping: 'simultaneous' })])
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
+    })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+
+    expect(screen.getByText('Input window (ms)')).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: 'Per-step input window (ms)' })).toBeNull()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith({
+      envId: 'flappy_bird',
+      seasonId: 'iter-1',
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'human' } },
+      seed: undefined,
+    })
+  })
+
   it('navigates to the active session on an already-active start (rejoin)', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({

@@ -23,7 +23,7 @@ import type {
   TreeHandle,
 } from '../../src/submission/source/index.js'
 import { FakeDriver, type FakeSessionProcess } from '../support/fake-driver.js'
-import { delay, FakeSocket, flush, makeConfig, makeEnvironments } from '../support/harness.js'
+import { delay, FakeSocket, flush, makeConfig, makeEnvironments, meta } from '../support/harness.js'
 
 /**
  * A submission-source double for the submitted-agent runs. Records the inputs it resolves and
@@ -151,7 +151,7 @@ function wideEnvironments(): EnvironmentRegistry {
   return EnvironmentRegistry.parse(
     JSON.stringify([
       ...makeEnvironments().list(),
-      {
+      meta({
         env_id: WIDE_ENV_ID,
         display_name: 'Synthetic wide',
         description: 'A four-player synthetic layout for orchestrator tests.',
@@ -177,19 +177,12 @@ function wideEnvironments(): EnvironmentRegistry {
             },
           ],
         },
-        human_players: ['player_0'],
         human_timeout_ms: 5_000,
         recommended_episode_ticks: 10,
         pace_interval_ms: null,
-        step_limit_ms: 1_000,
-        episode_limit_ms: 120_000,
-        messaging: false,
-        message_cap: null,
         llm: true,
         renderer: 'fake',
         seat_order_matters: true,
-        view_interval_ms: null,
-        live_interval_ms: null,
         parameters: [
           {
             name: 'seat_plan',
@@ -203,7 +196,7 @@ function wideEnvironments(): EnvironmentRegistry {
             ],
           },
         ],
-      },
+      }),
     ]),
     'synthetic-wide-test',
   )
@@ -299,7 +292,7 @@ describe('orchestrator', () => {
     // A plain public session needs a play-open season to attach to (the seed season is both
     // submission- and play-open); seed it for the environments the plain-session tests exercise.
     PLAY_SEASONS.clear()
-    for (const envId of ['flappy_bird', 'turn_based', 'hearts', 'chatty']) {
+    for (const envId of ['flappy_bird', 'simultaneous', 'turn_based', 'hearts', 'chatty']) {
       const season = await storage.ensureOpenSeason(envId, 1)
       PLAY_SEASONS.set(envId, season.id)
     }
@@ -472,6 +465,30 @@ describe('orchestrator', () => {
       const orch3 = makeOrchestrator()
       const c = await start(orch3, { envId: 'flappy_bird', seats: seats({ kind: 'human' }) })
       expect(c.config.human_timeout_ms).toBeNull()
+    })
+
+    it('rejects a simultaneous human timeout before it creates a session or launches a container', async () => {
+      const orch = makeOrchestrator()
+
+      await expect(
+        start(orch, {
+          envId: 'simultaneous',
+          seats: seats({ kind: 'human' }),
+          humanTimeoutMs: 2000,
+        }),
+      ).rejects.toMatchObject({ status: 400, code: 'human_timeout_not_allowed' })
+
+      expect(driver.launches).toHaveLength(0)
+      expect(await storage.listSessions()).toEqual([])
+    })
+
+    it('omits the human timeout from a simultaneous launch config', async () => {
+      const result = await start(makeOrchestrator(), {
+        envId: 'simultaneous',
+        seats: seats({ kind: 'human' }),
+      })
+
+      expect(result.config).not.toHaveProperty('human_timeout_ms')
     })
 
     it('rejects a second concurrent session for the same user with 409', async () => {

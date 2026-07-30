@@ -27,6 +27,7 @@ def _entry() -> EnvironmentEntry:
         env_id="fake",
         display_name="Fake",
         description="fake",
+        stepping="sequential",
         builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
         layout=PlayerBounds(1, 1),
         human_players=("player_0",),

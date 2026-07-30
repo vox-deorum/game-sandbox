@@ -216,6 +216,8 @@ def parse_config(
                 )
         player_bindings[player_id] = PlayerBinding(kind=kind, path=path, name=cast("str | None", name))
 
+    if entry.meta.stepping == "simultaneous" and "human_timeout_ms" in config:
+        raise LiveConfigError("simultaneous environments must not supply 'human_timeout_ms'")
     if "human_timeout_ms" not in config:
         human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT
     else:

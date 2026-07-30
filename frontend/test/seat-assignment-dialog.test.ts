@@ -18,6 +18,13 @@ const AGENTS: WatchAgentSummary[] = [
   agent({ submission_id: 'sub2', anonymous_number: 2 }),
 ]
 const START_CONTEXT = { seasonId: 'season-1', parameters: { players: 4 } }
+// The three fields a simultaneous environment always overrides together: the hearts and spades base
+// fixtures default to turn-based values, so a simultaneous-mode test must replace all three at once.
+const SIMULTANEOUS_META = {
+  stepping: 'simultaneous' as const,
+  pace_interval_ms: 50,
+  human_timeout_ms: null,
+}
 
 interface StartPayload {
   seats: Record<string, SeatAssignmentInput>
@@ -40,7 +47,7 @@ function lastStart(emitted: () => Record<string, unknown[]>): StartPayload {
   return calls[calls.length - 1]?.[0] as StartPayload
 }
 
-function restrictedMeta() {
+function restrictedMeta(overrides: Partial<ReturnType<typeof spadesMeta>> = {}) {
   return spadesMeta({
     layout: {
       kind: 'seat_plans',
@@ -62,12 +69,61 @@ function restrictedMeta() {
         choices: [{ value: 'restricted', label: 'Restricted' }],
       },
     ],
+    ...overrides,
   })
 }
 
 const RESTRICTED_CONTEXT = { seasonId: 'season-1', parameters: { seat_plan: 'restricted' } }
 
 describe('SeatAssignmentDialog', () => {
+  it('play: shows a simultaneous input window without emitting a human timeout override', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { players: 4 },
+        meta: heartsMeta({ ...SIMULTANEOUS_META }),
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+
+    expect(screen.getByText('Input window (ms)')).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: 'Per-step input window (ms)' })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+
+    expect(lastStart(emitted)).toEqual({
+      seasonId: 'season-1',
+      parameters: { players: 4 },
+      seats: {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+        seat_3: { kind: 'builtin-agent', name: 'naive' },
+      },
+      seed: undefined,
+    })
+  })
+
+  it('rate: shows the simultaneous input window only while its restricted human seat is selected', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        ...RESTRICTED_CONTEXT,
+        meta: restrictedMeta({ ...SIMULTANEOUS_META }),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' },
+      },
+    })
+
+    expect(screen.getByText('Input window (ms)')).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: 'Per-step input window (ms)' })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).humanTimeoutMs).toBeUndefined()
+
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Seat 1' }), 'builtin:cautious')
+    expect(screen.queryByText('Input window (ms)')).toBeNull()
+  })
+
   it('watch: preselects the clicked agent into every seat and enables Start', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {

@@ -40,6 +40,7 @@ def _entry() -> EnvironmentEntry:
             env_id="fixture",
             display_name="Fixture",
             description="fixture",
+            stepping="sequential",
             builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=PlayerBounds(2, 2),
             human_players=("player_0", "player_1"),
@@ -65,6 +66,7 @@ def _wide_entry(*, human_players: tuple[str, ...] = ("player_0", "player_1", "pl
             env_id="fixture",
             display_name="Fixture",
             description="fixture",
+            stepping="sequential",
             builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
             layout=SeatPlans(
                 (

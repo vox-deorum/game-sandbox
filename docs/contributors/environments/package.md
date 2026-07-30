@@ -6,7 +6,7 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 ## Package shape
 
-`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
+`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns the PettingZoo environment selected by metadata. A sequential environment returns a fresh agent-environment-cycle (AEC) environment. A simultaneous environment returns a fresh parallel environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
 
 It also defines `default_action(env, player_id)`, which returns the legal integer applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
 
@@ -18,7 +18,7 @@ Every module copied into the composed `sandbox.env` package must be self-contain
 
 The single player id is `player_0`. Player ids are PettingZoo agent ids verbatim in state objects, metadata, and harness APIs.
 
-Multi-agent games subclass `pettingzoo.AECEnv` directly and do not use the adapter.
+Sequential multi-agent games subclass `pettingzoo.AECEnv` directly and do not use the adapter. Simultaneous games implement PettingZoo's parallel environment interface.
 
 ### Overlay
 
@@ -40,15 +40,16 @@ The environment owns its display state. Test that every overlay field exists and
 | `human_players` | PettingZoo players that a person may control. |
 | `parameters` | Typed gameplay parameter declarations. The public JSON also includes the synthesized `players` or `seat_plan` parameter. |
 | `human_timeout_ms` | Human move clock, or `None` when pacing is the deadline. |
+| `stepping` | Required `sequential` or `simultaneous` PettingZoo contract. |
 | `recommended_episode_ticks` | Suggested episode length. |
-| `pace_interval_ms` | Realtime cadence, or `None` for turn-based play. |
+| `pace_interval_ms` | Realtime cadence for sequential play, or the required positive input window for simultaneous play. |
 | `view_interval_ms`, `live_interval_ms` | Optional replay and live viewing cadence. They never affect scoring. |
 | `step_limit_ms`, `episode_limit_ms` | Default agent compute limits. |
 | `messaging`, `message_cap`, `llm` | Optional agent capabilities. |
 | `seat_order_matters` | Whether scheduler seat order creates a distinct game. |
 | `renderer` | Browser renderer id. |
 
-The session loop reads `pace_interval_ms` instead of branching on the game type.
+The harness checks the constructed environment against `stepping` after it receives the resolved parameters. A simultaneous environment has no separate `human_timeout_ms` and must declare a positive `pace_interval_ms`.
 
 Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
 
@@ -72,15 +73,19 @@ The wheel excludes `*/renderer`, `*/tests`, `*/template`, and `*/examples`, so b
 
 ## Conformance
 
-Every environment runs PettingZoo conformance through the shared guard in `environments/test_conformance.py`.
+Every environment runs the mode-selected PettingZoo conformance check through the shared guard in `environments/test_conformance.py`.
 
 ```python
-from pettingzoo.test import api_test
+from pettingzoo.test import api_test, parallel_api_test
 
 parameters = resolve_parameters(ENTRY.meta)
-api_test(make_env(parameters), num_cycles=100)
+env = make_env(parameters)
+if ENTRY.meta.stepping == "sequential":
+    api_test(env, num_cycles=100)
+else:
+    parallel_api_test(env, num_cycles=100)
 ```
 
-The pinned PettingZoo version has a known `api_test` issue with object-shaped composite observations. The shared guard accepts only that exact failure as expected. Direct `observation_space.contains()` checks still cover a full episode.
+The shared guard also checks the configured parallel roster and mapping rules, deterministic rollout output, overlay JSON, and finite values. Direct `observation_space.contains()` checks still cover a full episode.
 
 The discovery-driven suite also checks determinism, overlay JSON and finite values, and the required colocated template and example shape. Keep game-specific rules and regressions in `environments/<env>/tests/`.
