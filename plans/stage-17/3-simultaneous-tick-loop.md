@@ -39,22 +39,60 @@ Factor only mode-neutral participant work into shared helpers: timed actions, le
 
 The `agents` entries retain canonical player order in Python before JSON serialization. Each entry contains that player's applied action, immediate reward, cumulative score, and its own optional decision, chat, and learning durations.
 
-The state's `started_at` is the cadence boundary. `duration_ms` ends immediately before canonical state construction and serialization, after participant hooks, the joint environment step, learning, and overlay extraction. Recording and relay serialization and I/O are excluded because a state cannot include time measured after its canonical bytes are written. The environment transition remains platform work and is not added to any player's compute budget.
+The state's `started_at` is the cadence boundary. `duration_ms` ends immediately before canonical state construction and serialization, after participant hooks, the joint environment step, learning, and overlay extraction. Recording and relay serialization and I/O are excluded. The environment transition remains platform work and is not added to any player's compute budget.
 
 ## Per-player execution and failure
 
-The existing action policy remains mode-neutral:
+The tick steps above apply the existing mode-neutral action policy: an over-limit action hook is charged and replaced with the legal default, an illegal agent action or participant exception is an attributable failure, and missing or illegal human input is diagnosed and defaulted. Chat and learning overruns never replace the action; they stay charged and increment the player's step-timeout count when its complete per-tick compute exceeds the step limit.
 
-- An agent action whose hook returns over its step limit is charged and replaced with the environment default.
-- An illegal agent action or participant exception fails that player and aborts before applying an incomplete joint action mapping.
-- Missing or illegal human input is diagnosed and replaced with the default.
-- Chat and learning overruns do not replace the action, but remain charged and increment that player's step-timeout count when the complete per-tick participant compute exceeds its limit.
+Each agent-controlled player retains a separate episode budget, checked after the completed joint state is recorded. If several players cross their episode limit on the same tick, the first in canonical player order becomes `failed_player`; the episode reports one deterministic attributable failure.
 
-Each agent-controlled player retains a separate episode budget. Budget checks run after the completed joint state is recorded because every action has already affected the environment. If several players cross their episode limit on the same tick, the first in canonical player order becomes `failed_player`; the episode reports one deterministic attributable failure.
+## Official LLM execution
 
-Official LLM credential activation must follow the player across the separated action, chat, and learning phases. Before each participant hook, the harness restores that player's base URL and key and retains the current tick marker. A later player's global environment activation must never leak into an earlier player's chat or learning hook.
+Credential activation follows the player across the separated action, chat, and learning phases. The harness posts the player's tick marker and restores that player's base URL and key before each hook. A later player's global environment activation must never leak into an earlier player's chat or learning hook.
 
-Synchronous model calls use the Stage 9 timing contract unchanged. Their proxy wait may make the wall-clock tick slip. Background requests and cross-tick helpers are not introduced.
+Synchronous model calls keep the Stage 9 timing contract, and their proxy wait may make the wall-clock tick slip.
+
+An official request does not have to finish inside the hook that starts it. The template's `sandbox.llm.BackgroundLLM` helper runs the call on an internal background thread: the agent calls `request` during one hook and collects `response` in a later hook, ticks or turns apart. Students never create threads themselves, and the harness gains no submit, poll, or scheduling API. Local computation stays on the hook thread, where CPU time is always chargeable. A background request never blocks a hook, so the existing verified-proxy discount only lowers a later hook's charge to the CPU floor, and `_timed_llm_hook` does not change. The backend's per-request in-flight cap bounds each request's contribution to those exclusions and never aborts it, and session teardown aborts requests still open.
+
+Watchdogs distinguish blocking waits from background requests. The helper marks every call with a background header, the proxy listener reads it, and `KeyRegistry.authenticateRequest` stores the flag on the active request, accruing verified in-flight time in a blocking bucket and a total bucket. The per-hook charging discount and its `/internal/inflight` reading keep the total. The live-session and leaderboard-game chargeable timers switch to a blocking-only `inFlightMs` reading, so an open background request never delays terminating a session that stops making progress, while a synchronous wait still extends the deadline within the per-request cap. An unmarked request counts as blocking.
+
+The helper satisfies the credential rule by reading `OPENAI_BASE_URL` and `OPENAI_API_KEY` and constructing its client inside the calling hook, since the harness rebinds those globals per player. The captured key stays valid for the whole session.
+
+A successful call records the player's tick marker as of proxy admission. `KeyRegistry.authenticateRequest` snapshots the marker and returns a per-request grant whose record sink writes that snapshot, replacing the commit-time marker read. Synchronous calls record the same tick as today because the marker cannot change inside the calling hook, and setup-phase admissions still record a null tick. The decision-log `(tick, player)` lookup stays deterministic for cross-tick calls.
+
+The helper is one new template module, `templates/base/sandbox/llm.py`, regenerated into the per-environment templates, with a single-slot contract:
+
+- `BackgroundLLM()` holds at most one request in flight. On first use it loads `.env` if present, reads the two environment variables, and constructs the standard OpenAI client with `max_retries=0`, like `llm_example.py`. It calls `create` with `stream=False`.
+- `request(model=..., messages=..., **kwargs)` takes exactly the arguments of `client.chat.completions.create`, returns immediately, and runs the call on an internal daemon thread.
+- `request` serves plain text completions only. It raises immediately in the calling hook when given `tools`, `tool_choice`, `functions`, or `response_format`, so a paid completion can never arrive without message text. Advanced completion shapes use the synchronous client.
+- `response()` returns the finished reply's message text exactly once, and None while waiting, while idle, and after a failure.
+- `requesting` is True from `request` until the reply is read or the call fails. A `request` made while it is True does nothing and returns False; it never cancels or replaces the pending call, because an abandoned model call would still finish server-side and spend budget.
+- `error` holds the last failure. Argument validation raises in the calling hook; nothing raises from the background thread. A failed call, including a successful completion whose message text is empty or missing, prints a stderr diagnostic, sets `error`, and frees the slot.
+- An agent that wants several concurrent requests creates several instances.
+
+The student guide teaches the helper with a chat example: the agent answers table talk without blocking a turn, and the reply lands a few ticks after the message that prompted it.
+
+```python
+from sandbox.llm import BackgroundLLM
+
+class Agent:
+    def __init__(self) -> None:
+        self.llm = BackgroundLLM()
+
+    def chat(self, inbox):
+        reply = self.llm.response()
+        if reply:
+            return [{"to": None, "text": reply}]
+        if inbox and not self.llm.requesting:
+            self.llm.request(
+                model="small",
+                messages=[{"role": "user", "content": f"Reply in one short sentence to: {inbox[-1]['text']}"}],
+            )
+        return []
+```
+
+Collect first, then ask: `response` hands back a finished reply once, and the explicit `requesting` check keeps at most one call in flight. The same pattern works from `act`: request a plan on one tick and follow it once `response` returns it.
 
 ## Individual termination and truncation
 
@@ -113,13 +151,7 @@ Update shared consumers that currently assume the first or final entry:
 
 Reward-only AEC entries are ordinary state deltas under the existing schema because `action` and `timing` are optional. Workflow aggregation already ignores them when counting acted ticks because they carry no timing.
 
-Verify consumers that are already state-level or player-keyed:
-
-- `backend/src/workflow/aggregate.ts` counts timing-bearing entries for one named player across all states.
-- replay transport and seek move one state per recorded tick;
-- `useSessionSocket` paces one state at a time;
-- renderers receive the complete state and may inspect any or every agent entry;
-- the backend relay and audience filter preserve the one canonical state line, apart from existing targeted-message filtering.
+Consumers that are already state-level or player-keyed need only verification: `backend/src/workflow/aggregate.ts` counts timing-bearing entries for one named player across all states, replay transport and seek move one state per recorded tick, `useSessionSocket` paces one state at a time, renderers receive the complete state and may inspect any agent entry, and the backend relay and audience filter preserve the one canonical state line apart from existing targeted-message filtering.
 
 The parallel fixture recording supplies the regression data. No parallel-only transport envelope, recording header field, or renderer method is added.
 
@@ -138,39 +170,36 @@ The parallel fixture recording supplies the regression data. No parallel-only tr
 
 [Recording](../../docs/specs/recording.md) defines a state line as one AEC action, including any non-acting reward-and-lifecycle deltas caused by it, or one parallel tick. A player's final score is the latest cumulative score recorded for that player.
 
+[LLM API](../../docs/specs/llm.md) keeps the charging formula and the one-read-per-hook baseline. It replaces the requirement that model calls stay on the hook thread: local computation must run on the hook thread, while a model request may run on an agent-side background thread and stay in flight across hooks and ticks, with the same discount and CPU floor. It documents the in-hook credential-capture rule, admission-time tick recording for successful calls, the rule that live-session and leaderboard-run timeouts exclude only blocking proxy wait so a background-marked request never extends them, and a pointer to the student guide's helper.
+
+[Using the LLM API](../../docs/students/llm.md) gains a cross-tick subsection after the existing synchronous example. It teaches `sandbox.llm.BackgroundLLM` with the chat example above, tells students not to create threads themselves, says the helper serves plain text completions, and notes the text limit.
+
 Update harness package and contributor runtime documentation that currently describes `step_once()` as the sole episode path.
 
 ## Tests
 
 Fake-clock and fixture harness tests cover:
 
-- every active player observing the same pre-step version;
+- every active player observing the same pre-step snapshot, sequential action collection in canonical order, and one joint environment step producing one recorded state and one tick increment;
 - exact reset and step mapping keys, monotonic active membership, and runtime `EnvironmentContractError` on every contract violation;
-- canonical sequential action collection and one joint environment step;
-- an unrecorded simultaneous opening frame carrying reset controls and chat policy, followed by one full cadence interval before tick 0 input is consumed;
-- a latched human action consumed before agent hooks and later input retained for the next tick;
+- an unrecorded simultaneous opening frame carrying reset controls and chat policy, one full cadence interval before tick 0 input is consumed, and a latched human action consumed before agent hooks with later input retained for the next tick;
 - one recorded state with every applied action, reward, score, and per-player timing;
-- one tick increment per joint step;
-- a late agent defaulting only itself while every later player still acts;
-- an illegal agent action failing before an incomplete joint step;
+- a late agent defaulting only itself while every later player still acts, and an illegal agent action failing before an incomplete joint step;
 - chat hooks seeing no messages admitted on their current boundary and recipients first seeing tick T messages on tick T+1;
-- individual parallel termination and truncation;
-- individual AEC termination while another player continues, including the non-acting player's reward-only terminal entry and no synthetic learning call;
-- mixed natural termination and truncation producing `truncated` regardless of AEC dead-step order;
-- natural completion winning when the same AEC or parallel step reaches the tick cap, plus cap truncation while players remain active;
-- canonical attribution when several episode budgets cross together;
+- individual termination and truncation in both modes while other players continue: a parallel player that acted receives its terminal learning call, a non-acting AEC player receives a reward-only terminal entry and no synthetic learning call, and neither receives later hooks;
+- ending precedence: a mixed natural ending reporting `truncated` regardless of AEC dead-step order, natural completion winning when the same AEC or parallel step reaches the tick cap, cap truncation while players remain active, and canonical attribution when several episode budgets cross together;
 - first-tick wait, completion-based slip, pause, stop, and no catch-up burst;
-- an unpaced headless rollout with the same states apart from wall-clock fields.
+- an unpaced headless rollout with the same states apart from wall-clock fields;
+- a proxy in-flight delta spanning several hooks and ticks discounting each hook only to its CPU floor, with no hook blocked between the request's admission and completion.
 
 Consumer tests cover:
 
-- one decision-log row for every action-bearing `(tick, player)` entry in live and replay views, with no row for an AEC reward-only delta;
-- grouped replay highlighting and one copy of each tick's messages after all decisions for that tick;
-- latest-seen replay scores for players absent from the final state;
-- complete live, local, directly opened ended-session, and replay game-over standings when a player is absent from the final state and no environment score array is available;
+- one decision-log row for every action-bearing `(tick, player)` entry in live and replay views, no row for an AEC reward-only delta, grouped replay highlighting, and one copy of each tick's messages after that tick's decision group;
+- latest-seen replay scores and complete live, local, directly opened ended-session, and replay game-over standings when a player is absent from the final state and no environment score array is available;
 - correct acted-tick counts and compute means from a multi-entry workflow recording;
-- replay seek and playback advancing one multi-entry frame at a time;
-- socket pacing and one renderer mount receiving multi-entry states unchanged.
+- replay seek, playback, socket pacing, and one renderer mount receiving multi-entry states one frame at a time.
+
+Backend tests pin admission-tick attribution (a request admitted under marker tick T and committed after later marker posts records tick T, and a setup-phase admission records a null tick) and the watchdog split: with only an open background-marked request, the live-session and leaderboard-game chargeable timers expire on their normal deadline, while a blocking request still extends both. A template test, `templates/base/tests/test_llm.py`, pins the helper contract following the faking approach in `test_llm_example.py`: `request` is non-blocking and does nothing while `requesting` is True, an in-flight or unread call is never cancelled or replaced, `response` yields a success text exactly once, tool and response-format arguments raise in the calling hook, and a failure, including a text-free successful completion, sets `error`, prints a diagnostic, and frees the slot.
 
 The fixture runs through direct `Episode`, `run_episode`, the injected live runner, and the local relay without becoming a registered environment. An existing AEC Playwright journey pins one decision row per real action and complete game-over standings after the adapter change. Browser end-to-end play for the parallel path waits for the first public simultaneous environment; Stage 17.1's Spades journey remains the browser gate for the messaging UI changed in this stage.
 
@@ -181,4 +210,4 @@ The fixture runs through direct `Episode`, `run_episode`, the injected live runn
 - A slow player slips cadence but cannot skip a later player or cause a catch-up burst.
 - AEC and parallel players can become inactive individually without losing final scores or receiving later hooks.
 - Multi-entry decisions and final scores remain visible through recording, replay, workflow aggregation, and the shared decision log.
-- Synchronous LLM calls retain their existing accounting and may slip ticks; Stage 17 adds no background execution path.
+- Synchronous LLM calls keep their existing accounting and may slip ticks. A cross-tick request through the template helper charges hooks no more than their own local time, records the admission-time tick, and needs no student-managed threads; the harness gains no submit, poll, or scheduling API.

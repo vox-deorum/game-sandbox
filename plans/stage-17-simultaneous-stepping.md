@@ -19,11 +19,12 @@ Messaging uses one buffered asynchronous model in both stepping modes. Agent and
 - AEC and parallel players may terminate or truncate individually. Inactive players receive no later hooks. AEC states carry reward-only entries when a non-acting player receives reward or becomes inactive, so every player's latest recorded score remains available to replay summaries.
 - Shared decision logs and chat threads show every player action in a multi-entry state while presenting the state's messages once.
 - Human chat is always available while the designated external player is active. The acting-turn opportunity and compose-tick machinery are removed.
-- Spec changes land with the work: [Communication](../docs/specs/communication.md), [Interaction](../docs/specs/interaction.md), [Environments](../docs/specs/environment.md), [Execution](../docs/specs/execution.md), and [Recording](../docs/specs/recording.md).
+- An agent may keep an official LLM request in flight across ticks. The template's background helper runs the call on a thread it manages, students create no threads, and local computation stays on the hook thread. The existing verified-proxy discount and CPU floor price the request, a successful call records the tick at which the proxy admitted it, and a background-marked request never extends the live-session or leaderboard-run watchdogs.
+- Spec changes land with the work: [Communication](../docs/specs/communication.md), [Interaction](../docs/specs/interaction.md), [Environments](../docs/specs/environment.md), [Execution](../docs/specs/execution.md), [Recording](../docs/specs/recording.md), and [LLM API](../docs/specs/llm.md).
 
 Stage 17 targets a fresh, pre-release checkout. Environment metadata and the internal chat command shape change in place, with no compatibility path.
 
-Out of scope: the role-playing environment and its renderer; a registered public simultaneous environment; multi-human sessions; concurrent CPU execution for agent decisions; message-only transport states; changes to the recorded message object; background or cross-tick LLM execution; and changes to the renderer contract. The ordinary synchronous LLM API remains available, and its wall-clock wait may make a simultaneous tick slip.
+Out of scope: the role-playing environment and its renderer; a registered public simultaneous environment; multi-human sessions; concurrent CPU execution for agent decisions; message-only transport states; changes to the recorded message object; a harness API for submitting, polling, or scheduling model requests; and changes to the renderer contract. The ordinary synchronous LLM API remains available, and its wall-clock wait may make a simultaneous tick slip.
 
 ## Related specifications
 
@@ -32,6 +33,7 @@ Out of scope: the role-playing environment and its renderer; a registered public
 - [Environments](../docs/specs/environment.md): the required stepping declaration and the AEC or parallel authoring contract.
 - [Execution](../docs/specs/execution.md): sequential decision collection inside one parallel tick.
 - [Recording](../docs/specs/recording.md): multi-entry state lines and final scores derived from each player's latest entry.
+- [LLM API](../docs/specs/llm.md): hook timing, the verified proxy discount, and cross-tick requests through the template helper.
 
 ## Depends on
 
@@ -60,6 +62,12 @@ At a simultaneous cadence boundary, the harness snapshots every active observati
 A slow action is charged to that player and replaced with its legal default after the hook returns. The harness does not preempt Python work, skip later players, or create seat-order deadline bias. An illegal agent action remains an attributable failure. An absent or illegal human input uses the legal default and records the existing diagnostic.
 
 After all actions are available, the environment applies them in one `env.step(actions)` call. If collection and stepping overrun the cadence, the next tick is scheduled one full interval after completion. Headless runs keep no wall-clock pacing and execute the next tick immediately.
+
+### Cross-tick model requests run through the template helper
+
+An agent may start an official model request during one hook and read the response in a later hook, ticks or turns apart. The template's `sandbox.llm.BackgroundLLM` helper owns the background thread, captures the player's credentials inside the calling hook, and exposes one non-blocking request slot; students never create threads. The harness offers no submit, poll, or scheduling API and does not schedule agent threads.
+
+Local computation stays on the hook thread, where CPU time is always chargeable. A background request never blocks a hook, so the existing verified-proxy discount only lowers charged time toward the CPU floor. The helper marks its calls background at admission, and the live-session and leaderboard-run watchdogs exclude only blocking proxy wait, so an open background request never delays terminating a session that stops making progress. The helper serves plain text completions; advanced completion shapes use the synchronous client. The proxy records each successful call under the player's tick marker at admission, which matches today's behavior for synchronous calls and is deterministic for cross-tick ones. The key lasts the whole session, and session teardown aborts requests still in flight.
 
 ### One completed parallel step produces one state
 
@@ -107,7 +115,7 @@ Require the stepping declaration, validate the constructed AEC or parallel proto
 
 ### 17.3 [The simultaneous tick loop](stage-17/3-simultaneous-tick-loop.md)
 
-Add the tick path and its live and headless dispatch, completion-based cadence, mode-neutral player lifecycle, multi-entry decision logs, last-seen replay scores, and end-to-end fixture coverage.
+Add the tick path and its live and headless dispatch, completion-based cadence, mode-neutral player lifecycle, multi-entry decision logs, last-seen replay scores, cross-tick official LLM requests through the template helper with admission-tick attribution, and end-to-end fixture coverage.
 
 ## Exit criteria
 
@@ -127,5 +135,5 @@ Add the tick path and its live and headless dispatch, completion-based cadence, 
 - The live and replay decision logs show every `(tick, player)` action from a multi-entry state, while AEC logs retain one action row per completed step.
 - Replay highlighting selects the complete current tick group, and a tick's messages appear once after that group.
 - Workflow timing aggregation, replay seek and playback, live socket pacing, and a renderer mount accept multi-entry states without a parallel-specific transport or renderer branch.
-- The specs state that synchronous model calls are supported but can slip simultaneous ticks, and do not describe background or cross-tick execution as a platform feature.
+- The specs state that a synchronous model call can slip a simultaneous tick, that a request may stay in flight across ticks through the template helper while local computation stays on the hook thread, that the harness has no submit, poll, or scheduling API, that a successful call records the tick at proxy admission, and that a background-marked request never extends the live-session or leaderboard-run watchdogs.
 - `uv run python scripts/ci.py python`, `generated-code-fresh`, `docs`, and `frontend-e2e` pass.
