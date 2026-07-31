@@ -1,6 +1,6 @@
 # Hearts
 
-Hearts is a four-player card game. Your goal is to finish with as few penalty points as possible. Each heart is worth 1 point, and the queen of spades is worth 13. Your agent controls one player. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
+Hearts is a four-player card game where your goal is to take as few penalty points as possible. Your agent controls one player. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
 
 ## How the game works
 
@@ -14,25 +14,35 @@ This environment uses these Hearts rules:
 - No heart or queen of spades may be played on the first trick unless the player has no other kind of card.
 - A player may not lead a heart until hearts are **broken**, which means someone played a heart on an earlier trick. The one exception is a hand that holds nothing but hearts, which may lead one. The queen of spades does not break hearts in this variant.
 
-You do not need to program these rules yourself. The template's `legal_cards` helper reads the observation and lists the cards you may play on the current turn.
+You do not need to program these rules yourself: the template's `legal_cards` helper reads the observation and lists the cards you may play on the current turn.
 
 > _Never played Hearts?_ The [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction.
+
+## How player numbers work
+
+Player IDs are fixed labels in the turn order, not positions on the screen, and turns move clockwise:
+
+```text
+0 → 1 → 2 → 3 → 0
+```
+
+The viewer rotates the table to place the player being watched at the bottom. From that view, the next player is on the left, the following player is at the top, and the previous player is on the right. Player `0` can therefore appear at any side of the screen.
+
+Suppose the observation's `player` field is `2`, so your agent controls player 2. The viewer places you at the bottom, player 3 on the left, player 0 at the top, and player 1 on the right. If `scores` is `[3, 0, 5, 1]`, then player 0 has 3 penalty points, player 1 has 0, your player 2 has 5, and player 3 has 1.
+
+The `current_trick` field uses these same player IDs. If it is `[{"player": 0, "card": {"suit": 1, "rank": 4}}, {"player": 1, "card": {"suit": 1, "rank": 13}}]`, then player 0 led the four of diamonds, player 1 followed with the king of diamonds, and players 2 and 3 have not played yet. Because the list is already in play order, its first entry is the player named by `trick_leader`.
 
 ## Your first agent
 
 Your template contains a complete working agent. This section explains how it chooses a card.
 
-On each turn, the game harness calls `act` with an observation of the table. Your agent must return the card it wants to play. The template's helper module converts the observation into card objects and plain Python values, so you do not need to work with raw numbers.
+On each turn, the runner calls `act` with an observation of the table. Your agent must return the card it wants to play. The template's helper module converts the observation into card objects and plain Python values, so you do not need to work with raw numbers.
 
-A card is a small object with a `suit` number from `0` through `3` and a `rank` number from `2` through `14`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The queen of spades is therefore `{"suit": 2, "rank": 12}`.
+A card is a small object with a `suit` number from `0` through `3` (clubs, diamonds, spades, hearts, in that order) and a `rank` number from `2` through `14`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The queen of spades is therefore `{"suit": 2, "rank": 12}`.
 
-`legal_cards(observation)` returns the cards you may play this turn. It applies every rule, including following suit, not leading hearts before they are broken, and the first-trick restrictions. Every card in the returned list is legal.
+`legal_cards(observation)` returns the cards you may play this turn, already checked against every rule. Python's built-in `min` compares those cards with `rank_of` and returns the lowest-ranked one, and `play` converts that card into the integer `act` returns. [The helper module](#the-helper-module) lists what each helper does.
 
-`rank_of(card)` gives a card's face-value rank from two through ace, without considering its suit. Python's built-in `min` can use that helper to find the lowest-ranked card.
-
-`play(card)` converts a card object into the integer that `act` must return. Choose a card object first, then convert it at the end instead of building the integer yourself.
-
-The strategy is simple: always play the lowest-ranked legal card. Low cards rarely win tricks, and winning tricks is how you collect penalty cards. Playing low is therefore a reasonable starting point.
+The strategy is to always play the lowest-ranked legal card. The comments in the code below explain why.
 
 ```python
 from sandbox.cards import legal_cards, play, rank_of
@@ -71,14 +81,14 @@ Run the agent from the template folder:
 
 ```console
 python -m sandbox play                 # watch separate copies of your agent play all four positions
-python -m sandbox eval                 # play several seeded games and report the mean score
+python -m sandbox eval                 # play several seeded episodes and report the mean score
 python -m sandbox eval --vs rivals/v1  # play against a saved copy of your agent
 python -m sandbox test                 # run the checks
 ```
 
 `eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
-The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. This page is the `environment.md` file that the template comments mention.
+The `TODO(you)` comment inside `act` marks the line for you to improve, and this page is the `environment.md` file that the template's comments mention. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy.
 
 ## Scoring and rewards
 
@@ -95,13 +105,13 @@ During play, every action gives a reward of `0.0`. When the game ends, each play
 | `13`                | `-13.0`      |
 | `26`                | `-26.0`      |
 
-After a successful moon shot, the shooter receives `0.0` and each other player receives `-26.0`. While the game is still running, the `scores` observation shows the penalty points taken so far. The moon-shot adjustment is applied to the final score and reward when the game ends.
+While the game is still running, the `scores` observation shows the penalty points taken so far. The moon-shot adjustment applies to the final score and reward when the game ends.
 
 ## The helper module
 
-The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values. Your `act` method therefore does not need to read internal arrays or action numbers.
+The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values, so your `act` method never has to read internal arrays or action numbers.
 
-`legal_cards(observation)` returns the card objects you may play. This list is never empty on your turn. `min(legal, key=rank_of)` selects the lowest-ranked legal card. `rank_of(card)` reads a card's face value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
+`legal_cards(observation)` returns the card objects you may play, and on your turn that list is never empty. `min(legal, key=rank_of)` selects the lowest-ranked legal card, `rank_of(card)` reads a card's face value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
 
 The module provides these helpers and constants:
 
@@ -128,7 +138,7 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-This is optional advanced reference material. The starting agent uses helpers instead of raw action numbers and observation arrays, and most agents never need this section.
+This is optional advanced reference material. The starting agent uses helpers instead of raw action numbers and observation arrays, so most agents never need this section.
 
 Without the helpers, finding the legal cards means reading all 52 mask entries by hand:
 
@@ -153,7 +163,7 @@ Your `act` method returns an integer from `0` through `51`. This **card ID** is 
 | Spades | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 |
 | Hearts | 39 | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 | 49 | 50 | 51 |
 
-For example, card `0` is the two of clubs, card `15` is the four of diamonds, card `36` is the queen of spades, and card `51` is the ace of hearts. These numbers are identifiers. Card `0` is not on the left or top of the table, and card `51` is not physically farther right or lower.
+For example, card `0` is the two of clubs, card `15` is the four of diamonds, card `36` is the queen of spades, and card `51` is the ace of hearts. These numbers are only identifiers: card `0` is not on the left or top of the table, and card `51` is not physically farther right or lower.
 
 You can calculate a card ID with `card = suit * 13 + rank`. In this formula, suit and rank use these values:
 
@@ -162,7 +172,7 @@ You can calculate a card ID with `card = suit * 13 + rank`. In this formula, sui
 | Suit | `0` clubs, `1` diamonds, `2` spades, `3` hearts |
 | Rank | `0` two, `1` three, through `8` ten, `9` jack, `10` queen, `11` king, `12` ace |
 
-To decode card `36`, divide it by 13. The whole-number result, `2`, means spades. The remainder, `10`, means queen. A card ID uses ranks `0` through `12`, while observation card objects and `rank_of` use face values `2` through `14`. You rarely need to convert either scale. Work with card objects and let `play(card)` build the ID.
+To decode card `36`, divide it by 13. The whole-number result, `2`, means spades. The remainder, `10`, means queen. A card ID uses ranks `0` through `12`, while observation card objects and `rank_of` use face values `2` through `14`. You rarely need to convert between them: work with card objects and let `play(card)` build the ID.
 
 The card you return must have a `1` at the same position in `observation["action_mask"]`. The environment rejects a card whose entry is `0`. This includes cards you do not hold and cards that break a rule.
 
@@ -178,7 +188,7 @@ observation
 
 The top-level `action_mask` is a 52-entry NumPy array indexed by card ID. `1` means you may play that card now, and `0` means you may not. `legal_cards` reads this array for you.
 
-Everything else is under the `"observation"` key and uses meaningful structures. Cards are objects shaped like `{"suit", "rank"}`. Your hand and current trick are ordinary sequences of cards, and small numbers represent categories. None of these fields is another 52-entry mask.
+Everything else sits under the `"observation"` key in readable structures: cards are objects shaped like `{"suit", "rank"}`, your hand and current trick are ordinary sequences of cards, and small numbers represent categories. None of these fields is another 52-entry mask.
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
@@ -190,25 +200,11 @@ Everything else is under the `"observation"` key and uses meaningful structures.
 | `player` | `0..3` | Your own player ID. |
 | `scores` | length-4 array | Running penalty points indexed by player. Each value is from `0` through `26`, and lower is better. |
 
-Read these through `observation["observation"]`, for example `observation["observation"]["player"]`, or let the helpers do it: `hand_cards`, `current_trick`, `led_suit`, `my_player`, and `scores` each return one of these fields as plain Python values.
-
-#### How player numbers work
-
-Player IDs are fixed labels in the turn order, not positions on the screen. Turns move clockwise:
-
-```text
-0 → 1 → 2 → 3 → 0
-```
-
-The viewer rotates the table to place the player being watched at the bottom. From that view, the next player is on the left, the following player is at the top, and the previous player is on the right. Player `0` can therefore appear at any side of the screen.
-
-Suppose `player` is `2`. Your agent controls player 2, which the viewer places at the bottom. Player 3 appears on the left, player 0 at the top, and player 1 on the right. If `scores` is `[3, 0, 5, 1]`, then player 0 has 3 penalty points, player 1 has 0, your player 2 has 5, and player 3 has 1.
-
-`current_trick` carries absolute player IDs too. If it is `[{"player": 0, "card": {"suit": 1, "rank": 4}}, {"player": 1, "card": {"suit": 1, "rank": 13}}]`, then player 0 led the four of diamonds and player 1 followed with the king of diamonds; players 2 and 3 have not played yet. Because the list is already in play order, its first entry is the player named by `trick_leader`.
+Read these through `observation["observation"]`, for example `observation["observation"]["player"]`. The helpers `hand_cards`, `current_trick`, `led_suit`, `my_player`, and `scores` each return one of these fields as plain Python values.
 
 ## Time limits
 
-Hearts is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
+Hearts is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late, the environment plays the legal card with the lowest rank, breaking ties by the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Your first improvement
 
@@ -222,6 +218,8 @@ One possible improvement is **ducking**: playing a high card below another playe
 
 Record the average score from `python -m sandbox eval` before the change, then run it again afterward. Ducking saves a few points at a time over many deals, so compare averages over several games.
 
-You can also make the comparison direct: copy the old `agent.py` and `manifest.json` into a folder such as `rivals/v1`, then run `python -m sandbox eval --vs rivals/v1` to play your new agent against the saved one.
+For a direct comparison, play your new agent against a saved earlier version: the getting started guide's [play and evaluate](../../docs/students/getting-started.md#4-play-and-evaluate) step shows how to save a rival and run `eval --vs` against it.
 
 One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually _for_?
+
+When your agent is ready, the [submitting guide](../../docs/students/submitting.md) covers how to send it in.

@@ -33,14 +33,14 @@ For documentation:
 uv run python scripts/ci.py docs
 ```
 
-For committed generated artifacts after changing schemas, environment metadata, or environment packaging:
+For committed generated artifacts after a schema, environment metadata, or environment packaging change:
 
 ```console
 uv run python scripts/generate.py
 uv run python scripts/ci.py generated-code-fresh
 ```
 
-After changing a template layer, example, harness file, or shared template helper, run `uv run python scripts/ci.py examples` to compose and test every student kit.
+After changing a template layer, example, harness file, or shared template helper, run `uv run python scripts/ci.py examples` to compose and test every template.
 
 ## CI job runner
 
@@ -57,13 +57,7 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium |
 
-Run every non-Docker job plus the docs build and publish dry run:
-
-```console
-uv run python scripts/ci.py all
-```
-
-The full local pull-request bar is:
+The full local pull-request bar runs every non-Docker job plus the docs build and publish dry run, then the two Docker-heavy suites:
 
 ```console
 uv run python scripts/ci.py all
@@ -82,12 +76,15 @@ uv run python scripts/ci.py backend-integration
 This suite builds the session image and verifies behavior that unit tests cannot:
 
 - A scripted client completes a Flappy Bird session.
-- CPU, memory, read-only filesystem, and network restrictions apply.
+- A memory quota kills a container that exceeds it, and network restrictions isolate the container.
 - Idle teardown and orphan reaping work.
 - Submission overlays build and cache.
 - Load checks report success and known failures.
 - Overlay eviction protects active ready submissions.
-- Git reachability and commit pinning work non-interactively.
+
+CPU limits and a read-only root filesystem are part of the sandbox profile configuration, but no test in this suite asserts them behaviorally.
+
+Git reachability and commit pinning against a real repository are covered by a separate, opt-in test (`backend/test/integration/submission-source-network.test.ts`). It runs only when `SUBMISSION_NETWORK_TESTS=1` is set, so it is skipped by default and is not part of this job.
 
 Integration tests live under `backend/test/integration/`.
 
@@ -97,11 +94,9 @@ Integration tests live under `backend/test/integration/`.
 uv run python scripts/ci.py frontend-e2e
 ```
 
-This job is not part of per-push CI because it is too slow and Docker-heavy. It has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Trigger it from the Actions tab with **Run workflow**, or run it locally with the command above.
+This job runs on its own manually dispatched workflow instead of per-push CI; see [Browser end-to-end tests](browser-e2e.md) for why, how to trigger it, and how to add a spec or fixture.
 
 The suite builds the frontend and session image, starts the real backend, and covers browser flows for sessions, submissions, authentication, replays, seasons, and leaderboards. Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
-
-See [End-to-end tests](browser-e2e.md) for setup, fixture conventions, and instructions for adding a spec or fixture.
 
 Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
 
@@ -113,9 +108,9 @@ Each bare student template includes a working `act` method and should pass. A pa
 uv run python scripts/ci.py examples
 ```
 
-CI requires at least one example per environment and tests each example in a fresh virtual environment.
+CI requires at least one example per environment and tests each one in a fresh virtual environment.
 
-Use the publish dry run before changing release machinery. It verifies the publish-only browser bundle injection that ordinary composition intentionally omits:
+Run the publish dry run after changing release machinery. It verifies the publish-only browser bundle injection that ordinary composition intentionally omits:
 
 ```console
 uv run python scripts/ci.py publish-dry-run
@@ -164,7 +159,7 @@ uv run python scripts/publish_template.py --tag template-v0 --dry-run
 
 Two operations require GitHub:
 
-- Pages deployment through the `github-pages` environment. The deploy job in `.github/workflows/docs.yml` stays disabled until the documentation site goes public.
+- Pages deployment: `.github/workflows/docs.yml` only runs `mkdocs build --strict`. The site is not deployed yet.
 - Real template publication and release tagging with repository credentials.
 
 Everything else should be exercised locally through the commands above before relying on CI.

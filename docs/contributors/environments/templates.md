@@ -1,6 +1,6 @@
 # Template Product and Releases
 
-The student kit combines shared files with one environment's hand-authored layer and, optionally, a worked example.
+The composed template combines shared files with one environment's hand-authored layer and, optionally, a worked example.
 
 ```text
 templates/base
@@ -12,25 +12,25 @@ environments/<env>/examples/<name>   (optional)
 complete runnable repository
 ```
 
-Read [Environment template and examples](template-and-examples.md) to create an environment layer. This page covers the composed product, its version, and publication.
+Read [Environment template and examples](template-and-examples.md) to create an environment layer. This page covers the composed template, its version, and publication.
 
 ## Composition
 
-`scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and overlays the environment's `template/` directory.
+`scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and copies the environment's `template/` directory onto it.
 
-Composition is intentionally disposable. Recompose every template and example after changing environment metadata, gameplay parameter declarations, the harness launch contract, or the generated factory signature. Outputs composed from another checkout are unsupported.
+Composition is intentionally disposable. Recompose every template and example after changing environment metadata, gameplay parameter declarations, the harness launch contract (the launch configuration and stdio protocol the backend shares with the session container), or the generated factory signature. Outputs composed from another checkout are unsupported.
 
-`scripts/compose.py <env> <name>` then overlays `environments/<env>/examples/<name>/` into `build/examples/<env>/<name>/`.
+`scripts/compose.py <env> <name>` also layers `environments/<env>/examples/<name>/` onto `build/examples/<env>/<name>/`.
 
 Composition replaces whole files. The only merged file is `requirements.extra.txt`: it appends pins but cannot override a pin already in `requirements.txt`.
 
 The [`PUBLISHED_EXAMPLES` allowlist](template-and-examples.md#hand-authored-layers) selects which examples the publish step turns into public branches.
 
-Compose copies the canonical `environments/<env>/environment.md` guide into each kit as `environment.md`, alongside the shared LLM guide as `llm.md`. It rewrites `{{DOCS_URL}}` and fails if a required guide or token is missing. The local browser bundle is added only to a release or dry-run staging tree.
+Compose copies the canonical `environments/<env>/environment.md` guide into each composed template as `environment.md`, alongside the shared LLM guide as `llm.md`. It rewrites `{{DOCS_URL}}` and fails if a required guide or token is missing. The local browser bundle is added only to a release or dry-run staging tree.
 
 ## Versioned dependency set
 
-One version number, `N`, identifies the `template-v<N>` tag, the `deps-v<N>` session image, and each agent manifest's `template_version`.
+A student's repository, the CI checks, and the session container that runs the agent must all use identical dependencies, so one version number, `N`, ties together the `template-v<N>` tag, the `deps-v<N>` session image, and each agent manifest's `template_version`.
 
 `templates/base/manifest.json` is the canonical template value. `scripts/bump_template_version.py` updates every coupled touchpoint, and CI runs it with `--check` to catch drift.
 
@@ -40,12 +40,14 @@ An active, unreleased `deps-v<N>` directory may be regenerated with its matching
 
 ## Cutting a release
 
-Dispatch the Publish Template workflow from `main` with version `N`.
+The typical release dispatches the Publish Template workflow from `main` with the next `N` to publish. A few special cases use the same workflow with different inputs:
 
-- A greater `N` creates the next dependency snapshot and updates the owned version touchpoints.
-- The current `N` retries a release whose `template-v<N>` tag never landed.
-- The current `N` with `republish: true` refreshes an already-tagged release from the current `main`, force-pushing the student repository. Use it to publish an environment merged after `template-v<N>` shipped.
-- A lower `N` is refused.
+| Dispatch input | Behavior |
+| --- | --- |
+| Greater `N` | Creates the next dependency snapshot and updates the owned version touchpoints. |
+| Same `N` | Retries a release whose `template-v<N>` tag never landed. |
+| Same `N`, `republish: true` | Refreshes an already-tagged release from the current `main`, force-pushing the student repository. Use it to publish an environment merged after `template-v<N>` shipped. |
+| Lower `N` | Refused. |
 
 The workflow verifies the selected commit, builds the local frontend once, and uses the same composition path as local checks. It publishes the default template to the student repository's `main` branch, environment templates to `templates/<env>`, and selected examples to `examples/<env>/<name>`. After pushing every desired branch, a real publish removes generated `examples/*` branches that are no longer in `PUBLISHED_EXAMPLES` and leaves other branches unaffected.
 

@@ -87,5 +87,5 @@
 
 /*
  * Breakpoints are documented constants, not tokens, because custom properties cannot parameterize
- * media queries. Use these values literally in scoped media queries: 480px, 768px, 1024px.
+ * media queries. Use these values literally in scoped media queries: 480px, 768px, 1200px.
  */

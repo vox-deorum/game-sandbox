@@ -1,6 +1,6 @@
 # Game Sandbox Agent Template: Flappy Bird
 
-This repository is a complete starter project for a Flappy Bird agent. Edit `agent.py` and, if you use the optional LLM API, a local `.env` file. Everything in `sandbox/` is provided.
+This repository is a complete starter project for a Flappy Bird agent. Edit `agent.py`, plus a local `.env` file if you use the optional LLM API. Everything in `sandbox/` is provided.
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
@@ -30,17 +30,17 @@ From the project folder:
 python -m sandbox
 ```
 
-The first run creates `.venv`, installs the pinned packages, and opens a game you control with **space** or the **up arrow**. Use these commands as you work:
+The first run creates `.venv`, installs the pinned packages, and opens a game you control with **space**, the **up arrow**, or **W**. Use these commands as you work:
 
 ```console
 python -m sandbox            # play it yourself
-python -m sandbox play       # run YOUR agent in a window (add --headless for no window)
+python -m sandbox play       # run YOUR agent in your browser (add --headless to run without opening the browser)
 python -m sandbox eval       # run several seeded episodes and report the mean score
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
+The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 
 ## Write the agent
 
@@ -49,16 +49,16 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called whenever the agent must choose.
 
-Read [`environment.md`](environment.md) before you start. It explains the starter agent, observation, actions, `sandbox.features` helpers, scoring, and time limits.
+Read [`environment.md`](environment.md) before you start. It explains the starter agent, the observation, the actions, the `sandbox.features` helpers, scoring, and time limits.
 
-Two optional methods are available:
+Two optional methods are available, described in the [agent interface reference]({{DOCS_URL}}students/agent-interface/):
 
 - `learn(observation, action, reward, terminated)` updates a learning agent after a step.
 - `chat(inbox)` sends messages in environments that enable communication.
 
-Leave an optional method out when you do not use it.
+Leave out any optional method you do not use.
 
-The template already plays. Its agent flaps below the middle of the screen, and `TODO(you)` in `act` marks where to improve it.
+The template already plays. Its agent flaps whenever the bird is below the middle of the screen, and `TODO(you)` in `act` marks where to improve it.
 
 ## Submit
 

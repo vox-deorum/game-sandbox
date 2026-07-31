@@ -11,7 +11,7 @@ A **player** is one position at the card table. A **seat** is the set of players
 | `partnership` (default) | One partnership: players 0 and 2, or players 1 and 3 |
 | `solo` | One player |
 
-The default `partnership` plan runs one submission for each team. Game Sandbox creates a separate `Agent()` object for each of that submission's two players. Those objects do not share variables, even though they come from the same code. Use the optional `chat` method to pass information between them. A season can choose the `solo` plan, which assigns one submission to each player instead.
+The default `partnership` plan runs one submission for each team. Game Sandbox creates a separate `Agent()` object for each of that submission's two players. They come from the same code but do not share variables. Use the optional `chat` method to pass information between them. A season can choose the `solo` plan, which assigns one submission to each player instead.
 
 ## How the game works
 
@@ -19,7 +19,7 @@ Each player receives 13 cards from a standard 52-card deck. A hand has two phase
 
 **Bidding.** Starting with player 0 and moving clockwise, each player bids once. A bid is a whole number from `0` to `13` that says how many tricks the player expects to take. A bid of `0` is **nil**, a promise to take no tricks. Your team's **contract** is the sum of your bid and your partner's bid.
 
-**Tricks.** Player 0 starts the first trick. One player **leads** by playing the first card. The other players each add one card in clockwise order. The first card sets the **led suit**. If you hold a card of that suit, you must play one. This rule is called **following suit**. If you hold none, you may play any card.
+**Tricks.** Player 0 starts the first trick. Whoever starts a trick **leads** it by playing the first card, and the others each add one card in clockwise order. The first card sets the **led suit**. If you hold a card of that suit, you must play one. This rule is called **following suit**. If you hold none, you may play any card.
 
 Spades are always **trump**, which means any spade beats a card from another suit. The highest spade wins a trick. If no one plays a spade, the highest card of the led suit wins. The winner takes the trick and leads the next one.
 
@@ -33,23 +33,29 @@ You do not need to program these rules yourself. The template helpers read the o
 
 > _Never played Spades?_ The [Wikipedia article about Spades](https://en.wikipedia.org/wiki/Spades_%28card_game%29) provides a broader introduction.
 
+## How player numbers and partnerships work
+
+Player IDs are fixed labels in the turn order, not positions on the screen. Turns move clockwise:
+
+```text
+0 → 1 → 2 → 3 → 0
+```
+
+Partnerships follow the player numbers: players `0` and `2` form one team, players `1` and `3` the other. Your partner is always directly across the table at `(your player + 2) % 4`, a value the observation provides as `partner_player`. A failed nil bidder's tricks still count for the team, and the team's contract combines both bids, so treat the game as two teams rather than four independent players.
+
+The viewer rotates the table to put the player being viewed at the bottom, their partner at the top, and the two opponents left and right, so player `0` is not always at a fixed screen position.
+
+Suppose `player` is `2`. Your `partner_player` is then 0, and your opponents are players 1 and 3. If `bids` is `[3, 0, 4, 5]`, then player 0 bid 3, player 1 bid nil, your player 2 bid 4, and player 3 bid 5. Your team's contract is `3 + 4 = 7`. `current_trick` uses these same player IDs, and because it is already in play order, its first entry is the player named by `trick_leader`.
+
 ## Your first agent
 
-Your template contains a complete working agent. This section explains how it handles bidding and card play.
+Your template contains a complete working agent. This section explains how it bids and plays.
 
-On each turn, the game harness calls `act` with an observation of the table. During the bidding round, your agent returns a bid. During card play, it returns a card. The template's helper module tells you which phase the game is in and converts the observation into card objects and plain Python values, so you do not need to handle raw numbers.
+On each turn, the runner calls `act` with an observation of the table. Your agent returns a bid during the bidding round and a card during play. The template's helper module tells you which phase the game is in and converts the observation into card objects and plain Python values, so you do not need to handle raw numbers.
 
 A card is a small object with a `suit` number from `0` through `3` and a `rank` number from `2` through `14`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The ace of spades is therefore `{"suit": 2, "rank": 14}`.
 
-`is_bidding(observation)` returns `True` during bidding and `False` during card play. A single `if` can therefore send each turn to the right part of your code.
-
-`bid(n)` converts a bid of `n` tricks into the integer that `act` must return. The starting agent calls `bid(1)` to promise one trick.
-
-`legal_cards(observation)` returns the cards you may play this turn. It applies every rule, including following suit and not leading spades before they are broken. Every card in the returned list is legal.
-
-`rank_of(card)` gives a card's face-value rank from two through ace, without considering its suit. Python's built-in `min` can use that helper to find the lowest-ranked card. `play(card)` then converts the chosen card into the integer returned by `act`.
-
-The strategy has two parts. During bidding, it always promises one trick. A bid of `0` is nil, a risky promise to take none, so `1` is the smallest safe bid for a simple agent. During play, it chooses the lowest-ranked legal card because low cards rarely win unplanned tricks. This strategy will not win often, but it is legal, complete, and ready to improve.
+`is_bidding(observation)` tells `act` which phase the turn is in, so a single `if` can route to the right code. During bidding, the agent calls `bid(1)`, promising one trick every time. During play, it reads its options from `legal_cards(observation)`, picks the lowest-ranked one with Python's `min` and `rank_of(card)`, and hands it to `play(card)`. [The helper module](#the-helper-module) defines each of these precisely. The code comments below explain both choices. The result is legal and complete, but not competitive yet.
 
 ```python
 from sandbox.cards import bid, is_bidding, legal_cards, play, rank_of
@@ -93,18 +99,18 @@ Run the agent from the template folder:
 
 ```console
 python -m sandbox play                 # watch separate copies of your agent play all four positions
-python -m sandbox eval                 # play several seeded games and report the mean score
+python -m sandbox eval                 # play several seeded episodes and report the mean score
 python -m sandbox eval --vs rivals/v1  # play against a saved copy of your agent
 python -m sandbox test                 # run the checks
 ```
 
 `eval` reports the higher-is-better team score from [Scoring and rewards](#scoring-and-rewards). It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
-The `TODO(you)` comment inside `act` marks where you take over. A better agent should improve both the fixed bid and the strategy of never trying to win. [Your first improvement](#your-first-improvement) helps you find a first step. This page is the `environment.md` file that the template comments mention.
+The `TODO(you)` comment inside `act` marks where you take over. A better agent improves both the fixed bid and a card strategy that never tries to win a trick. [Your first improvement](#your-first-improvement) helps you find a first step. This page is the `environment.md` that the template comments mention.
 
 ## Scoring and rewards
 
-Each team's score is calculated once at the end of one hand. This environment does not carry bags into a later hand, so the traditional ten-bag penalty does not apply.
+Each team's score is calculated once, at the end of the hand. This environment does not carry bags into a later hand, so the traditional ten-bag penalty does not apply.
 
 - Your team's **contract** is the sum of your non-nil bid and your partner's non-nil bid. If the team takes at least that many tricks, it **makes** the contract and scores **10 points for each bid trick**. Each extra trick is an **overtrick**, also called a **bag**, and adds 1 point. If the team takes too few tricks, it is **set** and loses 10 points for each bid trick.
 - A **nil** bid is scored separately from the team's contract. A successful nil, in which the bidder takes no tricks, earns **100 points**. A failed nil, in which the bidder takes at least one, loses 100. Tricks from a failed nil still count toward the team's total. They can help make the contract or become bags under the normal rules.
@@ -125,9 +131,9 @@ The lowest possible team score is minus 260 (both partners bidding 13, a contrac
 
 ## The helper module
 
-The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, bid numbers, lists, and plain Python values. Your `act` method therefore does not need to read internal arrays or action numbers.
+The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, bid numbers, lists, and plain Python values, so your `act` method never has to read internal arrays or action numbers.
 
-`is_bidding(observation)` identifies the phase. `bid(n)` and `play(card)` build the two kinds of action. `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, while `partner_player(observation)` identifies your teammate. The optional [advanced reference](#under-the-hood) documents raw fields and encodings.
+`is_bidding(observation)` tells you the phase, `bid(n)` and `play(card)` build the two kinds of action, `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, and `partner_player(observation)` identifies your teammate. The optional [advanced reference](#under-the-hood) documents raw fields and encodings.
 
 The module provides these helpers and constants:
 
@@ -161,7 +167,7 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-This is optional advanced reference material. The starting agent uses helpers instead of raw action numbers and observation arrays, and most agents never need this section.
+This is optional advanced reference material. The starting agent uses helpers instead of raw action numbers and observation arrays, and most agents never need it.
 
 Without the helpers, a minimal agent has to read the mask by hand and know that bids live above card 51:
 
@@ -180,7 +186,7 @@ def act(self, observation):
 
 ### Actions
 
-Your `act` method returns one integer from a combined set of bidding and card actions. During bidding, it must return a **bid**. During play, it must return a **card**. The action mask identifies the phase because it allows only bids during bidding and only cards during play.
+Your `act` method returns one integer from a combined set of bidding and card actions. It must return a **bid** during bidding and a **card** during play. The action mask identifies the phase because it allows only bids during bidding and only cards during play.
 
 #### Bids
 
@@ -206,7 +212,7 @@ The encoding can also be written as `card = suit * 13 + rank`. The suit and rank
 | Suit | `0` clubs, `1` diamonds, `2` spades, `3` hearts |
 | Rank | `0` two, `1` three, through `8` ten, `9` jack, `10` queen, `11` king, `12` ace |
 
-To decode card `38`, divide it by 13. The whole-number result, `2`, means spades. The remainder, `12`, means ace. A card ID uses ranks `0` through `12`, while observation card objects and `rank_of` use face values `2` through `14`. You rarely need to convert either scale. Work with card objects and let `play(card)` build the ID.
+To decode card `38`, divide it by 13. The whole-number result, `2`, means spades. The remainder, `12`, means ace. A card ID uses ranks `0` through `12`, while observation card objects and `rank_of` use face values `2` through `14`. You rarely need to convert between the two: work with card objects and let `play(card)` build the ID.
 
 #### The action mask
 
@@ -224,7 +230,7 @@ observation
 
 The top-level `action_mask` is a 66-entry NumPy array indexed by action. Entries `0..51` are cards, and entries `52..65` are bids (`52 + k`). A `1` marks an action as legal. `legal_cards` and `legal_bids` read this array for you.
 
-Everything else is under the `"observation"` key and uses meaningful structures. Your hand and tricks are sequences of card objects shaped like `{"suit", "rank"}`, and other small numbers represent categories. A few raw fields need a special code for "none yet": `14` means a player has not bid, and `4` means there is no led suit or completed trick. The matching helpers translate these codes to `None` or `-1`.
+Everything else lives under the `"observation"` key. Your hand and tricks are sequences of card objects shaped like `{"suit", "rank"}`, and the other small numbers stand for categories. A few raw fields need a special code for "none yet": `14` means a player has not bid, and `4` means there is no led suit or completed trick. The matching helpers translate these codes to `None` or `-1`.
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
@@ -244,27 +250,13 @@ Everything else is under the `"observation"` key and uses meaningful structures.
 
 Read these through `observation["observation"]`, or let the helpers do it: `hand_cards`, `bids`, `team_scores`, `current_trick`, `last_trick`, `my_player`, `partner_player`, and the rest each return one of these fields as plain Python values.
 
-#### How player numbers and partnerships work
-
-Player IDs are fixed labels in the turn order, not positions on the screen. Turns move clockwise:
-
-```text
-0 → 1 → 2 → 3 → 0
-```
-
-**Players determine partnerships.** Players `0` and `2` form one team, while players `1` and `3` form the other. Your partner is always directly across the table at `(your player + 2) % 4`. The observation provides this value as `partner_player`. A failed nil bidder's tricks still count for the team, and the team's contract combines both bids, so treat the game as two teams rather than four independent players.
-
-The viewer rotates the table so that the player being viewed is at the bottom, with their partner at the top and the two opponents left and right. Therefore player `0` is not always at a fixed screen position.
-
-Suppose `player` is `2`. Your agent controls player 2, so your `partner_player` is 0 and your opponents are players 1 and 3. If `bids` is `[3, 0, 4, 5]`, then player 0 bid 3, player 1 bid nil, your player 2 bid 4, and player 3 bid 5. Your team's contract is `3 + 4 = 7`. `current_trick` carries absolute player IDs too; because it is already in play order, its first entry is the player named by `trick_leader`.
-
 ## Time limits
 
 Spades is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Messaging
 
-Spades supports messaging, so your agent may talk during a hand. If you add the optional `chat` method, the harness calls it on your turn immediately after `act` and before the trick is resolved. This complete agent sends one direct message to its partner on every turn:
+Spades enables messaging by default, so your agent may talk during a hand. `agent.py` includes a commented-out `chat` method to start from. This complete agent sends one direct message to its partner on every turn:
 
 ```python
 from sandbox.cards import bid, is_bidding, legal_cards, partner_player, play
@@ -289,11 +281,7 @@ class Agent:
         return [{"to": self.partner, "text": "I am ready"}]
 ```
 
-Messages name players with strings such as `"player_2"`, not the plain numbers in the observation, so the example builds that name from the partner's number. `chat` receives the inbox but not the observation, which is why the example saves the name during `act`, the method that runs first on every turn. Return `{"to": None, "text": "..."}` when you want to broadcast to the whole table.
-
-A **targeted** message goes only to the selected player, while a **broadcast** (`"to": None`) goes to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. By default, a message can hold up to 120 characters (some emoji count as more than one), and a season may change that limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
-
-In the default partnership plan, `chat` is how the two separate copies of your agent can coordinate. Treat it as a communication channel, not shared memory.
+Messages name players with strings such as `"player_2"`, not the plain numbers in the observation. The example builds that name from the partner's number and saves it during `act`, because `chat` does not receive the observation. By default, a message can hold up to 120 characters (some emoji count as more than one), and a season may change that limit. See the [agent interface](../../docs/students/agent-interface.md#chatinbox) for delivery timing, broadcast and targeted messages, replay visibility, and how chat time counts toward your limits.
 
 ## Your first improvement
 
@@ -301,12 +289,12 @@ Run `python -m sandbox play` a few times. Watch the bidding round and the final 
 
 > Reread [Scoring and rewards](#scoring-and-rewards) next to a finished deal: every trick promised in advance is worth ten points, and every extra trick beyond the promise is worth one.
 
-So the bid should depend on the hand. Knowing only your 13 cards, and that spades are always trump, how many tricks could you promise, and can your agent read those cards on its bidding turn?
+So the bid should depend on the hand. Knowing only your 13 cards and that spades are always trump, how many tricks could you promise? Can your agent read those cards on its bidding turn?
 
 > Scan the table in [The helper module](#the-helper-module) for what a bidding turn can see.
 
-Record the average score from `python -m sandbox eval` before the change and again afterward. A bidding improvement appears over many deals, so compare averages across several games.
-
-You can also make the comparison direct: copy the old `agent.py` and `manifest.json` into a folder such as `rivals/v1`, then run `python -m sandbox eval --vs rivals/v1`. Your partner still runs your current agent, and only the opposing partnership plays the saved version.
+Record the average score from `python -m sandbox eval` before the change and again afterward. A bidding improvement appears over many deals, so compare averages across several games. For a head-to-head comparison, [Getting started, step 4](../../docs/students/getting-started.md#4-play-and-evaluate) explains how to save a rival version and play against it with `--vs`. In Spades, your partner still runs your current agent; only the opposing partnership plays the saved one.
 
 When the bid is honest, notice what has not changed: your agent still always plays its lowest card, which is a strategy for _losing_ tricks. Your team is now promising to win some. At what point in the thirteen tricks should your agent start trying to keep that promise?
+
+When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md) to send it in.

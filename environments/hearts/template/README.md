@@ -4,7 +4,7 @@ This repository is a complete starter project for a Hearts agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Hearts is a four-player trick-taking game. Local play uses separate copies of the agent in this repository for every agent-controlled player, unless you pick a saved rival with `--vs`. See the course documentation for the environments and examples available to your class.
+Hearts is a four-player trick-taking game. In local play, every agent-controlled player runs a separate copy of the agent in this repository, unless you pick a saved rival with `--vs`. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -36,12 +36,19 @@ The first run creates `.venv`, installs the pinned packages, and opens a game yo
 python -m sandbox            # play one chosen position yourself; your agent runs the other three
 python -m sandbox play       # watch separate copies of your agent play all four positions
 python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
-python -m sandbox eval       # repeat that headless check over seeded games and report the mean score
+python -m sandbox eval       # repeat that headless check over seeded episodes and report the mean score
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. `python -m sandbox play --vs rivals/v1` plays your current agent against a saved rival, a folder holding that version's `agent.py` and `manifest.json`; it also works with `human` and `eval`. `eval` is useful for comparing changes against the same seeds, not for predicting leaderboard results. It reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
+A few more flags help while you work, plus one thing to know about `eval`:
+
+- `--seed N`, for example `python -m sandbox play --seed 7`, repeats the same game.
+- `human --player N`, for example `python -m sandbox human --player 2`, lets you play a different position.
+- `--vs rivals/v1` plays your current agent against a saved rival, a folder holding that version's `agent.py` and `manifest.json`. It also works with `human` and `eval`.
+- `eval` reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. Use it to compare changes against the same seeds, not to predict leaderboard results.
+
+The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 
 ## Write the agent
 
@@ -50,14 +57,14 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called on your turn to return the card you want to play.
 
-Read [`environment.md`](environment.md) before you start. It explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.
+Read [`environment.md`](environment.md) before you start: it explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.
 
-Two optional methods are available:
+Two optional methods are available; see the [agent interface reference]({{DOCS_URL}}students/agent-interface/) for their full signatures:
 
 - `learn(observation, action, reward, terminated)` updates a learning agent after a step.
 - `chat(inbox)` sends messages in environments that enable communication. Hearts ships with messaging off.
 
-Leave an optional method out when you do not use it.
+Leave out any optional method you do not use.
 
 The template already plays its lowest-ranked legal card. `TODO(you)` in `act` marks where to improve it.
 

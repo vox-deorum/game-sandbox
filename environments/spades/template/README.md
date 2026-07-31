@@ -4,7 +4,7 @@ This repository is a complete starter project for a Spades agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Spades is a four-player partnership card game. The player across the table is your partner. Local play uses separate copies of the agent in this repository for every agent-controlled player, unless you pick a saved rival with `--vs`. See the course documentation for the environments and examples available to your class.
+Spades is a four-player partnership card game. The player across the table is your partner. Unless you pick a saved rival with `--vs`, local play runs a separate copy of this repository's agent for every agent-controlled player. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -36,12 +36,19 @@ The first run creates `.venv`, installs the pinned packages, and opens a game yo
 python -m sandbox            # play one chosen position yourself; your agent runs the other three
 python -m sandbox play       # watch separate copies of your agent play all four positions
 python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
-python -m sandbox eval       # repeat that headless check over seeded games and report the mean score
+python -m sandbox eval       # repeat that headless check over seeded episodes and report the mean score
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. `python -m sandbox play --vs rivals/v1` plays your partnership against a saved rival, a folder holding that version's `agent.py` and `manifest.json`; your partner keeps your current agent, and the flag also works with `human` and `eval`. `eval` is useful for comparing changes against the same seeds, not for predicting leaderboard results. It reports a higher-is-better team score. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
+A few notes on these commands:
+
+- `play --seed 7` repeats the same game.
+- `human --player 2` lets you play a different position.
+- `play --vs rivals/v1` plays your partnership against a saved rival, a folder holding that version's `agent.py` and `manifest.json`. Your partner keeps your current agent, and the flag also works with `human` and `eval`.
+- `eval` reports a higher-is-better team score. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
+
+The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 
 ## Write the agent
 
@@ -52,7 +59,7 @@ Open `agent.py` and implement:
 
 Read [`environment.md`](environment.md) before you start. It explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.
 
-Two optional methods are available:
+Two optional methods are available. The [agent interface reference]({{DOCS_URL}}students/agent-interface/) covers both in full:
 
 - `learn(observation, action, reward, terminated)` updates a learning agent after a step.
 - `chat(inbox)` sends and receives messages. Spades enables messaging, and `agent.py` includes a commented-out `chat` hook to start from.

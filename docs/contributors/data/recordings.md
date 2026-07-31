@@ -7,27 +7,21 @@ line 1: recording header
 line 2+: one StepState per line
 ```
 
-The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
+The [harness](../../specs/overview.md) streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
-The header contains a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
+The header contains a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry is one of three closed variants: human, submitted agent (with `submission_id`), or builtin agent (with `builtin_name`). See [the state schema](state-schema.md) for the full definitions.
 
-The harness copies this map from the session configuration. The backend assigns:
+The harness copies this map from the session configuration; the backend assigns each player to its session owner, submission, or builtin agent (see [orchestrator lifecycle](../runtime/execution.md#orchestrator-lifecycle)).
 
-- Human players to the session owner.
-- Submitted players to the submission owner and id.
-- Other built-in players to the "Naive agent".
-
-The required `seats` map groups those player ids under canonical `seat_N` ids. Its nonempty arrays form an exact partition of `players`, so every player belongs to exactly one seat. The required `seat_plan` field records the canonical plan key that produced the partition. Readers use these fields directly instead of resolving current environment metadata.
-
-Only headers that carry all three fields are readable; the [version rule](state-schema.md#the-version-rule) explains this pre-release policy.
+The required `seats` map groups those player ids under canonical `seat_N` ids. Its nonempty arrays form an exact partition of `players`, so every player belongs to exactly one seat. The `seat_plan` field, also required, records the canonical plan key that produced the partition. Readers use these fields directly instead of resolving current environment metadata. Only headers carrying all three fields are readable, a pre-release policy the [version rule](state-schema.md#the-version-rule) explains.
 
 ## External LLM telemetry
 
-LLM telemetry is stored separately, not as a recording sidecar, so it does not change the JSONL header or step schema. For an LLM-enabled recording, the backend stores durable `llm_scope_id` and `llm_session_id` metadata. It uses these identifiers to read successful calls from the execution scope's SQLite file.
+LLM telemetry is stored separately, not as a recording [sidecar](state-schema.md#the-sidecar-rule), so it does not change the JSONL header or step schema. For an LLM-enabled recording, the backend stores durable `llm_scope_id` and `llm_session_id` metadata identifying the execution scope: one live session, or one whole workflow run shared by all of that run's matches. The backend uses these identifiers to read successful calls from that scope's single SQLite file.
 
 A live session uses its session ID for both identifiers. Workflow matches share their run ID as `llm_scope_id` and keep the individual match ID as `llm_session_id`. This association lets a retained replay find its external telemetry after the backend prunes the session or workflow that produced it.
 
-An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope while any retained recording needs it. The backend can reclaim the external telemetry afterward.
+An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope while any retained recording needs it, and the backend can reclaim the external telemetry afterward.
 
 ## The store interface
 
@@ -37,7 +31,7 @@ The harness exposes `RecordingStore`, a small interface with three members:
 - `open(recording_id)` returns a recording holding the parsed, validated header and a lazy iterator of validated states.
 - `list_ids()` enumerates stored recordings.
 
-Readers require every state's `schema_version` to match the header. A blank or truncated final line ends the readable prefix instead of invalidating earlier complete lines.
+Readers require every state's `schema_version` to match the header. Blank lines are skipped, and a final line that fails to parse as JSON (a truncated write) ends the readable prefix instead of invalidating earlier complete lines.
 
 ## The folder store and the S3 seam
 

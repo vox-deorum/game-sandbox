@@ -25,7 +25,7 @@ Browser
 | `src/<domain>/routes.ts` | Register one domain's HTTP routes through a `register<Domain>Routes(app, deps)` function |
 | `src/config/config.ts` | Parse environment variables into one typed `Config` |
 | `src/auth/` | Better Auth wiring, GitHub account linking, public attribution reads |
-| `src/auth/identity.ts` | Resolve the authenticated session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
+| `src/auth/identity.ts` | Resolve the authenticated Better Auth session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
 | `src/environments/registry.ts` | Load generated environment metadata |
 | `src/environments/generated/environments.json` | Generated public environment metadata |
 | `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
@@ -64,7 +64,7 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives either `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](../setup/configuration.md) for the full environment-variable reference and deployment notes.
 
@@ -74,9 +74,17 @@ The backend exposes an OpenAI-compatible proxy when the deployment configures an
 
 Official sessions reach the proxy only through their isolated relay network. The harness reads the internal timing endpoint around an agent hook so verified proxy time is excluded from the hook budget. Development keys and usage belong to an active participant in an open, LLM-enabled season.
 
-The durable telemetry store retains public usage metadata and costs. Each official scope and development ledger performs a transactional write/readback preflight before every provider admission, including when an existing handle is reused. A pre-upstream failure rejects the current request and is retried by the next request. A durable-record failure after provider success makes only that accounting scope unavailable until the backend restarts. Completion-normalization and usage-resolution failures release their reservations, leave the scope available, and log the unaccounted provider spend.
+The preflight prevents two concurrent requests from double-spending the same budget, and every failure mode favors undercounting usage over overcharging. The durable telemetry store retains public usage metadata and costs. Each official scope and development ledger performs a transactional write/readback preflight before every provider admission, including when an existing handle is reused.
 
 Request and completion bodies are available only to an operator or the owner of the controlling submission. Product behavior, accounting guarantees, and error codes are defined in the [LLM specification](../../specs/llm.md). See [Configuration](../setup/configuration.md#llm-proxy) for deployment settings and the [LLM source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/llm) for the implementation.
+
+### Failure handling
+
+| Failure point | Result |
+| --- | --- |
+| Pre-upstream failure | Rejects the current request; the next request retries |
+| Durable-record failure after provider success | Only that accounting scope is unavailable until the backend restarts |
+| Completion-normalization or usage-resolution failure | Releases reservations, leaves the scope available, and logs the unaccounted provider spend |
 
 ## Static frontend
 
@@ -125,9 +133,9 @@ Season configuration is one strict JSON document because it is authored and froz
 
 ## Recording retention
 
-A recording directory stores JSONL. Its database row stores retention metadata.
+A recording directory holds the JSONL. Its database row stores retention metadata.
 
-The sweep runs at startup, on its interval, and after session finalization:
+The sweep runs at startup, on its interval, after session finalization, and after workflow-run completion:
 
 1. Protect recordings used by the latest completed leaderboard runs.
 2. Delete unpinned recordings older than the retention window.
@@ -139,6 +147,8 @@ Deletion tolerates a missing row or directory so an interrupted sweep can recove
 
 ## Identity and authorization
 
+See [the identity specification](../../specs/identity.md) for the product rules this section implements.
+
 Identity comes from a Better Auth session cookie. `createRequestIdentity(auth)` in `auth/identity.ts` resolves it and caches the result for the request, so a route that both checks access and personalizes its response performs only one session lookup.
 
 `deriveStatus(role)` splits the Better Auth `role` on commas and maps it to `pending`, `normal`, or `admin`. Admin takes precedence over user, and user takes precedence over pending. An unknown, empty, or missing role becomes `pending`, so access fails closed.
@@ -149,7 +159,7 @@ Every route states its requirement against the guard trio:
 - `requireActive`: An active (`normal` or `admin`) user; returns `403 not_active` for a pending user.
 - `requireAdmin`: An `admin` user; returns `403 not_operator` otherwise. The `/api/admin` plugin uses the same code through one `onRequest` guard backed by `status === 'admin'`.
 
-Public reads stay open to anonymous visitors. Ban is a standalone Better Auth flag: banning revokes sessions and blocks sign-in, so a banned user never reaches the guards at all.
+Public reads stay open to anonymous visitors.
 
 | Requirement | Applies to |
 | --- | --- |
@@ -164,11 +174,11 @@ Cookies ride HTTP fetches, WebSocket upgrades, and native download navigations o
 
 ### GitHub account linking
 
-`auth/auth.ts` configures Better Auth for GitHub linking. GitHub requires a verified email. An implicit link uses the matching verified local email, while an authenticated user may explicitly link a different verified GitHub address.
+`auth/auth.ts` configures Better Auth for GitHub linking.
 
-Database constraints keep each GitHub identity and account email owned by one user. The account hooks maintain the server-owned `githubUsername` field on GitHub links and sign-ins, and unlinking clears it. See the [authentication source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/auth) for the implementation details.
+Database constraints keep each GitHub identity and account email owned by one user. The account hooks maintain the server-owned `githubUsername` field on GitHub links and sign-ins, and a database trigger clears it on unlink. See the [authentication source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/auth) for implementation details.
 
-`auth/users.ts` resolves public attribution from the Better Auth-owned `user` table. `namesFor(ids)` remains the low-cost name-only batch read used across sessions, recordings, workflows, and leaderboards. `profilesFor(ids)` adds the optional GitHub username and is used only by the agent-profile response, so blind-rating and recording payloads never gain the handle.
+`auth/users.ts` resolves public attribution from the Better Auth-owned `user` table. `namesFor(ids)` is the low-cost name-only batch read used across sessions, recordings, workflows, and leaderboards. `profilesFor(ids)` adds the optional GitHub username and is used only by the agent-profile response, so blind-rating and recording payloads never gain the handle.
 
 ## Environment metadata
 
@@ -182,7 +192,7 @@ The canonical registry lives in Python. `scripts/generate.py` writes committed `
 HTTP request → pending row → resolve → static → build → load → ready
 ```
 
-The route returns after enqueueing. `submission/worker.ts` processes one submission at a time and records each stage before updating the rollup status. The [submission specification](../../specs/submission.md) owns the product rules (flow, validation layers, size cap, snapshots); this section covers the backend implementation.
+The route returns after enqueueing. `submission/worker.ts` processes one submission at a time and records each stage before updating the rollup status. The [submission specification](../../specs/submission.md) owns the product rules (flow, validation layers, size cap, snapshots).
 
 ### Sources
 
@@ -213,7 +223,7 @@ Static validation runs no participant code. It checks:
 | `unknown_template_version`  | No registered base image              |
 | `template_version_mismatch` | Version differs from the season       |
 
-The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, and compares it to the effective cap defined by [maximum submission size](../../specs/submission.md#maximum-submission-size). The same filter drives the snapshot pack and the overlay build context, so all three agree on which bytes are "the submission".
+The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, then compares the result to the effective cap defined by [maximum submission size](../../specs/submission.md#maximum-submission-size). The same filter drives the snapshot pack and the overlay image build context, so all three agree on which bytes are "the submission".
 
 The Zod manifest schema and Python harness loader are kept in sync by contract tests.
 
@@ -228,17 +238,17 @@ For each stage, the worker:
 
 Unexpected errors still close the active stage. Startup re-enqueues pending submissions, and the unique `(submission_id, stage)` key replaces prior attempts.
 
-Overlay building and load checking are described in [Execution boundary](execution.md#submission-overlay-images).
+Overlay image building and load checking are described in [Execution boundary](execution.md#submission-overlay-images).
 
 ### Snapshots
 
-Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. The write is best-effort, so a failure logs and the submission still reaches `ready`.
+Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. The write is best-effort, so a failure is logged and the submission still reaches `ready`.
 
-When a cached overlay was evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission), and the shared filter plus a deterministic sort make the rebuild reproduce the original overlay. Operator download routes stream the same snapshots, and a forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
+When a cached overlay image has been evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission). The shared filter plus a deterministic sort make the rebuild reproduce the original overlay image. Operator download routes stream the same snapshots, and a forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
 
 ## HTTP API
 
-Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and expected refusals use stable `code` values.
+Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and expected refusals carry stable `code` values.
 
 ### Selected public and participant endpoints
 
@@ -271,7 +281,7 @@ All `/api/admin` routes pass one operator guard. They support:
 - Opening and closing submission and play windows.
 - Releasing and unreleasing results.
 - Triggering and cancelling runs.
-- Reading private season, run, board, and game status.
+- Reading private season, run, board, and match status.
 - Listing a season's active submissions, and downloading one submission's source snapshot or a whole season as one `.tar.gz`.
 - Streaming workflow logs over WebSocket.
 
@@ -286,6 +296,8 @@ Rating writes validate the full batch before saving anything and reject any batc
 Rerating upserts the existing value. Closed play returns a read-only view with prior ratings and prompts.
 
 ## Workflow runner
+
+A workflow run is an automated batch of matches scheduled between submitted agents when an operator triggers a season's leaderboard update.
 
 Triggering a leaderboard run does not wait for Docker. Scheduling, forfeit, and release rules live in the [leaderboard specification](../../specs/leaderboard.md).
 

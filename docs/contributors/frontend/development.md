@@ -4,6 +4,8 @@ The frontend is a Vue 3, Vite, and TypeScript browser app. It displays environme
 
 Use this page for the frontend development workflow. Read [the frontend specification](../../specs/frontend.md) for product behavior and [the interaction specification](../../specs/interaction.md) for the browser/server boundary. Before changing visuals, also read [the design system](design-system.md). Renderer-specific guidance lives in [Rendering](../environments/rendering.md).
 
+Prerequisites: Node 22 (pinned in `.nvmrc`), and Docker only when you also run the backend.
+
 ## Source layout
 
 Frontend code lives under `frontend/src/`.
@@ -21,11 +23,11 @@ Frontend code lives under `frontend/src/`.
 | `replay/`        | Recording parsing and replay transport          |
 | `styles/`        | Design tokens and global styles                 |
 
-`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Focused modules hold shared application state, such as the signed-in user and environment catalog. The project does not use a state-management library.
+`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Focused modules hold shared state, such as the signed-in user and environment catalog. The project does not use a state-management library.
 
 ## Development workflow
 
-The frontend requires Node.js 22. Run these commands from `frontend/`:
+Run these commands from `frontend/`:
 
 | Command         | Purpose                                                 |
 | --------------- | ------------------------------------------------------- |
@@ -34,7 +36,7 @@ The frontend requires Node.js 22. Run these commands from `frontend/`:
 | `npm test`      | Run the Vitest unit tests                               |
 | `npm run build` | Create the production build in `frontend/dist/`         |
 
-For local development, run `npm run dev` separately in `backend/`. Starting the backend, including root `npm start`, needs a running Docker daemon because startup reaps managed containers. Docker is also required for sessions and the browser end-to-end suite.
+For local development, run `npm run dev` separately in `backend/`. Starting the backend, including root `npm start`, needs a running Docker daemon; see [Run and test](../runtime/backend.md#run-and-test). Sessions and the browser end-to-end suite need it too.
 
 When making a change:
 
@@ -44,7 +46,7 @@ When making a change:
 4. Update the jsdom and Playwright tests with any UI change, as [Testing](../testing/index.md#browser-end-to-end) requires.
 5. Run `npm run check`, `npm test`, and `npm run build`.
 
-After a UI change, also run the browser suite from the repository root. It requires a running Docker daemon:
+After a UI change, also run the browser suite from the repository root, with Docker running:
 
 ```console
 uv run python scripts/ci.py frontend-e2e
@@ -68,7 +70,7 @@ The browser receives identity from the same-origin Better Auth session cookie. H
 
 Build features from the primitives in `components/ui/` and use semantic tokens from `styles/tokens.css`. Do not introduce raw color or spacing values in component styles. Renderer modules are exempt because each environment owns its game visuals.
 
-For a confirmation dialog, use `UiDialogActions` instead of a feature-local action row. Put the consequential action first, use the `danger` button variant for irreversible work, and follow it with a ghost Cancel button.
+For a confirmation dialog, follow the rule in [Component primitives](design-system.md#component-primitives).
 
 Add every new primitive variant to the development-only `/styleguide` route. Follow the accessibility and visual rules in [the design system](design-system.md), and confirm new visual patterns with the project owner.
 
@@ -82,4 +84,4 @@ Do not add environment-specific behavior to shared pages. Implement it in the en
 
 ### In-app documentation
 
-The Documentation page's product behavior, including which pages it serves, is specified in [the frontend specification](../../specs/frontend.md). Markdown compatibility and link rewriting live in `frontend/src/docs/markdown.ts`. Product documentation outside the student collection is linked to its source rather than served in the app.
+The Documentation page's product behavior, including which pages it serves, is specified in [the frontend specification](../../specs/frontend.md). Markdown compatibility and link rewriting live in `frontend/src/docs/markdown.ts`. Product documentation outside the student collection links to its source instead. The student collection is the `docs/students/` tree served in the app; see [Execution and frontend](../setup/configuration.md#execution-and-frontend) for `DOCS_DIR`.

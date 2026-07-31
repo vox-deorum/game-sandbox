@@ -6,9 +6,9 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 ## How configuration loads
 
-`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files. The precedence is therefore the process environment, `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
+`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
 
-Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file. Use the Git-ignored `.env` for machine-specific values and private credentials. Other `.env.*` files are not loaded automatically.
+Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file: use the Git-ignored `.env` for those and for machine-specific values. Other `.env.*` files are not loaded automatically.
 
 After loading, `backend/src/config/config.ts` validates required values and parses the environment into one typed `Config` object. It also derives values such as `SITE_SHORT_NAME`, which falls back to `SITE_NAME` when unset. Feature modules receive configuration rather than reading process environment variables directly.
 
@@ -20,7 +20,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
 - Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.
-- `LLM_UPSTREAM_URL` must be an absolute `http` or `https` base URL with no surrounding whitespace, embedded credentials, query, or fragment. An invalid value is rejected without copying the value into the error message.
+- `LLM_UPSTREAM_URL` must be an absolute `http` or `https` base URL with no surrounding whitespace, embedded credentials, query, or fragment. An invalid value is rejected without copying it into the error message.
 
 ## Server and session
 
@@ -41,14 +41,14 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AUTH_SECRET` | `dev-secret-do-not-deploy-32-chars` | Better Auth signing secret for cookies and tokens. The development value meets the length minimum but is public and accepted only with the explicit insecure-defaults opt-in on a loopback origin. |
-| `PUBLIC_ORIGIN` | `http://localhost:8080` | The public origin the site is reached at, for cookie origin checks and OAuth callbacks. Override it together with `PORT` when changing the local port. A normal startup requires a deployment value. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. |
-| `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins appended to the built-in list, which is `PUBLIC_ORIGIN` plus these (and `http://localhost:5173` only under the loopback insecure-defaults opt-in). |
-| `AUTH_ALLOW_INSECURE_DEFAULTS` | `true` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. Never enable it in a deployment. |
-| `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin's development email. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
-| `ADMIN_PASSWORD` | `admin-dev-password` | Bootstrap admin's development password, re-synced on every boot. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
+| `AUTH_SECRET` | `dev-secret-do-not-deploy-32-chars` | Better Auth signing secret for cookies and tokens. |
+| `PUBLIC_ORIGIN` | `http://localhost:8080` | The public origin the site is reached at, for cookie origin checks and OAuth callbacks. Override it together with `PORT` when changing the local port. |
+| `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins appended to the built-in list, which is `PUBLIC_ORIGIN` plus these (and, only under the loopback insecure-defaults opt-in, every loopback spelling of the configured origin's port, `localhost`, `127.0.0.1`, `[::1]`, plus `http://localhost:5173`). |
+| `AUTH_ALLOW_INSECURE_DEFAULTS` | `true` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. |
+| `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin's development email. |
+| `ADMIN_PASSWORD` | `admin-dev-password` | Bootstrap admin's development password, re-synced on every boot. |
 | `ADMIN_NAME` | `Admin` | Seeded admin's display name. |
-| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. The same OAuth app powers sign-in and profile account linking. Distinct from `GITHUB_TOKEN`, which stays a submissions-only credential. |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. The same OAuth app powers sign-in and profile account linking. |
 
 ## Execution and frontend
 
@@ -119,9 +119,22 @@ Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path 
 
 Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](../runtime/backend.md#static-frontend).
 
-The Documentation page reads shared guides from `DOCS_DIR` and discovers game guides from `environments/<env>/environment.md` at request time, so updating a guide does not require a frontend rebuild. Game guides are served at virtual `students/environments/<slug>.md` paths and have no mirror under `DOCS_DIR`. Set `DOCS_INDEX_FILE` to provide a class-specific landing page, such as a schedule or grading notes, without editing the shared guides. If the configured file cannot be read, the landing request fails instead of silently using the default page.
+The Documentation page:
 
-Set `PUBLIC_ORIGIN`, `AUTH_SECRET`, and the bootstrap `ADMIN_EMAIL` and `ADMIN_PASSWORD` explicitly in a deployment. A normal startup refuses to run without them, preventing accidental use of the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`. Never enable this setting outside loopback development. In local mode, it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register `<PUBLIC_ORIGIN>/api/auth/callback/github` as the callback URL. The same OAuth app handles sign-in and the connect action on My Profile. `GITHUB_TOKEN` is separate from the OAuth client ID and secret and is used only for submissions. `sandbox.db` also contains the Better Auth tables (`user`, `session`, `account`, `verification`), which a separate programmatic migration creates outside the application's schema.
+- Reads shared guides from `DOCS_DIR` and discovers game guides from `environments/<env>/environment.md` at request time, so updating a guide needs no frontend rebuild.
+- Serves game guides at virtual `students/environments/<slug>.md` paths, with no mirror under `DOCS_DIR`.
+- Uses `DOCS_INDEX_FILE`, when set, as a class-specific landing page (a schedule or grading notes, for example) in place of the default, without editing the shared guides.
+- Fails the landing request, rather than falling back to the default page, when the configured `DOCS_INDEX_FILE` cannot be read.
+
+A deployment must:
+
+- Set `PUBLIC_ORIGIN`, `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` explicitly. Startup refuses the published development values for `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
+- Change `PUBLIC_ORIGIN` from its development default: startup only validates it as a well-formed origin and does not check it against the development value.
+- Register `<PUBLIC_ORIGIN>/api/auth/callback/github` as the GitHub OAuth callback URL, when GitHub OAuth is configured.
+- Keep `GITHUB_TOKEN` separate from the GitHub OAuth client credentials; it is used only for submissions.
+- Never enable `AUTH_ALLOW_INSECURE_DEFAULTS`. A deployment from a repository checkout must set it to `false` explicitly to override the local `.env.default`; in local mode it accepts the published values and restricts the HTTP listener to loopback.
+
+`sandbox.db` also contains the Better Auth tables (`user`, `session`, `account`, `verification`), which a separate programmatic migration creates outside the application's schema.
 
 ## See also
 

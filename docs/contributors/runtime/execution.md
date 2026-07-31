@@ -8,8 +8,6 @@ Browser ⇄ Node backend ⇄ sandboxed Python container
 
 The browser renders the game and sends user commands. The backend authorizes requests, supervises sessions, stores metadata, and relays traffic. The container runs the harness, environment, and agents.
 
-Local play reuses the browser protocol and live runner without starting the backend or a container. `game_sandbox_harness.local_server` binds only to `127.0.0.1`. It serves the generated local browser bundle, starts the requested runner command, and relays protocol lines. The server accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It neither exposes the game to a network nor steps the game itself.
-
 Read [the execution specification](../../specs/execution.md) for the architectural rules, [Frontend](../frontend/development.md) for the browser host, and [Backend](backend.md) for storage and HTTP routes.
 
 ## Execution driver
@@ -18,9 +16,9 @@ Read [the execution specification](../../specs/execution.md) for the architectur
 
 `ExecutionDriver` provides:
 
-- `ensureImage(spec)`
-- `launch(spec)`
-- Overlay-image listing and removal
+- `ensureImage(spec)`.
+- `launch(spec)`.
+- Overlay-image listing and removal.
 
 `SessionProcess` provides:
 
@@ -32,7 +30,7 @@ Read [the execution specification](../../specs/execution.md) for the architectur
 
 The interface guarantees an ordered, newline-delimited, bidirectional UTF-8 channel. It does not expose file descriptors, ports, or a specific attachment mechanism.
 
-The Docker implementation lives under `driver/docker/`. A later Kubernetes implementation can choose a different transport without changing the orchestrator.
+The Docker implementation lives under `driver/docker/`. Keeping it behind this interface lets a later Kubernetes implementation use a different transport without changing the orchestrator.
 
 ## Sandbox profile
 
@@ -49,7 +47,7 @@ The Docker implementation lives under `driver/docker/`. A later Kubernetes imple
 
 The Docker driver maps these to Docker settings, drops capabilities, and labels containers with `game-sandbox.session=<id>`. Startup reaps leftover labeled containers from an interrupted backend process.
 
-`driver/sandbox.ts` builds profiles for live sessions, workflow games, and submission load checks. It always uses a read-only root filesystem and bounded `/tmp`. Callers choose `none` or `llm` networking, resource limits, scratch size, and approved mounts. Add new callers through this helper and extend its invariant tests.
+`driver/sandbox.ts` builds profiles for live sessions, matches, and submission load checks. It always uses a read-only root filesystem and bounded `/tmp`. Callers choose `none` or `llm` networking, resource limits, scratch size, and approved mounts. Add new callers through this helper and extend its invariant tests.
 
 An LLM-enabled session uses two isolated Docker networks. The agent container can reach only `llm-proxy`. A relay joins that network and a separate egress network, forwarding only to the backend's internal LLM listener. The agent never gets general internet access.
 
@@ -67,7 +65,7 @@ Each base contains:
 
 - Harness and environments.
 - Frozen dependency set.
-- Built-in Naive agent.
+- Every declared builtin agent for the environment. An environment can declare more than one: Spades bundles both a Naive agent and a Cautious bidder.
 - `python -m game_sandbox_harness.live` entrypoint.
 
 The image tag is `game-sandbox/session-base:deps-v<N>`. The driver either reuses or rebuilds it according to `DOCKER_IMAGE_POLICY`.
@@ -80,20 +78,20 @@ npm run build:image
 
 ## Submission overlay images
 
-A validated submission adds source code to the season's base image. It never installs submission-specific dependencies.
+A validated submission becomes an overlay image (the submission's built image, layered on the session base image). It adds source code only and never installs submission-specific dependencies.
 
 `submission/submission-image.ts`:
 
 - Copies source to `/opt/agents/submissions/<seatId>`.
 - Selects the matching `deps-v<N>` base.
-- Tags the overlay from dependency version and submission ID.
+- Tags the overlay image from dependency version and submission ID.
 - Applies `SUBMISSION_BUILD_TIMEOUT_MS`.
 
-An evicted overlay can be rebuilt from the pinned source.
+An evicted overlay image can be rebuilt from the pinned source.
 
 ### Load check
 
-Before an overlay becomes ready, `submission/validate/load-check.ts` launches it with the real sandbox profile and runs:
+Before an overlay image becomes ready, `submission/validate/load-check.ts` launches it with the real sandbox profile and runs:
 
 ```console
 python -m game_sandbox_harness.validate <repo_root>
@@ -112,16 +110,16 @@ The harness emits one `validate-result` event:
 
 The runner claims the protocol stdout before importing participant code and redirects participant prints to stderr. Participant code therefore cannot spoof a successful result.
 
-### Overlay eviction
+### Overlay image eviction
 
-The overlay sweep runs at startup, on its timer, and after a successful build. It:
+The overlay image sweep runs at startup, on its timer, and after a successful build. It:
 
 1. Lists overlay images through the driver.
 2. Protects active ready submissions.
 3. Counts protected images toward the budget.
 4. Deletes remaining images oldest first until within `OVERLAY_IMAGE_BUDGET`.
 
-Removal is best-effort because every overlay is reproducible.
+Removal is best-effort because every overlay image is reproducible.
 
 ## Container transport
 
@@ -155,11 +153,17 @@ The browser receives:
 - Pause and resume echoes.
 - Backend session-status events.
 
-When a browser attaches, the backend immediately sends the buffered header, latest state, and current status. For a paused session, it then sends the current pause echo. The loopback relay follows the same attachment contract.
+When a browser attaches, the backend immediately sends the buffered header, latest state, and current status. For a paused session, it then sends the current pause echo. The local bridge follows the same attachment contract.
 
 The browser sends the same command envelopes used on the container side. The backend validates shape and authority, then forwards without interpreting environment actions.
 
 Only the session owner can issue commands. Input also requires human mode and a human-capable player. A slow socket is dropped instead of blocking the relay.
+
+## Local play
+
+Local play reuses the browser protocol and live runner without starting the backend or a container.
+
+The local bridge, `game_sandbox_harness.local_server`, binds only to `127.0.0.1`, serves the generated local browser bundle, starts the requested runner command, and relays protocol lines. The server accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It neither exposes the game to a network nor steps the game itself.
 
 ## Orchestrator lifecycle
 
@@ -173,7 +177,7 @@ Only the session owner can issue commands. Input also requires human mode and a 
 6. Launch the container.
 7. Relay output through `LiveSession`.
 
-The session configuration includes a `players` map for recording attribution. Human players name the session owner, submitted players name the submission and owner, and remaining agent players name the built-in agent.
+The session configuration includes a `players` map for recording attribution. Human players name the session owner, submitted players name the submission and owner, and remaining agent players name the builtin agent.
 
 Every exit path enters the same idempotent finalizer. The first termination reason wins.
 
@@ -195,8 +199,6 @@ The finalizer stores the result, notifies clients, kills the container if needed
 - `Episode.step_once()` consumes one real AEC action and any required dead-step housekeeping.
 - `Episode.step_tick()` snapshots every active parallel observation, gathers participant work sequentially, applies one joint action mapping, and records one multi-entry state.
 
-For an official LLM-enabled session, the launch configuration supplies `inflight_url` alongside the model endpoint and tick-marker URL. The harness restores the current player's base URL and key before every `act`, `chat`, and `learn` hook, and posts that player's tick marker when it changes. It subtracts that player's total verified proxy-time change around each hook, reusing a valid post-hook reading as the next baseline. Hook-thread CPU remains chargeable, and a failed reading charges the full hook time. Module loading, construction, and `reset` are setup work outside turn timing. The template's `BackgroundLLM` helper may continue across hooks and ticks, while watchdogs use the blocking-only counter. See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).
-
 Live pacing keeps separate scheduler branches:
 
 - Sequential paced environments retain their target cadence and use the latest latched human input.
@@ -206,6 +208,19 @@ Live pacing keeps separate scheduler branches:
 Pausing uses a `PausableClock`, so cadence and decision-time accounting stop together. Headless runs do not construct this live loop.
 
 The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical. The local bridge forwards those bytes unchanged and uses a caller-owned scratch recording directory.
+
+### LLM hook timing
+
+This timing machinery exists so an agent's LLM-call latency does not count against its own compute budget.
+
+- For an official LLM-enabled session, the launch contract (the launch configuration and stdio protocol the backend shares with the session container) wires `inflight_url` alongside the model endpoint and tick-marker URL.
+- Before every `act`, `chat`, and `learn` hook, the harness restores the current player's base URL and key, and posts that player's tick marker when it changes.
+- Around each hook, the harness subtracts that player's total verified proxy-time change, reusing a valid post-hook reading as the next baseline.
+- Hook-thread CPU remains chargeable, and a failed reading charges the full hook time.
+- Module loading, construction, and `reset` are setup work outside turn timing.
+- The template's `BackgroundLLM` helper may keep running across hooks and ticks. Watchdogs (the runner's stall detectors: the live-session idle and time-limit detectors, and the automated-run wall-clock watchdog) exclude only verified blocking proxy time, so a background-marked request never extends them.
+
+See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).
 
 ## Add a driver
 
