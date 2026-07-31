@@ -3,8 +3,8 @@
 Stage 1 shipped the cross-boundary contract pieces: schema validation, typed state builders,
 and the recording store. Stage 2 adds the session loop and its surrounding machinery — the
 agent interface, the manifest loader, the environment metadata and registry, the injectable
-clock, and ``run_episode`` with its player bindings and action sources. Stage 3 factors the loop
-into an ``Episode`` whose ``step_once`` both ``run_episode`` and the live container runner drive.
+clock, and ``run_episode`` with its player bindings and action sources. The loop is factored into
+an ``Episode`` whose ``advance`` dispatch is shared by ``run_episode`` and the live container runner.
 Environments live in a separate package discovered through entry points; the harness never
 imports them.
 """

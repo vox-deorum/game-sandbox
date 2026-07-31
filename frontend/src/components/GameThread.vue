@@ -1,12 +1,12 @@
 <!--
   The merged replay thread: the decision log and the chat woven into one chronological feed. A replay
-  scrubs a whole recorded game, so unlike the split live stage this shows both threads at once — the
+  scrubs a whole recorded game, so unlike the split live stage this shows both threads at once: the
   decision for every tick (the whole game, ticks ahead of the scrubber dimmed, the current tick
   highlighted) with each tick's messages interleaved right after it.
 
   The chat the caller passes is already filtered to the transport position (visibleChat), so messages
   reveal progressively as the scrubber reaches their tick while the decisions stay fully listed. Each
-  message hangs off its tick's decision row, so the caller must supply a decision for every tick that
+  message hangs off its tick's decision group, so the caller must supply a decision for every tick that
   carries chat (ReplayPage derives both from the same parsed states); a message on a tick with no
   decision row is never rendered. Rows render through the same shared helpers the split panels use:
   formatAction/formatPlayer for a decision line, attributionLabel plus the shared broadcast/to-you/
@@ -22,7 +22,7 @@ import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, type MessageBadge, messageBadge, messageKey } from '../lib/chat.js'
 import { formatAction, formatPlayer } from '../lib/format.js'
-import type { DecisionEntry } from './DecisionLog.vue'
+import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
 import RequestResponseView from './RequestResponseView.vue'
@@ -32,12 +32,12 @@ import UiDialog from './ui/UiDialog.vue'
 
 const props = withDefaults(
   defineProps<{
-    /** One decision per tick, in order — the whole recorded game. */
+    /** Every action-bearing decision, ordered by state tick and canonical player order. */
     decisions: DecisionEntry[]
     /** Messages already filtered to the transport position, so future ticks carry none. */
     chat: ChatEntry[]
-    /** The row to mark current and scroll to (the scrubbed tick). Null follows the latest row. */
-    currentIndex?: number | null
+    /** The state tick to mark current (a replay). Null follows the latest tick. */
+    currentTick?: number | null
     /** The recording header's players map: sender labels for message rows. */
     players?: RecordingHeader['players']
     /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
@@ -52,7 +52,7 @@ const props = withDefaults(
     llmPending?: boolean
   }>(),
   {
-    currentIndex: null,
+    currentTick: null,
     players: undefined,
     blind: false,
     viewerId: undefined,
@@ -75,12 +75,9 @@ function labelFor(playerId: string): string {
   return attributionLabel(playerId, props.players?.[playerId], attributionCtx.value)
 }
 
-const activeIndex = computed(() =>
-  props.currentIndex ?? (props.decisions.length > 0 ? props.decisions.length - 1 : -1),
-)
+const activeTick = computed(() => props.currentTick ?? props.decisions.at(-1)?.tick ?? null)
 
-// Group the (already position-filtered) messages by the tick they rode in on, so each decision can
-// pull its own tick's messages as it is emitted.
+// Group the position-filtered messages by their recorded state tick.
 const chatByTick = computed(() => {
   const map = new Map<number, ChatEntry[]>()
   for (const entry of props.chat) {
@@ -104,6 +101,7 @@ interface DecisionItem {
   action: string
   tick: number
   playerId: string
+  currentMarker: boolean
 }
 
 interface MessageItem {
@@ -119,28 +117,38 @@ interface MessageItem {
 
 type ThreadItem = DecisionItem | MessageItem
 
-// Weave decisions and messages into one ordered list: every tick's decision, then that tick's
-// messages. A decision is future (dimmed) past the scrubber, current at it, else past; a message
-// shares its decision's state but is never future (the caller filtered future messages out).
+// Weave complete decision groups and messages into one ordered list. Messages are appended once after
+// every action-bearing entry for their tick.
 const items = computed<ThreadItem[]>(() => {
-  const active = activeIndex.value
   const result: ThreadItem[] = []
-  props.decisions.forEach((decision, i) => {
-    const state: ThreadState = i === active ? 'current' : i > active ? 'future' : 'past'
-    result.push({
-      key: `d-${decision.tick}-${i}`,
-      kind: 'decision',
-      state,
-      player: decision.player ? formatPlayer(decision.player) : 'None',
-      action: formatAction(decision.action),
-      tick: decision.tick,
-      playerId: decision.player,
-    })
-    for (const entry of chatByTick.value.get(decision.tick) ?? []) {
+  const byTick = new Map<number, DecisionEntry[]>()
+  for (const decision of props.decisions) {
+    const group = byTick.get(decision.tick)
+    if (group === undefined) {
+      byTick.set(decision.tick, [decision])
+    } else {
+      group.push(decision)
+    }
+  }
+
+  for (const [tick, decisions] of byTick) {
+    const state: ThreadState =
+      tick === activeTick.value ? 'current' : activeTick.value !== null && tick > activeTick.value ? 'future' : 'past'
+    decisions.forEach((decision, index) => {
       result.push({
-        // The decision index disambiguates the key: if two decisions ever shared a tick, both would
-        // pull the same messages and a bare message identity would collide.
-        key: `m-${i}-${messageKey(entry)}`,
+        key: `d-${decision.tick}-${decision.player}`,
+        kind: 'decision',
+        state,
+        player: decision.player ? formatPlayer(decision.player) : 'None',
+        action: formatAction(decision.action),
+        tick: decision.tick,
+        playerId: decision.player,
+        currentMarker: state === 'current' && index === 0,
+      })
+    })
+    for (const entry of chatByTick.value.get(tick) ?? []) {
+      result.push({
+        key: `m-${messageKey(entry)}`,
         kind: 'message',
         state: state === 'future' ? 'past' : state,
         player: formatPlayer(entry.from),
@@ -150,7 +158,7 @@ const items = computed<ThreadItem[]>(() => {
         tick: entry.tick,
       })
     }
-  })
+  }
   return result
 })
 
@@ -191,7 +199,7 @@ function inspect(calls: RecordingLlmCall[]): void {
 // Follow the scrubbed row: center the current tick, the same active-row scroll the decision log uses.
 const scroller = useActiveRowScroll(
   () => props.decisions.length + setupRows.value.length,
-  () => activeIndex.value,
+  () => activeTick.value ?? -1,
 )
 </script>
 
@@ -232,7 +240,7 @@ const scroller = useActiveRowScroll(
           { 'is-current': item.state === 'current', 'is-future': item.state === 'future' },
         ]"
         :data-active="(item.kind === 'decision' && item.state === 'current') || undefined"
-        :aria-current="item.kind === 'decision' && item.state === 'current' ? 'true' : undefined"
+        :aria-current="item.kind === 'decision' && item.currentMarker ? 'true' : undefined"
       >
         <template v-if="item.kind === 'decision'">
           <span class="thread-player">{{ item.player }}</span>

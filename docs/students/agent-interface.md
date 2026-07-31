@@ -102,9 +102,9 @@ At each acting opportunity, your agent can send one message to each recipient an
 
 ### LLM calls
 
-When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, or the response has the wrong format.
+When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, the response has the wrong format, or a background reply is not ready.
 
-Make the call in the method that needs it and wait for the complete response. In official sessions, the platform measures how long your agent waits for the Game Sandbox LLM service and does not count that wait toward the decision or game limit. Keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for setup, budgets, errors, and prompt visibility.
+A method may make a normal request and wait for the complete response. An agent that can continue without the immediate reply may instead use the template's `BackgroundLLM` helper to start one plain-text request and collect it from a later hook. Do not create threads yourself. In official sessions, verified time inside the Game Sandbox LLM service does not count toward the decision or game limit, but your local computation still does. Keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for synchronous and cross-tick examples, setup, budgets, errors, and prompt visibility.
 
 ## Manifest
 

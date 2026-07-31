@@ -732,7 +732,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   ): { timedOut: () => boolean; stop: () => void } {
     return createChargeableTimer({
       budgetMs: timeoutMs,
-      inFlightMs: llmLease?.inFlightMs,
+      inFlightMs: llmLease?.blockingInFlightMs,
       log: (message) => this.log(`run ${runId} game ${game.game_index}: ${message}`),
       onExpire: () => {
         this.gameLog(

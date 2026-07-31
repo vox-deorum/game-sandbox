@@ -252,6 +252,7 @@ def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
     guide = (out / "llm.md").read_text(encoding="utf-8")
     readme = (out / "README.md").read_text(encoding="utf-8")
     example = (out / "sandbox" / "llm_example.py").read_text(encoding="utf-8")
+    background_helper = (out / "sandbox" / "llm.py").read_text(encoding="utf-8")
     dispatcher = (out / "sandbox" / "__main__.py").read_text(encoding="utf-8")
     dotenv = (out / ".env.example").read_text(encoding="utf-8")
 
@@ -262,6 +263,7 @@ def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
     assert "[Using the LLM API](llm.md)" in readme
     assert "python -m sandbox llm" in readme
     assert "python -m sandbox llm [small|medium|large]" in example
+    assert "class BackgroundLLM" in background_helper
     # Compose only owns that the smoke command's surfaces ship together; the dispatcher's exact
     # wiring (probe constant, table formatting) is the dispatcher test's contract, not this one.
     assert '"llm"' in dispatcher

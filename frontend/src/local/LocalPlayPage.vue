@@ -47,6 +47,8 @@ const {
   paused,
   buffering,
   endReason,
+  finalResult,
+  accumulatedScores,
   latestState,
   connect,
   send,
@@ -61,21 +63,30 @@ const {
     renderState(state, options)
     lastState.value = state
     appendMessages(state)
-    if (Object.keys(state.agents).length > 0) {
+    const entries = appendDecisions(state)
+    if (entries.length > 0) {
       // The relay replays its latest acted state before the retained pause echo. A refreshed tab is
       // therefore resuming an existing session, not opening the initial start gate again.
       started.value = true
-      decisions.value.push(toDecision(state))
     }
   },
 })
-const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
-  useLiveFramePresentation({
-    viewerPlayers: controlledPlayers,
-    status,
-    paused,
-    endReason,
-  })
+const {
+  appendDecisions,
+  appendMessages,
+  chatLog,
+  completedOutcome,
+  decisions,
+  statusLabel,
+  statusTone,
+} = useLiveFramePresentation({
+  status,
+  paused,
+  endReason,
+})
+const completePlayerScores = computed(
+  () => finalResult.value?.scores ?? accumulatedScores.value,
+)
 
 // The relay echo is the authority for pause state. This only switches the first-control label.
 watch(paused, (value) => {
@@ -173,6 +184,7 @@ onMounted(async () => {
           "
           :state="lastState"
           :header="header"
+          :player-scores="completePlayerScores"
           @dismiss="gameOverDismissed = true"
         />
       </template>

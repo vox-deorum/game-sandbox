@@ -1,6 +1,56 @@
+import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 
-import { reducePlayersToSeats } from '../../src/workflow/aggregate.js'
+import { aggregatePlayer, reducePlayersToSeats } from '../../src/workflow/aggregate.js'
+
+describe('aggregatePlayer', () => {
+  it('counts each player timing in multi-entry states and ignores reward-only entries', () => {
+    const states: StepState[] = [
+      {
+        schema_version: 1,
+        tick: 0,
+        agents: {
+          player_0: {
+            reward: 1,
+            score: 1,
+            action: 0,
+            timing: { decision_ms: 2, chat_ms: 3, learn_ms: 1 },
+          },
+          player_1: {
+            reward: 0,
+            score: 0,
+            action: 1,
+            timing: { decision_ms: 4 },
+          },
+        },
+        timing: { started_at: 0, duration_ms: 10 },
+      },
+      {
+        schema_version: 1,
+        tick: 1,
+        agents: {
+          player_0: { reward: 2, score: 3 },
+          player_1: {
+            reward: 5,
+            score: 5,
+            action: 1,
+            timing: { decision_ms: 6, learn_ms: 2 },
+          },
+        },
+        timing: { started_at: 10, duration_ms: 10 },
+      },
+    ]
+
+    expect(aggregatePlayer(states, 'player_0')).toEqual({
+      agentComputeMsTotal: 6,
+      actedTickCount: 1,
+    })
+    expect(aggregatePlayer(states, 'player_1')).toEqual({
+      agentComputeMsTotal: 12,
+      actedTickCount: 2,
+    })
+  })
+})
 
 describe('reducePlayersToSeats', () => {
   it('averages scores and sums player consumption in noncontiguous seat order', () => {

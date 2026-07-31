@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 import websockets
+from support_parallel import make_entry as make_parallel_entry
 
 from game_sandbox_harness.environment import (
     BuiltinAgent,
@@ -128,6 +129,95 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
         assert json.loads(frames[0])["environment"] == "flappy_bird"
         assert frames[1] == '{"kind":"session","status":"running"}'
         assert frames[2] == '{"kind":"pause"}'
+
+    asyncio.run(exercise())
+
+
+def test_local_server_runs_the_injected_parallel_fixture_through_the_live_runner(
+    tmp_path: Path,
+) -> None:
+    async def exercise() -> None:
+        (tmp_path / "local.html").write_text("local", encoding="utf-8")
+        recording_dir = tmp_path / "recordings"
+        config = {
+            "env_id": "three_player_parallel_test",
+            "parameters": {"players": 3},
+            "seed": 1,
+            "player_bindings": {
+                player: {"kind": "external"} for player in ("player_0", "player_1", "player_2")
+            },
+            "players": {
+                player: {"kind": "human", "label": f"Human {index}"}
+                for index, player in enumerate(("player_0", "player_1", "player_2"))
+            },
+            "recording_dir": str(recording_dir),
+            "recording_id": "parallel-local",
+            "start_paused": True,
+        }
+        tests_dir = str(Path(__file__).parent)
+        child = (
+            "import sys\n"
+            f"sys.path.insert(0, {tests_dir!r})\n"
+            "from support_parallel import make_entry\n"
+            "from game_sandbox_harness.clock import SystemClock\n"
+            "from game_sandbox_harness.live import parse_config, run\n"
+            "from game_sandbox_harness.live_io import "
+            "PausableClock, ProtocolStream, RealSleeper, SessionControl, build_tee_store\n"
+            "entry = make_entry()\n"
+            "config = parse_config([sys.argv[1]], entry=entry)\n"
+            "clock = PausableClock(SystemClock())\n"
+            "control = SessionControl(clock)\n"
+            "protocol = ProtocolStream(sys.stdout)\n"
+            "raise SystemExit(run(\n"
+            "    entry, config, protocol=protocol, control=control,\n"
+            "    clock=clock, sleeper=RealSleeper(),\n"
+            "    store=build_tee_store(config.recording_dir, protocol), command_lines=sys.stdin,\n"
+            "))\n"
+        )
+        command = [
+            sys.executable,
+            "-c",
+            child,
+            json.dumps(config, separators=(",", ":")),
+        ]
+
+        async with LocalServer(
+            make_parallel_entry(),
+            command=command,
+            static_root=tmp_path,
+            start_paused=True,
+        ) as server:
+            uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+            async with websockets.connect(uri) as socket:
+                initial = [await asyncio.wait_for(socket.recv(), timeout=5) for _ in range(4)]
+                assert json.loads(initial[0])["environment"] == "three_player_parallel_test"
+                assert initial[1] == '{"kind":"session","status":"running"}'
+                assert initial[2] == '{"kind":"pause"}'
+                assert json.loads(initial[3])["agents"] == {}
+
+                await socket.send('{"kind":"resume"}')
+                assert await asyncio.wait_for(socket.recv(), timeout=5) == '{"kind":"resume"}'
+                states = [json.loads(await asyncio.wait_for(socket.recv(), timeout=5)) for _ in range(3)]
+                assert [list(state["agents"]) for state in states] == [
+                    ["player_0", "player_1", "player_2"],
+                    ["player_1", "player_2"],
+                    ["player_2"],
+                ]
+                result = json.loads(await asyncio.wait_for(socket.recv(), timeout=5))
+                ended = json.loads(await asyncio.wait_for(socket.recv(), timeout=5))
+                assert result["kind"] == "result"
+                assert result["ticks"] == 3
+                assert ended == {
+                    "kind": "session",
+                    "status": "ended",
+                    "reason": "truncated",
+                }
+            await asyncio.wait_for(server.wait(), timeout=5)
+
+        recording = recording_dir / "parallel-local" / "recording.jsonl"
+        lines = [json.loads(line) for line in recording.read_text(encoding="utf-8").splitlines()]
+        assert len(lines) == 4
+        assert all("kind" not in line for line in lines)
 
     asyncio.run(exercise())
 

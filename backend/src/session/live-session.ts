@@ -58,8 +58,8 @@ export interface LiveSessionDeps {
   killGraceMs: number
   /** Close official admission and await active-request finalizers before container teardown. */
   revokeLlm?: () => Promise<void>
-  /** Cumulative official LLM wait, including any capped partial active request. */
-  llmInFlightMs?: () => number
+  /** Cumulative blocking official LLM wait, including any capped partial active request. */
+  llmBlockingInFlightMs?: () => number
   /** Remove this live scope after the barrier when no recording association was retained. */
   deleteLlmScope?: (scopeId: string) => void
 }
@@ -112,6 +112,8 @@ export class LiveSession {
   private status: 'starting' | 'running' | 'ended' = 'starting'
   private headerLine: string | null = null
   private latestState: string | null = null
+  /** The protocol emits one result at session end; retain its first envelope for late attachers. */
+  private resultLine: string | null = null
   /** The accepted pause state is replayed to late attachers after their running envelope. */
   private paused = false
   /** The container's reported episode outcome, stashed from the `result` envelope. */
@@ -138,7 +140,7 @@ export class LiveSession {
 
     this.maxTimer = createChargeableTimer({
       budgetMs: this.deps.maxDurationMs,
-      inFlightMs: this.deps.llmInFlightMs,
+      inFlightMs: this.deps.llmBlockingInFlightMs,
       log: (message) => this.deps.log(`session ${this.id}: ${message}`),
       onExpire: () => void this.finalize('time_limit'),
     })
@@ -197,8 +199,9 @@ export class LiveSession {
       }
       return
     }
-    // Event envelope: stash the result reason for the row, then relay it like any other envelope.
-    if (line.kind === RESULT_KIND) {
+    // Retain the first terminal result, but relay every event envelope verbatim to live sockets.
+    if (line.kind === RESULT_KIND && this.resultLine === null) {
+      this.resultLine = raw
       const coerced = coerceResultReason(line.value.reason)
       if (coerced !== null) {
         this.resultReason = coerced
@@ -328,9 +331,9 @@ export class LiveSession {
   // --- attach / inbound commands: browsers → container ---
 
   /**
-   * Attach a socket. It immediately receives the buffered header, the latest state, and the
-   * current status so a renderer can draw without waiting for the next step. Only the owner's
-   * commands are honored, and `input` only in human mode for a player the session exposes.
+   * Attach a socket. It immediately receives the buffered header, latest state, current status, and
+   * terminal result when one already arrived. Only the owner's commands are honored, and `input`
+   * only in human mode for a player the session exposes.
    */
   attach(socket: ClientSocket, isOwner: boolean): Attachment {
     this.sockets.set(socket, { isOwner })
@@ -347,7 +350,13 @@ export class LiveSession {
       if (this.paused) {
         this.trySend(socket, serializeCommand({ kind: 'pause' }))
       }
+      if (this.resultLine !== null) {
+        this.trySend(socket, this.resultLine)
+      }
     } else if (this.status === 'ended') {
+      if (this.resultLine !== null) {
+        this.trySend(socket, this.resultLine)
+      }
       this.trySend(socket, sessionEnvelope('ended', this.finalReason ?? undefined))
     }
     this.refreshIdleOnAttach()

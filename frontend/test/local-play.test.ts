@@ -159,6 +159,33 @@ describe('LocalPlayPage', () => {
     expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
   })
 
+  it('logs every simultaneous action and omits reward-only entries', async () => {
+    await renderLocal()
+    handlers.onHeader(
+      flappyHeader({ players: { player_0: { kind: 'human', label: 'Local player' } } }),
+    )
+    const state = {
+      schema_version: 1,
+      tick: 3,
+      agents: {
+        player_0: { reward: 1, score: 1, action: 'left' },
+        player_1: { reward: 0, score: 0, action: 'right' },
+        player_2: { reward: 2, score: 2 },
+      },
+      timing: { started_at: 0, duration_ms: 1 },
+    } as const
+    handlers.onState(state)
+    handlers.onState(state)
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('.decision-log tbody:last-of-type tr')).toHaveLength(2),
+    )
+    const rows = document.querySelectorAll('.decision-log tbody:last-of-type tr')
+    expect(rows[0]).toHaveTextContent('P0')
+    expect(rows[1]).toHaveTextContent('P1')
+    expect(document.querySelector('.decision-log')).not.toHaveTextContent('P2')
+  })
+
   it('waits for terminal status and labels a stopped session without final standings', async () => {
     await renderLocal()
     startPaused()
@@ -175,14 +202,68 @@ describe('LocalPlayPage', () => {
     expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
   })
 
-  it('shows final standings when the environment completes normally', async () => {
+  it('shows complete result standings when the terminal state omits a player', async () => {
     await renderLocal()
-    startPaused()
-    handlers.onState(flappyState(1))
-    handlers.onResult?.({ scores: { player_0: 4 }, ticks: 1, reason: 'terminated' })
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
+        },
+        seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 1,
+      agents: { player_1: { reward: 2, score: 2, action: 1 } },
+      timing: { started_at: 0, duration_ms: 1 },
+    })
+    handlers.onResult?.({
+      scores: { player_0: 4, player_1: 2 },
+      ticks: 2,
+      reason: 'terminated',
+    })
     handlers.onSessionStatus?.('ended', 'terminated')
 
-    expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
+    expect(gameOver).toHaveTextContent('4')
+    expect(gameOver).toHaveTextContent('2')
+  })
+
+  it('falls back to accumulated state scores until a result envelope arrives', async () => {
+    await renderLocal()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
+        },
+        seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {
+        player_0: { reward: 4, score: 4, action: 0 },
+        player_1: { reward: 0, score: 0, action: 1 },
+      },
+      timing: { started_at: 0, duration_ms: 1 },
+    })
+    handlers.onState({
+      schema_version: 1,
+      tick: 1,
+      agents: { player_1: { reward: 2, score: 2, action: 1 } },
+      timing: { started_at: 1, duration_ms: 1 },
+    })
+    handlers.onSessionStatus?.('ended', 'terminated')
+
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
+    expect(gameOver).toHaveTextContent('4')
+    expect(gameOver).toHaveTextContent('2')
   })
 
   it('sends tick-free local chat and keeps the composer available across actions', async () => {

@@ -23,10 +23,18 @@ class Clock(Protocol):
 
 
 class SystemClock:
-    """A :class:`Clock` backed by the real wall clock."""
+    """An epoch clock whose elapsed time comes from the monotonic system clock.
+
+    The wall clock supplies the initial timestamp only. Later NTP or host clock corrections cannot
+    make episode durations negative.
+    """
+
+    def __init__(self) -> None:
+        self._epoch_ms = int(time.time() * 1000)
+        self._started_ns = time.monotonic_ns()
 
     def now_ms(self) -> int:
-        return int(time.time() * 1000)
+        return self._epoch_ms + (time.monotonic_ns() - self._started_ns) // 1_000_000
 
 
 class ManualClock:

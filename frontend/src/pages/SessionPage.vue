@@ -49,6 +49,7 @@ import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { hasSubmittedAgent } from '../lib/attribution.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
+import { decisionEntries } from '../lib/state.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { summarizeStates } from '../replay/summary.js'
@@ -144,6 +145,7 @@ const {
   buffering,
   endReason,
   finalResult,
+  accumulatedScores,
   latestState,
   connect,
   togglePause,
@@ -161,20 +163,23 @@ const {
       // any human-queued messages. onState is called at render (drain) time, so a message appears
       // exactly when its state line renders, not ahead of it.
       appendMessages(state)
-      // The live-only opening frame (a turn-based deal) carries no acting agent: render it so the
-      // table shows before the first move, but keep it out of the decision log, which logs actions.
-      if (Object.keys(state.agents).length > 0) {
-        decisions.value.push(toDecision(state))
-      }
+      // Opening frames and reward-only deltas carry no actions, so the shared adapter omits them.
+      appendDecisions(state)
     },
 })
-const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
-  useLiveFramePresentation({
-    viewerPlayers,
-    status,
-    paused,
-    endReason,
-  })
+const {
+  appendDecisions,
+  appendMessages,
+  chatLog,
+  completedOutcome,
+  decisions,
+  statusLabel,
+  statusTone,
+} = useLiveFramePresentation({
+  status,
+  paused,
+  endReason,
+})
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
 // The chat panel mounts when the session's effective messaging block enables it, resolved once by the
@@ -208,6 +213,9 @@ const statusFacts = computed(() => [
   { label: 'Ticks', value: finalResult.value?.ticks },
   { label: 'Started', value: formatDate(row.value?.created_at) },
 ])
+const completePlayerScores = computed(
+  () => finalResult.value?.scores ?? accumulatedScores.value,
+)
 
 onMounted(async () => {
   const fetched = await getSession(id).catch(() => undefined)
@@ -292,7 +300,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   try {
     const parsed = parseRecording(text)
     header.value = parsed.header
-    decisions.value = parsed.states.map(toDecision)
+    decisions.value = parsed.states.flatMap(decisionEntries)
     // A directly opened ended session never streams through onState, so build its message log from the
     // same parsed states — the full exchange, read-only, with no live socket.
     parsed.states.forEach(appendMessages)
@@ -309,7 +317,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     }
   } catch {
     if (finalResult.value === null) {
-      finalResult.value = { score: null, ticks: null }
+      finalResult.value = { score: null, ticks: null, scores: {} }
     }
   }
 }
@@ -404,6 +412,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             "
             :state="lastState"
             :header="header"
+            :player-scores="completePlayerScores"
             :blind="blindAttribution"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SessionProcess } from '../../src/driver/index.js'
+import { createOfficialTickMarker, KeyRegistry } from '../../src/llm/key-registry.js'
+import type { LlmGrant } from '../../src/llm/types.js'
 import { LiveSession } from '../../src/session/live-session.js'
 import type { Storage } from '../../src/storage/index.js'
 import type { SessionMode } from '../../src/storage/schema.js'
@@ -34,7 +36,7 @@ describe('relay (LiveSession)', () => {
       messaging?: { enabled: boolean; cap: number | null }
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
-      llmInFlightMs?: () => number
+      llmBlockingInFlightMs?: () => number
       maxDurationMs?: number
       deleteLlmScope?: (scopeId: string) => void
       onEnd?: (id: string) => void
@@ -70,7 +72,7 @@ describe('relay (LiveSession)', () => {
         maxDurationMs: options.maxDurationMs ?? 1_000_000,
         killGraceMs: 10,
         revokeLlm: options.revokeLlm,
-        llmInFlightMs: options.llmInFlightMs,
+        llmBlockingInFlightMs: options.llmBlockingInFlightMs,
         deleteLlmScope: options.deleteLlmScope,
       },
     })
@@ -107,12 +109,45 @@ describe('relay (LiveSession)', () => {
     expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'time_limit' })
   })
 
-  it('discounts only post-start LLM wait from the live max-duration backstop', async () => {
+  it('does not extend the live deadline for an open background request', async () => {
+    vi.useFakeTimers()
+    const registry = new KeyRegistry()
+    const grant = {
+      kind: 'official',
+      models: {},
+      accountingScope: {
+        key: 'official:sess-1:player_0',
+        limits: { tokenBudget: 100, requestsPerMinute: 10 },
+        weights: {},
+        readCommittedUsage: () => ({}),
+      },
+      recordSink: () => {},
+    } satisfies LlmGrant
+    const key = registry.issueOfficial(
+      'sess-1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
+    const request = registry.authenticateRequest(key, true)
+    const { process } = makeSession('scripted', {
+      maxDurationMs: 10,
+      llmBlockingInFlightMs: () => registry.blockingInFlightMs('sess-1'),
+    })
+
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(process.killGraceMs).toEqual([10])
+    request.release()
+    await registry.revokeSession('sess-1')
+  })
+
+  it('discounts only post-start blocking LLM wait from the live max-duration backstop', async () => {
     vi.useFakeTimers()
     let inFlightMs = 7 // Setup work before LiveSession starts earns no deadline extension.
     const { process } = makeSession('scripted', {
       maxDurationMs: 10,
-      llmInFlightMs: () => inFlightMs,
+      llmBlockingInFlightMs: () => inFlightMs,
     })
 
     inFlightMs = 17
@@ -131,7 +166,7 @@ describe('relay (LiveSession)', () => {
     let available = false
     const { process } = makeSession('scripted', {
       maxDurationMs: 10,
-      llmInFlightMs: () => {
+      llmBlockingInFlightMs: () => {
         if (!available) throw new Error('proxy unavailable')
         return 100
       },
@@ -148,7 +183,7 @@ describe('relay (LiveSession)', () => {
     let reads = 0
     const { process } = makeSession('scripted', {
       maxDurationMs: 10,
-      llmInFlightMs: () => {
+      llmBlockingInFlightMs: () => {
         reads += 1
         if (reads === 2) throw new Error('proxy unavailable')
         return reads === 1 ? 100 : 200
@@ -217,6 +252,82 @@ describe('relay (LiveSession)', () => {
 
     expect(socket.received).toContain(RESULT_TERMINATED)
     expect(socket.received).not.toContain('not-json-garbage')
+  })
+
+  it('replays the complete result to an attacher racing with process finalization', async () => {
+    const { session, process } = makeSession()
+    const result =
+      '{"kind":"result","ticks":2,"reason":"terminated","scores":{"player_0":7,"player_1":3},"step_timeouts":{}}'
+    process.emit(HEADER)
+    process.emit(STATE_1)
+    process.emit(result)
+    await flush()
+
+    const late = new FakeSocket()
+    session.attach(late, true)
+
+    expect(late.received).toEqual([
+      HEADER,
+      STATE_1,
+      JSON.stringify({ kind: 'session', status: 'running' }),
+      result,
+    ])
+  })
+
+  it('relays duplicate results live while late attachers receive the first result and reason', async () => {
+    const { session, process } = makeSession()
+    const liveSocket = new FakeSocket()
+    session.attach(liveSocket, true)
+    const first =
+      '{"kind":"result","ticks":2,"reason":"terminated","scores":{"player_0":7},"step_timeouts":{}}'
+    const duplicate =
+      '{"kind":"result","ticks":2,"reason":"stopped","scores":{"player_0":3},"step_timeouts":{}}'
+
+    process.emit(HEADER)
+    process.emit(first)
+    process.emit(duplicate)
+    process.finish({ code: 0, oomKilled: false })
+    await settle()
+
+    expect(liveSocket.received).toContain(first)
+    expect(liveSocket.received).toContain(duplicate)
+
+    const late = new FakeSocket()
+    session.attach(late, false)
+    expect(late.received).toEqual([
+      HEADER,
+      first,
+      JSON.stringify({ kind: 'session', status: 'ended', reason: 'terminated' }),
+    ])
+    expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'terminated' })
+  })
+
+  it('does not repair an invalid first result reason from a valid duplicate', async () => {
+    const { session, process } = makeSession()
+    const liveSocket = new FakeSocket()
+    session.attach(liveSocket, true)
+    const first =
+      '{"kind":"result","ticks":2,"reason":"invalid","scores":{"player_0":7},"step_timeouts":{}}'
+    const duplicate =
+      '{"kind":"result","ticks":2,"reason":"terminated","scores":{"player_0":3},"step_timeouts":{}}'
+
+    process.emit(HEADER)
+    process.emit(first)
+    process.emit(duplicate)
+    process.finish({ code: 0, oomKilled: false })
+    await settle()
+
+    expect(liveSocket.received).toContain(first)
+    expect(liveSocket.received).toContain(duplicate)
+
+    const late = new FakeSocket()
+    session.attach(late, false)
+    expect(late.received).toEqual([
+      HEADER,
+      first,
+      JSON.stringify({ kind: 'session', status: 'ended', reason: 'stopped' }),
+    ])
+    expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'stopped' })
   })
 
   it('drains output before deriving the reason from a clean process exit', async () => {

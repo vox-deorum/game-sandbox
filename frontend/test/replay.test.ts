@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RendererContext } from '../src/renderers/types.js'
 import {
+  flappyHeader,
   flappyMeta,
   flappyState,
   playerState,
@@ -138,6 +139,41 @@ describe('ReplayPage', () => {
     ).toBe(true)
   })
 
+  it('flattens every action-bearing state entry and omits reward-only deltas', async () => {
+    const players = {
+      player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'North' },
+      player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'South' },
+      player_2: { kind: 'agent' as const, builtin_name: 'naive', label: 'West' },
+    }
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [
+          {
+            schema_version: 1,
+            tick: 4,
+            agents: {
+              player_0: { reward: 1, score: 1, action: 'left' },
+              player_1: { reward: 0, score: 0, action: 'right' },
+              player_2: { reward: 2, score: 2 },
+            },
+            timing: { started_at: 0, duration_ms: 1 },
+          },
+        ],
+        { players },
+      ),
+    )
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+
+    const log = view.container.querySelector('.decision-log') as HTMLElement
+    const rows = log.querySelectorAll('tbody:last-of-type tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('P0')
+    expect(rows[1]).toHaveTextContent('P1')
+    expect(log).not.toHaveTextContent('P2')
+    expect(log.querySelectorAll('[data-active="true"]')).toHaveLength(2)
+  })
+
   it('summarizes the episode settings and puts their values in a tooltip', async () => {
     vi.mocked(getRecording).mockResolvedValue(
       recordingText(
@@ -258,6 +294,59 @@ describe('ReplayPage', () => {
     expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
     await fireEvent.keyDown(stage, { key: 'End' })
     expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+  })
+
+  it('uses latest recorded scores when the final replay state omits an inactive player', async () => {
+    const players = {
+      player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'North' },
+      player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'South' },
+    }
+    const replayHeader = flappyHeader({
+      players,
+      seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+    })
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [
+          {
+            schema_version: 1,
+            tick: 0,
+            agents: {
+              player_0: { reward: 7, score: 7, action: 0 },
+              player_1: { reward: 0, score: 0, action: 1 },
+            },
+            timing: { started_at: 0, duration_ms: 1 },
+          },
+          {
+            schema_version: 1,
+            tick: 1,
+            agents: { player_1: { reward: 3, score: 3, action: 1 } },
+            timing: { started_at: 1, duration_ms: 1 },
+          },
+        ],
+        { players, seats: replayHeader.seats },
+      ),
+    )
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: replayHeader,
+        user_id: 'dev-user',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: null,
+      },
+    ])
+
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
+
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
+    expect(gameOver).toHaveTextContent('7')
+    expect(gameOver).toHaveTextContent('3')
   })
 
   it('shows no game-over card at the final frame when the run did not complete', async () => {

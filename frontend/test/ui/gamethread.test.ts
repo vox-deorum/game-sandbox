@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
-import type { DecisionEntry } from '../../src/components/DecisionLog.vue'
 import GameThread from '../../src/components/GameThread.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
+import type { DecisionEntry } from '../../src/lib/state.js'
 
 // A four-player Spades roster: three agents sharing a label plus the viewer's human player.
 const PLAYERS = {
@@ -30,7 +30,7 @@ describe('GameThread', () => {
 
   it('lists the whole game, dims ticks ahead of the scrubber, and highlights the current one', () => {
     const { container } = render(GameThread, {
-      props: { decisions: decisions(), chat: [], currentIndex: 1, players: PLAYERS },
+      props: { decisions: decisions(), chat: [], currentTick: 1, players: PLAYERS },
     })
     const rows = Array.from(container.querySelectorAll('.thread-item--decision'))
     // Every tick is listed, not just those up to the scrubber.
@@ -44,7 +44,7 @@ describe('GameThread', () => {
       'P3',
     ])
 
-    // Index 1 is the current tick (marked, aria-current); 2 and 3 sit ahead (dimmed); 0 is past.
+    // Tick 1 is current (marked, aria-current); 2 and 3 sit ahead (dimmed); 0 is past.
     const [past, current, futureA, futureB] = rows
     expect(current?.classList.contains('is-current')).toBe(true)
     expect(current?.getAttribute('aria-current')).toBe('true')
@@ -60,7 +60,7 @@ describe('GameThread', () => {
       { tick: 3, from: 'player_1', to: 'player_3', text: 'cover the king' },
     ]
     const { container } = render(GameThread, {
-      props: { decisions: decisions(), chat, currentIndex: 3, players: PLAYERS },
+      props: { decisions: decisions(), chat, currentTick: 3, players: PLAYERS },
     })
 
     expect(screen.getByText('good luck')).toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('GameThread', () => {
       { tick: 3, from: 'player_1', to: 'player_3', text: 'cover the king' },
     ]
     const { container } = render(GameThread, {
-      props: { decisions: decisions(), chat, currentIndex: 3, players: PLAYERS },
+      props: { decisions: decisions(), chat, currentTick: 3, players: PLAYERS },
     })
 
     // Exactly one element is aria-current, and it is the current tick's decision row. Multiple
@@ -96,6 +96,34 @@ describe('GameThread', () => {
     const message = container.querySelector('.thread-item--message')
     expect(message?.classList.contains('is-current')).toBe(true)
     expect(message?.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('groups same-tick decisions before rendering that tick messages once', () => {
+    const sameTick: DecisionEntry[] = [
+      { tick: 4, player: 'player_0', action: 'left' },
+      { tick: 4, player: 'player_1', action: 'right' },
+      { tick: 5, player: 'player_2', action: 'wait' },
+    ]
+    const { container } = render(GameThread, {
+      props: {
+        decisions: sameTick,
+        chat: [{ tick: 4, from: 'player_0', to: null, text: 'move together' }],
+        currentTick: 4,
+        players: PLAYERS,
+      },
+    })
+
+    const items = Array.from(container.querySelectorAll('.thread-item'))
+    const firstDecision = items.findIndex((item) => item.textContent?.includes('left'))
+    const secondDecision = items.findIndex((item) => item.textContent?.includes('right'))
+    const message = items.findIndex((item) => item.textContent?.includes('move together'))
+    const nextTick = items.findIndex((item) => item.textContent?.includes('wait'))
+    expect(firstDecision).toBeLessThan(secondDecision)
+    expect(secondDecision).toBeLessThan(message)
+    expect(message).toBeLessThan(nextTick)
+    expect(screen.getAllByText('move together')).toHaveLength(1)
+    expect(container.querySelectorAll('.thread-item--decision.is-current')).toHaveLength(2)
+    expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
   })
 
   it('shows an empty state when there are no decisions', () => {

@@ -1438,7 +1438,51 @@ describe('Docker-backed workflow runner', () => {
     expect(logs.some((line) => line.includes('wall-clock watchdog'))).toBe(true)
   })
 
-  it('discounts post-launch official LLM wait from the game watchdog', async () => {
+  it('does not extend the game watchdog for background-only LLM wait', async () => {
+    vi.useFakeTimers()
+    let markWatchdogArmed = (): void => {}
+    const watchdogArmed = new Promise<void>((resolve) => {
+      markWatchdogArmed = resolve
+    })
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => Promise.resolve(),
+        blockingInFlightMs: () => {
+          markWatchdogArmed()
+          return 0
+        },
+      }),
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      killGraceMs: 2,
+      gameWatchdogGraceMs: 0,
+      officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0, 1)], {
+      overrides: { episode_timeout_ms: 10 },
+      llmPolicy: enabledLlmPolicy(),
+    })
+    let markLaunched = (): void => {}
+    const launched = new Promise<void>((resolve) => {
+      markLaunched = resolve
+    })
+    handle.driver.onLaunch = (launch): void => {
+      emitHeader(launch.process, 1)
+      markLaunched()
+    }
+
+    const terminal = runToTerminal(handle, run.id)
+    await launched
+    await watchdogArmed
+    await vi.advanceTimersByTimeAsync(10)
+    await expect(terminal).resolves.toMatchObject({ status: 'completed' })
+    expect(handle.driver.launches[0]?.process.killGraceMs).toEqual([2])
+  })
+
+  it('discounts post-launch blocking official LLM wait from the game watchdog', async () => {
     vi.useFakeTimers()
     let inFlightMs = 7 // Work before the watchdog arms earns no deadline extension.
     let markWatchdogArmed = (): void => {}
@@ -1449,7 +1493,7 @@ describe('Docker-backed workflow runner', () => {
       issue: async () => ({
         keys: { player_0: 'official-key' },
         revoke: () => Promise.resolve(),
-        inFlightMs: () => {
+        blockingInFlightMs: () => {
           markWatchdogArmed()
           return inFlightMs
         },

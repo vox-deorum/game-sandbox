@@ -95,6 +95,42 @@ class Agent:
 
 Streaming completions are not supported. Use a normal request with `stream=False`.
 
+### Use a model across ticks
+
+A normal request pauses the current `act`, `chat`, or `learn` method until the model replies. When an agent can continue without the immediate reply, the template's `BackgroundLLM` helper can start one request and let later hooks collect it without blocking the current turn or tick.
+
+Do not create background threads yourself. The helper owns its thread and captures the current player's credentials when `request` is called. It serves plain-text chat completions only. Use the standard synchronous client when you need tools, structured response formats, or another advanced completion shape.
+
+This example answers table talk when the reply becomes available, often a few ticks after the message that prompted it:
+
+```python
+from sandbox.llm import BackgroundLLM
+
+class Agent:
+    def __init__(self) -> None:
+        self.llm = BackgroundLLM()
+
+    def chat(self, inbox):
+        reply = self.llm.response()
+        if reply:
+            return [{"to": None, "text": reply}]
+        if inbox and not self.llm.requesting:
+            self.llm.request(
+                model="small",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Reply in one short sentence to: {inbox[-1]['text']}",
+                    }
+                ],
+            )
+        return []
+```
+
+Collect first, then ask. `response()` returns a completed reply once, and returns `None` while the request is running or when no unread reply exists. The `requesting` check keeps this instance to one request at a time. A second `request()` while it is busy returns `False` and leaves the original request running. Check `error` if a request fails.
+
+The same pattern works in `act`: start a request for a plan on one tick, continue with a legal fallback, and use the reply on a later tick. A background response still counts against the model budget. If you send it through `chat`, keep it within the environment's message-length limit.
+
 ### Troubleshooting
 
 Even if your code is correct, LLM calls may fail. Therefore, keep the fallback even after you improve the prompt or response parsing.

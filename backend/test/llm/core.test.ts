@@ -56,12 +56,12 @@ function fixture(
     ((record: LlmSuccessfulRecord) => {
       records.push(record)
     })
-  const grant: LlmGrant = {
+  const grant = {
     kind: 'official',
     models: { [model.tier]: { upstream: model.upstream, costWeight: model.costWeight } },
     accountingScope: scope,
     recordSink: sink,
-  }
+  } satisfies LlmGrant
   const tokenizer: LlmTokenCounter = overrides.tokenizer ?? {
     countRequest: () => 3,
     countCompletion: () => 5,
@@ -224,9 +224,9 @@ describe('LLM registry, handler, and listener', () => {
     let issued = 6
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(++issued))
     const tick = createOfficialTickMarker()
-    const key = registry.issueOfficial('s1', grant, tick)
+    const key = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
     const otherTick = createOfficialTickMarker()
-    const otherKey = registry.issueOfficial('s2', grant, otherTick)
+    const otherKey = registry.issueOfficial('s2', grant, otherTick, () => grant.recordSink)
     const app = await buildLlmListener({ registry, handler })
 
     expect(key).toMatch(/^sk-sandbox-[0-9a-f]{64}$/)
@@ -297,7 +297,7 @@ describe('LLM registry, handler, and listener', () => {
     })
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(2))
     const tick = createOfficialTickMarker()
-    const key = registry.issueOfficial('s1', grant, tick)
+    const key = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
     const app = await buildLlmListener({ registry, handler })
 
     const activeRequest = app.inject({
@@ -358,7 +358,12 @@ describe('LLM registry, handler, and listener', () => {
         }),
     )
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(3))
-    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const key = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
     const app = await buildLlmListener({ registry, handler })
 
     const activeRequest = app.inject({
@@ -393,7 +398,12 @@ describe('LLM registry, handler, and listener', () => {
         throw new LlmError(400, 'bad_upstream', 'bad')
       })
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(9), { now: () => now })
-    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const key = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
     const app = await buildLlmListener({ registry, handler })
 
     const ok = await app.inject({
@@ -404,6 +414,7 @@ describe('LLM registry, handler, and listener', () => {
     })
     expect(ok.statusCode).toBe(200)
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(40)
+    expect(registry.blockingInFlightMs('s1')).toBe(40)
 
     const failed = await app.inject({
       method: 'POST',
@@ -414,6 +425,7 @@ describe('LLM registry, handler, and listener', () => {
     expect(failed.statusCode).toBe(400)
     // A failed call still counts: timing authority stays with the proxy for the whole logical request.
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(65)
+    expect(registry.blockingInFlightMs('s1')).toBe(65)
 
     const inflight = await app.inject({
       method: 'POST',
@@ -428,6 +440,98 @@ describe('LLM registry, handler, and listener', () => {
       payload: { phase: 'setup' },
     })
     expect(tick.json()).toEqual({ ok: true })
+    await app.close()
+  })
+
+  it('classifies only the exact background header as non-blocking while preserving total timing', async () => {
+    let now = 1_000
+    const { grant, handler, upstream } = fixture()
+    upstream.call.mockImplementation(async () => {
+      now += 10
+      return {
+        completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
+        latencyMs: 10,
+      }
+    })
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(8), { now: () => now })
+    const key = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
+    const app = await buildLlmListener({ registry, handler })
+
+    for (const headers of [
+      {},
+      { 'x-game-sandbox-background': '1' },
+      { 'x-game-sandbox-background': 'true' },
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        headers: { authorization: `Bearer ${key}`, ...headers },
+        payload: { model: 'small', messages: [] },
+      })
+      expect(response.statusCode).toBe(200)
+    }
+
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
+    expect(registry.blockingInFlightMs('s1')).toBe(20)
+    const inflight = await app.inject({
+      method: 'POST',
+      url: '/internal/inflight',
+      headers: { authorization: `Bearer ${key}` },
+    })
+    expect(inflight.json()).toEqual({ inflight_ms: 30 })
+    await app.close()
+  })
+
+  it('binds successful telemetry to the admission marker, including setup null', async () => {
+    const { grant, handler, upstream } = fixture()
+    const tick = createOfficialTickMarker()
+    const admissions: Array<{ admitted: number | null; committed: number | null }> = []
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(7))
+    const key = registry.issueOfficial('s1', grant, tick, (admitted) => () => {
+      admissions.push({ admitted, committed: tick.current })
+    })
+    const app = await buildLlmListener({ registry, handler })
+    upstream.call
+      .mockImplementationOnce(async () => {
+        tick.current = 4
+        return {
+          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
+          latencyMs: 1,
+        }
+      })
+      .mockImplementationOnce(async () => {
+        tick.current = 13
+        return {
+          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
+          latencyMs: 1,
+        }
+      })
+
+    const setupCall = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(setupCall.statusCode).toBe(200)
+
+    tick.current = 12
+    const turnCall = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(turnCall.statusCode).toBe(200)
+    expect(admissions).toEqual([
+      { admitted: null, committed: 4 },
+      { admitted: 12, committed: 13 },
+    ])
     await app.close()
   })
 
@@ -449,7 +553,12 @@ describe('LLM registry, handler, and listener', () => {
       now: () => now,
       maxRequestMs: 15,
     })
-    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const key = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
     const app = await buildLlmListener({ registry, handler })
 
     const active = app.inject({
@@ -461,7 +570,7 @@ describe('LLM registry, handler, and listener', () => {
     await started
     now = 1_050
     // The active request has run 50 ms, but a single call may contribute at most maxRequestMs (15).
-    expect(registry.inFlightMs('s1')).toBe(15)
+    expect(registry.blockingInFlightMs('s1')).toBe(15)
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(15)
     const inflight = await app.inject({
       method: 'POST',
@@ -472,8 +581,8 @@ describe('LLM registry, handler, and listener', () => {
 
     await registry.revokeSession('s1')
     await active
-    // Revocation clears both the per-session view and the per-scope accumulator.
-    expect(registry.inFlightMs('s1')).toBe(0)
+    // Revocation clears the per-session blocking view and the per-scope accumulator.
+    expect(registry.blockingInFlightMs('s1')).toBe(0)
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
     await app.close()
   })
@@ -482,17 +591,32 @@ describe('LLM registry, handler, and listener', () => {
     let now = 1_000
     let issued = 10
     const { grant } = fixture()
-    const otherGrant: LlmGrant = {
+    const otherGrant = {
       ...grant,
       accountingScope: { ...grant.accountingScope, key: 'session:s2:player_0' },
-    }
+    } satisfies LlmGrant
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(++issued), {
       now: () => now,
       maxRequestMs: 15,
     })
-    const firstKey = registry.issueOfficial('s1', grant, createOfficialTickMarker())
-    const secondKey = registry.issueOfficial('s1', grant, createOfficialTickMarker())
-    const otherKey = registry.issueOfficial('s2', otherGrant, createOfficialTickMarker())
+    const firstKey = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
+    const secondKey = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
+    const otherKey = registry.issueOfficial(
+      's2',
+      otherGrant,
+      createOfficialTickMarker(),
+      () => otherGrant.recordSink,
+    )
     const first = registry.authenticateRequest(firstKey)
     const second = registry.authenticateRequest(secondKey)
     const other = registry.authenticateRequest(otherKey)
@@ -527,7 +651,7 @@ describe('LLM registry, handler, and listener', () => {
   ])('returns the pinned authentication envelope for malformed authorization %s', async (authorization) => {
     const { grant, handler, upstream } = fixture()
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(1))
-    registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    registry.issueOfficial('s1', grant, createOfficialTickMarker(), () => grant.recordSink)
     const app = await buildLlmListener({ registry, handler })
     const response = await app.inject({
       method: 'POST',
@@ -973,7 +1097,12 @@ describe('generic admission and unavailable scopes', () => {
     const { grant, handler, logs, meter, upstream } = fixture({ sink: vi.fn(), tokenizer })
     upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(9))
-    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const key = registry.issueOfficial(
+      's1',
+      grant,
+      createOfficialTickMarker(),
+      () => grant.recordSink,
+    )
     const app = await buildLlmListener({ registry, handler })
 
     const response = await app.inject({

@@ -17,7 +17,9 @@ renderer + input ⇄ WebSocket relay ⇄ line transport ⇄ harness + environmen
 - The backend supervises and relays. It does not step the game.
 - The per-step state schema is the container boundary and recording format.
 
-Keeping every player in one session container avoids crossing a second container boundary during each turn. It also keeps session management practical for a class-sized deployment. Agents act in sequence, so legitimate agent work does not need simultaneous CPU access.
+Keeping every player in one session container avoids crossing a second container boundary during each turn or tick. It also keeps session management practical for a class-sized deployment.
+
+Participant hooks run sequentially on the harness thread, including within a simultaneous tick. Before that tick's first hook, the harness snapshots every active player's observation and info mapping. Canonical player order determines hook order, but each decision sees its own snapshot from the same pre-step world. Simultaneous stepping therefore promises a joint environment transition, not concurrent CPU execution.
 
 ## Live sessions
 

@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from support_parallel import ThreePlayerParallelEnv
+from support_parallel import make_entry as make_parallel_entry
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
@@ -805,6 +807,119 @@ def test_paced_with_no_input_keeps_moving_on_defaults(tmp_path: Path):
     assert result.ticks == 4
     assert result.reason == "terminated"
     assert _recorded_actions(recording) == [DEFAULT_ACTION] * 4
+
+
+def test_simultaneous_live_cadence_waits_after_each_completed_tick():
+    base = ManualClock(0)
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    starts: list[int] = []
+
+    class TimedParallelEnv(ThreePlayerParallelEnv):
+        def step(self, actions):
+            starts.append(base.now_ms())
+            base.advance(20)
+            return super().step(actions)
+
+    entry = replace(make_parallel_entry(), make=lambda _parameters: TimedParallelEnv())
+    for player, action in (("player_0", 1), ("player_1", 2), ("player_2", 0)):
+        control.handle_line(json.dumps({"kind": "input", "player": player, "action": action}))
+    sleeper = AdvancingSleeper(base)
+    players = {
+        player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
+        for player in entry.meta.human_players
+    }
+
+    with Episode(
+        entry,
+        players,
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+    ) as episode:
+        assert episode.opening_state() is not None
+        run_live_loop(
+            episode,
+            pace_interval_ms=50,
+            control=control,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        assert episode.result().ticks == 3
+
+    # Tick zero gets a full input window. Every 20 ms overrun then starts a fresh 50 ms wait instead
+    # of immediately catching up to the preceding target.
+    assert starts == [50, 120, 190]
+
+
+def test_simultaneous_live_cadence_stays_paused_until_resume():
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    paused_at_step: list[bool] = []
+
+    class ObservedParallelEnv(ThreePlayerParallelEnv):
+        def step(self, actions):
+            paused_at_step.append(control.paused)
+            return super().step(actions)
+
+    entry = replace(make_parallel_entry(), make=lambda _parameters: ObservedParallelEnv())
+    control.pause()
+    sleeper = AdvancingSleeper(base, at=3, do=control.resume)
+    players = {
+        player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
+        for player in entry.meta.human_players
+    }
+
+    with Episode(
+        entry,
+        players,
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+    ) as episode:
+        run_live_loop(
+            episode,
+            pace_interval_ms=50,
+            control=control,
+            clock=clock,
+            sleeper=sleeper,
+        )
+
+    assert episode.result().ticks == 3
+    assert paused_at_step == [False, False, False]
+    assert sleeper.calls >= 3
+
+
+def test_simultaneous_live_stop_prevents_the_next_joint_tick():
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    control.handle_line('{"kind":"stop"}')
+    entry = make_parallel_entry()
+    sleeper = AdvancingSleeper(base)
+    players = {
+        player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
+        for player in entry.meta.human_players
+    }
+
+    with Episode(
+        entry,
+        players,
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+    ) as episode:
+        run_live_loop(
+            episode,
+            pace_interval_ms=50,
+            control=control,
+            clock=clock,
+            sleeper=sleeper,
+        )
+
+    assert episode.result().ticks == 0
+    assert episode.result().reason == "stopped"
 
 
 def test_streamed_bytes_equal_stored_bytes_and_result_is_not_recorded(tmp_path: Path):

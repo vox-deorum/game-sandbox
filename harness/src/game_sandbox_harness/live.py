@@ -7,12 +7,11 @@ under wall-clock pacing with pause and stop. State lines stream out on the proto
 are simultaneously written to the recording on the mounted volume; one ``result`` envelope is
 emitted at the end.
 
-The live loop is a second thin loop over the very same :meth:`Episode.step_once` that the
-headless ``run_episode`` uses. The only realtime-versus-turn-based difference is one conditional
-on the environment's pace interval: a paced environment waits for the next cadence instant before
-each step; a turn-based one does not, and its external source blocks for input instead. Pause is a
-cooperative wait shared by both, and because the injected :class:`PausableClock` freezes while
-paused, the cadence instant and every measured duration freeze with it.
+The live loop and headless ``run_episode`` both call :meth:`Episode.advance`, which dispatches to
+one sequential AEC step or one simultaneous parallel tick. Sequential pacing retains its target
+cadence. Simultaneous pacing waits one full interval after each completed tick, so slow work slips
+the cadence without a catch-up burst. Pause is a cooperative wait shared by both, and because the
+injected :class:`PausableClock` freezes while paused, cadence and measured durations freeze with it.
 
 Module-level imports stay free of environment packages so :func:`main` can claim stdout
 *before* anything imports a game; the environment is loaded only inside :func:`main`,
@@ -478,6 +477,9 @@ class _LlmExecutionScope:
 
     def __init__(self, config: LlmConfig) -> None:
         self._config = config
+        # The backend retains one marker per bearer key. Keep the last successful post for each
+        # player so interleaved action, chat, and learning hooks do not repeat the same boundary.
+        self._posted_markers: dict[str, dict[str, str | int]] = {}
 
     def setup(self, player_id: str) -> None:
         self._activate(player_id)
@@ -522,6 +524,8 @@ class _LlmExecutionScope:
         os.environ["OPENAI_API_KEY"] = self._config.keys[player_id]
 
     def _post_marker(self, player_id: str, payload: dict[str, str | int]) -> None:
+        if self._posted_markers.get(player_id) == payload:
+            return
         try:
             request = urllib.request.Request(
                 self._config.tick_url,
@@ -536,6 +540,7 @@ class _LlmExecutionScope:
             # body beyond the local marker timeout.
             with urllib.request.urlopen(request, timeout=_MARKER_TIMEOUT_SECONDS):
                 pass
+            self._posted_markers[player_id] = payload
         except Exception as error:  # noqa: BLE001 - marker telemetry is deliberately best-effort
             print(
                 f"live: LLM marker failed for player {player_id!r}: {error}",
@@ -599,11 +604,31 @@ def run_live_loop(
 ) -> None:
     """Drive ``episode`` to its end under pacing, pause, and stop.
 
-    A second thin loop over :meth:`Episode.step_once`. Before each step it waits out any pause
-    (a frozen clock means the wait and the cadence below both freeze), then — the one pace-interval
-    conditional — waits for the next cadence instant when the environment is realtime and not at
-    all when it is turn-based. A ``stop`` command ends the run with reason ``stopped``.
+    A thin loop over :meth:`Episode.advance`. Sequential environments retain their target-based
+    scheduler. Both simultaneous modes wait cooperatively while paused. A paced simultaneous session
+    waits one full interval after every completed tick, while headless mode otherwise advances back to
+    back. A ``stop`` command ends the run with reason ``stopped``.
     """
+    if episode.stepping == "simultaneous":
+        # Only read when paced: the first tick waits one full input window before advancing.
+        next_instant = clock.now_ms() + (pace_interval_ms or 0)
+        while not episode.done:
+            while control.paused and not control.stopping:
+                sleeper.sleep_ms(slice_ms)
+            if pace_interval_ms is not None:
+                while clock.now_ms() < next_instant and not control.stopping:
+                    sleeper.sleep_ms(slice_ms)
+            if control.stopping:
+                episode.stop(REASON_STOPPED)
+                break
+            episode.advance()
+            if pace_interval_ms is not None:
+                # A long participant hook or environment transition slips the following tick. Never catch up.
+                next_instant = clock.now_ms() + pace_interval_ms
+        return
+
+    # Preserve the original AEC target-based scheduler byte-for-byte apart from dispatching through
+    # Episode.advance(), which selects step_once() for every sequential declaration.
     next_instant = clock.now_ms()
     while not episode.done:
         # Pause is a cooperative wait shared by both cadences; the frozen clock does the rest.
@@ -616,7 +641,7 @@ def run_live_loop(
         if control.stopping:
             episode.stop(REASON_STOPPED)
             break
-        episode.step_once()
+        episode.advance()
 
 
 def _claim_stdout() -> IO[str]:

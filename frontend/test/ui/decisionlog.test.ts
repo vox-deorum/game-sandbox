@@ -45,21 +45,25 @@ describe('DecisionLog', () => {
     expect(current).toHaveTextContent('7')
   })
 
-  it('marks the scrubbed index current when one is given (replay)', () => {
-    render(DecisionLog, {
+  it('highlights every decision in the scrubbed tick and marks one row current', () => {
+    const { container } = render(DecisionLog, {
       props: {
         entries: [
           { tick: 5, player: 'player_0', action: 0 },
-          { tick: 6, player: 'player_0', action: 1 },
-          { tick: 7, player: 'player_0', action: 0 },
+          { tick: 5, player: 'player_1', action: 1 },
+          { tick: 6, player: 'player_0', action: 0 },
         ],
-        currentIndex: 1,
+        currentTick: 5,
       },
     })
+    expect(container.querySelectorAll('[data-active="true"]')).toHaveLength(2)
     const current = screen
       .getAllByRole('row')
       .find((r) => r.getAttribute('aria-current') === 'true')
-    expect(current).toHaveTextContent('6')
+    expect(current).toHaveTextContent('P0')
+    expect(
+      screen.getAllByRole('row').filter((row) => row.hasAttribute('aria-current')),
+    ).toHaveLength(1)
   })
 
   it('shows an empty state when there are no decisions', () => {
@@ -109,7 +113,7 @@ describe('DecisionLog', () => {
           { tick: 5, player: 'player_0', action: 0 },
           { tick: 6, player: 'player_0', action: 1 },
         ],
-        currentIndex: 1,
+        currentTick: 6,
         setupLlmCalls: [
           call({ tick: null, player: 'player_1', budget_cost_units: 8 }),
           call({ tick: null, player: 'player_0', budget_cost_units: 3 }),
@@ -137,7 +141,7 @@ describe('DecisionLog', () => {
           { tick: 5, player: 'player_0', action: 0 },
           { tick: 6, player: 'player_0', action: 1 },
         ],
-        currentIndex: 1,
+        currentTick: 6,
         setupLlmCalls: [],
       },
     })
@@ -151,7 +155,7 @@ describe('DecisionLog', () => {
         { tick: 5, player: 'player_0', action: 0 },
         { tick: 6, player: 'player_0', action: 1 },
       ],
-      currentIndex: 1,
+      currentTick: 6,
       setupLlmCalls: [
         call({ tick: null, player: 'player_0' }),
         call({ tick: null, player: 'player_1' }),

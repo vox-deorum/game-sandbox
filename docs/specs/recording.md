@@ -14,6 +14,8 @@ The header identifies who controlled each player: a human, a named builtin agent
 
 The header also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat records the person on its designated player and the selected companion agent on every other member. Every recording carries this seat map and the canonical seat-plan key, along with the complete normalized gameplay parameter map used to construct the environment. See [Environments](environment.md#configurable-gameplay-parameters).
 
+Each state line represents one completed environment transition using the [per-step state object](interaction.md#per-step-state-object). PettingZoo dead-step housekeeping produces no state line. A player that becomes inactive remains absent from later states. The player's final cumulative score is therefore the latest score recorded for that player anywhere in the recording, not necessarily a value in the final state.
+
 This design means:
 
 - Recordings stay small.

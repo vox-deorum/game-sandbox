@@ -1,6 +1,6 @@
 # Stage 17.3: The simultaneous tick loop
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 17](../stage-17-simultaneous-stepping.md), build-order step 3.
 
@@ -19,7 +19,7 @@ The two paths keep their PettingZoo-specific outer shape:
 - `step_once()` consumes one AEC agent cycle and required dead steps.
 - `step_tick()` consumes one parallel action mapping and result tuple.
 
-Factor only mode-neutral participant work into shared helpers: timed actions, legal-default handling, chat validation and delivery, learning, score and budget accounting, state entry construction, failure attribution, and lifecycle cleanup. The AEC path also uses the state-entry helper to add actionless reward-and-score deltas for non-acting players. Do not adapt a `ParallelEnv` into an AEC wrapper or convert the AEC environments into parallel form.
+Use one mode-neutral per-player context and shared helpers in the private `participant_runner` module for timed actions, legal-default handling, chat validation, learning, score and budget accounting, state entry construction, failure attribution, and lifecycle cleanup. Keep `step_once()` and `step_tick()` as thin PettingZoo-specific orchestrators. The AEC path also uses the state-entry helper to add actionless reward-and-score deltas for non-acting players. Do not adapt a `ParallelEnv` into an AEC wrapper or convert the AEC environments into parallel form.
 
 `Episode.opening_state()` checks the declared mode before reading AEC-only fields. A simultaneous live session emits an unrecorded opening presentation state immediately after reset, containing `agents={}`, the reset overlay, and the designated human's reset `chat_options` when available. The browser can render legal controls, latch input, and compose chat before tick 0. Existing unpaced AEC opening presentation remains unchanged, and existing paced sequential environments keep skipping the opening frame.
 
@@ -49,13 +49,13 @@ Each agent-controlled player retains a separate episode budget, checked after th
 
 ## Official LLM execution
 
-Credential activation follows the player across the separated action, chat, and learning phases. The harness posts the player's tick marker and restores that player's base URL and key before each hook. A later player's global environment activation must never leak into an earlier player's chat or learning hook.
+Credential activation follows the player across the separated action, chat, and learning phases. The harness restores the player's base URL and key before each hook and posts the tick marker when it changes. A later player's global environment activation must never leak into an earlier player's chat or learning hook.
 
 Synchronous model calls keep the Stage 9 timing contract, and their proxy wait may make the wall-clock tick slip.
 
 An official request does not have to finish inside the hook that starts it. The template's `sandbox.llm.BackgroundLLM` helper runs the call on an internal background thread: the agent calls `request` during one hook and collects `response` in a later hook, ticks or turns apart. Students never create threads themselves, and the harness gains no submit, poll, or scheduling API. Local computation stays on the hook thread, where CPU time is always chargeable. A background request never blocks a hook, so the existing verified-proxy discount only lowers a later hook's charge to the CPU floor, and `_timed_llm_hook` does not change. The backend's per-request in-flight cap bounds each request's contribution to those exclusions and never aborts it, and session teardown aborts requests still open.
 
-Watchdogs distinguish blocking waits from background requests. The helper marks every call with a background header, the proxy listener reads it, and `KeyRegistry.authenticateRequest` stores the flag on the active request, accruing verified in-flight time in a blocking bucket and a total bucket. The per-hook charging discount and its `/internal/inflight` reading keep the total. The live-session and leaderboard-game chargeable timers switch to a blocking-only `inFlightMs` reading, so an open background request never delays terminating a session that stops making progress, while a synchronous wait still extends the deadline within the per-request cap. An unmarked request counts as blocking.
+Watchdogs distinguish blocking waits from background requests. The helper marks every call with `X-Game-Sandbox-Background: 1`, the proxy listener reads it, and `KeyRegistry.authenticateRequest` stores the flag on the active request, accruing verified in-flight time in a blocking bucket and a total bucket. The per-hook charging discount and its `/internal/inflight` reading keep the existing total-only response. The live-session and leaderboard-game chargeable timers use a backend-only blocking counter exposed through the grant lease, so an open background request never delays terminating a session that stops making progress, while a synchronous wait still extends the deadline within the per-request cap. An absent or invalid marker counts as blocking.
 
 The helper satisfies the credential rule by reading `OPENAI_BASE_URL` and `OPENAI_API_KEY` and constructing its client inside the calling hook, since the harness rebinds those globals per player. The captured key stays valid for the whole session.
 
@@ -142,7 +142,7 @@ The state schema and JSONL envelope do not change. One parallel state line simpl
 
 Update shared consumers that currently assume the first or final entry:
 
-- `frontend/src/pages/SessionPage.vue`, `frontend/src/pages/ReplayPage.vue`, and `frontend/src/composables/useLiveFramePresentation.ts` flatten every action-bearing state entry for the decision log.
+- One shared pure frontend adapter flattens every action-bearing state entry and reduces the latest player scores. `frontend/src/pages/SessionPage.vue`, `frontend/src/pages/ReplayPage.vue`, `frontend/src/composables/useLiveFramePresentation.ts`, and local play consume it.
 - `DecisionLog` keys rows by `(tick, player)` and displays canonical player order within a tick. LLM call lookup continues to use that same pair.
 - `GameThread` groups decision rows by state tick, highlights by tick rather than flattened row index, and appends that state's messages once after the complete decision group.
 - `frontend/src/local/LocalPlayPage.vue` uses the same multi-entry conversion rather than pushing one `toDecision()` result.
@@ -168,13 +168,13 @@ The parallel fixture recording supplies the regression data. No parallel-only tr
 
 [Execution](../../docs/specs/execution.md) states that decisions within a parallel tick run sequentially in one container. It does not promise concurrent CPU and explains that all observations are snapshotted before participant work.
 
-[Recording](../../docs/specs/recording.md) defines a state line as one AEC action, including any non-acting reward-and-lifecycle deltas caused by it, or one parallel tick. A player's final score is the latest cumulative score recorded for that player.
+[Recording](../../docs/specs/recording.md) links to the canonical per-step state shape and states that a player's final score is the latest cumulative score recorded for that player.
 
 [LLM API](../../docs/specs/llm.md) keeps the charging formula and the one-read-per-hook baseline. It replaces the requirement that model calls stay on the hook thread: local computation must run on the hook thread, while a model request may run on an agent-side background thread and stay in flight across hooks and ticks, with the same discount and CPU floor. It documents the in-hook credential-capture rule, admission-time tick recording for successful calls, the rule that live-session and leaderboard-run timeouts exclude only blocking proxy wait so a background-marked request never extends them, and a pointer to the student guide's helper.
 
 [Using the LLM API](../../docs/students/llm.md) gains a cross-tick subsection after the existing synchronous example. It teaches `sandbox.llm.BackgroundLLM` with the chat example above, tells students not to create threads themselves, says the helper serves plain text completions, and notes the text limit.
 
-Update harness package and contributor runtime documentation that currently describes `step_once()` as the sole episode path.
+Harness package and contributor runtime documentation describe `step_once()` and `step_tick()` as the two episode paths.
 
 ## Tests
 

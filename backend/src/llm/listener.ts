@@ -17,7 +17,10 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
   app.post('/v1/chat/completions', async (request, reply) => {
     let releaseAdmission: (() => void) | undefined
     try {
-      const admission = deps.registry.authenticateRequest(readBearer(request.headers.authorization))
+      const admission = deps.registry.authenticateRequest(
+        readBearer(request.headers.authorization),
+        request.headers['x-game-sandbox-background'] === '1',
+      )
       releaseAdmission = admission.release
       return await deps.handler.handle(admission.grant, request.body, {
         signal: admission.signal,

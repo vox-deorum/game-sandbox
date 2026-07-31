@@ -481,6 +481,123 @@ def test_terminal_rewards_credited_to_every_player_not_just_the_actor():
     assert result.failed_player is None  # a clean episode charges no player
 
 
+def test_aec_terminal_rewards_record_nonacting_players_without_synthetic_actions(tmp_path: Path):
+    finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
+    entry = _team_entry(finals)
+    run_episode(
+        entry,
+        {player: ExternalPlayer(ScriptedSource([0])) for player in finals},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+        store=FolderRecordingStore(tmp_path),
+        recording_id="team",
+    )
+
+    states = list(FolderRecordingStore(tmp_path).open("team").steps())
+    terminal = states[-1]["agents"]
+    assert terminal["player_2"]["action"] == 0
+    assert terminal["player_0"] == {"reward": -13.0, "score": -13.0}
+    assert terminal["player_1"] == {"reward": -3.0, "score": -3.0}
+
+
+class EarlyDepartureEnv:
+    """Two-player AEC fixture where player_1 truncates before its first action."""
+
+    possible_agents = ["player_0", "player_1"]
+
+    def reset(self, seed: int | None = None, options: Any = None) -> None:
+        self.agents = self.possible_agents[:]
+        self.agent_selection = "player_0"
+        self.rewards = {player: 0.0 for player in self.agents}
+        self.terminations = {player: False for player in self.agents}
+        self.truncations = {player: False for player in self.agents}
+        self._first = True
+
+    def last(self) -> tuple[int, float, bool, bool, dict[str, object]]:
+        player = self.agent_selection
+        return 0, self.rewards[player], self.terminations[player], self.truncations[player], {}
+
+    def step(self, action: object) -> None:
+        player = self.agent_selection
+        if self.terminations[player] or self.truncations[player]:
+            self.agents.remove(player)
+            self.rewards = {agent: 0.0 for agent in self.agents}
+            if self.agents:
+                self.agent_selection = self.agents[0]
+            return
+        if self._first:
+            self._first = False
+            self.rewards = {"player_0": 0.0, "player_1": 4.0}
+            self.truncations["player_1"] = True
+            self.agent_selection = "player_1"
+            return
+        self.rewards = {"player_0": 1.0}
+        self.terminations["player_0"] = True
+
+
+def _early_departure_entry() -> EnvironmentEntry:
+    return EnvironmentEntry(
+        meta=EnvironmentMeta(
+            env_id="early-departure",
+            display_name="Early departure",
+            description="An AEC lifecycle fixture.",
+            stepping="sequential",
+            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
+            layout=PlayerBounds(2, 2),
+            human_players=("player_0", "player_1"),
+            human_timeout_ms=None,
+            recommended_episode_ticks=2,
+            pace_interval_ms=None,
+            step_limit_ms=1000,
+            episode_limit_ms=120_000,
+            messaging=False,
+            message_cap=None,
+            llm=False,
+            renderer="early-departure",
+        ),
+        make=lambda _parameters: EarlyDepartureEnv(),
+        default_action=lambda _env, _player: 0,
+    )
+
+
+def test_aec_individual_departure_records_reward_only_and_skips_every_later_hook(tmp_path: Path):
+    calls: list[tuple[str, str]] = []
+
+    class Agent:
+        def __init__(self, player: str) -> None:
+            self.player = player
+
+        def reset(self, seed: int) -> None: ...
+
+        def act(self, observation: int) -> int:
+            calls.append((self.player, "act"))
+            return 0
+
+        def learn(self, observation: int, action: int, reward: float, terminated: bool) -> None:
+            calls.append((self.player, "learn"))
+
+    entry = _early_departure_entry()
+    result = run_episode(
+        entry,
+        {"player_0": AgentPlayer(Agent("player_0")), "player_1": AgentPlayer(Agent("player_1"))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=FolderRecordingStore(tmp_path),
+        recording_id="early",
+        player_attribution={
+            player: {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
+            for player in ("player_0", "player_1")
+        },
+    )
+
+    states = list(FolderRecordingStore(tmp_path).open("early").steps())
+    assert states[0]["agents"]["player_1"] == {"reward": 4.0, "score": 4.0}
+    assert calls == [("player_0", "act"), ("player_0", "learn"), ("player_0", "act"), ("player_0", "learn")]
+    assert result.reason == REASON_TRUNCATED
+    assert result.scores == {"player_0": 1.0, "player_1": 4.0}
+
+
 def test_agent_crash_charges_the_failure_to_its_own_player():
     # In a three-player game only player_1's agent raises. The crash must be charged to player_1 alone,
     # so the orchestrator never marks player_0 or player_2 failed for a competitor's bug. The exception

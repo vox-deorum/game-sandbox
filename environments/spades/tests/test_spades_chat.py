@@ -147,7 +147,9 @@ def test_daredevil_cover_provably_depends_on_the_broadcast(tmp_path: Path):
             "player_3": AgentPlayer(Counter()),
         }
         states, result = _play(players, seed=1236, tmp_path=tmp_path / sub, messaging=messaging)
-        player2 = [s["agents"]["player_2"]["action"] for s in states if "player_2" in s["agents"]]
+        player2 = [
+            entry["action"] for state in states if "action" in (entry := state["agents"].get("player_2", {}))
+        ]
         every_message = [m for s in states for m in s.get("messages", [])]
         return player2, every_message, result.scores
 

@@ -73,6 +73,9 @@ export interface LlmGrant {
   recordSink: LlmRecordSink
 }
 
+/** Official grant fields shared by every request before its admission tick binds a record sink. */
+export type OfficialGrantTemplate = Omit<LlmGrant, 'kind' | 'recordSink'> & { kind: 'official' }
+
 /** Mutable hook phase captured by an official telemetry sink and key-registry entry. */
 export interface OfficialTickMarkerRef {
   current: number | null
@@ -80,8 +83,10 @@ export interface OfficialTickMarkerRef {
 
 export interface OfficialKeyEntry {
   sessionId: string
-  grant: LlmGrant
+  grant: OfficialGrantTemplate
   tick: OfficialTickMarkerRef
+  /** Build the immutable telemetry sink for one request's admission-time tick. */
+  recordSinkForTick: (tick: number | null) => LlmRecordSink
 }
 
 export type LlmChatRequest = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming

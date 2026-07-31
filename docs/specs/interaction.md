@@ -22,32 +22,50 @@ Structured state uses less bandwidth and adds less latency than streamed video. 
 
 ## Per-step state object
 
-The harness emits one state object per step. It is both the live wire format and the stored replay format. Each state is a delta for the player who acted. It contains:
+The harness emits one state object per completed environment transition. It is both the live wire format and the stored replay format.
+
+In a sequential environment, the state begins with the player whose action caused the transition. It may also include actionless reward, score, and lifecycle deltas for other players affected by that action. In a simultaneous environment, one state contains every player that acted in the joint tick, in canonical player order.
+
+Each state contains:
 
 - Tick number.
-- Acting player, action, reward, cumulative score, and timing.
+- One or more player entries with the action when one was applied, immediate reward, cumulative score, and optional timing.
 - Environment-specific overlay data needed for rendering, including semantic legal choices when a human can act.
-- Messages sent on that tick.
+- Messages admitted on that boundary.
 - Chat options for the designated human player while that player remains active.
 - Optional observations and action details when an environment chooses to expose them.
 
 The renderer cannot inspect the live environment. Anything needed on screen must appear in state.
 
-A turn-based live session may also emit one opening presentation state after reset, before any player acts. It has no acting-player entry and carries the initial overlay and chat options when available. It uses the state schema for the live renderer but is not a recorded step, so replay begins with the first completed action.
+A live session may also emit one opening presentation state after reset, before any player acts. It has no player entries and carries the initial overlay and chat options when available. An unpaced sequential session emits it when it has something to present. Every simultaneous session emits it before the first cadence interval. A paced sequential session continues to wait for its first recorded state. The opening state uses the ordinary state schema for the live renderer but is not recorded, so replay begins with the first completed transition.
 
 ## Session loop
 
-One PettingZoo agent-environment cycle supports real-time, turn-based, single-agent, and multi-agent environments. A sequential environment advances one acting player at a time:
+A sequential environment advances one acting player at a time:
 
 ```text
-Choose acting player → obtain action or default → step environment → emit state → repeat
+Choose acting player → obtain action or default → step environment → emit one state → repeat
 ```
 
-A simultaneous environment advances every active player in the same step:
+Required PettingZoo dead steps perform lifecycle housekeeping only. They do not invoke participant hooks or emit recorded states. After each real action, the state includes any non-acting player whose reward changed or who became terminated or truncated.
+
+A simultaneous environment advances every active player in one joint tick:
 
 ```text
-Collect each active player's action or default → step environment once → emit state → repeat
+snapshot pre-step world
+        ↓
+collect each action or default in canonical order
+        ↓
+run pre-step chat hooks in canonical order
+        ↓
+step environment once with the complete action map
+        ↓
+learn and emit one multi-player state
 ```
+
+The simultaneous path snapshots the active roster, every observation, and every info mapping before participant work begins. It consumes the designated human's latched action at the cadence boundary, then runs agent actions sequentially in canonical player order. Every agent decides from its saved pre-step observation. All action hooks finish before any chat hook runs, and the environment receives exactly one action for every player that was active in the snapshot.
+
+Participant compute limits remain per player. A late `act` result is replaced only for that player, and every later player still gets its decision opportunity. Chat and learning overruns keep the chosen action and may make the tick finish late. Once a player becomes inactive, it receives no later observation, action, chat, learning, or state entry.
 
 The server is authoritative. The browser never simulates ahead. Human inputs include the controlled player ID.
 
@@ -55,15 +73,17 @@ The transport and state model identify every player, even when a product flow co
 
 The environment's [metadata](environment.md) selects timing:
 
-| Mode | Pace interval | Advance rule |
-| --- | --- | --- |
-| Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. |
-| Sequential real-time | Set | Advance on each cadence, using the latest input or the default action. |
-| Simultaneous | Set (required) | Advance on each cadence with one action per active player, using each player's latest input or its default action. |
+| Mode | Pace interval | Advance rule | Late work |
+| --- | --- | --- | --- |
+| Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. | The next turn begins after the action finishes. |
+| Sequential real-time | Set | Advance on the existing target cadence, using the latest input or the default action. | The scheduler retains its target sequence. |
+| Simultaneous | Set (required) | Treat each cadence boundary as the earliest start of one joint tick, using the latest latched human input or its default action. | Schedule the next boundary one full interval after completion. Never skip a player or run catch-up ticks. |
 
 Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
 
-Live sessions may pause, which freezes stepping, cadence, and in-harness action and episode timing. Pausing does not stop the backend session-duration or idle timers. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
+A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay serialization and input/output are outside that duration. Environment transition time is platform work and is not charged to a participant.
+
+Live sessions may pause, which freezes stepping, cadence, and in-harness action and episode timing. An explicit stop prevents the next transition but does not interrupt participant work already running. Pausing does not stop the backend session-duration or idle timers. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
 
 Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a move clock and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate human-timeout override. The interface shows the active value whenever it affects play.
 

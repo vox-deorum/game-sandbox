@@ -204,7 +204,7 @@ export function spadesHeader(overrides: Partial<RecordingHeader> = {}): Recordin
 
 /** One Flappy Bird step state with a single agent and its cumulative score. */
 export function flappyState(tick: number, score = 0): StepState {
-  const agent: AgentStep = { reward: 0, score }
+  const agent: AgentStep = { reward: 0, score, action: 0 }
   return {
     schema_version: 1,
     tick,
@@ -230,8 +230,12 @@ export function playerState(
   } = {},
 ): StepState {
   const agents: Record<string, AgentStep> = {}
-  for (const player of ['player_0', 'player_1', 'player_2', 'player_3']) {
-    agents[player] = { reward: 0, score: opts.score ?? 0 }
+  for (const [index, player] of ['player_0', 'player_1', 'player_2', 'player_3'].entries()) {
+    agents[player] = {
+      reward: 0,
+      score: opts.score ?? 0,
+      ...(index === tick % 4 ? { action: tick } : {}),
+    }
   }
   const state: StepState = {
     schema_version: 1,

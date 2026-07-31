@@ -329,23 +329,13 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
     assert [event[3] for event in markers] == [
         {"phase": "setup"},
         {"phase": "setup"},
-        {"phase": "setup"},
-        {"phase": "setup"},
-        {"tick": 0},
-        {"tick": 1},
-        {"tick": 2},
-        {"tick": 3},
+        *({"tick": tick} for tick in range(4)),
     ]
     assert all(event[1] == "http://marker.example/internal/tick" for event in markers)
     assert [event[2] for event in markers] == [
         "Bearer key-0",
         "Bearer key-1",
-        "Bearer key-0",
-        "Bearer key-1",
-        "Bearer key-0",
-        "Bearer key-1",
-        "Bearer key-0",
-        "Bearer key-1",
+        *(f"Bearer key-{tick % 2}" for tick in range(4)),
     ]
     assert all(event[4] == 2.0 for event in markers)
 
@@ -358,8 +348,8 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         if event[0] == "hook":
             assert event[5] == expected_key
 
-    # Reduce the trace to ownership boundaries and assert the full order. This proves every load,
-    # reset, and turn marker is immediately before the participant work it describes.
+    # Reduce the trace to ownership boundaries and assert the full order. Credential activation runs
+    # before every hook, while each marker posts only before the first hook for its player and tick.
     boundaries: list[tuple[Any, ...]] = []
     for event in events:
         if event[0] == "marker":
@@ -377,21 +367,13 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         ("marker", "player_1", {"phase": "setup"}),
         ("load", "player_1"),
         ("construct", "player_1"),
-        ("marker", "player_0", {"phase": "setup"}),
         ("hook", "player_0", "reset"),
-        ("marker", "player_1", {"phase": "setup"}),
         ("hook", "player_1", "reset"),
     ]
     for tick in range(4):
         player_id = f"player_{tick % 2}"
-        expected_boundaries.extend(
-            [
-                ("marker", player_id, {"tick": tick}),
-                ("hook", player_id, "act"),
-                ("hook", player_id, "chat"),
-                ("hook", player_id, "learn"),
-            ]
-        )
+        expected_boundaries.append(("marker", player_id, {"tick": tick}))
+        expected_boundaries.extend(("hook", player_id, hook) for hook in ("act", "chat", "learn"))
     assert boundaries == expected_boundaries
 
     turn_hooks = [event[1:3] for event in events if event[0] == "hook" and event[2] != "reset"]
@@ -409,6 +391,70 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         ("player_1", "chat"),
         ("player_1", "learn"),
     ]
+
+
+def test_marker_scope_memoizes_per_player_across_interleaved_hook_phases(monkeypatch):
+    import game_sandbox_harness.live as live
+
+    posts: list[tuple[str, dict[str, object]]] = []
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        posts.append((request.get_header("Authorization"), json.loads(request.data)))
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    scope = live._LlmExecutionScope(
+        LlmConfig(
+            "http://proxy.example/v1",
+            "http://marker.example/internal/tick",
+            "http://marker.example/internal/inflight",
+            {"player_0": "key-0", "player_1": "key-1"},
+        )
+    )
+
+    # Parallel ticks can interleave players across phase boundaries. Each distinct player and tick
+    # posts once, even though turn() still restores credentials before every simulated hook.
+    scope.turn("player_0", 0)  # act
+    scope.turn("player_1", 0)  # act
+    scope.turn("player_0", 0)  # chat
+    scope.turn("player_1", 0)  # chat
+    scope.turn("player_0", 0)  # learn
+    scope.turn("player_1", 0)  # learn
+    scope.turn("player_0", 1)  # act
+
+    assert posts == [
+        ("Bearer key-0", {"tick": 0}),
+        ("Bearer key-1", {"tick": 0}),
+        ("Bearer key-0", {"tick": 1}),
+    ]
+
+
+def test_marker_scope_retries_a_failed_post_on_the_next_hook(monkeypatch):
+    import game_sandbox_harness.live as live
+
+    attempts = 0
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("proxy down")
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    scope = live._LlmExecutionScope(
+        LlmConfig(
+            "http://proxy.example/v1",
+            "http://marker.example/internal/tick",
+            "http://marker.example/internal/inflight",
+            {"player_0": "key-0", "player_1": "key-1"},
+        )
+    )
+
+    scope.turn("player_0", 0)
+    scope.turn("player_0", 0)
+
+    assert attempts == 2
 
 
 def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatch, tmp_path: Path):
@@ -475,7 +521,13 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     )
 
     steps = list(store.open("model-wait").steps())
-    assert [next(iter(step["agents"].values()))["timing"]["decision_ms"] for step in steps] == [
+    decision_ms = [
+        agent["timing"]["decision_ms"]
+        for step in steps
+        for agent in step["agents"].values()
+        if "timing" in agent
+    ]
+    assert decision_ms == [
         100,
         100,
         100,

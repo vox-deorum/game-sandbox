@@ -25,7 +25,7 @@ import {
   type RecordingSummary,
   watchAgentNumbers,
 } from '../api/client.js'
-import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import GameThread from '../components/GameThread.vue'
@@ -47,10 +47,11 @@ import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { describeParameters } from '../lib/parameters.js'
 import { playbackIntervalMs } from '../lib/playback.js'
+import { decisionEntries, type DecisionEntry, type RunSummary } from '../lib/state.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
-import { type RunSummary, summarizeStates } from '../replay/summary.js'
+import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
 const me = useMe()
@@ -64,7 +65,7 @@ const loadError = ref(false)
 const versionMessage = ref<string | null>(null)
 const header = ref<RecordingHeader | null>(null)
 const meta = ref<EnvironmentMeta | null>(null)
-const finalSummary = ref<RunSummary>({ score: null, ticks: null })
+const finalSummary = ref<RunSummary>({ score: null, ticks: null, scores: {} })
 // The terminal frame, kept so the end-of-match leaderboard can read its final scores/overlay. The
 // viewer can dismiss the leaderboard to inspect the final board underneath.
 const finalState = shallowRef<StepState | null>(null)
@@ -126,7 +127,7 @@ const blindAttribution = computed(() => presentsMasked(attributionState.value))
 
 // The panel mounts only for a recording that actually carries messages (a messaging session); it is
 // read-only, with no session row to consult. It shows the entries whose tick is at or before the
-// transport position — the same pattern the decision log uses with :current-index. Targeted messages a
+// transport position, matching the decision log's current-tick highlight. Targeted messages a
 // live spectator never saw are shown here on purpose; that is the recording contract.
 const hasChat = computed(() => chatLog.value.length > 0)
 const visibleChat = computed<ChatEntry[]>(() => {
@@ -209,16 +210,6 @@ function onStageKeydown(event: KeyboardEvent): void {
   onKeydown(event)
 }
 
-/** One decision-log row per state: the first agent's action (single-agent today). */
-function toDecision(state: StepState): DecisionEntry {
-  const playerId = Object.keys(state.agents)[0]
-  return {
-    tick: state.tick,
-    player: playerId ?? '',
-    action: playerId === undefined ? undefined : state.agents[playerId]?.action,
-  }
-}
-
 onMounted(async () => {
   const telemetryPromise = getRecordingLlm(id).catch(() => ({
     ok: false as const,
@@ -256,7 +247,7 @@ onMounted(async () => {
   // The live result envelope is not part of the JSONL recording, so summarize the final state.
   finalSummary.value = summarizeStates(parsed.states)
   finalState.value = parsed.states.at(-1) ?? null
-  decisions.value = parsed.states.map(toDecision)
+  decisions.value = parsed.states.flatMap(decisionEntries)
   // Build the whole message log up front, tagging each message with its state's tick (the wire message
   // carries no tick of its own). The transport position then filters what shows.
   chatLog.value = parsed.states.flatMap((state) =>
@@ -415,6 +406,7 @@ onMounted(async () => {
           v-if="finalState !== null && showGameOver && !gameOverDismissed"
           :state="finalState"
           :header="header"
+          :player-scores="finalSummary.scores"
           :blind="blindAttribution"
           :viewer-id="viewerId"
           :anonymous-numbers="anonymousNumbers"
@@ -435,7 +427,7 @@ onMounted(async () => {
           v-if="hasChat"
           :decisions="decisions"
           :chat="visibleChat"
-          :current-index="replayState.index"
+          :current-tick="replayState.tick"
           :players="header?.players"
           :blind="blindAttribution"
           :viewer-id="viewerId"
@@ -448,7 +440,7 @@ onMounted(async () => {
         <DecisionLog
           v-else
           :entries="decisions"
-          :current-index="replayState.index"
+          :current-tick="replayState.tick"
           :llm-calls="tickLlmCalls"
           :setup-llm-calls="setupLlmCalls"
           :llm-unavailable="llmTelemetryUnavailable"
@@ -464,7 +456,7 @@ onMounted(async () => {
           <GameThread
             :decisions="decisions"
             :chat="visibleChat"
-            :current-index="replayState.index"
+            :current-tick="replayState.tick"
             :players="header?.players"
             :blind="blindAttribution"
             :viewer-id="viewerId"
@@ -479,7 +471,7 @@ onMounted(async () => {
           <summary>Decision log</summary>
           <DecisionLog
             :entries="decisions"
-            :current-index="replayState.index"
+            :current-tick="replayState.tick"
             :llm-calls="tickLlmCalls"
             :setup-llm-calls="setupLlmCalls"
             :llm-unavailable="llmTelemetryUnavailable"

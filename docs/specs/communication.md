@@ -11,7 +11,7 @@ def chat(self, inbox):
     ...
 ```
 
-On the agent's acting opportunity, the harness calls `chat` immediately after `act` and before the environment applies the action. The agent therefore knows its chosen action, but not the outcome of the step. `inbox` contains messages addressed to that player since its previous acting opportunity. Each inbox item includes its sender, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. Its inbox is still drained so unread messages remain bounded. See [Submissions](submission.md).
+On the agent's acting opportunity, the harness calls `chat` after its `act` result is available and before the environment applies the action. In a simultaneous tick, every active player's action finishes before any chat hook begins. The agent therefore knows its own chosen action, but receives no harness access to another player's returned action or the outcome of the step. `inbox` contains messages addressed to that player since its previous acting opportunity. Each inbox item includes its sender, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. Its inbox is still drained so unread messages remain bounded. See [Submissions](submission.md).
 
 ## Messages
 
@@ -45,15 +45,17 @@ human FIFO ─┐
 agent chat ─┘
 ```
 
-One completed step uses this messaging order:
+One completed boundary uses this messaging order:
 
-1. Snapshot the acting observation and obtain the action.
+1. Snapshot the observations used by the boundary and obtain every required action.
 2. Atomically drain the designated human player's message queue.
-3. Use the human policy published on the preceding live state and resolve the acting agent's current pre-step policy.
-4. Validate the human batch, drain the acting player's inbox, and run its optional `chat` hook.
-5. Apply the environment action and run the acting agent's optional `learn` hook.
+3. Use the human policy published on the preceding live state and resolve each chatting agent's current pre-step policy.
+4. Validate the human batch, drain each participating player's inbox, and run optional `chat` hooks.
+5. Apply the environment transition and run applicable `learn` hooks.
 6. Record the accepted human and agent messages on the completed state.
 7. Deliver that batch to recipient inboxes.
+
+A sequential boundary has one acting player. A simultaneous boundary obtains every active player's action first, then runs chat hooks in canonical player order against the unchanged pre-step environment. The recorded message batch lists the human FIFO first, followed by agent batches in canonical player order while retaining each sender's returned order.
 
 The atomic queue drain is the admission cutoff. A browser frame accepted before the drain joins that boundary. A later frame waits for the next completed step. Wall-clock arrival and client-provided ticks do not assign a message to a boundary.
 
@@ -61,7 +63,7 @@ Human messages travel through the session WebSocket to one bounded first-in, fir
 
 The episode retains the human policy published on the latest live state. Every queued human message at the next boundary is validated against that cached pre-step policy, including when another player acts. The completed transition publishes the next policy while the human remains active. Required AEC dead steps neither publish nor replace it.
 
-Accepted messages are recorded on their admitted boundary and delivered only afterward. A message recorded on tick T cannot be read by any `chat` hook on tick T. Its inbox item includes T as the sent tick, and the recipient first reads it at a later acting opportunity. One recorded batch lists the human FIFO first, followed by agent batches in canonical player order while retaining each sender's returned order.
+Accepted messages are recorded on their admitted boundary and delivered only afterward. A message recorded on tick T cannot be read by any `chat` hook on tick T. Its inbox item includes T as the sent tick, and the recipient first reads it at a later acting opportunity.
 
 A completed transition discards the inbox of every player that left on it, and delivery skips a recipient that left the same way, because neither has a later acting opportunity to read on. Once the designated human is inactive, its queued frames are still drained at each boundary and dropped there, so the transport's bound is all that holds them.
 

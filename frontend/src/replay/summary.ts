@@ -1,13 +1,7 @@
 import type { StepState } from '@game-sandbox/schema'
 
 import { formatPlayer } from '../lib/format.js'
-
-// Recordings do not store the trailing result envelope, so replay and terminal-session pages derive
-// their final score and tick count from the readable state prefix instead.
-export interface RunSummary {
-  score: string | null
-  ticks: number | null
-}
+import { latestPlayerScores, type PlayerScoreMap, type RunSummary } from '../lib/state.js'
 
 function formatNumber(value: number): string {
   if (Number.isInteger(value)) {
@@ -16,10 +10,9 @@ function formatNumber(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-export function formatScoreMap(scores: Record<string, unknown>): string | null {
-  const entries = Object.entries(scores)
-    .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
-    .sort(([a], [b]) => a.localeCompare(b))
+export function formatScoreMap(scores: Readonly<PlayerScoreMap>): string | null {
+  // Callers provide an already-sanitized finite PlayerScoreMap.
+  const entries = Object.entries(scores).sort(([a], [b]) => a.localeCompare(b))
   if (entries.length === 0) {
     return null
   }
@@ -33,16 +26,10 @@ export function formatScoreMap(scores: Record<string, unknown>): string | null {
 }
 
 export function summarizeStates(states: readonly StepState[]): RunSummary {
-  const last = states.at(-1)
-  // Agent state stores scores inside each player object, while live result envelopes use player -> score.
-  const scores =
-    last === undefined
-      ? {}
-      : Object.fromEntries(
-          Object.entries(last.agents).map(([playerId, agent]) => [playerId, agent.score]),
-        )
+  const scores = latestPlayerScores(states)
   return {
     score: formatScoreMap(scores),
     ticks: states.length > 0 ? states.length : null,
+    scores,
   }
 }

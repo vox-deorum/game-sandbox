@@ -37,7 +37,7 @@ describe('buildStandings without a header', () => {
       { player_0: 0 },
       { leaderboard_scores: [10, 5, 0, -5], display_scores: [10, 5, 0, -5] },
     )
-    const standings = buildStandings(state, null)
+    const standings = buildStandings(state, null, { player_0: 0 })
     expect(standings.map((row) => row.medal)).toEqual(['gold', 'silver', 'bronze', null])
   })
 
@@ -45,7 +45,7 @@ describe('buildStandings without a header', () => {
   // overlay array. Sizing the rows from `state.agents` would collapse a four-player game to one row.
   it('ranks every player from the overlay, not just the recorded final actor', () => {
     const state = stepState({ player_3: -5 }, { leaderboard_scores: [-2, -17, -2, -5] })
-    const standings = buildStandings(state, null)
+    const standings = buildStandings(state, null, { player_3: -5 })
     expect(standings.map((row) => row.seat)).toEqual(['seat_0', 'seat_2', 'seat_3', 'seat_1'])
     expect(standings.map((row) => row.players)).toEqual([
       ['player_0'],
@@ -57,17 +57,24 @@ describe('buildStandings without a header', () => {
 
   it('shows a single gold row for a single-player game (Flappy Bird pipes)', () => {
     const state = stepState({ player_0: 12 }, { pipes_passed: 42 })
-    const standings = buildStandings(state, null)
+    const standings = buildStandings(state, null, { player_0: 12 })
     expect(standings).toHaveLength(1)
     expect(standings[0]).toMatchObject({ seat: 'seat_0', value: 42, medal: 'gold' })
     expect(standings[0]?.label).toBe('P0') // no header, so the player id is the fallback label
   })
 
-  it('falls back to the rounded cumulative score when the overlay ships no game score', () => {
-    const state = stepState({ player_0: 3.7, player_1: 9.2 })
-    const standings = buildStandings(state, null)
+  it('uses complete cumulative scores when the final state omits an inactive player', () => {
+    const state = stepState({ player_1: 9.2 })
+    const standings = buildStandings(state, null, { player_0: 3.7, player_1: 9.2 })
     expect(standings.map((row) => row.players)).toEqual([['player_1'], ['player_0']])
     expect(standings.map((row) => row.value)).toEqual([9, 4])
+  })
+
+  it('adds complete score-map players when the overlay leaderboard is partial', () => {
+    const state = stepState({ player_1: 9 }, { leaderboard_scores: [3] })
+    const standings = buildStandings(state, null, { player_0: 3, player_1: 9 })
+    expect(standings.map((row) => row.players)).toEqual([['player_1'], ['player_0']])
+    expect(standings.map((row) => row.value)).toEqual([9, 3])
   })
 })
 
@@ -85,6 +92,7 @@ describe('buildStandings', () => {
         player_2: { kind: 'agent', builtin_name: 'naive', label: 'South' },
         player_3: { kind: 'agent', builtin_name: 'naive', label: 'West' },
       }),
+      { player_3: -5 },
     )
 
     expect(standings.map((row) => row.seat)).toEqual(['seat_0', 'seat_2', 'seat_3', 'seat_1'])
@@ -109,6 +117,7 @@ describe('buildStandings', () => {
         },
         { seat_0: ['player_0', 'player_2'], seat_1: ['player_1', 'player_3'] },
       ),
+      { player_3: 3 },
     )
 
     expect(standings).toMatchObject([
@@ -144,6 +153,7 @@ describe('buildStandings', () => {
         },
         { seat_0: ['player_0', 'player_1', 'player_2'] },
       ),
+      { player_0: 4, player_1: 4, player_2: 4 },
     )
 
     expect(standings[0]).toMatchObject({
@@ -173,6 +183,7 @@ describe('buildStandings', () => {
         },
         { seat_0: ['player_0', 'player_1'] },
       ),
+      { player_0: 1, player_1: 1 },
       { blind: true, viewerId: 'viewer', anonymousNumbers: { 'sub-maya': 1 } },
     )
     expect(standings[0]?.label).toBe('Agent 1')
@@ -191,6 +202,7 @@ describe('buildStandings', () => {
         player_0: { kind: 'human', label: 'Some Human' },
         player_1: { kind: 'agent', label: "someone's agent", submission_id: 'sub-x' },
       }),
+      { player_1: -3 },
       { blind: true, viewerId: undefined },
     )
 

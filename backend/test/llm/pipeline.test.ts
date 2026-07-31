@@ -6,8 +6,10 @@ import { APIError } from 'openai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { LlmHandler } from '../../src/llm/handler.js'
+import { createOfficialTickMarker, KeyRegistry } from '../../src/llm/key-registry.js'
+import { buildLlmListener } from '../../src/llm/listener.js'
 import { LlmMeter } from '../../src/llm/meter.js'
-import type { LlmChatCompletion, LlmGrant, OfficialTickMarkerRef } from '../../src/llm/types.js'
+import type { LlmChatCompletion, LlmGrant } from '../../src/llm/types.js'
 import { UpstreamCaller } from '../../src/llm/upstream.js'
 import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
 import { createOfficialRecordSink } from '../../src/storage/llm/official-record-sink.js'
@@ -50,8 +52,9 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     const store = new ExecutionTelemetryStore(root)
     stores.push(store)
     const meter = new LlmMeter()
-    const tick: OfficialTickMarkerRef = { current: initialTick }
-    const grant: LlmGrant = {
+    const tick = createOfficialTickMarker()
+    tick.current = initialTick
+    const grant = {
       kind: 'official',
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
       accountingScope: {
@@ -64,9 +67,9 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
         scopeId: SESSION_ID,
         sessionId: SESSION_ID,
         player: PLAYER,
-        tick,
+        tick: initialTick,
       }),
-    }
+    } satisfies LlmGrant
     const upstream = new UpstreamCaller({
       baseURL: 'http://stub.invalid',
       timeoutMs: 50,
@@ -116,18 +119,50 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     expect(meter.inspect(grant.accountingScope.key).rateEvents).toHaveLength(1)
   })
 
-  it('attributes successful setup and turn calls to the current tick marker', async () => {
-    const client = { create: vi.fn().mockResolvedValue(completion()) }
+  it('persists the admission tick after setup and turn markers change before commit', async () => {
+    const client = { create: vi.fn() }
     const { grant, handler, store, tick } = pipeline(client, null)
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(6))
+    const recordSinkForTick = (admissionTick: number | null) =>
+      createOfficialRecordSink(store, {
+        scopeId: SESSION_ID,
+        sessionId: SESSION_ID,
+        player: PLAYER,
+        tick: admissionTick,
+      })
+    const key = registry.issueOfficial(SESSION_ID, grant, tick, recordSinkForTick)
+    const app = await buildLlmListener({ registry, handler })
+    client.create
+      .mockImplementationOnce(async () => {
+        tick.current = 9
+        return completion()
+      })
+      .mockImplementationOnce(async () => {
+        tick.current = 18
+        return completion()
+      })
 
-    await handler.handle(grant, { model: 'small', messages: [] })
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(setup.statusCode).toBe(200)
     tick.current = 12
-    await handler.handle(grant, { model: 'small', messages: [] })
+    const turn = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(turn.statusCode).toBe(200)
 
     expect(store.listCalls(SESSION_ID)).toEqual([
       expect.objectContaining({ sessionId: SESSION_ID, player: PLAYER, tick: null }),
       expect.objectContaining({ sessionId: SESSION_ID, player: PLAYER, tick: 12 }),
     ])
+    await app.close()
   })
 
   it.each([

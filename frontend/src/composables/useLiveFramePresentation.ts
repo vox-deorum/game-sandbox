@@ -1,12 +1,11 @@
 import type { StepState } from '@game-sandbox/schema'
 import { computed, type Ref, ref } from 'vue'
 
-import type { DecisionEntry } from '../components/DecisionLog.vue'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
+import { type DecisionEntry, decisionEntries } from '../lib/state.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
 interface LiveFramePresentationOptions {
-  viewerPlayers: Readonly<Ref<string[]>>
   status: Readonly<Ref<'starting' | 'running' | 'ended'>>
   paused: Readonly<Ref<boolean>>
   endReason: Readonly<Ref<string | null>>
@@ -17,14 +16,27 @@ interface LiveFramePresentationOptions {
  * this composable keeps their rendered chat, decisions, and status wording consistent.
  */
 export function useLiveFramePresentation({
-  viewerPlayers,
   status,
   paused,
   endReason,
 }: LiveFramePresentationOptions) {
   const decisions = ref<DecisionEntry[]>([])
   const chatLog = ref<ChatEntry[]>([])
+  const seenDecisions = new Set<string>()
   const seenMessages = new Set<string>()
+
+  function appendDecisions(state: StepState): DecisionEntry[] {
+    const appended: DecisionEntry[] = []
+    for (const entry of decisionEntries(state)) {
+      const key = `${entry.tick}\0${entry.player}`
+      if (!seenDecisions.has(key)) {
+        seenDecisions.add(key)
+        decisions.value.push(entry)
+        appended.push(entry)
+      }
+    }
+    return appended
+  }
 
   function appendMessages(state: StepState): void {
     for (const message of state.messages ?? []) {
@@ -34,15 +46,6 @@ export function useLiveFramePresentation({
         seenMessages.add(key)
         chatLog.value.push(entry)
       }
-    }
-  }
-
-  function toDecision(state: StepState): DecisionEntry {
-    const playerId = viewerPlayers.value[0] ?? Object.keys(state.agents)[0]
-    return {
-      tick: state.tick,
-      player: playerId ?? '',
-      action: playerId === undefined ? undefined : state.agents[playerId]?.action,
     }
   }
 
@@ -64,12 +67,12 @@ export function useLiveFramePresentation({
   const completedOutcome = computed(() => isCompletedOutcome(endReason.value))
 
   return {
+    appendDecisions,
     appendMessages,
     chatLog,
     completedOutcome,
     decisions,
     statusLabel,
     statusTone,
-    toDecision,
   }
 }

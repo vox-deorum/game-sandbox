@@ -11,7 +11,8 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from game_sandbox_harness.clock import ManualClock
+import game_sandbox_harness.clock as clock_module
+from game_sandbox_harness.clock import ManualClock, SystemClock
 from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.live_io import (
     PausableClock,
@@ -25,6 +26,21 @@ from game_sandbox_harness.session import EpisodeResult
 from game_sandbox_harness.state import build_header, build_step_state
 
 # --- PausableClock -----------------------------------------------------------------------
+
+
+def test_system_clock_keeps_epoch_time_monotonic_when_the_wall_clock_moves_back(
+    monkeypatch,
+):
+    wall_seconds = 1_700_000_000.0
+    monotonic_ns = 10_000_000_000
+    monkeypatch.setattr(clock_module.time, "time", lambda: wall_seconds)
+    monkeypatch.setattr(clock_module.time, "monotonic_ns", lambda: monotonic_ns)
+    clock = SystemClock()
+
+    wall_seconds -= 2
+    monotonic_ns += 25_000_000
+
+    assert clock.now_ms() == 1_700_000_000_025
 
 
 def test_pausable_clock_passes_through_when_never_paused():

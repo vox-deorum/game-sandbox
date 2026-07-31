@@ -43,7 +43,13 @@ describe('GameOverCard', () => {
       seat_plan: 'solo',
     }
 
-    render(GameOverCard, { props: { state, header } })
+    render(GameOverCard, {
+      props: {
+        state,
+        header,
+        playerScores: { player_0: 10, player_1: 5, player_2: 0, player_3: -5 },
+      },
+    })
 
     // Ranked best-first. Rows are seats, so they carry seat tags ("S0") rather than player tags
     // ("P0"): the two are numbered independently and a seat may cover more than one player.
@@ -75,7 +81,9 @@ describe('GameOverCard', () => {
       seat_plan: 'uneven',
     }
 
-    render(GameOverCard, { props: { state, header } })
+    render(GameOverCard, {
+      props: { state, header, playerScores: { player_0: 10, player_1: 5, player_2: 6 } },
+    })
 
     expect(screen.getByText('S0')).toBeInTheDocument()
     expect(screen.getByText('P0, P2')).toBeInTheDocument()
@@ -99,7 +107,9 @@ describe('GameOverCard', () => {
       seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
       seat_plan: 'solo',
     }
-    render(GameOverCard, { props: { state, header } })
+    render(GameOverCard, {
+      props: { state, header, playerScores: { player_0: 10, player_1: 10 } },
+    })
     expect(screen.getByText('Tied')).toBeInTheDocument()
   })
 })

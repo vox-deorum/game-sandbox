@@ -15,11 +15,14 @@ import { computed } from 'vue'
 import UiButton from './ui/UiButton.vue'
 import { formatSeat, formatPlayer } from '../lib/format.js'
 import { buildStandings } from '../lib/standings.js'
+import type { PlayerScoreMap } from '../lib/state.js'
 
 const props = withDefaults(
   defineProps<{
     state: StepState
     header: RecordingHeader | null
+    /** Complete latest cumulative scores, including players absent from the final state. */
+    playerScores: Readonly<PlayerScoreMap>
     /** Hide submitted-agent ownership while a non-operator views a playable season. */
     blind?: boolean
     /** Lets a blind viewer still recognize their own submitted agent. */
@@ -34,7 +37,7 @@ const emit = defineEmits<{ dismiss: [] }>()
 
 // The labels honour the same blind policy as the per-player attribution line, via the shared helper.
 const standings = computed(() =>
-  buildStandings(props.state, props.header, {
+  buildStandings(props.state, props.header, props.playerScores, {
     blind: props.blind,
     viewerId: props.viewerId,
     anonymousNumbers: props.anonymousNumbers,

@@ -1,10 +1,10 @@
 import { createOfficialTickMarker, type KeyRegistry } from '../llm/key-registry.js'
 import {
-  type LlmGrant,
   type LlmLimits,
   type LlmModelConfig,
   type ModelAlias,
   modelCostWeights,
+  type OfficialGrantTemplate,
 } from '../llm/types.js'
 import { createOfficialRecordSink, type ExecutionTelemetryStore } from '../storage/llm/index.js'
 
@@ -13,11 +13,8 @@ export interface OfficialGrantLease {
   readonly keys: Readonly<Record<string, string>>
   /** Admission closes immediately; resolution is the abort/drain/reservation-finalizer barrier. */
   revoke(): Promise<void>
-  /**
-   * Cumulative in-flight LLM ms for this session (completed calls plus the current call's partial).
-   * Used by outer watchdogs. Optional so existing lease fakes keep compiling.
-   */
-  inFlightMs?(): number
+  /** Optional cumulative blocking proxy wait, supplied by official leases for outer watchdogs. */
+  blockingInFlightMs?(): number
 }
 
 export interface IssueOfficialGrantsInput {
@@ -53,7 +50,14 @@ export function createOfficialGrantIssuer(
       try {
         for (const playerId of input.agentPlayers) {
           const tick = createOfficialTickMarker()
-          const grant: LlmGrant = {
+          const recordSinkForTick = (admissionTick: number | null) =>
+            createOfficialRecordSink(telemetry, {
+              scopeId: input.scopeId,
+              sessionId: input.sessionId,
+              player: playerId,
+              tick: admissionTick,
+            })
+          const grant: OfficialGrantTemplate = {
             kind: 'official',
             models: input.models,
             accountingScope: {
@@ -64,14 +68,8 @@ export function createOfficialGrantIssuer(
               readCommittedUsage: () =>
                 telemetry.readSessionUsageByModel(input.scopeId, input.sessionId, playerId),
             },
-            recordSink: createOfficialRecordSink(telemetry, {
-              scopeId: input.scopeId,
-              sessionId: input.sessionId,
-              player: playerId,
-              tick,
-            }),
           }
-          keys[playerId] = registry.issueOfficial(input.sessionId, grant, tick)
+          keys[playerId] = registry.issueOfficial(input.sessionId, grant, tick, recordSinkForTick)
         }
       } catch (error) {
         // A later player can fail after earlier keys were registered. Do not let a partially issued
@@ -87,8 +85,8 @@ export function createOfficialGrantIssuer(
           revocation ??= Promise.resolve(registry.revokeSession(input.sessionId))
           return revocation
         },
-        inFlightMs(): number {
-          return registry.inFlightMs(input.sessionId)
+        blockingInFlightMs(): number {
+          return registry.blockingInFlightMs(input.sessionId)
         },
       }
     },

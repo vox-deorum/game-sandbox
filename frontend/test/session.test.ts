@@ -469,6 +469,40 @@ describe('SessionPage', () => {
     await waitFor(() => expect(screen.queryByText('No decisions yet.')).toBeNull())
   })
 
+  it('logs every action-bearing player in a state and omits reward-only deltas', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    const view = await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(HEADER)
+    const state = {
+      schema_version: 1,
+      tick: 4,
+      agents: {
+        player_0: { reward: 1, score: 1, action: 'left' },
+        player_1: { reward: 0, score: 0, action: 'right' },
+        player_2: { reward: 2, score: 2 },
+      },
+      timing: { started_at: 0, duration_ms: 1 },
+    } as const
+    handlers.onState(state)
+    handlers.onState(state)
+
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('.decision-log tbody:last-of-type tr')).toHaveLength(
+        2,
+      ),
+    )
+    const log = view.container.querySelector('.decision-log') as HTMLElement
+    const rows = log.querySelectorAll('tbody:last-of-type tr')
+    expect(rows[0]).toHaveTextContent('P0')
+    expect(rows[0]).toHaveTextContent('left')
+    expect(rows[1]).toHaveTextContent('P1')
+    expect(rows[1]).toHaveTextContent('right')
+    expect(log).not.toHaveTextContent('P2')
+  })
+
   it('reflects pause/resume echoes and sends the toggle command', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
@@ -502,6 +536,92 @@ describe('SessionPage', () => {
       'href',
       '/replays/flappy_bird-s1',
     )
+  })
+
+  it('keeps the first result when an immediate stream sends a duplicate', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    const view = await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(HEADER)
+    handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
+    handlers.onResult?.({ ticks: 99, reason: 'stopped', scores: { player_0: 99 } })
+    handlers.onSessionStatus?.('ended')
+
+    const statusBar = view.container.querySelector('.session-status') as HTMLElement
+    expect(await within(statusBar).findByText('Game over')).toBeInTheDocument()
+    expect(within(statusBar).getByText('7')).toBeInTheDocument()
+    expect(within(statusBar).getByText('42')).toBeInTheDocument()
+    expect(within(statusBar).queryByText('Stopped')).toBeNull()
+    expect(within(statusBar).queryByText('99')).toBeNull()
+  })
+
+  it('uses complete result scores when the terminal state omits an inactive player', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
+        },
+        seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 2,
+      agents: { player_1: { reward: 3, score: 3, action: 1 } },
+      timing: { started_at: 0, duration_ms: 1 },
+    })
+    handlers.onResult?.({
+      ticks: 3,
+      reason: 'terminated',
+      scores: { player_0: 7, player_1: 3 },
+    })
+    handlers.onSessionStatus?.('ended', 'terminated')
+
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
+    expect(within(gameOver).getByText('7')).toBeInTheDocument()
+    expect(within(gameOver).getByText('3')).toBeInTheDocument()
+  })
+
+  it('drops malformed result scores before rendering standings', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
+          player_2: { kind: 'agent', builtin_name: 'naive', label: 'West' },
+          player_3: { kind: 'agent', builtin_name: 'naive', label: 'East' },
+        },
+        seats: {
+          seat_0: ['player_0'],
+          seat_1: ['player_1'],
+          seat_2: ['player_2'],
+          seat_3: ['player_3'],
+        },
+      }),
+    )
+    handlers.onState(flappyState(1, 7))
+    handlers.onResult?.({
+      ticks: 2,
+      reason: 'terminated',
+      scores: { player_0: 7, player_1: Number.NaN, player_2: '3', player_3: Infinity },
+    })
+    handlers.onSessionStatus?.('ended', 'terminated')
+
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(1)
+    expect(within(gameOver).getByText('7')).toBeInTheDocument()
+    expect(gameOver).not.toHaveTextContent('NaN')
   })
 
   it('reveals the rating panel above the canvas only after the session ends', async () => {
@@ -710,6 +830,47 @@ describe('SessionPage', () => {
     expect(drawn.at(-1)).toMatchObject({ tick: 2 })
   })
 
+  it('rebuilds complete standings for a directly opened ended session', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
+    const players = {
+      player_0: { kind: 'agent' as const, builtin_name: 'naive', label: 'North' },
+      player_1: { kind: 'agent' as const, builtin_name: 'naive', label: 'South' },
+    }
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [
+          {
+            schema_version: 1,
+            tick: 0,
+            agents: {
+              player_0: { reward: 7, score: 7, action: 0 },
+              player_1: { reward: 0, score: 0, action: 1 },
+            },
+            timing: { started_at: 0, duration_ms: 1 },
+          },
+          {
+            schema_version: 1,
+            tick: 1,
+            agents: { player_1: { reward: 3, score: 3, action: 1 } },
+            timing: { started_at: 1, duration_ms: 1 },
+          },
+        ],
+        {
+          players,
+          seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+        },
+      ),
+    )
+
+    await renderSession()
+
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
+    expect(within(gameOver).getByText('7')).toBeInTheDocument()
+    expect(within(gameOver).getByText('3')).toBeInTheDocument()
+  })
+
   it('gives a spectator no controls and no input', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
@@ -779,8 +940,41 @@ describe('SessionPage', () => {
       expect(drawn).toHaveLength(3)
       // The held end is revealed: both the status badge (reasonText) and the new game-over
       // leaderboard card show, so disambiguate to the card and check the held result fact.
-      expect(screen.getByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
-      expect(screen.getByText('7')).toBeInTheDocument()
+      const gameOver = screen.getByRole('dialog', { name: 'Game over' })
+      expect(gameOver).toBeInTheDocument()
+      expect(within(gameOver).getByText('7')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the first held result when a buffered stream sends a duplicate', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    const view = await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(HEADER)
+      handlers.onState(flappyState(0, 1))
+      handlers.onState(flappyState(1, 2))
+      handlers.onState(flappyState(2, 3))
+      handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
+      handlers.onResult?.({ ticks: 99, reason: 'stopped', scores: { player_0: 99 } })
+      handlers.onSessionStatus?.('ended')
+
+      vi.advanceTimersByTime(150)
+      await nextTick()
+
+      const gameOver = screen.getByRole('dialog', { name: 'Game over' })
+      expect(within(gameOver).getByText('7')).toBeInTheDocument()
+      expect(within(gameOver).queryByText('99')).toBeNull()
+      const statusBar = view.container.querySelector('.session-status') as HTMLElement
+      expect(within(statusBar).getByText('Game over')).toBeInTheDocument()
+      expect(within(statusBar).getByText('42')).toBeInTheDocument()
+      expect(within(statusBar).queryByText('Stopped')).toBeNull()
+      expect(within(statusBar).queryByText('99')).toBeNull()
     } finally {
       vi.useRealTimers()
     }

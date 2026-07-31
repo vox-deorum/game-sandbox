@@ -49,10 +49,10 @@ def _policy_fields(policy: object) -> tuple[object, object] | None:
 class ChatRouter:
     """Routes and validates messages for one episode's players.
 
-    Owns the pending inboxes only; the accepted batch for a tick is returned to the caller
-    (the :class:`~game_sandbox_harness.session.Episode`), which records it and hands it back to
-    :meth:`deliver` at the end of the step. The cap counts Unicode code points (``len(text)`` on a
-    Python ``str``), pinned here so both sides of every boundary agree.
+    Owns the pending inboxes only. The participant runner owns accepted batches and delivery, while
+    the episode records a batch before asking the runner to deliver it at the end of the step. The
+    cap counts Unicode code points (``len(text)`` on a Python ``str``), pinned here so both sides
+    of every boundary agree.
     """
 
     def __init__(self, player_ids: Iterable[str], cap: int | None) -> None:

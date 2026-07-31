@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { LlmSuccessfulRecord, OfficialTickMarkerRef } from '../../../src/llm/types.js'
+import type { LlmSuccessfulRecord } from '../../../src/llm/types.js'
 import { ExecutionTelemetryStore } from '../../../src/storage/llm/execution-telemetry.js'
 import { createOfficialRecordSink } from '../../../src/storage/llm/official-record-sink.js'
 
@@ -46,18 +46,22 @@ describe('createOfficialRecordSink', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('reads the tick at commit time and maps successful records into official rows', () => {
-    const tick: OfficialTickMarkerRef = { current: null }
-    const sink = createOfficialRecordSink(store, {
+  it('maps immutable admission ticks and successful records into official rows', () => {
+    const setupSink = createOfficialRecordSink(store, {
       scopeId: 'run-1',
       sessionId: 'game-1',
       player: 'player_2',
-      tick,
+      tick: null,
+    })
+    const turnSink = createOfficialRecordSink(store, {
+      scopeId: 'run-1',
+      sessionId: 'game-1',
+      player: 'player_2',
+      tick: 14,
     })
 
-    sink(SUCCESS)
-    tick.current = 14
-    sink({ ...SUCCESS, usageEstimated: false, latencyMs: 20 })
+    setupSink(SUCCESS)
+    turnSink({ ...SUCCESS, usageEstimated: false, latencyMs: 20 })
 
     expect(store.listCalls('run-1')).toEqual([
       {
@@ -102,7 +106,7 @@ describe('createOfficialRecordSink', () => {
       scopeId: 'live-session',
       sessionId: 'live-session',
       player: 'player_0',
-      tick: { current: null },
+      tick: null,
     })
 
     sink(SUCCESS)

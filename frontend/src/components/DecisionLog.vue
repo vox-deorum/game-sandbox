@@ -15,23 +15,18 @@ import { computed, ref } from 'vue'
 import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { formatAction, formatPlayer } from '../lib/format.js'
+import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
 import RequestResponseView from './RequestResponseView.vue'
 import UiButton from './ui/UiButton.vue'
 import UiDialog from './ui/UiDialog.vue'
 
-export interface DecisionEntry {
-  tick: number
-  player: string
-  action: unknown
-}
-
 const props = withDefaults(
   defineProps<{
     entries: DecisionEntry[]
-    /** The row to mark current and scroll to (a scrubbed replay). Null follows the latest row (live). */
-    currentIndex?: number | null
+    /** The state tick to mark current (a replay). Null follows the latest tick (live). */
+    currentTick?: number | null
     /** Successful calls attached to normal decisions. Null-tick calls use setupLlmCalls instead. */
     llmCalls?: RecordingLlmCall[]
     /** Successful setup calls, kept separate so they never change decision indexes. */
@@ -41,7 +36,7 @@ const props = withDefaults(
     /** Telemetry is still loading. Every decision cell reports that state instead of a false empty result. */
     llmPending?: boolean
   }>(),
-  { currentIndex: null, llmUnavailable: false, llmPending: false },
+  { currentTick: null, llmUnavailable: false, llmPending: false },
 )
 
 interface SetupRow {
@@ -97,11 +92,14 @@ function inspect(calls: RecordingLlmCall[]): void {
   inspectorOpen.value = true
 }
 
+const activeTick = computed(() => props.currentTick ?? props.entries.at(-1)?.tick ?? null)
 const activeIndex = computed(() =>
-  props.currentIndex ?? (props.entries.length > 0 ? props.entries.length - 1 : -1),
+  activeTick.value === null
+    ? -1
+    : props.entries.findIndex((entry) => entry.tick === activeTick.value),
 )
 
-// Follow the active row: a live log tracks the latest tick, a scrubbed replay tracks the scrubber.
+// Follow the first row in the active tick group. Every same-tick row receives the visual highlight.
 const scroller = useActiveRowScroll(
   () => props.entries.length + setupRows.value.length,
   () => activeIndex.value,
@@ -144,8 +142,8 @@ const scroller = useActiveRowScroll(
       <tbody>
         <tr
           v-for="(entry, i) in entries"
-          :key="entry.tick"
-          :data-active="i === activeIndex || undefined"
+          :key="`${entry.tick}:${entry.player}`"
+          :data-active="entry.tick === activeTick || undefined"
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
           <td class="player-col">

@@ -190,14 +190,18 @@ The finalizer stores the result, notifies clients, kills the container if needed
 
 ## Container-side live runner
 
-`python -m game_sandbox_harness.live` uses the same `Episode.step_once` path as headless execution.
+`python -m game_sandbox_harness.live` and headless execution both call `Episode.advance()`. The environment's required `stepping` metadata selects one of two PettingZoo-specific paths:
 
-For an official LLM-enabled session, the launch configuration supplies `inflight_url` alongside the model endpoint and tick-marker URL. The harness subtracts that player's verified proxy-time change around each `act`, `chat`, and `learn` hook. It reuses a valid post-hook reading as the next baseline, so the steady-state path makes one synchronous bounded read per hook and a request still in flight between two hooks is discounted from the later one. Calling-thread CPU remains chargeable, which bounds that discount. If a required reading fails, it charges the full hook time. Module loading, construction, and `reset` are setup work outside turn timing. Live-session and workflow watchdogs use the same per-request bounded credit, while idle timeout remains wall-clock time.
+- `Episode.step_once()` consumes one real AEC action and any required dead-step housekeeping.
+- `Episode.step_tick()` snapshots every active parallel observation, gathers participant work sequentially, applies one joint action mapping, and records one multi-entry state.
 
-The only pacing branch reads environment metadata:
+For an official LLM-enabled session, the launch configuration supplies `inflight_url` alongside the model endpoint and tick-marker URL. The harness restores the current player's base URL and key before every `act`, `chat`, and `learn` hook, and posts that player's tick marker when it changes. It subtracts that player's total verified proxy-time change around each hook, reusing a valid post-hook reading as the next baseline. Hook-thread CPU remains chargeable, and a failed reading charges the full hook time. Module loading, construction, and `reset` are setup work outside turn timing. The template's `BackgroundLLM` helper may continue across hooks and ticks, while watchdogs use the blocking-only counter. See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).
 
-- With `pace_interval_ms`, wait for the cadence and use the latest latched human input.
-- Without it, block for a turn-based human action until the move clock expires.
+Live pacing keeps separate scheduler branches:
+
+- Sequential paced environments retain their target cadence and use the latest latched human input.
+- Simultaneous environments emit an opening state, wait one full interval before tick 0, and schedule every later boundary one interval after the previous tick completes. They never issue catch-up ticks.
+- Sequential environments without a pace interval block for the acting human until the move clock expires.
 
 Pausing uses a `PausableClock`, so cadence and decision-time accounting stop together. Headless runs do not construct this live loop.
 

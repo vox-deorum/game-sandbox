@@ -1,7 +1,12 @@
 import { randomBytes } from 'node:crypto'
 
 import { LlmError } from './errors.js'
-import type { LlmGrant, OfficialKeyEntry, OfficialTickMarkerRef } from './types.js'
+import type {
+  LlmGrant,
+  OfficialGrantTemplate,
+  OfficialKeyEntry,
+  OfficialTickMarkerRef,
+} from './types.js'
 
 type RandomKeyBytes = (size: number) => Uint8Array
 
@@ -11,10 +16,11 @@ const DEFAULT_MAX_REQUEST_MS = 600_000
 export interface KeyRegistryOptions {
   now?: () => number
   /**
-   * Upper bound on how much a single in-flight request may contribute to {@link KeyRegistry.inFlightMs},
-   * matching its configured attempt timeouts and default SDK retry waits. Provider-directed waits
-   * beyond this allowance and a per-attempt timeout that never fires remain capped, so outer
-   * watchdog discounting can rely on a stuck request's contribution being bounded.
+   * Upper bound on how much a single in-flight request may contribute to
+   * {@link KeyRegistry.inFlightMsForScope} and {@link KeyRegistry.blockingInFlightMs}, matching its
+   * configured attempt timeouts and default SDK retry waits. Provider-directed waits beyond this
+   * allowance and a per-attempt timeout that never fires remain capped, so outer watchdog discounting
+   * can rely on a stuck request's contribution being bounded.
    */
   maxRequestMs?: number
 }
@@ -33,6 +39,7 @@ interface OfficialRequestState {
   cancellable: boolean
   scopeKey: string
   startedAt: number
+  background: boolean
 }
 
 /** One admitted official request. Releasing it settles the session revocation barrier. */
@@ -50,6 +57,8 @@ export class KeyRegistry {
   private readonly sessions = new Map<string, OfficialSessionState>()
   /** Cumulative capped in-flight ms per accounting-scope key, spanning success and failure alike. */
   private readonly inFlightByScope = new Map<string, number>()
+  /** Blocking subset of cumulative in-flight ms, used only by outer execution watchdogs. */
+  private readonly blockingInFlightByScope = new Map<string, number>()
   /** Active requests by accounting scope, used by the hook-timing control read. */
   private readonly activeRequestsByScope = new Map<string, Set<OfficialRequestState>>()
   private readonly now: () => number
@@ -63,7 +72,12 @@ export class KeyRegistry {
     this.maxRequestMs = options.maxRequestMs ?? DEFAULT_MAX_REQUEST_MS
   }
 
-  issueOfficial(sessionId: string, grant: LlmGrant, tick: OfficialTickMarkerRef): string {
+  issueOfficial(
+    sessionId: string,
+    grant: OfficialGrantTemplate,
+    tick: OfficialTickMarkerRef,
+    recordSinkForTick: (tick: number | null) => LlmGrant['recordSink'],
+  ): string {
     let state = this.sessions.get(sessionId)
     if (state?.closed === true) {
       throw new Error(`Cannot issue an LLM key while session ${sessionId} is being revoked`)
@@ -73,22 +87,24 @@ export class KeyRegistry {
     do {
       bearer = `sk-sandbox-${Buffer.from(this.random(32)).toString('hex')}`
     } while (this.official.has(bearer))
-    this.official.set(bearer, { sessionId, grant, tick })
+    this.official.set(bearer, { sessionId, grant, tick, recordSinkForTick })
     state.keys.add(bearer)
     state.scopeKeys.add(grant.accountingScope.key)
     this.sessions.set(sessionId, state)
     return bearer
   }
 
-  authenticateRequest(bearer: string): OfficialRequestAdmission {
+  authenticateRequest(bearer: string, background = false): OfficialRequestAdmission {
     const entry = this.lookup(bearer)
     const state = this.sessions.get(entry.sessionId)
     if (state === undefined || state.closed) throw invalidKey()
+    const requestGrant = { ...entry.grant, recordSink: entry.recordSinkForTick(entry.tick.current) }
     const requestState: OfficialRequestState = {
       controller: new AbortController(),
       cancellable: true,
       scopeKey: entry.grant.accountingScope.key,
       startedAt: this.now(),
+      background,
     }
     state.activeRequests.add(requestState)
     const activeRequests = this.activeRequestsByScope.get(requestState.scopeKey) ?? new Set()
@@ -97,7 +113,7 @@ export class KeyRegistry {
 
     let released = false
     return {
-      grant: entry.grant,
+      grant: requestGrant,
       signal: requestState.controller.signal,
       beginFinalization: () => {
         requestState.cancellable = false
@@ -110,6 +126,12 @@ export class KeyRegistry {
         const elapsed = this.activeRequestMs(requestState, this.now())
         const scopeKey = requestState.scopeKey
         this.inFlightByScope.set(scopeKey, (this.inFlightByScope.get(scopeKey) ?? 0) + elapsed)
+        if (!requestState.background) {
+          this.blockingInFlightByScope.set(
+            scopeKey,
+            (this.blockingInFlightByScope.get(scopeKey) ?? 0) + elapsed,
+          )
+        }
         state.activeRequests.delete(requestState)
         const activeRequests = this.activeRequestsByScope.get(scopeKey)
         activeRequests?.delete(requestState)
@@ -129,15 +151,20 @@ export class KeyRegistry {
     return total
   }
 
-  /** Cumulative in-flight ms for a session: completed requests plus each active request's capped partial. */
-  inFlightMs(sessionId: string): number {
+  /**
+   * Cumulative blocking in-flight ms for a session.
+   *
+   * Background-marked requests remain part of total hook-time accounting, but never extend the
+   * live-session or leaderboard-game watchdog.
+   */
+  blockingInFlightMs(sessionId: string): number {
     const state = this.sessions.get(sessionId)
     if (state === undefined) return 0
     let total = 0
-    for (const scopeKey of state.scopeKeys) total += this.inFlightByScope.get(scopeKey) ?? 0
+    for (const scopeKey of state.scopeKeys) total += this.blockingInFlightByScope.get(scopeKey) ?? 0
     const now = this.now()
     for (const request of state.activeRequests) {
-      total += this.activeRequestMs(request, now)
+      if (!request.background) total += this.activeRequestMs(request, now)
     }
     return total
   }
@@ -175,7 +202,10 @@ export class KeyRegistry {
   private finishRevocation(sessionId: string, state: OfficialSessionState): void {
     if (this.sessions.get(sessionId) !== state) return
     this.sessions.delete(sessionId)
-    for (const scopeKey of state.scopeKeys) this.inFlightByScope.delete(scopeKey)
+    for (const scopeKey of state.scopeKeys) {
+      this.inFlightByScope.delete(scopeKey)
+      this.blockingInFlightByScope.delete(scopeKey)
+    }
     state.resolveDrain()
   }
 }

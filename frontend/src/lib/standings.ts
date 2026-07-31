@@ -3,6 +3,7 @@ import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { reduceSeatScore } from '@game-sandbox/schema/environment'
 
 import { type AttributionContext, seatControllerLabel } from './attribution.js'
+import type { PlayerScoreMap } from './state.js'
 
 export type Medal = 'gold' | 'silver' | 'bronze'
 
@@ -19,22 +20,24 @@ export interface Standing {
 
 /**
  * Build best-first final standings. The header's seat map is authoritative: overlay arrays and
- * per-player state scores are reduced by each seat's ordered members, so one wide seat produces one
+ * complete per-player scores are reduced by each seat's ordered members, so one wide seat produces one
  * row. Repeated controller labels collapse, while a mixed seat puts its human controller first.
  */
 export function buildStandings(
   state: StepState,
   header: RecordingHeader | null,
+  playerScores: Readonly<PlayerScoreMap>,
   attribution: AttributionContext = {},
 ): Standing[] {
   const overlay = state.overlay
   const leaderboard = numberArray(overlay?.leaderboard_scores)
   const displayScores = numberArray(overlay?.display_scores)
   const pipes = typeof overlay?.pipes_passed === 'number' ? overlay.pipes_passed : null
-  const seats = header === null ? headerlessSeats(state, leaderboard) : Object.entries(header.seats)
+  const seats =
+    header === null ? headerlessSeats(playerScores, leaderboard) : Object.entries(header.seats)
 
   const rows = seats.flatMap(([seat, players]) => {
-    const rankScores = players.map((player) => rankScoreOf(player, leaderboard, state))
+    const rankScores = players.map((player) => rankScoreOf(player, leaderboard, playerScores))
     if (rankScores.some((score) => score === null)) {
       return []
     }
@@ -71,17 +74,21 @@ export function buildStandings(
 }
 
 /**
- * One seat per player when there is no header to group by. The overlay's leaderboard array is the
- * complete, player-indexed picture and `state.agents` is not: a recording stores only the acting
- * player each tick, so a four-player terminal frame carries just the last one. Size the seats from
- * the overlay whenever it is present, and fall back to the recorded agents only when it is not
- * (a single-player environment, where that map is complete).
+ * One seat per player when there is no header to group by. Overlay leaderboard positions come first,
+ * then the complete score map adds any players a partial overlay omitted.
  */
-function headerlessSeats(state: StepState, leaderboard: number[] | null): [string, string[]][] {
-  const players =
-    leaderboard === null
-      ? Object.keys(state.agents)
-      : leaderboard.map((_score, index) => `player_${index}`)
+function headerlessSeats(
+  playerScores: Readonly<PlayerScoreMap>,
+  leaderboard: number[] | null,
+): [string, string[]][] {
+  const players = leaderboard === null ? [] : leaderboard.map((_score, index) => `player_${index}`)
+  const included = new Set(players)
+  for (const player of Object.keys(playerScores)) {
+    if (!included.has(player)) {
+      players.push(player)
+      included.add(player)
+    }
+  }
   return players.map((player, index) => [`seat_${index}`, [player]])
 }
 
@@ -92,10 +99,14 @@ function headerlessSeats(state: StepState, leaderboard: number[] | null): [strin
  * recorded score keeps that seat in the standings; without it the seat would be dropped and the card
  * would quietly show fewer competitors than played.
  */
-function rankScoreOf(player: string, overlay: number[] | null, state: StepState): number | null {
+function rankScoreOf(
+  player: string,
+  overlay: number[] | null,
+  playerScores: Readonly<PlayerScoreMap>,
+): number | null {
   const index = playerIndex(player)
   const fromOverlay = overlay !== null && index !== null ? overlay[index] : undefined
-  return fromOverlay ?? state.agents[player]?.score ?? null
+  return fromOverlay ?? playerScores[player] ?? null
 }
 
 /**

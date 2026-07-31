@@ -648,11 +648,9 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   // and the decision log grows — the DOM-observable proof that the on-screen human play registered and
   // advanced the hand.
   await canvas.click({ position: twoOfClubs })
-  // The decision log growing from empty to one row is the DOM-observable proof the on-screen play
-  // registered and advanced the hand. The host renders the controlled player (here player_0, the
-  // seed-chosen 2♣ leader) and attributes every log row to it, so this smoke-tests player_0;
-  // a per-row player assertion would be tautological, and narrowing controlledPlayers to an arbitrary
-  // assigned player is step 6's job. The row-count advance is the honest signal.
+  // The decision log growing from empty to one row proves the on-screen player_0 move registered and
+  // advanced the hand. Later automated turns are attributed to the player whose action each state
+  // carries.
   await expect(decisionRows.first()).toBeVisible({ timeout: 30_000 })
 
   // Stop the still-running human session and wait until the backend frees this user's single active
@@ -706,6 +704,13 @@ test('a multi-agent Hearts recording replays with per-player attribution and tri
     const decisionLog = page.locator('.decision-log')
     await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
     await expect(decisionLog.getByText('None').first()).toBeVisible()
+    const decisionRows = decisionLog.locator('tbody:last-of-type tr')
+    // A complete Hearts hand has 52 real AEC actions. Reward-only score or lifecycle entries share a
+    // state with an action and must not create extra rows.
+    await expect(decisionRows).toHaveCount(52)
+    for (const player of ['P0', 'P1', 'P2', 'P3']) {
+      await expect(decisionRows.getByText(player).first()).toBeVisible()
+    }
 
     // Per-player attribution: the PlayerAttribution line names every player and who drove it. A
     // four-player Hearts recording shows all four players; the submitted player reads the owner's-agent
@@ -725,6 +730,13 @@ test('a multi-agent Hearts recording replays with per-player attribution and tri
     await expect(position).toContainText('2/')
     // The scrubber is the Reka UiSlider (a span with role=slider), present and operable.
     await expect(page.getByRole('slider')).toBeVisible()
+
+    // The replay summary retains each player's latest score even if the final AEC state does not carry
+    // every player. The complete four-seat standings appear at the final recorded action.
+    const stage = page.getByRole('group', { name: 'Replay stage' })
+    await stage.click()
+    await stage.press('End')
+    await expect(page.getByRole('dialog', { name: 'Game over' }).locator('.row')).toHaveCount(4)
   } finally {
     rmSync(stagedDir, { recursive: true, force: true })
   }

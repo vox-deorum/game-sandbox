@@ -31,6 +31,12 @@ import type { Command } from '@game-sandbox/schema/protocol'
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
+import {
+  latestPlayerScores,
+  type PlayerScoreMap,
+  type RunSummary,
+  toPlayerScores,
+} from '../lib/state.js'
 import type { RenderOptions } from '../renderers/types.js'
 import { formatScoreMap } from '../replay/summary.js'
 
@@ -70,7 +76,10 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const status = ref<'starting' | 'running' | 'ended'>('starting')
   const paused = ref(false)
   const endReason = ref<string | null>(null)
-  const finalResult = ref<{ score: string | null; ticks: number | null } | null>(null)
+  const finalResult = ref<RunSummary | null>(null)
+  // The latest recorded score for every player seen on the transport. This remains complete when an
+  // individually inactive player is absent from later frames and covers reconnect until result arrives.
+  const accumulatedScores = shallowRef<PlayerScoreMap>({})
   // Transport-authoritative state advances on receipt, before optional visual pacing. Interactive
   // policy such as chat must follow the harness immediately even while the renderer animates older
   // queued frames.
@@ -80,6 +89,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const buffering = ref(false)
   // shallowRef: the socket is an imperative class, not reactive data.
   const socket = shallowRef<SessionSocket | null>(null)
+  let connectionId = 0
 
   // --- watch jitter buffer ---
   // The buffer of frames awaiting their cadence tick, the timer that drains it, whether playout has
@@ -94,15 +104,19 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   let endHeld = false
   let heldEndReason: string | null = null
   let heldResult: Record<string, unknown> | null = null
+  // The protocol promises one result at session end. Keep the first result from the active connection
+  // if a malformed producer repeats it, matching the relay's retained result and termination reason.
+  let resultSeen = false
   // The live human throttle cadence (ms); 0 disables it (the on-arrival default). Reuses frameQueue,
   // paceTimer, and the end-hold above — a session is at most one of the two paced modes.
   let liveMs = 0
 
   function applyResult(value: Record<string, unknown>): void {
-    const scores = (value.scores ?? {}) as Record<string, number>
+    const scores = toPlayerScores(value.scores)
     finalResult.value = {
       score: formatScoreMap(scores),
       ticks: typeof value.ticks === 'number' ? value.ticks : null,
+      scores,
     }
     if (typeof value.reason === 'string') {
       endReason.value = value.reason
@@ -139,6 +153,25 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       clearInterval(paceTimer)
       paceTimer = null
     }
+  }
+
+  /** Retire the current transport before starting another explicit connection. */
+  function retireConnection(): void {
+    connectionId += 1
+    stopPacer()
+    frameQueue.length = 0
+    pacing = false
+    cadence = DEFAULT_WATCH_CADENCE_MS
+    leadFrames = 1
+    playing = false
+    endHeld = false
+    heldEndReason = null
+    heldResult = null
+    resultSeen = false
+    liveMs = 0
+    buffering.value = false
+    socket.value?.close()
+    socket.value = null
   }
 
   /** Play the next buffered frame; once the buffer drains and the stream has ended, reveal game over.
@@ -188,6 +221,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
    *  entirely for an already-ended session (a historical view with no live transport). Pass
    *  `pace` for a watch run so frames play at the environment's cadence rather than as they arrive. */
   function connect(options: ConnectOptions = {}): void {
+    retireConnection()
+    const activeConnectionId = connectionId
     pacing = options.pace === true
     cadence =
       pacing && typeof options.paceMs === 'number' && options.paceMs > 0
@@ -198,12 +233,21 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     // declares a positive cadence.
     liveMs =
       !pacing && typeof options.liveMs === 'number' && options.liveMs > 0 ? options.liveMs : 0
-    playing = false
-    buffering.value = false
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
-      onHeader: frames.onHeader,
+      onHeader: (header) => {
+        if (connectionId === activeConnectionId) {
+          frames.onHeader(header)
+        }
+      },
       onState: (state) => {
+        if (connectionId !== activeConnectionId) {
+          return
+        }
         latestState.value = state
+        accumulatedScores.value = {
+          ...accumulatedScores.value,
+          ...latestPlayerScores([state]),
+        }
         if (pacing) {
           frameQueue.push(state)
           maybeStart(false)
@@ -214,6 +258,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         }
       },
       onSessionStatus: (next, reason) => {
+        if (connectionId !== activeConnectionId) {
+          return
+        }
         if (next === 'running') {
           status.value = 'running'
           return
@@ -237,12 +284,23 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         applyEnd(reason ?? endReason.value)
       },
       onPause: () => {
-        paused.value = true
+        if (connectionId === activeConnectionId) {
+          paused.value = true
+        }
       },
       onResume: () => {
-        paused.value = false
+        if (connectionId === activeConnectionId) {
+          paused.value = false
+        }
       },
       onResult: (value) => {
+        if (connectionId !== activeConnectionId) {
+          return
+        }
+        if (resultSeen) {
+          return
+        }
+        resultSeen = true
         // In either paced mode (watch buffer or live throttle) the result is held and revealed with the
         // last frame, so the score does not surface ahead of the final animation; otherwise apply now.
         if (pacing || liveMs > 0) {
@@ -252,7 +310,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         applyResult(value)
       },
       onConnectionChange: (state) => {
-        connection.value = state
+        if (connectionId === activeConnectionId) {
+          connection.value = state
+        }
       },
     })
     socket.value = client
@@ -274,9 +334,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   }
 
   function close(): void {
-    stopPacer()
-    socket.value?.close()
-    socket.value = null
+    retireConnection()
+    connection.value = 'closed'
   }
 
   onBeforeUnmount(close)
@@ -288,6 +347,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     buffering,
     endReason,
     finalResult,
+    accumulatedScores,
     latestState,
     connect,
     send,

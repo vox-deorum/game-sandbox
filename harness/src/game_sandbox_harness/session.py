@@ -1,19 +1,14 @@
 """The single session loop and the step machinery beneath it.
 
-One loop serves realtime and turn-based environments alike: each step asks the acting player
-for an action under a deadline and applies the environment-provided default action if the
-deadline passes. The realtime-versus-turn-based difference is the environment's pace
-interval, which is a Stage 3 live-session pacing concern; the machinery here has no pacing
-and steps as fast as the acting player produces actions.
+One loop serves sequential and simultaneous environments alike. A sequential step asks its
+acting player for an action, while a parallel tick snapshots every active player before it
+collects their actions. Live pacing remains outside this module, and headless callers advance
+without a wall-clock cadence.
 
-The machinery is exposed as an :class:`Episode`: it owns the reset env, the recording writer,
-and the per-player accounting, and advances exactly one PettingZoo cycle per
-:meth:`Episode.step_once`. :func:`run_episode` is a thin loop over it
-(``while not episode.done: episode.step_once()``),
-and Stage 3's live runner is a second thin loop over the *same* ``step_once`` that adds wall-clock
-pacing and pause/stop handling around it. There is one code path, and the pace interval is the only
-branch. The Stage 2 determinism fixtures are the regression gate for this split: a recording
-produced through :class:`Episode` is byte-identical to the pre-refactor loop.
+The machinery is exposed as an :class:`Episode`: it owns the reset env and recording writer,
+delegates participant accounting to a private runner, and advances one declared unit through
+:meth:`Episode.advance`. :func:`run_episode` and the live runner share that dispatch point.
+The Stage 2 sequential determinism fixtures remain the regression gate for the AEC path.
 
 A player is bound either to a loaded agent (:class:`AgentPlayer`, governed by the cooperative
 agent-timeout machinery) or to an external action source (:class:`ExternalPlayer`, which is
@@ -25,18 +20,15 @@ or overage accounting.
 from __future__ import annotations
 
 import contextlib
-import sys
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, TypedDict, cast, runtime_checkable
+from typing import Any, cast
 
-from .agent import has_chat, has_learn
 from .chat import ChatRouter
 from .clock import Clock, SystemClock
 from .environment import (
-    ChatPolicy,
     EnvironmentEntry,
     ParameterValue,
     ResolvedLayout,
@@ -44,6 +36,22 @@ from .environment import (
     resolve_layout,
     validate_complete_parameters,
     validate_configured_environment,
+    validate_parallel_step,
+)
+from .participant_runner import (
+    ActionSource,
+    AgentExecutionScope,
+    AgentPlayer,
+    ExternalChatFrame,
+    ExternalPlayer,
+    IllegalAgentActionError,
+    MessageSource,
+    NoopSource,
+    ParticipantRunner,
+    Player,
+    PlayerState,
+    ScriptedSource,
+    StepContext,
 )
 from .recording import RecordingStore
 from .state import (
@@ -56,6 +64,26 @@ from .state import (
     build_step_state,
 )
 
+__all__ = [
+    "ActionSource",
+    "AgentExecutionScope",
+    "AgentPlayer",
+    "Episode",
+    "EpisodeResult",
+    "ExternalChatFrame",
+    "ExternalPlayer",
+    "IllegalAgentActionError",
+    "MessageSource",
+    "NoopSource",
+    "Player",
+    "REASON_EPISODE_LIMIT",
+    "REASON_STOPPED",
+    "REASON_TERMINATED",
+    "REASON_TRUNCATED",
+    "ScriptedSource",
+    "run_episode",
+]
+
 # Termination reasons reported in EpisodeResult.
 REASON_TERMINATED = "terminated"
 REASON_TRUNCATED = "truncated"
@@ -64,106 +92,6 @@ REASON_EPISODE_LIMIT = "episode_limit"
 #: episode reaching its own end. Only the live loop sets it (via :meth:`Episode.stop`); the
 #: headless ``run_episode`` never stops early this way.
 REASON_STOPPED = "stopped"
-
-
-class IllegalAgentActionError(RuntimeError):
-    """Raised when an agent returns an action the environment would reject as an illegal move.
-
-    The loop rejects it at the action boundary and charges the fault to the acting player, instead of
-    letting ``env.step`` raise with no attribution, which would smear the failure across every player
-    sharing the container. A move that passes the boundary but still makes ``env.step`` raise is a
-    genuine environment fault, owned by no player.
-    """
-
-
-@runtime_checkable
-class ActionSource(Protocol):
-    """A source of actions for an external (human-controlled) player.
-
-    ``get_action`` may block up to ``deadline_ms`` (Stage 3's transport-backed source will);
-    ``deadline_ms`` is ``None`` when no deadline applies. Returning ``None`` means no input
-    arrived in time, and the loop applies the environment's default action for the player.
-    """
-
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any: ...
-
-
-@runtime_checkable
-class MessageSource(Protocol):
-    """A source of queued outgoing messages for an external player."""
-
-    def take_messages(self, player_id: str) -> list[ExternalChatFrame]: ...
-
-
-class ExternalChatFrame(TypedDict):
-    """One human chat frame queued by the live transport."""
-
-    to: str | None
-    text: str
-
-
-@runtime_checkable
-class AgentExecutionScope(Protocol):
-    """Activate one agent's execution scope at setup and turn ownership boundaries.
-
-    Live LLM sessions use this seam to select player credentials and publish tick markers. Keeping
-    the scope optional on :class:`AgentPlayer` leaves headless and non-LLM callers on their existing
-    path without environment changes or network operations.
-    """
-
-    def setup(self, player_id: str) -> None: ...
-
-    def turn(self, player_id: str, tick: int) -> None: ...
-
-    def inflight_ms(self, player_id: str) -> int | None: ...
-
-
-class NoopSource:
-    """An :class:`ActionSource` that never supplies input; the loop always defaults."""
-
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
-        return None
-
-
-class ScriptedSource:
-    """An :class:`ActionSource` that replays a fixed list of actions, then yields ``None``."""
-
-    def __init__(self, actions: list[Any]) -> None:
-        self._actions = list(actions)
-        self._index = 0
-
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
-        if self._index >= len(self._actions):
-            return None
-        action = self._actions[self._index]
-        self._index += 1
-        return action
-
-
-@dataclass(frozen=True)
-class AgentPlayer:
-    """A PettingZoo player driven by a loaded agent, under agent-timeout machinery."""
-
-    agent: Any
-    execution_scope: AgentExecutionScope | None = None
-
-
-@dataclass(frozen=True)
-class ExternalPlayer:
-    """A PettingZoo player fed from outside the harness, usually a human player.
-
-    ``timeout_ms`` defaults to the environment's ``human_timeout_ms``; when the environment
-    has a pace interval, the interval is the deadline instead. ``message_source`` is explicit
-    and optional so an action transport is not implicitly treated as a chat transport merely
-    because it happens to expose a similarly named method.
-    """
-
-    source: ActionSource
-    timeout_ms: int | None = None
-    message_source: MessageSource | None = None
-
-
-Player = AgentPlayer | ExternalPlayer
 
 
 @dataclass(frozen=True)
@@ -181,36 +109,6 @@ class EpisodeResult:
     failed_player: str | None = None
 
 
-@dataclass
-class _PlayerState:
-    """Per-player mutable accounting for one episode."""
-
-    score: float = 0.0
-    budget_used_ms: float = 0.0
-    step_timeouts: int = 0
-
-
-@dataclass
-class _StepContext:
-    """Mutable values carried through one ordered :meth:`Episode.step_once` cycle."""
-
-    env: Any
-    player_id: str
-    observation: Any
-    info: Any
-    binding: Player
-    player: _PlayerState
-    started_at: int
-    action: Any = None
-    decision_ms: float | None = None
-    agent_compute_ms: float = 0.0
-    chat_ms: float | None = None
-    messages: list[Message] = field(default_factory=list[Message])
-    chat_options: ChatOptions | None = None
-    reward: float = 0.0
-    learn_ms: float | None = None
-
-
 def _iso_utc(ms: int) -> str:
     """Render epoch milliseconds as an ISO-8601 UTC date-time string."""
     return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
@@ -220,14 +118,12 @@ class Episode:
     """One seeded episode's worth of step machinery, advanced one cycle at a time.
 
     Construct, :meth:`start` (reset the env and the agents, open the recording), then drive
-    ``while not episode.done: episode.step_once()`` and read :meth:`result`. :meth:`close`
+    ``while not episode.done: episode.advance()`` and read :meth:`result`. :meth:`close`
     flushes the recording and closes the env; the context-manager form pairs ``start`` with it.
 
-    Each :meth:`step_once` runs exactly one PettingZoo agent-environment cycle: it obtains an
-    action for the acting player (agent or external path), steps the environment, calls the
-    optional ``learn`` hook, assembles one per-step state, writes it through the store when one
-    is given, and applies the budget and step-cap termination checks. The live runner shares
-    this method verbatim and only wraps pacing and pause/stop around the loop.
+    :meth:`step_once` runs one AEC agent-environment cycle. :meth:`step_tick` collects one action
+    for every active parallel player and applies one joint transition. Both paths share participant
+    accounting and state construction, while :meth:`advance` selects the declared path.
     """
 
     def __init__(
@@ -288,10 +184,7 @@ class Episode:
         ):
             raise ValueError("external_chat_player must name an external player binding")
         self._external_chat_sender = external_chat_player
-        #: The policy the latest live state published for the human, and what the next drain enforces.
-        self._human_chat_policy: ChatPolicy | None = None
-
-        self._state = {player_id: _PlayerState() for player_id in players}
+        self._state = {player_id: PlayerState() for player_id in players}
         self._env: Any = None
         self._writer: Any = None
         self._writer_cm: Any = None
@@ -299,8 +192,23 @@ class Episode:
         self._tick = 0
         self._stopped = False
         self._failed_player: str | None = None
-        self._inflight_snapshots: dict[str, int] = {}
         self._opening_chat_options: ChatOptions | None = None
+        self._parallel_observations: Mapping[str, object] | None = None
+        self._parallel_infos: Mapping[str, object] | None = None
+        self._saw_natural_truncation = False
+        self._participant_runner = ParticipantRunner(
+            entry,
+            players,
+            self._state,
+            clock=self._clock,
+            cpu_clock_ms=self._cpu_clock_ms,
+            step_limit_ms=self._step_limit,
+            chat=self._chat,
+            external_chat_sender=self._external_chat_sender,
+            active_players=self._logical_active_players,
+            tick=lambda: self._tick,
+            failed=self._set_failed_player,
+        )
 
     def start(self) -> None:
         """Reset the environment, open the recording, then reset the agents.
@@ -326,7 +234,13 @@ class Episode:
             self._env = env
             reset_result = env.reset(seed=self._seed)
             validate_configured_environment(self._entry, env, self._layout.players, reset_result)
-            self._opening_chat_options = self._refresh_chat_state()
+            if self._entry.meta.stepping == "simultaneous":
+                # The reset mapping is the first pre-step snapshot. Later ticks replace it only after
+                # their joint transition has passed the strict parallel contract check.
+                self._parallel_observations, self._parallel_infos = cast(
+                    "tuple[Mapping[str, object], Mapping[str, object]]", reset_result
+                )
+            self._opening_chat_options = self._participant_runner.refresh_chat_state(env)
 
             if self._store is not None:
                 created_at_ms = self._clock.now_ms()
@@ -343,15 +257,7 @@ class Episode:
                 self._writer_cm = self._store.create(self._recording_id, header)
                 self._writer = self._writer_cm.__enter__()
 
-            for player_id, binding in self._players.items():
-                if isinstance(binding, AgentPlayer):
-                    try:
-                        if binding.execution_scope is not None:
-                            binding.execution_scope.setup(player_id)
-                        binding.agent.reset(self._seed)
-                    except Exception:  # noqa: BLE001 - charge a reset crash to this player, then re-raise
-                        self._failed_player = player_id
-                        raise
+            self._participant_runner.reset_agents(self._seed)
         except Exception:  # noqa: BLE001 - release the half-opened recording/env, then re-raise as-is
             # Suppress any close fault so it never masks the original startup error (which the headless
             # caller still receives and which carries the player attribution set just above).
@@ -389,6 +295,11 @@ class Episode:
     def tick(self) -> int:
         """The number of steps recorded so far."""
         return self._tick
+
+    @property
+    def stepping(self) -> str:
+        """The entry's already validated stepping declaration."""
+        return self._entry.meta.stepping
 
     @property
     def failed_player(self) -> str | None:
@@ -429,10 +340,11 @@ class Episode:
         and the headless path are byte-for-byte unchanged, so a replay still begins at the first play.
         Valid only after :meth:`start` (the env must be reset); the live runner calls it there.
         """
-        if self._entry.meta.pace_interval_ms is not None:
+        simultaneous = self._entry.meta.stepping == "simultaneous"
+        if not simultaneous and self._entry.meta.pace_interval_ms is not None:
             return None
         overlay = self._entry.overlay(self._env) if self._entry.overlay is not None else None
-        if overlay is None and self._opening_chat_options is None:
+        if not simultaneous and overlay is None and self._opening_chat_options is None:
             return None
         return build_step_state(
             tick=0,
@@ -452,6 +364,17 @@ class Episode:
         self._reason = reason
         self._stopped = True
 
+    def advance(self) -> None:
+        """Advance one declared AEC step or one declared parallel tick."""
+        if self._entry.meta.stepping == "simultaneous":
+            self.step_tick()
+        else:
+            self.step_once()
+
+    def _set_failed_player(self, player_id: str) -> None:
+        """Record the participant at fault before its original exception propagates."""
+        self._failed_player = player_id
+
     def step_once(self) -> None:
         """Advance the acting player by exactly one PettingZoo cycle. See the class docstring."""
         env = self._env
@@ -459,15 +382,13 @@ class Episode:
         observation, _reward, termination, truncation, info = env.last()
 
         if termination or truncation:
-            self._reason = REASON_TRUNCATED if truncation else REASON_TERMINATED
+            self._saw_natural_truncation = self._saw_natural_truncation or truncation
             env.step(None)
+            self._finish_without_recorded_step()
             return
 
         binding = self._players[player_id]
-        if isinstance(binding, AgentPlayer) and binding.execution_scope is not None:
-            binding.execution_scope.turn(player_id, self._tick)
-
-        context = _StepContext(
+        context = StepContext(
             env=env,
             player_id=player_id,
             observation=observation,
@@ -476,70 +397,75 @@ class Episode:
             player=self._state[player_id],
             started_at=self._clock.now_ms(),
         )
-        self._select_action(context)
+        self._participant_runner.select_action(context)
 
-        self._collect_messages(context)
-        self._apply_environment_step(context)
-        self._run_learning(context)
-
-        self._record_step(context)
-        self._deliver_messages(context)
-        self._finish_step(context)
-
-    def _select_action(self, context: _StepContext) -> None:
-        """Obtain and validate the action, applying defaults under the existing timeout rules."""
-        binding = context.binding
-        if isinstance(binding, AgentPlayer):
-            try:
-                context.action, context.decision_ms = self._timed_llm_hook(
-                    binding.execution_scope,
-                    context.player_id,
-                    lambda: binding.agent.act(context.observation),
-                )
-            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
-                self._failed_player = context.player_id
-                raise
-            context.agent_compute_ms += context.decision_ms
-            context.player.budget_used_ms += context.decision_ms
-            if context.decision_ms > self._step_limit:
-                context.action = self._entry.default_action(context.env, context.player_id)
-                return
-            reason = _illegal_action_reason(
-                context.env,
-                context.player_id,
-                context.observation,
-                context.info,
-                context.action,
-            )
-            if reason is not None:
-                self._failed_player = context.player_id
-                raise IllegalAgentActionError(f"{context.player_id} returned an illegal action: {reason}")
-            return
-
-        deadline_ms = _external_deadline(self._entry, binding, self._clock)
-        context.action = binding.source.get_action(context.player_id, context.observation, deadline_ms)
-        if context.action is None:
-            print(
-                f"human player {context.player_id} defaulted due to no input in time",
-                file=sys.stderr,
-                flush=True,
-            )
-            context.action = self._entry.default_action(context.env, context.player_id)
-            return
-        illegal_reason = _illegal_action_reason(
-            context.env,
-            context.player_id,
-            context.observation,
-            context.info,
-            context.action,
+        self._participant_runner.collect_messages(context)
+        context.chat_options = self._participant_runner.apply_environment_step(context)
+        self._saw_natural_truncation = self._saw_natural_truncation or any(
+            bool(truncated) for truncated in env.truncations.values()
         )
-        if illegal_reason is not None:
-            print(
-                f"human player {context.player_id} defaulted due to illegal input: {illegal_reason}",
-                file=sys.stderr,
-                flush=True,
+        self._participant_runner.run_learning(context)
+
+        self._record_step((context,), context.started_at, context.messages, context.chat_options)
+        self._participant_runner.deliver_messages(context.messages)
+        self._finish_step((context.player_id,))
+
+    def step_tick(self) -> None:
+        """Advance every active parallel player from one saved pre-step snapshot."""
+        env = self._env
+        active_players = canonical_player_order(env.agents)
+        observations = self._parallel_observations
+        infos = self._parallel_infos
+        if observations is None or infos is None:
+            raise RuntimeError("parallel episode has no saved reset or step snapshot")
+        started_at = self._clock.now_ms()
+        contexts = [
+            StepContext(
+                env=env,
+                player_id=player_id,
+                observation=observations[player_id],
+                info=infos[player_id],
+                binding=self._players[player_id],
+                player=self._state[player_id],
+                started_at=started_at,
             )
-            context.action = self._entry.default_action(context.env, context.player_id)
+            for player_id in active_players
+        ]
+
+        # Consume every external latch at the boundary before an agent can begin work. Agent callbacks
+        # remain canonical and sequential, while the action map below keeps canonical key order.
+        for context in contexts:
+            if isinstance(context.binding, ExternalPlayer):
+                self._participant_runner.select_action(context)
+        for context in contexts:
+            if isinstance(context.binding, AgentPlayer):
+                self._participant_runner.select_action(context)
+
+        messages = self._participant_runner.drain_human_messages()
+        for context in contexts:
+            self._participant_runner.collect_agent_messages(context, messages)
+
+        actions = {context.player_id: context.action for context in contexts}
+        step_result = env.step(actions)
+        observations, rewards, terminations, truncations, infos = validate_parallel_step(
+            self._entry.meta, env, active_players, actions, step_result
+        )
+        self._parallel_observations = observations
+        self._parallel_infos = infos
+        self._saw_natural_truncation = self._saw_natural_truncation or any(
+            bool(truncations[player_id]) for player_id in active_players
+        )
+        for context in contexts:
+            context.reward = float(cast("float", rewards[context.player_id]))
+            context.player.score += context.reward
+        chat_options = self._participant_runner.refresh_chat_state(env)
+        for context in contexts:
+            terminated = bool(terminations[context.player_id] or truncations[context.player_id])
+            self._participant_runner.run_learning(context, terminated=terminated)
+
+        self._record_step(tuple(contexts), started_at, messages, chat_options)
+        self._participant_runner.deliver_messages(messages)
+        self._finish_step(active_players)
 
     def _logical_active_players(self) -> tuple[str, ...]:
         """Return players in ``env.agents`` that are not marked terminal, including live AEC players."""
@@ -552,189 +478,75 @@ class Episode:
             and not self._env.truncations.get(player_id, False)
         )
 
-    def _drain_human_messages(self) -> list[Message]:
-        """Atomically drain the designated human FIFO under the policy its last live state published.
-
-        This drain is the boundary's admission cutoff: a frame that arrives after it waits for the
-        next completed step. An inactive sender's frames are drained the same way and then dropped by
-        the validator, which is also what keeps the queue from holding them once nobody can send.
-        """
-        sender = self._external_chat_sender
-        if self._chat is None or sender is None:
-            return []
-        binding = self._players[sender]
-        if not isinstance(binding, ExternalPlayer) or binding.message_source is None:
-            return []
-        queued = binding.message_source.take_messages(sender)
-        return self._chat.validate_outgoing(sender, queued, self._human_chat_policy)
-
-    def _collect_messages(self, context: _StepContext) -> None:
-        """Run the pre-step chat phases after action selection and before the environment step."""
-        if self._chat is None:
-            return
-        context.messages.extend(self._drain_human_messages())
-        inbox = self._chat.drain(context.player_id)
-        binding = context.binding
-        if isinstance(binding, AgentPlayer) and has_chat(binding.agent):
-            policy = self._chat.policy_from(self._env, context.player_id)
-            try:
-                outgoing, context.chat_ms = self._timed_llm_hook(
-                    binding.execution_scope,
-                    context.player_id,
-                    lambda: binding.agent.chat(inbox),
-                )
-            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
-                self._failed_player = context.player_id
-                raise
-            context.agent_compute_ms += context.chat_ms
-            context.player.budget_used_ms += context.chat_ms
-            context.messages.extend(self._chat.validate_outgoing(context.player_id, outgoing, policy))
-
-    def _refresh_chat_state(self) -> ChatOptions | None:
-        """Adopt this transition's active players and republish the designated human's policy.
-
-        Called once at reset and once per completed step, so the active set the router validates
-        everything against changes in exactly one place. Required AEC dead steps do not reach here,
-        which is why the human drain re-checks recipient activity against the set this leaves behind.
-        """
-        if self._chat is None:
-            return None
-        active_players = self._logical_active_players()
-        self._chat.set_active(active_players)
-        sender = self._external_chat_sender
-        if sender is None or sender not in active_players:
-            self._human_chat_policy = None
-            return None
-        policy = self._chat.policy_from(self._env, sender)
-        self._human_chat_policy = policy
-        return {
-            "sender": sender,
-            "target_recipients": list(policy.target_recipients),
-            "default_recipient": policy.default_recipient,
-        }
-
-    def _apply_environment_step(self, context: _StepContext) -> None:
-        """Apply the action, credit rewards, and publish the following human policy."""
-        context.env.step(context.action)
-        context.reward = float(context.env.rewards[context.player_id])
-        # Terminal rewards in an AEC environment can be published for every player on the final
-        # actor's step and then cleared by dead steps, so credit the entire reward mapping here.
-        for rewarded_player, player_reward in context.env.rewards.items():
-            rewarded_state = self._state.get(rewarded_player)
-            if rewarded_state is not None:
-                rewarded_state.score += float(player_reward)
-        context.chat_options = self._refresh_chat_state()
-
-    def _run_learning(self, context: _StepContext) -> None:
-        """Run the post-step learning hook and finish per-step compute accounting."""
-        binding = context.binding
-        if isinstance(binding, AgentPlayer) and has_learn(binding.agent):
-            terminated_now = bool(
-                context.env.terminations[context.player_id] or context.env.truncations[context.player_id]
-            )
-            try:
-                _, context.learn_ms = self._timed_llm_hook(
-                    binding.execution_scope,
-                    context.player_id,
-                    lambda: binding.agent.learn(
-                        context.observation,
-                        context.action,
-                        context.reward,
-                        terminated_now,
-                    ),
-                )
-            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
-                self._failed_player = context.player_id
-                raise
-            context.agent_compute_ms += context.learn_ms
-            context.player.budget_used_ms += context.learn_ms
-
-        if isinstance(binding, AgentPlayer) and context.agent_compute_ms > self._step_limit:
-            context.player.step_timeouts += 1
-
-    def _timed_llm_hook(
+    def _record_step(
         self,
-        scope: AgentExecutionScope | None,
-        player_id: str,
-        callback: Callable[[], Any],
-    ) -> tuple[Any, float]:
-        """Measure a hook while discounting verified official proxy request time.
-
-        A valid post-hook snapshot becomes the next hook's baseline. Failed reads and hook errors
-        clear that cache, so no discount crosses an unknown interval. Calling-thread CPU is always
-        a lower bound.
-        """
-        if scope is None:
-            started = self._clock.now_ms()
-            return callback(), self._clock.now_ms() - started
-
-        before = self._inflight_snapshots.pop(player_id, None)
-        if before is None:
-            before = scope.inflight_ms(player_id)
-        started = self._clock.now_ms()
-        cpu_started = self._cpu_clock_ms()
-        try:
-            value = callback()
-        except Exception:
-            self._inflight_snapshots.pop(player_id, None)
-            raise
-        # Thread CPU is independent of the pausable wall clock, so local work stays chargeable.
-        cpu_ms = max(0.0, self._cpu_clock_ms() - cpu_started)
-        raw_ms = self._clock.now_ms() - started
-        after = scope.inflight_ms(player_id)
-        if after is not None:
-            self._inflight_snapshots[player_id] = after
-        else:
-            self._inflight_snapshots.pop(player_id, None)
-        if before is None or after is None:
-            return value, max(cpu_ms, raw_ms)
-        # A request in flight across the hook boundary keeps advancing the counter, so the change can
-        # exceed this hook's own proxy time. Calling-thread CPU is the floor that keeps local work
-        # chargeable no matter how large the discount grows.
-        return value, max(cpu_ms, raw_ms - max(0, after - before))
-
-    def _record_step(self, context: _StepContext) -> None:
-        """Persist the completed cycle before accepted messages mutate recipient inboxes."""
+        contexts: tuple[StepContext, ...],
+        started_at: int,
+        messages: list[Message],
+        chat_options: ChatOptions | None,
+    ) -> None:
+        """Persist one completed AEC action or parallel tick before message delivery."""
         if self._writer is None:
             return
-        overlay = self._entry.overlay(context.env) if self._entry.overlay is not None else None
-        agent_step = build_agent_step(
-            reward=context.reward,
-            score=context.player.score,
-            action=context.action,
-            decision_ms=context.decision_ms,
-            learn_ms=context.learn_ms,
-            chat_ms=context.chat_ms,
-        )
+        env = contexts[0].env
+        overlay = self._entry.overlay(env) if self._entry.overlay is not None else None
+        agents = {
+            context.player_id: self._participant_runner.build_agent_step(context) for context in contexts
+        }
+        if self._entry.meta.stepping == "sequential":
+            # AEC can publish rewards and terminal flags for non-actors. Snapshot those deltas before
+            # its required dead steps clear the mappings, but never invent a participant hook or action.
+            actor = contexts[0].player_id
+            for player_id in canonical_player_order(env.rewards):
+                if player_id == actor or player_id not in self._state:
+                    continue
+                if (
+                    float(env.rewards[player_id]) != 0.0
+                    or bool(env.terminations.get(player_id, False))
+                    or bool(env.truncations.get(player_id, False))
+                ):
+                    agents[player_id] = build_agent_step(
+                        reward=float(env.rewards[player_id]), score=self._state[player_id].score
+                    )
         self._writer.write_step(
             build_step_state(
                 tick=self._tick,
-                agents={context.player_id: agent_step},
-                started_at=context.started_at,
-                duration_ms=self._clock.now_ms() - context.started_at,
+                agents=agents,
+                started_at=started_at,
+                duration_ms=self._clock.now_ms() - started_at,
                 overlay=overlay,
-                messages=context.messages or None,
-                chat_options=context.chat_options,
+                messages=messages or None,
+                chat_options=chat_options,
             )
         )
 
-    def _deliver_messages(self, context: _StepContext) -> None:
-        """Deliver this tick's accepted messages strictly after the environment step."""
-        if self._chat is not None and context.messages:
-            self._chat.deliver(context.messages, tick=self._tick)
+    def _finish_without_recorded_step(self) -> None:
+        """Resolve a natural AEC ending reached while consuming a dead step."""
+        if not self._env.agents:
+            self._reason = REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED
 
-    def _finish_step(self, context: _StepContext) -> None:
-        """Advance the tick and apply episode-budget and step-cap checks last."""
+    def _finish_step(self, acted_players: tuple[str, ...]) -> None:
+        """Advance once, then apply budget, natural-ending, and tick-cap precedence."""
         self._tick += 1
-        if context.player.budget_used_ms > self._episode_limit:
+        over_budget = tuple(
+            player_id
+            for player_id in canonical_player_order(acted_players)
+            if self._state[player_id].budget_used_ms > self._episode_limit
+        )
+        if over_budget:
             self._reason = REASON_EPISODE_LIMIT
-            self._failed_player = context.player_id
+            self._failed_player = over_budget[0]
+            self._stopped = True
+            return
+        if not self._env.agents:
+            self._reason = REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED
             self._stopped = True
             return
         if self._max_steps is not None and self._tick >= self._max_steps:
-            # Preserve a natural terminal outcome when it lands on the tick that reaches the cap.
             self._reason = (
-                REASON_TERMINATED if context.env.terminations[context.player_id] else REASON_TRUNCATED
+                REASON_TRUNCATED
+                if self._logical_active_players()
+                else (REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED)
             )
             self._stopped = True
 
@@ -789,11 +601,12 @@ def run_episode(
     """Play one seeded episode of ``entry`` with the given player bindings.
 
     A thin headless loop over :class:`Episode`: reset seeds everything (the environment via
-    ``reset(seed=seed)`` and every agent via its own ``reset(seed)``), then drive PettingZoo's
-    agent-environment cycle to its end, recording through the store when one is given.
+    ``reset(seed=seed)`` and every agent via its own ``reset(seed)``), then call
+    :meth:`Episode.advance` until the declared AEC or parallel environment ends, recording through
+    the store when one is given.
     Recording is optional so the evaluation pattern (run many seeds, keep scores, store
     nothing) shares this exact code path. This loop never paces and never pauses; that is the
-    live runner's job, layered around the same :meth:`Episode.step_once`.
+    live runner's job, layered around the same :meth:`Episode.advance`.
     """
     with Episode(
         entry,
@@ -813,74 +626,5 @@ def run_episode(
         parameters=parameters,
     ) as episode:
         while not episode.done:
-            episode.step_once()
+            episode.advance()
     return episode.result()
-
-
-def _illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any, action: Any) -> str | None:
-    """Why ``action`` is an illegal move for ``player_id``, or ``None`` if it is acceptable.
-
-    Environment-agnostic, built only on the two standard PettingZoo legality signals and never on any
-    environment-specific knowledge:
-
-    * the player's action space decides membership: an action the space does not contain is illegal,
-      since the agent contract is that ``act`` returns an action in the environment's action space; and
-    * for an environment that follows the AEC illegal-move convention, the ``action_mask`` decides
-      per-action legality: an in-range index the mask flags ``0`` is illegal.
-
-    Anything this cannot disprove, including an environment exposing no action space or publishing no
-    mask, or an action that does not index the mask, is deliberately left for ``env.step`` to judge, so a
-    genuine fault on an otherwise-legal action stays owned by no player rather than blamed on this one.
-    """
-    space_fn: Any = getattr(env, "action_space", None)
-    if space_fn is not None:
-        try:
-            contained = bool(space_fn(player_id).contains(action))
-        except Exception:  # noqa: BLE001 - a space that cannot judge the action does not get to veto it
-            contained = True
-        if not contained:
-            return f"action {action!r} is outside the player's action space"
-    mask = _action_mask(info, observation)
-    if mask is not None:
-        try:
-            index = int(action)
-        except (TypeError, ValueError):
-            index = None
-        if index is not None and 0 <= index < len(mask) and not mask[index]:
-            return f"action {action!r} is not in the legal-move mask"
-    return None
-
-
-def _action_mask(info: Any, observation: Any) -> Any:
-    """The per-action legality mask for this step, or ``None`` when the environment publishes none.
-
-    The AEC API permits the mask in either the ``info`` or the ``observation`` dict, by environment:
-    PettingZoo's Classic games carry it as ``observation["action_mask"]`` while Shimmy's OpenSpiel
-    wrapper carries it as ``info["action_mask"]``. The canonical AEC loop consults ``info`` first and
-    falls back to the observation, so this does the same; otherwise an OpenSpiel illegal move would slip
-    past the boundary unattributed (https://pettingzoo.farama.org/api/aec/#action-masking).
-    """
-    if isinstance(info, Mapping):
-        mask: Any = cast("Mapping[Any, Any]", info).get("action_mask")
-        if mask is not None:
-            return mask
-    if isinstance(observation, Mapping):
-        return cast("Mapping[Any, Any]", observation).get("action_mask")
-    return None
-
-
-def _external_deadline(entry: EnvironmentEntry, binding: ExternalPlayer, clock: Clock) -> int | None:
-    """Compute the wall-clock deadline for an external player, or ``None`` for no deadline.
-
-    A set pace interval is itself the human deadline; otherwise the player's own ``timeout_ms``
-    applies, defaulting from the environment's ``human_timeout_ms``.
-    """
-    if entry.meta.pace_interval_ms is not None:
-        window = entry.meta.pace_interval_ms
-    elif binding.timeout_ms is not None:
-        window = binding.timeout_ms
-    else:
-        window = entry.meta.human_timeout_ms
-    if window is None:
-        return None
-    return clock.now_ms() + window
