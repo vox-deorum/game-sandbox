@@ -177,7 +177,9 @@ test('operator season configuration exposes and validates LLM controls', async (
 
     const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
     await expect(runConfiguration.locator('.ui-card')).toHaveCount(4)
-    await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
+    await expect(
+      runConfiguration.getByRole('heading', { name: 'Match Design: 0 submissions' }),
+    ).toBeVisible()
     await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
     await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
     await expect(
@@ -220,7 +222,7 @@ test('operator season configuration exposes and validates LLM controls', async (
     await expect(messaging.locator('option')).toHaveText(['Environment default (off)', 'Off'])
 
     const submissions = page.locator('section.admin-section', {
-      has: page.getByRole('heading', { name: 'Submissions' }),
+      has: page.getByRole('heading', { name: 'Submissions', exact: true }),
     })
     const downloadAll = submissions.getByRole('link', { name: 'Download all (.tar.gz)' })
     await expect(downloadAll).toHaveClass(/secondary/)
@@ -229,7 +231,13 @@ test('operator season configuration exposes and validates LLM controls', async (
     await expect(submissions.locator('.ui-card')).toHaveCount(0)
 
     await expect(page.getByLabel('LLM enablement')).toBeVisible()
-    await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
+    const aliases = page.getByLabel('Allowed model aliases')
+    await expect(aliases).toBeVisible()
+    await expect(aliases.locator('option')).toHaveText([
+      'All of them',
+      'Medium and small only',
+      'Small only',
+    ])
     await expect(page.getByLabel('Per-player token budget')).toBeVisible()
     await expect(page.getByLabel('Per-player rate limit (RPM)')).toBeVisible()
     await expect(page.getByLabel('Development token budget')).toBeVisible()
@@ -265,11 +273,13 @@ test('operator season configuration exposes and validates LLM controls', async (
     await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
     await page.getByLabel('Per-player token budget').fill('')
 
-    await page.getByLabel('Allowed model aliases').selectOption('custom')
+    await aliases.selectOption('small')
     await page.getByRole('button', { name: 'Save configuration' }).click()
-    await expect(page.getByText(/Select at least one allowed LLM model alias/)).toBeVisible()
+    await expect
+      .poll(async () => (await getSeasonConfig(admin, season.id)).overrides?.llm?.models)
+      .toEqual(['small'])
 
-    // The validation is local, so the freshly declared season remains empty and safe to remove.
+    // Configuration alone does not create activity, so the freshly declared season stays safe to remove.
     expect(season.id).toBeTruthy()
   } finally {
     if (configuredPlayOpen) await closePlay(admin, season.id).catch(() => {})

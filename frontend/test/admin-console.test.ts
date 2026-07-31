@@ -235,23 +235,22 @@ describe('AdminConsolePage', () => {
     )
     await renderConsole()
 
-    expect(
-      await screen.findByText('Projected games: 762 (2 seats, 20 submissions)'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Projected total: 762 games')).toBeInTheDocument()
     // Each match carries its own share of the total in its heading, so the totals need no second line.
-    expect(screen.getByText('Match 1 (762 games)')).toBeInTheDocument()
+    expect(screen.getByText('Match 1: 762 games')).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Match Design: 20 submissions' }),
+    ).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
     const match = screen.getByTestId('match')
     expect(within(match).getAllByTestId('seat')).toHaveLength(4)
     expect(screen.queryByRole('button', { name: 'Match the layout' })).toBeNull()
-    expect(
-      screen.getByText('Projected games: 232,562 (4 seats, 20 submissions)'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 232,562 games')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
 
     await fireEvent.update(within(match).getByRole('spinbutton', { name: 'Games' }), '0')
-    expect(screen.queryByText(/Projected games:/)).toBeNull()
+    expect(screen.queryByText(/Projected total:/)).toBeNull()
     expect(screen.getByTestId('projection-error')).toHaveTextContent(
       'Match 1 has an invalid game count',
     )
@@ -273,12 +272,10 @@ describe('AdminConsolePage', () => {
       adminView({ season: configured, eligible_submission_count: 20 }),
     )
     await renderConsole()
-    expect(
-      await screen.findByText('Projected games: 762 (2 seats, 20 submissions)'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Projected total: 762 games')).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Dependency-set version'), '0')
-    expect(screen.getByText('Projected games: 762 (2 seats, 20 submissions)')).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 762 games')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
@@ -331,7 +328,7 @@ describe('AdminConsolePage', () => {
     expect(within(secondSeat).getByRole('option', { name: 'Cautious bidder' })).toHaveValue(
       'builtin:cautious',
     )
-    expect(screen.getByText('Projected games: 4 (2 seats, 3 submissions)')).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 4 games')).toBeInTheDocument()
 
     await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
     expect(within(pair).getAllByTestId('seat')).toHaveLength(4)
@@ -339,7 +336,7 @@ describe('AdminConsolePage', () => {
     expect(fourthSeat).toHaveValue('builtin:cautious')
     expect(fourthSeat).toBeDisabled()
     await fireEvent.update(within(pair).getByRole('combobox', { name: 'Seat 2' }), 'builtin:naive')
-    expect(screen.getByText('Projected games: 4 (4 seats, 3 submissions)')).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 4 games')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
@@ -392,7 +389,7 @@ describe('AdminConsolePage', () => {
     expect(runConfiguration?.querySelectorAll('.ui-card')).toHaveLength(4)
 
     for (const title of [
-      'Match Design',
+      'Match Design: 0 submissions',
       'Session Behavior',
       'LLM Access',
       'Environment Parameters',
@@ -481,13 +478,11 @@ describe('AdminConsolePage', () => {
   it('shows a blank numeric override error and refuses to save it', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
     await renderConsole()
-    expect(
-      await screen.findByText('Projected games: 1 (1 seat, 0 submissions)'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Projected total: 1 game')).toBeInTheDocument()
     await fireEvent.update(await screen.findByLabelText('Pipe gap'), 'override')
     await fireEvent.update(screen.getByLabelText('Pipe gap override'), '')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('Projected games: 1 (1 seat, 0 submissions)')).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 1 game')).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
@@ -745,13 +740,13 @@ describe('AdminConsolePage', () => {
 
     const match = await screen.findByTestId('match')
     expect(within(match).getByRole('combobox', { name: 'Seat 1' })).toHaveValue('submission')
-    expect(screen.queryByText(/Projected games:/)).toBeNull()
+    expect(screen.queryByText(/Projected total:/)).toBeNull()
     const blocked = screen.getByTestId('projection-error')
     expect(blocked).toHaveTextContent('A match no longer matches the resolved seat layout.')
 
     await fireEvent.click(within(blocked).getByRole('button', { name: 'Match the layout' }))
     expect(within(match).getByRole('combobox', { name: 'Seat 1' })).toHaveValue('builtin:cautious')
-    expect(screen.getByText('Projected games: 4 (2 seats, 3 submissions)')).toBeInTheDocument()
+    expect(screen.getByText('Projected total: 4 games')).toBeInTheDocument()
     expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
@@ -802,9 +797,13 @@ describe('AdminConsolePage', () => {
     await renderConsole()
 
     await fireEvent.update(await screen.findByLabelText('LLM enablement'), 'on')
-    await fireEvent.update(screen.getByLabelText('Allowed model aliases'), 'custom')
-    await fireEvent.click(screen.getByLabelText('small'))
-    await fireEvent.click(screen.getByLabelText('medium'))
+    const aliases = screen.getByLabelText('Allowed model aliases')
+    expect(
+      within(aliases)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All of them', 'Medium and small only', 'Small only'])
+    await fireEvent.update(aliases, 'medium-small')
     await fireEvent.update(screen.getByLabelText('Per-player token budget'), '10000')
     await fireEvent.update(screen.getByLabelText('Per-player rate limit (RPM)'), '30')
     await fireEvent.update(screen.getByLabelText('Development token budget'), '20000')
@@ -822,15 +821,75 @@ describe('AdminConsolePage', () => {
     })
   })
 
-  it('rejects a custom LLM model list with no aliases', async () => {
+  it('writes the small-only LLM model preset', async () => {
     await renderConsole()
-    await fireEvent.update(await screen.findByLabelText('Allowed model aliases'), 'custom')
+    await fireEvent.update(await screen.findByLabelText('Allowed model aliases'), 'small')
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
 
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm?.models).toEqual(['small'])
+  })
+
+  it('preserves a script-managed model subset until the operator chooses a preset', async () => {
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
+        overrides: { llm: { models: ['medium'] } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: configured }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+
+    const aliases = await screen.findByLabelText('Allowed model aliases')
+    expect((aliases as HTMLSelectElement).selectedIndex).toBe(-1)
     expect(
-      await screen.findByText(/Select at least one allowed LLM model alias/),
+      screen.getByText('Current API-managed aliases: medium. Choose a preset to replace them.'),
     ).toBeInTheDocument()
-    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm?.models).toEqual(['medium'])
+
+    await fireEvent.update(aliases, 'medium-small')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(configureSeason).mock.calls[1]?.[1].overrides?.llm?.models).toEqual([
+      'medium',
+      'small',
+    ])
+  })
+
+  it('preserves an explicit all-alias list until the operator chooses inherited all', async () => {
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
+        overrides: { llm: { models: ['large', 'medium', 'small'] } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: configured }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+
+    const aliases = await screen.findByLabelText('Allowed model aliases')
+    expect((aliases as HTMLSelectElement).selectedIndex).toBe(-1)
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm?.models).toEqual([
+      'large',
+      'medium',
+      'small',
+    ])
+
+    await fireEvent.update(aliases, 'all')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(configureSeason).mock.calls[1]?.[1].overrides?.llm?.models).toBeUndefined()
   })
 
   it('rejects non-positive LLM limits before saving', async () => {

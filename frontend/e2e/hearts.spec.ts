@@ -261,9 +261,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     await page.goto(`/environments/${HEARTS_ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(HEARTS_SEASON) }).click()
     await expect(page.getByRole('heading', { name: `Season ${HEARTS_SEASON}` })).toBeVisible()
-    await expect(
-      page.getByText('Projected games: 3 (4 seats, 2 submissions)', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText('Projected total: 3 games', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow' }).click()
     await expect(page).toHaveURL(
       new RegExp(`/environments/${HEARTS_ENV_ID}/admin/seasons/${season.id}/runs/`),

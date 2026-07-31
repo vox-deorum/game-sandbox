@@ -12,10 +12,10 @@
   metadata arriving both leave the stored seats exactly as saved. A row saved under an earlier layout
   keeps its seats until the operator conforms it with "Match the layout".
 
-  The projection counts exactly what the draft would create: a total beside the resolved seat and
-  roster sizes, and each match's own share in its heading. One box carries the total or the single
-  reason there is none, never both. Only the roster makes it an estimate, since triggering a run
-  freezes a fresh one.
+  The projection counts exactly what the draft would create: the eligible roster size in the section
+  heading, the projected total below the matches, and each match's own share in its heading. One box
+  carries the total or the single reason there is none, never both. Only the roster makes it an
+  estimate, since triggering a run freezes a fresh one.
 
   A config edit once runs exist, or a deps_version change once submissions exist, is destructive. The
   first save attempt goes without `force`; the backend refuses it with a typed conflict, and the editor
@@ -111,8 +111,12 @@ const episodeTimeoutPlaceholder = computed(() =>
   timeoutPlaceholder(props.environment?.episode_limit_ms),
 )
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
-const llmModelsMode = ref<'all' | 'custom'>('all')
-const llmModels = ref<LlmModelAlias[]>([])
+const llmModelsMode = ref<'all' | 'medium-small' | 'small' | 'script-managed'>('all')
+const llmModelsHint = computed(() => {
+  if (llmModelsMode.value !== 'script-managed') return undefined
+  const models = props.season.config.overrides?.llm?.models ?? []
+  return `Current API-managed aliases: ${models.join(', ')}. Choose a preset to replace them.`
+})
 const officialTokenBudget = ref<number | ''>('')
 const officialRateLimit = ref<number | ''>('')
 const developmentTokenBudget = ref<number | ''>('')
@@ -205,18 +209,16 @@ const projection = computed<{ totals: ScheduleProjection | null; error: string |
   }
 })
 
-/** The projected total, with the two inputs that decide it. Empty until the draft projects. */
+/** The projected total. Empty until the draft projects. */
 const headline = computed(() => {
   const total = projection.value.totals?.totalGames
-  const seats = resolvedLayout.value?.seatCount
-  if (total === undefined || seats === undefined) return ''
-  return `Projected games: ${total.toLocaleString()} (${count(seats, 'seat')}, ${count(props.eligibleSubmissionCount, 'submission')})`
+  return total === undefined ? '' : `Projected total: ${count(total, 'game')}`
 })
 
 /** One match's own share of the projected games, shown in its heading. Empty until the draft projects. */
 function matchGames(matchIndex: number): string {
   const total = projection.value.totals?.matches[matchIndex]?.totalGames
-  return total === undefined ? '' : ` (${count(total, 'game')})`
+  return total === undefined ? '' : `: ${count(total, 'game')}`
 }
 
 /**
@@ -291,8 +293,15 @@ function seedFromSeason(): void {
   messagingEnabled.value = messaging?.enabled === false ? 'off' : 'default'
   const llm = config.overrides?.llm
   llmEnabled.value = llm?.enabled === undefined ? 'default' : llm.enabled ? 'on' : 'off'
-  llmModelsMode.value = llm?.models === undefined ? 'all' : 'custom'
-  llmModels.value = [...(llm?.models ?? [])]
+  const models = llm?.models
+  llmModelsMode.value =
+    models === undefined
+      ? 'all'
+      : models.length === 2 && models.includes('medium') && models.includes('small')
+        ? 'medium-small'
+        : models.length === 1 && models[0] === 'small'
+          ? 'small'
+          : 'script-managed'
   officialTokenBudget.value = llm?.official?.token_budget ?? ''
   officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
   developmentTokenBudget.value = llm?.development?.token_budget ?? ''
@@ -405,9 +414,6 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const messaging: NonNullable<SeasonOverrides['messaging']> = {}
   if (messagingEnabled.value === 'off') messaging.enabled = false
   if (Object.keys(messaging).length > 0) overrides.messaging = messaging
-  if (llmModelsMode.value === 'custom' && llmModels.value.length === 0) {
-    return { error: 'Select at least one allowed LLM model alias, or inherit all deployment aliases.' }
-  }
   const official = buildLimitOverride(
     'official',
     officialTokenBudget.value,
@@ -422,8 +428,11 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (development.error !== undefined) return { error: development.error }
   const llm: NonNullable<SeasonOverrides['llm']> = {}
   if (llmEnabled.value !== 'default') llm.enabled = llmEnabled.value === 'on'
-  if (llmModelsMode.value === 'custom') {
-    llm.models = LLM_MODEL_ALIASES.filter((alias) => llmModels.value.includes(alias))
+  const storedModels = props.season.config.overrides?.llm?.models
+  if (llmModelsMode.value === 'script-managed' && storedModels !== undefined) {
+    llm.models = [...storedModels]
+  } else if (llmModelsMode.value !== 'all') {
+    llm.models = llmModelsMode.value === 'medium-small' ? ['medium', 'small'] : ['small']
   }
   if (official.limits !== undefined) llm.official = official.limits
   if (development.limits !== undefined) llm.development = development.limits
@@ -601,7 +610,9 @@ watch(confirmOpen, (open) => {
 <template>
   <div class="config">
     <UiCard aria-labelledby="match-design-title">
-      <h3 id="match-design-title" class="config-title">Match Design</h3>
+      <h3 id="match-design-title" class="config-title">
+        Match Design: {{ count(props.eligibleSubmissionCount, 'submission') }}
+      </h3>
 
     <UiField label="Dependency-set version" hint="Defaults to the current template release.">
       <template #default="{ id }">
@@ -724,24 +735,16 @@ watch(confirmOpen, (open) => {
             </UiSelect>
           </template>
         </UiField>
-        <UiField
-          label="Allowed model aliases"
-        >
-          <template #default="{ id }">
-            <UiSelect :id="id" v-model="llmModelsMode">
-              <option value="all">All deployment aliases</option>
-              <option value="custom">Custom selection</option>
+        <UiField label="Allowed model aliases" :hint="llmModelsHint">
+          <template #default="{ id, describedby }">
+            <UiSelect :id="id" v-model="llmModelsMode" :aria-describedby="describedby">
+              <option value="all">All of them</option>
+              <option value="medium-small">Medium and small only</option>
+              <option value="small">Small only</option>
             </UiSelect>
           </template>
         </UiField>
       </div>
-
-      <UiCheckboxGroup
-        v-if="llmModelsMode === 'custom'"
-        v-model="llmModels"
-        legend="Model aliases"
-        :options="LLM_MODEL_ALIASES.map((alias) => ({ value: alias, label: alias }))"
-      />
 
       <div class="limit-groups">
         <fieldset class="limit-group">

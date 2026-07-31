@@ -69,7 +69,7 @@ llm?: {
 
 Unset limits and token prices inherit deployment defaults, and an unset model list inherits every configured deployment tier. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits or prices, prices above 1,000,000, empty model lists, duplicate tiers, and selected tiers unavailable on the deployment. Run creation persists the resulting official model mapping, prices, and limits, while live and development resolution continue to use the current effective values.
 
-`SeasonConfigEditor.vue` exposes enablement, available model tiers, official per-slot limits, and development limits as separate field groups built from existing UI primitives. Scripts and the API can set per-tier token prices, but console saves omit stored `cost_weights`. The admin-editor unit and browser tests cover every console control and validation state.
+`SeasonConfigEditor.vue` exposes enablement, allowed model aliases, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The model selector offers three descending presets: all aliases, medium and small only, or small only. A non-preset list written through the API remains unchanged until the operator chooses one of those presets. Scripts and the API can set per-tier token prices, but console saves omit stored `cost_weights`. The admin-editor unit and browser tests cover every console control and validation state.
 
 Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET` and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 

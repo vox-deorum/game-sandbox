@@ -266,11 +266,12 @@ const tooltipSettings = [
             </UiSelect>
           </template>
         </UiField>
-        <UiField label="Allowed model aliases" hint="Inherit all aliases or choose a subset.">
+        <UiField label="Allowed model aliases">
           <template #default="{ id }">
             <UiSelect :id="id" v-model="llmModelsMode">
-              <option value="all">All deployment aliases</option>
-              <option value="custom">Custom selection</option>
+              <option value="all">All of them</option>
+              <option value="medium-small">Medium and small only</option>
+              <option value="small">Small only</option>
             </UiSelect>
           </template>
         </UiField>
