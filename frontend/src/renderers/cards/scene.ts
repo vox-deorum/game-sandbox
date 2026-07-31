@@ -48,14 +48,6 @@ export function cardToAction(card: Card): number {
   return card.suit * 13 + (card.rank - 2)
 }
 
-/** Thin object accessors, kept for callers that prefer function form; every caller passes a Card. */
-export function suitOf(card: Card): number {
-  return card.suit
-}
-export function rankOf(card: Card): number {
-  return card.rank
-}
-
 /** Rank labels indexed by rank id 0..12. */
 export const RANK_LABELS = [
   '2',

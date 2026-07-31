@@ -105,7 +105,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `SUBMISSION_GIT_TIMEOUT_MS` | `15000` | Git operation deadline |
 | `SUBMISSION_BUILD_TIMEOUT_MS` | `120000` | Overlay build deadline |
 | `SUBMISSION_LOAD_CHECK_TIMEOUT_MS` | `30000` | Sandboxed load-check deadline |
-| `SUBMISSION_MAX_SIZE_MB` | `25` | Maximum checked-out submission source size, in MB, measured without `.git`/VCS history; a per-season `overrides.submission_max_size_mb` takes precedence. `0` rejects every submission |
+| `SUBMISSION_MAX_SIZE_MB` | `25` | Maximum checked-out submission source size, in MB, measured after dropping VCS history, dependency and virtual-environment directories, tool caches, compiled bytecode, and build or dist output; a submission's own `data/` directory counts. A per-season `overrides.submission_max_size_mb` takes precedence. `0` rejects every submission |
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
 

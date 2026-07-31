@@ -46,7 +46,7 @@ const standings = computed(() =>
 const winnerText = computed(() => {
   if (standings.value.length < 2) return null
   const winners = standings.value.filter((row) => row.medal === 'gold')
-  return winners.length === 1 ? `${formatSeat(winners[0]?.seat ?? '')} won` : 'Tied'
+  return winners.length === 1 ? `${formatSeat(winners[0]!.seat)} won` : 'Tied'
 })
 
 /**

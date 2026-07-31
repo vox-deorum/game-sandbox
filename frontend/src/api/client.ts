@@ -352,7 +352,7 @@ export async function getSession(id: string): Promise<SessionRow | undefined> {
 /** Owner-only graceful stop. A 204 (or an already-ended no-op) resolves; other failures throw. */
 export async function stopSession(id: string): Promise<void> {
   const res = await request(`/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
-  if (!res.ok && res.status !== 204) {
+  if (!res.ok) {
     throw new ApiError(res.status, `DELETE /sessions/:id failed with ${res.status}`)
   }
 }

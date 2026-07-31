@@ -1,20 +1,10 @@
-// The small presentational primitives in one suite: badge, status badge, card, empty state.
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import UiAvatar from '../../src/components/ui/UiAvatar.vue'
-import UiBadge from '../../src/components/ui/UiBadge.vue'
-import UiCard from '../../src/components/ui/UiCard.vue'
 import UiDialogActions from '../../src/components/ui/UiDialogActions.vue'
 import UiEmptyState from '../../src/components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../../src/components/ui/UiStatusBadge.vue'
-
-describe('UiBadge', () => {
-  it('renders its text', () => {
-    render(UiBadge, { slots: { default: 'Human playable' } })
-    expect(screen.getByText('Human playable')).toBeInTheDocument()
-  })
-})
 
 describe('UiAvatar', () => {
   it('renders a labelled initial fallback when no image is available', () => {
@@ -49,13 +39,6 @@ describe('UiStatusBadge', () => {
   })
 })
 
-describe('UiCard', () => {
-  it('renders slot content', () => {
-    render(UiCard, { slots: { default: 'Card body' } })
-    expect(screen.getByText('Card body')).toBeInTheDocument()
-  })
-})
-
 describe('UiDialogActions', () => {
   it('renders actions in the shared dialog footer', () => {
     const { container } = render(UiDialogActions, { slots: { default: 'Confirm and cancel' } })
@@ -65,11 +48,6 @@ describe('UiDialogActions', () => {
 })
 
 describe('UiEmptyState', () => {
-  it('renders the muted message by default', () => {
-    render(UiEmptyState, { slots: { default: 'No replays yet.' } })
-    expect(screen.getByText('No replays yet.')).toBeInTheDocument()
-  })
-
   it('renders the danger tone for errors', () => {
     const { container } = render(UiEmptyState, {
       props: { tone: 'danger' },

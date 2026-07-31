@@ -11,7 +11,7 @@ def chat(self, inbox):
     ...
 ```
 
-On the agent's acting opportunity, the harness calls `chat` after its `act` result is available and before the environment applies the action. In a simultaneous tick, every active player's action finishes before any chat hook begins. The agent therefore knows its own chosen action, but receives no harness access to another player's returned action or the outcome of the step. `inbox` contains messages addressed to that player since its previous acting opportunity. Each inbox item includes its sender, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. Its inbox is still drained so unread messages remain bounded. See [Submissions](submission.md).
+On the agent's acting opportunity, the harness calls `chat` after its `act` result is available and before the environment applies the action. In a simultaneous tick, every active player's action finishes before any chat hook begins. The agent therefore knows its own chosen action, but receives no harness access to another player's returned action or the outcome of the step. `inbox` contains messages addressed to that player since its previous acting opportunity. Each inbox item includes its sender, recipient, text, and sent tick. The method returns messages or nothing. An agent without this method stays silent and incurs no chat cost. Its inbox is still drained so unread messages remain bounded. See [Submissions](submission.md).
 
 ## Messages
 

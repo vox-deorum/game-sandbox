@@ -15,7 +15,7 @@ import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import { sessionBaseImageDefinition } from '../../build/deps-version.js'
 import type { ImagePolicy } from '../../config/config.js'
-import { isSubmissionIgnored } from '../../submission/tree-filter.js'
+import { isSubmissionIgnored, SUBMISSION_IGNORED_SEGMENTS } from '../../submission/tree-filter.js'
 import type { ImageRef, SessionBaseImageSpec } from '../index.js'
 
 /** backend/src/driver/docker/image.ts → repo root is four directories up. */
@@ -44,13 +44,30 @@ export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
   return `${prefix}/session-base:deps-v${spec.depsVersion}`
 }
 
+/**
+ * The submission filter's set, plus `data`: the repo's own data volume (`backend/data/`'s SQLite
+ * database and recordings) has no reason to reach the daemon, but a participant's submission keeps
+ * its data/ directory, so `data` stays out of {@link SUBMISSION_IGNORED_SEGMENTS} itself.
+ */
+const BUILD_CONTEXT_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
+  ...SUBMISSION_IGNORED_SEGMENTS,
+  'data',
+])
+
 /** True when an outer-edge ignored directory or a compiled-Python artifact sits on this path. */
 function isIgnored(absolutePath: string): boolean {
   const rel = relative(REPO_ROOT, absolutePath)
   const rootLocalEnvironmentFile =
     !rel.includes(sep) && (rel === '.env' || (rel.startsWith('.env.') && rel !== '.env.default'))
-  // The same shared exclusion set the submission snapshot and overlay use, anchored at the repo root.
-  return rootLocalEnvironmentFile || isSubmissionIgnored(REPO_ROOT, absolutePath)
+  const buildContextIgnoredSegment = rel
+    .split(sep)
+    .some((segment) => BUILD_CONTEXT_IGNORED_SEGMENTS.has(segment))
+  // isSubmissionIgnored also covers the shared set anchored at the repo root and compiled-Python artifacts.
+  return (
+    rootLocalEnvironmentFile ||
+    buildContextIgnoredSegment ||
+    isSubmissionIgnored(REPO_ROOT, absolutePath)
+  )
 }
 
 async function imageExists(docker: Docker, tag: string): Promise<boolean> {

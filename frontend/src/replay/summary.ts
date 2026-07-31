@@ -13,13 +13,9 @@ function formatNumber(value: number): string {
 export function formatScoreMap(scores: Readonly<PlayerScoreMap>): string | null {
   // Callers provide an already-sanitized finite PlayerScoreMap.
   const entries = Object.entries(scores).sort(([a], [b]) => a.localeCompare(b))
-  if (entries.length === 0) {
-    return null
-  }
-  if (entries.length === 1) {
-    const first = entries[0]
-    return first === undefined ? null : formatNumber(first[1])
-  }
+  const first = entries[0]
+  if (first === undefined) return null
+  if (entries.length === 1) return formatNumber(first[1])
   return entries
     .map(([playerId, score]) => `${formatPlayer(playerId)}: ${formatNumber(score)}`)
     .join(', ')

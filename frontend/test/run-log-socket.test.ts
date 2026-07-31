@@ -9,7 +9,6 @@ class FakeWebSocket {
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
-  onerror: (() => void) | null = null
 
   constructor(readonly url: string) {
     instances.push(this)

@@ -43,6 +43,6 @@ Every session is recorded. Storage remains bounded:
 
 The format is JSON Lines, or JSONL: one JSON object per line. The first line is the header and each later line is one step.
 
-The harness serializes each recording header and completed-step state once, then sends the canonical line to recording storage and the backend relay. Storage retains that canonical line. A live turn-based session may also relay the unrecorded opening presentation state defined in [Interaction](interaction.md#per-step-state-object). When a state contains targeted chat, the relay sends each client an audience-filtered derived line and never delivers the targeted content to another live audience. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
+The harness serializes each recording header and completed-step state once, then sends the canonical line to recording storage and the backend relay. Storage retains that canonical line. A live session may also relay the unrecorded opening presentation state defined in [Interaction](interaction.md#per-step-state-object). When a state contains targeted chat, the relay sends each client an audience-filtered derived line and never delivers the targeted content to another live audience. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
 
 The first storage implementation uses a mounted folder. An S3-compatible implementation may be added behind the same save/load interface.

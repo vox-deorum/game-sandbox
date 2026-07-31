@@ -30,16 +30,6 @@ export interface SessionSocketHandlers {
 
 const MAX_BACKOFF_MS = 5_000
 
-/**
- * Build the absolute ws(s) URL for a session path. The browser sends the Better Auth session cookie
- * on a same-origin upgrade, so identity rides the cookie and no `user` query parameter is appended.
- */
-export function sessionSocketUrl(wsPath: string, origin: string): string {
-  const url = new URL(wsPath, origin)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
-}
-
 export class SessionSocket {
   private socket: WebSocket | null = null
   private closedByCaller = false
@@ -68,7 +58,9 @@ export class SessionSocket {
     const origin = this.deps.origin ?? window.location.origin
     this.headerSeen = false
     this.handlers.onConnectionChange?.(state)
-    const socket = new Impl(sessionSocketUrl(this.wsPath, origin))
+    const url = new URL(this.wsPath, origin)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new Impl(url.toString())
     this.socket = socket
     socket.onopen = (): void => {
       this.reconnectAttempts = 0
@@ -84,9 +76,6 @@ export class SessionSocket {
         return
       }
       this.scheduleReconnect()
-    }
-    socket.onerror = (): void => {
-      // The close handler drives reconnect; errors only ever precede a close.
     }
   }
 

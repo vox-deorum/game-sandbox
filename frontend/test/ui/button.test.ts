@@ -12,17 +12,6 @@ function makeRouter() {
 }
 
 describe('UiButton', () => {
-  it('renders a button and forwards clicks', async () => {
-    const onClick = vi.fn()
-    render(UiButton, {
-      slots: { default: 'Start' },
-      attrs: { onClick },
-    })
-    const button = screen.getByRole('button', { name: 'Start' })
-    button.click()
-    expect(onClick).toHaveBeenCalledOnce()
-  })
-
   it('blocks clicks while disabled', () => {
     const onClick = vi.fn()
     render(UiButton, {

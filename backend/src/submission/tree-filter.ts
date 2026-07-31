@@ -15,7 +15,6 @@ export const SUBMISSION_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
   '.git',
   '.venv',
   'build',
-  'data',
   'dist',
   '.pytest-tmp',
   '.pytest-cache',

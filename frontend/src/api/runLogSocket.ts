@@ -59,16 +59,8 @@ export interface RunLogSocketHandlers {
   onClose?(): void
 }
 
-/** Build the absolute ws(s) URL for a run-log path; the browser sends the session cookie on upgrade. */
-export function runLogSocketUrl(wsPath: string, origin: string): string {
-  const url = new URL(wsPath, origin)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
-}
-
 export class RunLogSocket {
   private socket: WebSocket | null = null
-  private closedByCaller = false
 
   constructor(
     private readonly wsPath: string,
@@ -81,7 +73,9 @@ export class RunLogSocket {
   connect(): void {
     const Impl = this.deps.WebSocketImpl ?? WebSocket
     const origin = this.deps.origin ?? window.location.origin
-    const socket = new Impl(runLogSocketUrl(this.wsPath, origin))
+    const url = new URL(this.wsPath, origin)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new Impl(url.toString())
     this.socket = socket
     socket.onmessage = (event: MessageEvent): void => {
       this.onFrame(typeof event.data === 'string' ? event.data : String(event.data))
@@ -89,9 +83,6 @@ export class RunLogSocket {
     socket.onclose = (): void => {
       this.socket = null
       this.handlers.onClose?.()
-    }
-    socket.onerror = (): void => {
-      // The close handler reports the end; errors only ever precede a close.
     }
   }
 
@@ -119,13 +110,7 @@ export class RunLogSocket {
 
   /** Close the socket for good. */
   close(): void {
-    this.closedByCaller = true
     this.socket?.close()
     this.socket = null
-  }
-
-  /** Whether the caller has explicitly closed this socket. */
-  get isClosed(): boolean {
-    return this.closedByCaller
   }
 }

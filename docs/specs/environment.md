@@ -60,6 +60,8 @@ Game Sandbox metadata includes:
 - Recommended episode length.
 - Required stepping mode: `sequential` or `simultaneous`.
 - Pace interval, or no interval for turn-based play.
+- Viewing cadence for watch and replay playback, independent of the pace interval.
+- Live playout cadence for the other players' moves in a turn-based session with a human player.
 - Default step and episode compute limits.
 - Messaging availability and message cap.
 - LLM API availability.

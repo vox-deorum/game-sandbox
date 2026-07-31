@@ -1110,9 +1110,4 @@ const seasonLabel = (label: string | null, id: string): string =>
   color: var(--color-accent);
 }
 
-.agent-placeholder {
-  margin-top: var(--space-6);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
 </style>

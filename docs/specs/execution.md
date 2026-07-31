@@ -60,7 +60,7 @@ Before use, the image passes the sandboxed load check from [Submissions](submiss
 
 Session containers have:
 
-- Fixed CPU and memory quotas.
+- A fixed CPU quota and a memory quota that scales with player count.
 - A read-only root filesystem.
 - A bounded writable scratch directory.
 - No general internet access.

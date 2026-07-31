@@ -7,7 +7,6 @@
   recording carries a text "Pinned" badge, so the pin signal is never a bare glyph.
 -->
 <script setup lang="ts">
-import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

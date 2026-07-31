@@ -76,11 +76,11 @@ Every failure has a specific owner-visible reason. A successful submission becom
 
 ### Maximum submission size
 
-The static layer caps the size of the checked-out source without `.git` or other version-control history. A submission contains code, not repository history. The site default is 25 MB, configured by `SUBMISSION_MAX_SIZE_MB`. A season may set `overrides.submission_max_size_mb`, which takes precedence when present. If a submission exceeds the cap, the static stage fails and tells the owner both the measured size and the limit.
+The static layer caps the size of the checked-out source after a shared filter removes files that are never part of the submission itself: version-control history such as `.git`, dependency and virtual-environment directories such as `node_modules` and `.venv`, tool caches, compiled Python bytecode, and the `build` and `dist` build-artifact directories. A participant's `data` directory is not filtered, so it counts toward the cap. The site default is 25 MB, configured by `SUBMISSION_MAX_SIZE_MB`. A season may set `overrides.submission_max_size_mb`, which takes precedence when present. If a submission exceeds the cap, the static stage fails and tells the owner both the measured size and the limit.
 
 ## Snapshots and downloads
 
-After a submission passes the size cap and static checks, the server stores a compressed snapshot of its source tree under `<DATA_DIR>/submissions`. This is the same filtered tree used to build the overlay and excludes `.git`. The snapshot becomes the durable source of truth:
+After a submission passes the size cap and static checks, the server stores a compressed snapshot of its source tree under `<DATA_DIR>/submissions`. This is the same filtered tree used to build the overlay and measured against the size cap above, so it excludes the same version-control, dependency, and build-artifact directories and keeps a participant's `data` directory. The snapshot becomes the durable source of truth:
 
 - **Reruns and rebuilds** create the overlay from the snapshot instead of cloning the repository again. They therefore continue to work if the participant force-pushes or deletes the pinned commit.
 - **Operators** can download one submission's source or an entire season. A season download is a `.tar.gz` archive with each active participant's submission in a separate folder, a `submission.json` metadata file in each folder, and a top-level `season.json` index. Both download routes are restricted to operators under `/api/admin`.
