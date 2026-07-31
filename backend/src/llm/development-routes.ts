@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 
-import type { RequestIdentity } from '../identity.js'
+import type { RequestIdentity } from '../auth/identity.js'
 import type { Storage } from '../storage/index.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import { type EncodedLlmLimits, encodeLimits } from './config.js'

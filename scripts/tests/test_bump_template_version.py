@@ -139,7 +139,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A synthetic repo at version 1 with every touchpoint the bump script edits."""
     base_manifest = tmp_path / "templates" / "base" / "manifest.json"
     base_requirements = tmp_path / "templates" / "base" / "requirements.txt"
-    deps_ts = tmp_path / "backend" / "src" / "deps-version.ts"
+    deps_ts = tmp_path / "backend" / "src" / "build" / "deps-version.ts"
     images = tmp_path / "backend" / "images" / "session-base"
     fixtures = tmp_path / "frontend" / "e2e" / "fixtures" / "submission"
 
@@ -194,7 +194,7 @@ def test_apply_bumps_every_touchpoint(repo: Path):
         text = (repo / "frontend" / "e2e" / "fixtures" / "submission" / name / "manifest.json").read_text()
         assert '"template_version": 2' in text
 
-    ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    ts = (repo / "backend" / "src" / "build" / "deps-version.ts").read_text()
     assert "export const DEPS_VERSION = 2" in ts
     assert "deps-v2/Dockerfile" in ts
 
@@ -301,7 +301,7 @@ def test_apply_can_skip_versions(repo: Path):
     # N need not be prev+1; the registry just gains the requested version.
     bump.apply(5)
     assert bump.current_version() == 5
-    ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    ts = (repo / "backend" / "src" / "build" / "deps-version.ts").read_text()
     assert "deps-v5/Dockerfile" in ts
     assert "deps-v1/Dockerfile" in ts  # old entry retained
 
@@ -319,7 +319,7 @@ def test_apply_refuses_an_existing_snapshot(repo: Path):
     assert bump.current_version() == 1
     fixture = repo / "frontend" / "e2e" / "fixtures" / "submission" / "good" / "manifest.json"
     assert '"template_version": 1' in fixture.read_text()
-    deps_ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    deps_ts = (repo / "backend" / "src" / "build" / "deps-version.ts").read_text()
     assert "export const DEPS_VERSION = 1" in deps_ts
     assert "deps-v2/Dockerfile" not in deps_ts
 
@@ -337,7 +337,7 @@ def test_apply_refuses_a_dangling_snapshot_symlink(repo: Path):
     assert bump.current_version() == 1
     fixture = repo / "frontend" / "e2e" / "fixtures" / "submission" / "good" / "manifest.json"
     assert '"template_version": 1' in fixture.read_text()
-    deps_ts = (repo / "backend" / "src" / "deps-version.ts").read_text()
+    deps_ts = (repo / "backend" / "src" / "build" / "deps-version.ts").read_text()
     assert "export const DEPS_VERSION = 1" in deps_ts
     assert "deps-v2/Dockerfile" not in deps_ts
 
@@ -346,7 +346,7 @@ def test_apply_refuses_a_dangling_snapshot_symlink(repo: Path):
 
 
 def test_check_flags_manifest_constant_mismatch(repo: Path):
-    ts = repo / "backend" / "src" / "deps-version.ts"
+    ts = repo / "backend" / "src" / "build" / "deps-version.ts"
     ts.write_text(_DEPS_TS.replace("DEPS_VERSION = 1", "DEPS_VERSION = 2"), encoding="utf-8")
     problems = bump.check()
     assert any("DEPS_VERSION is 2" in p for p in problems)

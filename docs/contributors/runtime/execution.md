@@ -61,7 +61,7 @@ Each supported dependency version has a concrete base-image definition:
 backend/images/session-base/deps-v<N>/
 ```
 
-`backend/src/deps-version.ts` is the registry. A template version is valid only when this registry points to its Dockerfile.
+`backend/src/build/deps-version.ts` is the registry. A template version is valid only when this registry points to its Dockerfile.
 
 Each base contains:
 

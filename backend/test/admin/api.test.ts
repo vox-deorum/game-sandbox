@@ -11,10 +11,10 @@ import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../../src/app.js'
-import { DEPS_VERSION } from '../../src/deps-version.js'
+import { DEPS_VERSION } from '../../src/build/deps-version.js'
 import { decodeResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
-import { RecordingsStore } from '../../src/recordings.js'
-import { Retention } from '../../src/retention.js'
+import { Retention } from '../../src/recordings/retention.js'
+import { RecordingsStore } from '../../src/recordings/store.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import type {
   AgentRef,

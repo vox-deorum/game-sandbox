@@ -22,7 +22,7 @@
  * The worker is driver-neutral: it drives the {@link ExecutionDriver} seam (overlay build + launch)
  * and the {@link SubmissionSource} seam, learning no Docker or git specifics.
  */
-import type { SandboxDefaults } from '../config.js'
+import type { SandboxDefaults } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile } from '../driver/sandbox.js'
 import type {

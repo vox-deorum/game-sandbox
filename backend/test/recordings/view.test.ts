@@ -1,13 +1,13 @@
 import { Readable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 
-import type { AuthUser } from '../src/identity.js'
+import type { AuthUser } from '../../src/auth/identity.js'
 import {
   headerHasSubmittedAgent,
   isBlindRecording,
   maskPlayers,
   replaceHeaderLine,
-} from '../src/recordings-view.js'
+} from '../../src/recordings/view.js'
 
 type Players = NonNullable<import('@game-sandbox/schema').RecordingHeader['players']>
 

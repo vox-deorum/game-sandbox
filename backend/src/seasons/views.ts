@@ -11,8 +11,7 @@
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 
-import { enrichAgentRef } from './auth/users.js'
-import { optionalField } from './optional-field.js'
+import { enrichAgentRef } from '../auth/users.js'
 import {
   type AgentRef,
   AgentRefArraySchema,
@@ -20,8 +19,9 @@ import {
   type Season,
   type SeasonRun,
   type SeasonRunGame,
-} from './storage/schema.js'
-import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.js'
+} from '../storage/schema.js'
+import { decodeSeasonConfig, type SeasonConfig } from '../storage/season-config.js'
+import { optionalField } from '../util/optional-field.js'
 
 /** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
 const NO_NAMES: ReadonlyMap<string, string> = new Map()

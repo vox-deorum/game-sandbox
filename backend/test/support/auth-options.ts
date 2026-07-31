@@ -4,7 +4,7 @@
  * via `makeConfig`/`startStack` can reuse these values without importing the Better Auth runtime that
  * `support/auth.ts` pulls in. The values are valid but deliberately test-only; never deploy them.
  */
-import type { AuthOptions } from '../../src/config.js'
+import type { AuthOptions } from '../../src/config/config.js'
 
 export const TEST_AUTH_OPTIONS: AuthOptions = {
   secret: 'test-secret-at-least-32-characters!!',

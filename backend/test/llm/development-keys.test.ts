@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { EnvironmentRegistry } from '../../src/environments.js'
-import type { UserStatus } from '../../src/identity.js'
+import type { UserStatus } from '../../src/auth/identity.js'
+import type { EnvironmentRegistry } from '../../src/environments/registry.js'
 import {
   DevelopmentKeyService,
   type DevelopmentKeyStorage,

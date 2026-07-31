@@ -1,5 +1,5 @@
-import type { LlmOptions } from '../../src/config.js'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import type { LlmOptions } from '../../src/config/config.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 
 /** Explicit disabled policy for storage-focused tests that do not exercise LLM resolution. */

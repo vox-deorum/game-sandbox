@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { loadEnvironmentFiles } from '../src/env-files.js'
+import { loadEnvironmentFiles } from '../../src/config/env-files.js'
 
 describe('loadEnvironmentFiles', () => {
   const roots: string[] = []

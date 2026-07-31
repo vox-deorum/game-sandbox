@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { seedOpenSeasons } from '../../src/seasons-seed.js'
+import { seedOpenSeasons } from '../../src/seasons/seed.js'
 import {
   decodeSeasonConfig,
   type NewSessionInput,

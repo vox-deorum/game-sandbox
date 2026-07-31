@@ -7,17 +7,16 @@
  * playing without exposing its boards.
  */
 import type { FastifyInstance } from 'fastify'
-
+import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
-import type { EnvironmentRegistry } from '../environments.js'
-import type { RequestIdentity } from '../identity.js'
+import type { EnvironmentRegistry } from '../environments/registry.js'
 import {
   agentOwnerIds,
   gameOwnerIds,
   publicSeasonView,
   runGameView,
   seasonView,
-} from '../season-views.js'
+} from '../seasons/views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */

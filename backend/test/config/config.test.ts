@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { type Config, loadConfig } from '../src/config.js'
-import { withDefaultEnvironment } from './support/config-env.js'
+import { type Config, loadConfig } from '../../src/config/config.js'
+import { withDefaultEnvironment } from '../support/config-env.js'
 
 // Exercise the tracked defaults under normal-mode auth. The auth validation matrix (required
 // variables, local opt-in, loopback rules, GitHub both-or-neither) is covered separately.

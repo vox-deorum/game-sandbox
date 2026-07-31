@@ -9,7 +9,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import type { ResolvedLlm } from '../../src/llm/config.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Storage } from '../../src/storage/index.js'

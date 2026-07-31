@@ -19,7 +19,7 @@
 import { Transform } from 'node:stream'
 import type { RecordingHeader } from '@game-sandbox/schema'
 
-import type { AuthUser } from './identity.js'
+import type { AuthUser } from '../auth/identity.js'
 
 type Players = NonNullable<RecordingHeader['players']>
 

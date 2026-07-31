@@ -21,14 +21,15 @@
  * entry carries the header plus owner, age, and pin state. A directory with no row (foreign debris,
  * or pre-backfill data) is listed header-only and never evicted.
  */
-import type { RecordingsStore } from './recordings.js'
-import type { Recording, RecordingCleanupClaimResult, Storage } from './storage/index.js'
-import { SweepTimer } from './sweep-timer.js'
+
+import type { Recording, RecordingCleanupClaimResult, Storage } from '../storage/index.js'
+import { SweepTimer } from '../util/sweep-timer.js'
+import type { RecordingsStore } from './store.js'
 
 const MS_PER_DAY = 86_400_000
 const COMPLETED_OUTCOMES = new Set(['terminated', 'truncated'])
 
-/** The retention knobs, sliced from {@link import('./config.js').Config}. */
+/** The retention knobs, sliced from {@link import('../config/config.js').Config}. */
 export interface RetentionConfig {
   recordingRetentionDays: number
   recordingUserQuota: number

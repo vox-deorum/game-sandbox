@@ -9,9 +9,9 @@
  * produces is exactly what a session launch would, and it always rebuilds regardless of the
  * configured policy.
  */
-import { loadDockerOptions } from './config.js'
+import { loadDockerOptions } from '../config/config.js'
+import { buildImage } from '../driver/docker/index.js'
 import { currentSessionBaseImageSpec } from './deps-version.js'
-import { buildImage } from './driver/docker/index.js'
 
 async function main(): Promise<void> {
   // Only the Docker options are needed here, so parse just that slice: building an image must not

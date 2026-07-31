@@ -19,9 +19,9 @@
  */
 import type { OverlayImageManager } from '../driver/index.js'
 import type { Storage } from '../storage/index.js'
-import { SweepTimer } from '../sweep-timer.js'
+import { SweepTimer } from '../util/sweep-timer.js'
 
-/** The eviction knobs, sliced from {@link import('../config.js').Config}. */
+/** The eviction knobs, sliced from {@link import('../config/config.js').Config}. */
 export interface OverlayEvictionConfig {
   /** Max overlay images retained; active-`ready` images count toward it but are never evicted. */
   overlayImageBudget: number

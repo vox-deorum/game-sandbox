@@ -1,7 +1,7 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema'
 import { z } from 'zod'
 
-import type { LlmOptions } from '../config.js'
+import type { LlmOptions } from '../config/config.js'
 import type { SeasonConfig } from '../storage/season-config.js'
 import {
   type LlmLimits,

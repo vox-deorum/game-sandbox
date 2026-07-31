@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url'
 
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
-import type { ImagePolicy } from '../../config.js'
-import { sessionBaseImageDefinition } from '../../deps-version.js'
+import { sessionBaseImageDefinition } from '../../build/deps-version.js'
+import type { ImagePolicy } from '../../config/config.js'
 import { isSubmissionIgnored } from '../../submission/tree-filter.js'
 import type { ImageRef, SessionBaseImageSpec } from '../index.js'
 

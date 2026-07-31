@@ -7,8 +7,8 @@ import {
   DEPS_VERSION,
   KNOWN_DEPS_VERSIONS,
   sessionBaseImageDefinition,
-} from '../src/deps-version.js'
-import { imageTag } from '../src/driver/docker/image.js'
+} from '../../src/build/deps-version.js'
+import { imageTag } from '../../src/driver/docker/image.js'
 
 describe('dependency-set image registry', () => {
   it('backs every known version with an explicit image definition, keeping v1 forever', () => {
@@ -26,7 +26,7 @@ describe('dependency-set image registry', () => {
   it('builds each version from its own frozen dependency and built-in-agent inputs', () => {
     for (const n of KNOWN_DEPS_VERSIONS) {
       const dockerfile = readFileSync(
-        new URL(`../images/session-base/deps-v${n}/Dockerfile`, import.meta.url),
+        new URL(`../../images/session-base/deps-v${n}/Dockerfile`, import.meta.url),
         'utf8',
       )
       // Each versioned Dockerfile COPYs only its own deps-v<n> inputs — never the mutable template

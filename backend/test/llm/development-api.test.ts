@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import BetterSqlite3 from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { UserStatus } from '../../src/identity.js'
+import type { UserStatus } from '../../src/auth/identity.js'
 import {
   DevelopmentKeyService,
   type DevelopmentKeyStorage,

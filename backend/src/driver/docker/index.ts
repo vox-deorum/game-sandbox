@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import type { Container, ContainerCreateOptions, Network } from 'dockerode'
 import Docker from 'dockerode'
 
-import type { DockerDriverOptions } from '../../config.js'
+import type { DockerDriverOptions } from '../../config/config.js'
 import type {
   ExecutionDriver,
   ImageRef,

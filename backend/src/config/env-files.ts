@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { parseEnv } from 'node:util'
 
 /** The repository root, resolved from source so loading is independent of the process working directory. */
-export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 interface EnvironmentFileOptions {
   /** Environment map to extend. Tests pass an isolated object instead of mutating `process.env`. */

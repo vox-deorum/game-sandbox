@@ -13,10 +13,15 @@ import { createAuth } from './auth/auth.js'
 import { migrateAuthSchema, verifyCredentialUsers } from './auth/migrate.js'
 import { ensureAdminUser } from './auth/seed-admin.js'
 import { createUserDirectory, createUserStatusReader } from './auth/users.js'
-import { DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD, DEV_AUTH_SECRET, loadConfig } from './config.js'
-import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './deps-version.js'
+import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './build/deps-version.js'
+import {
+  DEV_ADMIN_EMAIL,
+  DEV_ADMIN_PASSWORD,
+  DEV_AUTH_SECRET,
+  loadConfig,
+} from './config/config.js'
 import { createDockerDriver } from './driver/docker/index.js'
-import { EnvironmentRegistry } from './environments.js'
+import { EnvironmentRegistry } from './environments/registry.js'
 import {
   persistPlacementsForCompletedRun,
   reconcileCompletedRunPlacements,
@@ -31,9 +36,9 @@ import {
   UpstreamCaller,
   upstreamRequestAllowanceMs,
 } from './llm/index.js'
-import { RecordingsStore } from './recordings.js'
-import { Retention, reclaimOrphanedOfficialTelemetry } from './retention.js'
-import { seedOpenSeasons } from './seasons-seed.js'
+import { Retention, reclaimOrphanedOfficialTelemetry } from './recordings/retention.js'
+import { RecordingsStore } from './recordings/store.js'
+import { seedOpenSeasons } from './seasons/seed.js'
 import { createOfficialGrantIssuer } from './session/official-grants.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { DevelopmentLedgerStore, ExecutionTelemetryStore } from './storage/llm/index.js'

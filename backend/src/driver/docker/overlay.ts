@@ -19,7 +19,7 @@ import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import type { Pack } from 'tar-stream'
 
-import type { ImagePolicy } from '../../config.js'
+import type { ImagePolicy } from '../../config/config.js'
 import { SUBMISSION_SEAT_BASE } from '../../submission/submission-image.js'
 import { submissionTarIgnore } from '../../submission/tree-filter.js'
 import type {

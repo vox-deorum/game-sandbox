@@ -8,8 +8,8 @@
  * against an existing database is a no-op and an environment already carrying an open season is left
  * untouched (its label is never overwritten — the operator renames it from the admin console).
  */
-import type { EnvironmentRegistry } from './environments.js'
-import type { Storage } from './storage/index.js'
+import type { EnvironmentRegistry } from '../environments/registry.js'
+import type { Storage } from '../storage/index.js'
 
 /** The label a freshly-seeded default season is stood up with. */
 export const DEFAULT_SEASON_LABEL = 'Playground'

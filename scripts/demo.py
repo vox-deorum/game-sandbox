@@ -52,7 +52,7 @@ from _paths import (
 from ci import _NPM, _run, job_frontend_e2e
 
 # The bootstrap admin the backend seeds under AUTH_ALLOW_INSECURE_DEFAULTS uses the published
-# development defaults (DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD in backend/src/config.ts). Must match
+# development defaults (DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD in backend/src/config/config.ts). Must match
 # frontend/e2e/support/auth.ts's ADMIN_EMAIL / ADMIN_PASSWORD, which the e2e suite's bootstrap
 # admin signs in with as well.
 _ADMIN_EMAIL = "admin@example.com"

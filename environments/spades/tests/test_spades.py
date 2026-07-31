@@ -523,7 +523,14 @@ def test_different_seeds_diverge():
 
 
 def test_generated_environments_json_includes_spades():
-    path = Path(__file__).resolve().parents[3] / "backend" / "src" / "generated" / "environments.json"
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "backend"
+        / "src"
+        / "environments"
+        / "generated"
+        / "environments.json"
+    )
     entries = json.loads(path.read_text(encoding="utf-8"))
     spades = next((entry for entry in entries if entry["env_id"] == "spades"), None)
     assert spades is not None

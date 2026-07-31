@@ -13,7 +13,7 @@
 import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
-import type { Auth } from './auth/auth.js'
+import type { Auth } from './auth.js'
 
 // The role->status derivation is shared with the frontend roster; re-export it here so backend callers
 // (and the identity unit test) keep resolving it through the identity seam.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { runGameView, runView } from '../src/season-views.js'
-import type { SeasonRun, SeasonRunGame } from '../src/storage/schema.js'
+import { runGameView, runView } from '../../src/seasons/views.js'
+import type { SeasonRun, SeasonRunGame } from '../../src/storage/schema.js'
 
 const game: SeasonRunGame = {
   id: 'game-1',

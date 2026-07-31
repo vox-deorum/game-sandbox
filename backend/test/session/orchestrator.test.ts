@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UserDirectory } from '../../src/auth/users.js'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
 import type { IssueOfficialGrantsInput } from '../../src/session/official-grants.js'
 import {

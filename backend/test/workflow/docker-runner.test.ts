@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UserDirectory } from '../../src/auth/users.js'
 import type { ExitInfo } from '../../src/driver/index.js'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { forfeitScore } from '../../src/leaderboards/score.js'
 import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 import type {

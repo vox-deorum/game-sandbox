@@ -39,7 +39,7 @@ import Docker from 'dockerode'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import type { AgentRef } from '../../src/storage/index.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'

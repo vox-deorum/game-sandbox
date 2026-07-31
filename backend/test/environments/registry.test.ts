@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { EnvironmentMetadataError, EnvironmentRegistry } from '../src/environments.js'
+import { EnvironmentMetadataError, EnvironmentRegistry } from '../../src/environments/registry.js'
 
 describe('EnvironmentRegistry', () => {
   it('loads the generated artifact and every entry carries the served fields', () => {

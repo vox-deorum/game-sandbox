@@ -197,7 +197,7 @@ export type StartSessionResult =
 export async function getEnvironments(): Promise<EnvironmentMeta[]> {
   const data = await json(await request('/environments'), 'GET /environments')
   // The catalog is this backend's own response, already validated at startup by
-  // EnvironmentRegistry.parse (backend/src/environments.ts). The frontend trusts the backend
+  // EnvironmentRegistry.parse (backend/src/environments/registry.ts). The frontend trusts the backend
   // everywhere else (see the comment in frontend/src/replay/parse.ts), so this keeps only the
   // cheap array-shape sanity check, which guards a real failure mode (an error body or an
   // unexpected envelope landing here instead of the list), rather than re-running the full

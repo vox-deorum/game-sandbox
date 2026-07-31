@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { RecordingsStore } from '../src/recordings.js'
+import { RecordingsStore } from '../../src/recordings/store.js'
 
 const HEADER =
   '{"created_at":"2026-06-11T00:00:00+00:00","environment":"hearts","parameters":{"players":3},"players":{"player_0":{"kind":"agent","builtin_name":"naive","label":"Naive agent"},"player_1":{"kind":"agent","builtin_name":"naive","label":"Naive agent"},"player_2":{"kind":"agent","builtin_name":"naive","label":"Naive agent"}},"schema_version":1,"seat_plan":"solo","seats":{"seat_0":["player_0"],"seat_1":["player_1"],"seat_2":["player_2"]},"seed":0}'

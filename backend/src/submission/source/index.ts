@@ -7,7 +7,7 @@
  * The git source is always available; the local source is constructed only when the dev gate is on,
  * and a local request is refused (`local_disabled`) before any filesystem access when it is off.
  */
-import type { SubmissionOptions } from '../../config.js'
+import type { SubmissionOptions } from '../../config/config.js'
 import { GitSource } from './git.js'
 import { createGitRunner, type GitRunner } from './git-process.js'
 import { createGitHubClient, type GitHubClient } from './github.js'

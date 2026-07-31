@@ -15,7 +15,7 @@ import { admin } from 'better-auth/plugins'
 import { type GithubProfile, github } from 'better-auth/social-providers'
 import type BetterSqlite3 from 'better-sqlite3'
 
-import type { AuthGithubOptions, AuthOptions } from '../config.js'
+import type { AuthGithubOptions, AuthOptions } from '../config/config.js'
 import { ac, roles } from './permissions.js'
 
 /** The provider profile data that has to survive from OAuth callback parsing to a database hook. */

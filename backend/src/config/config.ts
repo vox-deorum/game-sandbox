@@ -9,14 +9,13 @@
 import { isAbsolute, join, resolve } from 'node:path'
 import type { TiktokenEncoding } from 'tiktoken'
 import { z } from 'zod'
-
-import { loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
 import {
   type LlmLimits,
   type LlmModelConfig,
   MAX_LLM_COST_WEIGHT,
   type ModelAlias,
-} from './llm/types.js'
+} from '../llm/types.js'
+import { loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
 
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'

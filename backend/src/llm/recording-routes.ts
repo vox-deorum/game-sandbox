@@ -1,8 +1,8 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { FastifyInstance } from 'fastify'
 
-import type { RequestIdentity } from '../identity.js'
-import type { RecordingsStore } from '../recordings.js'
+import type { RequestIdentity } from '../auth/identity.js'
+import type { RecordingsStore } from '../recordings/store.js'
 import type { Storage } from '../storage/index.js'
 import {
   type ExecutionTelemetryCall,

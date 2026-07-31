@@ -21,11 +21,13 @@ Browser
 | Path | Responsibility |
 | --- | --- |
 | `src/main.ts` | Load configuration, open storage, reconcile work, assemble services, listen, handle signals |
-| `src/app.ts` | Fastify application, HTTP routes, WebSocket endpoints, static frontend |
-| `src/config.ts` | Parse environment variables into one typed `Config` |
-| `src/identity.ts` | Resolve the authenticated session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
+| `src/app.ts` | Fastify composition root: register routes and plugins, then install the static frontend fallback |
+| `src/<domain>/routes.ts` | Register one domain's HTTP routes through a `register<Domain>Routes(app, deps)` function |
+| `src/config/config.ts` | Parse environment variables into one typed `Config` |
 | `src/auth/` | Better Auth wiring, GitHub account linking, public attribution reads |
-| `src/environments.ts` | Load generated environment metadata |
+| `src/auth/identity.ts` | Resolve the authenticated session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
+| `src/environments/registry.ts` | Load generated environment metadata |
+| `src/environments/generated/environments.json` | Generated public environment metadata |
 | `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
 | `src/driver/` | Execution-driver interface and Docker implementation |
 | `src/session/` | Orchestrator, live relay, active-session registry |
@@ -36,9 +38,9 @@ Browser
 | `src/llm/` | OpenAI-compatible proxy, scoped grants, admission, retries, token estimation, and scope availability |
 | `src/storage/llm/` | Execution-scoped successful-call telemetry and development ledgers |
 | `src/workflow/` | Workflow runner interface, events, and recovery |
-| `src/recordings.ts` | Recording reads and deletion |
-| `src/retention.ts` | Recording metadata, pinning, and eviction |
-| `src/deps-version.ts` | Supported template dependency and base-image registry |
+| `src/recordings/store.ts` | Recording reads and deletion |
+| `src/recordings/retention.ts` | Recording metadata, pinning, and eviction |
+| `src/build/deps-version.ts` | Supported template dependency and base-image registry |
 
 Shared protocol and environment types live in `@game-sandbox/schema`. Browser-safe subpath exports avoid pulling Node-only recording readers into the frontend bundle.
 
@@ -62,7 +64,7 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-The required `.env.default` at the repository root defines all concrete runtime defaults. `config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives either `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives either `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](../setup/configuration.md) for the full environment-variable reference and deployment notes.
 
@@ -137,7 +139,7 @@ Deletion tolerates a missing row or directory so an interrupted sweep can recove
 
 ## Identity and authorization
 
-Identity comes from a Better Auth session cookie. `createRequestIdentity(auth)` in `identity.ts` resolves it and caches the result for the request, so a route that both checks access and personalizes its response performs only one session lookup.
+Identity comes from a Better Auth session cookie. `createRequestIdentity(auth)` in `auth/identity.ts` resolves it and caches the result for the request, so a route that both checks access and personalizes its response performs only one session lookup.
 
 `deriveStatus(role)` splits the Better Auth `role` on commas and maps it to `pending`, `normal`, or `admin`. Admin takes precedence over user, and user takes precedence over pending. An unknown, empty, or missing role becomes `pending`, so access fails closed.
 
@@ -170,9 +172,9 @@ Database constraints keep each GitHub identity and account email owned by one us
 
 ## Environment metadata
 
-The canonical registry lives in Python. `scripts/generate.py` writes committed `src/generated/environments.json`, and the generated-code check prevents drift.
+The canonical registry lives in Python. `scripts/generate.py` writes committed `src/environments/generated/environments.json`, and the generated-code check prevents drift.
 
-`environments.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
+`environments/registry.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
 
 ## Submission pipeline
 

@@ -38,15 +38,13 @@ import {
   validateCompleteParameters,
 } from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
-import type { ImagePolicy, SandboxDefaults } from '../config.js'
+import type { ImagePolicy, SandboxDefaults } from '../config/config.js'
 import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
 import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
-import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/types.js'
-import { optionalField } from '../optional-field.js'
-import { coerceResultReason } from '../result-reason.js'
 import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
   assembleLaunch,
@@ -55,6 +53,7 @@ import {
 } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
+import { coerceResultReason } from '../session/result-reason.js'
 import { decodeSeasonConfig, type LlmUsageByModel, type Storage } from '../storage/index.js'
 import type { ExecutionTelemetryStore, ExecutionUsageByModel } from '../storage/llm/index.js'
 import {
@@ -70,6 +69,7 @@ import {
   type SessionImageSeat,
   submissionSeatPath,
 } from '../submission/submission-image.js'
+import { optionalField } from '../util/optional-field.js'
 import {
   aggregatePlayer,
   failAllSeats,
@@ -1005,9 +1005,9 @@ function describeSeats(seats: readonly AgentRef[]): string {
 
 /**
  * Decode one stored assignment at the run boundary, rejecting malformed or foreign agent shapes.
- * Unlike `season-views.ts`'s `decodeAgentRefs` (the same `z.array(AgentRefSchema)` check over the same
+ * Unlike `seasons/views.ts`'s `decodeAgentRefs` (the same `z.array(AgentRefSchema)` check over the same
  * kind of stored column), this returns null on failure instead of throwing. That difference is
- * deliberate: `season-views.ts` reads trusted storage state a caller already committed to serving, so
+ * deliberate: `seasons/views.ts` reads trusted storage state a caller already committed to serving, so
  * a decode failure there is a bug worth throwing over; this reads a run's schedule before execution,
  * so a bad column here is funneled into one clean run-level failure (see the caller) rather than an
  * unhandled throw. Do not unify the two policies.

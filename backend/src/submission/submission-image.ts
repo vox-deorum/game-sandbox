@@ -16,7 +16,7 @@
  * pre-snapshot submission (or one whose snapshot write failed) the helper falls back to re-cloning the
  * pinned source through the source seam.
  */
-import type { ImagePolicy } from '../config.js'
+import type { ImagePolicy } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import type { Submission } from '../storage/index.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from './snapshot-store.js'

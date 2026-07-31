@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ParameterValue } from '@game-sandbox/schema/environment'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import {
   decodeResolvedOfficialLlmPolicy,
   type ResolvedOfficialLlmPolicy,

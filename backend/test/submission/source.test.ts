@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import type { SubmissionOptions } from '../../src/config.js'
+import type { SubmissionOptions } from '../../src/config/config.js'
 import {
   createSubmissionSource,
   type GitHubClient,

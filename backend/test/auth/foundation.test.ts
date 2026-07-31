@@ -25,9 +25,9 @@ import {
   DEV_ADMIN_PASSWORD,
   DEV_AUTH_SECRET,
   loadConfig as parseConfig,
-} from '../../src/config.js'
-import { RecordingsStore } from '../../src/recordings.js'
-import { Retention } from '../../src/retention.js'
+} from '../../src/config/config.js'
+import { Retention } from '../../src/recordings/retention.js'
+import { RecordingsStore } from '../../src/recordings/store.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import { openSqlite, type SqliteHandle } from '../../src/storage/sqlite.js'
 import { makeTestAuth, type TestUsers } from '../support/auth.js'

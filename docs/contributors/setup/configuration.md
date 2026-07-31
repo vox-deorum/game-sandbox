@@ -10,7 +10,7 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file. Use the Git-ignored `.env` for machine-specific values and private credentials. Other `.env.*` files are not loaded automatically.
 
-After loading, `config.ts` validates required values and parses the environment into one typed `Config` object. It also derives values such as `SITE_SHORT_NAME`, which falls back to `SITE_NAME` when unset. Feature modules receive configuration rather than reading process environment variables directly.
+After loading, `backend/src/config/config.ts` validates required values and parses the environment into one typed `Config` object. It also derives values such as `SITE_SHORT_NAME`, which falls back to `SITE_NAME` when unset. Feature modules receive configuration rather than reading process environment variables directly.
 
 ## Validation
 

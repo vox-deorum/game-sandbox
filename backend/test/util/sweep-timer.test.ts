@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { SweepTimer } from '../src/sweep-timer.js'
+import { SweepTimer } from '../../src/util/sweep-timer.js'
 
 describe('SweepTimer', () => {
   let timer: SweepTimer | undefined

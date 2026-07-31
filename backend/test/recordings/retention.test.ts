@@ -4,20 +4,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
-import { RecordingsStore } from '../src/recordings.js'
 import {
   Retention,
   type RetentionConfig,
   reclaimOrphanedOfficialTelemetry,
-} from '../src/retention.js'
-import { LiveSession } from '../src/session/live-session.js'
-import type { NewRecordingInput, ScheduledGameInput, Storage } from '../src/storage/index.js'
-import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../src/storage/llm/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
-import { FakeSessionProcess } from './support/fake-driver.js'
-import { createRunOrFail, flush } from './support/harness.js'
-import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from './support/llm-options.js'
+} from '../../src/recordings/retention.js'
+import { RecordingsStore } from '../../src/recordings/store.js'
+import { LiveSession } from '../../src/session/live-session.js'
+import type { NewRecordingInput, ScheduledGameInput, Storage } from '../../src/storage/index.js'
+import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../../src/storage/llm/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { FakeSessionProcess } from '../support/fake-driver.js'
+import { createRunOrFail, flush } from '../support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const DAY = 86_400_000
 // A fixed "now" so window math is deterministic; created_at values are offsets back from it.

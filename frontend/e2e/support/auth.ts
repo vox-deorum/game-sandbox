@@ -13,7 +13,7 @@ import { type APIRequestContext, type BrowserContext, expect } from '@playwright
 /**
  * The bootstrap admin the backend seeds under `AUTH_ALLOW_INSECURE_DEFAULTS`. These are the
  * published development credentials (`DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD` in
- * backend/src/config.ts). `npm run demo` prints the same pair, so scripts/demo.py must keep the
+ * backend/src/config/config.ts). `npm run demo` prints the same pair, so scripts/demo.py must keep the
  * values in sync.
  */
 export const ADMIN_EMAIL = 'admin@example.com'

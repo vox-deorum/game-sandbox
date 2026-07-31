@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { EnvironmentRegistry } from '../../src/environments.js'
+import type { EnvironmentRegistry } from '../../src/environments/registry.js'
 import {
   DevelopmentKeyService,
   type DevelopmentKeyStorage,

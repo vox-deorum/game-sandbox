@@ -1,4 +1,4 @@
-import type { SandboxDefaults } from '../config.js'
+import type { SandboxDefaults } from '../config/config.js'
 import type { MountSpec, SandboxNetwork, SandboxProfile } from './index.js'
 
 /** The only writable path exposed inside a sandboxed backend-launched container. */

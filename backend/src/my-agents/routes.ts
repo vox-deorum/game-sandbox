@@ -5,14 +5,14 @@
  */
 import type { FastifyInstance } from 'fastify'
 
-import type { RequestIdentity } from './identity.js'
+import type { RequestIdentity } from '../auth/identity.js'
 import type {
   AutomatedPlacement,
   PublicSeason,
   Storage,
   Submission,
   SubmissionStatus,
-} from './storage/index.js'
+} from '../storage/index.js'
 
 interface MyAgentsDeps {
   storage: Storage

@@ -18,13 +18,12 @@ import { agentRefKey } from '@game-sandbox/schema/board'
 import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
-
+import type { AuthUser, RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
-import type { AuthUser, RequestIdentity } from '../identity.js'
-import { optionalField } from '../optional-field.js'
-import type { RecordingsStore } from '../recordings.js'
+import type { RecordingsStore } from '../recordings/store.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
 import { agentKey } from '../storage/kysely/shared.js'
+import { optionalField } from '../util/optional-field.js'
 
 /** Everything the rating routes need beyond the Fastify instance. */
 export interface RatingDeps {

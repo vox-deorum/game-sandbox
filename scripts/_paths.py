@@ -20,7 +20,7 @@ FIXTURES_DIR = SCHEMA_DIR / "fixtures"
 # The backend serves environment metadata without ever running Python: generate.py writes the
 # registry's public-facing fields here as a committed, byte-stable JSON artifact, kept fresh by
 # the generated-code-fresh CI job like every other generated output.
-BACKEND_GENERATED_DIR = REPO_ROOT / "backend" / "src" / "generated"
+BACKEND_GENERATED_DIR = REPO_ROOT / "backend" / "src" / "environments" / "generated"
 BACKEND_ENVIRONMENTS_JSON = BACKEND_GENERATED_DIR / "environments.json"
 
 TEMPLATES_DIR = REPO_ROOT / "templates"
@@ -57,7 +57,7 @@ TEMPLATE_BASE_REQUIREMENTS = TEMPLATE_BASE_DIR / "requirements.txt"
 # registry of which versions have such a snapshot; both are edited at release time by
 # scripts/bump_template_version.py.
 SESSION_BASE_IMAGES_DIR = REPO_ROOT / "backend" / "images" / "session-base"
-DEPS_VERSION_TS = REPO_ROOT / "backend" / "src" / "deps-version.ts"
+DEPS_VERSION_TS = REPO_ROOT / "backend" / "src" / "build" / "deps-version.ts"
 
 # The e2e submission fixtures are submitted against seasons the backend seeds at the current
 # DEPS_VERSION, so their manifests must track the current template version rather than pin one.

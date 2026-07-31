@@ -1,4 +1,4 @@
-import { loadEnvironmentFiles } from '../../src/env-files.js'
+import { loadEnvironmentFiles } from '../../src/config/env-files.js'
 
 /** Merge explicit test overrides over the tracked defaults without reading a developer's `.env`. */
 export function withDefaultEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {

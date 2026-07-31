@@ -1,6 +1,6 @@
 """Bump the repo to a new template/dependency-set version, or check the touchpoints agree.
 
-The version ``N`` is one number wearing several hats (see ``backend/src/deps-version.ts``): the
+The version ``N`` is one number wearing several hats (see ``backend/src/build/deps-version.ts``): the
 ``template-v<N>`` release tag, the ``deps-v<N>`` session-image tag, and the ``template_version`` an
 agent manifest targets. Releasing a new version therefore means editing several files in lockstep,
 which used to be undocumented manual work the ``template-publish`` workflow trusted the operator to
@@ -24,7 +24,7 @@ What a bump touches, all to the same ``N``:
    template and example inherits.
 2. Each ``frontend/e2e/fixtures/submission/*/manifest.json``: these are submitted against seasons
    the backend seeds at the current ``DEPS_VERSION``, so a stale value would fail the e2e suite.
-3. ``backend/src/deps-version.ts``: the ``DEPS_VERSION`` constant and a new ``SESSION_BASE_IMAGES``
+3. ``backend/src/build/deps-version.ts``: the ``DEPS_VERSION`` constant and a new ``SESSION_BASE_IMAGES``
    registry entry pointing at the new image directory (old entries are never removed; a released
    version stays buildable forever).
 4. ``backend/images/session-base/deps-v<N>/``: a fresh frozen snapshot: ``requirements.txt`` frozen

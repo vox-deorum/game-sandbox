@@ -28,13 +28,12 @@ import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
 import { z } from 'zod'
-
+import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
-import type { LlmOptions } from '../config.js'
-import { DEPS_VERSION } from '../deps-version.js'
-import { resolveSeasonParameters } from '../environment-parameters.js'
-import type { EnvironmentRegistry } from '../environments.js'
-import type { RequestIdentity } from '../identity.js'
+import { DEPS_VERSION } from '../build/deps-version.js'
+import type { LlmOptions } from '../config/config.js'
+import { resolveSeasonParameters } from '../environments/parameters.js'
+import type { EnvironmentRegistry } from '../environments/registry.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
 import {
@@ -44,7 +43,6 @@ import {
 } from '../llm/development-views.js'
 import { asLlmError } from '../llm/errors.js'
 import { modelCostWeights } from '../llm/types.js'
-import { optionalField } from '../optional-field.js'
 import { buildSchedule } from '../scheduler/build-schedule.js'
 import {
   agentOwnerIds,
@@ -54,12 +52,13 @@ import {
   runSummaryView,
   runView,
   seasonView,
-} from '../season-views.js'
+} from '../seasons/views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage, Submission } from '../storage/index.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import { type MatchConfig, SeasonConfigSchema, type SeatSpec } from '../storage/season-config.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
+import { optionalField } from '../util/optional-field.js'
 import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
 
@@ -215,7 +214,7 @@ async function buildSeasonSubmissionArchive(
  * The operator submission routes (list + individual download + whole-season archive), registered on the
  * already operator-gated admin instance so they share the one `onRequest` guard.
  */
-function registerSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void {
+function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void {
   // The season's active submissions (one current attempt per participant, any status), each tagged with
   // whether a downloadable snapshot exists so the console can disable a download that has none.
   admin.get<{ Params: { id: string } }>('/seasons/:id/submissions', async (request, reply) => {
@@ -808,7 +807,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       )
 
       // --- Submissions: list + downloads -----------------------------------------------------
-      registerSubmissionRoutes(admin, deps)
+      registerOperatorSubmissionRoutes(admin, deps)
       registerDevelopmentReadRoutes(admin, deps)
 
       // --- Log stream (WebSocket) ------------------------------------------------------------

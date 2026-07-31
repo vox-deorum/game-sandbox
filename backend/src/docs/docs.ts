@@ -4,7 +4,7 @@
  * at their stable virtual `students/environments/<slug>.md` paths. Only student documentation is
  * exposed; contributor and specification pages stay repo- and MkDocs-only.
  *
- * Three shapes back the three routes in `app.ts`:
+ * Three shapes back the three routes in `docs/routes.ts`:
  *  - {@link buildDocsManifest} walks the tree into the navigation the sidebar renders,
  *  - {@link readDocsPage} returns one page's raw markdown, path-sanitized against traversal,
  *  - {@link readDocsIndex} returns the landing page, honoring the optional class-index override.

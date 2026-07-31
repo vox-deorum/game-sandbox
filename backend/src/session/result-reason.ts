@@ -7,7 +7,7 @@
  * relay (which stamps the producing session's reason) and the workflow runner (which stamps an
  * automated recording's reason, since an automated run has no session to carry it).
  */
-import type { TerminationReason } from './storage/schema.js'
+import type { TerminationReason } from '../storage/schema.js'
 
 /** The container-reported reasons that are valid {@link TerminationReason}s as-is. */
 export const RESULT_REASONS: ReadonlySet<string> = new Set([

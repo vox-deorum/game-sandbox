@@ -11,7 +11,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
-import { EnvironmentRegistry } from '../../src/environments.js'
+import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { persistPlacementsForCompletedRun } from '../../src/leaderboards/placements.js'
 import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 import { LlmHandler } from '../../src/llm/handler.js'

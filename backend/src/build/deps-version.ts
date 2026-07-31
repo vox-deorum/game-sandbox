@@ -3,7 +3,7 @@
  *
  * The version `N` is one number wearing several hats: the `template-v<N>` release tag, the pinned set
  * compiled into the matching versioned session-image definition, the `…:deps-v<N>` image tag, and
- * the `template_version` an agent manifest targets (see [template releases](../../docs/contributors/environments/templates.md)).
+ * the `template_version` an agent manifest targets (see [template releases](../../../docs/contributors/environments/templates.md)).
  * This module is the backend registry for those released definitions, so validation accepts only
  * versions the deployment can actually build, and the driver never rebuilds an old tag from the
  * current template dependency set by accident.
@@ -14,7 +14,7 @@
  * session's spec is the season's version rather than this fixed default. Building the base image
  * still needs a current default, which is what this remains.
  */
-import type { SessionBaseImageSpec } from './driver/index.js'
+import type { SessionBaseImageSpec } from '../driver/index.js'
 
 /**
  * The current dependency-set version `N`, tagged `…:deps-v<N>`. Bumped mechanically at release time by

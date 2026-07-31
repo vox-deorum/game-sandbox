@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import environmentMetadata from '../../backend/src/generated/environments.json'
+import environmentMetadata from '../../backend/src/environments/generated/environments.json'
 import '../src/renderers/index.js'
 import { getRenderer, registerRenderer, thumbnailFor } from '../src/renderers/registry.js'
 import type { Renderer, RendererDefinition } from '../src/renderers/types.js'

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from '../../../src/deps-version.js'
+import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from '../../../src/build/deps-version.js'
 import { validateStatic } from '../../../src/submission/validate/index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

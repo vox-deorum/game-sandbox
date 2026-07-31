@@ -1,8 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { describe, expect, it } from 'vitest'
 
-import type { Auth } from '../src/auth/auth.js'
-import { createRequestIdentity, deriveStatus } from '../src/identity.js'
+import type { Auth } from '../../src/auth/auth.js'
+import { createRequestIdentity, deriveStatus } from '../../src/auth/identity.js'
 
 /** A session user as Better Auth's admin plugin shapes the fields the seam reads. */
 interface StubUser {

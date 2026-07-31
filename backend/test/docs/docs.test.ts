@@ -13,27 +13,27 @@ import { fileURLToPath } from 'node:url'
 
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildApp } from '../src/app.js'
-import type { Auth } from '../src/auth/auth.js'
-import type { UserDirectory } from '../src/auth/users.js'
+import { buildApp } from '../../src/app.js'
+import type { Auth } from '../../src/auth/auth.js'
+import type { UserDirectory } from '../../src/auth/users.js'
 import {
   buildDocsManifest,
   DocsIndexError,
   ENVIRONMENT_CATALOG_MARKER,
   readDocsIndex,
   readDocsPage,
-} from '../src/docs.js'
-import { RecordingsStore } from '../src/recordings.js'
-import { Retention } from '../src/retention.js'
-import { Orchestrator } from '../src/session/orchestrator.js'
-import type { Storage } from '../src/storage/index.js'
-import { FakeDriver } from './support/fake-driver.js'
+} from '../../src/docs/docs.js'
+import { Retention } from '../../src/recordings/retention.js'
+import { RecordingsStore } from '../../src/recordings/store.js'
+import { Orchestrator } from '../../src/session/orchestrator.js'
+import type { Storage } from '../../src/storage/index.js'
+import { FakeDriver } from '../support/fake-driver.js'
 import {
   makeConfig,
   makeEnvironments,
   makeSubmissionDeps,
   openTestStack,
-} from './support/harness.js'
+} from '../support/harness.js'
 
 // A miniature repository tree: shared student docs, canonical environment guides, and an
 // out-of-scope contributors file. `fenced-only.md` has no real H1 and a `#` only inside a fence, so
@@ -266,7 +266,7 @@ describe('docs module', () => {
 })
 
 describe('real environment documentation sources', () => {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
   const docsDir = join(repoRoot, 'docs')
   const environmentsDir = join(repoRoot, 'environments')
 

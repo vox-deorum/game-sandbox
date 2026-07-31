@@ -22,10 +22,10 @@ import {
   sessionEnvelope,
 } from '@game-sandbox/schema'
 import type { SessionProcess } from '../driver/index.js'
-import { coerceResultReason } from '../result-reason.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
 import { type ChargeableTimer, createChargeableTimer } from './chargeable-timer.js'
+import { coerceResultReason } from './result-reason.js'
 
 /** The minimal browser-socket surface the relay needs, so it is framework- and test-agnostic. */
 export interface ClientSocket {

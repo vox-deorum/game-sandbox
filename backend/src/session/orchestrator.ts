@@ -17,13 +17,12 @@ import {
   validateCompleteParameters,
 } from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
-import type { Config } from '../config.js'
-import { currentSessionBaseImageSpec } from '../deps-version.js'
+import { currentSessionBaseImageSpec } from '../build/deps-version.js'
+import type { Config } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
-import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
-import { optionalField } from '../optional-field.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -33,6 +32,7 @@ import {
   type SessionImageSeat,
   submissionSeatPath,
 } from '../submission/submission-image.js'
+import { optionalField } from '../util/optional-field.js'
 import { assembleLaunch, assembleLlmLaunchConfig, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
