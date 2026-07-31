@@ -86,10 +86,12 @@ nav:
       - specs/overview.md
       - specs/environment.md
       - specs/interaction.md
+      - specs/seasons.md
       - specs/submission.md
       - specs/communication.md
       - specs/llm.md
       - specs/frontend.md
+      - specs/identity.md
       - specs/leaderboard.md
       - specs/execution.md
       - specs/recording.md

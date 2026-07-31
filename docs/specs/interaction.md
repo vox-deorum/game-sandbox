@@ -4,21 +4,19 @@ This specification defines how state reaches the browser, how a renderer draws i
 
 ## One renderer per environment
 
-Every environment has a browser renderer. The server sends structured state, not pixels or video.
+Every environment has a **renderer**. The server sends structured state, not pixels or video, which keeps bandwidth low and makes replay interactive.
 
 ```text
-Per-step state → environment renderer → game frame
-                         ↑
-                 live play and replay
+Per-step state → renderer → game frame
+                     ↑
+             live play and replay
 ```
 
 The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, replay transport, and the chat panel when messaging is enabled.
 
 Live play and replay use the same renderer. See [Recording](recording.md).
 
-Local play uses the same browser renderer and session protocol through a loopback-only Python relay. Its page has no account shell, but start, pause, resume, stop, input, status, and game-over behavior follow this contract.
-
-Structured state uses less bandwidth and adds less latency than streamed video. It also makes replay interactive instead of a passive video. In exchange, each environment must provide a small renderer.
+Local play uses the same renderer and session protocol through a loopback-only Python relay. Its page has no account shell, but start, pause, resume, stop, input, status, and game-over behavior follow this contract.
 
 ## Per-step state object
 
@@ -28,16 +26,16 @@ In a sequential environment, the state begins with the player whose action cause
 
 Each state contains:
 
-- Tick number.
-- One or more player entries with the action when one was applied, immediate reward, cumulative score, and optional timing.
+- A **tick** that numbers completed environment transitions; tick and step refer to the same event.
+- One or more player entries, each carrying the action when one was applied, the immediate reward, the cumulative score, and optional timing.
 - Environment-specific overlay data needed for rendering, including semantic legal choices when a human can act.
-- Messages admitted on that boundary.
-- Chat options for the designated human player while that player remains active.
+- Messages admitted on that step boundary.
+- Chat options for the [designated human player](#human-play) while that player remains active.
 - Optional observations and action details when an environment chooses to expose them.
 
-The renderer cannot inspect the live environment. Anything needed on screen must appear in state.
+The renderer cannot inspect the live environment. Anything needed on screen must appear in the state.
 
-A live session may also emit one opening presentation state after reset, before any player acts. It has no player entries and carries the initial overlay and chat options when available. An unpaced sequential session emits it when it has something to present. Every simultaneous session emits it before the first cadence interval. A paced sequential session continues to wait for its first recorded state. The opening state uses the ordinary state schema for the live renderer but is not recorded, so replay begins with the first completed transition.
+A live session may also emit one opening presentation state after reset, before any player acts. It has no player entries and carries the initial overlay and chat options when available. An unpaced sequential session emits it when it has something to present. Every simultaneous session emits it before the first cadence interval. A paced sequential session instead waits for its first recorded state. The opening state uses the ordinary state schema for the live renderer but is not recorded, so replay begins with the first completed transition.
 
 ## Session loop
 
@@ -81,25 +79,33 @@ The environment's [metadata](environment.md) selects timing:
 
 Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
 
-A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay serialization and input/output are outside that duration. Environment transition time is platform work and is not charged to a participant.
+A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay work (serialization and input/output) is outside that duration. Environment transition time is platform work and is not charged to a participant.
 
-Live sessions may pause, which freezes stepping, cadence, and in-harness action and episode timing. An explicit stop prevents the next transition but does not interrupt participant work already running. Pausing does not stop the backend session-duration or idle timers. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
+Live sessions may pause. Each control obeys one rule:
 
-Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a move clock and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate human-timeout override. The interface shows the active value whenever it affects play.
+| Control | Rule |
+| --- | --- |
+| **Pause** | Freezes stepping, cadence, and in-harness action and episode timing. The backend session-duration and idle timers keep running regardless. |
+| **Resume** | Unfreezes what pause froze. For both commands, the host page's pause control changes only after the relay confirms the accepted command. |
+| **Stop** | Prevents the next transition without interrupting participant work already running. It has no confirmation message, so the interface waits for the ended status before showing the session as finished. |
+| **Reconnect** | A newly connected browser is told when the session is paused. |
+| **Headless runs** | Automated leaderboard runs neither pace nor pause. |
+
+Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a **move clock** and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate move-clock override. The interface shows the active value whenever it affects play.
 
 ## Human play
 
-A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider unrestricted seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat.
+A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider unrestricted seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat. See [Environments](environment.md#players-and-seats).
 
-A restricted seat accepts only its designated builtin, or a human when one of its players is human-capable. A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies only on the designated human player's turns. Step and episode compute limits remain per agent-controlled player. See [Environments](environment.md#players-and-seats).
+A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies only on the designated human player's turns, and step and episode compute limits remain per agent-controlled player. See [restricted seats](environment.md#builtin-agents-and-restricted-seats).
 
 ## Starting watch and play sessions
 
-Before opening a start form, the browser loads the play-open season identifier and the complete resolved gameplay parameter map for that environment. When no season is open for play, the endpoint returns pure environment defaults with a null season identifier, but public session start remains unavailable.
+The start form is seeded with the [play-open season](seasons.md#public-gates) identifier and the complete resolved gameplay parameter map for that environment. When no season is open for play, the seeding endpoint returns pure environment defaults with a null season identifier, and public session start remains unavailable.
 
-The browser retains hidden parameter values, applies visible player edits, and submits the expected season identifier plus the complete map. A missing or unknown parameter is invalid. If another season became play-open while the page was open, session start returns a typed conflict before a session row or container is created. An edit to the same season does not silently replace values already loaded by the player.
+The submitted request carries the expected season identifier plus the complete parameter map. A missing or unknown parameter is invalid. If the play-open season changed since the form was seeded, session start returns a typed conflict before a session or container is created. Editing the same season's [configuration](seasons.md#per-season-configuration) does not silently replace values already loaded by the player.
 
-Because the submitted map already carries the season layer, session start validates that map against the current declarations and applies no further layer beneath it. The player is answerable for the values they submitted and for nothing else.
+The submitted map already carries the season layer, so session start validates it against the current declarations and applies no further layer beneath it. The player is responsible for the values they submitted and for nothing else.
 
 Parameter validation happens before seat-assignment validation. Only a valid `players` or `seat_plan` value changes the resolved seats. New seats use the flow's default assignment. An assignment that is not valid in the new layout is cleared, and the session cannot start until every required seat is assigned again.
 
@@ -107,7 +113,7 @@ The backend resolves the selected layout from installed environment metadata bef
 
 ## Human input
 
-An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines which member the person controls. Its renderer can accept:
+An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines which member the person controls. The renderer can accept:
 
 - Raw device input, such as keyboard, pointer, touch, or gamepad.
 - On-screen controls, such as buttons, board cells, card hands, or sliders.
@@ -116,14 +122,14 @@ A renderer may use both types of input. It maps each gesture to an action in the
 
 The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and binary `action_mask` received by an agent. They are not required fields in every emitted state. For human input, the semantic overlay supplies the currently legal choices. The renderer uses those choices to present only legal controls, such as by disabling illegal ones, instead of calculating rules in the browser.
 
-Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to an integer only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That actual integer is played and recorded like any other move.
+Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to an integer only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That default action is played and recorded like any other move.
 
 ## Chat
 
 When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and targeted messages sent to or from the connected user's designated human player.
 
-Every live state is self-contained for human chat while the designated human player remains active. It carries that sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient.
+Every live state is self-contained for human chat while the designated human player remains active. It carries that player as the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as the broadcast choice even when the environment offers no direct recipient.
 
-The panel stays available across every active player's turn. It becomes unavailable only when messaging is disabled, the connection is unavailable, the session ends, the designated human becomes inactive, or the current state offers no human policy. Sending an action does not consume or close the composer. An unsent draft survives ordinary state changes and reconnects. The selected recipient resets only when the sender, ordered recipients, or default recipient changes.
+The panel stays available across every active player's turn. It becomes unavailable only when messaging is disabled, the connection is lost, the session ends, the designated human becomes inactive, or the current state offers no human policy. Sending an action does not consume or close the composer. An unsent draft survives ordinary state changes and reconnects. The selected recipient resets only when the sender, ordered recipients, or default recipient changes.
 
-The browser sends the sender, recipient, and text without a compose tick. Its state remains an interface hint rather than the authority. The harness admits each frame at an atomic pre-step queue drain and validates it against the human policy published on the preceding live state, as [Communication](communication.md#delivery-and-visibility) defines.
+The browser sends the sender, recipient, and text without a compose tick. The browser's local state remains an interface hint rather than the authority. The harness admits each frame at an atomic pre-step queue drain and validates it against the human policy published on the preceding live state, as [Communication](communication.md#delivery-and-visibility) defines.

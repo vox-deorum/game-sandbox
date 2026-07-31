@@ -10,11 +10,11 @@ The system is designed for classes, but it does not depend on GitHub Classroom. 
 
 PettingZoo is the only environment interface. A compatibility wrapper makes single-agent Gymnasium games look like native multi-agent games to the rest of the system. See [Environments](environment.md).
 
-An agent is bound to a **seat**, which covers one or more of the environment's players and is scored as one unit. Most games give every seat a single player. A partnership or squad game gives one seat several, and the seat's score is the mean of theirs.
+An agent is bound to a **seat**, which covers one or more of the environment's players and is scored as one unit. Most games give every seat a single player. A partnership or squad game gives a seat several players, and that seat's score is the mean of their scores.
 
-Each competition round is a **season** for one environment. Participants submit a GitHub repository pinned to a specific commit. A session runs the environment and any agent-controlled players in a sandboxed container, streams state to a browser renderer, and saves the canonical state for replay.
+Each competition round is a **season** for one environment. See [Seasons](seasons.md). An **operator** is a signed-in user with `admin` status who manages seasons and runs. Participants submit a GitHub repository pinned to a specific commit. A session runs the environment and any agent-controlled players in a sandboxed container. The **harness** is the process inside the session container that steps the environment, drives every agent-controlled player, and emits the per-step state. The session streams that state to a browser renderer and saves the canonical state for replay.
 
-Each environment and season has two separate leaderboards:
+Each season of an environment has two leaderboards:
 
 - The **automated board** ranks game performance and shows efficiency.
 - The **human-feedback board** aggregates ratings from watch and play sessions.
