@@ -4,7 +4,7 @@ Your agent may call an LLM through a standard OpenAI-compatible endpoint. The en
 come from environment variables ``OPENAI_BASE_URL`` and ``OPENAI_API_KEY``:
 
 - Locally, put the key your instructor provides in a ``.env`` file (copy ``.env.example``).
-- Server-side, the harness injects the same two variables per player with a one-off key scoped
+- Server-side, the runner injects the same two variables per player with a one-off key scoped
   to your session. Choose the ``small``, ``medium``, or ``large`` model tier in your code.
 
     python -m sandbox llm [small|medium|large]

@@ -140,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if command == "setup":
+        if any(arg in ("-h", "--help") for arg in rest):
+            print("usage: python -m sandbox setup\n\ninstall dependencies into .venv without starting a game")
+            return 0
         setup()
         print(f"done. dependencies installed in {REPO_ROOT / '.venv'}", flush=True)
         return 0

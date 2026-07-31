@@ -87,7 +87,7 @@ The template also accepts these options and commands:
 - `--player N` chooses your player by number when a game has more than one. The commands use player `0` unless you pick another.
 - `python -m sandbox setup` prepares the virtual environment without starting a game.
 - `play --seed N` repeats the same starting condition and random generator every time, so you can study one specific game.
-- Adding `--help` to a command such as `play` or `eval` lists all of its options.
+- Adding `--help` to any command lists all of its options.
 
 ## 5. Run the checks
 

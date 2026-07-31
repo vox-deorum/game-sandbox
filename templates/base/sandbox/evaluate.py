@@ -1,4 +1,4 @@
-"""Evaluate your agent over seeded headless harness episodes.
+"""Evaluate your agent over seeded headless episodes.
 
 This command deliberately reuses ``sandbox.play.run_headless``. Evaluation therefore shares the
 same injected environment entry, agent loader, timeout accounting, and legal default-action behavior

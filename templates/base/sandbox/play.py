@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
     parser.add_argument("--no-browser", action="store_true", help="serve without opening a browser")
-    parser.add_argument("--headless", action="store_true", help="run one harness episode without a browser")
+    parser.add_argument("--headless", action="store_true", help="run one episode without a browser")
     timeouts = parser.add_mutually_exclusive_group()
     timeouts.add_argument("--human-timeout-ms", type=int, help="override the human turn timeout")
     timeouts.add_argument(

@@ -69,7 +69,7 @@ class Agent:
     #     ...
 
     # Optional: messaging. Spades enables it, so you may talk to the table. On your turn, right
-    # after act and before the trick resolves, the harness calls chat with messages sent to you since
+    # after act and before the trick resolves, the runner calls chat with messages sent to you since
     # your last turn. Return messages with a recipient and text. Use None as the recipient to broadcast
     # to the whole table, or a player ID such as "player_2" to send directly. You may send one message
     # per recipient and one broadcast at each acting opportunity. By default, text is limited to 120

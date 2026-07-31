@@ -13,6 +13,16 @@ def test_help_lists_llm(capsys):
     assert "llm      smoke-test small, medium, or large (default: small)" in capsys.readouterr().out
 
 
+def test_setup_help_prints_usage_instead_of_installing(capsys, monkeypatch):
+    def unexpected_setup() -> str:
+        raise AssertionError("setup called")
+
+    monkeypatch.setattr(dispatcher, "setup", unexpected_setup)
+
+    assert dispatcher.main(["setup", "--help"]) == 0
+    assert "usage: python -m sandbox setup" in capsys.readouterr().out
+
+
 def test_llm_dispatches_with_its_probe_and_forwards_arguments(monkeypatch):
     seen: list[tuple[list[str], str]] = []
 
