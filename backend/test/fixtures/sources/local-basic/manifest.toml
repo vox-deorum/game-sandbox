@@ -1,3 +1,1 @@
-# Placeholder manifest so the fixture tree has more than one file. The local source does not parse
-# it; the static validator (Stage 5.3) defines and reads the real manifest format.
 name = "local-basic"

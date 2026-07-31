@@ -95,7 +95,7 @@ describe('ExecutionTelemetryStore', () => {
   })
 
   it('round-trips full rows and returns exact usage and aggregates', () => {
-    expect(store.record('run', CALL)).toBe(1)
+    expect(store.insert('run', CALL)).toBe(1)
     store.insert('run', {
       ...CALL,
       sessionId: 'game-2',

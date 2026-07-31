@@ -8,12 +8,6 @@
  * defined once here so the admin API and the scheduler share one definition (and one set of rejection
  * reasons). The codec validates structure only. Seat counts against an environment's metadata are
  * the admin API's job in step 3, not this gate.
- *
- * `deps_version` lives inside the document (not its own column) so a run's frozen `config_snapshot`
- * is the single record of everything that governed the run. The `messaging` override block is a
- * strict shape consumed since Stage 8 (an enabled toggle and a code-point cap); the `llm` block
- * remains inert (validated to be an object and round-tripped unchanged) until Stage 9 gives it a
- * concrete shape.
  */
 import { parseSeatSpec, type SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
 import { z } from 'zod'
@@ -85,14 +79,11 @@ export const ParameterOverridesSchema = z.record(
   z.string(),
   z.union([z.boolean(), z.number().finite(), z.string(), z.array(z.string())]),
 )
-export type ParameterOverrides = z.infer<typeof ParameterOverridesSchema>
 
 /**
  * The optional override block. `step_timeout_ms`/`episode_timeout_ms` are effective this stage (they
  * fall back to the environment defaults when absent). `submission_max_size_mb` overrides the site
  * default cap on a submission's checked-out source size for this season (absent = the site default).
- * `messaging` is a strict shape consumed since Stage 8; `llm` is parsed-but-inert (any object passes,
- * stored untouched) until Stage 9 pins and consumes its shape.
  */
 export const OverridesSchema = z.strictObject({
   step_timeout_ms: z.int().positive().optional(),
@@ -104,11 +95,6 @@ export const OverridesSchema = z.strictObject({
 })
 export type Overrides = z.infer<typeof OverridesSchema>
 
-/**
- * The whole season configuration. `matches` may be empty while a season is still unconfigured
- * (the workflow trigger, not this codec, refuses to run an empty design). Unknown keys are rejected
- * at every level except inside the still-inert `llm` block.
- */
 export const SeasonConfigSchema = z.strictObject({
   deps_version: z.int().positive(),
   matches: z.array(MatchConfigSchema),

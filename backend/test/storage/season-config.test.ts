@@ -1,9 +1,3 @@
-/**
- * Unit coverage for the `SeasonConfig` zod codec (Stage 6.1): the single validated gate over the
- * `seasons.config` JSON column. It proves the codec round-trips a valid document, rejects the
- * malformed shapes the admin API relies on it to catch (unknown keys, empty seats, zero games, empty
- * seeds, a malformed match design), and stores the inert `messaging`/`llm` override blocks untouched.
- */
 import { describe, expect, it } from 'vitest'
 
 import {

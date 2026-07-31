@@ -17,7 +17,7 @@ export function createOfficialRecordSink(
   scope: OfficialRecordSinkScope,
 ): LlmRecordSink {
   return (record: LlmSuccessfulRecord): void => {
-    store.record(scope.scopeId, {
+    store.insert(scope.scopeId, {
       sessionId: scope.sessionId,
       player: scope.player,
       tick: scope.tick,

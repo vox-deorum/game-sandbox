@@ -3,9 +3,6 @@
  * `:memory:`, no Docker. Covers the schema migration, email/password sign-in over `app.inject`, the
  * idempotent bootstrap-admin seed, the config validation matrix, the admin roster surface (including
  * that user deletion is refused server-side), and the test-harness user minting.
- *
- * Nothing here exercises the identity seam: that is still the untouched Stage 3 header stub, so these
- * tests speak only to the auth endpoints under `/api/auth/*` and to the config loader.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

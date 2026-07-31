@@ -16,7 +16,7 @@ import type {
   LlmModelUsage as SchemaLlmModelUsage,
   LlmUsageByModel as SchemaLlmUsageByModel,
 } from '@game-sandbox/schema/llm'
-import type { Insertable, Selectable, Updateable } from 'kysely'
+import type { Selectable } from 'kysely'
 import { z } from 'zod'
 
 /** Whether a session is human-controlled or runs the built-in scripted agent. */
@@ -123,13 +123,6 @@ export interface RecordingCleanupQueueTable {
  * these, modeled as independent columns because they gate different surfaces and move independently.
  */
 export type WindowStatus = 'open' | 'closed'
-
-/**
- * The Stage 5 name for the submission window. Retained as an alias of {@link WindowStatus} so existing
- * imports keep resolving; the column is `submission_status` now that "open" is ambiguous across the
- * two windows.
- */
-export type SeasonStatus = WindowStatus
 
 /**
  * Whether a season's results (its boards and history) are visible outside the operator console.
@@ -530,21 +523,12 @@ export type Session = Omit<Selectable<SessionsTable>, 'parameters'> & {
   parameters: Record<string, ParameterValue>
 }
 
-/** A session row as inserted. */
-export type NewSession = Insertable<SessionsTable>
-
-/** A partial session update. */
-export type SessionUpdate = Updateable<SessionsTable>
-
 /** A recording row as read back from the database. */
 export type Recording = Selectable<RecordingsTable>
 
 /** Durable cleanup work claimed by recording retention. */
 export type RecordingCleanup = Selectable<RecordingCleanupQueueTable>
 export type LlmDevelopmentKey = Selectable<LlmDevelopmentKeysTable>
-
-/** A recording row as inserted. */
-export type NewRecording = Insertable<RecordingsTable>
 
 /** A season row as read back from the database. */
 export type Season = Selectable<SeasonsTable>
@@ -566,9 +550,6 @@ export type PublicSeason = Season & {
  * - `'all'` — every season, including fully-private unreleased ones (operator-only at the route layer).
  */
 export type SeasonScope = 'released' | 'public' | 'all'
-
-/** A partial season update. */
-export type SeasonUpdate = Updateable<SeasonsTable>
 
 /** A season-run row as read back from the database. */
 export type SeasonRun = Omit<Selectable<SeasonRunsTable>, 'parameters_snapshot'> & {
@@ -599,12 +580,6 @@ export type AgentRatingPrompt = Selectable<AgentRatingPromptsTable>
 
 /** A submission row as read back from the database. */
 export type Submission = Selectable<SubmissionsTable>
-
-/** A submission row as inserted. */
-export type NewSubmission = Insertable<SubmissionsTable>
-
-/** A partial submission update. */
-export type SubmissionUpdate = Updateable<SubmissionsTable>
 
 /** A session-submission link row as read back from the database. */
 export type SessionSubmission = Selectable<SessionSubmissionsTable>

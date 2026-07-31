@@ -66,7 +66,6 @@ export type {
   SeasonRun,
   SeasonRunGame,
   SeasonScope,
-  SeasonStatus,
   Session,
   SessionMode,
   SessionStatus,

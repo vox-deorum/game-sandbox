@@ -50,9 +50,7 @@ async function boardsFor(deps: LeaderboardDeps, envId: string, seasonId: string)
     ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
     ...gameOwnerIds(rawGames),
   ])
-  // The environment's declared built-in labels, when the registry is wired in; a built-in ref falls
-  // back to its stable name otherwise.
-  const meta = deps.environments?.get(envId)
+  const meta = deps.environments.get(envId)
   return {
     automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
     human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),

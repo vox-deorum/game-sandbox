@@ -283,11 +283,6 @@ export class ExecutionTelemetryStore {
     return Number(result.lastInsertRowid)
   }
 
-  /** Record-sink spelling used by the shared proxy handler. */
-  record(scopeId: string, input: ExecutionTelemetryCallInput): number {
-    return this.insert(scopeId, input)
-  }
-
   /** Successful committed usage for one player, grouped by every model name present in telemetry. */
   readSessionUsageByModel(
     scopeId: string,

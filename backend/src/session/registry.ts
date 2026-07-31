@@ -1,10 +1,5 @@
 /**
  * The in-memory registry of live sessions, and the index that enforces one active session per user.
- *
- * A {@link LiveSession} lives here from launch until its teardown converges; the orchestrator
- * checks {@link SessionRegistry.hasActiveUser} for the one-per-user rule and looks sessions up by id
- * for attach and stop. The persistent `sessions` table is the historical record; this registry is
- * the authority for what is running right now.
  */
 import type { LiveSession } from './live-session.js'
 
@@ -19,10 +14,6 @@ export class SessionRegistry {
 
   get(id: string): LiveSession | undefined {
     return this.byId.get(id)
-  }
-
-  hasActiveUser(userId: string): boolean {
-    return this.userToId.has(userId)
   }
 
   /** The id of the user's currently active session, or `undefined` if they have none. */

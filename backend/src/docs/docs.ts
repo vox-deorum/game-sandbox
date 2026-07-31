@@ -224,18 +224,10 @@ function discoverEnvironmentGuides(docsDir: string, environmentsDir: string): En
     .filter(({ source }) => existsSync(source))
     .sort((a, b) => a.envId.localeCompare(b.envId))
 
-  const paths = new Map<string, string>()
   const canonicalDocsDir = resolve(environmentsDir, '..', 'docs')
   return sources.map(({ envId, source }) => {
     const slug = environmentGuideSlug(envId)
     const path = `students/environments/${slug}.md`
-    const previous = paths.get(path)
-    if (previous !== undefined) {
-      throw new DocsEnvironmentGuideError(
-        `environment guide ids ${JSON.stringify(previous)} and ${JSON.stringify(envId)} both map to ${path}`,
-      )
-    }
-    paths.set(path, envId)
     return {
       envId,
       path,
