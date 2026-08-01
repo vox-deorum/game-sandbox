@@ -266,6 +266,12 @@ export class DockerDriver implements ExecutionDriver {
    * keeps crashed-backend restarts clean without a supervisor while never touching a *peer* backend's
    * live containers when several share one Docker daemon — its process is still alive, so its
    * containers are skipped rather than killed.
+   *
+   * Pid liveness is namespace-local, so a label carrying this process's own pid is never a live peer:
+   * reapOrphans runs before this process has created anything, so it can only be a previous
+   * incarnation whose pid namespace restarted. A containerized backend is pid 1 on every boot, and
+   * must be the only backend using its Docker daemon, so this rule always applies there; the
+   * peer-backend courtesy above applies only to host-process peers sharing a host daemon.
    */
   async reapOrphans(): Promise<void> {
     const [sessionContainers, relayContainers] = await Promise.all([
@@ -282,7 +288,9 @@ export class DockerDriver implements ExecutionDriver {
         const ownerPid = info.Labels?.[OWNER_PID_LABEL]
         const pid = ownerPid !== undefined ? Number.parseInt(ownerPid, 10) : Number.NaN
         // A container whose owner process is still running belongs to a live peer backend; leave it.
-        if (Number.isInteger(pid) && isProcessAlive(pid)) {
+        // A container labeled with our own pid can only be a previous incarnation (pid namespaces
+        // restart in a container), never us, so it is always reaped.
+        if (Number.isInteger(pid) && pid !== process.pid && isProcessAlive(pid)) {
           return
         }
         const container: Container = this.docker.getContainer(info.Id)
@@ -300,7 +308,7 @@ export class DockerDriver implements ExecutionDriver {
       networks.map(async (info) => {
         const ownerPid = info.Labels?.[OWNER_PID_LABEL]
         const pid = ownerPid !== undefined ? Number.parseInt(ownerPid, 10) : Number.NaN
-        if (Number.isInteger(pid) && isProcessAlive(pid)) {
+        if (Number.isInteger(pid) && pid !== process.pid && isProcessAlive(pid)) {
           return
         }
         const network: Network = this.docker.getNetwork(info.Id)

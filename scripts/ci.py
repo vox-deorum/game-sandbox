@@ -3,7 +3,7 @@
 Every GitHub Actions job is a single call to this script after dependency setup, so the
 workflow YAML carries triggers and caching but no logic, and a developer can reproduce
 any job with the same command (under WSL for Linux parity). The jobs map one-to-one to the
-four workflows under ``.github/workflows/``:
+five workflows under ``.github/workflows/``:
 
 ci.yml (runs on every push and pull request):
 - ``python``: ruff check, ruff format --check, pyright, pytest.
@@ -22,6 +22,13 @@ e2e.yml (manually dispatched from the Actions tab — too Docker-heavy and slow 
   backend serving the production frontend and the scripted loopback bridge serving the local bundle.
   A production session launches a container, so the job needs Docker and is *not* part of ``all``.
 
+compose-smoke.yml (manually dispatched from the Actions tab):
+- ``compose-smoke``: the containerized-deployment rehearsal from
+  docs/contributors/setup/docker.md. It builds the app image, boots ``compose.yaml`` with a
+  throwaway ``.env``, and proves the published API port, the same-path ``DATA_DIR`` bind, and
+  startup reaping through the mounted daemon socket. Needs a Linux daemon, so it is *not* part
+  of ``all``.
+
 docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
 
@@ -31,8 +38,8 @@ template-publish.yml:
 
 ``all`` runs every non-Docker job above in order (ci.yml minus its Docker job, plus the docs
 build and the publish dry run), which is what a contributor runs before pushing a branch or
-cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration`` and ``frontend-e2e``
-suites are run separately. ``check`` and ``test`` are narrower convenience aggregates wired to
+cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration``, ``frontend-e2e``, and
+``compose-smoke`` jobs are run separately. ``check`` and ``test`` are narrower convenience aggregates wired to
 ``npm run check`` / ``npm run test``.
 """
 
@@ -115,6 +122,111 @@ def job_frontend_e2e() -> None:
     ]
     _run(install_chromium)
     _run([_NPM, "run", "e2e", "--workspace", "@game-sandbox/frontend"])
+
+
+def _wait_for_http(url: str, timeout_s: float) -> None:
+    """Poll ``url`` until it answers 200, failing the job when ``timeout_s`` runs out."""
+    import time
+    import urllib.request
+
+    deadline = time.monotonic() + timeout_s
+    last_error = "no response yet"
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                if response.status == 200:
+                    return
+                last_error = f"HTTP {response.status}"
+        except OSError as error:
+            last_error = str(error)
+        time.sleep(2)
+    raise SystemExit(f"{url} did not answer 200 within {int(timeout_s)}s (last error: {last_error})")
+
+
+def job_compose_smoke() -> None:
+    # Rehearses the containerized deployment from docs/contributors/setup/docker.md: build the app
+    # image, boot compose.yaml with a throwaway .env, and prove the three things the topology
+    # depends on. The published API port answers, the same-path DATA_DIR bind is writable from
+    # inside the container, and a restart reaps a planted leftover container through the mounted
+    # daemon socket. Needs a Linux daemon (the same-path convention does not hold under Docker
+    # Desktop's VM), so it is not part of ``all``; run it from the Actions tab or under WSL.
+    import secrets
+    import shutil
+    import tempfile
+
+    if sys.platform == "win32":
+        raise SystemExit(
+            "compose-smoke needs a Linux Docker daemon; run it under WSL or from the Actions tab."
+        )
+    env_path = REPO_ROOT / ".env"
+    if env_path.exists():
+        raise SystemExit(".env already exists; compose-smoke writes a throwaway one. Move yours aside first.")
+
+    data_dir = Path(tempfile.mkdtemp(prefix="game-sandbox-compose-smoke-"))
+    env_path.write_text(
+        "\n".join(
+            [
+                "PUBLIC_ORIGIN=http://127.0.0.1:8080",
+                "PORT=8080",
+                f"AUTH_SECRET={secrets.token_hex(32)}",
+                "ADMIN_EMAIL=compose-smoke@example.com",
+                f"ADMIN_PASSWORD={secrets.token_hex(16)}",
+                "ADMIN_NAME=Compose Smoke",
+                "AUTH_ALLOW_INSECURE_DEFAULTS=false",
+                f"DATA_DIR={data_dir}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    url = "http://127.0.0.1:8080/api/environments"
+    planted_id: str | None = None
+    try:
+        _run(["docker", "compose", "up", "-d", "--build"])
+        _wait_for_http(url, 300)
+        if not (data_dir / "sandbox.db").exists():
+            raise SystemExit(
+                f"the app answered but wrote no sandbox.db under {data_dir}; "
+                "the same-path DATA_DIR bind is broken"
+            )
+        # Plant the leftover a previous containerized incarnation would leave behind: a container
+        # carrying the session label and owner pid 1. The restarted app (pid 1 again) must reap it.
+        planted = subprocess.run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--entrypoint",
+                "sleep",
+                "--label",
+                "game-sandbox.session=compose-smoke",
+                "--label",
+                "game-sandbox.owner-pid=1",
+                "game-sandbox/app",
+                "300",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if planted.returncode != 0:
+            raise SystemExit(f"could not plant the leftover container: {planted.stderr.strip()}")
+        planted_id = planted.stdout.strip()
+        _run(["docker", "compose", "restart", "app"])
+        _wait_for_http(url, 120)
+        gone = subprocess.run(["docker", "inspect", planted_id], cwd=REPO_ROOT, capture_output=True)
+        if gone.returncode == 0:
+            raise SystemExit("the restarted app did not reap the planted leftover container")
+        print("compose smoke passed: API up, same-path DATA_DIR bind works, restart reaped the leftover")
+    except (SystemExit, Exception):
+        subprocess.run(["docker", "compose", "logs", "app"], cwd=REPO_ROOT)
+        raise
+    finally:
+        if planted_id:
+            subprocess.run(["docker", "rm", "-f", planted_id], cwd=REPO_ROOT, capture_output=True)
+        subprocess.run(["docker", "compose", "down", "--remove-orphans"], cwd=REPO_ROOT)
+        env_path.unlink(missing_ok=True)
+        shutil.rmtree(data_dir, ignore_errors=True)
 
 
 def job_generated_code_fresh() -> None:
@@ -239,6 +351,7 @@ _JOBS = {
     "python": job_python,
     "typescript": job_typescript,
     "backend-integration": job_backend_integration,
+    "compose-smoke": job_compose_smoke,
     "frontend-e2e": job_frontend_e2e,
     "generated-code-fresh": job_generated_code_fresh,
     "examples": job_examples,

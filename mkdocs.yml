@@ -63,6 +63,7 @@ nav:
       - Setup:
           - Development setup: contributors/setup/development.md
           - Configuration: contributors/setup/configuration.md
+          - Run the app in Docker: contributors/setup/docker.md
       - Testing:
           - Testing: contributors/testing/index.md
           - Browser end-to-end tests: contributors/testing/browser-e2e.md
@@ -94,4 +95,5 @@ nav:
       - specs/identity.md
       - specs/leaderboard.md
       - specs/execution.md
+      - specs/deployment.md
       - specs/recording.md

@@ -1,13 +1,15 @@
-# Keep the session-base build context lean. This mirrors the tar-fs ignore in
-# backend/src/driver/docker/image.ts (the authoritative path the execution driver uses); it is
-# here so a manual `docker build` from the repo root sends the same small context.
+# Keep the build context lean for both the manual session-base build and the app image build
+# (Dockerfile, repo root). This mirrors the tar-fs ignore in backend/src/driver/docker/image.ts
+# (the authoritative path the execution driver uses).
 node_modules
 **/node_modules
 .git
 .venv
 build
 data
+**/data
 dist
+site
 .pytest-tmp
 .pytest-cache
 .pytest_cache

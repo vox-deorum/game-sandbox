@@ -16,6 +16,7 @@ import { BASE_IMAGE_REF, TAG_PREFIX } from './support/base-image.js'
 const SESSION_LABEL = 'game-sandbox.session'
 const LLM_NETWORK_LABEL = 'game-sandbox.llm-network'
 const LLM_RELAY_LABEL = 'game-sandbox.llm-relay'
+const OWNER_PID_LABEL = 'game-sandbox.owner-pid'
 
 function profile(overrides: Partial<SandboxProfile> = {}): SandboxProfile {
   return {
@@ -205,5 +206,57 @@ describe('driver-level sandbox guarantees', () => {
     await expect(relay.inspect()).rejects.toThrow()
     await expect(orphanAgentNetwork.inspect()).rejects.toThrow()
     await expect(orphanEgressNetwork.inspect()).rejects.toThrow()
+  })
+
+  it('reaps an orphan container labeled with our own live pid', async () => {
+    const docker = new Docker()
+    const selfPidOrphan = await docker.createContainer({
+      Image: BASE_IMAGE_REF.ref,
+      Entrypoint: ['sleep'],
+      Cmd: ['120'],
+      Labels: { [SESSION_LABEL]: 'it-self-pid-orphan', [OWNER_PID_LABEL]: String(process.pid) },
+      HostConfig: { NetworkMode: 'none' },
+    })
+    await selfPidOrphan.start()
+    cleanups.push(async () => {
+      await selfPidOrphan.remove({ force: true }).catch(() => undefined)
+    })
+
+    // The owner-pid label names this very process, which is alive, but a fresh driver still reaps
+    // it: reapOrphans runs before this process has created anything, so a label carrying its own pid
+    // can only be a previous incarnation whose pid namespace restarted (the containerized-backend
+    // restart case, where the backend is always pid 1).
+    await createDockerDriver({
+      imageTagPrefix: TAG_PREFIX,
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    })
+
+    await expect(selfPidOrphan.inspect()).rejects.toThrow()
+  })
+
+  it('keeps a container labeled with another live process pid', async () => {
+    const docker = new Docker()
+    const peerContainer = await docker.createContainer({
+      Image: BASE_IMAGE_REF.ref,
+      Entrypoint: ['sleep'],
+      Cmd: ['120'],
+      Labels: { [SESSION_LABEL]: 'it-live-peer', [OWNER_PID_LABEL]: String(process.ppid) },
+      HostConfig: { NetworkMode: 'none' },
+    })
+    await peerContainer.start()
+    cleanups.push(async () => {
+      await peerContainer.remove({ force: true }).catch(() => undefined)
+    })
+
+    // The label names a different live process (this worker's parent), so the container belongs to
+    // a live peer backend and a fresh driver leaves it alone.
+    await createDockerDriver({
+      imageTagPrefix: TAG_PREFIX,
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    })
+
+    await expect(peerContainer.inspect()).resolves.toBeDefined()
   })
 })

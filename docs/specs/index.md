@@ -16,6 +16,7 @@ Start with the [overview](overview.md). For a complete introduction, continue wi
 | [Identity](identity.md) | Accounts, sign-in, statuses, bans |
 | [Leaderboards](leaderboard.md) | Automated ranking, human feedback |
 | [Execution](execution.md) | Runtime boundary, containers, drivers, sandboxing |
+| [Deployment](deployment.md) | Where the app process runs, daemon topology, containerized mode |
 | [Recording](recording.md) | State-only recordings, replay, retention |
 
 ```text

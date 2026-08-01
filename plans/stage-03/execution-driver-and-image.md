@@ -38,9 +38,9 @@ The local Docker driver carries the channel over attached stdio; a Kubernetes dr
 
 The driver attaches stdin/stdout/stderr before starting the container and demultiplexes with the Docker modem. Stdout is split into lines with partial-line buffering and becomes `output`, stderr becomes `diagnostics`, and `send` writes to stdin. `exited` resolves from `container.wait()` plus an inspect for `OOMKilled`, treating a 137 exit as OOM too when Docker omits the explicit flag. Containers are created without `AutoRemove` precisely so that inspect works, and the driver removes them after recording the exit info. `kill` is Docker stop with the grace period (SIGTERM then SIGKILL), then remove.
 
-On construction the driver reaps orphans: any container carrying the `game-sandbox.session` label belongs to a previous backend process whose sessions no longer exist, so it is killed and removed. This keeps crashed-backend restarts clean without a supervisor.
+Containers and networks carry a `game-sandbox.owner-pid` label naming the backend process that created them. On construction the driver reaps orphans: any labeled item whose pid is dead or equals the current process pid is removed, since construction precedes any launches and a self-pid label can only be a previous incarnation (a containerized backend is pid 1 on every boot). Items whose pid names another live process belong to a peer backend sharing the daemon and are left alone. This keeps crashed-backend restarts clean without a supervisor.
 
-The driver configuration is the daemon socket (dockerode defaults suffice on both Windows and Linux), the image tag prefix, and `imagePolicy: 'reuse' | 'rebuild'`. `reuse` returns an existing tag when present (the default); `rebuild` always rebuilds (a development convenience). This is the image-caching configuration the parent file requires to live on the driver.
+The driver configuration is the daemon socket (dockerode defaults suffice on Windows, on Linux, and for a socket mounted into a containerized backend), the image tag prefix, and `imagePolicy: 'reuse' | 'rebuild'`. `reuse` returns an existing tag when present (the default); `rebuild` always rebuilds (a development convenience). This is the image-caching configuration the parent file requires to live on the driver.
 
 ## The session base image
 

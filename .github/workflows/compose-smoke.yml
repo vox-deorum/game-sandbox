@@ -1,0 +1,24 @@
+name: Compose smoke
+
+# Rehearses the containerized deployment (the repo-root Dockerfile and compose.yaml) on a real
+# Linux daemon: builds the app image, boots the stack with a throwaway .env, and proves the
+# published API port, the same-path DATA_DIR bind, and startup reaping through the mounted
+# daemon socket. Building the app image takes minutes, so the workflow is triggered by hand from
+# the Actions tab (Run workflow) after changes to the Dockerfile, compose.yaml, or the driver's
+# orphan reaping. Everything else stays in ci.yml, which runs on every push and pull request.
+on:
+  workflow_dispatch:
+
+# Cancel a superseded manual run on the same ref.
+concurrency:
+  group: compose-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-smoke:
+    # The job needs only Docker and a stock Python 3 for scripts/ci.py, both present on
+    # ubuntu-latest. No Node or uv setup: everything else happens inside the app image.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/ci.py compose-smoke

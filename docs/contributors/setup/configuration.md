@@ -29,7 +29,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `PORT` | `8080` | HTTP and WebSocket port |
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
-| `DATA_DIR` | `backend/data` | Repository-relative root containing `sandbox.db` and recording directories |
+| `DATA_DIR` | `backend/data` | Repository-relative root containing `sandbox.db` and recording directories. When the app runs in a container, set an absolute path that is identical on the host and in the container; see [Run the app in Docker](docker.md) |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
 | `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
@@ -72,7 +72,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 
 ## LLM proxy
 
-The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay can reach it through the host gateway. Every listener route requires a scoped bearer key.
+The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay can reach it through the host gateway. When the app itself runs in a container, the port must also be published on the host; see [Run the app in Docker](docker.md#llm-sessions). Every listener route requires a scoped bearer key.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -113,6 +113,8 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 `DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Backend](../runtime/backend.md) for the pipeline.
 
 ## Deployment notes
+
+To run the whole app in a container on a Linux daemon, see [Run the app in Docker](docker.md); every rule below applies there too.
 
 Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path sanitization, is its security boundary.
 

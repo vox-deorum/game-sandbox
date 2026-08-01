@@ -15,6 +15,7 @@ lint + types → unit tests → integration → browser e2e → GitHub Actions
 | Unit tests | No | Pure logic, routes with fakes, storage in memory, Vue in jsdom |
 | Backend integration | Yes | Real images, containers, limits, Git source, load checks |
 | Frontend e2e | Yes | Chromium against the real backend and session containers |
+| Compose deployment smoke | Yes | The app image and compose topology booting against a real Linux daemon |
 | Workflow rehearsal | Yes | GitHub Actions YAML through `act` |
 | GitHub Actions | Varies | Suite of record and GitHub-only behavior |
 
@@ -56,6 +57,7 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | `publish-dry-run` | Build the local frontend once, stage runnable student-repository snapshots, and do not push |
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium |
+| `compose-smoke` | Build the app image and boot `compose.yaml` against a real Linux daemon |
 
 The full local pull-request bar runs every non-Docker job plus the docs build and publish dry run, then the two Docker-heavy suites:
 
@@ -65,7 +67,7 @@ uv run python scripts/ci.py backend-integration
 uv run python scripts/ci.py frontend-e2e
 ```
 
-The last two require a running Docker daemon.
+The last two require a running Docker daemon. The manually dispatched `compose-smoke` job additionally needs a Linux daemon, so run it from the Actions tab or under WSL.
 
 ## Backend integration
 
@@ -99,6 +101,16 @@ This job runs on its own manually dispatched workflow instead of per-push CI; se
 The suite builds the frontend and session image, starts the real backend, and covers browser flows for sessions, submissions, authentication, replays, seasons, and leaderboards. Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
 
 Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
+
+## Compose deployment smoke
+
+```console
+uv run python scripts/ci.py compose-smoke
+```
+
+This job rehearses the containerized deployment from [Run the app in Docker](../setup/docker.md) on its own manually dispatched workflow. It builds the app image, boots `compose.yaml` with a throwaway `.env` and a temporary data directory, and asserts three things: the published API port answers, `sandbox.db` appears under the host data directory through the same-path bind, and a restart reaps a planted leftover session container through the mounted socket.
+
+It needs a Linux Docker daemon, so on Windows run it under WSL. It refuses to run while a real `.env` exists at the repository root.
 
 ## Examples and template checks
 

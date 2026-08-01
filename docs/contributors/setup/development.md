@@ -7,6 +7,8 @@
 - Git.
 - A running Docker daemon for full-stack startup, sessions, integration tests, and browser end-to-end tests. Docker Desktop provides one on Windows.
 
+To run the app itself inside a container on a Linux daemon, see [Run the app in Docker](docker.md); the rest of this page covers the host-process flow.
+
 From the repository root:
 
 ```console

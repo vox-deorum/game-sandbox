@@ -1,0 +1,26 @@
+# Supported topology: a Linux Docker daemon that shares a filesystem with this compose project,
+# either a real Linux host or Docker Engine inside WSL2. On Windows or macOS Docker Desktop, run
+# the app as a host process instead; see docs/contributors/setup/docker.md for that setup.
+# The app orchestrates session containers as siblings through the mounted Docker socket.
+# A .env file at the repo root is required (env_file below): create it first, following that page.
+# DATA_DIR must be the same absolute path on the host and in the container: session containers
+# bind-mount the recordings directory from the daemon's view of the filesystem, and the same
+# .env value feeds both the mount below and the container environment. Set it to an absolute
+# path; the repository-relative default in .env.default suits only a host process.
+# The published LLM_INTERNAL_PORT is what the per-session relay reaches via host.docker.internal.
+
+services:
+  app:
+    build: .
+    image: game-sandbox/app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: ${DATA_DIR:-/srv/game-sandbox/data}
+    # Defaults 8080 and 8081 mirror .env.default, which compose interpolation does not read.
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+      - "${LLM_INTERNAL_PORT:-8081}:${LLM_INTERNAL_PORT:-8081}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DATA_DIR:-/srv/game-sandbox/data}:${DATA_DIR:-/srv/game-sandbox/data}

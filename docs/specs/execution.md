@@ -39,7 +39,7 @@ The backend uses an execution-driver interface to:
 - Observe exit status.
 - Tear the process down.
 
-Local Docker is the first driver. A future Kubernetes driver can map the same interface to its platform. Code above the driver does not depend on Docker-specific ports, file descriptors, or image-cache behavior.
+Local Docker is the first driver. A future Kubernetes driver can map the same interface to its platform. Code above the driver does not depend on Docker-specific ports, file descriptors, or image-cache behavior. [Deployment](deployment.md) defines where the backend process itself runs relative to the daemon.
 
 ## From submission to image
 
