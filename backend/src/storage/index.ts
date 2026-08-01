@@ -498,6 +498,11 @@ export interface Storage {
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void>
   /** Set or clear the public Season description; editable anytime and outside run configuration. */
   setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined>
+  /** Set or clear the season-specific template repository; editable anytime and outside run configuration. */
+  setSeasonTemplateRepoUrl(
+    seasonId: string,
+    templateRepoUrl: string | null,
+  ): Promise<Season | undefined>
   /** Rename a season (or clear its label with `null`); editable anytime, never gated by the config rules. */
   setSeasonLabel(seasonId: string, label: string | null): Promise<void>
 

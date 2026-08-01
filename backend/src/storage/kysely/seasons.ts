@@ -101,6 +101,7 @@ export async function ensureOpenSeason(
         release_status: release,
         label: defaults?.label ?? null,
         description_markdown: null,
+        template_repo_url: null,
         config: encodeSeasonConfig(emptySeasonConfig(depsVersion)),
         rating_prompt: null,
         created_at: now,
@@ -145,6 +146,7 @@ export async function createSeason(
       release_status: 'unreleased',
       label: input.label ?? null,
       description_markdown: null,
+      template_repo_url: null,
       config: encodeSeasonConfig(emptySeasonConfig(input.deps_version)),
       rating_prompt: null,
       created_at: new Date().toISOString(),
@@ -472,6 +474,20 @@ export async function setSeasonDescription(
   return await db
     .updateTable('seasons')
     .set({ description_markdown: markdown })
+    .where('id', '=', seasonId)
+    .returningAll()
+    .executeTakeFirst()
+}
+
+/** Set or clear the season-specific template repository without changing run configuration. */
+export async function setSeasonTemplateRepoUrl(
+  db: Kysely<Database>,
+  seasonId: string,
+  templateRepoUrl: string | null,
+): Promise<Season | undefined> {
+  return await db
+    .updateTable('seasons')
+    .set({ template_repo_url: templateRepoUrl })
     .where('id', '=', seasonId)
     .returningAll()
     .executeTakeFirst()

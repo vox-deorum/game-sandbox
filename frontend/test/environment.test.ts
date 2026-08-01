@@ -1,4 +1,5 @@
 import { fireEvent, screen } from '@testing-library/vue'
+import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
@@ -16,6 +17,7 @@ vi.mock('../src/api/client.js', () => ({
   // boards embed; play gating is covered by the separate play-parameters mock.
   getEnvironmentLeaderboards: vi.fn(),
   getPlayParameters: vi.fn(),
+  getSeasonSettings: vi.fn(),
   // The page also fetches the released-season record on mount for the "Past seasons" links; default
   // it to empty so the record stays hidden unless a test sets it.
   listReleasedSeasons: vi.fn().mockResolvedValue([]),
@@ -31,6 +33,7 @@ import {
   getEnvironments,
   getMe,
   getPlayParameters,
+  getSeasonSettings,
   listRecordings,
   listSeasons,
   listWatchAgents,
@@ -66,6 +69,22 @@ describe('EnvironmentPage', () => {
     vi.mocked(getPlayParameters).mockResolvedValue({
       season_id: 'iter-1',
       values: { players: 1, pipe_gap: 100 },
+    })
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: {
+        season_id: 'iter-1',
+        season_label: 'Playground',
+        template_repo: { url: 'https://example.test/template', branch: 'main' },
+        values: { players: 1, pipe_gap: 100 },
+        rules: {
+          step_timeout_ms: 1000,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+      submission: null,
     })
     vi.mocked(listRecordings).mockResolvedValue([])
     vi.mocked(listSeasons).mockResolvedValue([
@@ -119,23 +138,81 @@ describe('EnvironmentPage', () => {
     expect(await screen.findByText('login page')).toBeInTheDocument()
   })
 
-  it('lists the play season settings under its description', async () => {
+  it('shows no season changes when play uses the environment defaults', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     // The prefill resolves to the environment default, so the summary names the one visible parameter
     // (`players` is fixed at one for Flappy Bird and stays out of a player-facing line).
     await renderPage()
-    expect(await screen.findByText(/Settings: Pipe gap 100/)).toBeInTheDocument()
-    expect(screen.queryByText('No special settings.')).toBeNull()
+    expect(await screen.findByText('This season uses the default settings.')).toBeInTheDocument()
   })
 
-  it('says a season has no special settings rather than dropping the line', async () => {
+  it('leaves the season settings block absent when its explanatory read fails', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
-    // Every Hearts parameter is fixed, so there is nothing to list. The line still answers the question
-    // instead of vanishing and leaving the player to guess.
-    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
-    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: { players: 4 } })
-    await renderPage('hearts')
-    expect(await screen.findByText('No special settings.')).toBeInTheDocument()
+    let rejectSettings!: (reason: unknown) => void
+    vi.mocked(getSeasonSettings).mockReturnValue(
+      new Promise<never>((_resolve, reject) => {
+        rejectSettings = reject
+      }),
+    )
+    await renderPage()
+
+    await screen.findByRole('button', { name: 'Play' })
+    await vi.waitFor(() => expect(getSeasonSettings).toHaveBeenCalledOnce())
+    rejectSettings(new Error('settings unavailable'))
+    await flushPromises()
+    expect(screen.queryByRole('list', { name: 'Season changes' })).toBeNull()
+    expect(screen.queryByText('This season uses the default settings.')).toBeNull()
+  })
+
+  it('leaves the season settings block absent when its response is for a stale play season', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: {
+        season_id: 'iter-0',
+        season_label: 'Previous playground',
+        template_repo: { url: 'https://example.test/template', branch: 'main' },
+        values: { players: 1, pipe_gap: 90 },
+        rules: {
+          step_timeout_ms: 500,
+          episode_timeout_ms: 60_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+      submission: null,
+    })
+    await renderPage()
+
+    await screen.findByRole('button', { name: 'Play' })
+    await flushPromises()
+    expect(screen.queryByRole('list', { name: 'Season changes' })).toBeNull()
+    expect(screen.queryByText('This season uses the default settings.')).toBeNull()
+  })
+
+  it('lists play-season changes in declaration order', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: {
+        season_id: 'iter-1',
+        season_label: 'Playground',
+        template_repo: { url: 'https://example.test/template', branch: 'main' },
+        values: { players: 1, pipe_gap: 90 },
+        rules: {
+          step_timeout_ms: 500,
+          episode_timeout_ms: 60_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+      submission: null,
+    })
+    await renderPage()
+    const changes = await screen.findByRole('list', { name: 'Season changes' })
+    expect(changes).toHaveTextContent('Pipe gap 100 → 90')
+    expect(changes).toHaveTextContent('Decision limit 1 s → 0.5 s')
+    expect(changes).toHaveTextContent('Game limit 120 s → 60 s')
   })
 
   it('names the released season in the boards heading with its release date beside it', async () => {

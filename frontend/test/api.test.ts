@@ -16,6 +16,7 @@ import {
   getRecording,
   getRecordingLlm,
   getSeasonLeaderboards,
+  getSeasonSettings,
   getSession,
   getSessionRatings,
   getSiteConfig,
@@ -31,6 +32,7 @@ import {
   type SeasonConfig,
   setAuthorPrompt,
   setSeasonDescription,
+  setSeasonTemplateRepository,
   startSession,
   submitRatings,
   triggerRun,
@@ -416,6 +418,13 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy_bird/leaderboards')
   })
 
+  it('reads independent play and submission season settings', async () => {
+    const payload = { play: null, submission: null }
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await getSeasonSettings('flappy bird')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy%20bird/season-settings')
+  })
+
   it('reads the public season index with an optional encoded environment filter', async () => {
     const payload = [
       {
@@ -506,6 +515,30 @@ describe('api client', () => {
       expect(await setSeasonDescription('iter-1', null)).toEqual({ ok: false, reason })
     }
   })
+
+  it('sets a season template repository through the dedicated operator route', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({ id: 'iter-1', template_repo_url: 'https://example.test/template' }),
+    )
+    expect(await setSeasonTemplateRepository('iter 1', 'https://example.test/template')).toEqual({
+      ok: true,
+      season: { id: 'iter-1', template_repo_url: 'https://example.test/template' },
+    })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/admin/seasons/iter%201/template-repository')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body as string)).toEqual({
+      template_repo_url: 'https://example.test/template',
+    })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'invalid_template_repo_url' }, 400))
+    expect(await setSeasonTemplateRepository('iter-1', 'https://bad.test/repo;echo')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    })
+  })
+
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {
     const config: SeasonConfig = {
       deps_version: 1,

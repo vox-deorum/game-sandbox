@@ -178,6 +178,36 @@ export interface PlayParameters {
   values: Record<string, ParameterValue>
 }
 
+/** The repository and branch participants clone to begin work for a season. */
+export interface TemplateRepository {
+  url: string
+  branch: string | null
+}
+
+/** The effective non-gameplay rules that can differ from an environment's defaults. */
+export interface SeasonRules {
+  step_timeout_ms: number
+  episode_timeout_ms: number
+  messaging_enabled: boolean
+  message_cap: number | null
+  llm_enabled: boolean
+}
+
+/** One public season's effective local-development settings. */
+export interface SeasonSettings {
+  season_id: string
+  season_label: string | null
+  template_repo: TemplateRepository
+  values: Record<string, ParameterValue>
+  rules: SeasonRules
+}
+
+/** The play and submission seasons' settings, independently absent when their windows are closed. */
+export interface EnvironmentSeasonSettings {
+  play: SeasonSettings | null
+  submission: SeasonSettings | null
+}
+
 /** A started session's id and the socket path the live host attaches to. */
 export interface StartedSession {
   id: string
@@ -214,6 +244,14 @@ export async function getPlayParameters(envId: string): Promise<PlayParameters> 
     await request(`/environments/${encodeURIComponent(envId)}/play-parameters`),
     `GET /environments/${envId}/play-parameters`,
   )) as PlayParameters
+}
+
+/** Load the effective settings for the environment's current play and submission seasons. */
+export async function getSeasonSettings(envId: string): Promise<EnvironmentSeasonSettings> {
+  return (await json(
+    await request(`/environments/${encodeURIComponent(envId)}/season-settings`),
+    `GET /environments/${envId}/season-settings`,
+  )) as EnvironmentSeasonSettings
 }
 
 /** The signed-in session user and derived status, or `{ user: null }` for an anonymous visitor. */
@@ -899,6 +937,8 @@ export interface SeasonView {
   rating_prompt: string | null
   /** A short, one-paragraph inline Markdown summary shown on public season cards. */
   description_markdown: string | null
+  /** The optional starter template chosen by an operator. */
+  template_repo_url?: string | null
   created_at: string
   released_at: string | null
 }
@@ -916,6 +956,8 @@ export type PublicSeasonView = Pick<
   | 'created_at'
   | 'released_at'
 > & {
+  /** The operator-selected starter repository, exposed only as a URL to public season readers. */
+  template_repo_url?: string | null
   /** Active participant submissions, excluding superseded attempts. */
   submission_count: number
   /** Games in the season's latest completed automated run — what the released Scoreboard aggregates. */
@@ -1327,6 +1369,30 @@ export async function setSeasonDescription(
           : 'failed'
   return { ok: false, reason }
 }
+
+/** The outcome of setting an optional starter-template repository for a season. */
+export type SetSeasonTemplateRepositoryResult =
+  | { ok: true; season: SeasonView }
+  | { ok: false; reason: 'invalid' | 'failed' }
+
+/** Set or clear the repository participants use to begin local work for a season. */
+export async function setSeasonTemplateRepository(
+  seasonId: string,
+  templateRepositoryUrl: string | null,
+): Promise<SetSeasonTemplateRepositoryResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/template-repository`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ template_repo_url: templateRepositoryUrl }),
+  })
+  if (res.ok) return { ok: true, season: (await res.json()) as SeasonView }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  return {
+    ok: false,
+    reason: body.code === 'invalid_template_repo_url' ? 'invalid' : 'failed',
+  }
+}
+
 /** Set or clear the operator's always-editable season rating prompt. */
 export async function setSeasonRatingPrompt(
   seasonId: string,

@@ -25,6 +25,7 @@ import {
   getLlmDevelopmentSummary,
   getAgentPlacements,
   getAgentProfile,
+  getSeasonSettings,
   type LlmDevelopmentCall,
   type LlmDevelopmentCredential,
   type LlmDevelopmentSummary,
@@ -32,11 +33,14 @@ import {
   listLlmDevelopmentSeasons,
   listSeasons,
   type PublicSeasonView,
+  type SeasonSettings,
   rotateLlmDevelopmentKey,
   type SubmissionStatus,
 } from '../api/client.js'
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
+import SeasonChanges from '../components/SeasonChanges.vue'
+import SetUpLocallyButton from '../components/SetUpLocallyButton.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -48,6 +52,7 @@ import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { useLatestRequest } from '../composables/useLatestRequest.js'
+import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import {
   formatComputeMs,
   formatDate,
@@ -68,6 +73,7 @@ const route = useRoute()
 const me = useMe()
 const envId = String(route.params.envId)
 const ownerId = String(route.params.ownerId)
+const { meta } = useEnvironmentMeta(envId)
 
 const profile = ref<AgentProfile | null>(null)
 const failed = ref(false)
@@ -278,6 +284,28 @@ const currentSeasonName = computed(() => {
   return currentSeasonMetadata.value?.label ?? `Season ${shortId(seasonId)}`
 })
 
+// Local setup belongs to the submission window, not the independent play season. The settings
+// endpoint is a supplementary public read, so a failed request leaves submission usable.
+const submissionSeasonSettings = ref<SeasonSettings | null>(null)
+const submissionSettingsRequest = useLatestRequest()
+watch(
+  [() => profile.value?.submission_season_id, () => userId(me.me)],
+  async ([seasonId, viewerId]) => {
+    const isCurrent = submissionSettingsRequest.begin()
+    submissionSeasonSettings.value = null
+    if (seasonId === null || seasonId === undefined || viewerId !== ownerId) return
+    try {
+      const settings = await getSeasonSettings(envId)
+      if (isCurrent() && settings.submission?.season_id === seasonId) {
+        submissionSeasonSettings.value = settings.submission
+      }
+    } catch {
+      // The setup help is optional and must never prevent an owner from submitting normally.
+    }
+  },
+  { immediate: true },
+)
+
 const developmentAccess = ref<LlmDevelopmentSummary | null>(null)
 const developmentRequest = useLatestRequest()
 watch(
@@ -415,6 +443,7 @@ function closeHistory(): void {
 onUnmounted(() => {
   profileLoadRequest.invalidate()
   seasonMetadataRequest.invalidate()
+  submissionSettingsRequest.invalidate()
   developmentRequest.invalidate()
   historyRequest.invalidate()
 })
@@ -541,9 +570,19 @@ const seasonLabel = (label: string | null, id: string): string =>
             v-bind="statusBadge(currentSeasonSubmission)"
           />
           <UiStatusBadge v-else label="Not submitted" tone="warning" />
+          <SetUpLocallyButton
+            v-if="submissionSeasonSettings !== null && meta !== null"
+            :meta="meta"
+            :settings="submissionSeasonSettings"
+          />
         </template>
         <span v-else class="submit-none">No Season is accepting submissions right now.</span>
       </header>
+      <SeasonChanges
+        v-if="submissionSeasonSettings !== null && meta !== null"
+        :meta="meta"
+        :settings="submissionSeasonSettings"
+      />
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
       <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">

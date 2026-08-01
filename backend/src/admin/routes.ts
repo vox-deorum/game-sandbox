@@ -24,14 +24,18 @@ import {
   type ResolvedLayout,
   resolveLayout,
 } from '@game-sandbox/schema/environment'
-import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
+import {
+  RATING_PROMPT_MAX,
+  SEASON_DESCRIPTION_MAX,
+  TEMPLATE_REPO_URL_MAX,
+} from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
 import { z } from 'zod'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../build/deps-version.js'
-import type { LlmOptions } from '../config/config.js'
+import { isSafeTemplateRepoUrl, type LlmOptions } from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
@@ -111,6 +115,11 @@ const RatingPromptBodySchema = z.strictObject({
  */
 const SeasonDescriptionBodySchema = z.strictObject({
   markdown: z.string().nullable(),
+})
+
+/** The body accepted when setting or clearing a season-specific template repository. */
+const TemplateRepositoryBodySchema = z.strictObject({
+  template_repo_url: z.string().max(TEMPLATE_REPO_URL_MAX).nullable(),
 })
 
 /** Whether a run is still in progress, so a re-run is refused and a cancel is meaningful. */
@@ -520,6 +529,39 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           }
 
           const updated = await deps.storage.setSeasonDescription(request.params.id, normalized)
+          if (updated === undefined) {
+            return reply.code(404).send({ error: 'no such season' })
+          }
+          return reply.code(200).send(seasonView(updated))
+        },
+      )
+
+      // --- Template repository ---------------------------------------------------------------
+      // This display and onboarding metadata does not affect a pinned submission, a session launch,
+      // or an automated run, so operators may change it at any point in a season's lifecycle.
+      admin.put<{ Params: { id: string }; Body: unknown }>(
+        '/seasons/:id/template-repository',
+        async (request, reply) => {
+          const parsed = TemplateRepositoryBodySchema.safeParse(request.body)
+          if (!parsed.success) {
+            return reply.code(400).send({
+              error: 'invalid template repository URL',
+              code: 'invalid_template_repo_url',
+              reason: zodReason(parsed.error),
+            })
+          }
+          const raw = parsed.data.template_repo_url
+          const templateRepoUrl = raw === null || raw.trim() === '' ? null : raw.trim()
+          if (templateRepoUrl !== null && !isSafeTemplateRepoUrl(templateRepoUrl)) {
+            return reply.code(400).send({
+              error: 'invalid template repository URL',
+              code: 'invalid_template_repo_url',
+            })
+          }
+          const updated = await deps.storage.setSeasonTemplateRepoUrl(
+            request.params.id,
+            templateRepoUrl,
+          )
           if (updated === undefined) {
             return reply.code(404).send({ error: 'no such season' })
           }

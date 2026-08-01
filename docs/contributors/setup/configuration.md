@@ -60,6 +60,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
 | `DOCS_DIR` | `docs` | Documentation root for shared in-app student guides; only its `students/` subtree is served |
 | `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
+| `TEMPLATE_REPO_URL` | `https://github.com/vox-deorum/game-agent-template` | Published student template repository used when a season has no repository URL. When this fallback is used, the setup dialog selects its `templates/<environment>` branch. A season-specific URL uses its default branch. |
 
 ## Recordings
 

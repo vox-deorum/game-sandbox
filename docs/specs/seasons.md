@@ -35,7 +35,10 @@ Each season defines:
 - Optional overrides for the deployment's LLM model aliases, token prices, official limits, and student development limits. Limits set the weighted token budget and request rate per minute. See [LLM API](llm.md#budgets-and-limits).
 - Optional season-wide rating prompt.
 - An optional **Season description**: display-only Markdown metadata that operators may save, replace, or clear at any time. The [frontend](frontend.md) defines its format and visibility.
+- An optional template repository URL. A season-specific URL is cloned from its default branch. When the URL is absent, the season uses the deployment's published template repository on the `templates/<environment>` branch.
 
 Every override applies to the season's automated matches and live sessions alike. Gameplay parameters are additionally the middle parameter layer: players may tweak them for one live session, while automated matches use the season values exactly, or the run refuses to start. See [Environments](environment.md#configurable-gameplay-parameters) for the full layering and drift rules. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry. See [LLM API](llm.md#budgets-and-limits).
 
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season with no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation. The API refuses deletion rather than removing related historical activity. The backend runs these workflows and streams logs to the console.
+
+The template repository URL and Season description remain editable after runs or submissions exist. They are display and setup metadata, not part of the configuration captured by an official run.

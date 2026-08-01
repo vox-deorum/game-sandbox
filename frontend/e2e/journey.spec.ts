@@ -1,13 +1,18 @@
+import { readFile } from 'node:fs/promises'
+
 import {
   activeWindows,
   closePlay,
+  closeSubmissions,
   declareSeason,
   deleteSeason,
   getRecordingHeader,
   getSession,
   openPlay,
+  openSubmissions,
+  setSeasonOverrides,
 } from './support/api.js'
-import { authenticateBrowser } from './support/auth.js'
+import { authenticateBrowser, userIdOf } from './support/auth.js'
 import { expect, test } from './support/fixtures.js'
 
 /**
@@ -28,7 +33,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.goto('/')
   await page.getByRole('link', { name: /Flappy Bird/ }).click()
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
-  await expect(page.getByText('Settings: Pipe gap 100')).toBeVisible()
+  await expect(page.getByText('This season uses the default settings.')).toBeVisible()
 
   // The Play entry point in the play-season section opens the start form; submit it to start a
   // human session.
@@ -132,5 +137,54 @@ test('rejects a start form loaded for a stale play season', async ({ page, admin
     await closePlay(admin, replacement.id).catch(() => {})
     await openPlay(admin, original.playSeasonId).catch(() => {})
     await deleteSeason(admin, replacement.id).catch(() => {})
+  }
+})
+
+test('shows submission-season changes and downloads its local setup file', async ({
+  page,
+  admin,
+  as,
+}) => {
+  const original = await activeWindows(admin)
+  if (original.submissionSeasonId === null) {
+    throw new Error('the seeded submission season is missing')
+  }
+  const season = await declareSeason(admin, 'Local setup season')
+  try {
+    await closeSubmissions(admin, original.submissionSeasonId)
+    await setSeasonOverrides(admin, season.id, {
+      step_timeout_ms: 750,
+      parameters: { pipe_gap: 90 },
+    })
+    await openSubmissions(admin, season.id)
+
+    const owner = await as('local-setup-owner')
+    await authenticateBrowser(page.context(), owner)
+    await page.goto(`/environments/flappy_bird/agents/${await userIdOf(owner)}`)
+
+    const changes = page.getByRole('list', { name: 'Season changes' })
+    await expect(changes).toContainText('Pipe gap 100 → 90')
+    await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Set Up Locally' }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('season.json')
+    const downloadPath = await download.path()
+    if (downloadPath === null) throw new Error('season settings download has no local path')
+    expect(JSON.parse(await readFile(downloadPath, 'utf8'))).toEqual({
+      env_id: 'flappy_bird',
+      season: 'Local setup season',
+      parameters: { pipe_gap: 90 },
+      decision_limit_ms: 750,
+    })
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('git clone -b templates/flappy_bird')
+    await expect(dialog).toContainText('Move the downloaded season.json next to manifest.json')
+  } finally {
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
+    await deleteSeason(admin, season.id).catch(() => {})
   }
 })

@@ -1391,7 +1391,7 @@ describe('Docker-backed workflow runner', () => {
     expect(config).toMatchObject({ messaging_enabled: false, message_cap: 80 })
   })
 
-  it('omits the messaging keys when the season sets no messaging override', async () => {
+  it('passes resolved metadata messaging defaults when the season sets no messaging override', async () => {
     const handle = makeRunner(storage)
     const run = await makeRun(storage, [naiveGame(0, 13)])
     let config: Record<string, unknown> | null = null
@@ -1400,8 +1400,7 @@ describe('Docker-backed workflow runner', () => {
       emitRecording(launch.process, { seed: config.seed as number })
     }
     await runToTerminal(handle, run.id)
-    expect(config).not.toHaveProperty('messaging_enabled')
-    expect(config).not.toHaveProperty('message_cap')
+    expect(config).toMatchObject({ messaging_enabled: false, message_cap: null })
   })
 
   it('kills a hung game at the wall-clock watchdog and continues the schedule', async () => {

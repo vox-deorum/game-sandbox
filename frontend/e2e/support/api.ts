@@ -115,6 +115,23 @@ export async function getSeasonConfig(
   return body.season.config
 }
 
+/** Merge selected season overrides through the full-replacement operator config endpoint. */
+export async function setSeasonOverrides(
+  admin: APIRequestContext,
+  seasonId: string,
+  overrides: NonNullable<SeasonConfigDoc['overrides']>,
+): Promise<void> {
+  const config = await getSeasonConfig(admin, seasonId)
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
+    data: {
+      deps_version: config.deps_version,
+      matches: config.matches,
+      overrides: { ...config.overrides, ...overrides },
+    },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
 /**
  * Set (or clear) a season's messaging-enabled override in place, preserving its existing match design
  * and every other override. The config endpoint is a full replace (no server-side merge), so this reads

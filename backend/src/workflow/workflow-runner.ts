@@ -41,6 +41,7 @@ import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config/config.js'
 import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
 import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
+import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
@@ -330,6 +331,8 @@ class DockerWorkflowRunner implements WorkflowRunner {
         return
       }
       const config = decodeSeasonConfig(run.config_snapshot)
+      const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
+      const seasonRules = resolveSeasonRules(meta, config.overrides, llmPolicy.enabled).rules
       const resolvedParameters = validateCompleteParameters(
         meta.parameters,
         run.parameters_snapshot,
@@ -339,7 +342,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
           `invalid frozen parameter snapshot: ${resolvedParameters.issues[0]?.name} ${resolvedParameters.issues[0]?.message}`,
         )
       }
-      const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
       const layout = resolveLayout(meta, resolvedParameters.values)
       const games = await this.deps.storage.listRunGames(runId)
       const preparedGames: Array<{ game: SeasonRunGame; seats: AgentRef[] }> = []
@@ -365,8 +367,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
       // Derive the watchdog once per run so every game uses the same effective bound.
       const watchdogMs = gameWatchdogMs(
-        meta,
-        config.overrides,
+        seasonRules.episode_timeout_ms,
         layout.playerCount,
         this.gameWatchdogGraceMs,
       )
@@ -383,7 +384,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           run,
           meta,
           config.deps_version,
-          config.overrides,
+          seasonRules,
           resolvedParameters.values,
           layout,
           llmPolicy,
@@ -419,7 +420,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     run: SeasonRun,
     meta: EnvironmentMeta,
     depsVersion: number,
-    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     layout: ReturnType<typeof resolveLayout>,
     llmPolicy: ResolvedOfficialLlmPolicy,
@@ -493,7 +494,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         game.seed,
         seats,
         recordingId,
-        overrides,
+        seasonRules,
         parameters,
         layout,
         llmLease?.keys ?? {},
@@ -808,7 +809,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     seed: number,
     assignedSeats: readonly AgentRef[],
     recordingId: string,
-    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     layout: ReturnType<typeof resolveLayout>,
     llmKeys: Readonly<Record<string, string>>,
@@ -855,13 +856,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       headless: true,
       players,
       ...assembleLlmLaunchConfig(this.deps.llmInternalPort ?? 1, llmKeys),
-      // Per-step/per-episode overrides take effect this stage; absent keys fall back to env defaults.
-      ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),
-      ...optionalField('episode_timeout_ms', overrides?.episode_timeout_ms),
-      // The messaging override, spread exactly like the timeouts. The harness combines defensively
-      // (metadata AND config; minimum cap), so a stored value can only disable or tighten.
-      ...optionalField('messaging_enabled', overrides?.messaging?.enabled),
-      ...optionalField('message_cap', overrides?.messaging?.message_cap),
+      step_timeout_ms: seasonRules.step_timeout_ms,
+      episode_timeout_ms: seasonRules.episode_timeout_ms,
+      messaging_enabled: seasonRules.messaging_enabled,
+      message_cap: seasonRules.message_cap,
     }
   }
 
@@ -1136,13 +1134,11 @@ export function resolveFailureAttribution(
 
 /** The chargeable-wall-clock watchdog bound for one game, derived from the effective episode timeout. */
 export function gameWatchdogMs(
-  meta: EnvironmentMeta,
-  overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+  episodeTimeoutMs: number,
   playerCount: number,
   graceMs: number,
 ): number {
-  const episodeLimit = overrides?.episode_timeout_ms ?? meta.episode_limit_ms
-  return episodeLimit * playerCount + graceMs
+  return episodeTimeoutMs * playerCount + graceMs
 }
 
 /**

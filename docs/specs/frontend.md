@@ -49,7 +49,7 @@ The environment overview may present three different seasons because the public 
 - Watch and play use the current play-open season.
 - My Submissions uses the current submission-open season.
 
-While play is open, the overview names that season, shows its description and visible effective gameplay settings, and makes its play, watch, and rating choices available. When the season has no visible setting, the overview says **No special settings.** When play is closed, the page says that no season is open for play. See [Seasons](seasons.md#public-gates) for the gate rules.
+While play is open, the overview names that season, shows its description, and lists only the settings that differ from the environment defaults. The difference list covers visible gameplay parameters, decision and game limits, messaging availability and length when supported, and LLM API availability when supported. Each item shows the default and season value. When nothing differs, the overview says **This season uses the default settings.** The overview also makes the season's play, watch, and rating choices available. When play is closed, the page says that no season is open for play. See [Seasons](seasons.md#public-gates) for the gate rules.
 
 Every builtin declared by the environment is available to watch under its display label. Ready submissions for the play-open season are the other choices.
 
@@ -83,6 +83,8 @@ The frontend checks that the repository can be reached before submission. The ba
 
 My Submissions identifies the selected season and shows whether its active attempt is absent, validating, ready, or failed. Status is always matched within that season, so an attempt in another season cannot satisfy it.
 
+For the submission-open season, My Submissions shows the same default-to-season difference list as the environment overview. **Set Up Locally** provides the season's template clone command and downloads `season.json` when the season has locally reproducible gameplay or time-limit changes. The setup dialog links to Getting Started and explains where to put the file. The action remains available when the season uses all defaults because the template link is still useful.
+
 The **My Agents** page groups the user's current and recent submission seasons by environment. It marks the current submission-open season with text as well as color, shows each active attempt and validation status, and exposes released results only. A released result includes a placement earned by any of the user's attempts in that season, including one later replaced. A failed validation still counts as an attempt. Unreleased placements stay hidden, while zero and negative scores remain valid displayed results.
 
 When the current submission-open season has effective LLM access, My Agents and the owner's agent profile show development usage and key management. The owner can inspect call history for an eligible current season and for historical submission seasons. See [LLM API](llm.md#budgets-and-limits).
@@ -113,6 +115,8 @@ Start forms render visible effective environment parameters, including the synth
 ### Manage
 
 The season config editor lists every effective parameter, including the synthesized layout parameter and values hidden from players. Each value either inherits the environment default or supplies an override, so an empty string remains valid. The editor validates and canonicalizes values before saving, and it serializes only current effective parameter names.
+
+The season text editor also accepts an optional absolute HTTP(S) template repository URL. A blank field uses the deployment's published template repository and the environment's `templates/<environment>` branch. Operators may correct this URL after runs or submissions exist.
 
 Each matchup row keeps one selector per seat it holds. A selector offers `submission` plus every builtin declared by the environment, displayed by label and saved as `builtin:<name>`. A seat the resolved layout restricts is set to its designated builtin and disabled. Changing the seat plan or the player count conforms every row to the newly resolved layout, updating its width and every restricted seat's designated builtin. A row saved under an earlier layout keeps its stored seats until the operator conforms it. The editor reports the projected game count for the whole match design beside the resolved seat and roster sizes, and each match's heading shows that match's own share. When the design cannot be counted, the editor shows one reason in place of those counts. The editor flags a row that no longer matches the resolved layout and offers a one-step action to conform it.
 

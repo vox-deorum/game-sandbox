@@ -228,6 +228,7 @@ async function main(): Promise<void> {
     orchestrator,
     siteName: config.siteName,
     siteShortName: config.siteShortName,
+    templateRepoUrl: config.templateRepoUrl,
     githubAuth: config.auth.github !== undefined,
     environments,
     recordings,

@@ -87,6 +87,7 @@ describe('submission API', () => {
       allowLocalSubmissions: overrides.allowLocalSubmissions ?? false,
       docsDir: config.docsDir,
       llm: config.llm,
+      templateRepoUrl: config.templateRepoUrl,
     })
   }
 

@@ -86,6 +86,7 @@ export type PublicSeasonView = Pick<
   | 'release_status'
   | 'label'
   | 'description_markdown'
+  | 'template_repo_url'
   | 'created_at'
   | 'released_at'
   | 'submission_count'
@@ -105,6 +106,7 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
     release_status: season.release_status,
     label: season.label,
     description_markdown: season.description_markdown,
+    template_repo_url: season.template_repo_url,
     created_at: season.created_at,
     released_at: season.released_at,
     submission_count: season.submission_count,

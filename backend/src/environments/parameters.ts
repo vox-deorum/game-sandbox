@@ -17,6 +17,7 @@ import {
   type ParameterValue,
   resolveParameters,
 } from '@game-sandbox/schema/environment'
+import type { Overrides } from '../storage/season-config.js'
 
 /** A season's effective parameter values, plus the first override the environment no longer accepts. */
 export interface SeasonParameters {
@@ -24,6 +25,20 @@ export interface SeasonParameters {
   values: Record<string, ParameterValue>
   /** Present when the stored config has drifted from the current declarations. */
   issue?: ParameterIssue
+}
+
+/** The effective non-parameter rules a season applies to live and workflow sessions. */
+export interface SeasonRules {
+  step_timeout_ms: number
+  episode_timeout_ms: number
+  messaging_enabled: boolean
+  message_cap: number | null
+  llm_enabled: boolean
+}
+
+/** Resolved parameter values, drift information, and the rules that govern a session. */
+export interface ResolvedSeasonRules extends SeasonParameters {
+  rules: SeasonRules
 }
 
 /** Resolve a season's parameter overrides against the environment's current declarations. */
@@ -34,4 +49,26 @@ export function resolveSeasonParameters(
   const resolved = resolveParameters(meta.parameters, overrides ?? {})
   const issue = resolved.issues[0]
   return issue === undefined ? { values: resolved.values } : { values: resolved.values, issue }
+}
+
+/** Resolve every environment and season rule that reaches a launched game. */
+export function resolveSeasonRules(
+  meta: EnvironmentMeta,
+  overrides: Overrides | undefined,
+  llmEnabled: boolean,
+): ResolvedSeasonRules {
+  const parameters = resolveSeasonParameters(meta, overrides?.parameters)
+  const caps = [meta.message_cap, overrides?.messaging?.message_cap].filter(
+    (cap): cap is number => cap !== null && cap !== undefined,
+  )
+  return {
+    ...parameters,
+    rules: {
+      step_timeout_ms: overrides?.step_timeout_ms ?? meta.step_limit_ms,
+      episode_timeout_ms: overrides?.episode_timeout_ms ?? meta.episode_limit_ms,
+      messaging_enabled: meta.messaging && (overrides?.messaging?.enabled ?? true),
+      message_cap: caps.length > 0 ? Math.min(...caps) : null,
+      llm_enabled: llmEnabled,
+    },
+  }
 }

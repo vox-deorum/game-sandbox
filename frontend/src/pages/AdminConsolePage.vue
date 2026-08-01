@@ -34,6 +34,7 @@ import {
   type SeasonView,
   setSeasonDescription,
   setSeasonRatingPrompt,
+  setSeasonTemplateRepository,
 } from '../api/client.js'
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import OperatorSeasonTextEditor from '../components/admin/OperatorSeasonTextEditor.vue'
@@ -201,6 +202,12 @@ function seasonDescriptionErrorMessage(reason: string): string {
     : reason === 'multiple_paragraphs'
       ? 'Use one paragraph only.'
       : 'Could not save the season description. Please try again.'
+}
+
+function templateRepositoryErrorMessage(reason: string): string {
+  return reason === 'invalid'
+    ? 'Enter a valid repository URL.'
+    : 'Could not save the template repository. Please try again.'
 }
 
 function startRename(season: SeasonView): void {
@@ -464,6 +471,9 @@ onUnmounted(() => {
                   :max-length="SEASON_DESCRIPTION_MAX"
                   :persist="setSeasonDescription"
                   :error-message="seasonDescriptionErrorMessage"
+                  :template-repository="view.season.template_repo_url"
+                  :persist-template-repository="setSeasonTemplateRepository"
+                  :template-repository-error-message="templateRepositoryErrorMessage"
                   clearable
                   clear-label="Clear description"
                   @changed="refresh"

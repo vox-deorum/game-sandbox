@@ -70,6 +70,7 @@ describe('rating API', () => {
       auth: stack.auth,
       userDirectory: stack.userDirectory,
       llm: config.llm,
+      templateRepoUrl: config.templateRepoUrl,
       ...makeSubmissionDeps(storage, config),
     })
     await app.ready()

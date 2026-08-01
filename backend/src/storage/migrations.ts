@@ -110,6 +110,7 @@ const initialSchema: Migration = {
       .addColumn('release_status', 'text', (col) => col.notNull())
       .addColumn('label', 'text')
       .addColumn('description_markdown', 'text')
+      .addColumn('template_repo_url', 'text')
       .addColumn('config', 'text', (col) => col.notNull())
       .addColumn('rating_prompt', 'text')
       .addColumn('created_at', 'text', (col) => col.notNull())

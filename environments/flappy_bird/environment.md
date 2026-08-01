@@ -181,7 +181,7 @@ The bird sits at `x = 57`, near the left, with the nearest pipe ahead at `x = 92
 
 ## Pipe-gap setting
 
-The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any gap from 60 to 200 pixels, so read the gap from each observation instead of assuming a fixed opening.
+The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any gap from 60 to 200 pixels, so read the gap from each observation instead of assuming a fixed opening. Use **Set Up Locally** on My Submissions to download the season's setting into your template.
 
 ## Time limits
 

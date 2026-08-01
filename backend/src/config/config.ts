@@ -145,6 +145,8 @@ export interface Config {
    * distinct short form.
    */
   siteShortName: string
+  /** The default student repository. It must match the template publisher's target repository. */
+  templateRepoUrl: string
   /** Root directory holding the SQLite database and the recordings volume. */
   dataDir: string
   /** Absolute path to the SQLite database file inside {@link Config.dataDir}. */
@@ -336,6 +338,27 @@ function httpUrlVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
     throw new ConfigError(`${name} must be a valid absolute http(s) URL`)
   }
   return raw
+}
+
+const TEMPLATE_REPO_SHELL_UNSAFE = /[\s`"';&|<>()$%\\!?*[\]{}^]/
+
+/** Whether a repository URL is safe to expose and interpolate into the documented clone command. */
+export function isSafeTemplateRepoUrl(value: string): boolean {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    value === value.trim() &&
+    url.username === '' &&
+    url.password === '' &&
+    url.search === '' &&
+    url.hash === '' &&
+    !TEMPLATE_REPO_SHELL_UNSAFE.test(value)
+  )
 }
 
 /** The loopback hostnames a `PUBLIC_ORIGIN` may use under the insecure-defaults opt-in. */
@@ -530,6 +553,15 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
   // sets only SITE_NAME gets a matching short form for free while either can be overridden alone.
   const siteName = requiredStringVar(env, 'SITE_NAME')
   const siteShortName = optionalStringVar(env, 'SITE_SHORT_NAME') ?? siteName
+  const templateRepoUrl = httpUrlVar(env, 'TEMPLATE_REPO_URL')
+  if (templateRepoUrl === undefined) {
+    throw new ConfigError(
+      'TEMPLATE_REPO_URL is required in .env.default or the process environment',
+    )
+  }
+  if (!isSafeTemplateRepoUrl(templateRepoUrl)) {
+    throw new ConfigError('TEMPLATE_REPO_URL must be safe for the documented git clone command')
+  }
 
   const defaultMaxOutputTokens = boundedIntVar(env, 'LLM_DEFAULT_MAX_OUTPUT_TOKENS', 0, 1_000_000)
   const maxOutputTokens = boundedIntVar(env, 'LLM_MAX_OUTPUT_TOKENS', 1, 1_000_000)
@@ -572,6 +604,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     listenHost,
     siteName,
     siteShortName,
+    templateRepoUrl,
     dataDir,
     dbPath: join(dataDir, 'sandbox.db'),
     recordingsDir: join(dataDir, 'recordings'),

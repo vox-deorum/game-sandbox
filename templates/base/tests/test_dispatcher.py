@@ -10,7 +10,9 @@ from sandbox import __main__ as dispatcher
 
 def test_help_lists_llm(capsys):
     assert dispatcher.main(["--help"]) == 0
-    assert "llm      smoke-test small, medium, or large (default: small)" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "llm      smoke-test small, medium, or large (default: small)" in output
+    assert "season.json" in output
 
 
 def test_setup_help_prints_usage_instead_of_installing(capsys, monkeypatch):

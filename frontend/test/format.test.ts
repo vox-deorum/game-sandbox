@@ -1,7 +1,7 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatPlayer, formatSeat } from '../src/lib/format.js'
+import { formatDate, formatDuration, formatPlayer, formatSeat } from '../src/lib/format.js'
 import { decisionEntries, latestPlayerScores, toPlayerScores } from '../src/lib/state.js'
 import { formatScoreMap } from '../src/replay/summary.js'
 
@@ -14,6 +14,15 @@ describe('formatDate', () => {
     expect(formatDate(iso)).not.toBeNull()
     expect(formatDate(null)).toBeNull()
     expect(formatDate(undefined)).toBeNull()
+  })
+})
+
+describe('formatDuration', () => {
+  it('uses compact human units for exact limits', () => {
+    expect(formatDuration(500)).toBe('0.5 s')
+    expect(formatDuration(1000)).toBe('1 s')
+    expect(formatDuration(120_000)).toBe('120 s')
+    expect(formatDuration(1500)).toBe('1.5 s')
   })
 })
 

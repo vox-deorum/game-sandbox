@@ -30,6 +30,7 @@ from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
 from sandbox.harness.manifest import load_agent as _load_agent
 from sandbox.harness.session import AgentPlayer, ExternalPlayer, run_episode
+from sandbox.season import announce, load_season_settings, parse_parameter_overrides
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = Path(__file__).resolve().parent / "web"
@@ -56,9 +57,9 @@ def _entry(make: Any = make_env) -> EnvironmentEntry:
     )
 
 
-def possible_players() -> tuple[str, ...]:
+def possible_players(parameters: Mapping[str, ParameterValue] | None = None) -> tuple[str, ...]:
     """Read every environment player instead of assuming every player is human-capable."""
-    env = make_env(resolve_parameters(META))
+    env = make_env(resolve_parameters(META) if parameters is None else parameters)
     try:
         return tuple(env.possible_agents)
     finally:
@@ -89,7 +90,11 @@ def resolve_rival(raw: str) -> Path:
     return folder
 
 
-def parse_rival(parser: argparse.ArgumentParser, raw: str | None) -> Path | None:
+def parse_rival(
+    parser: argparse.ArgumentParser,
+    raw: str | None,
+    parameters: Mapping[str, ParameterValue] | None = None,
+) -> Path | None:
     """Turn a ``--vs`` value into the rival's folder, reporting problems through the parser.
 
     A game whose layout resolves to one seat has no opposing seat for a rival to fill, whether that
@@ -97,7 +102,7 @@ def parse_rival(parser: argparse.ArgumentParser, raw: str | None) -> Path | None
     """
     if raw is None:
         return None
-    layout = resolve_layout(META, resolve_parameters(META))
+    layout = resolve_layout(META, resolve_parameters(META) if parameters is None else parameters)
     if layout.seat_count == 1:
         reason = "it has only one player" if layout.player_count == 1 else "every player is on your team"
         parser.error(f"--vs is not available in this game: {reason}, so there are no opponents to replace")
@@ -120,6 +125,8 @@ def play_episode(
     max_steps: int | None = None,
     player_id: str = PLAYER_ID,
     parameters: Mapping[str, ParameterValue] | None = None,
+    decision_limit_ms: int | None = None,
+    game_limit_ms: int | None = None,
     other_agents: Mapping[str, Any] | None = None,
 ) -> float:
     """Play one headless episode with one selected agent and legal defaults for every other player.
@@ -139,37 +146,49 @@ def play_episode(
             return AgentPlayer(others[candidate])
         return ExternalPlayer(_DefaultSource())
 
-    players = {candidate: _player(candidate) for candidate in possible_players()}
+    resolved_parameters = resolve_parameters(META) if parameters is None else parameters
+    players = {candidate: _player(candidate) for candidate in possible_players(resolved_parameters)}
     result = run_episode(
         _entry(lambda _parameters: env),
         players,
         seed=seed,
-        parameters=resolve_parameters(META) if parameters is None else parameters,
+        parameters=resolved_parameters,
+        step_limit_ms=decision_limit_ms,
+        episode_limit_ms=game_limit_ms,
         max_steps=max_steps,
     )
     return result.scores[player_id]
 
 
-def run_headless(*, seed: int, max_steps: int | None, player: int, vs: Path | None = None) -> float:
+def run_headless(
+    *,
+    seed: int,
+    max_steps: int | None,
+    player: int,
+    vs: Path | None = None,
+    parameters: Mapping[str, ParameterValue] | None = None,
+    decision_limit_ms: int | None = None,
+    game_limit_ms: int | None = None,
+) -> float:
     """Run the selected player through the harness without local networking or browser rendering.
 
     With ``vs``, the players outside the selected player's seat run the rival saved in that folder,
     and seatmates run this repository's agent, each as its own separately constructed instance.
     """
-    player_ids = possible_players()
+    resolved_parameters = resolve_parameters(META) if parameters is None else parameters
+    player_ids = possible_players(resolved_parameters)
     player_id = player_ids[player]
     # One resolution feeds both the environment and the episode, so the recorded parameters always
     # describe the environment that actually ran.
-    parameters = resolve_parameters(META)
     other_agents: dict[str, Any] | None = None
     if vs is not None:
-        rivals = rival_player_ids(player_id, parameters)
+        rivals = rival_player_ids(player_id, resolved_parameters)
         other_agents = {
             candidate: load_agent(vs if candidate in rivals else REPO_ROOT)
             for candidate in player_ids
             if candidate != player_id
         }
-    env = make_env(parameters)
+    env = make_env(resolved_parameters)
     try:
         return play_episode(
             load_agent(REPO_ROOT),
@@ -177,7 +196,9 @@ def run_headless(*, seed: int, max_steps: int | None, player: int, vs: Path | No
             seed=seed,
             max_steps=max_steps,
             player_id=player_id,
-            parameters=parameters,
+            parameters=resolved_parameters,
+            decision_limit_ms=decision_limit_ms,
+            game_limit_ms=game_limit_ms,
             other_agents=other_agents,
         )
     finally:
@@ -193,16 +214,19 @@ def local_config(
     step_limit: int | None,
     human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
     vs: Path | None = None,
+    parameters: Mapping[str, ParameterValue] | None = None,
+    decision_limit_ms: int | None = None,
+    game_limit_ms: int | None = None,
 ) -> dict[str, object]:
     """Build the complete runner config and header attribution for one local launch.
 
     With ``vs``, the players outside the selected player's seat bind to the rival saved in that
     folder instead of this repository.
     """
-    player_ids = possible_players()
-    parameters = resolve_parameters(META)
+    resolved_parameters = resolve_parameters(META) if parameters is None else parameters
+    player_ids = possible_players(resolved_parameters)
     human_player = player_ids[player] if mode == "human" else None
-    rivals = rival_player_ids(player_ids[player], parameters) if vs is not None else frozenset()
+    rivals = rival_player_ids(player_ids[player], resolved_parameters) if vs is not None else frozenset()
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
     for player_id in player_ids:
@@ -225,7 +249,7 @@ def local_config(
             }
     config: dict[str, object] = {
         "env_id": META.env_id,
-        "parameters": parameters,
+        "parameters": resolved_parameters,
         "seed": seed,
         "player_bindings": bindings,
         "players": players,
@@ -238,6 +262,10 @@ def local_config(
     # ``max_steps`` is the local runner's explicit step cap. Omit it for normal unlimited sessions.
     if step_limit is not None:
         config["max_steps"] = step_limit
+    if decision_limit_ms is not None:
+        config["step_timeout_ms"] = decision_limit_ms
+    if game_limit_ms is not None:
+        config["episode_timeout_ms"] = game_limit_ms
     # Omission means the metadata default. JSON null is reserved for an explicit disabled timeout.
     if human_timeout_ms is not UNSET_TIMEOUT:
         config["human_timeout_ms"] = human_timeout_ms
@@ -285,6 +313,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
     parser.add_argument("--no-browser", action="store_true", help="serve without opening a browser")
     parser.add_argument("--headless", action="store_true", help="run one episode without a browser")
+    parser.add_argument(
+        "--parameter",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="typed environment parameter override; repeat for several values",
+    )
+    parser.add_argument("--decision-limit-ms", type=int, help="override the agent decision limit")
+    parser.add_argument("--game-limit-ms", type=int, help="override the game time limit")
     timeouts = parser.add_mutually_exclusive_group()
     timeouts.add_argument("--human-timeout-ms", type=int, help="override the human turn timeout")
     timeouts.add_argument(
@@ -294,14 +331,49 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    player_ids = possible_players()
+    try:
+        season = load_season_settings(REPO_ROOT, META)
+        parameter_overrides = parse_parameter_overrides(META, args.parameter)
+        parameters = resolve_parameters(
+            META, {} if season is None else season.parameters, parameter_overrides
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    if args.decision_limit_ms is not None and args.decision_limit_ms <= 0:
+        parser.error("--decision-limit-ms must be positive")
+    if args.game_limit_ms is not None and args.game_limit_ms <= 0:
+        parser.error("--game-limit-ms must be positive")
+    decision_limit_ms = (
+        args.decision_limit_ms
+        if args.decision_limit_ms is not None
+        else None
+        if season is None
+        else season.decision_limit_ms
+    )
+    game_limit_ms = (
+        args.game_limit_ms
+        if args.game_limit_ms is not None
+        else None
+        if season is None
+        else season.game_limit_ms
+    )
+    announce(season)
+    player_ids = possible_players(parameters)
     if args.player < 0 or args.player >= len(player_ids):
         parser.error(f"--player must name one of 0..{len(player_ids) - 1}")
     if args.mode == "human" and not args.headless and player_ids[args.player] not in META.human_players:
         parser.error(f"player {args.player} is not human-playable in {META.env_id!r}")
-    rival = parse_rival(parser, args.vs)
+    rival = parse_rival(parser, args.vs, parameters)
     if args.headless:
-        score = run_headless(seed=args.seed, max_steps=args.steps, player=args.player, vs=rival)
+        score = run_headless(
+            seed=args.seed,
+            max_steps=args.steps,
+            player=args.player,
+            vs=rival,
+            parameters=parameters,
+            decision_limit_ms=decision_limit_ms,
+            game_limit_ms=game_limit_ms,
+        )
         print(f"seed {args.seed}: score {score:.2f}")
         return 0
     with TemporaryDirectory(prefix="game-sandbox-local-") as recording_dir:
@@ -312,6 +384,9 @@ def main(argv: list[str] | None = None) -> int:
             recording_dir=Path(recording_dir),
             step_limit=args.steps,
             vs=rival,
+            parameters=parameters,
+            decision_limit_ms=decision_limit_ms,
+            game_limit_ms=game_limit_ms,
             human_timeout_ms=(
                 None
                 if args.no_human_timeout

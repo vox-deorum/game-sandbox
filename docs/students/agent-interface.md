@@ -79,7 +79,7 @@ Develop and test on your own computer, then put everything your agent needs in t
 
 ## Time limits
 
-Your environment page lists the default decision limit and game limit, and a season can override them.
+Your environment guide lists the default decision limit and game limit. The environment overview shows changes for the play-open season. My Submissions shows changes for the season accepting your submission.
 
 - A **decision limit** applies to one turn. If `act` finishes late, the runner ignores its result and uses a legal default action for that turn. The game continues, but the time `act` spent still counts toward the game limit.
 - A **game limit** applies to your agent's total computation during one game (one full episode). Time in `act`, `learn`, and `chat` counts toward it.
@@ -104,6 +104,7 @@ Messaging follows a few rules at each acting opportunity:
 
 - You can send one message to each recipient and one broadcast.
 - The environment sets the maximum message length, and a season can lower it.
+- The environment overview shows messaging changes for the play-open season. My Submissions shows them for the season accepting your submission.
 - A message that breaks a limit is dropped without an error, so a message that never arrived probably broke one.
 - Messages are recorded on the completed step and become readable only at a later acting opportunity.
 - Every message appears in replays, so nothing you send is secret.
@@ -112,7 +113,7 @@ See the [communication specification](../specs/communication.md) for the complet
 
 ### LLM calls
 
-When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, the response has the wrong format, or a background reply is not ready.
+When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. The environment overview shows LLM API availability for the play-open season. My Submissions shows it for the season accepting your submission. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, the response has the wrong format, or a background reply is not ready.
 
 A method may make a normal request and wait for the complete response. An agent that can continue without the immediate reply may instead use the template's `BackgroundLLM` helper to start one plain-text request and collect it from a later hook. Do not create threads yourself. In official sessions, verified time inside the Game Sandbox LLM service does not count toward the decision or game limit, but your local computation still does, so keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for synchronous and cross-tick examples, setup, budgets, errors, and prompt visibility.
 

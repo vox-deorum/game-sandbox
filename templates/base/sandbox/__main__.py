@@ -37,7 +37,8 @@ commands:
   setup    install dependencies into .venv
 
 Extra args pass straight through, e.g. `python -m sandbox play --seed 7` or
-`python -m sandbox test -k manifest`.\
+`python -m sandbox play --decision-limit-ms 500`. Local episode commands also use an optional
+`season.json` beside manifest.json.\
 """
 
 #: Repo root is the parent of this ``sandbox`` package, where requirements + manifest live.

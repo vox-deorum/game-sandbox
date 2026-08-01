@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Storage } from '../src/storage/index.js'
 import type { TestUsers } from './support/auth.js'
-import { openTestApp, type TestApp } from './support/harness.js'
+import { makeConfig, openTestApp, type TestApp } from './support/harness.js'
+import { llmEnvironments, makeTestLlmOptions } from './support/llm-options.js'
 
 describe('HTTP API', () => {
   let app: FastifyInstance
@@ -60,6 +61,138 @@ describe('HTTP API', () => {
     expect(res.json()).toEqual({ season_id: playSeasonId, values: { players: 1, pipe_gap: 100 } })
   })
 
+  it('returns independent play and submission settings with resolved rules and template locations', async () => {
+    await storage.updateSeasonConfig(playSeasonId, {
+      deps_version: 1,
+      matches: [],
+      overrides: { parameters: { pipe_gap: 120 }, step_timeout_ms: 250, episode_timeout_ms: 5_000 },
+    })
+    await storage.setSubmissionStatus(playSeasonId, 'closed')
+    const submissionSeason = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+    await storage.setSubmissionStatus(submissionSeason.id, 'open')
+    await storage.setSeasonTemplateRepoUrl(
+      submissionSeason.id,
+      'https://example.test/course-template',
+    )
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/environments/flappy_bird/season-settings',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      play: {
+        season_id: playSeasonId,
+        season_label: null,
+        template_repo: {
+          url: 'https://github.com/vox-deorum/game-agent-template',
+          branch: 'templates/flappy_bird',
+        },
+        values: { players: 1, pipe_gap: 120 },
+        rules: {
+          step_timeout_ms: 250,
+          episode_timeout_ms: 5_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+      submission: {
+        season_id: submissionSeason.id,
+        season_label: null,
+        template_repo: { url: 'https://example.test/course-template', branch: null },
+        values: { players: 1, pipe_gap: 100 },
+        rules: {
+          step_timeout_ms: 1_000,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+    })
+  })
+
+  it('uses the environment branch when a season pastes the deployment template repository', async () => {
+    for (const templateRepoUrl of [
+      fixture.config.templateRepoUrl,
+      `${fixture.config.templateRepoUrl}/`,
+    ]) {
+      await storage.setSeasonTemplateRepoUrl(playSeasonId, templateRepoUrl)
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/environments/flappy_bird/season-settings',
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(
+        (response.json() as { play: { template_repo: { url: string; branch: string | null } } })
+          .play.template_repo,
+      ).toEqual({ url: templateRepoUrl, branch: 'templates/flappy_bird' })
+    }
+  })
+
+  it('reports closed gates as null and rejects an unknown environment', async () => {
+    await storage.setSubmissionStatus(playSeasonId, 'closed')
+    await storage.setPlayStatus(playSeasonId, 'closed')
+    const closed = await app.inject({
+      method: 'GET',
+      url: '/api/environments/flappy_bird/season-settings',
+    })
+    expect(closed.statusCode).toBe(200)
+    expect(closed.json()).toEqual({ play: null, submission: null })
+
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/api/environments/nope/season-settings',
+    })
+    expect(missing.statusCode).toBe(404)
+  })
+
+  it('reports LLM access only when the deployment can provide it', async () => {
+    async function readLlmEnabled(configured: boolean): Promise<boolean> {
+      const root = join(fixture.rootDir, configured ? 'llm-configured' : 'llm-unconfigured')
+      const llm = makeTestLlmOptions()
+      const llmFixture = await openTestApp({
+        environments: llmEnvironments(),
+        config: makeConfig({
+          dataDir: root,
+          recordingsDir: join(root, 'recordings'),
+          submissionsDir: join(root, 'submissions'),
+          llm: configured
+            ? {
+                ...llm,
+                upstreamUrl: 'https://provider.test/v1',
+                models: { small: { upstream: 'provider-small', costWeight: 1 } },
+              }
+            : llm,
+        }),
+      })
+      try {
+        const season = await llmFixture.storage.ensureOpenSeason('llm_env', 1)
+        await llmFixture.storage.updateSeasonConfig(season.id, {
+          deps_version: 1,
+          matches: [],
+          overrides: { llm: { enabled: true } },
+        })
+        const response = await llmFixture.app.inject({
+          method: 'GET',
+          url: '/api/environments/llm_env/season-settings',
+        })
+        expect(response.statusCode).toBe(200)
+        return (response.json() as { play: { rules: { llm_enabled: boolean } } }).play.rules
+          .llm_enabled
+      } finally {
+        await llmFixture.close()
+      }
+    }
+
+    await expect(readLlmEnabled(false)).resolves.toBe(false)
+    await expect(readLlmEnabled(true)).resolves.toBe(true)
+  })
+
   // Season overrides are checked against the environment's declarations when an operator writes them
   // and never again, so an environment that later tightens a bound (or changes its player bounds, which
   // moves the synthesized `players` range) leaves a stored override the current declarations reject.
@@ -85,6 +218,18 @@ describe('HTTP API', () => {
       expect(res.json()).toEqual({
         season_id: playSeasonId,
         values: { players: 1, pipe_gap: 100 },
+      })
+    })
+
+    it('keeps season settings available with the default after drift', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/environments/flappy_bird/season-settings',
+      })
+      expect(res.statusCode).toBe(200)
+      expect((res.json() as { play: { values: Record<string, number> } }).play.values).toEqual({
+        players: 1,
+        pipe_gap: 100,
       })
     })
 

@@ -335,6 +335,7 @@ describe('docs HTTP routes', () => {
       auth,
       userDirectory,
       llm: config.llm,
+      templateRepoUrl: config.templateRepoUrl,
       environmentGuidesDir: environmentsDir,
       docsIndexFile,
       ...makeSubmissionDeps(storage, config),

@@ -21,6 +21,7 @@ import { currentSessionBaseImageSpec } from '../build/deps-version.js'
 import type { Config } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
+import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
@@ -283,13 +284,14 @@ export class Orchestrator {
         : null
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
-    // Resolve the play-open season's overrides once, and from them the effective messaging rules:
-    // enabled is the environment metadata AND the season override; the cap is the minimum of the two.
-    // The same resolved block is handed to all three consumers (the container config, the relay, and
-    // the session row) so live and reopened-ended payloads agree, and it is persisted on the row.
-    const overrides = seasonConfig.overrides
-    const messaging = resolveMessaging(meta, overrides?.messaging)
     const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
+    // Resolve the play-open season's rules once. The same block drives the container config, relay,
+    // and persisted session row so live and reopened-ended payloads agree.
+    const seasonRules = resolveSeasonRules(meta, seasonConfig.overrides, llm.enabled).rules
+    const messaging = {
+      enabled: seasonRules.messaging_enabled,
+      cap: seasonRules.message_cap,
+    }
     const externalPlayers = resolvedSeats.flatMap((seat) =>
       seat.kind === 'human' ? [seat.playerId] : [],
     )
@@ -371,7 +373,7 @@ export class Orchestrator {
         resolvedSeats,
         layout,
         request.userId,
-        overrides,
+        seasonRules,
         resolvedParameters.values,
         messaging,
         externalChatPlayer,
@@ -731,7 +733,7 @@ export class Orchestrator {
     resolvedSeats: ResolvedSeat[],
     layout: ReturnType<typeof resolveLayout>,
     ownerUserId: string,
-    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     messaging: { enabled: boolean; cap: number | null },
     externalChatPlayer: string | null,
@@ -800,10 +802,8 @@ export class Orchestrator {
       message_cap: messaging.cap,
       external_chat_player: externalChatPlayer,
       ...assembleLlmLaunchConfig(this.config.llm.internalPort, llmKeys),
-      // The owner decision: the play-open season's overrides now reach live sessions too, exactly as
-      // the workflow runner already spreads them into scheduled games.
-      ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),
-      ...optionalField('episode_timeout_ms', overrides?.episode_timeout_ms),
+      step_timeout_ms: seasonRules.step_timeout_ms,
+      episode_timeout_ms: seasonRules.episode_timeout_ms,
     }
   }
 
@@ -838,15 +838,4 @@ export class Orchestrator {
       return new Map()
     }
   }
-}
-
-function resolveMessaging(
-  meta: EnvironmentMeta,
-  override: { enabled?: boolean; message_cap?: number } | undefined,
-): { enabled: boolean; cap: number | null } {
-  const enabled = meta.messaging && (override?.enabled ?? true)
-  const caps = [meta.message_cap, override?.message_cap].filter(
-    (cap): cap is number => cap !== null && cap !== undefined,
-  )
-  return { enabled, cap: caps.length > 0 ? Math.min(...caps) : null }
 }

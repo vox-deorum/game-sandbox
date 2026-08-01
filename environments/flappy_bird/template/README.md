@@ -13,6 +13,7 @@ Flappy Bird is the default template. See the course documentation for the enviro
 | `agent.py` | Your agent implementation |
 | `environment.md` | The Flappy Bird reference: the starter agent, observations, actions, helpers, scoring, and limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
+| `season.json` | Optional local season settings downloaded from My Submissions |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
@@ -36,9 +37,12 @@ The first run creates `.venv`, installs the pinned packages, and opens a game yo
 python -m sandbox            # play it yourself
 python -m sandbox play       # run YOUR agent in your browser (add --headless to run without opening the browser)
 python -m sandbox eval       # run several seeded episodes and report the mean score
+python -m sandbox play --parameter pipe_gap=120  # override one setting for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
+
+When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 

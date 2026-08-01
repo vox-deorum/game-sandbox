@@ -44,6 +44,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
     siteShortName: 'Game Sandbox',
+    templateRepoUrl: 'https://github.com/vox-deorum/game-agent-template',
     dataDir: recordingsDir,
     dbPath: ':memory:',
     recordingsDir,
@@ -129,6 +130,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
     docsDir: config.docsDir,
     llm: config.llm,
+    templateRepoUrl: config.templateRepoUrl,
   })
 
   const httpBase = await app.listen({ port: 0, host: '127.0.0.1' })

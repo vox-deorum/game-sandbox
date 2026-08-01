@@ -13,6 +13,7 @@ Hearts is a four-player trick-taking game. In local play, every agent-controlled
 | `agent.py` | Your agent implementation |
 | `environment.md` | The Hearts reference: rules, observations, helpers, scoring, and limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
+| `season.json` | Optional local season settings downloaded from My Submissions |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
@@ -37,9 +38,12 @@ python -m sandbox            # play one chosen position yourself; your agent run
 python -m sandbox play       # watch separate copies of your agent play all four positions
 python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
 python -m sandbox eval       # repeat that headless check over seeded episodes and report the mean score
+python -m sandbox play --decision-limit-ms 500  # override the decision limit for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
+
+When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
 
 A few more flags help while you work, plus one thing to know about `eval`:
 

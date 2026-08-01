@@ -76,6 +76,7 @@ export interface OpenTestAppOptions {
   allowLocalSubmissions?: boolean
   siteName?: string
   siteShortName?: string
+  templateRepoUrl?: string
   githubAuth?: boolean
   frontendDir?: string
   docsDir?: string
@@ -142,6 +143,7 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     ...submissionDeps,
     ...(options.siteName === undefined ? {} : { siteName: options.siteName }),
     ...(options.siteShortName === undefined ? {} : { siteShortName: options.siteShortName }),
+    templateRepoUrl: options.templateRepoUrl ?? config.templateRepoUrl,
     ...(options.githubAuth === undefined ? {} : { githubAuth: options.githubAuth }),
     ...(options.frontendDir === undefined ? {} : { frontendDir: options.frontendDir }),
     ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
@@ -191,6 +193,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
     siteShortName: 'Game Sandbox',
+    templateRepoUrl: 'https://github.com/vox-deorum/game-agent-template',
     dataDir: './data',
     dbPath: ':memory:',
     recordingsDir: './data/recordings',

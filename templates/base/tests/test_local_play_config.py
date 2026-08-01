@@ -11,7 +11,13 @@ from types import SimpleNamespace
 
 import pytest
 from sandbox import evaluate, live_local, play
-from sandbox.harness.environment import PlayerBounds, SeatDeclaration, SeatPlan, SeatPlans
+from sandbox.harness.environment import (
+    PlayerBounds,
+    SeatDeclaration,
+    SeatPlan,
+    SeatPlans,
+    resolve_parameters,
+)
 from sandbox.harness.live import parse_config
 
 
@@ -24,7 +30,7 @@ def _rival_repo(tmp_path: Path) -> Path:
 
 def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     players = ("player_0", "player_1", "player_2", "player_3")
-    monkeypatch.setattr(play, "possible_players", lambda: players)
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: players)
     plans = SeatPlans(
         (
             SeatPlan(
@@ -38,7 +44,7 @@ def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0",))
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0",))
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
 
     config = play.local_config(
@@ -57,7 +63,7 @@ def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypat
 
 def test_four_player_local_config_covers_every_player_and_preserves_null_timeout(monkeypatch, tmp_path: Path):
     player_ids = ("player_0", "player_1", "player_2", "player_3")
-    monkeypatch.setattr(play, "possible_players", lambda: player_ids)
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: player_ids)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
 
     config = play.local_config(
@@ -78,7 +84,7 @@ def test_four_player_local_config_covers_every_player_and_preserves_null_timeout
 
 
 def test_human_mode_rejects_a_player_excluded_from_metadata(monkeypatch, capsys):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0", "player_1"))
     monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
 
     with pytest.raises(SystemExit) as error:
@@ -89,7 +95,7 @@ def test_human_mode_rejects_a_player_excluded_from_metadata(monkeypatch, capsys)
 
 
 def test_headless_allows_a_valid_player_excluded_from_human_metadata(monkeypatch, capsys):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0", "player_1"))
     monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
     monkeypatch.setattr(play, "run_headless", lambda **kwargs: 3.5)
 
@@ -106,6 +112,8 @@ def test_template_play_does_not_offer_unsupported_watch_mode():
 
 def test_evaluate_forwards_the_selected_player(monkeypatch, capsys):
     calls: list[dict[str, object]] = []
+    monkeypatch.setattr(evaluate.play, "possible_players", lambda parameters: ("player_0", "player_1"))
+    parameters = resolve_parameters(evaluate.play.META)
 
     def run_headless(**kwargs: object) -> float:
         calls.append(kwargs)
@@ -115,8 +123,24 @@ def test_evaluate_forwards_the_selected_player(monkeypatch, capsys):
 
     assert evaluate.main(["--episodes", "2", "--player", "1"]) == 0
     assert calls == [
-        {"seed": 0, "max_steps": None, "player": 1, "vs": None},
-        {"seed": 1, "max_steps": None, "player": 1, "vs": None},
+        {
+            "seed": 0,
+            "max_steps": None,
+            "player": 1,
+            "vs": None,
+            "parameters": parameters,
+            "decision_limit_ms": None,
+            "game_limit_ms": None,
+        },
+        {
+            "seed": 1,
+            "max_steps": None,
+            "player": 1,
+            "vs": None,
+            "parameters": parameters,
+            "decision_limit_ms": None,
+            "game_limit_ms": None,
+        },
     ]
     assert "mean over 2 episode(s): 2.00" in capsys.readouterr().out
 
@@ -165,7 +189,7 @@ def test_resolve_rival_rejects_missing_and_manifestless_paths(tmp_path: Path):
 
 def test_vs_fills_every_opposing_player_in_a_one_player_per_seat_layout(monkeypatch, tmp_path: Path):
     player_ids = ("player_0", "player_1", "player_2", "player_3")
-    monkeypatch.setattr(play, "possible_players", lambda: player_ids)
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: player_ids)
     monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=4, max=4)))
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
     rival = _rival_repo(tmp_path)
@@ -248,7 +272,7 @@ def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatc
 
 
 def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0",))
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0",))
     monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=1, max=1)))
 
     with pytest.raises(SystemExit) as error:
@@ -263,7 +287,8 @@ def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
 
 
 def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_path: Path):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1", "player_2"))
+    players = ("player_0", "player_1", "player_2")
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: players)
     plans = SeatPlans((SeatPlan("coop", "Cooperative", (SeatDeclaration((0, 1, 2)),)),))
     monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
 
@@ -311,7 +336,7 @@ def test_run_headless_vs_loads_a_separate_agent_for_every_other_player(monkeypat
 
 
 def test_run_headless_without_vs_keeps_the_default_action_opponents(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0", "player_1"))
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
     monkeypatch.setattr(play, "make_env", lambda parameters: SimpleNamespace(close=lambda: None))
     loads: list[Path] = []
@@ -330,7 +355,8 @@ def test_run_headless_without_vs_keeps_the_default_action_opponents(monkeypatch,
 
 
 def test_play_episode_binds_other_agents_and_defaults(monkeypatch):
-    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1", "player_2"))
+    players = ("player_0", "player_1", "player_2")
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: players)
     captured: dict[str, object] = {}
 
     def fake_run_episode(entry: object, players: object, **kwargs: object) -> SimpleNamespace:
@@ -356,6 +382,8 @@ def test_play_episode_binds_other_agents_and_defaults(monkeypatch):
 
 def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=2, max=2)))
+    monkeypatch.setattr(evaluate.play, "possible_players", lambda parameters: ("player_0", "player_1"))
+    parameters = resolve_parameters(evaluate.play.META)
     rival = _rival_repo(tmp_path)
     calls: list[dict[str, object]] = []
 
@@ -366,4 +394,14 @@ def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(evaluate, "run_headless", run_headless)
 
     assert evaluate.main(["--seeds", "5", "--vs", str(rival)]) == 0
-    assert calls == [{"seed": 5, "max_steps": None, "player": 0, "vs": rival.resolve()}]
+    assert calls == [
+        {
+            "seed": 5,
+            "max_steps": None,
+            "player": 0,
+            "vs": rival.resolve(),
+            "parameters": parameters,
+            "decision_limit_ms": None,
+            "game_limit_ms": None,
+        }
+    ]

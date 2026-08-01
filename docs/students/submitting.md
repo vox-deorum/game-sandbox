@@ -18,10 +18,11 @@ Your repository must be public so the server can download it. Ask your instructo
 
 1. Open the environment.
 2. Go to **My Submissions**.
-3. Paste the GitHub repository URL.
-4. If needed, enter a branch, tag, or commit to identify a specific version of your project.
-5. Optionally write a **rating prompt**, a short note telling raters what to evaluate about your agent.
-6. Review the reachability check, which confirms that the server can reach your repository, then submit.
+3. Check what the season changes. Use **Set Up Locally** if you need the template link or a `season.json` file that applies its gameplay parameters and decision and game limits on your computer. Messaging and LLM availability remain website and server settings.
+4. Paste the GitHub repository URL.
+5. If needed, enter a branch, tag, or commit to identify a specific version of your project.
+6. Optionally write a **rating prompt**, a short note telling raters what to evaluate about your agent.
+7. Review the reachability check, which confirms that the server can reach your repository, then submit.
 
 If you leave the branch, tag, or commit field blank, the server uses the latest commit on your repository's default branch.
 
@@ -78,7 +79,7 @@ If the Load check fails with a missing class, make sure `class_name` in your man
 
 **Ready** means the server can load your agent, not that it has played an official game yet (the schedule calls this a match).
 
-A **season** is one competition round for one environment. It fixes the opponents or player layout, the game settings, repeated starting positions, time limits, and any enabled LLM limits, and these can differ from what you run on your own computer. The environment's page on the website shows the settings in effect for the current season. See [Seasons](../specs/seasons.md) for the full season rules.
+A **season** is one competition round for one environment. It fixes the opponents or player layout, the game settings, repeated starting positions, time limits, and any enabled LLM limits, and these can differ from what you run on your own computer. The environment page shows what the play-open season changes from the environment defaults. My Submissions shows the submission-open season and offers **Set Up Locally** to apply its reproducible settings on your computer. See [Seasons](../specs/seasons.md) for the full season rules.
 
 Here is what to know about the season's boards and official games:
 
@@ -88,4 +89,4 @@ Here is what to know about the season's boards and official games:
 - While the season runs, other participants see agents under neutral numbered labels, and your name appears once the season's results are released. See [Seasons](../specs/seasons.md) for the release rules.
 - A leaderboard run uses the submissions that were active when it was created, so resubmitting does not change a run that has already started. See [Leaderboards](../specs/leaderboard.md) for how a run is built.
 
-`python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they run a local setup, so they cannot predict the official board. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.
+`python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board. A downloaded `season.json` applies only to local episode commands. Official games always use the season stored by the server. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.

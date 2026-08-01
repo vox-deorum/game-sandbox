@@ -26,6 +26,7 @@ describe('loadConfig', () => {
     expect(config.siteName).toBe('Game Sandbox')
     // The short name defaults to the site name, so it is 'Game Sandbox' out of the box too.
     expect(config.siteShortName).toBe('Game Sandbox')
+    expect(config.templateRepoUrl).toBe('https://github.com/vox-deorum/game-agent-template')
     expect(config.executionDriver).toBe('docker')
     expect(config.docker.imagePolicy).toBe('reuse')
     expect(config.docker.imageTagPrefix).toBe('game-sandbox')
@@ -47,6 +48,26 @@ describe('loadConfig', () => {
   it('overrides the site name from SITE_NAME and rejects an empty value', () => {
     expect(load({ SITE_NAME: 'Acme Arena' }).siteName).toBe('Acme Arena')
     expect(() => load({ SITE_NAME: '' })).toThrow(/SITE_NAME/)
+  })
+
+  it('parses TEMPLATE_REPO_URL as an absolute HTTP(S) URL', () => {
+    expect(load({ TEMPLATE_REPO_URL: 'https://example.test/templates' }).templateRepoUrl).toBe(
+      'https://example.test/templates',
+    )
+    expect(() => load({ TEMPLATE_REPO_URL: 'git@example.test:templates.git' })).toThrow(
+      /TEMPLATE_REPO_URL/,
+    )
+    expect(() => load({ TEMPLATE_REPO_URL: '' })).toThrow(/TEMPLATE_REPO_URL/)
+    for (const unsafe of [
+      'https://user:secret@example.test/template',
+      'https://example.test/template?token=secret',
+      'https://example.test/template#main',
+      'https://example.test/template;echo',
+      'https://example.test/%USERNAME%',
+      'https://example.test/template name',
+    ]) {
+      expect(() => load({ TEMPLATE_REPO_URL: unsafe })).toThrow(/TEMPLATE_REPO_URL/)
+    }
   })
 
   it('defaults the short name to the resolved site name and overrides it independently', () => {

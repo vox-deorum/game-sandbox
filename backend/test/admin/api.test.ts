@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { TEMPLATE_REPO_URL_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -100,6 +101,7 @@ describe('admin API', () => {
       userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config, { snapshots }),
       llm: config.llm,
+      templateRepoUrl: config.templateRepoUrl,
       knownDepsVersions,
       workflowRunner: runner,
     })
@@ -179,6 +181,7 @@ describe('admin API', () => {
         ['DELETE', `/api/admin/seasons/${id}`],
         ['PUT', `/api/admin/seasons/${id}/config`],
         ['PUT', `/api/admin/seasons/${id}/description`],
+        ['PUT', `/api/admin/seasons/${id}/template-repository`],
         ['PUT', `/api/admin/seasons/${id}/rating-prompt`],
         ['PUT', `/api/admin/seasons/${id}/label`],
         ['POST', `/api/admin/seasons/${id}/submissions/open`],
@@ -797,6 +800,82 @@ describe('admin API', () => {
         'First second.',
       )
       expect((await storage.getSeason(id))?.description_markdown).toBe('First second.')
+    })
+  })
+
+  describe('template repository', () => {
+    it('sets, replaces, and clears the URL after a run exists', async () => {
+      const id = await declare()
+      await seedSubmission(id, 'alice')
+      await createRun(
+        id,
+        'dev-user',
+        [],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin', name: 'naive' }],
+            seat_plan: 'solo',
+          },
+        ],
+      )
+
+      const saved = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/template-repository`,
+        headers: OPERATOR,
+        payload: { template_repo_url: ' https://example.test/template ' },
+      })
+      expect(saved.statusCode).toBe(200)
+      expect((saved.json() as { template_repo_url: string }).template_repo_url).toBe(
+        'https://example.test/template',
+      )
+      expect((await storage.getSeason(id))?.template_repo_url).toBe('https://example.test/template')
+
+      const cleared = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/template-repository`,
+        headers: OPERATOR,
+        payload: { template_repo_url: '   ' },
+      })
+      expect(cleared.statusCode).toBe(200)
+      expect((cleared.json() as { template_repo_url: string | null }).template_repo_url).toBeNull()
+    })
+
+    it('rejects an invalid body and returns 404 for an unknown season', async () => {
+      const id = await declare()
+      for (const payload of [
+        {},
+        { template_repo_url: 123 },
+        { template_repo_url: 'git@example.test:template.git' },
+        { template_repo_url: 'ftp://example.test/template' },
+        { template_repo_url: 'https://user:secret@example.test/template' },
+        { template_repo_url: 'https://example.test/template?token=secret' },
+        { template_repo_url: 'https://example.test/template#main' },
+        { template_repo_url: 'https://example.test/template;echo' },
+        { template_repo_url: 'https://example.test/%USERNAME%' },
+        { template_repo_url: 'https://example.test/template name' },
+        { template_repo_url: `https://example.test/${'a'.repeat(TEMPLATE_REPO_URL_MAX)}` },
+        { template_repo_url: 'https://example.test', extra: true },
+      ]) {
+        const invalid = await app.inject({
+          method: 'PUT',
+          url: `/api/admin/seasons/${id}/template-repository`,
+          headers: OPERATOR,
+          payload,
+        })
+        expect(invalid.statusCode).toBe(400)
+        expect(invalid.json()).toMatchObject({ code: 'invalid_template_repo_url' })
+      }
+      const missing = await app.inject({
+        method: 'PUT',
+        url: '/api/admin/seasons/does-not-exist/template-repository',
+        headers: OPERATOR,
+        payload: { template_repo_url: 'https://example.test/template' },
+      })
+      expect(missing.statusCode).toBe(404)
     })
   })
 

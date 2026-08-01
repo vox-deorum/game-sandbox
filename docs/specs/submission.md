@@ -41,6 +41,8 @@ A participant who needs a missing library asks the operator for a new template r
 
 Participants develop against PettingZoo on their own computers. Each environment's published template supplies the agent interface, manifest, pinned dependency set, local play and evaluation commands, and worked examples. The environment's student guide is the authority on using that template.
 
+My Submissions can provide a `season.json` file that applies the season's reproducible gameplay parameters and compute limits to local episode commands. The file is a local convenience only. Official validation and runs always use the season stored by the server and never read `season.json` from a submission.
+
 While submissions are open for an LLM-enabled season, an active participant may request a development key from the backend and place the returned credentials in `.env`. Development access ends when submissions close. Rotating a key invalidates the previous credential without resetting that participant's usage for the season. Development usage has its own meter for each season.
 
 Official sessions supply their own temporary player credentials. Participants do not need the backend to write an agent or to run one without model calls. See [LLM API](llm.md).

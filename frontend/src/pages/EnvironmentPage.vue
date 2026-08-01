@@ -23,6 +23,8 @@ import {
   type EnvironmentLeaderboards,
   getEnvironmentLeaderboards,
   getPlayParameters,
+  getSeasonSettings,
+  type EnvironmentSeasonSettings,
   listReleasedSeasons,
   listSeasons,
   listWatchAgents,
@@ -35,6 +37,7 @@ import {
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import InlineMarkdown from '../components/InlineMarkdown.vue'
+import SeasonChanges from '../components/SeasonChanges.vue'
 import SeatAssignmentDialog from '../components/SeatAssignmentDialog.vue'
 import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
@@ -44,7 +47,6 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, seatLabel } from '../lib/format.js'
-import { describeParameters } from '../lib/parameters.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
@@ -70,6 +72,16 @@ const playParameters = ref<PlayParameters | null>(null)
 // for a request that never landed would misreport the season's state, so track the failure separately
 // and let the empty state say which one happened.
 const playParametersFailed = ref(false)
+// The season-settings document is presentation-only. Start forms still use the narrower play prefill
+// endpoint, which remains the source of truth for a live session launch.
+const seasonSettings = ref<EnvironmentSeasonSettings | null>(null)
+const playSeasonSettings = computed(() => {
+  const settings = seasonSettings.value?.play
+  if (settings === null || settings === undefined) {
+    return null
+  }
+  return settings.season_id === playParameters.value?.season_id ? settings : null
+})
 const playOpen = computed(
   () => playParameters.value !== null && playParameters.value.season_id !== null,
 )
@@ -162,6 +174,14 @@ onMounted(() => {
       playParametersFailed.value = true
     },
   )
+  getSeasonSettings(envId).then(
+    (settings) => {
+      seasonSettings.value = settings
+    },
+    () => {
+      // The play flow remains usable when this supplementary explanatory read fails.
+    },
+  )
 })
 // The play start dialog's open state. Watch starts through WatchAgentPicker, so this dialog is the
 // human-play entry point only.
@@ -245,18 +265,6 @@ function startSingleSeat(input: Omit<StartPayload, 'seats'>): void {
   void submitStart({ seats: { seat_0: { kind: 'human' } }, ...input })
 }
 
-// The season's settings, as the quiet summary line under its description. An environment whose
-// parameters are all fixed (or a season that overrides none of the adjustable ones) has nothing to
-// list, and the line says so rather than disappearing: "no special settings" is itself the answer a
-// player wants from that line.
-const visibleSeasonSettings = computed(() => {
-  const prefill = playParameters.value
-  if (meta.value === null || prefill === null) return []
-  return describeParameters(meta.value.parameters, prefill.values).map(
-    (setting) => `${setting.label} ${setting.value}`,
-  )
-})
-
 /** Start the human-play session the form (single seat) or seat grid (multi-seat) composed. */
 async function submitStart(payload: StartPayload): Promise<void> {
   if (meta.value === null || !playFormOpen.value) {
@@ -296,12 +304,11 @@ async function submitStart(payload: StartPayload): Promise<void> {
       >
         <InlineMarkdown :markdown="playableSeason.description_markdown" />
       </div>
-      <p class="play-season-settings">
-        <template v-if="visibleSeasonSettings.length > 0">
-          Settings: {{ visibleSeasonSettings.join(' · ') }}
-        </template>
-        <template v-else>No special settings.</template>
-      </p>
+      <SeasonChanges
+        v-if="playSeasonSettings !== null"
+        :meta="meta"
+        :settings="playSeasonSettings"
+      />
     </section>
 
     <section id="play" class="env-section">
@@ -417,11 +424,6 @@ async function submitStart(payload: StartPayload): Promise<void> {
 
 .env-section {
   margin-top: var(--space-6);
-}
-
-/* The season's settings summary: a quiet line under the description, never a heading of its own. */
-.play-season-settings {
-  color: var(--color-text-muted);
 }
 
 .env-section-head {

@@ -191,6 +191,12 @@ export class KyselyStorage implements Storage {
   setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined> {
     return seasons.setSeasonDescription(this.db, seasonId, markdown)
   }
+  setSeasonTemplateRepoUrl(
+    seasonId: string,
+    templateRepoUrl: string | null,
+  ): Promise<Season | undefined> {
+    return seasons.setSeasonTemplateRepoUrl(this.db, seasonId, templateRepoUrl)
+  }
   setSeasonLabel(seasonId: string, label: string | null): Promise<void> {
     return seasons.setSeasonLabel(this.db, seasonId, label)
   }

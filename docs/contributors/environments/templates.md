@@ -34,6 +34,8 @@ A student's repository, the CI checks, and the session container that runs the a
 
 `templates/base/manifest.json` is the canonical template value. `scripts/bump_template_version.py` updates every coupled touchpoint, and CI runs it with `--check` to catch drift.
 
+The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFAULT_TARGET_REPO` in `scripts/publish_template.py`. My Submissions uses that setting and the branches created by the publisher when a season does not provide its own repository URL.
+
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 
 An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. Once `template-v<N>` is published, its snapshot is immutable. A [republish](#cutting-a-release) reuses the unchanged `deps-v<N>` snapshot because CI pins every dependency reference to it.
@@ -59,3 +61,5 @@ The two release forms differ only in their final steps:
 | Write the `template-v<N>` tag         | Yes            | No        |
 
 Use `dry_run: true` to rehearse the full path without contacting or mutating the student repository, `main`, or tags. Combine it with `republish: true` to rehearse a republish. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.
+
+A republish keeps the existing template version. For the current template, publish these local setup changes by manually republishing v1 after they merge.

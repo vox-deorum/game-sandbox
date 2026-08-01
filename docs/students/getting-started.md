@@ -16,7 +16,7 @@ Install:
 
 ## 1. Copy the template to your computer
 
-Your assignment will have a link to a GitHub repository with the agent template. **Cloning** it means copying it to your computer.
+Your assignment or the environment's **My Submissions** page will have a link to a GitHub repository with the agent template. On My Submissions, choose **Set Up Locally** for the exact clone command. **Cloning** a repository means copying it to your computer.
 
 Open Visual Studio Code's Start page and select **Clone Git Repository** for an interactive experience, or use the command line:
 
@@ -85,6 +85,8 @@ The template also accepts these options and commands:
   > _Why save a rival?_ The default opponents never change, so two decent versions of your agent can score alike against them. Playing one version directly against the other shows which one is stronger.
 
 - `--player N` chooses your player by number when a game has more than one. The commands use player `0` unless you pick another.
+- A `season.json` file downloaded through **Set Up Locally** applies the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Put it beside `manifest.json`. Every affected command prints the season it loaded. Delete the file to return to the environment defaults.
+- `--parameter NAME=VALUE`, `--decision-limit-ms N`, and `--game-limit-ms N` override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change more than one gameplay setting.
 - `python -m sandbox setup` prepares the virtual environment without starting a game.
 - `play --seed N` repeats the same starting condition and random generator every time, so you can study one specific game.
 - Adding `--help` to any command lists all of its options.

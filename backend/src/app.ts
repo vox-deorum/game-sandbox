@@ -54,6 +54,8 @@ export interface AppDeps {
    * {@link AppDeps.siteName}, then the deployment display-name default.
    */
   siteShortName?: string
+  /** The repository whose environment folders provide the default student templates. */
+  templateRepoUrl: string
   /**
    * Whether this deployment configured GitHub OAuth. It defaults to `false` when omitted.
    */
@@ -123,6 +125,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerEnvironmentRoutes(app, {
     environments: deps.environments,
     storage: deps.storage,
+    templateRepoUrl: deps.templateRepoUrl,
+    llm: deps.llm,
   })
   registerConfigRoutes(app, {
     ...(deps.siteName === undefined ? {} : { siteName: deps.siteName }),

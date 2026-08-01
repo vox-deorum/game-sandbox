@@ -80,6 +80,7 @@ async function setupAuthApp(): Promise<AuthAppFixture> {
     auth,
     userDirectory: createUserDirectory(handle.sqlite),
     llm: config.llm,
+    templateRepoUrl: config.templateRepoUrl,
     ...makeSubmissionDeps(handle.storage, config),
   })
   return { handle, auth, users, app, orchestrator, dir }

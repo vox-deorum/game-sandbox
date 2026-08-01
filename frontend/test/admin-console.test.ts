@@ -26,6 +26,7 @@ vi.mock('../src/api/client.js', () => ({
   configureSeason: vi.fn(),
   setSeasonRatingPrompt: vi.fn(),
   setSeasonDescription: vi.fn(),
+  setSeasonTemplateRepository: vi.fn(),
   openSubmissions: vi.fn(),
   closeSubmissions: vi.fn(),
   openPlay: vi.fn(),
@@ -60,6 +61,7 @@ import {
   renameSeason,
   setSeasonDescription,
   setSeasonRatingPrompt,
+  setSeasonTemplateRepository,
   triggerRun,
 } from '../src/api/client.js'
 import AdminConsolePage from '../src/pages/AdminConsolePage.vue'
@@ -1002,6 +1004,25 @@ describe('AdminConsolePage', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Clear description' }))
     expect(vi.mocked(setSeasonDescription)).toHaveBeenLastCalledWith('iter-1', null)
     expect(await screen.findByRole('status')).toHaveTextContent('Cleared')
+  })
+
+  it('saves the template repository through the season editor', async () => {
+    vi.mocked(setSeasonTemplateRepository).mockResolvedValue({
+      ok: true,
+      season: season({ template_repo_url: 'https://example.test/template' }),
+    })
+    await renderConsole()
+
+    await fireEvent.update(
+      await screen.findByLabelText('Template repository'),
+      'https://example.test/template',
+    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Save template repository' }))
+    expect(vi.mocked(setSeasonTemplateRepository)).toHaveBeenCalledWith(
+      'iter-1',
+      'https://example.test/template',
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved')
   })
 
   it('reseeds the description draft from the normalized saved value', async () => {

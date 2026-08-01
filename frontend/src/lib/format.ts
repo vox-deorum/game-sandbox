@@ -96,6 +96,13 @@ export function formatComputeMs(value: number | null | undefined): string {
   return `${value.toFixed(1)} ms`
 }
 
+/** A compact duration from a millisecond limit, in seconds to at most one decimal place. */
+export function formatDuration(value: number): string {
+  const seconds = value / 1000
+  const formatted = Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)
+  return `${formatted} s`
+}
+
 /**
  * A mean compute time with its spread, as "mean ± sd ms" (both to one decimal). An em dash when the
  * mean is absent (no tick contributed); just the mean when the spread is somehow absent.

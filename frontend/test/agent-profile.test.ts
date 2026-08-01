@@ -2,12 +2,15 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentProfile, AgentProfileSubmission, SubmissionCheck } from '../src/api/client.js'
+import { flappyMeta } from './helpers/fixtures.js'
 import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getAgentProfile: vi.fn(),
+  getEnvironments: vi.fn(async () => []),
+  getSeasonSettings: vi.fn(async () => ({ play: null, submission: null })),
   listSeasons: vi.fn(async () => []),
   // The profile fetches the agent's released placements on mount; default it to none.
   getAgentPlacements: vi.fn(async () => ({
@@ -37,8 +40,10 @@ import {
   getAgentPlacements,
   getAgentProfile,
   getAuthorPrompt,
+  getEnvironments,
   getLlmDevelopmentSummary,
   getMe,
+  getSeasonSettings,
   getSubmission,
   listLlmDevelopmentCalls,
   listLlmDevelopmentSeasons,
@@ -101,6 +106,7 @@ async function renderProfile(
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
     { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
+    { path: '/docs/students/getting-started', component: { template: '<div />' } },
     { path: '/replays/:id', component: ReplayStub },
   ])
   router.push(path)
@@ -115,6 +121,8 @@ describe('AgentProfilePage', () => {
     vi.mocked(listSeasons).mockResolvedValue([])
     vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([])
     vi.mocked(listLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
+    vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
+    vi.mocked(getSeasonSettings).mockResolvedValue({ play: null, submission: null })
   })
 
   it('renders submission history newest-first with active marker and replays', async () => {
@@ -478,6 +486,70 @@ describe('AgentProfilePage', () => {
     expect(currentSeasonHeader.querySelector('.ui-card')).toBeNull()
     expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
     expect(screen.queryByText('Not submitted')).toBeNull()
+  })
+
+  it('shows submission season changes and offers local setup', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: null,
+      submission: {
+        season_id: 'iter-next',
+        season_label: 'Week 4',
+        template_repo: { url: 'https://example.test/template', branch: 'week-4' },
+        values: { players: 1, pipe_gap: 90 },
+        rules: {
+          step_timeout_ms: 1000,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+    })
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [],
+    })
+
+    expect(await screen.findByRole('button', { name: 'Set Up Locally' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Season changes' })).toHaveTextContent(
+      'Pipe gap 100 → 90',
+    )
+  })
+
+  it('says when the submission season uses the environment defaults', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: null,
+      submission: {
+        season_id: 'iter-next',
+        season_label: 'Week 4',
+        template_repo: { url: 'https://example.test/template', branch: 'week-4' },
+        values: { players: 1, pipe_gap: 100 },
+        rules: {
+          step_timeout_ms: 1000,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+    })
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [],
+    })
+
+    expect(await screen.findByText('This season uses the default settings.')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Set Up Locally' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(
+      screen.getByText('git clone -b week-4 https://example.test/template'),
+    ).toBeInTheDocument()
   })
 
   it('keeps the current season header useful when its metadata read fails', async () => {
