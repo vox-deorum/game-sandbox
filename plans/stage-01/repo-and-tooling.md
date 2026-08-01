@@ -41,10 +41,11 @@ npm workspaces from the root `package.json`, starting with `schema/ts`. Biome ha
 
 ## Dev scripts
 
-Every dev script is Python under `scripts/`, run as `uv run python scripts/<name>.py`. Development machines are Windows and CI is Linux, so nothing is written in bash. The root `package.json` and the docs map intents to commands.
+Every dev script keeps its logic in Python under `scripts/`, run as `uv run python scripts/<name>.py`. Development machines are Windows and CI is Linux, so the setup entry point has two deliberately thin repo-root wrappers: `setup.sh` and `setup.ps1` install uv when needed and invoke `scripts/setup.py`. The root `package.json` and the docs map intents to commands.
 
 | Intent | Command |
 | --- | --- |
+| Set up and run a checkout interactively | `./setup.sh` or `powershell -ExecutionPolicy Bypass -File .\setup.ps1` |
 | Regenerate types, packaged schema, fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` (fans out to ruff, pyright, biome, tsc) |
 | Run all tests | `npm run test` (pytest plus vitest) |

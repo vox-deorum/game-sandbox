@@ -4,6 +4,8 @@ The repository root has a `Dockerfile` and `compose.yaml` that run the whole app
 
 ## Procedure
 
+The repository setup script automates steps 1 through 3, including the health wait. Run `./setup.sh` from Linux or WSL2 and choose Docker deployment. The manual steps below remain the reference procedure.
+
 1. Create `.env` at the repository root with real credentials. A deployment must set these explicitly; see [Deployment notes](configuration.md#deployment-notes):
 
    ```dotenv

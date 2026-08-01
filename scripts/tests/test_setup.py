@@ -1,0 +1,206 @@
+"""Tests for the dependency-free setup helpers."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import setup  # noqa: E402
+
+
+def deployment_answers(**overrides: str) -> dict[str, str]:
+    answers = {
+        "PUBLIC_ORIGIN": "https://sandbox.example.com",
+        "PORT": "8080",
+        "ADMIN_EMAIL": "operator@example.com",
+        "ADMIN_PASSWORD": "not-the-development-password",
+        "ADMIN_NAME": "Site Admin",
+        "DATA_DIR": "/srv/game-sandbox/data",
+        "GITHUB_OAUTH_CLIENT_ID": "",
+        "GITHUB_OAUTH_CLIENT_SECRET": "",
+        "GITHUB_TOKEN": "",
+        "LLM_UPSTREAM_URL": "",
+        "LLM_UPSTREAM_KEY": "",
+        "LLM_MODEL_LARGE": "",
+        "LLM_MODEL_MEDIUM": "",
+        "LLM_MODEL_SMALL": "",
+    }
+    answers.update(overrides)
+    return answers
+
+
+def test_every_managed_field_has_a_label_a_reader_recognizes():
+    assert all(field.label and field.label != key for key, field in setup.ENV_FIELDS.items())
+
+
+def test_collect_answers_uses_friendly_labels_and_mode_defaults(monkeypatch):
+    labels: list[str] = []
+    supplied = {
+        "Public site URL": "https://sandbox.example.com",
+        "Administrator email address": "operator@example.com",
+    }
+
+    def fake_prompt(label, default="", validator=None, *, allow_blank=False):
+        labels.append(label)
+        if allow_blank:
+            return default
+        return default or supplied[label]
+
+    monkeypatch.setattr(setup, "prompt", fake_prompt)
+    monkeypatch.setattr(setup, "prompt_yes_no", lambda *args: False)
+    monkeypatch.setattr(setup.secrets, "token_urlsafe", lambda _length: "generated-password")
+
+    host = setup.collect_answers("host", {})
+    docker = setup.collect_answers("docker", {})
+
+    assert host["DATA_DIR"] == "backend/data"
+    assert docker["DATA_DIR"] == "/srv/game-sandbox/data"
+    assert host["ADMIN_PASSWORD"] == "generated-password"
+    assert "Public site URL" in labels
+    assert "GitHub repository access token" in labels
+    assert not set(labels) & set(setup.MANAGED_KEYS)
+
+
+def test_enabled_optional_groups_use_friendly_labels(monkeypatch):
+    labels: list[str] = []
+    supplied = {
+        "Public site URL": "https://sandbox.example.com",
+        "Administrator email address": "operator@example.com",
+        "GitHub OAuth client ID": "client-id",
+        "GitHub OAuth client secret": "client-secret",
+        "LLM provider URL": "https://models.example.com/v1",
+    }
+
+    def fake_prompt(label, default="", validator=None, *, allow_blank=False):
+        labels.append(label)
+        if allow_blank:
+            return "large-model" if label == "Large model name" else default
+        return default or supplied[label]
+
+    monkeypatch.setattr(setup, "prompt", fake_prompt)
+    monkeypatch.setattr(setup, "prompt_yes_no", lambda *args: True)
+    monkeypatch.setattr(setup.secrets, "token_urlsafe", lambda _length: "generated-password")
+
+    answers = setup.collect_answers("host", {})
+
+    assert answers["GITHUB_OAUTH_CLIENT_ID"] == "client-id"
+    assert answers["LLM_MODEL_LARGE"] == "large-model"
+    assert "GitHub OAuth client secret" in labels
+    assert "LLM provider API key" in labels
+    assert "Small model name" in labels
+    assert not set(labels) & set(setup.MANAGED_KEYS)
+
+
+def test_deployment_summary_uses_friendly_names(capsys):
+    setup._print_deploy_summary("host", deployment_answers())
+
+    output = capsys.readouterr().out
+    assert "Setup complete" in output
+    assert "Administrator email:" in output
+    assert "Data directory:" in output
+    assert "DATA_DIR" not in output
+
+
+def test_render_quotes_only_what_needs_it_and_keeps_preserved_lines_verbatim():
+    rendered = setup.render_env_file(
+        {"PUBLIC_ORIGIN": "https://sandbox.example.com", "ADMIN_NAME": "Site Admin"},
+        preserved=['CUSTOM_VALUE="kept as written"'],
+    )
+
+    assert "PUBLIC_ORIGIN=https://sandbox.example.com" in rendered
+    assert 'ADMIN_NAME="Site Admin"' in rendered
+    assert 'CUSTOM_VALUE="kept as written"' in rendered
+    assert setup.parse_env_file(rendered) == {
+        "PUBLIC_ORIGIN": "https://sandbox.example.com",
+        "ADMIN_NAME": "Site Admin",
+        "CUSTOM_VALUE": "kept as written",
+    }
+
+
+def test_plan_env_writes_required_docker_values_and_reuses_valid_secret():
+    secret = "a" * 32
+    planned = setup.plan_env("docker", deployment_answers(), {"AUTH_SECRET": secret})
+
+    assert planned.keys() >= setup.REQUIRED_ENV_KEYS
+    assert planned["AUTH_ALLOW_INSECURE_DEFAULTS"] == "false"
+    assert planned["AUTH_SECRET"] == secret
+    assert "GITHUB_TOKEN" not in planned
+
+
+def test_plan_env_regenerates_development_secret():
+    planned = setup.plan_env("docker", deployment_answers(), {"AUTH_SECRET": setup.DEV_AUTH_SECRET})
+
+    assert planned["AUTH_SECRET"] != setup.DEV_AUTH_SECRET
+    assert len(planned["AUTH_SECRET"]) >= 32
+
+
+@pytest.mark.parametrize("secret", ["short", setup.DEV_AUTH_SECRET])
+def test_auth_secret_validator_rejects_short_and_development_values(secret: str):
+    assert setup.validate_auth_secret(secret) is not None
+
+
+def test_admin_validators_reject_development_values():
+    assert setup.validate_admin_email(setup.DEV_ADMIN_EMAIL) is not None
+    assert setup.validate_admin_email(setup.DEV_ADMIN_EMAIL.upper()) is not None
+    assert setup.validate_admin_password(setup.DEV_ADMIN_PASSWORD) is not None
+
+
+def test_url_validators_distinguish_origins_from_base_urls():
+    assert setup.validate_origin("https://sandbox.example.com") is None
+    assert setup.validate_origin("https://sandbox.example.com/api") is not None
+    assert setup.validate_http_url("https://models.example.com/v1") is None
+    assert setup.validate_http_url("https://user:secret@models.example.com/v1") is not None
+    assert setup.validate_http_url("http://[invalid") is not None
+
+
+@pytest.mark.parametrize("port", ["0", "65536", "not-a-port", "+8080", "8_080"])
+def test_port_validator_rejects_invalid_ports(port: str):
+    assert setup.validate_port(port) is not None
+
+
+def test_oauth_requires_both_values():
+    assert setup.validate_oauth("client", "") is not None
+    assert setup.validate_oauth("", "secret") is not None
+    assert setup.validate_oauth("client", "secret") is None
+
+
+def test_data_dir_validation_depends_on_mode():
+    assert setup.validate_data_dir("backend/data", "docker") is not None
+    assert setup.validate_data_dir("backend/data", "host") is None
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_docker_mode_error_rejects_desktop_platforms(platform: str):
+    assert setup.docker_mode_error(platform) is not None
+
+
+def test_docker_mode_error_allows_linux():
+    assert setup.docker_mode_error("linux") is None
+
+
+@pytest.mark.parametrize("value", ['has "quote"', "has\\backslash"])
+def test_validate_env_value_rejects_quotes_and_backslashes(value: str):
+    assert setup.validate_env_value(value) is not None
+
+
+def test_validate_env_value_accepts_values_with_spaces():
+    assert setup.validate_env_value("has a space") is None
+
+
+def test_write_env_file_backs_up_existing_file(tmp_path: Path):
+    env_path = tmp_path / ".env"
+    previous_text = '# handwritten\nCUSTOM_VALUE="kept as written"\nPUBLIC_ORIGIN=https://old.example.com\n'
+    env_path.write_text(previous_text, encoding="utf-8")
+
+    setup.write_env_file(env_path, {"PUBLIC_ORIGIN": "https://new.example.com"}, previous_text)
+
+    assert (tmp_path / ".env.bak").read_text(encoding="utf-8") == previous_text
+    written_text = env_path.read_text(encoding="utf-8")
+    assert 'CUSTOM_VALUE="kept as written"' in written_text.splitlines()
+    values = setup.parse_env_file(written_text)
+    assert values["PUBLIC_ORIGIN"] == "https://new.example.com"
+    assert values["CUSTOM_VALUE"] == "kept as written"

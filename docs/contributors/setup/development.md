@@ -9,6 +9,10 @@
 
 To run the app itself inside a container on a Linux daemon, see [Run the app in Docker](docker.md); the rest of this page covers the host-process flow.
 
+## Guided setup
+
+From the repository root, run `./setup.sh` on Linux, WSL2, or macOS. On Windows, run `powershell -ExecutionPolicy Bypass -File .\setup.ps1`. The setup script installs uv when needed and walks through local development, host deployment, or Docker deployment.
+
 From the repository root:
 
 ```console
@@ -43,6 +47,7 @@ The backend needs a running Docker daemon; see [Run and test](../runtime/backend
 
 | Intent | Command |
 | --- | --- |
+| Set up and run a checkout interactively | `./setup.sh` or `powershell -ExecutionPolicy Bypass -File .\setup.ps1` |
 | Regenerate JSON Schema, packaged schema, and fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` |
 | Run all Docker-free tests | `npm run test` |
