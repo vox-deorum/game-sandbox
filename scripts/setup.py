@@ -180,6 +180,7 @@ class EnvField:
     """Metadata for one setup-managed environment value."""
 
     label: str
+    help_text: str = ""
     required: bool = False
     prompt_group: str | None = None
     allow_blank: bool = False
@@ -190,14 +191,15 @@ class EnvField:
 ENV_FIELDS = {
     "PUBLIC_ORIGIN": EnvField(
         "Public site URL",
+        "The web address participants will use to open Game Sandbox.",
         required=True,
-        prompt_group="core",
+        prompt_group="site",
         validator=validate_origin,
     ),
     "PORT": EnvField(
         "Site port",
         required=True,
-        prompt_group="core",
+        prompt_group="site",
         default=_fixed_default(DEFAULT_PORT),
         validator=validate_port,
     ),
@@ -205,46 +207,84 @@ ENV_FIELDS = {
     "ADMIN_EMAIL": EnvField(
         "Administrator email address",
         required=True,
-        prompt_group="core",
+        prompt_group="administrator",
         validator=validate_admin_email,
     ),
     "ADMIN_PASSWORD": EnvField(
         "Administrator password",
         required=True,
-        prompt_group="core",
+        prompt_group="administrator",
         default=_password_default,
         validator=validate_admin_password,
     ),
     "ADMIN_NAME": EnvField(
         "Administrator name",
         required=True,
-        prompt_group="core",
+        prompt_group="administrator",
         default=_fixed_default("Admin"),
     ),
     "AUTH_ALLOW_INSECURE_DEFAULTS": EnvField("Allow insecure development defaults", required=True),
     "DATA_DIR": EnvField(
         "Data directory",
+        "Game data, recordings, and the database will be stored here.",
         required=True,
-        prompt_group="core",
+        prompt_group="storage",
         default=_data_dir_default,
         validator=validate_data_dir,
     ),
     "GITHUB_OAUTH_CLIENT_ID": EnvField("GitHub OAuth client ID", prompt_group="oauth"),
     "GITHUB_OAUTH_CLIENT_SECRET": EnvField("GitHub OAuth client secret", prompt_group="oauth"),
-    "GITHUB_TOKEN": EnvField("GitHub repository access token", prompt_group="github", allow_blank=True),
+    "GITHUB_TOKEN": EnvField(
+        "GitHub repository access token",
+        "Optional. This allows submissions from private GitHub repositories.",
+        prompt_group="github",
+        allow_blank=True,
+    ),
     "LLM_UPSTREAM_URL": EnvField(
-        "LLM provider URL",
-        prompt_group="llm",
+        "AI provider URL",
+        "The base URL of your OpenAI-compatible provider.",
+        prompt_group="ai",
         validator=validate_http_url,
     ),
-    "LLM_UPSTREAM_KEY": EnvField("LLM provider API key", prompt_group="llm", allow_blank=True),
-    "LLM_MODEL_LARGE": EnvField("Large model name", prompt_group="llm", allow_blank=True),
-    "LLM_MODEL_MEDIUM": EnvField("Medium model name", prompt_group="llm", allow_blank=True),
-    "LLM_MODEL_SMALL": EnvField("Small model name", prompt_group="llm", allow_blank=True),
+    "LLM_UPSTREAM_KEY": EnvField("AI provider API key", prompt_group="ai", allow_blank=True),
+    "LLM_MODEL_LARGE": EnvField("Large model name", prompt_group="ai", allow_blank=True),
+    "LLM_MODEL_MEDIUM": EnvField("Medium model name", prompt_group="ai", allow_blank=True),
+    "LLM_MODEL_SMALL": EnvField("Small model name", prompt_group="ai", allow_blank=True),
 }
 MANAGED_KEYS = tuple(ENV_FIELDS)
 MANAGED_KEY_SET = frozenset(MANAGED_KEYS)
 REQUIRED_ENV_KEYS = frozenset(key for key, field in ENV_FIELDS.items() if field.required)
+
+
+@dataclass(frozen=True)
+class WizardChoice:
+    title: str
+    description: str
+
+
+MODES = {
+    "dev": WizardChoice("Local development", "For contributing or trying Game Sandbox locally."),
+    "host": WizardChoice(
+        "Run on this computer",
+        "For a long-running site without putting the app itself in Docker.",
+    ),
+    "docker": WizardChoice(
+        "Docker on a Linux server",
+        "For a self-contained deployment on Linux or inside WSL2.",
+    ),
+}
+
+PROMPT_GROUPS = {
+    "site": WizardChoice("Site", "Choose where people will open Game Sandbox."),
+    "administrator": WizardChoice("Administrator account", "Create the account that manages the site."),
+    "storage": WizardChoice("Storage", "Choose where Game Sandbox will keep its data."),
+    "oauth": WizardChoice("GitHub sign-in", "Allow participants to sign in with their GitHub accounts."),
+    "github": WizardChoice(
+        "Private GitHub repositories",
+        "Add a token only if submissions may come from private repositories.",
+    ),
+    "ai": WizardChoice("AI provider", "Connect an OpenAI-compatible provider for agent access."),
+}
 
 
 def plan_env(mode: str, answers: Mapping[str, str], existing: Mapping[str, str]) -> dict[str, str]:
@@ -331,6 +371,8 @@ def prompt_yes_no(label: str, default: bool = False) -> bool:
 
 def _prompt_field(key: str, mode: str, existing: Mapping[str, str]) -> str:
     field = ENV_FIELDS[key]
+    if field.help_text:
+        print(field.help_text)
     default = existing.get(key) or field.default(mode)
     validator = field.validator
     bound = None if validator is None else (lambda value: validator(value, mode))
@@ -345,24 +387,39 @@ def _collect_group(group: str, mode: str, existing: Mapping[str, str]) -> dict[s
     }
 
 
+def _print_group(group: str) -> None:
+    metadata = PROMPT_GROUPS[group]
+    print(f"\n{metadata.title}")
+    print(metadata.description)
+
+
 def collect_answers(mode: str, existing: Mapping[str, str]) -> dict[str, str]:
     """Collect the shared host and Docker deployment settings."""
     print("\nDeployment settings")
-    print("Press Enter to accept a value shown in brackets.")
-    answers = _collect_group("core", mode, existing)
+    print("Press Enter to keep a suggested value shown in brackets.")
+    answers: dict[str, str] = {}
+    for group in ("site", "administrator", "storage"):
+        _print_group(group)
+        answers.update(_collect_group(group, mode, existing))
+
+    _print_group("oauth")
     has_oauth = bool(existing.get("GITHUB_OAUTH_CLIENT_ID") and existing.get("GITHUB_OAUTH_CLIENT_SECRET"))
     if prompt_yes_no("Set up GitHub sign-in", has_oauth):
         answers.update(_collect_group("oauth", mode, existing))
     else:
         answers["GITHUB_OAUTH_CLIENT_ID"] = ""
         answers["GITHUB_OAUTH_CLIENT_SECRET"] = ""
+
+    _print_group("github")
     answers.update(_collect_group("github", mode, existing))
+
+    _print_group("ai")
     has_llm = bool(existing.get("LLM_UPSTREAM_URL"))
-    if prompt_yes_no("Connect an LLM provider", has_llm):
-        answers.update(_collect_group("llm", mode, existing))
+    if prompt_yes_no("Connect an AI provider", has_llm):
+        answers.update(_collect_group("ai", mode, existing))
         model_keys = ("LLM_MODEL_LARGE", "LLM_MODEL_MEDIUM", "LLM_MODEL_SMALL")
         while not any(answers[key] for key in model_keys):
-            print("Enter at least one model name.")
+            print("Choose at least one model before continuing.")
             for key in model_keys:
                 answers[key] = _prompt_field(key, mode, {})
     else:
@@ -378,40 +435,46 @@ def collect_answers(mode: str, existing: Mapping[str, str]) -> dict[str, str]:
     return answers
 
 
-def _run_step(label: str, command: list[str], *, show_output: bool = False) -> None:
+def _print_technical_details(*outputs: str) -> None:
+    details = [output.rstrip() for output in outputs if output and output.strip()]
+    if details:
+        print("\nTechnical details:")
+        print("\n".join(details))
+
+
+def _run_step(label: str, command: list[str], *, success: str = "done") -> None:
     """Run one installer step with concise output and useful failure details."""
-    ending = "\n" if show_output else " "
-    print(f"{label}...", end=ending, flush=True)
+    print(f"{label}...", end=" ", flush=True)
     try:
         result = subprocess.run(
             command,
             cwd=REPO_ROOT,
-            capture_output=not show_output,
+            capture_output=True,
             text=True,
             check=False,
         )
     except OSError as error:
-        if not show_output:
-            print("failed.")
-        raise SystemExit(f"Could not run {label.lower()}: {error}") from None
+        print("failed.")
+        print(f"We could not complete this step: {label.strip()}.")
+        _print_technical_details(str(error))
+        raise SystemExit(1) from None
     if result.returncode != 0:
-        if not show_output:
-            print("failed.")
-            if result.stdout.strip():
-                print(result.stdout.rstrip())
-            if result.stderr.strip():
-                print(result.stderr.rstrip())
+        print("failed.")
+        print(f"We could not complete this step: {label.strip()}.")
+        _print_technical_details(result.stdout, result.stderr)
         raise SystemExit(result.returncode)
-    if show_output:
-        print(f"{label} complete.")
-    else:
-        print("done.")
+    print(f"{success}.")
 
 
 def _start_foreground() -> int:
     command = [_NPM, "start"]
     print("\nStarting Game Sandbox. Press Ctrl+C to stop.", flush=True)
-    process = subprocess.Popen(command, cwd=REPO_ROOT)
+    try:
+        process = subprocess.Popen(command, cwd=REPO_ROOT)
+    except OSError as error:
+        print("Game Sandbox could not start.")
+        _print_technical_details(str(error))
+        raise SystemExit(1) from None
     try:
         return process.wait()
     except KeyboardInterrupt:
@@ -419,35 +482,45 @@ def _start_foreground() -> int:
 
 
 def _print_deploy_summary(mode: str, values: Mapping[str, str]) -> None:
-    status = "is running" if mode == "docker" else "is configured"
-    print(f"\nSetup complete. Your {mode} deployment {status}.")
-    print(f"  Site: {values['PUBLIC_ORIGIN']}")
-    print(f"  Administrator email: {values['ADMIN_EMAIL']}")
-    print(f"  Administrator password: {values['ADMIN_PASSWORD']}")
-    print(f"  Data directory: {values['DATA_DIR']}")
+    print("\nSetup complete")
+    print("Game Sandbox is running." if mode == "docker" else "Game Sandbox is ready to start.")
+    print(f"Open it at: {values['PUBLIC_ORIGIN']}")
+
+    print("\nAdministrator sign-in")
+    print(f"  Email: {values['ADMIN_EMAIL']}")
+    print(f"  Password: {values['ADMIN_PASSWORD']}")
+    print(f"\nData will be stored in: {values['DATA_DIR']}")
     if values.get("GITHUB_OAUTH_CLIENT_ID"):
         origin = values["PUBLIC_ORIGIN"].rstrip("/")
-        print(f"\nRegister this GitHub callback URL: {origin}/api/auth/callback/github")
-    print("\nThe first game session builds its base image, which can take a while.")
+        print("\nOne last step for GitHub sign-in")
+        print("Add this callback URL to your GitHub app:")
+        print(f"  {origin}/api/auth/callback/github")
+
+    print("\nHelpful commands")
     if mode == "docker":
-        print("View logs with: docker compose logs -f app")
-        print("Stop the deployment with: docker compose down")
+        print("  View logs: docker compose logs -f app")
+        print("  Stop Game Sandbox: docker compose down")
     else:
-        print("Start the deployment with: npm start")
+        print("  Start Game Sandbox: npm start")
+    print("\nThe first game session builds its base image, which can take a while.")
 
 
 def run_dev() -> int:
     """Install local development dependencies and optionally start the app."""
     env_path = REPO_ROOT / ".env"
-    if env_path.exists():
+    has_custom_settings = env_path.exists()
+    if has_custom_settings:
         print("Note: your existing .env file overrides the local development defaults.")
     print("\nPreparing local development")
     _run_step("Installing Python dependencies", ["uv", "sync"])
     _run_step("Installing web dependencies", [_NPM, "install"])
     print("\nSetup complete. Local development is ready.")
-    print(f"  Site: http://localhost:{DEFAULT_PORT}")
-    print(f"  Administrator email: {DEV_ADMIN_EMAIL}")
-    print(f"  Administrator password: {DEV_ADMIN_PASSWORD}")
+    if has_custom_settings:
+        print("Your existing .env settings will be used when Game Sandbox starts.")
+    else:
+        print(f"  Site: http://localhost:{DEFAULT_PORT}")
+        print(f"  Administrator email: {DEV_ADMIN_EMAIL}")
+        print(f"  Administrator password: {DEV_ADMIN_PASSWORD}")
     print("\nFor a database with sample data, run: npm run demo")
     if prompt_yes_no("Start the app now", True):
         return _start_foreground()
@@ -458,12 +531,27 @@ def run_dev() -> int:
 def _configure_deployment(mode: str) -> dict[str, str]:
     """Collect the deployment settings, write ``.env``, and create the data directory."""
     env_path = REPO_ROOT / ".env"
-    previous_text = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    try:
+        previous_text = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    except OSError as error:
+        print("\nWe could not read your existing settings.")
+        _print_technical_details(str(error))
+        raise SystemExit(1) from None
     existing = parse_env_file(previous_text)
     values = plan_env(mode, collect_answers(mode, existing), existing)
-    write_env_file(env_path, values, previous_text)
-    data_dir = Path(values["DATA_DIR"])
-    (data_dir if data_dir.is_absolute() else REPO_ROOT / data_dir).mkdir(parents=True, exist_ok=True)
+    print("\nSaving your settings...", end=" ", flush=True)
+    try:
+        write_env_file(env_path, values, previous_text)
+        data_dir = Path(values["DATA_DIR"])
+        (data_dir if data_dir.is_absolute() else REPO_ROOT / data_dir).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print("failed.")
+        print("We could not save your settings.")
+        _print_technical_details(str(error))
+        raise SystemExit(1) from None
+    print("done.")
+    if previous_text:
+        print("Your previous settings were saved as .env.bak.")
     return values
 
 
@@ -482,38 +570,50 @@ def run_host() -> int:
 def run_docker() -> int:
     """Configure and launch a Linux containerized deployment."""
     values = _configure_deployment("docker")
+    print("\nPreparing the Docker deployment")
+    print("The initial build may take several minutes.")
+    _run_step(
+        "Building and starting Game Sandbox",
+        ["docker", "compose", "up", "-d", "--build"],
+    )
+    print("Waiting for Game Sandbox to become ready...", end=" ", flush=True)
     try:
-        print("\nPreparing the Docker deployment")
-        print("The initial build may take several minutes.")
-        _run_step(
-            "Building and starting Game Sandbox",
-            ["docker", "compose", "up", "-d", "--build"],
-            show_output=True,
-        )
-        print("Waiting for Game Sandbox to become ready...", end=" ", flush=True)
         _wait_for_http(f"http://127.0.0.1:{values['PORT']}/api/environments", 300)
         print("done.")
-    except (SystemExit, Exception):
-        print("\nGame Sandbox did not start successfully. Recent app logs follow:\n")
-        subprocess.run(["docker", "compose", "logs", "app"], cwd=REPO_ROOT, check=False)
-        raise
+    except (SystemExit, Exception) as error:
+        print("failed.")
+        print("Game Sandbox started, but it did not become ready in time.")
+        try:
+            logs = subprocess.run(
+                ["docker", "compose", "logs", "--tail", "100", "app"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            _print_technical_details(str(error), logs.stdout, logs.stderr)
+        except OSError as logs_error:
+            _print_technical_details(str(error), str(logs_error))
+        raise SystemExit(1) from None
     _print_deploy_summary("docker", values)
     return 0
 
 
 def choose_mode() -> str:
-    print("\nHow would you like to run Game Sandbox?")
-    print("  1. Local development")
-    print("  2. Host deployment")
-    print("  3. Docker deployment")
+    print("\nWhat would you like to set up?")
+    choices = tuple(MODES)
+    for number, mode in enumerate(choices, start=1):
+        metadata = MODES[mode]
+        print(f"\n  {number}. {metadata.title}")
+        print(f"     {metadata.description}")
     while True:
         choice = input("Choose an option [1]: ").strip()
-        if choice in {"", "1", "dev"}:
-            return "dev"
-        if choice in {"2", "host"}:
-            return "host"
-        if choice in {"3", "docker"}:
-            return "docker"
+        if not choice:
+            return choices[0]
+        if choice in {"dev", "host", "docker"}:
+            return choice
+        if choice.isdigit() and 1 <= int(choice) <= len(choices):
+            return choices[int(choice) - 1]
         print("Choose 1, 2, or 3.")
 
 
@@ -527,27 +627,30 @@ def _node_major() -> int | None:
 
 
 def check_prerequisites(mode: str) -> None:
-    print("\nChecking system requirements")
+    print("\nChecking what you need")
     if shutil.which("docker") is None:
-        raise SystemExit("Docker is required, and its daemon must be running.")
-    _run_step("Checking the Docker daemon", ["docker", "info"])
+        raise SystemExit("Docker is not installed. Install Docker, start it, and run this wizard again.")
+    _run_step("  Docker", ["docker", "info"], success="ready")
     if mode == "docker" and (error := docker_mode_error(sys.platform)):
         raise SystemExit(error)
     if mode in {"dev", "host"}:
-        print("Checking Node.js...", end=" ", flush=True)
+        print("  Node.js...", end=" ", flush=True)
         major = _node_major()
-        print(f"found {major}." if major else "not found.")
+        print("ready." if major == NODE_MAJOR else "needs attention.")
         if major != NODE_MAJOR:
-            raise SystemExit(f"Node.js {NODE_MAJOR} is required for development and host mode.")
+            found = f"version {major}" if major else "no working installation"
+            raise SystemExit(
+                f"Node.js {NODE_MAJOR} is required, but the wizard found {found}. "
+                "Install the required version and try again."
+            )
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Configure and deploy Game Sandbox.")
     parser.add_argument("--mode", choices=("dev", "host", "docker"), help="Skip the interactive mode menu.")
     args = parser.parse_args(argv)
-    print("Game Sandbox setup")
-    print("==================")
-    print("This wizard will prepare the project and help you start it.")
+    print("Game Sandbox setup\n")
+    print("Welcome. This wizard will save your settings, prepare Game Sandbox, and help you start it.")
     mode = args.mode or choose_mode()
     check_prerequisites(mode)
     if mode == "dev":

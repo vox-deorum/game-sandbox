@@ -37,7 +37,7 @@ def test_every_managed_field_has_a_label_a_reader_recognizes():
     assert all(field.label and field.label != key for key, field in setup.ENV_FIELDS.items())
 
 
-def test_collect_answers_uses_friendly_labels_and_mode_defaults(monkeypatch):
+def test_collect_answers_uses_friendly_labels_and_mode_defaults(monkeypatch, capsys):
     labels: list[str] = []
     supplied = {
         "Public site URL": "https://sandbox.example.com",
@@ -63,6 +63,10 @@ def test_collect_answers_uses_friendly_labels_and_mode_defaults(monkeypatch):
     assert "Public site URL" in labels
     assert "GitHub repository access token" in labels
     assert not set(labels) & set(setup.MANAGED_KEYS)
+    output = capsys.readouterr().out
+    assert "Administrator account" in output
+    assert "Private GitHub repositories" in output
+    assert "AI provider" in output
 
 
 def test_enabled_optional_groups_use_friendly_labels(monkeypatch):
@@ -72,7 +76,7 @@ def test_enabled_optional_groups_use_friendly_labels(monkeypatch):
         "Administrator email address": "operator@example.com",
         "GitHub OAuth client ID": "client-id",
         "GitHub OAuth client secret": "client-secret",
-        "LLM provider URL": "https://models.example.com/v1",
+        "AI provider URL": "https://models.example.com/v1",
     }
 
     def fake_prompt(label, default="", validator=None, *, allow_blank=False):
@@ -90,7 +94,7 @@ def test_enabled_optional_groups_use_friendly_labels(monkeypatch):
     assert answers["GITHUB_OAUTH_CLIENT_ID"] == "client-id"
     assert answers["LLM_MODEL_LARGE"] == "large-model"
     assert "GitHub OAuth client secret" in labels
-    assert "LLM provider API key" in labels
+    assert "AI provider API key" in labels
     assert "Small model name" in labels
     assert not set(labels) & set(setup.MANAGED_KEYS)
 
@@ -100,9 +104,83 @@ def test_deployment_summary_uses_friendly_names(capsys):
 
     output = capsys.readouterr().out
     assert "Setup complete" in output
-    assert "Administrator email:" in output
-    assert "Data directory:" in output
+    assert "Administrator sign-in" in output
+    assert "Open it at:" in output
+    assert "Data will be stored in:" in output
     assert "DATA_DIR" not in output
+
+
+def test_mode_menu_explains_each_choice(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _label: "2")
+
+    assert setup.choose_mode() == "host"
+
+    output = capsys.readouterr().out
+    assert "Local development" in output
+    assert "Run on this computer" in output
+    assert "Docker on a Linux server" in output
+    assert "Host deployment" not in output
+
+
+def test_successful_step_hides_command_output(monkeypatch, capsys):
+    result = setup.subprocess.CompletedProcess([], 0, stdout="raw command output", stderr="")
+    monkeypatch.setattr(setup.subprocess, "run", lambda *args, **kwargs: result)
+
+    setup._run_step("Installing dependencies", ["fake-command"])
+
+    output = capsys.readouterr().out
+    assert output == "Installing dependencies... done.\n"
+    assert "raw command output" not in output
+
+
+def test_docker_build_failure_does_not_add_unrelated_app_logs(monkeypatch):
+    def fail_build(*args, **kwargs):
+        raise SystemExit(1)
+
+    monkeypatch.setattr(setup, "_configure_deployment", lambda _mode: deployment_answers())
+    monkeypatch.setattr(setup, "_run_step", fail_build)
+    monkeypatch.setattr(
+        setup.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("app logs should not run after a build failure"),
+    )
+
+    with pytest.raises(SystemExit):
+        setup.run_docker()
+
+
+def test_docker_readiness_failure_labels_diagnostics_once(monkeypatch, capsys):
+    def fail_health_check(*args, **kwargs):
+        raise SystemExit("raw timeout detail")
+
+    monkeypatch.setattr(setup, "_configure_deployment", lambda _mode: deployment_answers())
+    monkeypatch.setattr(setup, "_run_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup, "_wait_for_http", fail_health_check)
+    logs = setup.subprocess.CompletedProcess([], 0, stdout="recent app log", stderr="")
+    monkeypatch.setattr(setup.subprocess, "run", lambda *args, **kwargs: logs)
+
+    with pytest.raises(SystemExit) as error:
+        setup.run_docker()
+
+    assert error.value.code == 1
+    output = capsys.readouterr().out
+    assert "did not become ready in time" in output
+    assert output.count("Technical details:") == 1
+    assert "raw timeout detail" in output
+    assert "recent app log" in output
+
+
+def test_unreadable_existing_settings_get_friendly_error(tmp_path, monkeypatch, capsys):
+    (tmp_path / ".env").mkdir()
+    monkeypatch.setattr(setup, "REPO_ROOT", tmp_path)
+
+    with pytest.raises(SystemExit) as error:
+        setup._configure_deployment("host")
+
+    assert error.value.code == 1
+    output = capsys.readouterr().out
+    assert "We could not read your existing settings." in output
+    assert "Technical details:" in output
 
 
 def test_render_quotes_only_what_needs_it_and_keeps_preserved_lines_verbatim():
