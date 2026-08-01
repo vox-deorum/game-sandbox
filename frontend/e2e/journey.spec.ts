@@ -3,14 +3,11 @@ import { readFile } from 'node:fs/promises'
 import {
   activeWindows,
   closePlay,
-  closeSubmissions,
   declareSeason,
   deleteSeason,
   getRecordingHeader,
   getSession,
   openPlay,
-  openSubmissions,
-  setSeasonOverrides,
 } from './support/api.js'
 import { authenticateBrowser, userIdOf } from './support/auth.js'
 import { expect, test } from './support/fixtures.js'
@@ -33,13 +30,15 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.goto('/')
   await page.getByRole('link', { name: /Flappy Bird/ }).click()
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
-  await expect(page.getByText('This season uses the default settings.')).toBeVisible()
+  const changes = page.getByRole('list', { name: 'Season changes' })
+  await expect(changes).toContainText('Pipe gap 100 → 90')
+  await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
 
   // The Play entry point in the play-season section opens the start form; submit it to start a
   // human session.
   await page.getByRole('button', { name: 'Play', exact: true }).click()
-  await expect(page.getByLabel('Pipe gap')).toHaveValue('100')
-  await page.getByLabel('Pipe gap').fill('90')
+  await expect(page.getByLabel('Pipe gap')).toHaveValue('90')
+  await page.getByLabel('Pipe gap').fill('110')
   await page.getByRole('button', { name: 'Start playing' }).click()
 
   // The session page mounts the renderer and shows the per-step input window while we control a player.
@@ -50,7 +49,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
     .poll(async () => (await getSession(admin, sessionId))?.parameters)
     .toEqual({
       players: 1,
-      pipe_gap: 90,
+      pipe_gap: 110,
     })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
 
@@ -87,7 +86,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
     .poll(async () => (await getRecordingHeader(admin, recordingId)).parameters)
     .toEqual({
       players: 1,
-      pipe_gap: 90,
+      pipe_gap: 110,
     })
 
   // Open the replay from the ended session and scrub it.
@@ -101,7 +100,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await settings.hover()
   const settingsTooltip = page.getByRole('tooltip')
   await expect(settingsTooltip).toContainText('Pipe gap')
-  await expect(settingsTooltip).toContainText('90')
+  await expect(settingsTooltip).toContainText('110')
   await expect(settingsTooltip).toContainText('Seed')
   const decisionLog = page.locator('.decision-log')
   await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
@@ -145,46 +144,36 @@ test('shows submission-season changes and downloads its local setup file', async
   admin,
   as,
 }) => {
-  const original = await activeWindows(admin)
-  if (original.submissionSeasonId === null) {
+  const windows = await activeWindows(admin)
+  if (windows.submissionSeasonId === null) {
     throw new Error('the seeded submission season is missing')
   }
-  const season = await declareSeason(admin, 'Local setup season')
-  try {
-    await closeSubmissions(admin, original.submissionSeasonId)
-    await setSeasonOverrides(admin, season.id, {
-      step_timeout_ms: 750,
-      parameters: { pipe_gap: 90 },
-    })
-    await openSubmissions(admin, season.id)
 
-    const owner = await as('local-setup-owner')
-    await authenticateBrowser(page.context(), owner)
-    await page.goto(`/environments/flappy_bird/agents/${await userIdOf(owner)}`)
+  const owner = await as('local-setup-owner')
+  await authenticateBrowser(page.context(), owner)
+  await page.goto(`/environments/flappy_bird/agents/${await userIdOf(owner)}`)
 
-    const changes = page.getByRole('list', { name: 'Season changes' })
-    await expect(changes).toContainText('Pipe gap 100 → 90')
-    await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
+  const changes = page.getByRole('list', { name: 'Season changes' })
+  await expect(changes).toContainText('Pipe gap 100 → 90')
+  await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
 
-    const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Set Up Locally' }).click()
-    const download = await downloadPromise
-    expect(download.suggestedFilename()).toBe('season.json')
-    const downloadPath = await download.path()
-    if (downloadPath === null) throw new Error('season settings download has no local path')
-    expect(JSON.parse(await readFile(downloadPath, 'utf8'))).toEqual({
-      env_id: 'flappy_bird',
-      season: 'Local setup season',
-      parameters: { pipe_gap: 90 },
-      decision_limit_ms: 750,
-    })
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Set Up Locally' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('season.json')
+  const downloadPath = await download.path()
+  if (downloadPath === null) throw new Error('season settings download has no local path')
+  expect(JSON.parse(await readFile(downloadPath, 'utf8'))).toEqual({
+    env_id: 'flappy_bird',
+    season: 'Playground',
+    parameters: { pipe_gap: 90 },
+    decision_limit_ms: 750,
+  })
 
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText('git clone -b templates/flappy_bird')
-    await expect(dialog).toContainText('Move the downloaded season.json next to manifest.json')
-  } finally {
-    await closeSubmissions(admin, season.id).catch(() => {})
-    await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
-    await deleteSeason(admin, season.id).catch(() => {})
-  }
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('git clone -b templates/flappy_bird')
+  await expect(dialog).toContainText(
+    'Move the downloaded season.json next to manifest.json in the cloned folder.',
+  )
+  await expect(dialog.getByText('manifest.json', { exact: true })).toBeVisible()
 })

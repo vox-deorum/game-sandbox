@@ -50,7 +50,7 @@ function begin(): void {
         <code>manifest.json</code> in the cloned folder.
       </li>
       <li>
-        Run <code>python -m sandbox play</code>.
+        Run <code>python -m sandbox play</code>
       </li>
     </ol>
     <p v-if="file !== null" class="setup-result">

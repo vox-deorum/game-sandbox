@@ -22,7 +22,7 @@ test('watch a scripted session, and a spectator gets no controls', async ({
   const builtinRow = page.locator('.agent-row').filter({ hasText: 'Naive agent' })
   await builtinRow.getByRole('button', { name: 'Watch' }).click()
   const dialog = page.getByRole('dialog', { name: /Watch Flappy Bird/ })
-  await expect(dialog.getByLabel('Pipe gap')).toHaveValue('100')
+  await expect(dialog.getByLabel('Pipe gap')).toHaveValue('90')
   await dialog.getByLabel('Pipe gap').fill('110')
   await dialog.getByRole('button', { name: 'Start watching' }).click()
 

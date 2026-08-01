@@ -35,6 +35,12 @@ const SOFTWARE_WEBGL_ARGS = [
   '--enable-unsafe-swiftshader',
 ]
 
+const MAIN_USE = {
+  ...devices['Desktop Chrome'],
+  baseURL: `http://127.0.0.1:${MAIN_PORT}`,
+  launchOptions: { args: SOFTWARE_WEBGL_ARGS },
+}
+
 function backendEnv(
   port: number,
   dataSubdir: string,
@@ -109,12 +115,15 @@ export default defineConfig({
   ],
   projects: [
     {
+      name: 'season-fixture',
+      testMatch: '**/season-fixture.setup.ts',
+      use: MAIN_USE,
+    },
+    {
       name: 'main',
-      use: {
-        ...devices['Desktop Chrome'],
-        baseURL: `http://127.0.0.1:${MAIN_PORT}`,
-        launchOptions: { args: SOFTWARE_WEBGL_ARGS },
-      },
+      dependencies: ['season-fixture'],
+      testIgnore: '**/season-fixture.setup.ts',
+      use: MAIN_USE,
     },
   ],
 })

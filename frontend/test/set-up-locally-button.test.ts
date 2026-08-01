@@ -63,10 +63,16 @@ describe('SetUpLocallyButton', () => {
 
     expect(createObjectURL).toHaveBeenCalledOnce()
     expect(click).toHaveBeenCalledOnce()
+    const download = click.mock.contexts[0] as HTMLAnchorElement
+    expect(download.href).toBe('blob:season-settings')
+    expect(download.download).toBe('season.json')
     expect(revokeObjectURL).not.toHaveBeenCalled()
     vi.advanceTimersByTime(0)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:season-settings')
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
-    expect(screen.getByText('manifest.json')).toBeInTheDocument()
+    expect(screen.getByText('manifest.json', { exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Move the downloaded season.json next to manifest.json in the cloned folder.',
+    )
   })
 })
