@@ -134,15 +134,24 @@ An environment factory receives the complete resolved parameter map. A variable-
 
 The platform convention is an **object-shaped observation** and a simple **`Discrete` action space**. Observations contain meaningful game values instead of packed integer arrays that agents must decode. For example, a card is an object with `{"suit", "rank"}`, a hand is a sequence of card objects, and a Flappy Bird observation describes the bird and pipes as coordinate objects. Every observation must satisfy its declared Gymnasium space throughout a complete episode.
 
-An environment whose legal actions depend on state publishes a top-level binary **`action_mask`** beside the agent observation. It wraps the meaningful state as `{"observation": {…}, "action_mask": …}`, which places the mask where PettingZoo's masked sampling expects it. The mask is authoritative for agent legality. Human controls must offer the same legal choices, either listed in the semantic render overlay or derived by the renderer from the overlay's game state. Hearts and Spades provide both the mask and the overlay. Flappy Bird needs neither because idle and flap are always legal while its agent is active.
+An environment whose legal actions depend on state publishes a top-level binary **`action_mask`** beside the agent observation. It wraps the meaningful state as `{"observation": {…}, "action_mask": …}`, which places the mask where PettingZoo's masked sampling expects it. The mask counts positions from the action space's `start`, so position `i` covers the action `start + i`, which for the usual space starting at zero is simply the action `i`. The mask is authoritative for agent legality. Human controls must offer the same legal choices, either listed in the semantic render overlay or derived by the renderer from the overlay's game state. Hearts and Spades provide both the mask and the overlay. Flappy Bird needs neither because idle and flap are always legal while its agent is active.
 
 Every current environment uses a flat integer action accepted by a `Discrete` space. `env.step()` validates each integer and rejects illegal actions. Template helpers convert a meaningful choice, such as a card or bid, into the integer accepted by the action space.
 
 ### Composite actions
 
-An environment may declare a `Dict` action space when one action is genuinely several independent choices. An action is then an object with one value per declared key, and the `action_mask` is an object with the same keys. Each mask entry is either a binary mask over that subspace or `null` when that component is unrestricted for the turn. A `Box` subspace is always `null`, because Gymnasium cannot mask a continuous range.
+An environment may declare a `Dict` action space when one action is genuinely several independent choices. An action is then an object with one value per declared key, and the `action_mask` is an object carrying one entry per declared key. An entry of `null` marks that component as unrestricted for the turn. A `Dict` child may itself be one of a small set of permitted types, each with its own mask entry shape:
 
-A `Dict` action space is permitted only when the legal action set is exactly the product of the per-key legal sets. Gymnasium masks each key independently, so masked sampling draws one value per key and combines them. If any combination of individually legal values is illegal, the mask stops being authoritative and a masked sample can produce a move the environment rejects.
+| Child subspace | Mask entry shape |
+| --- | --- |
+| `Discrete(n, start=s)` | a binary vector of length `n`. Position `i` covers the action `s + i`. |
+| `MultiDiscrete(nvec, start=starts)` | a tuple of binary vectors, one per dimension. Vector `i` has length `nvec[i]`, and its position `j` covers the value `starts[i] + j`. `nvec` must be one-dimensional. |
+| a nested `Dict` | an object under these same rules, one entry per its own declared key. |
+| `Box` | always `null`, because a continuous range cannot be masked. |
+
+`MultiBinary` and `Tuple` children are not permitted. `MultiBinary(k)` describes the same choice set as a `MultiDiscrete` with two values per dimension, so declare that instead. A `Tuple` is a `Dict` without names, and the platform's convention is named components everywhere, so declare a `Dict` with one key per component instead. Keeping to one mask vocabulary means a `1` always marks a legal choice, with no second dialect to learn.
+
+A `Dict` action space is permitted only when the legal action set is exactly the product of the per-key legal sets. Masked sampling draws one value per key and combines them, so it covers exactly that product. If any combination of individually legal values is illegal, the mask stops being authoritative and a masked sample can produce a move the environment rejects.
 
 | Action space | Mask on one turn | Permitted |
 | --- | --- | --- |
@@ -153,11 +162,11 @@ The first factorizes. Pinning `kind` to the current phase leaves `index` free, s
 
 The second does not. A hand of the two of clubs and the nine of spades masks in the suits `{clubs, spades}` and the ranks `{two, nine}`, so masked sampling can draw the two of spades, which is not held. Encode a choice like this as a flat `Discrete` over the joint options, or as a single `Dict` key whose values enumerate them, so the mask keeps describing exactly the legal moves.
 
-The harness applies the same rule when it checks an agent's action. It judges each key against that key's mask entry. It does not judge a key the mask leaves out, a key set to `null`, or an action whose shape disagrees with the mask's.
+The harness applies the same rule when it checks an agent's action. It judges each key against that key's mask entry. It does not judge a key the mask leaves out, a key set to `null`, or an action whose shape disagrees with the mask's. A mask entry the platform cannot read withholds the legality verdict for that key alone: the other keys are still judged, the acting player is never charged for it, and the session never aborts over it, because an unreadable entry is the environment's defect.
 
 ### PettingZoo conformance
 
-Beyond the declared mode's API test, the shared conformance suite runs a deterministic rollout, validates each observation and legal default action, and checks that overlays are finite and JSON-safe. `observation_space.contains()` validates the full composite observation throughout an episode.
+Beyond the declared mode's API test, the shared conformance suite runs a deterministic rollout, validates each observation and legal default action, and checks that overlays are finite and JSON-safe. `observation_space.contains()` validates the full composite observation throughout an episode. On every turn of that rollout, the suite also checks that the published `action_mask` agrees in shape with the declared action space, and that a `Dict` action space declares only the permitted child types above.
 
 A `Dict` action space is supported for sequential environments only. PettingZoo's `parallel_api_test` reduces an action mask with `np.flatnonzero` before sampling, which is meaningless for an object mask, so a simultaneous environment with a `Dict` action space cannot pass conformance on the pinned PettingZoo version. The correction is merged upstream and has not reached a release. The sequential `api_test` samples through the action space itself and handles an object mask correctly.
 

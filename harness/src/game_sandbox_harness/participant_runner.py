@@ -371,10 +371,10 @@ class ParticipantRunner:
 
 def illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any, action: Any) -> str | None:
     """Return why an action is illegal, or ``None`` when the common checks accept it."""
-    space_fn: Any = getattr(env, "action_space", None)
-    if space_fn is not None:
+    space = _declared_action_space(env, player_id)
+    if space is not None:
         try:
-            contained = bool(space_fn(player_id).contains(action))
+            contained = bool(space.contains(action))
         except Exception:  # noqa: BLE001 - a space that cannot judge does not veto an action
             contained = True
         if not contained:
@@ -383,33 +383,92 @@ def illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any,
     if mask is None:
         return None
     if isinstance(mask, Mapping):
-        # A Dict action space publishes one sub-mask per subspace key, each judged on its own.
-        # A mask whose shape disagrees with the action is the environment's defect, not the
-        # agent's, so it withholds a verdict rather than charging the acting player.
+        # A Dict action space publishes one sub-mask per subspace key, each judged on its own
+        # against the subspace that declares it. A mask whose shape disagrees with the action is
+        # the environment's defect, not the agent's, so it withholds a verdict rather than
+        # charging the acting player.
         if not isinstance(action, Mapping):
             return None
         components = cast("Mapping[str, Any]", action)
-        for key, sub_mask in cast("Mapping[str, Any]", mask).items():
-            # ``None`` is Gymnasium's spelling for an unrestricted subspace, and the only entry a
-            # Box subspace may carry. A key the action omits is the space check's to reject.
-            if sub_mask is None or key not in components:
-                continue
-            if _masked_out(components[key], sub_mask):
-                return f"action component {key!r}={components[key]!r} is not in the legal-move mask"
+        key = _first_masked_out_key(space, components, cast("Mapping[str, Any]", mask))
+        if key is not None:
+            return f"action component {key!r}={components[key]!r} is not in the legal-move mask"
         return None
     if isinstance(action, Mapping):
         return None
-    if _masked_out(action, mask):
+    if _masked_out(space, action, mask):
         return f"action {action!r} is not in the legal-move mask"
     return None
 
 
-def _masked_out(component: Any, mask: Any) -> bool:
-    """Whether one flat binary mask positively rejects one integer action component."""
+def _declared_action_space(env: Any, player_id: str) -> Any:
+    """The player's declared action space, or ``None`` when the environment cannot supply one."""
+    space_fn: Any = getattr(env, "action_space", None)
+    if space_fn is None:
+        return None
     try:
-        index = int(component)
-    except (TypeError, ValueError):
+        return space_fn(player_id)
+    except Exception:  # noqa: BLE001 - a space that cannot be fetched simply does not judge
+        return None
+
+
+def _subspaces(space: Any) -> Mapping[str, Any]:
+    """The declared per-key subspaces of a Dict space, empty when none are available."""
+    declared: Any = getattr(space, "spaces", None)
+    return cast("Mapping[str, Any]", declared) if isinstance(declared, Mapping) else {}
+
+
+def _first_masked_out_key(space: Any, components: Mapping[str, Any], mask: Mapping[str, Any]) -> str | None:
+    """The first action component an object mask positively rejects, or ``None`` when none is."""
+    subspaces = _subspaces(space)
+    for key, entry in mask.items():
+        # ``None`` is the spelling for an unrestricted subspace, and the only entry a Box subspace
+        # may carry. A key the action omits is the space check's to reject.
+        if entry is None or key not in components:
+            continue
+        if _masked_out(subspaces.get(key), components[key], entry):
+            return key
+    return None
+
+
+def _masked_out(space: Any, component: Any, entry: Any) -> bool:
+    """Whether one mask entry positively rejects one action component.
+
+    The entry is read against the subspace that declares it: a Discrete entry is a binary vector
+    whose position ``i`` covers the action ``start + i``, a MultiDiscrete entry is one such vector
+    per dimension, and a nested Dict entry is an object judged key by key. An entry this cannot
+    read, or a subspace shape it does not cover, withholds the verdict for that component alone,
+    because a mask the platform cannot interpret is the environment's defect and not the agent's.
+    """
+    try:
+        if isinstance(entry, Mapping):
+            if not isinstance(component, Mapping):
+                return False
+            nested = _first_masked_out_key(
+                space, cast("Mapping[str, Any]", component), cast("Mapping[str, Any]", entry)
+            )
+            return nested is not None
+        nvec: Any = getattr(space, "nvec", None)
+        if nvec is not None:
+            starts: Any = getattr(space, "start", None)
+            if starts is None:
+                starts = [0] * len(nvec)
+            if not len(component) == len(entry) == len(starts) == len(nvec):
+                return False
+            return any(
+                _index_masked_out(value, vector, start)
+                for value, vector, start in zip(component, entry, starts, strict=True)
+            )
+        if space is None or hasattr(space, "n"):
+            return _index_masked_out(component, entry, getattr(space, "start", 0))
         return False
+    except Exception:  # noqa: BLE001 - an unreadable entry withholds this component's verdict
+        return False
+
+
+def _index_masked_out(component: Any, mask: Any, start: Any) -> bool:
+    """Whether one binary vector rejects one integer component, counting positions from ``start``."""
+    index = int(component) - int(start)
     return 0 <= index < len(mask) and not mask[index]
 
 

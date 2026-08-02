@@ -585,6 +585,99 @@ def validate_parallel_step(
     )
 
 
+#: The subspace types a composite action space may declare, each with a mask entry the platform
+#: can read. A type outside this set is named here with the permitted shape to reach for, so one
+#: mask vocabulary covers every environment: a 1 always marks a legal choice.
+_COMPOSITE_ALTERNATIVES = {
+    "MultiBinary": "declare a MultiDiscrete with two values per dimension instead",
+    "Tuple": "declare a Dict with a name per component instead",
+}
+_COMPOSITE_SUBSPACES = frozenset({"Discrete", "MultiDiscrete", "Dict", "Box"})
+
+
+def action_mask_problems(space: Any, mask: Any) -> list[str]:
+    """Describe every disagreement between a declared action space and one published mask.
+
+    An empty list means the two agree, which includes an environment that publishes no mask at
+    all. Problems are collected rather than raised so one conformance run reports all of them.
+    Spaces are recognised by type name, keeping the harness free of a Gymnasium dependency.
+    """
+    return _mask_problems(space, mask, "action_mask")
+
+
+def _mask_problems(space: Any, mask: Any, label: str) -> list[str]:
+    kind = type(space).__name__
+    if kind == "Dict":
+        return _composite_mask_problems(space, mask, label)
+    if kind == "Box":
+        return [] if mask is None else [f"{label} must be null, because a continuous range cannot be masked"]
+    if mask is None:
+        return []
+    if kind == "Discrete":
+        return _binary_vector_problems(mask, int(space.n), label)
+    if kind == "MultiDiscrete":
+        return _multi_discrete_mask_problems(space, mask, label)
+    return [f"{label} is published for a {kind} action space, which cannot carry a mask"]
+
+
+def _composite_mask_problems(space: Any, mask: Any, label: str) -> list[str]:
+    """Check a Dict action space's declared children, then its mask object against them."""
+    subspaces = cast("Mapping[str, Any]", space.spaces)
+    problems: list[str] = []
+    for key, subspace in subspaces.items():
+        kind = type(subspace).__name__
+        if kind in _COMPOSITE_SUBSPACES:
+            continue
+        advice = _COMPOSITE_ALTERNATIVES.get(kind)
+        problems.append(
+            f"action space component {key!r} is a {kind}, which a composite action may not declare"
+            + (f": {advice}" if advice is not None else "")
+        )
+    if mask is None:
+        return problems
+    if not isinstance(mask, Mapping):
+        problems.append(f"{label} is not an object, but the action space is a Dict")
+        return problems
+    entries = cast("Mapping[str, Any]", mask)
+    if set(entries) != set(subspaces):
+        problems.append(
+            f"{label} carries the keys {sorted(entries)}, but the action space declares {sorted(subspaces)}"
+        )
+    for key in sorted(set(entries) & set(subspaces)):
+        if type(subspaces[key]).__name__ in _COMPOSITE_SUBSPACES:
+            problems.extend(_mask_problems(subspaces[key], entries[key], f"{label}[{key!r}]"))
+    return problems
+
+
+def _multi_discrete_mask_problems(space: Any, mask: Any, label: str) -> list[str]:
+    """Check one tuple of binary vectors, one per dimension, against a MultiDiscrete subspace."""
+    if getattr(space.nvec, "ndim", 1) != 1:
+        return [f"{label} covers a MultiDiscrete whose nvec is not one-dimensional"]
+    lengths = [int(size) for size in space.nvec]
+    if not isinstance(mask, tuple):
+        return [f"{label} is not a tuple of one binary vector per dimension"]
+    values = cast("tuple[Any, ...]", mask)
+    if len(values) != len(lengths):
+        return [f"{label} carries {len(values)} vectors, but the subspace has {len(lengths)} dimensions"]
+    problems: list[str] = []
+    for position, (entry, length) in enumerate(zip(values, lengths, strict=True)):
+        problems.extend(_binary_vector_problems(entry, length, f"{label}[{position}]"))
+    return problems
+
+
+def _binary_vector_problems(mask: Any, length: int, label: str) -> list[str]:
+    """Check one mask entry is a vector of ``length`` values, each of them 0 or 1."""
+    try:
+        values = [int(value) for value in mask]
+    except (TypeError, ValueError):
+        return [f"{label} is not a vector of {length} binary values"]
+    if len(values) != length:
+        return [f"{label} carries {len(values)} values, but the subspace has {length}"]
+    if any(value not in (0, 1) for value in values):
+        return [f"{label} carries a value other than 0 and 1"]
+    return []
+
+
 def _validate_aec_reset_surface(meta: EnvironmentMeta, env: object) -> None:
     for name in ("agents", "rewards", "terminations", "truncations", "agent_selection"):
         if not hasattr(env, name):

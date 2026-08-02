@@ -20,12 +20,20 @@ from support_parallel import make_entry  # noqa: E402
 from _envs import discover_environments, package_dirs  # noqa: E402
 from _paths import ENVIRONMENT_PACKAGES_DIR, ENVIRONMENTS_PYPROJECT  # noqa: E402
 from game_sandbox_harness.environment import (  # noqa: E402
+    action_mask_problems,
     resolve_layout,
     resolve_parameters,
     validate_parallel_reset,
     validate_parallel_step,
 )
+from game_sandbox_harness.participant_runner import action_mask  # noqa: E402
 from game_sandbox_harness.state import json_default  # noqa: E402
+
+
+def _check_action_mask(env: Any, player_id: str, observation: Any, info: Any) -> None:
+    """Assert one published mask agrees with the declared action space, read as the harness reads it."""
+    problems = action_mask_problems(env.action_space(player_id), action_mask(info, observation))
+    assert not problems, f"{player_id}: {'; '.join(problems)}"
 
 
 def _api_test_tolerating_1211(env: Any, num_cycles: int = 100) -> None:
@@ -72,11 +80,12 @@ def _aec_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
         env.reset(seed=seed)
         while env.agents:
             agent = env.agent_selection
-            observation, _, terminated, truncated, _ = env.last()
+            observation, _, terminated, truncated, info = env.last()
             if terminated or truncated:
                 env.step(None)
                 continue
             assert env.observation_space(agent).contains(observation)
+            _check_action_mask(env, agent, observation, info)
             snapshots.append(_overlay_snapshot(entry, env, observation))
             action = entry.default_action(env, agent)
             assert env.action_space(agent).contains(action)
@@ -96,17 +105,18 @@ def _parallel_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
         reset_result = env.reset(seed=seed)
         # Validated reset agents equal the resolved roster, so the loop below covers every player's
         # opening observation against its space.
-        observations, _infos = validate_parallel_reset(entry.meta, env, layout.players, reset_result)
+        observations, infos = validate_parallel_reset(entry.meta, env, layout.players, reset_result)
         snapshots.append(_overlay_snapshot(entry, env, observations))
         while env.agents:
             active_players = list(env.agents)
             for player_id in active_players:
                 assert env.observation_space(player_id).contains(observations[player_id])
+                _check_action_mask(env, player_id, observations[player_id], infos.get(player_id))
             actions = {player_id: entry.default_action(env, player_id) for player_id in active_players}
             for player_id, action in actions.items():
                 assert env.action_space(player_id).contains(action)
             result = env.step(actions)
-            observations, _rewards, _terminations, _truncations, _infos = validate_parallel_step(
+            observations, _rewards, _terminations, _truncations, infos = validate_parallel_step(
                 entry.meta, env, active_players, actions, result
             )
             snapshots.append(_overlay_snapshot(entry, env, observations))
