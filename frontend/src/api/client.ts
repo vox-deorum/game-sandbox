@@ -202,6 +202,12 @@ export interface SeasonSettings {
   rules: SeasonRules
 }
 
+/** The resolved gameplay settings included with a season's leaderboard result. */
+export interface ResolvedSeasonSettings {
+  values: Record<string, ParameterValue>
+  rules: SeasonRules
+}
+
 /** The play and submission seasons' settings, independently absent when their windows are closed. */
 export interface EnvironmentSeasonSettings {
   play: SeasonSettings | null
@@ -1057,6 +1063,7 @@ export interface RunSummaryView {
 /** The full admin view of one season: its config and gates, the latest run, and both boards. */
 export interface AdminSeasonView {
   season: SeasonView
+  settings: ResolvedSeasonSettings
   /** Ready active submissions that a workflow triggered now would freeze into its roster. */
   eligible_submission_count: number
   latest_run: RunView | null
@@ -1066,6 +1073,7 @@ export interface AdminSeasonView {
 /** The current released season plus its boards, as the environment leaderboards read returns it. */
 export interface CurrentLeaderboards {
   season: SeasonView
+  settings: ResolvedSeasonSettings
   board: Board
 }
 

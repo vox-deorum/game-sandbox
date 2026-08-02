@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 
 import type { LlmOptions } from '../config/config.js'
-import { resolveLlm } from '../llm/config.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { Season } from '../storage/schema.js'
-import { resolveSeasonParameters, resolveSeasonRules, type SeasonParameters } from './parameters.js'
+import { resolveSeasonParameters, type SeasonParameters } from './parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from './registry.js'
+import { resolveSeasonDisplaySettings } from './season-settings.js'
 
 /** Dependencies for the public environment reads. */
 export interface EnvironmentRouteDeps {
@@ -34,10 +34,6 @@ function seasonSettings(
   templateRepoUrl: string,
   llmOptions: LlmOptions,
 ) {
-  const config = decodeSeasonConfig(season.config)
-  const llmEnabled = resolveLlm(llmOptions, meta, config).enabled
-  const resolved = resolveSeasonRules(meta, config.overrides, llmEnabled)
-  warnForParameterDrift(season, resolved)
   const url = season.template_repo_url ?? templateRepoUrl
   return {
     season_id: season.id,
@@ -46,8 +42,7 @@ function seasonSettings(
       url,
       branch: sameTemplateRepository(url, templateRepoUrl) ? `templates/${meta.env_id}` : null,
     },
-    values: resolved.values,
-    rules: resolved.rules,
+    ...resolveSeasonDisplaySettings(meta, season, llmOptions),
   }
 }
 

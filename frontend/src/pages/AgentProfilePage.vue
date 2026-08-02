@@ -40,7 +40,6 @@ import {
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
 import SeasonChanges from '../components/SeasonChanges.vue'
-import SetUpLocallyButton from '../components/SetUpLocallyButton.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -559,24 +558,21 @@ const seasonLabel = (label: string | null, id: string): string =>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
-      <!-- The current-season context stays on the plain heading as two tags. The id/tabindex anchor
-           remains here so season deep links focus and scroll to it. -->
+      <!-- The id/tabindex anchor keeps season deep links focused on the submission controls. -->
       <header id="current-season-banner" class="submit-head" tabindex="-1">
         <h2>Submit an Agent</h2>
-        <template v-if="profile.submission_season_id !== null">
-          <UiBadge>Current Season: {{ currentSeasonName }}</UiBadge>
+        <p v-if="profile.submission_season_id !== null" class="submit-meta">
+          <span>Season: {{ currentSeasonName }}</span>
+          <span aria-hidden="true">·</span>
           <UiStatusBadge
-            v-if="currentSeasonSubmission !== null"
+            v-if="currentSeasonSubmission !== null && statusBadge(currentSeasonSubmission).tone === 'danger'"
             v-bind="statusBadge(currentSeasonSubmission)"
           />
-          <UiStatusBadge v-else label="Not submitted" tone="warning" />
-          <SetUpLocallyButton
-            v-if="submissionSeasonSettings !== null && meta !== null"
-            :meta="meta"
-            :settings="submissionSeasonSettings"
-          />
-        </template>
-        <span v-else class="submit-none">No Season is accepting submissions right now.</span>
+          <span v-else>
+            {{ currentSeasonSubmission === null ? 'Not submitted' : statusBadge(currentSeasonSubmission).label }}
+          </span>
+        </p>
+        <p v-else class="submit-none">No Season is accepting submissions right now.</p>
       </header>
       <SeasonChanges
         v-if="submissionSeasonSettings !== null && meta !== null"
@@ -589,6 +585,8 @@ const seasonLabel = (label: string | null, id: string): string =>
         <SubmitAgentForm
           :env-id="envId"
           :submission-season-id="profile.submission_season_id"
+          :meta="meta"
+          :settings="submissionSeasonSettings"
           @accepted="refreshProfile"
           @settled="refreshProfile"
         />
@@ -925,10 +923,6 @@ const seasonLabel = (label: string | null, id: string): string =>
 }
 
 .submit-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
   margin-bottom: var(--space-4);
   scroll-margin-top: var(--space-5);
 }
@@ -938,6 +932,17 @@ const seasonLabel = (label: string | null, id: string): string =>
 }
 
 .submit-none {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.submit-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }

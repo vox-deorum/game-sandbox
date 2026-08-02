@@ -2,6 +2,10 @@
 
 There are two leaderboards per environment per season: an automated board and a human-feedback board. They are kept separate and are never combined into a single number. See [Seasons](seasons.md) for the season model and its public gates.
 
+## Leaderboard views
+
+A selected season's leaderboard header shows a compact **Settings** summary from the server-resolved settings returned with that season's boards. It uses the same default-to-season differences as the environment overview and My Submissions. The **All Seasons** section is a clean season index and does not repeat the selected season's settings.
+
 ## Automated board
 
 The automated board ranks agents by mean episode score. A higher value is always better for ranking, even when the environment also displays a native score where lower is better. The board shows the population standard deviation of episode scores beside the mean.

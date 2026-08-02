@@ -21,10 +21,12 @@ import {
   getSeasonLeaderboards,
   listSeasons,
   type PublicSeasonView,
+  type ResolvedSeasonSettings,
   type SeasonView,
 } from '../api/client.js'
 import GamesTable from '../components/GamesTable.vue'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
+import SeasonChanges from '../components/SeasonChanges.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
@@ -41,6 +43,7 @@ const notReleased = ref(false)
 const failed = ref(false)
 const board = ref<Board | null>(null)
 const season = ref<SeasonView | null>(null)
+const settings = ref<ResolvedSeasonSettings | null>(null)
 // The seasons listed in the Seasons table, newest first, with their activity counts; also backs the
 // header annotation for the season in view (matched out of this same list by id). Released-only for
 // the public, but every season (including unreleased ones) for an operator.
@@ -71,6 +74,7 @@ async function load(): Promise<void> {
   failed.value = false
   board.value = null
   season.value = null
+  settings.value = null
   operatorPreview.value = false
   try {
     // Operators see every season for the environment — including unreleased and fully-private ones —
@@ -85,6 +89,7 @@ async function load(): Promise<void> {
         await loadOperatorPreview(requestedSeasonId.value)
       } else {
         season.value = result.season
+        settings.value = result.settings
         board.value = result.board
       }
     } else {
@@ -93,6 +98,7 @@ async function load(): Promise<void> {
         notReleased.value = true
       } else {
         season.value = result.current.season
+        settings.value = result.current.settings
         board.value = result.current.board
       }
     }
@@ -119,6 +125,7 @@ async function loadOperatorPreview(seasonId: string): Promise<void> {
       return
     }
     season.value = view.season
+    settings.value = view.settings
     board.value = view.board
     operatorPreview.value = true
   } catch {
@@ -137,14 +144,19 @@ watch(requestedSeasonId, load, { immediate: true })
       <h2 v-if="season !== null" class="leaderboards-sub">
         Season: {{ seasonLabel(season) }}
         <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
-        <span v-else-if="season.released_at !== null" class="leaderboards-released">
-          · released {{ formatDate(season.released_at) }}
+      </h2>
+      <p v-if="season !== null" class="leaderboards-metadata">
+        <span v-if="!operatorPreview && season.released_at !== null">
+          released {{ formatDate(season.released_at) }}
         </span>
         <template v-if="currentCounts !== undefined">
-          <UiBadge class="leaderboards-stat">{{ currentCounts.submission_count }} submissions</UiBadge>
-          <UiBadge class="leaderboards-stat">{{ currentCounts.game_count }} games run</UiBadge>
+          <span v-if="!operatorPreview && season.released_at !== null" aria-hidden="true"> · </span>
+          <span>{{ currentCounts.submission_count }} submissions</span>
+          <span aria-hidden="true"> · </span>
+          <span>{{ currentCounts.game_count }} games run</span>
         </template>
-      </h2>
+      </p>
+      <SeasonChanges v-if="settings !== null && meta !== null" :meta="meta" :settings="settings" />
     </header>
 
     <main class="leaderboards-main">
@@ -212,8 +224,10 @@ watch(requestedSeasonId, load, { immediate: true })
   gap: var(--space-2);
 }
 
-.leaderboards-stat {
-  font-weight: 500;
+.leaderboards-metadata {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .leaderboards-matchups {

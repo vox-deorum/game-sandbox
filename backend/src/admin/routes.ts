@@ -38,6 +38,7 @@ import { DEPS_VERSION } from '../build/deps-version.js'
 import { isSafeTemplateRepoUrl, type LlmOptions } from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
+import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
 import {
@@ -765,6 +766,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         if (season === undefined) {
           return reply.code(404).send({ error: 'no such season' })
         }
+        const meta = deps.environments.get(season.env_id)
+        if (meta === undefined) {
+          return reply.code(409).send({
+            error: `environment ${season.env_id} is not registered`,
+            code: 'unknown_environment',
+          })
+        }
         const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
         // This is the same active-ready roster predicate the run transaction snapshots through
@@ -793,9 +801,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         ])
         // The season's environment metadata, so a built-in agent ref is enriched with its declared
         // label the same way a submission ref is enriched with its owner's display name.
-        const meta = deps.environments.get(season.env_id)
         return reply.code(200).send({
           season: seasonView(season),
+          settings: resolveSeasonDisplaySettings(meta, season, deps.llm),
           eligible_submission_count: eligibleSubmissionCount,
           latest_run: latest === undefined ? null : runView(latest, games, names, meta),
           board: {

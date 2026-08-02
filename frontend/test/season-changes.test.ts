@@ -22,12 +22,12 @@ describe('SeasonChanges', () => {
   it('shows each changed setting as a default-to-season pair', () => {
     render(SeasonChanges, { props: { meta: flappyMeta(), settings: changed } })
 
-    expect(screen.getByRole('list', { name: 'Season changes' })).toHaveTextContent(
-      'Pipe gap 100 → 90',
-    )
-    expect(screen.getByRole('list', { name: 'Season changes' })).toHaveTextContent(
+    expect(screen.getByText('Settings:')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent('Pipe gap 100 → 90')
+    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent(
       'Decision limit 1 s → 0.5 s',
     )
+    expect(screen.getByText('Pipe gap from 100 to 90')).toHaveClass('sr-only')
   })
 
   it('states when every setting stays at the environment default', () => {

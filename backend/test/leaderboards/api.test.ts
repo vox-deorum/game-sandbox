@@ -221,16 +221,33 @@ describe('public leaderboard API', () => {
 
   it('returns the released current season and both boards', async () => {
     const released = await declare()
+    await storage.updateSeasonConfig(released.id, {
+      deps_version: 1,
+      matches: [],
+      overrides: { parameters: { pipe_gap: 125 }, step_timeout_ms: 500 },
+    })
     await storage.setReleaseStatus(released.id, 'released')
 
     const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
     const body = res.json() as {
       current: {
         season: { id: string }
+        settings: { values: Record<string, unknown>; rules: Record<string, unknown> }
         board: { automated: unknown[]; human: unknown[]; games: unknown[] }
       }
     }
     expect(body.current.season.id).toBe(released.id)
+    expect(body.current.settings).toEqual({
+      values: { players: 1, pipe_gap: 125 },
+      rules: {
+        step_timeout_ms: 500,
+        episode_timeout_ms: 120_000,
+        messaging_enabled: false,
+        message_cap: null,
+        llm_enabled: false,
+      },
+    })
+    expect(body.current.settings).not.toHaveProperty('template_repo')
     expect(body.current.board).toEqual({ automated: [], human: [], games: [] })
   })
 
@@ -375,6 +392,11 @@ describe('public leaderboard API', () => {
   it('serves a specific released season board and 404s an unreleased one', async () => {
     const unreleased = await declare()
     const released = await declare()
+    await storage.updateSeasonConfig(released.id, {
+      deps_version: 1,
+      matches: [],
+      overrides: { parameters: { pipe_gap: 80 }, episode_timeout_ms: 30_000 },
+    })
     await storage.setReleaseStatus(released.id, 'released')
 
     const ok = await app.inject({
@@ -382,7 +404,22 @@ describe('public leaderboard API', () => {
       url: `/api/environments/${ENV_ID}/seasons/${released.id}/leaderboards`,
     })
     expect(ok.statusCode).toBe(200)
-    expect((ok.json() as { season: { id: string } }).season.id).toBe(released.id)
+    const body = ok.json() as {
+      season: { id: string }
+      settings: { values: Record<string, unknown>; rules: Record<string, unknown> }
+    }
+    expect(body.season.id).toBe(released.id)
+    expect(body.settings).toEqual({
+      values: { players: 1, pipe_gap: 80 },
+      rules: {
+        step_timeout_ms: 1_000,
+        episode_timeout_ms: 30_000,
+        messaging_enabled: false,
+        message_cap: null,
+        llm_enabled: false,
+      },
+    })
+    expect(body.settings).not.toHaveProperty('template_repo')
 
     const hidden = await app.inject({
       method: 'GET',

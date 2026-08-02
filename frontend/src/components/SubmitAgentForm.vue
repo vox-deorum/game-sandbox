@@ -21,6 +21,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
+import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 
 import {
   checkReachability,
@@ -28,11 +29,13 @@ import {
   getSubmission,
   getSubmissionCapabilities,
   type ReachabilityResult,
+  type SeasonSettings,
   setAuthorPrompt,
   type SubmissionDetail,
   type SubmissionSourceInput,
   submitAgent,
 } from '../api/client.js'
+import SetUpLocallyButton from './SetUpLocallyButton.vue'
 import SubmissionStageTimeline from './SubmissionStageTimeline.vue'
 import UiButton from './ui/UiButton.vue'
 import UiCard from './ui/UiCard.vue'
@@ -46,6 +49,10 @@ const props = withDefaults(
     envId: string
     /** The open submission season the new agent lands in; also the season its rating prompt is saved to. */
     submissionSeasonId: string
+    /** Resolved submission-season settings, when the optional settings read succeeds. */
+    settings?: SeasonSettings | null
+    /** Environment metadata needed to prepare a local submission from the selected settings. */
+    meta?: EnvironmentMeta | null
     /** Poll cadence once a submission is pending; also lets tests drive the timeline deterministically. */
     pollIntervalMs?: number
     /** No-progress polls before the non-terminal "still processing" notice shows. */
@@ -251,12 +258,7 @@ const isFailed = computed(
 <template>
   <UiCard>
     <form v-if="phase === 'form'" class="submit-form" @submit.prevent="onSubmit">
-      <p class="submit-intro">
-        Submit an agent for the open season. Paste a public repository URL; we verify it is
-        reachable before accepting, then validate and build it in the background.
-      </p>
-
-      <UiField label="Repository URL" hint="A public git repository containing your agent and its manifest.">
+      <UiField label="Public Repository URL" hint="A public git repository containing your agent and its manifest.">
         <template #default="{ id, describedby }">
           <UiInput
             :id="id"
@@ -300,6 +302,11 @@ const isFailed = computed(
       </UiField>
 
       <div class="submit-actions">
+        <SetUpLocallyButton
+          v-if="meta !== null && meta !== undefined && settings !== null && settings !== undefined"
+          :meta="meta"
+          :settings="settings"
+        />
         <UiButton type="button" variant="secondary" :loading="verifying" :disabled="!hasSource" @click="verify">
           Verify reachability
         </UiButton>
@@ -348,14 +355,10 @@ const isFailed = computed(
   gap: var(--space-4);
 }
 
-.submit-intro {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
 .submit-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

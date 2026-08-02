@@ -478,7 +478,7 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    const seasonTag = await screen.findByText('Current Season: Week 4')
+    const seasonTag = await screen.findByText('Season: Week 4')
     expect(seasonTag).toBeInTheDocument()
     const currentSeasonHeader = document.getElementById('current-season-banner') as HTMLElement
     expect(currentSeasonHeader.tagName).toBe('HEADER')
@@ -513,10 +513,9 @@ describe('AgentProfilePage', () => {
       submissions: [],
     })
 
-    expect(await screen.findByRole('button', { name: 'Set Up Locally' })).toBeInTheDocument()
-    expect(screen.getByRole('list', { name: 'Season changes' })).toHaveTextContent(
-      'Pipe gap 100 → 90',
-    )
+    const localSetup = await screen.findByRole('button', { name: 'Set Up Locally' })
+    expect(localSetup.closest('.submit-actions')).not.toBeNull()
+    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent('Pipe gap 100 → 90')
   })
 
   it('says when the submission season uses the environment defaults', async () => {
@@ -562,7 +561,7 @@ describe('AgentProfilePage', () => {
       submissions: [],
     })
 
-    expect(await screen.findByText('Current Season: Season iteratio')).toBeInTheDocument()
+    expect(await screen.findByText('Season: Season iteratio')).toBeInTheDocument()
     expect(screen.getByText('Not submitted')).toBeInTheDocument()
   })
 
@@ -607,7 +606,7 @@ describe('AgentProfilePage', () => {
         },
         '/environments/flappy_bird/agents/eve?season=iter-next',
       )
-      const repository = await screen.findByLabelText('Repository URL')
+      const repository = await screen.findByLabelText('Public Repository URL')
       const header = document.getElementById('current-season-banner') as HTMLElement
       await waitFor(() => expect(document.activeElement).toBe(header))
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
@@ -756,7 +755,7 @@ describe('AgentProfilePage', () => {
     expect(await screen.findByText(/awaiting approval, so you can't submit/)).toBeInTheDocument()
     // The submit form itself is not rendered, so its repository field and submit button are absent.
     expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
-    expect(screen.queryByLabelText('Repository URL')).toBeNull()
+    expect(screen.queryByLabelText('Public Repository URL')).toBeNull()
     // ...and the owner-only prompt prefill never fires (the form never mounted).
     expect(vi.mocked(getAuthorPrompt)).not.toHaveBeenCalled()
   })

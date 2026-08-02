@@ -1282,7 +1282,12 @@ describe('admin API', () => {
 
     it('returns the admin view, including an unreleased season board after a completed run', async () => {
       const id = await declare()
-      await storage.updateSeasonConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(
+        id,
+        flappyConfig({
+          overrides: { parameters: { pipe_gap: 75 }, step_timeout_ms: 250 },
+        }),
+      )
       // A completed run with one Naive result, so the (still unreleased) board has a row.
       const run = await createRun(
         id,
@@ -1318,10 +1323,22 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(200)
       const body = res.json() as {
         season: { release_status: string; config: SeasonConfig }
+        settings: { values: Record<string, unknown>; rules: Record<string, unknown> }
         latest_run: { id: string; status: string; games: unknown[] }
         board: { automated: Array<{ mean_score: number }> }
       }
       expect(body.season.release_status).toBe('unreleased')
+      expect(body.settings).toEqual({
+        values: { players: 1, pipe_gap: 75 },
+        rules: {
+          step_timeout_ms: 250,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      })
+      expect(body.settings).not.toHaveProperty('template_repo')
       expect(body.latest_run.id).toBe(run.id)
       expect(body.latest_run.games).toHaveLength(1)
       expect(body.board.automated).toHaveLength(1)

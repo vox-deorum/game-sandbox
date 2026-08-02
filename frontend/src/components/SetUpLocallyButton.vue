@@ -36,7 +36,7 @@ function begin(): void {
 </script>
 
 <template>
-  <UiButton variant="secondary" size="tight" @click="begin"
+  <UiButton variant="secondary" @click="begin"
     >Set Up Locally</UiButton
   >
   <UiDialog v-model:open="open" title="Set up this season on your computer">

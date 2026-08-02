@@ -1,6 +1,6 @@
 import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 
-import type { SeasonSettings } from '../api/client.js'
+import type { ResolvedSeasonSettings, SeasonSettings } from '../api/client.js'
 import { formatDuration } from './format.js'
 import { formatParameterValue, visibleParameters } from './parameters.js'
 
@@ -22,7 +22,10 @@ function sameValue(left: ParameterValue, right: ParameterValue): boolean {
   return left === right
 }
 
-function formattedParameters(meta: EnvironmentMeta, settings: SeasonSettings): SeasonChange[] {
+function formattedParameters(
+  meta: EnvironmentMeta,
+  settings: ResolvedSeasonSettings,
+): SeasonChange[] {
   return visibleParameters(meta.parameters).flatMap((parameter) => {
     const value = settings.values[parameter.name] ?? parameter.default
     if (sameValue(value, parameter.default)) {
@@ -41,7 +44,7 @@ function formattedParameters(meta: EnvironmentMeta, settings: SeasonSettings): S
 /** The effective season values that differ from the environment's ordinary defaults. */
 export function describeSeasonChanges(
   meta: EnvironmentMeta,
-  settings: SeasonSettings,
+  settings: ResolvedSeasonSettings,
 ): SeasonChange[] {
   const changes = formattedParameters(meta, settings)
   if (settings.rules.step_timeout_ms !== meta.step_limit_ms) {

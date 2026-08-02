@@ -9,7 +9,9 @@
 import type { FastifyInstance } from 'fastify'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
+import type { LlmOptions } from '../config/config.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
+import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
 import {
   agentOwnerIds,
   gameOwnerIds,
@@ -28,6 +30,8 @@ export interface LeaderboardDeps {
   userDirectory: UserDirectory
   /** The environment registry, read to enrich a built-in agent ref with its declared label. */
   environments: EnvironmentRegistry
+  /** Deployment LLM configuration needed to resolve each season's effective display settings. */
+  llm: LlmOptions
 }
 
 /**
@@ -105,6 +109,10 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
     '/api/environments/:envId/leaderboards',
     async (request, reply) => {
       const envId = request.params.envId
+      const meta = deps.environments.get(envId)
+      if (meta === undefined) {
+        return reply.code(404).send({ error: 'no such environment' })
+      }
       const [released, submissionTarget, playTarget] = await Promise.all([
         deps.storage.getReleasedSeason(envId),
         deps.storage.getOpenSubmissionSeason(envId),
@@ -116,6 +124,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
             ? null
             : {
                 season: seasonView(released),
+                settings: resolveSeasonDisplaySettings(meta, released, deps.llm),
                 board: await boardsFor(deps, envId, released.id),
               },
         submission_season_id: submissionTarget?.id ?? null,
@@ -137,8 +146,13 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
       ) {
         return reply.code(404).send({ error: 'no such released season' })
       }
+      const meta = deps.environments.get(season.env_id)
+      if (meta === undefined) {
+        return reply.code(404).send({ error: 'no such released season' })
+      }
       return reply.code(200).send({
         season: seasonView(season),
+        settings: resolveSeasonDisplaySettings(meta, season, deps.llm),
         board: await boardsFor(deps, season.env_id, season.id),
       })
     },

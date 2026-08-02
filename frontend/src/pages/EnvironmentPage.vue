@@ -117,6 +117,7 @@ const playSectionHeading = computed(() =>
 // The last released season — the one whose boards are embedded below, named in the section heading
 // ("Leaderboard: <season>"); with nothing released the heading stays the plain plural.
 const releasedSeason = computed(() => leaderboards.value?.current?.season ?? null)
+const releasedSeasonSettings = computed(() => leaderboards.value?.current?.settings ?? null)
 const boardsHeading = computed(() =>
   releasedSeason.value === null
     ? 'Leaderboards'
@@ -342,6 +343,11 @@ async function submitStart(payload: StartPayload): Promise<void> {
           View all &amp; history →
         </RouterLink>
       </div>
+      <SeasonChanges
+        v-if="releasedSeasonSettings !== null"
+        :meta="meta"
+        :settings="releasedSeasonSettings"
+      />
       <LeaderboardBoards
         v-if="leaderboards?.current != null"
         :board="leaderboards.current.board"

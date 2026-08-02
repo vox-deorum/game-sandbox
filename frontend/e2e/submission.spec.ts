@@ -57,11 +57,11 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // Browse as the owner so both student-facing season summaries are exercised with the real row.
   await authenticateBrowser(page.context(), ownerCtx)
 
-  // My Submissions leads with the current season and makes the submission state explicit.
+  // My Submissions leads with plain season metadata and an explicit submission state.
   const ownerId = await userIdOf(ownerCtx)
   await page.goto(`/environments/${ENV_ID}/agents/${ownerId}`)
   const currentSeason = page.locator('#current-season-banner')
-  await expect(currentSeason.getByText('Current Season')).toBeVisible()
+  await expect(currentSeason.getByText('Season: Playground')).toBeVisible()
   await expect(currentSeason.getByText('ready to compete')).toBeVisible()
   await expect(currentSeason.getByText('Not submitted')).toHaveCount(0)
 

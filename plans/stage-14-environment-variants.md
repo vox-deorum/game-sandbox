@@ -106,7 +106,11 @@ A new `frontend/src/lib/parameters.ts` holds the pure logic: the visibility rule
 
 `UiCheckboxGroup` is a new `frontend/src/components/ui/` primitive: a fieldset with a visible legend, labeled options, a string-array model emitted in options order, hint and error wiring mirroring `UiField`, and token-only styling. It appears on the `/styleguide` route and in the design-system inventory, and the season config editor's ad hoc model-alias checkbox fieldset is refactored onto it.
 
-The environment page gains a play-season section directly above the play and rate section, shown while a season is open for play: "Open for Play" followed by the season name as its heading, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values. A season with nothing visible to list says "No special settings." instead of dropping the line, because a player reading that line wants an answer either way. The section owns the "Play" action. The section below it is headed "Play and Rate" followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. The play dialog title names the season too. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The play-season section and the boolean-as-select control are approved visual patterns.
+The environment page gains a play-season section directly above the play and rate section, shown while a season is open for play: "Open for Play" followed by the season name as its heading, the season's description markdown, and a compact **Settings** summary of differences from the environment defaults. Each setting pairs the default with the season value. A season with no differences says "This season uses the default settings." The section owns the "Play" action. The section below it is headed "Play and Rate" followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. The play dialog title names the season too. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The play-season section and the boolean-as-select control are approved visual patterns.
+
+My Submissions uses the same compact **Settings** summary for the submission-open season. Its form begins with **Public Repository URL**, then the optional source revision and rating-prompt fields. **Set Up Locally** is part of the form action row with verification and submission controls.
+
+The selected-season Leaderboards header uses the same compact **Settings** summary from the server-resolved settings returned with the boards. The **All Seasons** history remains a clean index without a repeated settings summary.
 
 The replay viewer shows the same settings for the episode it is replaying, read from the recording header's resolved parameter map through the shared `describeParameters` helper. Its status strip trades the "Seed" fact for a "Settings" one summarizing the count, with the visible values and the seed behind it in a tooltip: the strip stays one compact row, and the seed keeps its place as one of the run's settings rather than a fact of its own. The tooltip is the new `UiTooltip` primitive, extracted from `LlmCostTooltip` so cost figures and settings hover, focus, and pin identically; `LlmCostTooltip` becomes that primitive filled with `LlmCostDetails`.
 
@@ -121,18 +125,18 @@ The play-season section above the play and rate section head (which loses its "S
 ```text
 Open for Play: Spring 2026                        [Play]
 A faster season with narrower pipes.     (markdown)
-Settings: Pipe gap 90
+Settings: Pipe gap 100 -> 90
 
 Play and Rate: Spring 2026
   Naive agent  [Built-in]                      [Watch]
   Agent #3     [Not rated]                     [Rate]
 ```
 
-A season with no visible parameters keeps the line and answers instead:
+A season with no differences keeps the summary and answers instead:
 
 ```text
 Open for Play: Spring 2026                        [Play]
-No special settings.
+Settings: This season uses the default settings.
 ```
 
 The replay viewer's status strip, with the episode's settings summarized and their values on hover:

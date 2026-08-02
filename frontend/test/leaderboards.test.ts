@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Board, Me, SeasonView } from '../src/api/client.js'
+import type { Board, Me, ResolvedSeasonSettings, SeasonView } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
 import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
@@ -54,6 +54,19 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
     created_at: '2026-06-10T00:00:00Z',
     released_at: '2026-06-12T00:00:00Z',
     ...overrides,
+  }
+}
+
+function settings(): ResolvedSeasonSettings {
+  return {
+    values: { players: 1, pipe_gap: 90 },
+    rules: {
+      step_timeout_ms: 1000,
+      episode_timeout_ms: 120_000,
+      messaging_enabled: false,
+      message_cap: null,
+      llm_enabled: false,
+    },
   }
 }
 
@@ -145,7 +158,7 @@ describe('LeaderboardsPage', () => {
 
   it('renders both boards in one column from the current released season', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: board() },
+      current: { season: season(), settings: settings(), board: board() },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -153,6 +166,12 @@ describe('LeaderboardsPage', () => {
 
     expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
     expect(screen.getByText('Human Ratings')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Season: Week 1', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('released Jun 11, 2026, 5:00 PM')).toBeInTheDocument()
+    expect(screen.getByText('2 submissions')).toBeInTheDocument()
+    expect(screen.getByText('12 games run')).toBeInTheDocument()
+    expect(screen.getByText('Settings:')).toBeInTheDocument()
+    expect(screen.getByText('Pipe gap from 100 to 90')).toHaveClass('sr-only')
 
     // The automated board shows the weighted mean agent compute time as its own column, with the
     // game-to-game spread beside it.
@@ -180,7 +199,7 @@ describe('LeaderboardsPage', () => {
 
   it('ranks the human board at three ratings and leaves under-threshold rows unranked', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: board() },
+      current: { season: season(), settings: settings(), board: board() },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -227,7 +246,7 @@ describe('LeaderboardsPage', () => {
       },
     }
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: usageBoard },
+      current: { season: season(), settings: settings(), board: usageBoard },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -261,7 +280,7 @@ describe('LeaderboardsPage', () => {
 
   it("shows an agent's author rating prompt under its name on the human board", async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: board() },
+      current: { season: season(), settings: settings(), board: board() },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -277,6 +296,7 @@ describe('LeaderboardsPage', () => {
   it('resolves a specific season by URL through the released-only read', async () => {
     vi.mocked(getSeasonLeaderboards).mockResolvedValue({
       season: season({ id: 'iter-0', label: 'Week 0' }),
+      settings: settings(),
       board: board(),
     })
     await renderAt('/environments/flappy_bird/leaderboards/iter-0')
@@ -310,6 +330,7 @@ describe('LeaderboardsPage', () => {
         release_status: 'unreleased',
         released_at: null,
       }),
+      settings: settings(),
       eligible_submission_count: 0,
       latest_run: null,
       board: board(),
@@ -341,7 +362,7 @@ describe('LeaderboardsPage', () => {
       },
     ])
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: board() },
+      current: { season: season(), settings: settings(), board: board() },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -382,7 +403,7 @@ describe('LeaderboardsPage', () => {
       games: [],
     }
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: namedBoard },
+      current: { season: season(), settings: settings(), board: namedBoard },
       submission_season_id: null,
       play_season_id: null,
     })
@@ -400,6 +421,7 @@ describe('LeaderboardsPage', () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: {
         season: season(),
+        settings: settings(),
         board: {
           ...board(),
           games: [
@@ -432,7 +454,7 @@ describe('LeaderboardsPage', () => {
   it('requests only the released listing for a non-operator', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { season: season(), board: board() },
+      current: { season: season(), settings: settings(), board: board() },
       submission_season_id: null,
       play_season_id: null,
     })

@@ -96,6 +96,16 @@ function emptyBoard(): Board {
 function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
   return {
     season: season(),
+    settings: {
+      values: { players: 1, pipe_gap: 100 },
+      rules: {
+        step_timeout_ms: 1000,
+        episode_timeout_ms: 120_000,
+        messaging_enabled: false,
+        message_cap: null,
+        llm_enabled: false,
+      },
+    },
     eligible_submission_count: 0,
     latest_run: null,
     board: emptyBoard(),

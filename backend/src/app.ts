@@ -185,6 +185,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     identity,
     userDirectory: deps.userDirectory,
     environments: deps.environments,
+    llm: deps.llm,
   })
   registerRatingRoutes(app, {
     storage: deps.storage,
