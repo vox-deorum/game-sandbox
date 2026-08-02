@@ -479,8 +479,8 @@ onUnmounted(() => {
                   @changed="refresh"
                 >
                   <p>
-                    Up to {{ SEASON_DESCRIPTION_MAX.toLocaleString() }} characters. Inline
-                    Markdown supports emphasis, strong text, inline code, and HTTP or HTTPS links.
+                    Up to {{ SEASON_DESCRIPTION_MAX.toLocaleString() }} characters.
+                    Markdown syntax supports emphasis, strong text, inline code, and links.
                   </p>
                 </OperatorSeasonTextEditor>
               </UiCard>
