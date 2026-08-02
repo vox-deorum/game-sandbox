@@ -380,18 +380,46 @@ def illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any,
         if not contained:
             return f"action {action!r} is outside the player's action space"
     mask = action_mask(info, observation)
-    if mask is not None:
-        try:
-            index = int(action)
-        except (TypeError, ValueError):
-            index = None
-        if index is not None and 0 <= index < len(mask) and not mask[index]:
-            return f"action {action!r} is not in the legal-move mask"
+    if mask is None:
+        return None
+    if isinstance(mask, Mapping):
+        # A Dict action space publishes one sub-mask per subspace key, each judged on its own.
+        # A mask whose shape disagrees with the action is the environment's defect, not the
+        # agent's, so it withholds a verdict rather than charging the acting player.
+        if not isinstance(action, Mapping):
+            return None
+        components = cast("Mapping[str, Any]", action)
+        for key, sub_mask in cast("Mapping[str, Any]", mask).items():
+            # ``None`` is Gymnasium's spelling for an unrestricted subspace, and the only entry a
+            # Box subspace may carry. A key the action omits is the space check's to reject.
+            if sub_mask is None or key not in components:
+                continue
+            if _masked_out(components[key], sub_mask):
+                return f"action component {key!r}={components[key]!r} is not in the legal-move mask"
+        return None
+    if isinstance(action, Mapping):
+        return None
+    if _masked_out(action, mask):
+        return f"action {action!r} is not in the legal-move mask"
     return None
 
 
+def _masked_out(component: Any, mask: Any) -> bool:
+    """Whether one flat binary mask positively rejects one integer action component."""
+    try:
+        index = int(component)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= index < len(mask) and not mask[index]
+
+
 def action_mask(info: Any, observation: Any) -> Any:
-    """Return the standard per-action mask from info or observation when available."""
+    """Return the published action mask from info or observation when available.
+
+    A flat action space publishes one binary mask indexed by action. A Dict action space
+    publishes a mapping of one sub-mask per subspace key. The value is returned as the
+    environment wrote it; :func:`illegal_action_reason` is what interprets either shape.
+    """
     if isinstance(info, Mapping):
         mask = cast("Mapping[str, Any]", info).get("action_mask")
         if mask is not None:

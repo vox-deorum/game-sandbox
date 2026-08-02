@@ -13,7 +13,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import IO, TYPE_CHECKING
 
-from ..state import RecordingHeader, StepState
+from ..state import RecordingHeader, StepState, json_default
 from . import (
     RecordingError,
     check_header,
@@ -23,9 +23,17 @@ from . import (
 _RECORDING_FILENAME = "recording.jsonl"
 
 
-def _dump_line(payload: object) -> str:
-    # Compact, stable, one line. sort_keys keeps fixtures deterministic across runs.
-    return json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n"
+def dump_line(payload: object) -> str:
+    """Serialize one header or state into the canonical single-line recording form.
+
+    Compact, stable, one line. ``sort_keys`` keeps fixtures deterministic across runs, and
+    ``json_default`` normalizes the NumPy leaves an environment may put in an action, an
+    observation, or an overlay. Anything else a recording cannot carry still raises here.
+
+    Public because the live protocol stream serializes its one unrecorded frame with it, so the
+    streamed bytes cannot drift from the bytes on disk.
+    """
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True, default=json_default) + "\n"
 
 
 class _FolderRecordingWriter:
@@ -48,11 +56,11 @@ class _FolderRecordingWriter:
         self._on_line = on_line
         self._handle: IO[str] = path.open("w", encoding="utf-8", newline="\n")
         path.chmod(0o666)
-        self._emit(_dump_line(header))
+        self._emit(dump_line(header))
 
     def write_step(self, state: StepState) -> None:
         check_step(state, self._header["schema_version"])
-        self._emit(_dump_line(state))
+        self._emit(dump_line(state))
 
     def _emit(self, line: str) -> None:
         self._handle.write(line)

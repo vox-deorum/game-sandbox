@@ -122,7 +122,7 @@ A renderer may use both types of input. It maps each gesture to an action in the
 
 The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and binary `action_mask` received by an agent. They are not required fields in every emitted state. For human input, the semantic overlay supplies the currently legal choices. The renderer uses those choices to present only legal controls, such as by disabling illegal ones, instead of calculating rules in the browser.
 
-Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to an integer only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That default action is played and recorded like any other move.
+Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to the environment's action shape only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That default action is played and recorded like any other move.
 
 ## Chat
 

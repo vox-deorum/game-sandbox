@@ -27,7 +27,7 @@ from collections.abc import Iterable, Mapping
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from .clock import Clock
-from .recording.local import FolderRecordingStore
+from .recording.local import FolderRecordingStore, dump_line
 from .session import EpisodeResult, ExternalChatFrame
 
 #: The single outbound event-envelope kind this stage defines.
@@ -368,11 +368,12 @@ class ProtocolStream:
         """Serialize and write one recording-shaped state line that bypasses the recording.
 
         Used for the live-only opening frame (see :meth:`Episode.opening_state`): it is streamed to
-        the client but never persisted, so it is serialized exactly like a recorded state line (the
-        same bytes the recording store's writer would produce), and the client parses it identically.
+        the client but never persisted, so it goes through the recording store's own serializer and
+        is byte-for-byte a recorded state line, which the client parses identically. That shared call
+        is also what lets the frame carry an overlay holding NumPy leaves, as recorded states do.
         It carries no top-level ``kind``, so the classification rule routes it to the renderer as a state.
         """
-        self.emit_raw(json.dumps(state, separators=(",", ":"), sort_keys=True))
+        self.emit_raw(dump_line(state))
 
 
 def build_tee_store(recordings_root: str, protocol: ProtocolStream) -> FolderRecordingStore:

@@ -8,10 +8,29 @@ source of truth, and the recording store validates on write regardless.
 
 from __future__ import annotations
 
+import json
 from typing import Any, NotRequired, TypedDict
 
 from .environment import ParameterValue, ResolvedLayout
 from .schema import SCHEMA_VERSION
+
+
+def json_default(item: Any) -> Any:
+    """Convert a NumPy-like scalar or array leaf, leaving every other type to fail normally.
+
+    An environment may hand the harness values that are not JSON types. A Gymnasium space's
+    ``sample()`` returns NumPy scalars, and an observation or overlay routinely carries arrays,
+    so those normalize to the plain JSON values they already represent. Anything else keeps
+    ``json``'s ordinary ``TypeError``, because a set or a game object in a recorded payload is an
+    environment defect rather than a shape the wire can carry.
+
+    Duck-typed on ``tolist`` and ``item`` so the harness needs no NumPy dependency.
+    """
+    for method_name in ("tolist", "item"):
+        method = getattr(item, method_name, None)
+        if callable(method):
+            return method()
+    return json.JSONEncoder().default(item)
 
 
 class StepTiming(TypedDict):

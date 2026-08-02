@@ -25,6 +25,7 @@ from game_sandbox_harness.environment import (  # noqa: E402
     validate_parallel_reset,
     validate_parallel_step,
 )
+from game_sandbox_harness.state import json_default  # noqa: E402
 
 
 def _api_test_tolerating_1211(env: Any, num_cycles: int = 100) -> None:
@@ -39,21 +40,17 @@ def _api_test_tolerating_1211(env: Any, num_cycles: int = 100) -> None:
                 raise
 
 
-def _json_default(item: Any) -> Any:
-    """Convert NumPy-like scalar or array leaves, preserving JSON's normal error for other types."""
-    for method_name in ("tolist", "item"):
-        method = getattr(item, method_name, None)
-        if callable(method):
-            return method()
-    return json.JSONEncoder().default(item)
-
-
 def _json_bytes(value: Any) -> str:
-    """Canonicalize JSON values while rejecting NaN, infinity, and unsupported leaf types."""
+    """Canonicalize JSON values while rejecting NaN, infinity, and unsupported leaf types.
+
+    Shares the recording writer's leaf converter, so an overlay this suite accepts is one the
+    writer can serialize. ``allow_nan=False`` is this suite's own stricter rule: a recording may
+    legitimately carry a NaN reward, while an overlay that reaches a renderer may not.
+    """
     return json.dumps(
         value,
         allow_nan=False,
-        default=_json_default,
+        default=json_default,
         sort_keys=True,
         separators=(",", ":"),
     )

@@ -10,7 +10,7 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 `env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns the PettingZoo environment selected by metadata. For a sequential game, `make_env` returns a fresh agent-environment-cycle (AEC) environment; for a simultaneous game, it returns a fresh parallel environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
 
-It also defines `default_action(env, player_id)`, which returns the legal integer applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
+It also defines `default_action(env, player_id)`, which returns the legal action applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card. Return plain Python values, because the result is recorded like any other move.
 
 Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but only `__init__.py` may import the [harness](../../specs/overview.md#core-model).
 
@@ -80,3 +80,5 @@ Every environment runs the mode-selected PettingZoo conformance check through th
 The suite builds the environment through the registry entry (`entry.make(resolve_parameters(entry.meta))`), not by calling `make_env` directly. For a sequential environment it runs PettingZoo's `api_test` through a wrapper that tolerates two known PettingZoo warnings and one known dtype bug. For a simultaneous environment it calls `parallel_api_test` directly.
 
 The shared guard also checks the configured parallel roster and mapping rules, deterministic rollout output, overlay JSON and finite values, and the required colocated template and example shape. Direct `observation_space.contains()` checks still cover a full episode. Game-specific rules and regressions belong in `environments/<env>/tests/`.
+
+A [composite action space](../../specs/environment.md#composite-actions) is sequential-only for now. `parallel_api_test` reduces an action mask to a single index before sampling, so a simultaneous environment declaring one cannot pass conformance until a PettingZoo release carries the fix. The suite does not block it, so the failure comes from PettingZoo rather than from a check here.

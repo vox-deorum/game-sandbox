@@ -11,7 +11,7 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
-`act` receives the environment's object-shaped observation and returns an integer from its flat `Discrete` action space. See the [environment contract](environment.md#observations-and-actions).
+`act` receives the environment's object-shaped observation and returns an action in the environment's action space. Every current environment uses a flat `Discrete` space, so that action is an integer. See the [environment contract](environment.md#observations-and-actions).
 
 The interface is independent of algorithm style. Agents run inside the server-side session container and may call the optional [LLM API](llm.md).
 
