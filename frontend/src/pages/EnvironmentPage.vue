@@ -457,6 +457,10 @@ async function submitStart(payload: StartPayload): Promise<void> {
   flex-wrap: wrap;
 }
 
+.env-section-title h2 {
+  margin: 0;
+}
+
 .env-section-season {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

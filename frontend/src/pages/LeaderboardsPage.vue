@@ -232,17 +232,17 @@ watch(requestedSeasonId, load, { immediate: true })
 }
 
 .leaderboards-metadata {
-  margin: var(--space-1) 0 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
-.leaderboards-matchups {
-  margin-top: var(--space-8);
+.leaderboards-main {
+  margin-top: var(--space-2);
 }
 
+.leaderboards-matchups,
 .leaderboards-history {
-  margin-top: var(--space-8);
+  margin-top: var(--space-4);
 }
 
 .history-table {

@@ -161,7 +161,8 @@ test('shows submission-season changes and downloads its local setup file', async
   const submissionSection = page.locator('section').filter({
     has: page.getByRole('heading', { name: 'Submit an Agent' }),
   })
-  const changes = submissionSection.getByRole('group', {
+  // The summary renders inside the submit form, above its fields.
+  const changes = submissionSection.locator('form').getByRole('group', {
     name: 'Settings for submission season Playground',
   })
   await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()

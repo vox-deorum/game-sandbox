@@ -43,7 +43,7 @@ const groupLabel = computed(() => `Settings for ${props.context} ${formatSeasonN
   align-items: baseline;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: var(--space-3) 0 0;
+  margin: var(--space-1) 0;
   font-size: var(--text-sm);
 }
 

@@ -252,8 +252,11 @@ const currentSeasonSubmission = computed(() => {
     ) ?? null
   )
 })
-const currentSeasonStatus = computed(() =>
-  currentSeasonSubmission.value === null ? null : statusBadge(currentSeasonSubmission.value),
+/** The submission badge for the open season: the active submission's status, or "Not submitted". */
+const currentSeasonStatus = computed<{ label: string; tone: SubmissionStatusTone }>(() =>
+  currentSeasonSubmission.value === null
+    ? { label: 'Not submitted', tone: 'warning' }
+    : statusBadge(currentSeasonSubmission.value),
 )
 
 // Public season metadata improves the header label, but it is owner-only and non-blocking. The short
@@ -581,25 +584,11 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
       <header id="current-season-banner" class="submit-head" tabindex="-1">
         <h2>Submit an Agent</h2>
         <p v-if="profile.submission_season_id !== null" class="submit-meta">
-          <span>Season: {{ currentSeasonName }}</span>
-          <span aria-hidden="true">·</span>
-          <UiStatusBadge
-            v-if="currentSeasonStatus?.tone === 'danger'"
-            v-bind="currentSeasonStatus"
-          />
-          <span v-else>
-            {{ currentSeasonStatus?.label ?? 'Not submitted' }}
-          </span>
+          <UiBadge>Season: {{ currentSeasonName }}</UiBadge>
+          <UiStatusBadge v-bind="currentSeasonStatus" />
         </p>
         <p v-else class="submit-none">No Season is accepting submissions right now.</p>
       </header>
-      <SeasonChanges
-        v-if="submissionSetup !== null"
-        :meta="submissionSetup.meta"
-        :settings="submissionSetup.settings"
-        context="submission season"
-        :season="submissionSetup.season"
-      />
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
       <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">
@@ -609,6 +598,15 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
           @accepted="refreshProfile"
           @settled="refreshProfile"
         >
+          <template #fields-before>
+            <SeasonChanges
+              v-if="submissionSetup !== null"
+              :meta="submissionSetup.meta"
+              :settings="submissionSetup.settings"
+              context="submission season"
+              :season="submissionSetup.season"
+            />
+          </template>
           <template #actions-before>
             <SetUpLocallyButton
               v-if="submissionSetup !== null"
@@ -968,9 +966,8 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-muted);
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
 }
 

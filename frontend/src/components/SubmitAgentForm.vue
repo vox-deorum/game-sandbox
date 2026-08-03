@@ -251,6 +251,8 @@ const isFailed = computed(
 <template>
   <UiCard>
     <form v-if="phase === 'form'" class="submit-form" @submit.prevent="onSubmit">
+      <slot name="fields-before" />
+
       <UiField
         label="Public Repository URL"
         hint="A public git repository containing your agent and its manifest. We verify it before validating and building your submission."

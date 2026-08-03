@@ -489,7 +489,7 @@ describe('AgentProfilePage', () => {
     expect(within(currentSeasonHeader).queryByText('Not submitted')).toBeNull()
   })
 
-  it('renders a non-failing current status as plain text', async () => {
+  it('renders a non-failing current status as a badge too', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile({
       env_id: 'flappy_bird',
@@ -501,7 +501,7 @@ describe('AgentProfilePage', () => {
     await screen.findByRole('heading', { name: 'Submit an Agent' })
     const currentSeasonHeader = document.getElementById('current-season-banner') as HTMLElement
     expect(within(currentSeasonHeader).getByText('ready to compete')).toBeInTheDocument()
-    expect(currentSeasonHeader.querySelector('.ui-status-badge')).toBeNull()
+    expect(currentSeasonHeader.querySelector('.ui-status-badge')).not.toBeNull()
   })
 
   it('shows submission season changes and offers local setup', async () => {
@@ -550,9 +550,10 @@ describe('AgentProfilePage', () => {
     const form = screen.getByLabelText('Public Repository URL').closest('form')
     expect(form).toContainElement(localSetup)
     expect(await screen.findByText('Season: Week 4')).toBeInTheDocument()
-    expect(
+    // The summary sits in the form itself, above the fields, not loose in the page section.
+    expect(form).toContainElement(
       screen.getByRole('group', { name: 'Settings for submission season Week 4' }),
-    ).toBeInTheDocument()
+    )
   })
 
   it('says when the submission season uses the environment defaults', async () => {
@@ -599,7 +600,8 @@ describe('AgentProfilePage', () => {
     })
 
     expect(await screen.findByText('Season: Season iteratio')).toBeInTheDocument()
-    expect(screen.getByText('Not submitted')).toBeInTheDocument()
+    // The unsubmitted state is a status badge, like every other current-season status.
+    expect(screen.getByText('Not submitted').closest('.ui-status-badge')).not.toBeNull()
   })
 
   it('shows the no-accepting-season state once instead of duplicating a closed-form notice', async () => {
