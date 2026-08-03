@@ -171,7 +171,7 @@ describe('LeaderboardsPage', () => {
     expect(screen.getByText('2 submissions')).toBeInTheDocument()
     expect(screen.getByText('12 games run')).toBeInTheDocument()
     expect(screen.getByText('Settings:')).toBeInTheDocument()
-    expect(screen.getByRole('list', { name: 'Settings for season Week 1' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Settings for season Week 1' })).toBeInTheDocument()
     expect(screen.getByText('Pipe gap from 100 to 90')).toBeInTheDocument()
 
     // The automated board shows the weighted mean agent compute time as its own column, with the

@@ -55,10 +55,7 @@ export function resolveSeasonParameters(
  * Public reads keep a season available when stored parameter overrides drift: rejected values use
  * environment defaults, while this warning records the operator action needed to correct them.
  */
-export function warnForParameterDrift(
-  seasonId: string | undefined,
-  resolved: SeasonParameters,
-): void {
+export function warnForParameterDrift(seasonId: string, resolved: SeasonParameters): void {
   if (resolved.issue === undefined) return
   // The app is built with `logger: false`, so `request.log` would discard this.
   console.warn(

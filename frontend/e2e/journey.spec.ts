@@ -33,7 +33,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   const playSection = page.locator('section').filter({
     has: page.getByRole('heading', { name: 'Open for Play: Playground' }),
   })
-  const changes = playSection.getByRole('list', { name: 'Settings for play season Playground' })
+  const changes = playSection.getByRole('group', { name: 'Settings for play season Playground' })
   await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()
   await expect(changes.getByText('100 → 90', { exact: true })).toBeVisible()
   await expect(changes.getByText('Decision limit', { exact: true })).toBeVisible()
@@ -161,7 +161,7 @@ test('shows submission-season changes and downloads its local setup file', async
   const submissionSection = page.locator('section').filter({
     has: page.getByRole('heading', { name: 'Submit an Agent' }),
   })
-  const changes = submissionSection.getByRole('list', {
+  const changes = submissionSection.getByRole('group', {
     name: 'Settings for submission season Playground',
   })
   await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()

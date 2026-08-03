@@ -98,8 +98,11 @@ describe('SubmitAgentForm', () => {
     expect(actions).toContainElement(setup)
     expect(actions).toContainElement(verify)
     expect(actions).toContainElement(submit)
-    expect(setup.nextElementSibling).toBe(verify)
-    expect(verify.nextElementSibling).toBe(submit)
+    expect(
+      within(actions)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(['Set Up Locally', 'Verify reachability', 'Submit agent'])
   })
 
   it('keeps submit disabled until the repository verifies reachable', async () => {

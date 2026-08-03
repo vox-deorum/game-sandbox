@@ -59,6 +59,7 @@ import {
   formatRating,
   formatReplayLabel,
   formatScore,
+  formatSeasonName,
   shortId,
 } from '../lib/format.js'
 import { formatLlmCost } from '../lib/llm.js'
@@ -223,7 +224,7 @@ function toggle(seasonId: string, submissionId: string): void {
 /** A season's display label for the group caption, borrowed from any placement in that season. */
 const seasonCaption = (seasonId: string): string => {
   const placement = placements.value?.placements.find((p) => p.season_id === seasonId)
-  return placement?.season_label ?? `Season ${shortId(seasonId)}`
+  return formatSeasonName({ id: seasonId, label: placement?.season_label ?? null })
 }
 
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
@@ -279,13 +280,17 @@ watch(
   { immediate: true },
 )
 
-const currentSeasonName = computed(() => {
+/** The submission-open season's identity, named by the metadata read once that lands. */
+const currentSeason = computed(() => {
   const seasonId = profile.value?.submission_season_id
   if (seasonId === null || seasonId === undefined) {
     return null
   }
-  return currentSeasonMetadata.value?.label ?? `Season ${shortId(seasonId)}`
+  return { id: seasonId, label: currentSeasonMetadata.value?.label ?? null }
 })
+const currentSeasonName = computed(() =>
+  currentSeason.value === null ? null : formatSeasonName(currentSeason.value),
+)
 
 // Local setup belongs to the submission window, not the independent play season. The settings
 // endpoint is a supplementary public read, so a failed request leaves submission usable.
@@ -308,6 +313,17 @@ watch(
   },
   { immediate: true },
 )
+
+// The settings summary and the local-setup action need the same three pieces, so one readiness check
+// decides both rather than each control repeating the condition.
+const submissionSetup = computed(() => {
+  const settings = submissionSeasonSettings.value
+  const environment = meta.value
+  const season = currentSeason.value
+  return settings === null || environment === null || season === null
+    ? null
+    : { settings, meta: environment, season }
+})
 
 const developmentAccess = ref<LlmDevelopmentSummary | null>(null)
 const developmentRequest = useLatestRequest()
@@ -540,8 +556,7 @@ const authorPromptFor = (seasonId: string): string | null =>
   profile.value?.author_prompts[seasonId] ?? null
 
 /** A placement's season name, falling back to a short id when the season has no label. */
-const seasonLabel = (label: string | null, id: string): string =>
-  label ?? `Season ${id.slice(0, 8)}`
+const seasonLabel = (label: string | null, id: string): string => formatSeasonName({ id, label })
 </script>
 
 <template>
@@ -579,12 +594,11 @@ const seasonLabel = (label: string | null, id: string): string =>
         <p v-else class="submit-none">No Season is accepting submissions right now.</p>
       </header>
       <SeasonChanges
-        v-if="submissionSeasonSettings !== null && meta !== null"
-        :meta="meta"
-        :settings="submissionSeasonSettings"
-        :list-label="`Settings for submission season ${
-          submissionSeasonSettings.season_label ?? currentSeasonName ?? 'current season'
-        }`"
+        v-if="submissionSetup !== null"
+        :meta="submissionSetup.meta"
+        :settings="submissionSetup.settings"
+        context="submission season"
+        :season="submissionSetup.season"
       />
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
@@ -597,9 +611,9 @@ const seasonLabel = (label: string | null, id: string): string =>
         >
           <template #actions-before>
             <SetUpLocallyButton
-              v-if="submissionSeasonSettings !== null && meta !== null"
-              :meta="meta"
-              :settings="submissionSeasonSettings"
+              v-if="submissionSetup !== null"
+              :meta="submissionSetup.meta"
+              :settings="submissionSetup.settings"
             />
           </template>
         </SubmitAgentForm>

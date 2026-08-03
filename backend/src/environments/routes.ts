@@ -50,12 +50,15 @@ export function registerEnvironmentRoutes(app: FastifyInstance, deps: Environmen
         return reply.code(404).send({ error: 'no such environment' })
       }
       const season = await deps.storage.getPublicPlaySeason(meta.env_id)
+      if (season === undefined) {
+        return { season_id: null, values: resolveSeasonParameters(meta, {}).values }
+      }
       const resolved = resolveSeasonParameters(
         meta,
-        season === undefined ? {} : decodeSeasonConfig(season.config).overrides?.parameters,
+        decodeSeasonConfig(season.config).overrides?.parameters,
       )
-      warnForParameterDrift(season?.id, resolved)
-      return { season_id: season?.id ?? null, values: resolved.values }
+      warnForParameterDrift(season.id, resolved)
+      return { season_id: season.id, values: resolved.values }
     },
   )
 

@@ -30,7 +30,7 @@ import SeasonChanges from '../components/SeasonChanges.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { formatDate } from '../lib/format.js'
+import { formatDate, formatSeasonName } from '../lib/format.js'
 import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
@@ -58,20 +58,18 @@ const requestedSeasonId = computed(() => {
   return typeof raw === 'string' && raw !== '' ? raw : undefined
 })
 
-function seasonLabel(view: { id: string; label: string | null }): string {
-  return view.label ?? `Season ${view.id.slice(0, 8)}`
-}
-
 /** The activity counts for the season in view, looked up in the released history (absent for an
  * operator-only unreleased preview, which never appears in the public list). */
 const currentCounts = computed(() =>
   season.value === null ? undefined : history.value.find((entry) => entry.id === season.value?.id),
 )
-const hasLeaderboardMetadata = computed(
-  () =>
-    currentCounts.value !== undefined ||
-    (!operatorPreview.value && season.value?.released_at !== null && season.value?.released_at !== undefined),
-)
+/** The release line, absent while an operator previews a season the public cannot see yet. */
+const releasedText = computed(() => {
+  const releasedAt = season.value?.released_at
+  return operatorPreview.value || releasedAt === null || releasedAt === undefined
+    ? null
+    : `released ${formatDate(releasedAt)}`
+})
 
 async function load(): Promise<void> {
   loading.value = true
@@ -147,15 +145,13 @@ watch(requestedSeasonId, load, { immediate: true })
     <header class="leaderboards-header">
       <h1>Leaderboards</h1>
       <h2 v-if="season !== null" class="leaderboards-sub">
-        Season: {{ seasonLabel(season) }}
+        Season: {{ formatSeasonName(season) }}
         <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
       </h2>
-      <p v-if="hasLeaderboardMetadata && season !== null" class="leaderboards-metadata">
-        <span v-if="!operatorPreview && season.released_at !== null">
-          released {{ formatDate(season.released_at) }}
-        </span>
+      <p v-if="releasedText !== null || currentCounts !== undefined" class="leaderboards-metadata">
+        <span v-if="releasedText !== null">{{ releasedText }}</span>
         <template v-if="currentCounts !== undefined">
-          <span v-if="!operatorPreview && season.released_at !== null" aria-hidden="true"> · </span>
+          <span v-if="releasedText !== null" aria-hidden="true"> · </span>
           <span>{{ currentCounts.submission_count }} submissions</span>
           <span aria-hidden="true"> · </span>
           <span>{{ currentCounts.game_count }} games run</span>
@@ -165,7 +161,8 @@ watch(requestedSeasonId, load, { immediate: true })
         v-if="settings !== null && meta !== null && season !== null"
         :meta="meta"
         :settings="settings"
-        :list-label="`Settings for season ${seasonLabel(season)}`"
+        context="season"
+        :season="season"
       />
     </header>
 
@@ -213,7 +210,7 @@ watch(requestedSeasonId, load, { immediate: true })
                 class="history-link"
                 :to="`/environments/${envId}/leaderboards/${entry.id}`"
               >
-                {{ seasonLabel(entry) }}
+                {{ formatSeasonName(entry) }}
               </RouterLink>
             </td>
             <td>{{ entry.released_at !== null ? formatDate(entry.released_at) : '—' }}</td>

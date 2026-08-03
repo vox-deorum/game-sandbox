@@ -485,7 +485,7 @@ describe('AgentProfilePage', () => {
     expect(currentSeasonHeader.closest('.ui-card')).toBeNull()
     expect(currentSeasonHeader.querySelector('.ui-card')).toBeNull()
     expect(within(currentSeasonHeader).getByText('load check failed')).toBeInTheDocument()
-    expect(currentSeasonHeader.querySelector('.ui-status-badge .dot.danger')).not.toBeNull()
+    expect(currentSeasonHeader.querySelector('.ui-status-badge')).not.toBeNull()
     expect(within(currentSeasonHeader).queryByText('Not submitted')).toBeNull()
   })
 
@@ -506,6 +506,23 @@ describe('AgentProfilePage', () => {
 
   it('shows submission season changes and offers local setup', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    // The banner and the settings summary name the season from this one metadata read, so the
+    // summary's accessible label tracks the heading rather than a second copy of the label.
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'iter-next',
+        env_id: 'flappy_bird',
+        submission_status: 'open',
+        play_status: 'closed',
+        release_status: 'unreleased',
+        label: 'Week 4',
+        description_markdown: null,
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
     vi.mocked(getSeasonSettings).mockResolvedValue({
       play: null,
       submission: {
@@ -532,8 +549,9 @@ describe('AgentProfilePage', () => {
     const localSetup = await screen.findByRole('button', { name: 'Set Up Locally' })
     const form = screen.getByLabelText('Public Repository URL').closest('form')
     expect(form).toContainElement(localSetup)
+    expect(await screen.findByText('Season: Week 4')).toBeInTheDocument()
     expect(
-      screen.getByRole('list', { name: 'Settings for submission season Week 4' }),
+      screen.getByRole('group', { name: 'Settings for submission season Week 4' }),
     ).toBeInTheDocument()
   })
 

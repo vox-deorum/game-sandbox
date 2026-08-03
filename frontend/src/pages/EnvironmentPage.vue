@@ -106,17 +106,6 @@ const playableSeason = computed(() => {
     ? null
     : publicSeasons.value.find((season) => season.id === seasonId) ?? null
 })
-const playSeasonSettingsLabel = computed(() => {
-  const settings = playSeasonSettings.value
-  if (settings === null) {
-    return 'Settings for play season'
-  }
-  const season = playableSeason.value ?? {
-    id: settings.season_id,
-    label: settings.season_label,
-  }
-  return `Settings for play season ${formatSeasonName(season)}`
-})
 // The peer play and rate section names the season its runs are played under, so the viewer knows
 // which settings and which roster of agents they are watching and rating.
 const playSectionHeading = computed(() =>
@@ -128,17 +117,13 @@ const playSectionHeading = computed(() =>
 // The last released season — the one whose boards are embedded below, named in the section heading
 // ("Leaderboard: <season>"); with nothing released the heading stays the plain plural.
 const releasedSeason = computed(() => leaderboards.value?.current?.season ?? null)
-// When the open play season is also the released season, its settings belong beside the play entry
-// point. If that optional play-settings read fails, preserve the embedded leaderboard's copy.
-const releasedSeasonSettings = computed(() => {
-  const settings = leaderboards.value?.current?.settings ?? null
-  return releasedSeason.value?.id === playSeasonSettings.value?.season_id ? null : settings
+// The released season and the settings its boards were played under, for the summary in the boards
+// section. When the open play season is also the released season, that summary belongs beside the
+// play entry point instead; if the optional play-settings read fails, this copy stays as the fallback.
+const releasedSeasonSummary = computed(() => {
+  const current = leaderboards.value?.current ?? null
+  return current === null || current.season.id === playSeasonSettings.value?.season_id ? null : current
 })
-const releasedSeasonSettingsLabel = computed(() =>
-  releasedSeason.value === null
-    ? 'Settings for leaderboard season'
-    : `Settings for leaderboard season ${formatSeasonName(releasedSeason.value)}`,
-)
 const boardsHeading = computed(() =>
   releasedSeason.value === null
     ? 'Leaderboards'
@@ -330,7 +315,8 @@ async function submitStart(payload: StartPayload): Promise<void> {
         v-if="playSeasonSettings !== null"
         :meta="meta"
         :settings="playSeasonSettings"
-        :list-label="playSeasonSettingsLabel"
+        context="play season"
+        :season="{ id: playSeasonSettings.season_id, label: playSeasonSettings.season_label }"
       />
     </section>
 
@@ -366,10 +352,11 @@ async function submitStart(payload: StartPayload): Promise<void> {
         </RouterLink>
       </div>
       <SeasonChanges
-        v-if="releasedSeasonSettings !== null"
+        v-if="releasedSeasonSummary !== null"
         :meta="meta"
-        :settings="releasedSeasonSettings"
-        :list-label="releasedSeasonSettingsLabel"
+        :settings="releasedSeasonSummary.settings"
+        context="leaderboard season"
+        :season="releasedSeasonSummary.season"
       />
       <LeaderboardBoards
         v-if="leaderboards?.current != null"

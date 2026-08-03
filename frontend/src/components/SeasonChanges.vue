@@ -3,21 +3,28 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed } from 'vue'
 
 import type { ResolvedSeasonSettings } from '../api/client.js'
+import { formatSeasonName } from '../lib/format.js'
 import { describeSeasonChanges } from '../lib/season-settings.js'
 
 const props = defineProps<{
   meta: EnvironmentMeta
   settings: ResolvedSeasonSettings
-  listLabel: string
+  /** The section this summary sits in, as it reads in the group label: "play season", "season". */
+  context: string
+  /** The season these settings resolve to, named after the context in the same label. */
+  season: { id: string; label: string | null }
 }>()
 
 const changes = computed(() => describeSeasonChanges(props.meta, props.settings))
+// Several summaries can share a page, so the group names the season it describes. The list inside
+// inherits that name from the group and stays unlabelled, which keeps the announcement to one pass.
+const groupLabel = computed(() => `Settings for ${props.context} ${formatSeasonName(props.season)}`)
 </script>
 
 <template>
-  <div class="season-settings" role="group" :aria-label="listLabel">
+  <div class="season-settings" role="group" :aria-label="groupLabel">
     <span class="season-settings-label">Settings:</span>
-    <ul v-if="changes.length > 0" class="season-changes" :aria-label="listLabel">
+    <ul v-if="changes.length > 0" class="season-changes">
       <li v-for="change in changes" :key="change.label">
         <span class="season-change-visual" aria-hidden="true">
           <span class="season-change-label">{{ change.label }}</span>

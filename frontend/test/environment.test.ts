@@ -214,7 +214,7 @@ describe('EnvironmentPage', () => {
     })
     await renderPage()
     await screen.findByText('Game limit')
-    const changes = screen.getByRole('list', { name: 'Settings for play season Season iter-1' })
+    const changes = screen.getByRole('group', { name: 'Settings for play season Season iter-1' })
     expect(within(changes).getByText('Pipe gap')).toBeInTheDocument()
     expect(within(changes).getByText('100 → 90')).toBeInTheDocument()
     expect(within(changes).getByText('Decision limit')).toBeInTheDocument()
@@ -266,7 +266,7 @@ describe('EnvironmentPage', () => {
       screen.getByRole('group', { name: 'Settings for play season Playground' }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('list', { name: 'Settings for leaderboard season Partnership Cup' }),
+      screen.queryByRole('group', { name: 'Settings for leaderboard season Partnership Cup' }),
     ).toBeNull()
   })
 
@@ -306,9 +306,9 @@ describe('EnvironmentPage', () => {
     await renderPage()
 
     expect(
-      await screen.findByRole('list', { name: 'Settings for leaderboard season Partnership Cup' }),
+      await screen.findByRole('group', { name: 'Settings for leaderboard season Partnership Cup' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Settings for play season Playground' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Settings for play season Playground' })).toBeNull()
   })
 
   it('keeps contextual all-default summaries distinct for play and leaderboard seasons', async () => {
