@@ -32,7 +32,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 
 ### Fixtures and tests
 
-`scripts/gen_tactical_fixture.py` on the `_fixture_common` pattern generates two recordings into `frontend/test/fixtures/`: a plain skirmish at Season 1 defaults and a full-variant army. The army fixture doubles as the perf-test input.
+`scripts/gen_tactical_fixture.py` on the `_fixture_common` pattern generates two recordings into `frontend/test/fixtures/`: a plain skirmish at Season 1 defaults and a full-variant army. The army fixture doubles as the perf-test input. Beside each recording, it writes a compact test-only legality file. Its first entry is the opening state: the live-only pre-action frame is not recorded, so this entry carries that whole state, overlay included, and the generator drives an `Episode` and calls `opening_state()` rather than going through `run_and_copy`. Every later entry points into the recording by tick and repeats the overlay's `current_activation`. Each entry stores the expected path and target masks as Base64-encoded bit vectors. These legality files are test artifacts only: they do not appear in production recording headers, recordings, or live streams.
 
 ### Spec and docs reconciliation
 
@@ -46,6 +46,7 @@ Registration makes tactical the platform's first shipped Dict-action environment
 
 - The shared conformance suite green with tactical registered, including the authoring-shape and renderer-ownership checks.
 - Scene tests (vitest, jsdom) against both fixtures: hex layout and geometry, terrain and feature mapping, void surround, unit placement and hit points, zone drawing, activation highlight, HUD values, seek determinism (same state, same scene).
+- Fixture tests verify the opening legality entry and every actionable recorded state. Production recordings remain free of legality data and stay within the recording-size budget.
 - A perf smoke on the army fixture in the typescript lane: scene computation across the full recording within a pinned time budget.
 - The Playwright spectate journey above, in CI.
 

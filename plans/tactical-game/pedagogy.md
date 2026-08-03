@@ -51,7 +51,7 @@ The arc across the six seasons: Season 1 builds the first tactical blocks (small
 
 - What unlocks: the map holds three objectives at once, so the army must split and reconsider assignments as objectives change hands. This is the course's first training season.
 - Design issue: replacing repeated local strategic search with a learned assignment policy that can choose a tactical block and goal quickly for each unit instance.
-- Core techniques: imitation learning over the Season 4 decentralized strategic interface, using decisions from the student's Season 4 search agent or human play as demonstrations. Human play can control any of the seat's units, so those demonstrations cover the controlled units' decision streams. Agent-generated demonstrations can cover every unit role.
+- Core techniques: imitation learning over the Season 4 decentralized strategic interface, using decisions from the student's Season 4 search agent or human play as demonstrations. Human play can control the seat's primary unit or the whole seat, so those demonstrations cover the primary unit's stream or every unit's stream. Agent-generated demonstrations can cover every unit role.
 - Optional: an early start on reinforcement learning ahead of Season 6.
 - Evaluation: ladder plus baselines. Advise a modest compute cap; scripted submissions remain fully legitimate. Rating, e.g. "Watch one match: could you spot the plan, who was sent where and why, 1-5?"
 

@@ -32,7 +32,9 @@ Dead-step choreography exactly as the spec's Match flow section: a killed player
 
 ### Overlay
 
-Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode records to at most 10 MB. The budget deliberately forces tight encoding; candidates are one character per tile combining terrain and feature, flat unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation.
+Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode records to at most 10 MB. The budget deliberately forces tight encoding; candidates are one character per tile combining terrain and feature, flat unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
+
+`current_activation` follows the [environment spec](../environment.md#rendering-and-human-input). The dead-step choreography above is what makes it subtle: derive it from the engine's next living activation rather than from `agent_selection`, which also names players queued for cleanup.
 
 ### Chat policy and metadata
 
@@ -59,7 +61,14 @@ Seasons 1 and 2 silence messaging through the season override, which can only di
 
 ### Naive
 
-Deterministic and mask-driven: choose the walkable path whose final tile minimizes hex distance to the nearest visible enemy, name no target, and let the mandatory strike fight; stay when no path improves the distance. Weak on purpose; it is the platform baseline, not an anchor.
+Naive is a small, intentionally imperfect baseline. Each instance remembers its own starting tile and treats the point-reflected tile as a rough goal on the enemy side. Every random choice comes from a generator seeded in `reset(seed)`, the seed the environment also receives, so a seeded episode replays exactly.
+
+Each activation, mask-driven throughout:
+
+- With an enemy visible, greedily + randomly choose one of the tiles that will make the resulting distance closer.
+- With no enemy visible, consider legal one-step moves only. Choose at random among those that reduce hex distance to the goal, or among all of them when none do. Stay only when no one-step move is legal.
+
+Naive never names a target and leaves strikes to automatic resolution.
 
 ## Tests
 
@@ -69,10 +78,10 @@ Under `environments/tactical_game/tests/`, mirroring the shared conformance suit
 - The Text-space spike, first.
 - Emitted masks agree with the engine: a sampled set of masked-1 paths walk successfully, masked-0 paths and targets are rejected by `env.step()`, and the stay and none bits are always 1.
 - Dead-step choreography, complete final results for all of `possible_agents`, and the truncation path at a small round_cap.
-- Seeded golden rollouts at both plans: same seed, same actions, identical recordings.
+- Seeded golden rollouts at both plans: same seed and scripted actions produce identical recordings.
 - The recording-size test: a full-variant 6000-tick army episode through `run_episode` stays at or under 10 MB.
 - A season-table test: every row of the spec's season schedule resolves as a valid parameter payload via `resolve_parameters` against the declared parameters.
-- Naive plays full legal games at both plans, deterministically.
+- Naive plays full legal games at both plans. Its actions are legal, it takes a one-step move whenever no enemy is visible and one is legal, it pursues visible enemies without naming targets, and two runs at one seed match while different seeds diverge.
 
 ## Done when
 

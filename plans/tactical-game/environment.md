@@ -55,7 +55,7 @@ capture_target stays 200 and round_cap stays 1000 in every season.
 
 ## Match flow
 
-`reset(seed)` generates the battlefield and rosters and draws round 1's activation order. The seed fully determines the match, per the ruleset's determinism rule.
+`reset(seed)` generates the battlefield and rosters and draws round 1's activation order. The same seed and action sequence reproduce the same match, per the ruleset's determinism rule.
 
 One living-unit activation is exactly one real `env.step()`. `agent_selection` walks the round's activation order. The round's last real step also runs capture scoring, checks the end conditions, and draws the next round's order when the match continues.
 
@@ -87,13 +87,13 @@ One action is one complete ruleset order: the unit walks the path, then strikes 
 | 5     | west      | -1, 0  |
 | 6     | northwest | 0, -1  |
 
-Digits run clockwise from northeast, so opposite directions differ by 3: reversing a path adds 3 to each digit modulo 6.
+Digits run clockwise from northeast, so a direction's opposite is found by adding 3 and wrapping 7, 8, and 9 back to 1, 2, and 3. Rotating a path through 180 degrees keeps the digit order and opposes each digit. Retracing a path reverses the digit order and opposes each digit, so `[1, 2]` retraces as `[5, 4]`.
 
 Four directions per path suffice: the highest movement stat is 4 and every step costs at least 1, so no unit can execute a fifth step. A path value is legal exactly when the unit can walk the complete path from the current state under the movement rules, and stay is always legal. A target value is legal exactly when its roster slot is alive and visible at activation, and none is always legal. The components are independent by construction: range is checked only at resolution, from the path's final tile, and an out-of-range name falls to the ruleset's automatic strike, so every combination of individually legal component values is legal, which is what the platform requires of a `Dict` action space.
 
 Every observation carries an authoritative action mask with one binary vector per action component. The stay bit and the none bit are always 1, and the remaining path and target bits mark exactly the walkable paths and the nameable targets. A target masked 1 is nameable, not a guaranteed strike. `env.step()` rejects an action outside the `Dict` space and rejects one any of whose components is masked 0. Such an action is an illegal participant action. The environment entry's `default_action(env, player_id)` returns `{"path": 0, "target": 0}`, stand still, which is legal in every reachable state and is what the harness uses for a late or missing action. Per the ruleset, that order still strikes when enemies are in range, so a late or crashed agent fights back automatically.
 
-Target values index the acting player's enemy roster in player order, value i naming slot i - 1, so the same value names a different unit for Red and Blue. The agent template ships `move(path, target_id=None, observation=None)` and `stay(target_id=None, observation=None)` helpers that return action Dicts, resolving a target id to its roster slot through the observation. It also provides `legal_paths(observation)` and `nameable_targets(observation)`, both driven by the authoritative mask rather than by a second implementation of the rules.
+Target values index the acting player's enemy roster in player order, value i naming slot i - 1, so the same value names a different unit for Red and Blue. The agent template ships `encode_path(directions)` and `decode_path(path_id)` for the complete 0 through 1554 codec. An empty path uses 0, and invalid directions or ids raise `ValueError`. Its `move(path_id, target_id=None, observation=None)` and `stay(target_id=None, observation=None)` helpers return action Dicts and resolve a target id to its roster slot through the observation. It also provides `legal_paths(observation)` and `nameable_targets(observation)`, both driven by the authoritative mask rather than by a second implementation of the rules.
 
 ## Observations
 
@@ -154,9 +154,13 @@ The `tactical-field` renderer draws only from the semantic overlay. The overlay 
 - The battlefield, capture zones, round, capture scores, living units, current activation, and the visible-unit ids for each living player.
 - The most recent resolved move, attack, damage, death, and capture-score changes for optional animation.
 
-On a human turn, the renderer displays only the units listed as visible to the acting controlled player. It computes that player's walkable paths and nameable targets from the overlay state, lets the human compose a path and optionally name a target, and sends the matching action Dict. Spectators and replay viewers may display the complete battlefield and receive no action sender.
+The production overlay contains no observations, action masks, or legal-choice lists. `current_activation` identifies the next living player who can take a real action. PettingZoo cleanup selections never appear as activations, and `current_activation` is null only after the match ends.
 
-A human controls either one player in the selected seat or the whole side; all players are declared human-capable. When the human controls one player, the seat's other members use separately constructed instances of the selected companion agent. A human controlling the whole side needs no companion.
+The renderer reads the players this viewer controls from `controlledPlayers`, and their seat from the recording header's seat map. On a human-controlled player's turn, it shows that player's perspective. On a companion's turn, it shows the companion's perspective. On an opponent's turn, it shows the union of the visible sets of every living player on the human's side. Spectators, replays, and terminal states show the complete board.
+
+On a human turn, the renderer computes the acting controlled player's walkable paths and nameable targets from the overlay state, lets the human compose a path and optionally name a target, and sends the matching action Dict. Range helps explain likely strike results but never filters nameable targets: every living visible enemy is nameable. Spectators and replay viewers receive no action sender.
+
+A human controls either the primary player in the selected seat or the whole side; all players are declared human-capable. When the human controls the primary player, the seat's other members use separately constructed instances of the selected companion agent. A human controlling the whole side needs no companion.
 
 ## Platform metadata
 
@@ -183,11 +187,11 @@ A human controls either one player in the selected seat or the whole side; all p
 
 The four builtins are separately declared agents. `naive` is the platform baseline required on every board, while bronze, silver, and gold are the instructor anchors used by the course. The first implementation ships `naive` alone; the anchors are later work, added before the course needs them. Season configurations may assign any declared builtin to an unrestricted seat.
 
-All players are human-capable so a student can control one of a side's units, with a companion agent filling the rest, or the whole side. Season 5 may use the controlled units' decision streams as one source of imitation-learning demonstrations ([pedagogy.md](pedagogy.md)), covering one unit's stream or the whole side's; agent-generated demonstrations cover the rest. Compute limits are environment defaults a season may override.
+All players are human-capable so a student can control a side's primary unit, with a companion agent filling the rest, or the whole side. Season 5 may use the controlled units' decision streams as one source of imitation-learning demonstrations ([pedagogy.md](pedagogy.md)), covering the primary unit's stream or the whole side's; agent-generated demonstrations cover the rest. Compute limits are environment defaults a season may override.
 
 ## Package and student materials
 
-The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's tactical helper module owns the stable path encoding and has pin tests against the environment decoder. Environment tests cover rules, deterministic seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and the environment's masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
+The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's tactical helper module owns the stable path encoding and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
 
 ## Conformance notes
 

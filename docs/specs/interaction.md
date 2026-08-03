@@ -28,7 +28,7 @@ Each state contains:
 
 - A **tick** that numbers completed environment transitions; tick and step refer to the same event.
 - One or more player entries, each carrying the action when one was applied, the immediate reward, the cumulative score, and optional timing.
-- Environment-specific overlay data needed for rendering, including semantic legal choices when a human can act.
+- Environment-specific overlay data needed for rendering and human input. An overlay may list semantic legal choices when a human can act, or provide the semantic state the renderer needs to derive them.
 - Messages admitted on that step boundary.
 - Chat options for the [designated human player](#human-play) while that player remains active.
 - Optional observations and action details when an environment chooses to expose them.
@@ -95,7 +95,7 @@ Sequential human players have a timeout separate from agent compute limits. In s
 
 ## Human play
 
-A human play session designates one human-controlled seat. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the primary human player. A singleton seat needs nothing else. On a wider unrestricted seat, the person explicitly chooses either one companion agent for every other member or to play every member themself. Self-play is available only when every member is listed in `human_players`. A companion runs as a separately constructed instance for each player it controls. See [Environments](environment.md#players-and-seats).
+A human play session designates one human-controlled seat. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the primary human player. A singleton seat needs nothing else. On a wider unrestricted seat, the person chooses a companion agent for every other member or plays every member themself. Self-play is available only when every member is listed in `human_players`. A companion runs as a separately constructed instance for each player it controls. See [Environments](environment.md#players-and-seats).
 
 A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies on each human-controlled player's turn, and step and episode compute limits remain per agent-controlled player. Chat continues to use the primary human player as its designated sender. See [restricted seats](environment.md#builtin-agents-and-restricted-seats).
 
@@ -120,7 +120,7 @@ An environment may expose human-capable players, and a seat is offered to a huma
 
 A renderer may use both types of input. It maps each gesture to an action in the environment's action space and sends that action with the player ID. Spectators and replay viewers cannot send input.
 
-The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and binary `action_mask` received by an agent. They are not required fields in every emitted state. For human input, the semantic overlay supplies the currently legal choices. The renderer uses those choices to present only legal controls, such as by disabling illegal ones, instead of calculating rules in the browser.
+The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and binary `action_mask` received by an agent. They are not required fields in every emitted state. For human input, the semantic overlay either supplies the currently legal choices or provides the semantic state from which the renderer derives them. The renderer presents only legal controls, such as by disabling illegal ones.
 
 Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to the environment's action shape only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That default action is played and recorded like any other move.
 

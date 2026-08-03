@@ -11,13 +11,13 @@ The game is one environment plus four variants: terrain, abilities, messages, an
 - A tile has six neighbors, one per direction: east (+1, 0), west (-1, 0), northeast (+1, -1), northwest (0, -1), southeast (0, +1), southwest (-1, +1).
 - Range and vision use hex distance: (|dq| + |dr| + |dq + dr|) / 2. Each neighbor is at distance 1.
 - A tile holds at most one unit.
-- The match seed determines the battlefield, the activation order of every round, and every automatic-strike draw. The same seed and the same unit code replay the identical battle.
+- The match seed derives two independent random streams: one for battlefield generation and one for match play. The match-play stream supplies round activation shuffles and automatic-strike draws in the order they occur. A scripted match with the same seed and orders replays identically.
 
 ## Rounds and activation
 
-A match is a sequence of rounds. Each round, every living unit activates exactly once, in an order shuffled from the match seed and redrawn every round. After the last activation of the round, capture zones score (capture variant) and the end conditions are checked.
+A match is a sequence of rounds. Each round, every living unit activates exactly once, in an order shuffled from the match-play stream and redrawn every round. After the last activation of the round, capture zones score (capture variant) and the end conditions are checked.
 
-On its activation, a unit first receives the current state and selects one order. It then receives its inbox through the chat hook. The unit's code must store any received messages in its own instance state, where they can inform its next activation. The game then resolves the selected order immediately: the walk, then the strike. Later activations in the same round see the result.
+On its activation, a unit first receives the current state and selects one order. It then receives its inbox through the chat hook. The unit's code must store any received messages in its own instance state, where they can inform its next activation. The game resolves the selected order as one activation: it walks, then strikes. Later activations in the same round see the result.
 
 ## The battlefield
 
@@ -70,7 +70,7 @@ The engine never plans a route. Turning a pathfinder's route into legal orders, 
 The strike resolves from the final tile:
 
 - If the named target is alive, was visible at the moment of activation, and is within the unit's attack range of the final tile, the unit strikes it.
-- Otherwise, with no target named or the named target out of reach, the unit strikes an enemy drawn uniformly, from the match seed, among the in-range enemies at minimum hex distance from the final tile.
+- Otherwise, with no target named or the named target out of reach, the unit strikes an enemy drawn uniformly from the in-range enemies at minimum hex distance from the final tile. This draw uses the match-play stream, so it can affect later shuffles and automatic strikes.
 - If no enemy is in range, no strike happens. The strike is otherwise mandatory: a unit avoids attacking only by ending out of range.
 - An attack always hits. Damage is the attacker's damage stat, plus the charge bonus if it applies, adjusted by hill, forest, and shield wall, and never below 1. Damage applies immediately, and a unit it kills never activates later in the round.
 
