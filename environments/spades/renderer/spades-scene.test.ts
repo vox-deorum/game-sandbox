@@ -363,6 +363,43 @@ describe('controllability and the move clock (live vs replay)', () => {
     expect(replay?.chips.some((c) => c.controllable)).toBe(false)
   })
 
+  it('routes a partner bid to the acting player and names that hand in the status', () => {
+    const scene = computeScene(
+      mkState(
+        overlay({
+          phase: 'bidding',
+          bids: [3, -1, -1, -1],
+          turn: 2,
+          turn_player: 'player_2',
+          legal_bids: ALL_BIDS,
+        }),
+      ),
+      { controlledPlayers: ['player_0', 'player_2'] },
+    )
+
+    expect(scene.status.message).toBe('Your bid (P2)')
+    // The panel above the chips names the acting hand too, so the two prompts never disagree.
+    expect(scene.bidPanel?.prompt).toBe('Choose your bid (P2)')
+    expect(scene.bidPanel?.chips.every((chip) => chip.player === 2)).toBe(true)
+    expect(scene.bidPanel?.chips.every((chip) => chip.controllable)).toBe(true)
+  })
+
+  it('names the acting partner during play', () => {
+    const scene = computeScene(
+      mkState(
+        overlay({
+          hands: [[], [], [TWO_CLUBS], []],
+          turn: 2,
+          turn_player: 'player_2',
+          legal_cards: [TWO_CLUBS],
+        }),
+      ),
+      { controlledPlayers: ['player_0', 'player_2'] },
+    )
+
+    expect(scene.status.message).toBe('Your turn (P2)')
+  })
+
   it('shows the move clock only on the controlled human turn (bidding counts), never in replay', () => {
     const onTurn = overlay({
       phase: 'bidding',
@@ -375,6 +412,14 @@ describe('controllability and the move clock (live vs replay)', () => {
         .moveClock?.seconds,
     ).toBe(60)
     expect(computeScene(mkState(onTurn), { humanTimeoutMs: 60_000 }).moveClock).toBeNull()
+
+    const partnerTurn = { ...onTurn, turn: 2, turn_player: 'player_2' }
+    expect(
+      computeScene(mkState(partnerTurn), {
+        controlledPlayers: ['player_0', 'player_2'],
+        humanTimeoutMs: 60_000,
+      }).moveClock,
+    ).toEqual({ x: 480, y: 173, seconds: 60 })
   })
 })
 

@@ -289,7 +289,11 @@ export abstract class CardTableRenderer<
           .map((c) => ({ ...c, controllable: false })),
         scene.viewPlayer,
       )
-      this.reconcileOpponents(before.opponents.filter((c) => cardKey(c.card) !== playedKey))
+      this.reconcileOpponents(
+        before.opponents
+          .filter((c) => cardKey(c.card) !== playedKey)
+          .map((c) => ({ ...c, controllable: false })),
+      )
       // The fourth card resolves the trick in the same step, so its fly-in chains into the sweep;
       // cards 1–3 have no sweep to chain to. When it chains, both phases are sized from one shared
       // budget so the fly-in plus the sweep finish inside the replay cadence (see playPhaseDurations).
@@ -485,9 +489,14 @@ export abstract class CardTableRenderer<
   private reconcileOpponents(opponents: readonly SceneCard[]): void {
     clear(this.opponentLayer)
     for (const card of opponents) {
-      const node = card.faceUp
-        ? this.makeCardFace(card.card, card.w, card.h, {})
-        : this.makeCardBack(card.w, card.h)
+      let node: Container
+      if (!card.faceUp) {
+        node = this.makeCardBack(card.w, card.h)
+      } else if (card.controlled) {
+        node = this.makeHandCard(card, `player_${card.player}`)
+      } else {
+        node = this.makeCardFace(card.card, card.w, card.h, {})
+      }
       node.position.set(card.x, card.y)
       this.opponentLayer.addChild(node)
     }
@@ -615,6 +624,9 @@ export abstract class CardTableRenderer<
 
       // Hover feedback: lift the card and ring it gold while the cursor is over it. Transient view
       // chrome, mutated on the node directly (it is rebuilt each state, so no stale hover leaks).
+      // The lift always runs toward the table centre, so it reads as raised from the bottom fan and
+      // from a self-controlled partner's row along the top.
+      const lift = card.y < HEIGHT / 2 ? HOVER_LIFT : -HOVER_LIFT
       const hoverRing = this.makeHoverRing(card.w, card.h)
       node.addChild(hoverRing)
       let hovered = false
@@ -624,7 +636,7 @@ export abstract class CardTableRenderer<
         }
         hovered = true
         hoverRing.visible = true
-        node.position.set(card.x, card.y - HOVER_LIFT)
+        node.position.set(card.x, card.y + lift)
       })
       node.on('pointerout', () => {
         hovered = false

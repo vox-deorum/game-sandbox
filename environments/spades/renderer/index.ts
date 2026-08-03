@@ -189,10 +189,8 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     prompt.position.set(panel.x, panel.y)
     this.gameLayer.addChild(prompt)
 
-    // A controllable chip sends its bid for the controlled player, which is at the bottom view position.
-    const playerId = `player_${scene.viewPlayer}`
     for (const chip of panel.chips) {
-      this.gameLayer.addChild(this.makeBidChip(chip, playerId))
+      this.gameLayer.addChild(this.makeBidChip(chip))
     }
   }
 
@@ -201,7 +199,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
    * veil when the chip is not in the mask, and — for a controllable chip — the hover feedback and the
    * click that sends the bid. Inert chips (a replay, an off-turn player) are draw-only.
    */
-  private makeBidChip(chip: SceneBidChip, playerId: string): Container {
+  private makeBidChip(chip: SceneBidChip): Container {
     const c = new Container()
     c.position.set(chip.x, chip.y)
     const radius = 8
@@ -230,7 +228,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
       c.on('pointerout', () => {
         hover.visible = false
       })
-      c.on('pointertap', () => sendAction(playerId, chip.action))
+      c.on('pointertap', () => sendAction(`player_${chip.player}`, chip.action))
     }
 
     const label = this.text(

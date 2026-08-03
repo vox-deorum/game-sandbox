@@ -37,7 +37,7 @@ Player-bounds layouts synthesize interchangeable seats and cannot restrict one o
 
 ### Per-player agent instances
 
-In watch and automated play, one selected agent is assigned to a seat and serves every player it covers. Each agent-controlled player receives a separately constructed instance of that agent. The same applies to every nonhuman seat member controlled by a companion agent. The platform provides no combined multi-player object or shared-state API. An environment that needs one agent to reason over several units must expose them through one player's observation and action. [Interaction](interaction.md#human-play) defines human and companion assignment, and [Execution](execution.md#from-submission-to-image) defines how submissions are staged for those instances.
+In watch and automated play, one selected agent is assigned to a seat and serves every player it covers. Each agent-controlled player receives a separately constructed instance of that agent. The same applies to every nonhuman seat member controlled by a companion agent. A self-played wide human seat has no companion instances. The platform provides no combined multi-player object or shared-state API. An environment that needs one agent to reason over several units must expose them through one player's observation and action. [Interaction](interaction.md#human-play) defines human and companion assignment, and [Execution](execution.md#from-submission-to-image) defines how submissions are staged for those instances.
 
 ### Choosing a layout
 

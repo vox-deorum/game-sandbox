@@ -6,9 +6,9 @@ Part of [Stage 15](../stage-15-wide-seats.md), build-order step 4.
 
 ## Outcome
 
-Spades offers a default two-seat partnership layout and an explicit four-seat solo layout. The session form, automated scheduler, workflow, standings, recordings, local play, and renderer all use the selected topology. One submission can control both players of a partnership without changing the environment's four-player PettingZoo contract. A human partnership seat instead has one designated human player and one explicitly chosen companion agent.
+Spades offers a default two-seat partnership layout and an explicit four-seat solo layout. The session form, automated scheduler, workflow, standings, recordings, local play, and renderer all use the selected topology. One submission can control both players of a partnership without changing the environment's four-player PettingZoo contract. In a browser session, a person can control both players of a human-capable partnership seat or explicitly choose a companion agent.
 
-The hands-on check starts and completes one human session and one season run on each plan. The partnership plan asks for two seat assignments, requires a companion choice for a human seat, produces two result rows, marks its wide seats across the table, and labels a decisive replay with its winning seat rather than as tied.
+The hands-on check starts and completes one human session and one season run on each plan. The partnership plan asks for two seat assignments, requires a self-control or agent-companion choice for a human seat, produces two result rows, marks its wide seats across the table, and labels a decisive replay with its winning seat rather than as tied.
 
 ## Spades metadata and factory
 
@@ -25,7 +25,7 @@ Update the maintainer local-play CLI with repeatable typed parameter overrides, 
 
 ## Session and workflow behavior
 
-The start API receives exactly two `seat_N` assignments for `partnership` and four for `solo`. An ordinary seat assignment names Naive or one submission. A human assignment names Human plus its companion agent when the resolved seat is wide. Backend validation resolves parameters first, then validates the exact seat set, requires at least one human-capable member for a human seat, derives the first such member as the designated human player, and requires a legal companion exactly when other members remain. The launch-config expansion from [step 3](3-results-and-binding.md) creates separate player instances for each partnership submission. For a human partnership seat it creates one external binding and independent companion bindings for the other players.
+The start API receives exactly two `seat_N` assignments for `partnership` and four for `solo`. An ordinary seat assignment names Naive or one submission. A wide human assignment names Human plus either self-control or a companion agent. Backend validation resolves parameters first, then validates the exact seat set. Self-control requires every member to be human-capable and makes all members external. An agent companion requires at least one human-capable member, makes the first such member the primary external player, and assigns independent companion bindings to the remaining players. The launch-config expansion from [step 3](3-results-and-binding.md) creates separate player instances for each partnership submission.
 
 The scheduler uses `layout.seatCount`:
 
@@ -46,7 +46,7 @@ Refactor `frontend/src/components/SeatAssignmentDialog.vue` around the resolved 
 - `2 players` for each Spades partnership seat.
 - The same pluralized pattern for an uneven future plan.
 
-Do not list member player ids in the assignment row. Emit the selected values as a `seats` object keyed by the layout's exact seat ids. A seat offers the human option when at least one member is listed in `human_players`; the backend and browser both derive the first capable member in declared seat order. Selecting Human for a wide seat reveals a required Companion agent control with the same Naive and submission choices as an ordinary agent assignment. Singleton human seats omit the companion field. The single-human-per-session limit remains unchanged.
+Do not list member player ids in the assignment row. Emit the selected values as a `seats` object keyed by the layout's exact seat ids. A seat offers the human option when at least one member is listed in `human_players`; the backend and browser both derive the first capable member in declared seat order. Selecting Human for a wide unrestricted seat reveals `Seat N's other players`, with `Play them yourself` when every member is human-capable plus the same Naive and submission choices as an ordinary agent assignment. Restricted wide seats keep their fixed companion behavior, singleton human seats omit the field, and the single-human-seat-per-session limit remains unchanged.
 
 Changing the `seat_plan` parameter rebuilds the grid from the new layout. Preserve an assignment and companion choice only when the seat id still exists and each selected option remains legal for the new layout. Clear any now-invalid selection, show the normal required-field state, and do not submit a stale two-seat assignment against the four-seat plan.
 
@@ -54,7 +54,7 @@ Add the count hint using existing field and text primitives plus semantic tokens
 
 ## Human turns and chat
 
-A human assigned to a partnership seat controls only the first human-capable member in declared seat order. The chosen companion agent acts for the other member using its own instance, state, action budget, and chat output. The normal move prompt and existing card interaction apply only when the designated human player acts. Only that player's turns receive `human_timeout_ms`.
+A human assigned to a partnership seat controls both members when self-control is selected. Both hands are face up, legal actions are interactive for the acting member, and both players' turns receive `human_timeout_ms`. With an agent companion, the person controls only the first human-capable member in declared order and the companion acts for the other member using its own instance, state, action budget, and chat output. Status and move-clock cues identify which controlled player is acting. Chat remains attached to the first controlled player in either mode.
 
 Add an optional live-state `chat_policy(sender)` hook on the running environment instance. It returns an ordered set of allowed direct recipients and a default recipient for the current game state. The hook is a runtime environment extension rather than serialized metadata. Broadcast is always available as `to: null` and cannot be removed by the hook. Without a hook, every other player in the resolved layout is an allowed direct recipient and broadcast is the default, preserving the current generic behavior. Validate that direct recipients are unique resolved players other than the sender and that the default is either broadcast or one of those recipients. A hook result that breaks those rules falls back to that same default and records a diagnostic, so a bug in an environment never ends a game. Spades implements the hook by placing the sender's partner first and making that partner the default, followed by the other direct recipients that its live state permits, while broadcast remains available.
 
@@ -62,7 +62,7 @@ Expose the current messaging contract for an external turn in step state as opti
 
 The harness is authoritative. It accepts human chat only from the current designated external actor. It accepts the current announced tick plus that sender's immediately preceding announced tick for one drain, which preserves a message that arrived just after its original drain while rejecting anything older. It applies the recipient policy published for each admitted opportunity and drops stale, spoofed, and disallowed messages with a diagnostic rather than charging an illegal move. It drains only the current human player's queue. The browser disables the composer as soon as it sends the turn's action. The relay's membership and message-cap checks remain an earlier validation layer, not proof that the message is legal in the current turn. Apply the same live recipient policy to agent chat output before relay delivery.
 
-Unit tests advance through the human, companion, and opposing players' turns. They verify that browser actions and chat are available only for the designated human player, that sending an action closes that chat opportunity, that the companion agent acts independently, that partner-direct and broadcast messages are accepted, that one frame racing its drain receives the one-turn grace, that older, spoofed, inactive-player, and policy-disallowed messages are dropped without failing a seat, and that a hook returning an illegal recipient set degrades to the no-hook default.
+Unit tests advance through self-controlled partners, human and companion players, and opposing players' turns. They verify that browser actions are available for every self-controlled player, chat remains available only for the primary player, sending an action closes that chat opportunity, the companion agent acts independently, partner-direct and broadcast messages are accepted, one frame racing its drain receives the one-turn grace, older, spoofed, inactive-player, and policy-disallowed messages are dropped without failing a seat, and a hook returning an illegal recipient set degrades to the no-hook default.
 
 ## Standings, recordings, and replay labels
 
@@ -106,8 +106,8 @@ Add the eligible submission count to the admin season payload `frontend/src/page
 
 This step settles the interface behavior, so it revises:
 
-- [Frontend](../../docs/specs/frontend.md): the seat grid with its player-count hint and explicit companion control, mixed human and companion attribution, seat-ranked standings and their member-player detail, and the season config editor's projected total. The replay label needs no edit: the file already states the rule in seat terms, and a genuine tie between two seats still earns the label.
-- [Interaction](../../docs/specs/interaction.md): deterministic designation of one human player, the required companion for remaining members, the human move clock, and harness validation of the sender and tick.
+- [Frontend](../../docs/specs/frontend.md): the seat grid with its player-count hint and explicit self-control or companion choice, mixed human and companion attribution, seat-ranked standings and their member-player detail, and the season config editor's projected total. The replay label needs no edit: the file already states the rule in seat terms, and a genuine tie between two seats still earns the label.
+- [Interaction](../../docs/specs/interaction.md): the ordered controlled-player list, the companion choices for remaining members, the human move clock, and harness validation of the sender and tick.
 - [Communication](../../docs/specs/communication.md): the live-state recipient hook and its fallback, guaranteed broadcast, the current sender and tick, dropping an invalid message rather than charging it, and harness enforcement for human and agent messages.
 
 Also revise `docs/contributors/environments/index.md` for the maintainer launcher's wide-seat `--companion` requirement, and revise `environments/spades/environment.md` to explain that direct choices come from live game state, the partner is the default direct target, and broadcast to everyone remains available.
@@ -117,7 +117,7 @@ Also revise `docs/contributors/environments/index.md` for the maintainer launche
 Backend and scheduler tests cover:
 
 - Default partnership and explicit solo parameter resolution.
-- Exact request shapes, companion requirements, deterministic human-player designation, and human capability for both plans.
+- Exact request shapes, self-control and companion requirements, ordered human-player selection, and human capability for both plans.
 - Ordered schedule contents for two and four seats, the all-Naive assignment, game repetition, and the pinned roster-20 totals.
 - Projection equality with materialized schedules across small ordered and unordered cases, including mixed Naive/submission seats and multiple match rows.
 - The eligible submission count query matching the run trigger's eligibility predicate at read time, the browser labelling it as an advisory page-load snapshot, visible typed projection failures, and safe-integer failure in the projection helper.
@@ -125,12 +125,12 @@ Backend and scheduler tests cover:
 - A partner crash forfeiting only its seat, while an unattributed fault forfeits both seats.
 - Correct board game counts, summed telemetry, mean score, winner id, and true-tie handling.
 
-Frontend unit tests cover plan switching, grid row counts, count hints, companion selection and invalidation, any-member human eligibility, mixed attribution, seat-ranked standings, member-player detail, blind labels, winner copy, the projected total updating as the draft changes, typed projection error reasons, the advisory roster note, and designated-player chat gating.
+Frontend unit tests cover plan switching, grid row counts, count hints, self-control and companion selection and invalidation, all-member self-control eligibility, mixed attribution, seat-ranked standings, member-player detail, blind labels, winner copy, the projected total updating as the draft changes, typed projection error reasons, the advisory roster note, and primary-player chat gating.
 
 Environment and renderer tests cover metadata-to-rule agreement, both local-play plans, `--seat` on a wide seat with its required `--companion` choice and the independent companion instance that follows, the Spades live-state chat policy, shared wide-seat marks, solo rendering, and all viewer rotations. Harness tests cover the human sender and tick checks, policy evaluation at drain time, broadcast, the same recipient checks for agent output, and a byte-identical recording across two runs of the same seeded session. A synthetic messaging environment with no hook pins every other resolved player in canonical player order as the direct choices and broadcast as the default in human `chat_options`, then exercises the same fallback against agent output. Regenerated recording fixtures cover both header maps and both result topologies.
 
-Revise the existing Playwright Hearts and Spades journeys for the renamed contracts. Add Spades journeys that start a human session on both plans, exercise the designated human turn and companion-controlled partner turn, send a partner-direct message and a broadcast, inspect mixed final standings and replay winner text, and verify the shared wide-seat mark. Run the real Docker-backed workflow integration on each plan and the full frontend end-to-end suite.
+Revise the existing Playwright Hearts and Spades journeys for the renamed contracts. Add Spades journeys that start a human session on both plans, exercise both hands in a self-controlled partnership and the human plus agent-companion path, send a partner-direct message and a broadcast, inspect mixed final standings and replay winner text, and verify the shared wide-seat mark. Run the real Docker-backed workflow integration on each plan and the full frontend end-to-end suite.
 
 ## Done when
 
-Spades runs through the admin console, workflow, browser, replay, and local play on either selected plan. Partnership mode assigns and ranks two seats, solo mode assigns and ranks four, the editor shows the exact projected game count before a run, and a human partnership seat combines one deterministic human player with an explicitly chosen companion agent. Direct chat follows the environment's live-state policy, broadcast remains available, and the harness drops a stale or unauthorized message without failing a seat. The table visibly communicates the selected partnerships, and the three player-ranking defects named in the Stage 15 overview are closed on the partnership plan.
+Spades runs through the admin console, workflow, browser, replay, and local play on either selected plan. Partnership mode assigns and ranks two seats, solo mode assigns and ranks four, the editor shows the exact projected game count before a run, and a browser human partnership seat supports either self-control of both players or one primary human with an explicitly chosen companion agent. Direct chat follows the environment's live-state policy, broadcast remains available, and the harness drops a stale or unauthorized message without failing a seat. The table visibly communicates the selected partnerships, and the three player-ranking defects named in the Stage 15 overview are closed on the partnership plan.

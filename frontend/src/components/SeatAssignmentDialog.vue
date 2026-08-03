@@ -70,6 +70,7 @@ const emit = defineEmits<{
 // never in an ambiguous "human-or-agent" string state. Decoded back to the wire union on Start.
 const BUILTIN_PREFIX = 'builtin:'
 const NAIVE_BUILTIN = `${BUILTIN_PREFIX}naive`
+const SELF_COMPANION = 'self'
 
 function encodeAgent(assignment: AgentAssignmentInput): string {
   return assignment.kind === 'submission'
@@ -167,6 +168,25 @@ function isRestricted(seatId: string): boolean {
   return restrictedBuiltin(seatId) !== null
 }
 
+/**
+ * Whether this seat is the human's and needs an explicit companion choice: it holds several players and
+ * is unrestricted, so nothing derives who takes the others. A singleton or restricted human seat carries
+ * no companion at all.
+ */
+function needsCompanionChoice(seatId: string): boolean {
+  return isHuman(seatId) && seatPlayerCount(seatId) > 1 && !isRestricted(seatId)
+}
+
+/** A person may take every player of such a seat only when all of them are human-capable. */
+function canPlaySeatYourself(seatId: string): boolean {
+  const seat = seatsById.value.get(seatId)
+  return (
+    needsCompanionChoice(seatId) &&
+    seat !== undefined &&
+    seat.players.every((playerId) => humanPlayers.has(playerId))
+  )
+}
+
 function isRestrictedHumanChoice(seatId: string): boolean {
   return props.mode === 'rate' && isRestricted(seatId) && humanCapableSeats.value.has(seatId)
 }
@@ -262,10 +282,18 @@ const agentOptions = computed<{ value: string; label: string }[]>(() => [
   })),
 ])
 const legalAgentValues = computed(() => new Set(agentOptions.value.map((option) => option.value)))
+const legalCompanionValues = computed(() => {
+  const values = new Set(legalAgentValues.value)
+  if (humanSeat.value !== null && canPlaySeatYourself(humanSeat.value)) {
+    values.add(SELF_COMPANION)
+  }
+  return values
+})
 
 function sanitizeChoices(
   resolved = layout.value,
-  legal = legalAgentValues.value,
+  legalAgents = legalAgentValues.value,
+  legalCompanions = legalCompanionValues.value,
 ): void {
   const ids = resolved.seats.map((seat) => seat.seatId)
   // A seat added by a growing count gets the same mode default as the seats present at open.
@@ -274,26 +302,20 @@ function sanitizeChoices(
   for (const [seatId, value] of Object.entries(agentChoice)) {
     if (isRestricted(seatId) && !isHuman(seatId)) {
       agentChoice[seatId] = fallbackAgent(seatId)
-    } else if (!legal.has(value)) {
+    } else if (!legalAgents.has(value)) {
       agentChoice[seatId] = ''
     }
   }
+  // A seat keeps its companion only while it still asks for one and the choice is still on offer, so a
+  // grown, shrunk, or vacated seat never carries a stale value into the payload.
   for (const seatId of Object.keys(companionChoice)) {
-    const seat = resolved.seats.find((candidate) => candidate.seatId === seatId)
-    const value = companionChoice[seatId]
-    if (
-      seat === undefined ||
-      !isHuman(seatId) ||
-      seat.players.length === 1 ||
-      isRestricted(seatId) ||
-      !legal.has(value ?? '')
-    ) {
+    if (!needsCompanionChoice(seatId) || !legalCompanions.has(companionValue(seatId))) {
       delete companionChoice[seatId]
     }
   }
 }
 
-watch([layout, legalAgentValues], ([resolved, legal]) => {
+watch([layout, legalAgentValues, legalCompanionValues], ([resolved, legalAgents, legalCompanions]) => {
   const ids = resolved.seats.map((seat) => seat.seatId)
   // Only play keeps exactly one human seat at all times, so only play re-seats after a layout change.
   // Rate has no such invariant: a rating run may have no human seat, and a null one there is the
@@ -306,7 +328,7 @@ watch([layout, legalAgentValues], ([resolved, legal]) => {
   ) {
     humanSeat.value = defaultHumanSeat(ids)
   }
-  sanitizeChoices(resolved, legal)
+  sanitizeChoices(resolved, legalAgents, legalCompanions)
 })
 
 // Start is gated on a full, valid composition: every seat carries an agent (always true with the
@@ -322,9 +344,7 @@ const canStart = computed(() => {
         return legalAgentValues.value.has(seatValue(seatId))
       }
       return (
-        seatPlayerCount(seatId) === 1 ||
-        isRestricted(seatId) ||
-        legalAgentValues.value.has(companionValue(seatId))
+        !needsCompanionChoice(seatId) || legalCompanionValues.value.has(companionValue(seatId))
       )
     })
   )
@@ -380,11 +400,15 @@ function onSubmit(): void {
       seats[seatId] = decodeAgent(seatValue(seatId))
       continue
     }
+    if (!needsCompanionChoice(seatId)) {
+      seats[seatId] = { kind: 'human' }
+      continue
+    }
     const companion = companionValue(seatId)
-    seats[seatId] =
-      seatPlayerCount(seatId) === 1 || isRestricted(seatId)
-        ? { kind: 'human' }
-        : { kind: 'human', companion: decodeAgent(companion) }
+    seats[seatId] = {
+      kind: 'human',
+      companion: companion === SELF_COMPANION ? { kind: 'self' } : decodeAgent(companion),
+    }
   }
   emit('start', {
     seasonId: props.seasonId,
@@ -454,9 +478,9 @@ function onSubmit(): void {
               </template>
             </div>
             <UiField
-              v-if="isHuman(seatId) && seatPlayerCount(seatId) > 1 && !isRestricted(seatId)"
-              :label="`Companion agent for Seat ${index + 1}`"
-              hint="Required. A separate instance controls each remaining player."
+              v-if="needsCompanionChoice(seatId)"
+              :label="`Seat ${index + 1}'s other players`"
+              hint="Required. Choose one companion agent or play them yourself."
             >
               <template #default="{ id, describedby }">
                 <UiSelect
@@ -467,6 +491,9 @@ function onSubmit(): void {
                   @update:model-value="(value: string) => setCompanion(seatId, value)"
                 >
                   <option value="" disabled>Select a companion</option>
+                  <option v-if="legalCompanionValues.has(SELF_COMPANION)" :value="SELF_COMPANION">
+                    Play them yourself
+                  </option>
                   <option v-for="option in agentOptions" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
@@ -474,7 +501,7 @@ function onSubmit(): void {
               </template>
             </UiField>
             <p
-              v-else-if="isHuman(seatId) && seatPlayerCount(seatId) > 1 && isRestricted(seatId)"
+              v-else-if="isHuman(seatId) && seatPlayerCount(seatId) > 1"
               class="derived-companion"
             >
               {{ restrictedBuiltinLabel(seatId) }} controls the other players.

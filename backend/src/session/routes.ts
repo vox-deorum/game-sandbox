@@ -27,8 +27,9 @@ const SubmissionAgentSeatSchema = z.strictObject({
   kind: z.literal('submission'),
   submission_id: z.string().min(1),
 })
+const SelfCompanionSchema = z.strictObject({ kind: z.literal('self') })
 
-/** The two-way agent union a human seat's optional companion carries (a future wide seat). */
+/** The agent union a human seat's optional companion carries. */
 const AgentSeatAssignmentSchema = z.discriminatedUnion('kind', [
   BuiltinAgentSeatSchema,
   SubmissionAgentSeatSchema,
@@ -43,7 +44,16 @@ type AgentSeatAssignmentBody = z.infer<typeof AgentSeatAssignmentSchema>
 const SeatAssignmentSchema = z.discriminatedUnion('kind', [
   BuiltinAgentSeatSchema,
   SubmissionAgentSeatSchema,
-  z.strictObject({ kind: z.literal('human'), companion: AgentSeatAssignmentSchema.optional() }),
+  z.strictObject({
+    kind: z.literal('human'),
+    companion: z
+      .discriminatedUnion('kind', [
+        BuiltinAgentSeatSchema,
+        SubmissionAgentSeatSchema,
+        SelfCompanionSchema,
+      ])
+      .optional(),
+  }),
 ])
 type SeatAssignmentBody = z.infer<typeof SeatAssignmentSchema>
 
@@ -83,9 +93,9 @@ function toSeatAssignment(body: SeatAssignmentBody): SeatAssignment {
   if (body.kind !== 'human') {
     return toAgentSeatAssignment(body)
   }
-  return body.companion === undefined
-    ? { kind: 'human' }
-    : { kind: 'human', companion: toAgentSeatAssignment(body.companion) }
+  if (body.companion === undefined) return { kind: 'human' }
+  if (body.companion.kind === 'self') return { kind: 'human', companion: body.companion }
+  return { kind: 'human', companion: toAgentSeatAssignment(body.companion) }
 }
 
 /** Register the session HTTP and WebSocket routes. */

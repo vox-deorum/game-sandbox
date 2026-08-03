@@ -58,7 +58,7 @@ describe('assembleLaunch', () => {
           'seat_0',
           {
             driver: 'human',
-            playerId: 'player_2',
+            playerIds: ['player_2'],
             userId: 'person',
             companion: {
               driver: 'submission',
@@ -85,11 +85,26 @@ describe('assembleLaunch', () => {
   // width, is settled by the orchestrator's seat validation as a 400. Only the two rules expansion
   // itself owns are checked here. A human companion is unrepresentable: `SeatBinding.companion` is
   // typed to the agent drivers, so there is no runtime case left to test.
+  it('makes every named human player external without a companion', () => {
+    const launch = assembleLaunch(
+      new Map([
+        ['seat_0', { driver: 'human', playerIds: ['player_0', 'player_2'], userId: 'person' }],
+        ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
+      ]),
+      WIDE_LAYOUT,
+    )
+
+    expect(launch.playerBindings.player_0).toEqual({ kind: 'external' })
+    expect(launch.playerBindings.player_2).toEqual({ kind: 'external' })
+    expect(launch.players.player_0).toMatchObject({ kind: 'human', user: 'person' })
+    expect(launch.players.player_2).toMatchObject({ kind: 'human', user: 'person' })
+  })
+
   it('rejects a human seat naming a player outside it', () => {
     expect(() =>
       assembleLaunch(
         new Map([
-          ['seat_0', { driver: 'human', playerId: 'player_1', userId: 'person' }],
+          ['seat_0', { driver: 'human', playerIds: ['player_1'], userId: 'person' }],
           ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         WIDE_LAYOUT,
@@ -101,7 +116,7 @@ describe('assembleLaunch', () => {
     expect(() =>
       assembleLaunch(
         new Map([
-          ['seat_0', { driver: 'human', playerId: 'player_0', userId: 'person' }],
+          ['seat_0', { driver: 'human', playerIds: ['player_0'], userId: 'person' }],
           ['seat_1', { driver: 'builtin', name: 'naive', label: 'Naive agent' }],
         ]),
         WIDE_LAYOUT,

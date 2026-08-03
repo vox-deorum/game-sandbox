@@ -24,6 +24,7 @@ import {
   DEFAULT_GEOMETRY,
   HEARTS,
   HEIGHT,
+  isControlled,
   padScores,
   readCardOverlay,
   resolveView,
@@ -122,9 +123,10 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
 
   const players = buildPlayers(o, view, config.seats)
   const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
-  const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, DEFAULT_GEOMETRY)
   // Hearts reads the emitted legal-cards overlay verbatim: every legal card lights by its key.
-  const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
+  const legalKeys = new Set(o.legalCards.map(cardKey))
+  const opponents = buildOpponents(o, view, legalKeys, DEFAULT_GEOMETRY)
+  const hand = buildHand(o, view, legalKeys)
   const status = buildStatus(o, view, trickWinner)
   const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
 
@@ -167,8 +169,8 @@ function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | 
 
 /**
  * The primary-row state message and its tone. First-person ("You", "Your
- * turn") is used only for the player the user actually controls; a spectator or replay (controlledPlayer
- * null) never matches, so the same lines render in the third person ("P2 took the trick", "P0's turn").
+ * turn") is used only for a player the user actually controls; a spectator or replay has no controlled
+ * players, so the same lines render in the third person ("P2 took the trick", "P0's turn").
  */
 function statusMessage(
   o: HeartsOverlay,
@@ -181,11 +183,11 @@ function statusMessage(
   // A just-completed trick is shown statically in the center: name who took it and the points.
   if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
     const points = o.lastTrick.reduce((sum, e) => sum + cardPoints(e.card), 0)
-    const who = trickWinner === view.controlledPlayer ? 'You' : `P${trickWinner}`
+    const who = isControlled(view, trickWinner) ? 'You' : `P${trickWinner}`
     const suffix = points ? ` (+${points})` : ''
     return { message: `${who} took the trick${suffix}`, messageTone: 'gold' }
   }
-  if (o.turn === view.controlledPlayer) {
+  if (isControlled(view, o.turn)) {
     return { message: 'Your turn', messageTone: 'gold' }
   }
   return { message: `P${o.turn}'s turn`, messageTone: 'white' }
@@ -204,7 +206,7 @@ function legalHint(o: HeartsOverlay, view: ViewContext): string {
   }
   const turn = o.turn
   const led = o.ledSuit
-  if (view.controlledPlayer === null || turn !== view.controlledPlayer) {
+  if (!isControlled(view, turn)) {
     if (led !== null) {
       return `P${turn} to play  -  ${SUIT_NAMES[led]} were led`
     }
@@ -216,7 +218,7 @@ function legalHint(o: HeartsOverlay, view: ViewContext): string {
     return 'Opening lead  -  you must play the 2 of clubs'
   }
 
-  const hand = o.hands[view.viewPlayer] ?? []
+  const hand = o.hands[turn] ?? []
   if (led !== null) {
     const canFollow = hand.some((card) => card.suit === led)
     if (canFollow) {

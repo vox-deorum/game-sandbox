@@ -391,19 +391,34 @@ describe('HTTP API', () => {
     expect(agentWithId.statusCode).toBe(400)
   })
 
-  it('accepts the human companion wire shape before singleton layout validation rejects it', async () => {
+  it('accepts agent and self human companion wire shapes before singleton layout validation rejects them', async () => {
+    for (const companion of [{ kind: 'builtin-agent', name: 'naive' }, { kind: 'self' }]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        headers: alice,
+        payload: startPayload({
+          seat_0: { kind: 'human', companion },
+        }),
+      })
+      expect(res.statusCode).toBe(400)
+      expect((res.json() as { error: string }).error).toContain(
+        'singleton seat seat_0 cannot have a companion',
+      )
+    }
+  })
+
+  it('rejects extra fields on a self human companion', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
       payload: startPayload({
-        seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
+        seat_0: { kind: 'human', companion: { kind: 'self', name: 'naive' } },
       }),
     })
     expect(res.statusCode).toBe(400)
-    expect((res.json() as { error: string }).error).toContain(
-      'singleton seat seat_0 cannot have a companion',
-    )
+    expect(res.json()).toMatchObject({ code: 'invalid_request' })
   })
 
   it('enforces one active session per user with 409 and returns the active session id', async () => {

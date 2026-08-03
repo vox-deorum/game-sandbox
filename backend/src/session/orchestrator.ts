@@ -48,8 +48,8 @@ import { SessionRegistry } from './registry.js'
 const CONTAINER_RECORDINGS_DIR = '/recordings'
 /** Grace given to a container to end politely before the driver hard-kills it. */
 const KILL_GRACE_MS = 5_000
-/** This stage's single-human session-composition cap; later multi-human play relaxes it. */
-const MAX_HUMAN_PLAYERS = 1
+/** A live session has one human seat. */
+const MAX_HUMAN_SEATS = 1
 
 /** One ordinary agent binding accepted for a seat or a future human companion. */
 export type AgentSeatAssignment =
@@ -57,12 +57,12 @@ export type AgentSeatAssignment =
   | { kind: 'submission'; submissionId: string }
 
 /**
- * One seat's assignment in a start request. A human may carry an ordinary companion binding so the
- * request contract is ready for wide seats. Singleton seats reject that unnecessary companion.
+ * One seat's assignment in a start request. A wide human seat either names an agent companion or
+ * requests that its human controls every member. Singleton seats reject any companion.
  */
 export type SeatAssignment =
   | AgentSeatAssignment
-  | { kind: 'human'; companion?: AgentSeatAssignment }
+  | { kind: 'human'; companion?: AgentSeatAssignment | { kind: 'self' } }
 
 /**
  * A start request, already attributed to a user by the HTTP layer's identity resolution. The session
@@ -94,22 +94,27 @@ interface SubmissionBinding {
 /**
  * A seat after validation. A `submission` seat carries its loaded row; human and built-in seats carry
  * none. The discriminated union lets config assembly and image resolution read the submission without
- * a presence check. A human seat also carries the one player the person controls, chosen once during
- * seat validation so no later stage repeats the choice.
+ * a presence check. A human seat also carries the ordered players the person controls, chosen once
+ * during seat validation so no later stage repeats the choice.
  */
 type ResolvedAgentBinding =
   | { kind: 'builtin-agent'; name: string; label: string }
   | { kind: 'submission'; submission: Submission }
 
 type ResolvedSeat =
-  | { seatId: string; kind: 'human'; playerId: string; companion?: ResolvedAgentBinding }
+  | {
+      seatId: string
+      kind: 'human'
+      playerIds: readonly string[]
+      companion?: ResolvedAgentBinding
+    }
   | ({ seatId: string } & ResolvedAgentBinding)
 
 interface ValidatedSeatAssignment {
   seatId: string
   assignment: SeatAssignment
-  /** Set only for a human assignment: the seat's first human-capable member, in declared order. */
-  humanPlayer?: string
+  /** Set only for a human assignment, in declared order with the primary member first. */
+  humanPlayers?: string[]
   /** The designated builtin that fills nonhuman members of a restricted wide human seat. */
   derivedCompanion?: AgentSeatAssignment
 }
@@ -293,13 +298,14 @@ export class Orchestrator {
       cap: seasonRules.message_cap,
     }
     const externalPlayers = resolvedSeats.flatMap((seat) =>
-      seat.kind === 'human' ? [seat.playerId] : [],
+      seat.kind === 'human' ? seat.playerIds : [],
     )
-    // Live sessions currently permit one human. Keep the full set for input and visibility while
-    // retaining the authoritative human-seat selection as the one chat sender Stage 17.1 authorizes.
+    // One human seat may control multiple players. Its first declared player remains the chat sender.
     const designatedExternalSeat = resolvedSeats.find((seat) => seat.kind === 'human')
     const externalChatPlayer =
-      designatedExternalSeat?.kind === 'human' ? designatedExternalSeat.playerId : null
+      designatedExternalSeat?.kind === 'human'
+        ? (designatedExternalSeat.playerIds[0] ?? null)
+        : null
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -519,11 +525,19 @@ export class Orchestrator {
         ) {
           throw new OrchestratorError(400, `wide seat ${seat.seatId} requires a companion`)
         }
+        const selfControlled = assignment.companion?.kind === 'self'
+        if (selfControlled && !seat.players.every((candidate) => humanCapable.has(candidate))) {
+          throw new OrchestratorError(
+            400,
+            `seat ${seat.seatId} has members that are not human-controllable`,
+          )
+        }
+        const humanPlayers = selfControlled ? [...seat.players] : [humanPlayer]
         humanCount += 1
         return {
           seatId: seat.seatId,
           assignment,
-          humanPlayer,
+          humanPlayers,
           ...(restrictedBuiltin === null || seat.players.length === 1
             ? {}
             : { derivedCompanion: { kind: 'builtin-agent' as const, name: restrictedBuiltin } }),
@@ -531,10 +545,10 @@ export class Orchestrator {
       }
       return { seatId: seat.seatId, assignment }
     })
-    if (humanCount > MAX_HUMAN_PLAYERS) {
+    if (humanCount > MAX_HUMAN_SEATS) {
       throw new OrchestratorError(
         400,
-        `at most ${MAX_HUMAN_PLAYERS} human player is allowed, got ${humanCount}`,
+        `at most ${MAX_HUMAN_SEATS} human seat is allowed, got ${humanCount}`,
       )
     }
     return { assignments, mode: humanCount > 0 ? 'human' : 'scripted' }
@@ -551,12 +565,14 @@ export class Orchestrator {
     playSeason: Season,
   ): Promise<ResolvedSeat[]> {
     const resolved: ResolvedSeat[] = []
-    for (const { seatId, assignment, humanPlayer, derivedCompanion } of assignments) {
+    for (const { seatId, assignment, humanPlayers, derivedCompanion } of assignments) {
       if (assignment.kind === 'human') {
-        if (humanPlayer === undefined) {
-          throw new Error(`human seat ${seatId} was validated without a player`)
+        if (humanPlayers === undefined) {
+          throw new Error(`human seat ${seatId} was validated without players`)
         }
-        const companionAssignment = derivedCompanion ?? assignment.companion
+        const companionAssignment =
+          derivedCompanion ??
+          (assignment.companion?.kind === 'self' ? undefined : assignment.companion)
         const companion =
           companionAssignment === undefined
             ? undefined
@@ -564,7 +580,7 @@ export class Orchestrator {
         resolved.push({
           seatId,
           kind: 'human',
-          playerId: humanPlayer,
+          playerIds: humanPlayers,
           ...optionalField('companion', companion),
         })
         continue
@@ -749,7 +765,7 @@ export class Orchestrator {
         const companion = seat.companion
         seats.set(seat.seatId, {
           driver: 'human',
-          playerId: seat.playerId,
+          playerIds: seat.playerIds,
           userId: ownerUserId,
           ...optionalField('displayName', names.get(ownerUserId)),
           ...optionalField(

@@ -25,7 +25,7 @@ Replays are linkable by URL.
 
 The header identifies who controlled each player: a human, a named builtin agent, or a submitted agent. A submitted-agent entry carries `submission_id` and no `builtin_name`. A builtin-agent entry carries `builtin_name` and no `submission_id`. Both agent variants carry the display label snapshotted at launch, so a replay needs no environment or season lookup to name a builtin. An agent entry with both identity fields or neither is invalid.
 
-The header also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat records the person on its designated player and the selected companion agent on every other member. Every recording carries this seat map and the canonical seat-plan key, along with the complete normalized gameplay parameter map used to construct the environment. See [Environments](environment.md#configurable-gameplay-parameters).
+The header also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat with a companion records the person on its primary player and the selected companion agent on every other member. A self-played wide seat records the person on every member. Every recording carries this seat map and the canonical seat-plan key, along with the complete normalized gameplay parameter map used to construct the environment. See [Environments](environment.md#configurable-gameplay-parameters).
 
 ## State objects
 

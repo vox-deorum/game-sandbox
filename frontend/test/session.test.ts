@@ -403,6 +403,32 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', player: 'player_2', action: 5 })
   })
 
+  it('controls every human-attributed player in a self-played wide seat', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      spadesHeader({
+        players: {
+          player_0: { kind: 'human', label: 'dev', user: 'dev-user' },
+          player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+          player_2: { kind: 'human', label: 'dev', user: 'dev-user' },
+          player_3: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        },
+      }),
+    )
+
+    expect(mountCtx?.controlledPlayers).toEqual(['player_0', 'player_2'])
+    handlers.onConnectionChange?.('open')
+    mountCtx?.sendAction?.('player_0', 3)
+    mountCtx?.sendAction?.('player_2', 7)
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 3 })
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_2', action: 7 })
+  })
+
   it('shows the move clock using the session timeout override, not the env default', async () => {
     // The session was started with a 5s human budget, overriding Hearts' 60s default. The renderer reads
     // the budget from meta.human_timeout_ms, so the page must overlay the session's value onto the meta

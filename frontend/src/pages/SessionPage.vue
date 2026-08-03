@@ -80,8 +80,8 @@ const gameOverDismissed = ref(false)
 const isOwner = computed(
   () => viewerId.value !== undefined && row.value?.user_id === viewerId.value,
 )
-// The recording header identifies which player this viewer controlled as a human. Use that attribution
-// instead of every human-capable player because the renderer controls one player at a time. Before the
+// The recording header identifies every player this viewer controls as a human. Use that attribution
+// instead of every human-capable player. Before the
 // header arrives, return [] so a human controlling player_2 never briefly gets player_0's controls.
 //
 // This is independent of run status on purpose: it is the viewer's *identity* in the match, which the

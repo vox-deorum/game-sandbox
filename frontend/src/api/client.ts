@@ -144,10 +144,13 @@ export type AgentAssignmentInput =
   | { kind: 'builtin-agent'; name: string }
   | { kind: 'submission'; submissionId: string }
 
+/** Lets the connected person control every human-capable player in a wide seat. */
+export type SelfCompanionInput = { kind: 'self' }
+
 /** One assignable seat, including the companion seam used when a later stage adds wide seats. */
 export type SeatAssignmentInput =
   | AgentAssignmentInput
-  | { kind: 'human'; companion?: AgentAssignmentInput }
+  | { kind: 'human'; companion?: AgentAssignmentInput | SelfCompanionInput }
 
 /**
  * The fields a start request resolves; the seat-assignment flow fills them from the environment
@@ -334,7 +337,14 @@ function toSeatBody(assignment: SeatAssignmentInput): Record<string, unknown> {
   }
   return {
     kind: 'human',
-    ...(assignment.companion === undefined ? {} : { companion: toAgentBody(assignment.companion) }),
+    ...(assignment.companion === undefined
+      ? {}
+      : {
+          companion:
+            assignment.companion.kind === 'self'
+              ? { kind: 'self' }
+              : toAgentBody(assignment.companion),
+        }),
   }
 }
 

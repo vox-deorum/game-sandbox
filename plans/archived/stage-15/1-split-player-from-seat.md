@@ -67,7 +67,7 @@ Update `schema/recording-header.schema.json`, `schema/step-state.schema.json`, t
 The browser and backend continue assigning one request entry per assignable unit, so their overloaded slot vocabulary becomes seat vocabulary:
 
 - `StartRequest.slots`, `SlotAssignment`, and `validateSlotShape` in `backend/src/session/orchestrator.ts` become `seats`, `SeatAssignment`, and `validateSeatShape`.
-- `MAX_HUMAN_SLOTS` becomes `MAX_HUMAN_PLAYERS`.
+- `MAX_HUMAN_SLOTS` becomes `MAX_HUMAN_SEATS`.
 - `StartRequest.humanSlotTimeoutMs` becomes `humanTimeoutMs`, since it is the human move-clock override rather than an id.
 - `LiveSessionInit.externalSlots` in `backend/src/session/live-session.ts` becomes `externalPlayers`, and the relay's `input` gate moves onto it from `humanSlots`. The external set is the players a human actually controls, which is what an input command has to name.
 - `LiveSessionInit.humanSlots` is then removed, because the environment's human-capable list has no other consumer in the live session.

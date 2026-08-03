@@ -16,6 +16,8 @@ import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {
   buildHand,
+  buildMoveClock,
+  buildOpponents,
   cardKey,
   cardToAction,
   DEFAULT_GEOMETRY,
@@ -114,7 +116,7 @@ describe('the shared card-table renderer layer', () => {
     expect(positionAnchor(3)).toEqual({ x: WIDTH - DEFAULT_GEOMETRY.sideBadgeInset, y: HEIGHT / 2 })
   })
 
-  it('reads turn_player and trick player payloads, then controls only the resolved player', () => {
+  it('keeps every controlled player while anchoring the view to the first', () => {
     const state: StepState = {
       schema_version: 1,
       tick: 0,
@@ -138,12 +140,41 @@ describe('the shared card-table renderer layer', () => {
     expect(overlay.turnPlayerId).toBe('player_2')
     expect(overlay.currentTrick).toEqual([{ player: 1, card: { suit: 2, rank: 14 } }])
 
-    const view = resolveView({ controlledPlayers: ['player_2'] })
-    expect(view).toEqual({ viewPlayer: 2, controlledPlayer: 2, revealAll: false })
+    const view = resolveView({ controlledPlayers: ['player_2', 'player_0'] })
+    expect(view).toEqual({ viewPlayer: 2, controlledPlayers: [2, 0], revealAll: false })
     expect(buildHand(overlay, view, new Set(['0:2']))[0]?.controllable).toBe(true)
     expect(
-      buildHand(overlay, { ...view, controlledPlayer: null }, new Set(['0:2']))[0]?.controllable,
+      buildHand(overlay, { ...view, controlledPlayers: [] }, new Set(['0:2']))[0]?.controllable,
     ).toBe(false)
+
+    const partnerTurn = {
+      ...overlay,
+      hands: [[{ suit: 0, rank: 3 }], [], [{ suit: 0, rank: 2 }], []],
+      turn: 0,
+      turnPlayerId: 'player_0',
+      legalCards: [{ suit: 0, rank: 3 }],
+    }
+    expect(buildOpponents(partnerTurn, view, new Set(['0:3']), DEFAULT_GEOMETRY)).toEqual([
+      expect.objectContaining({
+        player: 0,
+        card: { suit: 0, rank: 3 },
+        faceUp: true,
+        controlled: true,
+        legal: true,
+        controllable: true,
+      }),
+    ])
+    expect(buildMoveClock(partnerTurn, view, 60_000)).toEqual({ x: WIDTH / 2, y: 157, seconds: 60 })
+
+    // A partner along a side edge shifts the clock inward instead, since those badges already sit at
+    // the table's vertical centre.
+    const westTurn = { ...partnerTurn, turn: 3, turnPlayerId: 'player_3' }
+    const westView = { ...view, controlledPlayers: [2, 3] }
+    expect(buildMoveClock(westTurn, westView, 60_000)).toEqual({
+      x: DEFAULT_GEOMETRY.sideBadgeInset + 56,
+      y: HEIGHT / 2,
+      seconds: 60,
+    })
   })
 
   it('derives only wide-seat groups and uses the shared compact and accessible labels', () => {

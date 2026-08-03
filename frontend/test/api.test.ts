@@ -268,6 +268,22 @@ describe('api client', () => {
     })
   })
 
+  it('passes a self companion through unchanged', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201),
+    )
+    await startSession({
+      envId: 'planned',
+      seasonId: 'season-1',
+      parameters: { seat_plan: 'wide' },
+      seats: { seat_0: { kind: 'human', companion: { kind: 'self' } } },
+    })
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const body = JSON.parse(init.body as string)
+    expect(body.seats.seat_0).toEqual({ kind: 'human', companion: { kind: 'self' } })
+  })
+
   it('reads the complete persisted parameter map on a session row', async () => {
     const row = {
       id: 's1',

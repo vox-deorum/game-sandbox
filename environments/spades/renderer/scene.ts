@@ -22,6 +22,7 @@ import {
   type CardTableScene,
   cardKey,
   HEIGHT,
+  isControlled,
   NUM_PLAYERS,
   padScores,
   readCardOverlay,
@@ -124,6 +125,8 @@ export interface SpadesSceneStatus {
 
 /** One clickable bid chip in the centre grid. */
 export interface SceneBidChip {
+  /** The player whose bid this chip submits. */
+  player: number
   /** The bid value 0..13 (0 is nil). */
   bid: number
   /** The action-space integer `52 + bid` this chip sends. */
@@ -141,7 +144,8 @@ export interface SceneBidChip {
 /** The bidding-round centre panel: the prompt line above a grid of 14 bid chips. */
 export interface SceneBidPanel {
   chips: SceneBidChip[]
-  /** e.g. "Choose your bid" on the controlled player's turn, else "P2 is bidding". */
+  /** e.g. "Choose your bid" on a controlled player's turn, else "P2 is bidding". Naming both partners
+   *  yourself adds the acting hand, "Choose your bid (P2)". */
   prompt: string
   promptTone: 'gold' | 'white'
   /** The prompt's centre point (the chips carry their own absolute rects). */
@@ -207,13 +211,14 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
 
   const players = buildPlayers(o, view, config.seats)
   const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
-  const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, SPADES_GEOMETRY)
   // Spades reads the emitted legal-cards overlay verbatim: during bidding it is empty (you cannot play
   // a card until you have bid), so every hand card greys — the correct read
   // This comes directly from the semantic overlay.
-  const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
+  const legalKeys = new Set(o.legalCards.map(cardKey))
+  const opponents = buildOpponents(o, view, legalKeys, SPADES_GEOMETRY)
+  const hand = buildHand(o, view, legalKeys)
   const status = buildStatus(o, view, trickWinner)
-  const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
+  const moveClock = buildMoveClock(o, view, config.humanTimeoutMs, SPADES_GEOMETRY)
   const bidPanel = buildBidPanel(o, view)
 
   return {
@@ -252,9 +257,17 @@ function buildPlayers(
   })
 }
 
-/** Whether the player the user controls is the one currently choosing (first-person, clickable). */
-function isViewTurn(o: SpadesOverlay, view: ViewContext): boolean {
-  return view.controlledPlayer !== null && !o.terminal && o.turn === view.controlledPlayer
+/** Whether a player the user controls is the one currently choosing (first-person, clickable). */
+function isControlledTurn(o: SpadesOverlay, view: ViewContext): boolean {
+  return !o.terminal && isControlled(view, o.turn)
+}
+
+/**
+ * Names the acting hand when the user controls more than one, so a person playing both partners knows
+ * which of their hands a first-person prompt is asking about. Empty for a single controlled player.
+ */
+function actingHand(view: ViewContext, player: number): string {
+  return view.controlledPlayers.length > 1 ? ` (P${player})` : ''
 }
 
 /** Build the status strip: phase text, spades-broken flag, the state message, and both team scores. */
@@ -271,7 +284,7 @@ function buildStatus(
   const { message, messageTone } = statusMessage(o, view, trickWinner)
   const teamScores: SceneTeamScore[] = [0, 1].map((team) => {
     const [a, b] = teamPlayers(team)
-    const mine = view.controlledPlayer === a || view.controlledPlayer === b
+    const mine = isControlled(view, a) || isControlled(view, b)
     return { label: `P${a}+P${b}${mine ? ' (you)' : ''}`, score: o.teamScores[team] ?? 0, team }
   })
   return { phaseText, spadesBroken: o.spadesBroken, message, messageTone, teamScores }
@@ -279,8 +292,8 @@ function buildStatus(
 
 /**
  * The primary-row state message and its tone. First-person ("You", "Your
- * bid", "Your turn") is used only for the player the user actually controls; a spectator or replay
- * (controlledPlayer null) never matches, so the same lines render in the third person ("P2 took the
+ * bid", "Your turn") is used only for a player the user actually controls; a spectator or replay
+ * has no controlled players, so the same lines render in the third person ("P2 took the
  * trick", "P0 to bid").
  */
 function statusMessage(
@@ -294,12 +307,13 @@ function statusMessage(
   // A just-completed trick is shown statically in the centre: name who took it. The lastTrick guard
   // keeps this off during the opening bid round (lastTrick is null until a trick lands).
   if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
-    const who = trickWinner === view.controlledPlayer ? 'You' : `P${trickWinner}`
+    const who = isControlled(view, trickWinner) ? 'You' : `P${trickWinner}`
     return { message: `${who} took the trick`, messageTone: 'gold' }
   }
   const bidding = o.phase === 'bidding'
-  if (o.turn === view.controlledPlayer) {
-    return { message: bidding ? 'Your bid' : 'Your turn', messageTone: 'gold' }
+  if (isControlled(view, o.turn)) {
+    const message = `${bidding ? 'Your bid' : 'Your turn'}${actingHand(view, o.turn)}`
+    return { message, messageTone: 'gold' }
   }
   return { message: `P${o.turn} ${bidding ? 'to bid' : 'to play'}`, messageTone: 'white' }
 }
@@ -328,7 +342,7 @@ function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | nul
   const blockH = rows * chipH + (rows - 1) * vgap
   const startY = Math.floor(HEIGHT / 2 - blockH / 2)
 
-  const viewTurn = isViewTurn(o, view)
+  const controlledTurn = isControlledTurn(o, view)
   const legalBids = new Set(o.legalBids)
   const chips: SceneBidChip[] = []
   for (let bid = 0; bid < count; bid++) {
@@ -337,6 +351,7 @@ function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | nul
     const action = bidToAction(bid)
     const enabled = legalBids.has(bid)
     chips.push({
+      player: o.turn,
       bid,
       action,
       x: startX + col * (chipW + gap),
@@ -344,12 +359,20 @@ function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | nul
       w: chipW,
       h: chipH,
       enabled,
-      controllable: enabled && viewTurn,
+      controllable: enabled && controlledTurn,
     })
   }
 
-  const prompt = viewTurn ? 'Choose your bid' : `P${o.turn} is bidding`
-  return { chips, prompt, promptTone: viewTurn ? 'gold' : 'white', x: WIDTH / 2, y: startY - 26 }
+  const prompt = controlledTurn
+    ? `Choose your bid${actingHand(view, o.turn)}`
+    : `P${o.turn} is bidding`
+  return {
+    chips,
+    prompt,
+    promptTone: controlledTurn ? 'gold' : 'white',
+    x: WIDTH / 2,
+    y: startY - 26,
+  }
 }
 
 // --- Hit-testing ---

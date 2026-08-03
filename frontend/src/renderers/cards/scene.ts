@@ -179,7 +179,7 @@ export interface ScenePlayerBase {
   label: string
   /** Whose turn it is now (gold highlight); false at terminal. */
   isTurn: boolean
-  /** The bottom view player, which the user controls in live play. */
+  /** Whether the user controls this player in live play. */
   isYou: boolean
 }
 
@@ -193,14 +193,21 @@ export interface SceneTrickCard {
   isWinner: boolean
 }
 
-/** A small card in an opponent's row: face-down in live play, face-up when revealing (spectate/replay). */
+/** A small card in a non-view player's row. */
 export interface SceneCard {
+  player: number
   card: Card
   x: number
   y: number
   w: number
   h: number
   faceUp: boolean
+  /** Whether the viewer controls the player whose row contains this card. */
+  controlled: boolean
+  /** Playable now: the viewer controls this row's player, it is that player's turn, and the card is legal. */
+  legal: boolean
+  /** Clickable: playable now, and the hand is still running. */
+  controllable: boolean
 }
 
 /** One card in the view player's fanned hand. */
@@ -404,36 +411,41 @@ export function readCardOverlay(state: StepState): CardOverlay {
 // --- View resolution (which player sits at the bottom, and whether opponents are revealed) ---
 
 /**
- * The resolved viewing context for one scene: which player sits at the bottom, which player (if any) the
- * user actually controls, and whether to reveal every hand. The crucial split is `viewPlayer` vs
- * `controlledPlayer`: layout (the bottom player, the fanned hand) keys off `viewPlayer`, but everything that
- * speaks in the first person or accepts input — the "(you)" tag, "Your turn", the rule hint, the move
- * clock, clickability — keys off `controlledPlayer`. A spectator or replay has `controlledPlayer: null`, so
- * none of that first-person language leaks even though a player still sits at the bottom.
+ * The resolved viewing context for one scene: which player sits at the bottom, which players the user
+ * controls, and whether to reveal every hand. The crucial split is `viewPlayer` vs `controlledPlayers`:
+ * layout (the bottom player, the fanned hand) keys off `viewPlayer`, while anything that speaks in the
+ * first person or accepts input (the "(you)" tag, "Your turn", the rule hint, the move clock,
+ * clickability) keys off `controlledPlayers`. A spectator or replay has no controlled players, so none
+ * of that first-person language leaks even though a player still sits at the bottom.
  */
 export interface ViewContext {
   viewPlayer: number
-  controlledPlayer: number | null
+  controlledPlayers: readonly number[]
   revealAll: boolean
+}
+
+/** Whether one table player is controlled by the connected viewer. */
+export function isControlled(view: ViewContext, player: number): boolean {
+  return view.controlledPlayers.includes(player)
 }
 
 /**
  * Resolve the {@link ViewContext} from the mount config.
  *
- * The recorded overlay always carries all four hands. In live human play the user controls one stable
- * player id, so that player sits at the bottom, is the controlled player, and the opponents are face-down
- * (no peeking). With no controlled ids (a spectator watching, or a replay) we reveal every hand, default
- * the view to player 0, and leave `controlledPlayer` null. The "(you)" marker and first-person status
+ * The recorded overlay always carries all four hands. In live human play the first stable controlled
+ * player id sits at the bottom, and any additional controlled hands remain at their table positions.
+ * Uncontrolled opponents are face-down. With no controlled ids (a spectator watching, or a replay), reveal every hand, default
+ * the view to player 0, and leave `controlledPlayers` empty. The "(you)" marker and first-person status
  * follow real control rather than always tagging the bottom player, since a replay's bottom player is not
  * the viewer.
  */
 export function resolveView(config: SceneConfig): ViewContext {
   const controlled = config.controlledPlayers ?? []
   if (controlled.length === 0) {
-    return { viewPlayer: 0, controlledPlayer: null, revealAll: true }
+    return { viewPlayer: 0, controlledPlayers: [], revealAll: true }
   }
-  const player = playerOfId(controlled[0] as string)
-  return { viewPlayer: player, controlledPlayer: player, revealAll: false }
+  const players = controlled.map(playerOfId)
+  return { viewPlayer: players[0] as number, controlledPlayers: players, revealAll: false }
 }
 
 /** One non-singleton assignment seat and its stable display order. */
@@ -506,9 +518,9 @@ export function buildPlayersBase(
   return Array.from({ length: NUM_PLAYERS }, (_, player) => {
     const position = positionOfPlayer(player, view.viewPlayer)
     const { x, y } = positionAnchor(position, geom)
-    // "(you)" tags the player the user actually controls, which is null (so never matched) when
-    // spectating or replaying even though that player still sits at the bottom.
-    const isYou = player === view.controlledPlayer
+    // "(you)" tags every player the user controls. No player matches while spectating or replaying,
+    // even though one player still sits at the bottom.
+    const isYou = isControlled(view, player)
     const assignment = assignments.get(`player_${player}`)
     const playerLabel = isYou ? `P${player} (you)` : `P${player}`
     return {
@@ -573,16 +585,16 @@ export function buildTrick(
 /** Lay out the three non-view players' cards along their table edges. */
 export function buildOpponents(
   o: CardOverlay,
-  viewPlayer: number,
-  revealAll: boolean,
+  view: ViewContext,
+  legalKeys: ReadonlySet<string>,
   geom: TableGeometry,
 ): SceneCard[] {
   const cards: SceneCard[] = []
   for (let player = 0; player < NUM_PLAYERS; player++) {
-    if (player === viewPlayer) {
+    if (player === view.viewPlayer) {
       continue
     }
-    const position = positionOfPlayer(player, viewPlayer)
+    const position = positionOfPlayer(player, view.viewPlayer)
     const hand = o.hands[player] ?? []
     const count = hand.length
     if (count === 0) {
@@ -602,7 +614,21 @@ export function buildOpponents(
         x = Math.floor((WIDTH - run) / 2) + i * step
         y = geom.opponentRowNorthY // North row sits just under the top player badge.
       }
-      cards.push({ card: hand[i] as Card, x, y, w: SMALL_W, h: SMALL_H, faceUp: revealAll })
+      const card = hand[i] as Card
+      const controlled = isControlled(view, player)
+      const legal = controlled && player === o.turn && legalKeys.has(cardKey(card))
+      cards.push({
+        player,
+        card,
+        x,
+        y,
+        w: SMALL_W,
+        h: SMALL_H,
+        faceUp: view.revealAll || controlled,
+        controlled,
+        legal,
+        controllable: legal && !o.terminal,
+      })
     }
   }
   return cards
@@ -627,10 +653,9 @@ export function buildHand(
     return []
   }
   // Clickable only when the user controls the player shown at the bottom and it is that player's turn;
-  // `controlledPlayer` is null (so never equals `o.turn`) when spectating or replaying, leaving the
-  // whole hand inert and draw-only.
+  // No player is controlled when spectating or replaying, leaving the whole hand inert and draw-only.
   const controllableTurn =
-    view.controlledPlayer !== null && !o.terminal && o.turn === view.controlledPlayer
+    isControlled(view, view.viewPlayer) && !o.terminal && o.turn === view.viewPlayer
 
   const { startX, step } = handFanGeometry(count)
   const baseY = HEIGHT - CARD_H - 18
@@ -650,6 +675,9 @@ export function buildHand(
   })
 }
 
+/** How far (px) the move clock sits from the acting player's badge, toward the table centre. */
+const CLOCK_INSET = 56
+
 /**
  * The move-clock chip, shown only when it is the turn of a player this user controls and the hand is not
  * over. That condition is empty in a replay or a spectator view (no controlled player ids), so the clock is
@@ -660,17 +688,23 @@ export function buildMoveClock(
   o: CardOverlay,
   view: ViewContext,
   humanTimeoutMs: number | null | undefined,
+  geom: TableGeometry = DEFAULT_GEOMETRY,
 ): SceneMoveClock | null {
   if (o.terminal || humanTimeoutMs == null || humanTimeoutMs <= 0) {
     return null
   }
-  // Only on the controlled player's own turn; null `controlledPlayer` (spectator/replay) never matches.
-  if (view.controlledPlayer === null || o.turn !== view.controlledPlayer) {
+  if (!isControlled(view, o.turn)) {
     return null
   }
-  // Sit the chip just above the South view-player badge, where the active player looks.
-  const south = positionAnchor(0)
-  return { x: south.x, y: south.y - 56, seconds: Math.round(humanTimeoutMs / 1000) }
+  const position = positionOfPlayer(o.turn, view.viewPlayer)
+  const anchor = positionAnchor(position, geom)
+  // Sit the chip one badge-height toward the table centre from the acting player's badge, so it follows
+  // the acting hand around the table without covering the badge. The side badges are centred
+  // vertically, so those shift horizontally instead.
+  const sideways = position === 1 || position === 3
+  const x = sideways ? anchor.x + (anchor.x < WIDTH / 2 ? CLOCK_INSET : -CLOCK_INSET) : anchor.x
+  const y = sideways ? anchor.y : anchor.y + (anchor.y < HEIGHT / 2 ? CLOCK_INSET : -CLOCK_INSET)
+  return { x, y, seconds: Math.round(humanTimeoutMs / 1000) }
 }
 
 // --- Hit-testing ---
@@ -869,7 +903,7 @@ function playSource(
   if (player === viewPlayer) {
     const hand = buildHand(
       prev,
-      { viewPlayer, controlledPlayer: null, revealAll: true },
+      { viewPlayer, controlledPlayers: [], revealAll: true },
       new Set(prev.legalCards.map(cardKey)),
     )
     const shc = hand.find((c) => cardKey(c.card) === key)
@@ -877,7 +911,12 @@ function playSource(
       return { fromX: shc.x + shc.w / 2, fromY: shc.y + shc.h / 2, fromW: shc.w, fromH: shc.h }
     }
   } else {
-    const sc = buildOpponents(prev, viewPlayer, true, geom).find((c) => cardKey(c.card) === key)
+    const sc = buildOpponents(
+      prev,
+      { viewPlayer, controlledPlayers: [], revealAll: true },
+      new Set(prev.legalCards.map(cardKey)),
+      geom,
+    ).find((c) => cardKey(c.card) === key)
     if (sc !== undefined) {
       return { fromX: sc.x + sc.w / 2, fromY: sc.y + sc.h / 2, fromW: sc.w, fromH: sc.h }
     }

@@ -6,7 +6,7 @@ Part of [Stage 15](../stage-15-wide-seats.md), build-order step 3.
 
 ## Outcome
 
-The live-session and workflow paths expand each resolved seat into player bindings, while recordings and leaderboard results contain one reduced row per seat. An agent seat repeats one agent binding across its players. A wide human seat makes its first human-capable member external and uses one explicitly selected companion agent for every remaining member. All current environments still resolve to singleton seats, so scores, standings, and replay labels remain behaviorally identical while the full wide-seat path becomes testable with synthetic layouts.
+The live-session and workflow paths expand each resolved seat into player bindings, while recordings and leaderboard results contain one reduced row per seat. An agent seat repeats one agent binding across its players. A wide human seat either makes every human-capable member external or makes its first human-capable member external and uses one explicitly selected companion agent for every remaining member. All current environments still resolve to singleton seats, so scores, standings, and replay labels remain behaviorally identical while the full wide-seat path becomes testable with synthetic layouts.
 
 The hands-on check launches a fixture layout with seats of different widths. One submitted agent is staged once per seat, loaded as a separate agent instance for each player in that seat, and produces one standings row whose score is the mean of its player scores.
 
@@ -14,21 +14,21 @@ The hands-on check launches a fixture layout with seats of different widths. One
 
 Refactor `backend/src/session/launch-config.ts` so its input is a map of `seat_N` to `SeatBinding`, while its output is explicitly player-named:
 
-- `SeatBinding` keeps its name and becomes genuinely one per seat. Its ordinary variants are Naive and submission. Its human variant carries the one companion agent binding required when the seat has more than one player.
+- `SeatBinding` keeps its name and becomes genuinely one per seat. Its ordinary variants are Naive and submission. Its human variant carries the ordered player ids controlled by the person and an optional companion agent binding for any remaining members.
 - `SlotConfig` becomes `PlayerConfig`, one per PettingZoo position.
 - `assembleSeats` becomes `assembleLaunch`, since it now takes seats and returns players rather than working in one currency.
 - The harness runtime-binding map becomes `player_bindings`, keyed by `player_N`.
 - The existing recording attribution map remains named `players`, also keyed by `player_N`.
 
-The assembly function also receives the resolved layout. For an ordinary seat it emits one player configuration and attribution entry for every member, using a separate Naive or submission instance for each. For a human seat it makes only the named player external and applies the chosen companion binding to every other member. A submitted companion points those players at the same staged seat overlay path while the harness constructs separate in-process objects. No shared object or shared memory is introduced.
+The assembly function also receives the resolved layout. For an ordinary seat it emits one player configuration and attribution entry for every member, using a separate Naive or submission instance for each. For a human seat it makes every named player external and applies the chosen companion binding to every other member. A submitted companion points those players at the same staged seat overlay path while the harness constructs separate in-process objects. No shared object or shared memory is introduced.
 
-Which player a person controls is decided once, by the orchestrator's seat validation, as the first member in declared seat order that occurs in `human_players`. That choice travels on the human `SeatBinding` itself, so neither the external-player list nor launch assembly re-derives it. Seat validation also owns whether a seat may be human at all and whether its width requires or forbids a companion, rejecting each as a request error. A companion whose binding is human needs no check: `SeatBinding.companion` is typed to the agent drivers, so the shape cannot be built. Assembly is left with the two rules it genuinely owns, that a human seat's named player belongs to it and that a seat wider than that player has a companion.
+Which players a person controls is decided once by the orchestrator's seat validation. Self-control preserves every seat member in declared order and requires every member to occur in `human_players`. Agent-companion control keeps the first human-capable member as the only external player. That ordered choice travels on the human `SeatBinding`, so neither the external-player list nor launch assembly re-derives it. Seat validation also owns whether a seat may be human and whether a companion choice is legal, rejecting each as a request error. A companion whose binding is human needs no check: `SeatBinding.companion` is typed to the agent drivers, so the shape cannot be built. Assembly verifies that every named human player belongs to the seat and that every unmanaged member has a companion.
 
 Return both maps as one `AssembledLaunch` value with distinct `player_bindings` and `players` fields. Reject a missing or extra seat assignment before expansion, and reject a layout that would cause the same player to be emitted twice even though metadata validation should already make that impossible.
 
 The launch config carries no seat-to-player map. The harness already receives the environment id and the complete parameter map, and [step 1](1-split-player-from-seat.md) gives it a Python resolver, so it derives the layout itself and passes it to `Episode` and `build_header`. The layout has one source, the environment metadata, and a launch caller has no way to state a competing one.
 
-Update both callers, `backend/src/session/orchestrator.ts` and `backend/src/workflow/workflow-runner.ts`, to resolve the layout once and pass it to launch-config assembly. The live orchestrator also passes human capability and the companion choice. LLM grants and keys are issued for every expanded agent-controlled `player_N`, including companion players, and the harness continues recording per-player LLM usage before the runner reduces it.
+Update both callers, `backend/src/session/orchestrator.ts` and `backend/src/workflow/workflow-runner.ts`, to resolve the layout once and pass it to launch-config assembly. The live orchestrator also passes human capability and the companion choice, then sends every controlled player id to the live session. LLM grants and keys are issued only for expanded agent-controlled `player_N` values, including companion players, and the harness continues recording per-player LLM usage before the runner reduces it.
 
 Extend the harness `LiveConfig` parser to validate `player_bindings` and `players` against the player-id set of the layout it resolved. A binding or attribution entry naming a player outside that set is a config error.
 
@@ -130,7 +130,8 @@ Launch-config and orchestrator tests cover:
 - A two-player seat producing two independent player configs from one staged submission path.
 - Two seats assigned the same submission using distinct staged seat paths.
 - A three-player human seat making only its first human-capable member external and expanding one selected companion into two distinct player configs and in-process agent objects that share only the staged seat path.
-- Rejection of a seat with no human-capable member, a missing wide-seat companion, an unnecessary singleton companion, and a human companion binding.
+- A wide human seat making every member external when self-control is selected, with no companion binding or LLM grant.
+- Rejection of a seat with no human-capable member, a self-controlled seat containing a nonhuman-capable member, a missing wide-seat companion, an unnecessary singleton companion, and a human companion binding.
 - Per-player LLM keys and grants for every expanded submitted player, including companion players.
 - One `session_submissions` row per seat containing a submission rather than per player.
 
@@ -151,4 +152,4 @@ Resource tests cover the exact derived memory for one, two, and four players, in
 
 ## Done when
 
-A synthetic wide layout runs end to end through both live and workflow launch assembly. An agent seat stages one submission and expands it across its members. A human seat makes one player external, stages its selected companion at most once, and expands that agent across the remaining members. Each seat writes one reduced result row and appears once in standings with accurate controller attribution. Failures affect only the attributable seat when possible, container memory uses the tracked 32 MB per-additional-player default, and chargeable workflow time grows with the resolved player count while a one-player session is untouched.
+A synthetic wide layout runs end to end through both live and workflow launch assembly. An agent seat stages one submission and expands it across its members. A human seat either makes all its members external or makes one player external, stages its selected companion at most once, and expands that agent across the remaining members. Each seat writes one reduced result row and appears once in standings with accurate controller attribution. Failures affect only the attributable seat when possible, container memory uses the tracked 32 MB per-additional-player default, and chargeable workflow time grows with the resolved player count while a one-player session is untouched.

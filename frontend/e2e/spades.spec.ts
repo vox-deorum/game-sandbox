@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 
 import type { BrowserContext, Locator, Page } from '@playwright/test'
-import { CARD_W, handFanGeometry, WIDTH } from '../src/renderers/cards/scene.js'
+import { CARD_W, handFanGeometry, SMALL_H, SMALL_W, WIDTH } from '../src/renderers/cards/scene.js'
 import {
   activeWindows,
   closePlay,
@@ -85,6 +85,71 @@ function humanDecisionRows(page: Page): Locator {
   return decisionRows(page).filter({ hasText: 'P0', hasNotText: '—' })
 }
 
+/** Completed decisions for one player, excluding the adapter's actionless frames. */
+function playerDecisionRows(page: Page, player: 0 | 2): Locator {
+  return decisionRows(page).filter({ hasText: `P${player}`, hasNotText: '—' })
+}
+
+/** Track the latest Spades turn directly from the state frames the page receives. */
+function trackSpadesTurn(page: Page): () => number | null {
+  let turn: number | null = null
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload !== 'string') return
+      try {
+        const frame = JSON.parse(payload) as { overlay?: { turn?: unknown } }
+        if (typeof frame.overlay?.turn === 'number') turn = frame.overlay.turn
+      } catch {
+        // Session-status envelopes and malformed diagnostics are not state frames.
+      }
+    })
+  })
+  return () => turn
+}
+
+/**
+ * Wait until the agent rows have stopped changing and one controlled hand is awaiting an action.
+ * The harness advances agent turns on its live cadence, then stays still for a human-controlled turn.
+ */
+async function waitForControlledTurn(page: Page, currentTurn: () => number | null): Promise<0 | 2> {
+  const rows = decisionRows(page)
+  let observedCount = -1
+  let unchangedSince = Date.now()
+  await expect
+    .poll(
+      async () => {
+        const count = await rows.count()
+        if (count !== observedCount) {
+          observedCount = count
+          unchangedSince = Date.now()
+        }
+        return Date.now() - unchangedSince
+      },
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThanOrEqual(1_500)
+  await expect
+    .poll(() => {
+      const turn = currentTurn()
+      return turn === 0 || turn === 2 ? turn : null
+    })
+    .not.toBeNull()
+  const turn = currentTurn()
+  if (turn !== 0 && turn !== 2) throw new Error('no controlled Spades hand is on turn')
+  return turn
+}
+
+/** The compact North-row card coordinates, derived from the renderer's shared opponent-row layout. */
+function northRowGeometry(cardCount: number): { startX: number; step: number; y: number } {
+  const step = cardCount > 1 ? Math.min(SMALL_W - 14, Math.floor((WIDTH - 360) / cardCount)) : 0
+  const run = step * (cardCount - 1) + SMALL_W
+  return {
+    startX: Math.floor((WIDTH - run) / 2),
+    step,
+    y: 166 + SMALL_H / 2,
+  }
+}
+
 /** Click the bid-1 chip in the Spades renderer's fixed 960 by 720 internal coordinate space. */
 async function bidOne(page: Page, canvas: Locator): Promise<void> {
   const box = await canvas.boundingBox()
@@ -101,6 +166,30 @@ async function bidOne(page: Page, canvas: Locator): Promise<void> {
     },
   })
   await expect(humanDecisions).toHaveCount(before + 1, { timeout: 30_000 })
+}
+
+/** Bid one for whichever self-controlled partnership hand is currently on turn. */
+async function bidOneForSelfControlledHand(
+  page: Page,
+  canvas: Locator,
+  currentTurn: () => number | null,
+): Promise<0 | 2> {
+  const player = await waitForControlledTurn(page, currentTurn)
+  const box = await canvas.boundingBox()
+  expect(box, 'Spades canvas bounding box').not.toBeNull()
+  if (box === null) {
+    throw new Error('no Spades canvas bounding box')
+  }
+  const decisions = playerDecisionRows(page, player)
+  const before = await decisions.count()
+  await canvas.click({
+    position: {
+      x: (372 / 960) * box.width,
+      y: (330 / 720) * box.height,
+    },
+  })
+  await expect(decisions).toHaveCount(before + 1, { timeout: 30_000 })
+  return player
 }
 
 /** Play one currently legal card from the controlled player's raised hand. */
@@ -152,6 +241,70 @@ async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Pr
     }
   }
   throw new Error(`no legal card click advanced a ${cardCount}-card Spades hand`)
+}
+
+/**
+ * Try every card in the acting controlled hand. South uses the full fanned hand; North uses its
+ * compact, face-up opponent row. Only a legal card advances play.
+ */
+async function tryPlayLegalCard(
+  page: Page,
+  canvas: Locator,
+  player: 0 | 2,
+  cardCount: number,
+): Promise<boolean> {
+  const box = await canvas.boundingBox()
+  expect(box, 'Spades canvas bounding box').not.toBeNull()
+  if (box === null) {
+    throw new Error('no Spades canvas bounding box')
+  }
+  const { startX, step, y } =
+    player === 0 ? { ...handFanGeometry(cardCount), y: 604 } : northRowGeometry(cardCount)
+  const decisions = playerDecisionRows(page, player)
+  const before = await decisions.count()
+
+  for (let index = 0; index < cardCount; index += 1) {
+    const cardWidth = player === 0 ? CARD_W : SMALL_W
+    await canvas.click({
+      position: {
+        x: ((startX + index * step + cardWidth / 2) / WIDTH) * box.width,
+        y: (y / 720) * box.height,
+      },
+    })
+    try {
+      await expect(decisions).toHaveCount(before + 1, { timeout: 800 })
+      return true
+    } catch {
+      // This card is illegal. Try the next target.
+    }
+  }
+  return false
+}
+
+/** Drive both partnership hands through bidding and all thirteen tricks. */
+async function completeSelfControlledSpadesHand(
+  page: Page,
+  canvas: Locator,
+  currentTurn: () => number | null,
+): Promise<{ bids: Set<number>; plays: Record<0 | 2, number> }> {
+  const composer = page.getByRole('group', { name: 'Chat', exact: true })
+  await expect(composer).toBeVisible({ timeout: 30_000 })
+
+  const bids = new Set<number>()
+  bids.add(await bidOneForSelfControlledHand(page, canvas, currentTurn))
+  bids.add(await bidOneForSelfControlledHand(page, canvas, currentTurn))
+
+  const remaining: Record<0 | 2, number> = { 0: 13, 2: 13 }
+  const plays: Record<0 | 2, number> = { 0: 0, 2: 0 }
+  while (remaining[0] + remaining[2] > 0) {
+    const player = await waitForControlledTurn(page, currentTurn)
+    if (!(await tryPlayLegalCard(page, canvas, player, remaining[player]))) {
+      throw new Error(`no legal card click advanced controlled Spades hand P${player}`)
+    }
+    remaining[player] -= 1
+    plays[player] += 1
+  }
+  return { bids, plays }
 }
 
 /** Drive player 0 through bidding and all thirteen tricks, waiting for every external turn. */
@@ -400,6 +553,55 @@ test('human Spades completes with seat-ranked results on partnership and solo pl
     } finally {
       await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
     }
+  }
+})
+
+test('human Spades self-controls both face-up partnership hands to game over', async ({
+  page,
+  admin,
+}) => {
+  test.setTimeout(900_000)
+  await authenticateBrowser(page.context(), admin)
+
+  const sessionId = await startSession(
+    admin,
+    SPADES_ENV_ID,
+    {
+      seat_0: { kind: 'human', companion: { kind: 'self' } },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+    },
+    {
+      seed: 0,
+      humanTimeoutMs: 30_000,
+      parameters: { seat_plan: 'partnership' },
+    },
+  )
+  try {
+    const currentTurn = trackSpadesTurn(page)
+    await page.goto(`/sessions/${sessionId}`)
+    const canvas = page.locator('canvas.renderer-canvas')
+    await expect(canvas).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator('.renderer-host')).toHaveAttribute(
+      'aria-label',
+      'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+    )
+
+    // P2 is North from P0's fixed view. Its compact row is a face-up controlled hand: the helper uses
+    // its rendered card targets and can advance a turn only through that hand's live input wiring.
+    const { bids, plays } = await completeSelfControlledSpadesHand(page, canvas, currentTurn)
+    expect(bids).toEqual(new Set([0, 2]))
+    expect(plays).toEqual({ 0: 13, 2: 13 })
+    await expect(playerDecisionRows(page, 0)).toHaveCount(14)
+    await expect(playerDecisionRows(page, 2)).toHaveCount(14)
+
+    const gameOver = page.getByRole('dialog', { name: 'Game over' })
+    await expect(gameOver).toBeVisible({ timeout: 60_000 })
+    await expect(gameOver.locator('.row')).toHaveCount(2)
+    const selfControlledSeat = gameOver.locator('.row').filter({ hasText: 'S0' })
+    await expect(selfControlledSeat.locator('.members')).toHaveText('P0, P2')
+    await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
+  } finally {
+    await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
   }
 })
 

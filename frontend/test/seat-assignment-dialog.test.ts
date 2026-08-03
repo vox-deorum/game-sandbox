@@ -438,8 +438,14 @@ describe('SeatAssignmentDialog', () => {
     expect(screen.queryByRole('button', { name: 'Sit here' })).toBeNull()
     const start = screen.getByRole('button', { name: 'Start playing' })
     expect(start).toBeDisabled()
+    expect(
+      within(screen.getByRole('combobox', { name: "Seat 2's other players" })).queryByRole(
+        'option',
+        { name: 'Play them yourself' },
+      ),
+    ).toBeNull()
     await fireEvent.update(
-      screen.getByRole('combobox', { name: 'Companion agent for Seat 2' }),
+      screen.getByRole('combobox', { name: "Seat 2's other players" }),
       'submission:sub1',
     )
     await fireEvent.click(start)
@@ -449,7 +455,7 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
-  it('shows resolved player counts and requires an explicit companion for a wide human seat', async () => {
+  it('offers self control and emits it as the wide human seat companion', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
         seasonId: 'season-1',
@@ -463,9 +469,12 @@ describe('SeatAssignmentDialog', () => {
     expect(screen.getAllByText('2 players')).toHaveLength(2)
     const start = screen.getByRole('button', { name: 'Start playing' })
     expect(start).toBeDisabled()
-    const companion = screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })
+    const companion = screen.getByRole('combobox', { name: "Seat 1's other players" })
     expect(companion).toHaveValue('')
-    await fireEvent.update(companion, 'submission:sub2')
+    expect(within(companion).getByRole('option', { name: 'Play them yourself' })).toHaveValue(
+      'self',
+    )
+    await fireEvent.update(companion, 'self')
     expect(start).toBeEnabled()
     await fireEvent.click(start)
 
@@ -474,7 +483,7 @@ describe('SeatAssignmentDialog', () => {
       seats: {
         seat_0: {
           kind: 'human',
-          companion: { kind: 'submission', submissionId: 'sub2' },
+          companion: { kind: 'self' },
         },
         seat_1: { kind: 'builtin-agent', name: 'naive' },
       },
@@ -488,7 +497,7 @@ describe('SeatAssignmentDialog', () => {
     const rows = screen.getAllByRole('listitem')
     expect(within(rows[0] as HTMLElement).getByText('You')).toBeInTheDocument()
     expect(screen.getByText('Cautious bidder controls the other players.')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Companion agent for Seat 1' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: "Seat 1's other players" })).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     expect(lastStart(emitted).seats).toEqual({
@@ -630,20 +639,17 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    await fireEvent.update(
-      screen.getByRole('combobox', { name: 'Companion agent for Seat 1' }),
-      'submission:sub1',
-    )
+    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's other players" }), 'self')
     const rows = screen.getAllByRole('listitem')
     await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 2' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 2's other players" })).toHaveValue('')
 
     await fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 1's other players" })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
   })
 
-  it('rebuilds exact seats on plan changes and clears a companion that is illegal in solo', async () => {
+  it('rebuilds exact seats on plan changes and clears self control that is illegal in solo', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
         seasonId: 'season-1',
@@ -654,15 +660,12 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    await fireEvent.update(
-      screen.getByRole('combobox', { name: 'Companion agent for Seat 1' }),
-      'submission:sub1',
-    )
+    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's other players" }), 'self')
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat 2' }), 'submission:sub2')
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'solo')
 
     expect(screen.getAllByText('1 player')).toHaveLength(4)
-    expect(screen.queryByRole('combobox', { name: /Companion agent/ })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: /other players/ })).toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'human' },
@@ -672,7 +675,7 @@ describe('SeatAssignmentDialog', () => {
     })
 
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'partnership')
-    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 1's other players" })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
   })
 

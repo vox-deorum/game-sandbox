@@ -45,10 +45,10 @@ export type SeatBinding =
   | {
       driver: 'human'
       /**
-       * The one player the person controls. Seat validation picks it (the first human-capable member
-       * in declared order) and it travels here, so nothing downstream re-derives the choice.
+       * The players the person controls. Seat validation preserves their declared order, with the
+       * primary human-capable member first, so nothing downstream re-derives the choice.
        */
-      playerId: string
+      playerIds: readonly string[]
       userId: string
       displayName?: string
       /**
@@ -137,9 +137,9 @@ export function assembleLaunch(
 
 /**
  * Which binding drives one player of a seat. An agent seat repeats its own binding across every
- * member; a human seat puts the person on the player it named and its companion on the rest. The
+ * member; a human seat puts the person on every named player and its companion on the rest. The
  * caller has already accepted the assignment, so the checks here are the ones expansion itself owns:
- * the named player must belong to this seat, and a seat wider than that player needs a companion.
+ * every named player must belong to this seat, and a seat with unmanaged members needs a companion.
  */
 function bindingFor(
   seat: SeatBinding,
@@ -148,10 +148,11 @@ function bindingFor(
   playerId: string,
 ): SeatBinding {
   if (seat.driver !== 'human') return seat
-  if (!members.includes(seat.playerId)) {
-    throw new Error(`human seat ${seatId} names player ${seat.playerId} outside it`)
+  const outsidePlayer = seat.playerIds.find((namedPlayer) => !members.includes(namedPlayer))
+  if (outsidePlayer !== undefined) {
+    throw new Error(`human seat ${seatId} names player ${outsidePlayer} outside it`)
   }
-  if (playerId === seat.playerId) return seat
+  if (seat.playerIds.includes(playerId)) return seat
   if (seat.companion === undefined) throw new Error(`wide human seat ${seatId} needs a companion`)
   return seat.companion
 }

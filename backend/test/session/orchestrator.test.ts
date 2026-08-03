@@ -175,8 +175,14 @@ function wideEnvironments(): EnvironmentRegistry {
                 { players: [1] },
               ],
             },
+            {
+              key: 'partially_human',
+              title: 'Partially human',
+              seats: [{ players: [0, 1] }, { players: [2, 3] }],
+            },
           ],
         },
+        human_players: ['player_0', 'player_2', 'player_3'],
         human_timeout_ms: 5_000,
         recommended_episode_ticks: 10,
         pace_interval_ms: null,
@@ -193,6 +199,7 @@ function wideEnvironments(): EnvironmentRegistry {
             choices: [
               { value: 'uneven', label: 'Uneven' },
               { value: 'restricted', label: 'Restricted' },
+              { value: 'partially_human', label: 'Partially human' },
             ],
           },
         ],
@@ -631,8 +638,7 @@ describe('orchestrator', () => {
         issued = input
       })
       const companion = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
-      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
-      if (season === undefined) throw new Error('synthetic wide season was not created')
+      const season = await storage.ensureOpenSeason(WIDE_ENV_ID, 1)
 
       const result = await orch.start({
         userId: 'alice',
@@ -689,6 +695,44 @@ describe('orchestrator', () => {
         { submission_id: companion.id, seat_id: 'seat_0' },
       ])
       await orch.stop(result.id, 'alice')
+    })
+
+    it('expands a self-controlled wide seat into human players with one chat sender', async () => {
+      const source = new FakeSource()
+      let issued: IssueOfficialGrantsInput | undefined
+      const orch = makeWideOrchestrator(source, (input) => {
+        issued = input
+      })
+      const season = await storage.ensureOpenSeason(WIDE_ENV_ID, 1)
+
+      const { id, config } = await start(orch, {
+        envId: WIDE_ENV_ID,
+        seasonId: season.id,
+        parameters: { seat_plan: 'uneven' },
+        seats: {
+          seat_0: { kind: 'human', companion: { kind: 'self' } },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
+        },
+      })
+
+      expect(config.player_bindings).toEqual({
+        player_0: { kind: 'external' },
+        player_2: { kind: 'external' },
+        player_3: { kind: 'external' },
+        player_1: { kind: 'builtin-agent', name: 'naive' },
+      })
+      expect(config.players).toEqual({
+        player_0: { kind: 'human', label: 'alice', user: 'alice' },
+        player_2: { kind: 'human', label: 'alice', user: 'alice' },
+        player_3: { kind: 'human', label: 'alice', user: 'alice' },
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      })
+      expect(config.external_chat_player).toBe('player_0')
+      expect(issued?.agentPlayers).toEqual(['player_1'])
+      expect((config.llm as { keys: Record<string, string> }).keys).toEqual({
+        player_1: 'key-player_1',
+      })
+      await orch.stop(id, 'alice')
     })
 
     it('enforces the designated builtin on a restricted seat before session launch', async () => {
@@ -749,6 +793,16 @@ describe('orchestrator', () => {
           parameters: { seat_plan: 'restricted' },
           seats: {
             seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
+            seat_1: { kind: 'builtin-agent', name: 'naive' },
+          },
+        }),
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('derives') })
+      await expect(
+        orch.start({
+          ...base,
+          parameters: { seat_plan: 'restricted' },
+          seats: {
+            seat_0: { kind: 'human', companion: { kind: 'self' } },
             seat_1: { kind: 'builtin-agent', name: 'naive' },
           },
         }),
@@ -893,6 +947,37 @@ describe('orchestrator', () => {
           ),
         ),
       ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('rejects self control when a wide seat has a non-human-capable member', async () => {
+      const orch = makeWideOrchestrator(new FakeSource(), () => undefined)
+      const season = await storage.ensureOpenSeason(WIDE_ENV_ID, 1)
+      await expect(
+        orch.start({
+          userId: 'alice',
+          envId: WIDE_ENV_ID,
+          seasonId: season.id,
+          parameters: { seat_plan: 'partially_human' },
+          seats: {
+            seat_0: { kind: 'human', companion: { kind: 'self' } },
+            seat_1: { kind: 'builtin-agent', name: 'naive' },
+          },
+        }),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining('members that are not human-controllable'),
+      })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('rejects self control on a singleton seat', async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
+      await expect(
+        orch.start(
+          startHearts(heartsSeats({ seat_0: { kind: 'human', companion: { kind: 'self' } } })),
+        ),
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('singleton') })
       expect(driver.launches).toHaveLength(0)
     })
 

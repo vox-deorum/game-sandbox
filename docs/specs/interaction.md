@@ -95,9 +95,9 @@ Sequential human players have a timeout separate from agent compute limits. In s
 
 ## Human play
 
-A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider unrestricted seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat. See [Environments](environment.md#players-and-seats).
+A human play session designates one human-controlled seat. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the primary human player. A singleton seat needs nothing else. On a wider unrestricted seat, the person explicitly chooses either one companion agent for every other member or to play every member themself. Self-play is available only when every member is listed in `human_players`. A companion runs as a separately constructed instance for each player it controls. See [Environments](environment.md#players-and-seats).
 
-A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies only on the designated human player's turns, and step and episode compute limits remain per agent-controlled player. See [restricted seats](environment.md#builtin-agents-and-restricted-seats).
+A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies on each human-controlled player's turn, and step and episode compute limits remain per agent-controlled player. Chat continues to use the primary human player as its designated sender. See [restricted seats](environment.md#builtin-agents-and-restricted-seats).
 
 ## Starting watch and play sessions
 
@@ -109,11 +109,11 @@ The submitted map already carries the season layer, so session start validates i
 
 Parameter validation happens before seat-assignment validation. Only a valid `players` or `seat_plan` value changes the resolved seats. New seats use the flow's default assignment. An assignment that is not valid in the new layout is cleared, and the session cannot start until every required seat is assigned again.
 
-The backend resolves the selected layout from installed environment metadata before accepting assignments. It rejects an undeclared builtin anywhere, including a wide-seat companion. It also rejects a submission, another builtin, or a client-supplied companion on a restricted seat before creating the session or starting container work.
+The backend resolves the selected layout from installed environment metadata before accepting assignments. It rejects an undeclared builtin anywhere, including a wide-seat companion. It also rejects a submission, another builtin, or a client-supplied companion on a restricted seat before creating the session or starting container work. A self companion is rejected on a singleton or restricted seat, and on a wide seat with any member that is not human-capable.
 
 ## Human input
 
-An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines which member the person controls. The renderer can accept:
+An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines the primary human player. A self-played wide seat exposes every member to the renderer as controlled. The renderer can accept:
 
 - Raw device input, such as keyboard, pointer, touch, or gamepad.
 - On-screen controls, such as buttons, board cells, card hands, or sliders.
