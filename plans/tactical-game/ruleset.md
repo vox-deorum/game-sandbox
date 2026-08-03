@@ -42,13 +42,13 @@ Vision and attacks ignore terrain everywhere: terrain prices movement and adjust
 
 ## Units
 
-| Stat | Footman | Archer | Cavalry |
-| --- | --- | --- | --- |
-| Hit points | 12 | 6 | 10 |
-| Movement points | 2 | 2 | 4 |
-| Attack range | 1 | 6 | 1 |
-| Damage | 3 | 2 | 3 |
-| Vision | 4 | 6 | 6 |
+| Stat            | Footman | Archer | Cavalry |
+| --------------- | ------- | ------ | ------- |
+| Hit points      | 12      | 6      | 10      |
+| Movement points | 2       | 2      | 4       |
+| Attack range    | 1       | 6      | 1       |
+| Damage          | 3       | 2      | 3       |
+| Vision          | 4       | 6      | 6       |
 
 - Every unit has a stable id of the form side_type_index, such as red_archer_2, fixed for the whole match.
 - A unit at 0 or fewer hit points is removed immediately.

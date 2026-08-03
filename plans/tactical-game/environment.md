@@ -6,17 +6,17 @@ This document defines how the [ruleset](ruleset.md) appears through the platform
 
 The environment declares seat plans. seat_0 is Red and seat_1 is Blue in every plan.
 
-| Plan | Title | Per side | Players |
-| --- | --- | --- | --- |
-| skirmish | Skirmish | 1 footman, 1 archer, 1 cavalry | 6 |
-| army | Army | 8 footmen, 6 archers, 6 cavalry | 40 |
+| Plan     | Title    | Per side                        | Players |
+| -------- | -------- | ------------------------------- | ------- |
+| skirmish | Skirmish | 1 footman, 1 archer, 1 cavalry  | 6       |
+| army     | Army     | 8 footmen, 6 archers, 6 cavalry | 40      |
 
-| Plan | Seat | Ordered players |
-| --- | --- | --- |
-| skirmish | seat_0, Red | player_0 through player_2 |
-| skirmish | seat_1, Blue | player_3 through player_5 |
-| army | seat_0, Red | player_0 through player_19 |
-| army | seat_1, Blue | player_20 through player_39 |
+| Plan     | Seat         | Ordered players             |
+| -------- | ------------ | --------------------------- |
+| skirmish | seat_0, Red  | player_0 through player_2   |
+| skirmish | seat_1, Blue | player_3 through player_5   |
+| army     | seat_0, Red  | player_0 through player_19  |
+| army     | seat_1, Blue | player_20 through player_39 |
 
 skirmish is declared first and is the default. Red covers the first half of the players and Blue the second. Within a side, players run footmen first, then archers, then cavalry, in index order, so unit ids follow from player positions alone. In the army plan, player_0 through player_7 are red_footman_0 through red_footman_7, player_8 through player_13 are the red archers, player_14 through player_19 the red cavalry, and player_20 through player_39 repeat the order for Blue. Every observation carries the full rosters, so agents never recompute this mapping.
 
@@ -28,8 +28,8 @@ Seat order matters: the field is symmetric, but a fixed seed gives the two seats
 | --- | --- | --- | --- | --- | --- |
 | seat_plan | Army size | choice (reserved) | skirmish | skirmish (Skirmish), army (Army) | Selects the declared seat plan and unit roster. |
 | field_extent | Field extent | int | 7 | 5 to 22 | Sets the field radius: the hex distance from the center tile to the field edge. |
-| terrain | Terrain | bool | false | | Enables water, hills, forests, and marshes. |
-| unit_abilities | Unit abilities | bool | false | | Enables cavalry charge and footman shield wall. |
+| terrain | Terrain | bool | false |  | Enables water, hills, forests, and marshes. |
+| unit_abilities | Unit abilities | bool | false |  | Enables cavalry charge and footman shield wall. |
 | capture_zones | Capture zones | int | 0 | 0 to 5 | Sets the number of scoring zones; zero disables capture play. |
 | capture_target | Capture target | int | 200 | 10 to 10000 | Sets the capture score needed to end a capture match. |
 | round_cap | Round cap | int | 1000 | 100 to 10000 | Sets the maximum number of completed rounds. |
@@ -79,13 +79,13 @@ Dict{
 One action is one complete ruleset order: the unit walks the path, then strikes from its final tile under the ruleset's strike rules. Path ids 1 through 1554 name every sequence of one through four directions from 1 through 6, because 6 + 6^2 + 6^3 + 6^4 = 1554. They are ordered first by path length and then lexicographically, with the last direction varying fastest. This order is part of the stable student contract and is covered by helper pin tests.
 
 | Digit | Direction | dq, dr |
-| --- | --- | --- |
-| 1 | northeast | 1, -1 |
-| 2 | east | 1, 0 |
-| 3 | southeast | 0, 1 |
-| 4 | southwest | -1, 1 |
-| 5 | west | -1, 0 |
-| 6 | northwest | 0, -1 |
+| ----- | --------- | ------ |
+| 1     | northeast | 1, -1  |
+| 2     | east      | 1, 0   |
+| 3     | southeast | 0, 1   |
+| 4     | southwest | -1, 1  |
+| 5     | west      | -1, 0  |
+| 6     | northwest | 0, -1  |
 
 Digits run clockwise from northeast, so opposite directions differ by 3: reversing a path adds 3 to each digit modulo 6.
 
@@ -156,7 +156,7 @@ The `tactical-field` renderer draws only from the semantic overlay. The overlay 
 
 On a human turn, the renderer displays only the units listed as visible to the acting controlled player. It computes that player's walkable paths and nameable targets from the overlay state, lets the human compose a path and optionally name a target, and sends the matching action Dict. Spectators and replay viewers may display the complete battlefield and receive no action sender.
 
-A human may control any number of players in the selected seat, up to the whole side; all players are declared human-capable. The members the human does not control use separately constructed instances of the selected companion agent, and a human controlling the whole seat needs no companion.
+A human controls either one player in the selected seat or the whole side; all players are declared human-capable. When the human controls one player, the seat's other members use separately constructed instances of the selected companion agent. A human controlling the whole side needs no companion.
 
 ## Platform metadata
 
@@ -174,16 +174,16 @@ A human may control any number of players in the selected seat, up to the whole 
 | Viewing cadence | 150 milliseconds per recorded transition |
 | Live playout cadence | 150 milliseconds per nonhuman transition |
 | Recommended episode length | 6000 ticks |
-| Compute limits | 1 second per decision, 120 seconds per game |
+| Compute limits | 1 second per decision, 600 seconds per game |
 | Messaging | available; text limit 200 code points |
 | LLM API | off |
 | Seat order | changes the game |
 | Forfeit floor | 0 |
 | Renderer | tactical-field |
 
-The four builtins are separately declared agents. `naive` is the platform baseline required on every board, while bronze, silver, and gold are the instructor anchors used by the course. Season configurations may assign any declared builtin to an unrestricted seat.
+The four builtins are separately declared agents. `naive` is the platform baseline required on every board, while bronze, silver, and gold are the instructor anchors used by the course. The first implementation ships `naive` alone; the anchors are later work, added before the course needs them. Season configurations may assign any declared builtin to an unrestricted seat.
 
-All players are human-capable so a student can control any of a side's units, up to the whole side, while a companion agent fills the players they leave. Season 5 may use the controlled units' decision streams as one source of imitation-learning demonstrations ([pedagogy.md](pedagogy.md)); agent-generated demonstrations cover the rest. Compute limits are environment defaults a season may override.
+All players are human-capable so a student can control one of a side's units, with a companion agent filling the rest, or the whole side. Season 5 may use the controlled units' decision streams as one source of imitation-learning demonstrations ([pedagogy.md](pedagogy.md)), covering one unit's stream or the whole side's; agent-generated demonstrations cover the rest. Compute limits are environment defaults a season may override.
 
 ## Package and student materials
 
