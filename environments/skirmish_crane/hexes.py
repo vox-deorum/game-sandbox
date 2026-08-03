@@ -54,20 +54,13 @@ def field_positions(extent: int) -> Iterator[Position]:
 def neighbor(position: Position, direction: int) -> Position:
     if type(direction) is not int or direction not in DIRECTIONS:
         raise ValueError(f"direction must be 1 through 6, got {direction!r}")
-    try:
-        dq, dr = DIRECTIONS[direction]
-    except KeyError as error:
-        raise ValueError(f"direction must be 1 through 6, got {direction!r}") from error
+    dq, dr = DIRECTIONS[direction]
     return position[0] + dq, position[1] + dr
 
 
 def neighbors(position: Position, extent: int) -> tuple[Position, ...]:
-    return tuple(
-        candidate
-        for digit in DIRECTIONS
-        for candidate in (neighbor(position, digit),)
-        if on_field(candidate, extent)
-    )
+    candidates = (neighbor(position, digit) for digit in DIRECTIONS)
+    return tuple(candidate for candidate in candidates if on_field(candidate, extent))
 
 
 def distance(first: Position, second: Position) -> int:
@@ -95,6 +88,10 @@ def retrace_path(path: tuple[int, ...] | list[int]) -> tuple[int, ...]:
 
 
 def tile_array(extent: int, tiles: dict[Position, Tile]) -> tuple[tuple[Tile, ...], ...]:
+    """Freeze a position-keyed field into the square grid, indexed row then column as ``grid[r][q]``.
+
+    This ordering is the shape participants receive, so it is part of the student contract.
+    """
     return tuple(
         tuple(tiles.get((q, r), VOID) if on_field((q, r), extent) else VOID for q in range(2 * extent + 1))
         for r in range(2 * extent + 1)

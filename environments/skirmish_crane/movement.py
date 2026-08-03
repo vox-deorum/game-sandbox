@@ -34,7 +34,8 @@ def walk(
         if candidate in occupied:
             raise ValueError("a path cannot enter an occupied tile")
         cost = tile.move_cost
-        first_step = index == 0 and remaining == movement_points
+        # At full movement points a unit may always take one step, whatever it costs.
+        first_step = index == 0
         if not first_step and remaining < cost:
             raise ValueError("a path spends more movement than is available")
         remaining -= cost

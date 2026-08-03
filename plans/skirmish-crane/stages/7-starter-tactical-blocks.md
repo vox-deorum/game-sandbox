@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the tactical game plan](../README.md). This is build-order step 7 and the closing step: the predefined tactical block library that [pedagogy.md](../pedagogy.md) promises as Season 4's on-ramp, shipped in the template layer with tests. The hands-on surface is a block-driven side maneuvering coherently in the browser.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 7 and the closing step: the predefined tactical block library that [pedagogy.md](../pedagogy.md) promises as Season 4's on-ramp, shipped in the template layer with tests. The hands-on surface is a block-driven side maneuvering coherently in the browser.
 
 ## Why this is its own seam
 
@@ -10,13 +10,13 @@ Season 4's design issue is decentralized strategy as assignment: each unit insta
 
 ## What to build
 
-`template/sandbox/blocks.py` on top of `sandbox/tactical.py`, plus a README section showing how to wire blocks into an agent.
+`template/sandbox/blocks.py` on top of `sandbox/crane.py`, plus a README section showing how to wire blocks into an agent.
 
 ### The block interface
 
 A block is a pure decision function: `decide(observation, memory, goal)` returns a mask-legal action Dict built through the helpers, or None meaning the block has nothing useful, which falls through to stay. `memory` is the unit's own instance dict and `goal` is a position or None. No classes with hidden state: the unit's code owns its memory, matching the ruleset's no-shared-controller rule.
 
-Blocks are mask-driven, not planners: they enumerate the legal path bits, call `decode_path` from the tactical helper, and score endpoints by distance to goal, range bands, and cover. They do not duplicate the path codec. No A\* and no route memory; long-range routing stays student work, which is what keeps the library from trivializing Seasons 2 through 4.
+Blocks are mask-driven, not planners: they enumerate the legal path bits, call `decode_path` from the crane helper, and score endpoints by distance to goal, range bands, and cover. They do not duplicate the path codec. No A\* and no route memory; long-range routing stays student work, which is what keeps the library from trivializing Seasons 2 through 4.
 
 ### The starter set
 
@@ -48,4 +48,4 @@ Nothing imports the module by default; the starter agent does not use it. The RE
 
 ## Done when
 
-A scratch agent wired per the README (driven by a test, so no second example package exists) plays a block-driven side that maneuvers coherently in the browser: the archers kite, the cavalry charges, the footmen hold ground near a goal. All block tests are green, and the tactical game plan is complete end to end.
+A scratch agent wired per the README (driven by a test, so no second example package exists) plays a block-driven side that maneuvers coherently in the browser: the archers kite, the cavalry charges, the footmen hold ground near a goal. All block tests are green, and the Skirmish at Crane Reach plan is complete end to end.

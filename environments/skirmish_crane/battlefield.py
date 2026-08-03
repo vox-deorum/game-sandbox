@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from random import Random
+from types import MappingProxyType
 
-from .hexes import Position, Tile, field_positions, neighbors, rotate_position, tile_array
+from .hexes import (
+    VOID,
+    Position,
+    Tile,
+    distance,
+    field_positions,
+    neighbors,
+    rotate_position,
+    tile_array,
+)
 
 MAX_REDRAWS = 12
 
@@ -19,9 +30,15 @@ class CaptureZone:
 
 @dataclass(frozen=True)
 class Battlefield:
+    """A generated field. Every field is immutable once built.
+
+    ``tiles`` is the square grid indexed row then column as ``tiles[r][q]``, with void
+    outside the hexagon. That is the same shape participants receive through perception.
+    """
+
     extent: int
-    tiles: dict[Position, Tile]
-    spawns: dict[str, tuple[Position, ...]]
+    tiles: tuple[tuple[Tile, ...], ...]
+    spawns: Mapping[str, tuple[Position, ...]]
     zones: tuple[CaptureZone, ...]
     passage_tiles: tuple[tuple[Position, ...], ...]
     redraw_count: int = 0
@@ -30,34 +47,25 @@ class Battlefield:
     def side(self) -> int:
         return 2 * self.extent + 1
 
-    @property
-    def array(self) -> tuple[tuple[Tile, ...], ...]:
-        return tile_array(self.extent, self.tiles)
-
-    @property
-    def passage_count(self) -> int:
-        return len(self.passage_tiles)
-
-    @property
-    def passage_widths(self) -> tuple[int, ...]:
-        return tuple(len(passage) for passage in self.passage_tiles)
-
     def tile_at(self, position: Position) -> Tile:
-        return self.tiles.get(position, Tile("void"))
+        q, r = position
+        if 0 <= q < self.side and 0 <= r < self.side:
+            return self.tiles[r][q]
+        return VOID
 
     def snapshot(self) -> BattlefieldSnapshot:
         """Return a deeply immutable view suitable for participant perception."""
         return BattlefieldSnapshot(
             self.extent,
             self.side,
-            self.array,
-            tuple((side, positions) for side, positions in self.spawns.items()),
+            self.tiles,
+            self.spawns,
             self.zones,
             self.passage_tiles,
         )
 
     def connected(self) -> bool:
-        passable = {position for position, tile in self.tiles.items() if tile.passable}
+        passable = {(q, r) for r, row in enumerate(self.tiles) for q, tile in enumerate(row) if tile.passable}
         if not passable:
             return False
         seen = {next(iter(passable))}
@@ -76,7 +84,7 @@ class BattlefieldSnapshot:
     extent: int
     side: int
     tiles: tuple[tuple[Tile, ...], ...]
-    spawns: tuple[tuple[str, tuple[Position, ...]], ...]
+    spawns: Mapping[str, tuple[Position, ...]]
     zones: tuple[CaptureZone, ...]
     passage_tiles: tuple[tuple[Position, ...], ...]
 
@@ -101,7 +109,9 @@ def _terrain_tiles(
     tiles = {position: Tile() for position in field_positions(extent)}
     if not terrain:
         return tiles, ()
-    passage_count = 3 if zone_count or rng.choice((False, True)) else 2
+    # Capture zones force three passages because only the three-wide central gap keeps
+    # the middle tile passable, and an odd zone count always needs a central zone there.
+    passage_count = 3 if zone_count else rng.choice((2, 3))
     passages = _passage_ranges(extent, passage_count, rng)
     gap_rows = {r for passage in passages for r in passage}
     for r in range(2 * extent + 1):
@@ -145,19 +155,24 @@ def _zones(extent: int, tiles: dict[Position, Tile], count: int) -> tuple[Captur
         if len(_zone_tiles(position, extent)) == 7
         and all(tiles[candidate].passable for candidate in _zone_tiles(position, extent))
     ]
+    valid_set = set(valid)
     chosen: list[Position] = []
     center = (extent, extent)
     if count % 2:
-        if center not in valid:
+        if center not in valid_set:
             raise ValueError("battlefield has no passable central capture zone")
         chosen.append(center)
     for candidate in valid:
-        mirror = rotate_position(candidate, extent)
         if len(chosen) >= count:
             break
-        if candidate == mirror or candidate > mirror or mirror not in valid:
+        mirror = rotate_position(candidate, extent)
+        if candidate >= mirror or mirror not in valid_set:
             continue
-        if candidate in chosen or mirror in chosen:
+        # Centers three apart keep the seven-tile footprints disjoint, so no single
+        # unit can ever score two zones in the same round.
+        if distance(candidate, mirror) < 3:
+            continue
+        if any(distance(candidate, taken) < 3 or distance(mirror, taken) < 3 for taken in chosen):
             continue
         chosen.extend((candidate, mirror))
     if len(chosen) != count:
@@ -193,7 +208,12 @@ def generate_battlefield(
         try:
             zones = _zones(extent, tiles, capture_zones)
             field = Battlefield(
-                extent, tiles, _spawns(extent, tiles, units_per_side), zones, passages, redraw
+                extent,
+                tile_array(extent, tiles),
+                MappingProxyType(_spawns(extent, tiles, units_per_side)),
+                zones,
+                passages,
+                redraw,
             )
         except ValueError:
             continue

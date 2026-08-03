@@ -5,7 +5,8 @@ from __future__ import annotations
 from .hexes import DIRECTIONS
 
 MAX_PATH_STEPS = 4
-MAX_PATH_ID = 1554
+# One id per direction sequence of each length, so 6 + 36 + 216 + 1296 = 1554 alongside id 0.
+MAX_PATH_ID = sum(len(DIRECTIONS) ** length for length in range(1, MAX_PATH_STEPS + 1))
 
 
 def encode_path(path: tuple[int, ...] | list[int]) -> int:
@@ -33,7 +34,7 @@ def encode_path(path: tuple[int, ...] | list[int]) -> int:
 def decode_path(path_id: int) -> tuple[int, ...]:
     """Decode a stable path id."""
     if isinstance(path_id, bool) or not isinstance(path_id, int) or not 0 <= path_id <= MAX_PATH_ID:
-        raise ValueError("path id must be an integer from 0 through 1554")
+        raise ValueError(f"path id must be an integer from 0 through {MAX_PATH_ID}")
     if path_id == 0:
         return ()
     remaining = path_id - 1

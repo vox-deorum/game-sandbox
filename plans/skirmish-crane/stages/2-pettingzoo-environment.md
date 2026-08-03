@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the tactical game plan](../README.md). This is build-order step 2: the platform-facing environment on the step 1 engine, exactly as [environment.md](../environment.md) specifies it, plus the naive agent's code. The package stays unregistered behind `environments/.envignore`. The hands-on surface is full recorded episodes through the harness.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 2: the platform-facing environment on the step 1 engine, exactly as [environment.md](../environment.md) specifies it, plus the naive agent's code. The package stays unregistered behind `environments/.envignore`. The hands-on surface is full recorded episodes through the harness.
 
 ## Why this is its own seam
 
@@ -10,7 +10,16 @@ This step is the platform's first production consumer of composite action spaces
 
 ## What to build
 
-`env.py` (the AEC environment and `make_env(parameters)`), `overlay.py` (`extract_overlay(env)`), and `__init__.py` with `META`, `ENTRY`, and `PUBLISHED_EXAMPLES = ()`, following the spades package shape. The naive agent's code and tests land here; its staging under `backend/images/session-base/deps-v1/builtin/tactical_game/naive/` lands with registration in step 3.
+`env.py` (the AEC environment and `make_env(parameters)`), `overlay.py` (`extract_overlay(env)`), and `__init__.py` with `META`, `ENTRY`, and `PUBLISHED_EXAMPLES = ()`, following the spades package shape. The naive agent's code and tests land here; its staging under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/` lands with registration in step 3.
+
+### Reconciling with the step 1 engine
+
+Two gaps between the engine and [environment.md](../environment.md) are this step's to close, not the engine's:
+
+- Parameter bounds. The spec declares `capture_target` from 10 to 10000 and `round_cap` from 100 to 10000. The engine only requires each to be positive, because bounding a season parameter belongs to the parameter schema rather than to the rules. This step's schema enforces the declared ranges.
+- Observation shape. The engine's internal perception is not the declared observation. Its `capture` value carries the two side scores without the target, and its battlefield snapshot also carries `extent`, `spawns`, and `passage_tiles`. This step reshapes perception into the spec's table rather than passing it through, and the engine's snapshot is free to keep whatever the rules find useful.
+
+The engine hands out `tiles[r][q]` directly as an immutable grid, which is already the shape this step declares, so the observation reuses it rather than rebuilding it.
 
 ### Action space and masks
 
@@ -42,7 +51,7 @@ The chat policy lists the living allied players in player order, excluding the s
 
 | Field | Value |
 | --- | --- |
-| env_id, display_name | tactical_game, The Tactical Game |
+| env_id, display_name | skirmish_crane, Skirmish at Crane Reach |
 | description | A seeded, turn-based team tactics game in which separately running units coordinate through perception and delayed messages. |
 | layout | seat plans skirmish (default) and army |
 | builtin_agents | naive (Naive) only; the instructor anchors are later work |
@@ -55,7 +64,7 @@ The chat policy lists the living allied players in player order, excluding the s
 | messaging, message_cap | True, 200 |
 | llm | False |
 | seat_order_matters | True |
-| renderer | tactical-field (inert until step 3) |
+| renderer | crane-reach-field (inert until step 3) |
 
 Seasons 1 and 2 silence messaging through the season override, which can only disable or tighten. The forfeit floor is 0, the backend default, so no backend change.
 
@@ -72,7 +81,7 @@ Naive never names a target and leaves strikes to automatic resolution.
 
 ## Tests
 
-Under `environments/tactical_game/tests/`, mirroring the shared conformance suite through the same harness validators, because the shared suite only ever builds default parameters and therefore only covers skirmish. This local suite permanently owns army-plan and parameter-extreme coverage:
+Under `environments/skirmish_crane/tests/`, mirroring the shared conformance suite through the same harness validators, because the shared suite only ever builds default parameters and therefore only covers skirmish. This local suite permanently owns army-plan and parameter-extreme coverage:
 
 - PettingZoo `api_test` (with the known 1211 tolerance) at both seat plans and at parameter extremes, `observation_space.contains()` on every turn of full episodes, `action_mask_problems` on every emitted mask, and strict JSON round-trips with `allow_nan=False`.
 - The Text-space spike, first.

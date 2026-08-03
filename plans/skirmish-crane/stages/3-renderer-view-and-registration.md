@@ -1,8 +1,8 @@
-# Step 3: Tactical-Field Renderer, View and Replay, and Registration
+# Step 3: Crane Reach Renderer, View and Replay, and Registration
 
 Status: planned.
 
-Part of [the tactical game plan](../README.md). This is build-order step 3: the first hex-grid renderer, draw-only and in a deliberate placeholder style, and the registration step that makes the environment public. The hands-on surface is the web app: the tactical card on the home page, a watchable live match, a scrubbable replay, and `npm run play` in watch mode.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 3: the first hex-grid renderer, draw-only and in a deliberate placeholder style, and the registration step that makes the environment public. The hands-on surface is the web app: the Crane Reach card on the home page, a watchable live match, a scrubbable replay, and `npm run play` in watch mode.
 
 ## Why this is its own seam
 
@@ -10,7 +10,7 @@ Registration is atomic: `environments/test_conformance.py` requires the complete
 
 ## What to build
 
-Remove `tactical_game` from `environments/.envignore` and run `npm run sync:envs`: the entry point and `backend/src/environments/generated/environments.json` regenerate, the shared conformance suite starts covering tactical at default parameters, and `scripts/play.py` can load the environment. Stage the naive builtin under `backend/images/session-base/deps-v1/builtin/tactical_game/naive/`.
+Remove `skirmish_crane` from `environments/.envignore` and run `npm run sync:envs`: the entry point and `backend/src/environments/generated/environments.json` regenerate, the shared conformance suite starts covering Skirmish at Crane Reach at default parameters, and `scripts/play.py` can load the environment. Stage the naive builtin under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/`.
 
 ### Seed participant artifacts
 
@@ -23,7 +23,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 
 ### Renderer
 
-`environments/tactical_game/renderer/` in TypeScript on PixiJS: `index.ts` default-exports `{key: "tactical-field", renderer, thumbnail}`, and a pure `computeScene(state, config)` in `scene.ts` maps overlay state to drawable structures. Pointy-top hexes on axial coordinates. Decisions:
+`environments/skirmish_crane/renderer/` in TypeScript on PixiJS: `index.ts` default-exports `{key: "crane-reach-field", renderer, thumbnail}`, and a pure `computeScene(state, config)` in `scene.ts` maps overlay state to drawable structures. Pointy-top hexes on axial coordinates. Decisions:
 
 - Placeholder visual style on purpose: functional flat shapes and labels that make the game readable (terrain, features, zones, units with hit points, activation highlight, round and capture HUD) without committing to an identity. Step 4 designs the identity using this renderer as the workbench, so `computeScene` keeps style swappable: geometry and content in the scene, appearance in one styling layer.
 - Draw-only: `sendAction` unused, and without `controlledPlayers` the view is the full board, which is the spectator and replay rule.
@@ -32,19 +32,19 @@ Registration demands them now; their completing steps finish them. Each seed is 
 
 ### Fixtures and tests
 
-`scripts/gen_tactical_fixture.py` on the `_fixture_common` pattern generates two recordings into `frontend/test/fixtures/`: a plain skirmish at Season 1 defaults and a full-variant army. The army fixture doubles as the perf-test input. Beside each recording, it writes a compact test-only legality file. Its first entry is the opening state: the live-only pre-action frame is not recorded, so this entry carries that whole state, overlay included, and the generator drives an `Episode` and calls `opening_state()` rather than going through `run_and_copy`. Every later entry points into the recording by tick and repeats the overlay's `current_activation`. Each entry stores the expected path and target masks as Base64-encoded bit vectors. These legality files are test artifacts only: they do not appear in production recording headers, recordings, or live streams.
+`scripts/gen_crane_fixture.py` on the `_fixture_common` pattern generates two recordings into `frontend/test/fixtures/`: a plain skirmish at Season 1 defaults and a full-variant army. The army fixture doubles as the perf-test input. Beside each recording, it writes a compact test-only legality file. Its first entry is the opening state: the live-only pre-action frame is not recorded, so this entry carries that whole state, overlay included, and the generator drives an `Episode` and calls `opening_state()` rather than going through `run_and_copy`. Every later entry points into the recording by tick and repeats the overlay's `current_activation`. Each entry stores the expected path and target masks as Base64-encoded bit vectors. These legality files are test artifacts only: they do not appear in production recording headers, recordings, or live streams.
 
 ### Spec and docs reconciliation
 
-Registration makes tactical the platform's first shipped Dict-action environment, so the platform spec updates land here, in the same change set: the sentence in [docs/specs/environment.md](../../../docs/specs/environment.md) stating that every current environment uses a flat integer action is rewritten, the mask-and-overlay provider list gains tactical, and the Composite actions section names tactical as the shipped consumer. The docs CI lane runs green with the v1 guide discovered at its virtual path.
+Registration makes Skirmish at Crane Reach the platform's first shipped Dict-action environment, so the platform spec updates land here, in the same change set: the sentence in [docs/specs/environment.md](../../../docs/specs/environment.md) stating that every current environment uses a flat integer action is rewritten, the mask-and-overlay provider list gains Crane Reach, and the Composite actions section names Crane Reach as the shipped consumer. The docs CI lane runs green with the v1 guide discovered at its virtual path.
 
 ### Browser journey
 
-`frontend/e2e/tactical.spec.ts` enters `e2e.yml` with the spectate half: watch a session to game over, scrub the replay to exact frames, and a season journey on the spades pattern (an admin creates a tactical season with variant overrides and naive seats, a scheduled matchup runs, results release).
+`frontend/e2e/crane-reach.spec.ts` enters `e2e.yml` with the spectate half: watch a session to game over, scrub the replay to exact frames, and a season journey on the spades pattern (an admin creates a Crane Reach season with variant overrides and naive seats, a scheduled matchup runs, results release).
 
 ## Tests
 
-- The shared conformance suite green with tactical registered, including the authoring-shape and renderer-ownership checks.
+- The shared conformance suite green with Skirmish at Crane Reach registered, including the authoring-shape and renderer-ownership checks.
 - Scene tests (vitest, jsdom) against both fixtures: hex layout and geometry, terrain and feature mapping, void surround, unit placement and hit points, zone drawing, activation highlight, HUD values, seek determinism (same state, same scene).
 - Fixture tests verify the opening legality entry and every actionable recorded state. Production recordings remain free of legality data and stay within the recording-size budget.
 - A perf smoke on the army fixture in the typescript lane: scene computation across the full recording within a pinned time budget.
@@ -52,4 +52,4 @@ Registration makes tactical the platform's first shipped Dict-action environment
 
 ## Done when
 
-The tactical card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 150 ms cadence, replay seeks land on identical frames, and `npm run play -- tactical_game` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.
+The Crane Reach card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 150 ms cadence, replay seeks land on identical frames, and `npm run play -- skirmish_crane` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.

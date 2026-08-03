@@ -47,18 +47,24 @@ def damage(
     attacker_tile = battlefield.tile_at(attacker.position)
     defender_tile = battlefield.tile_at(defender.position)
     total = attacker.stats.damage
-    charging = abilities and attacker.kind == "cavalry" and distance(start, attacker.position) >= 3
+    adjacent = neighbors(defender.position, battlefield.extent)
     shielded = (
         abilities
         and defender.kind == "footman"
         and any(
             other.side == defender.side and other.kind == "footman" and other.unit_id != defender.unit_id
             for other in units.values()
-            if other.position in neighbors(defender.position, battlefield.extent)
+            if other.position in adjacent
         )
     )
-    if defender_tile.feature == "forest" or shielded:
-        charging = False
+    # Forest cover and a shield wall each deny the charge outright.
+    charging = (
+        abilities
+        and attacker.kind == "cavalry"
+        and distance(start, attacker.position) >= 3
+        and defender_tile.feature != "forest"
+        and not shielded
+    )
     if charging:
         total += 2
     if attacker_tile.terrain == "hill" and defender_tile.terrain != "hill":
@@ -99,14 +105,13 @@ def resolve_strike(
         and named.unit_id in visible_at_activation
         and distance(attacker.position, named.position) <= attacker.stats.attack_range
     )
-    if automatic:
+    if named is not None and not automatic:
+        target = named
+    else:
         closest = min(distance(attacker.position, unit.position) for unit in enemies)
         target = rng.choice(
             [unit for unit in enemies if distance(attacker.position, unit.position) == closest]
         )
-    else:
-        target = named
-    assert target is not None
     hit = damage(attacker, target, battlefield, units, abilities=abilities, start=start)
     target.hit_points -= hit
     return Strike(attacker.unit_id, target.unit_id, hit, automatic)

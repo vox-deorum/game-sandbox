@@ -58,13 +58,15 @@ def capture_result(
     capture: dict[str, int],
     target: int,
     *,
-    reason: str,
+    capture_won: bool,
+    capped: bool,
 ) -> Result:
-    """Score a capture match after its terminating condition."""
+    """Score a capture match after its terminating condition, naming that condition."""
     if remaining["red"] == 0 or remaining["blue"] == 0:
         if remaining["red"] == remaining["blue"]:
             return _result(None, 50, 50, "elimination_draw")
         return _result("red" if remaining["red"] else "blue", 100, 0, "elimination")
+    reason = "capture" if capture_won else "round_cap" if capped else "elimination"
     if capture["red"] == capture["blue"]:
         if remaining["red"] == remaining["blue"]:
             return _result(None, 50, 50, reason)

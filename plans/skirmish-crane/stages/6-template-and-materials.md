@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the tactical game plan](../README.md). This is build-order step 6: the completed student surface. It can begin after step 3 (registration) and proceed alongside steps 4 and 5, but cannot finish until step 5 provides human input and local play. The hands-on surface is the full student flow: compose the template, run the pin tests, watch and play locally, and beat naive with the worked example.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 6: the completed student surface. It can begin after step 3 (registration) and proceed alongside steps 4 and 5, but cannot finish until step 5 provides human input and local play. The hands-on surface is the full student flow: compose the template, run the pin tests, watch and play locally, and beat naive with the worked example.
 
 ## Why this is its own seam
 
@@ -12,7 +12,7 @@ The template layer is the student contract, and its centerpiece, the helper modu
 
 ### The helper module
 
-`template/sandbox/tactical.py`, the surface the [environment spec](../environment.md) names:
+`template/sandbox/crane.py`, the surface the [environment spec](../environment.md) names:
 
 - `encode_path(directions)` and `decode_path(path_id)`, owning the student-facing path encoding. `encode_path(())` returns `0`, `decode_path(0)` returns an empty tuple, and ids 1 through 1554 round-trip to direction tuples. Invalid encoded values raise `ValueError`.
 - `move(path_id, target_id=None, observation=None)` and `stay(target_id=None, observation=None)`, returning action Dicts and resolving a target id to its enemy roster slot through the observation. `move` accepts an encoded path id.
@@ -23,7 +23,7 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 ### Template and guide
 
-`template/agent.py` completed as an intentionally weak starter that demonstrates one stay, one move, and one named-target order through the helpers, so Season 1's design issue stays open. `template/README.md` completed. The canonical guide `environments/tactical_game/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, teaching the observation, the mask, the helpers, messaging, and local play, with season variants described as instructor-controlled.
+`template/agent.py` completed as an intentionally weak starter that demonstrates one stay, one move, and one named-target order through the helpers, so Season 1's design issue stays open. `template/README.md` completed. The canonical guide `environments/skirmish_crane/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, teaching the observation, the mask, the helpers, messaging, and local play, with season variants described as instructor-controlled.
 
 ### The worked example
 

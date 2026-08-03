@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
 
-from .engine import Match, MatchConfig, Order
+from .engine import Match, MatchConfig, OrderSource, scripted_order
 
 
 def render(match: Match, *, round_number: int | None = None) -> str:
+    shown_round = match.round if round_number is None else round_number
     marks = {unit.position: unit.side[0].upper() for unit in match.units.values()}
     rows: list[str] = [
-        f"round {round_number or match.round}  red={match.capture_scores['red']} "
-        f"blue={match.capture_scores['blue']}"
+        f"round {shown_round}  red={match.capture_scores['red']} blue={match.capture_scores['blue']}"
     ]
-    for r, row in enumerate(match.battlefield.array):
+    for r, row in enumerate(match.battlefield.tiles):
         cells = []
         for q, tile in enumerate(row):
             position = (q, r)
@@ -36,21 +35,18 @@ def render(match: Match, *, round_number: int | None = None) -> str:
     return "\n".join(rows)
 
 
-def run_scripted_match(
-    config: MatchConfig,
-    orders: Callable[[Match, str], Order] | dict[str, Order] | None = None,
-) -> tuple[Match, str]:
+def run_scripted_match(config: MatchConfig, orders: OrderSource | None = None) -> tuple[Match, str]:
     """Run to completion and render exactly once after each completed round."""
     match = Match(config)
     frames: list[str] = []
-    source = orders or {}
+    source = orders if orders is not None else {}
     while match.result is None:
         completed_round = match.round
         while match.result is None and match.round == completed_round:
             unit_id = match.current_unit_id
-            assert unit_id is not None
-            order = source(match, unit_id) if callable(source) else source.get(unit_id, Order())
-            match.apply_order(order)
+            if unit_id is None:
+                break
+            match.apply_order(scripted_order(source, match, unit_id))
         frames.append(render(match, round_number=completed_round))
     return match, "\n\n".join(frames)
 

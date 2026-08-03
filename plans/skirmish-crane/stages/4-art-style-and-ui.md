@@ -2,11 +2,11 @@
 
 Status: planned. Exit requires explicit owner sign-off on the art direction, recorded here.
 
-Part of [the tactical game plan](../README.md). This is build-order step 4: the tactical-field visual identity, designed and iterated on the live step 3 renderer and approved by the owner. The hands-on surface is both fixture recordings replaying in the final style.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 4: the crane-reach-field visual identity, designed and iterated on the live step 3 renderer and approved by the owner. The hands-on surface is both fixture recordings replaying in the final style.
 
 ## Why this is its own seam
 
-A renderer owns its game's visual identity, but a new visual pattern needs owner confirmation, and design decisions are the owner's to make ([design system](../../../docs/contributors/frontend/design-system.md)). Tactical is the first battlefield renderer, so its identity is entirely new. Concentrating the design work in one step, on a working renderer, means candidate styles are judged on real frames (a live army match, a replay seek, the 150 ms cadence) and iteration happens here rather than leaking into later code review. Step 3 built the scene layer style-swappable for exactly this reason.
+A renderer owns its game's visual identity, but a new visual pattern needs owner confirmation, and design decisions are the owner's to make ([design system](../../../docs/contributors/frontend/design-system.md)). Skirmish at Crane Reach is the first battlefield renderer, so its identity is entirely new. Concentrating the design work in one step, on a working renderer, means candidate styles are judged on real frames (a live army match, a replay seek, the 150 ms cadence) and iteration happens here rather than leaking into later code review. Step 3 built the scene layer style-swappable for exactly this reason.
 
 ## What to build
 

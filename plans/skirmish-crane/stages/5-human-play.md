@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the tactical game plan](../README.md). This is build-order step 5: a human plays tactical in the browser and in local play, with fog of war, legal-by-construction order composition, and the move clock. The hands-on surface is controlling a seat's primary unit or the whole side, in the web app and through both local launchers with naive companions.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 5: a human plays Skirmish at Crane Reach in the browser and in local play, with fog of war, legal-by-construction order composition, and the move clock. The hands-on surface is controlling a seat's primary unit or the whole side, in the web app and through both local launchers with naive companions.
 
 ## Why this is its own seam
 
@@ -35,7 +35,7 @@ Browser whole-side control already exists and has coverage. The renderer filters
 
 Neither launcher can play a whole seat today, so this step closes that gap. In both, `self` joins the companion values: every player in the human's seat becomes externally controlled, and the seat's first declared human-capable player stays the chat sender. Other seats keep their existing assignments.
 
-`npm run play -- tactical_game human` is the smaller half. `scripts/play.py` already resolves a seat through `--seat` and fills its other members through `--companion`, so it needs `self` accepted alongside `naive` and a manifest path, the wide-seat requirement message updated to offer it, and the seat's players bound external instead of one.
+`npm run play -- skirmish_crane human` is the smaller half. `scripts/play.py` already resolves a seat through `--seat` and fills its other members through `--companion`, so it needs `self` accepted alongside `naive` and a manifest path, the wide-seat requirement message updated to offer it, and the seat's players bound external instead of one.
 
 `python -m sandbox human` is platform work in the shared template launcher, and it lands for every environment. Today it has no seat concept at all: `--player` indexes `possible_agents` flat, and every other player, same-seat teammates included, runs the repository's own agent. It gains three things:
 
@@ -50,7 +50,7 @@ Without the flag its current behavior stands: one external player, the repositor
 - The mask-agreement suite, the step's core deliverable: for the opening state and every actionable recorded state in both fixtures, the TypeScript-computed walkable path set and nameable target set equal the test-only legality masks exactly, path ids included. A visible enemy outside strike range remains nameable.
 - Interaction tests (vitest, jsdom): step-by-step composition builds the expected path id, undo and confirm behave, an empty confirm sends stay, target selection sends the right roster slot, illegal continuations are never offered, and nothing is clickable without `sendAction`.
 - Fog tests cover human turns, companion turns, opponent turns, a controlled unit's death while companions remain, terminal states, reconnect mounting, and direct rendering. Terrain stays complete.
-- Human-play tests cover primary-player companion control, whole-side browser control, chat-sender selection, and invalid whole-side requests. Both local launchers are covered, and the template launcher's wide-seat path is tested at the platform level, against an existing wide-seat environment as well as tactical.
+- Human-play tests cover primary-player companion control, whole-side browser control, chat-sender selection, and invalid whole-side requests. Both local launchers are covered, and the template launcher's wide-seat path is tested at the platform level, against an existing wide-seat environment as well as Skirmish at Crane Reach.
 - The e2e journey gains its bounded human segment: compose a short move and a stay via canvas clicks, deliberately minimal to contain canvas-click brittleness.
 
 ## Done when

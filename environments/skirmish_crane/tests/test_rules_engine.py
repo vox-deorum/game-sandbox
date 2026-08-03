@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from itertools import product
 from random import Random
 
@@ -29,6 +30,22 @@ from skirmish_crane.hexes import (
 from skirmish_crane.movement import walk
 from skirmish_crane.paths import MAX_PATH_ID, decode_path, encode_path
 from skirmish_crane.scoring import capture_result, elimination_result, score_capture
+
+
+def _with_tile(field: Battlefield, position: tuple[int, int], tile: Tile) -> Battlefield:
+    """Return the field with one tile replaced, since a battlefield is immutable."""
+    q, r = position
+    rows = [list(row) for row in field.tiles]
+    rows[r][q] = tile
+    return replace(field, tiles=tuple(tuple(row) for row in rows))
+
+
+def _planted(match: Match, units: tuple[Unit, ...], order: tuple[str, ...] | None = None) -> Match:
+    """Replace a generated roster with hand-placed units for one scripted scenario."""
+    match.units = {unit.unit_id: unit for unit in units}
+    match.activation_order = list(order if order is not None else (unit.unit_id for unit in units))
+    match.activation_index = 0
+    return match
 
 
 def _seam_passages(field: Battlefield) -> tuple[tuple[tuple[int, int], ...], ...]:
@@ -61,7 +78,14 @@ def test_battlefields_hold_topology_symmetry_and_zone_guarantees(
     )
 
     assert field.connected()
-    assert tuple(field.tiles) == tuple(field_positions(extent))
+    assert len(field.tiles) == field.side and all(len(row) == field.side for row in field.tiles)
+    # The grid covers the square exactly: void outside the hexagon, never inside it.
+    on_hexagon = set(field_positions(extent))
+    assert all(
+        (field.tiles[r][q] == VOID) is ((q, r) not in on_hexagon)
+        for r in range(field.side)
+        for q in range(field.side)
+    )
     assert all(
         field.tile_at(position) == field.tile_at(rotate_position(position, extent))
         for position in field_positions(extent)
@@ -79,13 +103,19 @@ def test_battlefields_hold_topology_symmetry_and_zone_guarantees(
     assert {zone.center for zone in field.zones} == {
         rotate_position(zone.center, extent) for zone in field.zones
     }
+    # No unit may ever stand in two zones at once, so one activation cannot score twice.
+    assert all(
+        not set(first.tiles) & set(second.tiles)
+        for index, first in enumerate(field.zones)
+        for second in field.zones[index + 1 :]
+    )
 
     passages = _seam_passages(field)
     if terrain:
         assert len(passages) in (2, 3)
         assert all(2 <= len(passage) <= 4 for passage in passages)
     else:
-        assert all(tile == Tile() for tile in field.tiles.values())
+        assert all(field.tile_at(position) == Tile() for position in field_positions(extent))
         assert not passages or passages == (tuple((extent, r) for r in range(2 * extent + 1)),)
 
 
@@ -141,14 +171,14 @@ def test_hex_field_shape_rotation_and_void_array_are_pinned() -> None:
 def test_movement_matrix_covers_cost_balance_blocking_and_length() -> None:
     field = generate_battlefield(5, Random(1))
     start = (5, 5)
-    field.tiles[(6, 5)] = Tile("hill")
+    field = _with_tile(field, (6, 5), Tile("hill"))
     assert walk(field, start, 1, (2,), set()) == (6, 5)
     assert walk(field, start, 2, (2,), set()) == (6, 5)
     with pytest.raises(ValueError, match="negative"):
         walk(field, start, 1, (2, 3), set())
     with pytest.raises(ValueError, match="occupied"):
         walk(field, start, 2, (2,), {(6, 5)})
-    field.tiles[(6, 5)] = Tile("water")
+    field = _with_tile(field, (6, 5), Tile("water"))
     with pytest.raises(ValueError, match="impassable"):
         walk(field, start, 2, (2,), set())
     with pytest.raises(ValueError, match="four"):
@@ -170,11 +200,11 @@ def test_damage_modifier_matrix(
     defender = Unit("blue_footman_0", "blue", "footman", (8, 5), 12)
     units = {attacker.unit_id: attacker, defender.unit_id: defender}
     if attacker_hill:
-        field.tiles[attacker.position] = Tile("hill")
+        field = _with_tile(field, attacker.position, Tile("hill"))
     if defender_hill:
-        field.tiles[defender.position] = Tile("hill")
+        field = _with_tile(field, defender.position, Tile("hill"))
     if forest:
-        field.tiles[defender.position] = Tile(field.tile_at(defender.position).terrain, "forest")
+        field = _with_tile(field, defender.position, Tile(field.tile_at(defender.position).terrain, "forest"))
     if shield:
         ally = Unit("blue_footman_1", "blue", "footman", (7, 5), 12)
         units[ally.unit_id] = ally
@@ -207,11 +237,10 @@ def test_abilities_off_suppresses_charge_and_shield_but_keeps_terrain() -> None:
     assert damage(cavalry, footman, field, units, abilities=False, start=cavalry.position) == 3
     assert damage(cavalry, footman, field, units, abilities=True, start=cavalry.position) == 2
 
-    field.tiles[cavalry.position] = Tile("hill")
-    assert damage(cavalry, footman, field, units, abilities=False, start=cavalry.position) == 4
-    field.tiles[cavalry.position] = Tile()
-    field.tiles[footman.position] = Tile("grass", "forest")
-    assert damage(cavalry, footman, field, units, abilities=False, start=cavalry.position) == 2
+    on_hill = _with_tile(field, cavalry.position, Tile("hill"))
+    assert damage(cavalry, footman, on_hill, units, abilities=False, start=cavalry.position) == 4
+    in_forest = _with_tile(field, footman.position, Tile("grass", "forest"))
+    assert damage(cavalry, footman, in_forest, units, abilities=False, start=cavalry.position) == 2
 
 
 def test_strike_rule_matrix_named_automatic_mandatory_range_and_visibility() -> None:
@@ -321,14 +350,10 @@ def test_automatic_strikes_consume_match_play_randomness_in_execution_order() ->
 
 
 def _match_with_tied_automatic_targets() -> Match:
-    match = Match(MatchConfig(seed=0, round_cap=2))
     attacker = Unit("red_archer_0", "red", "archer", (5, 5), 6)
     left = Unit("blue_footman_0", "blue", "footman", (6, 5), 12)
     right = Unit("blue_footman_1", "blue", "footman", (5, 6), 12)
-    match.units = {unit.unit_id: unit for unit in (attacker, left, right)}
-    match.activation_order = [attacker.unit_id]
-    match.activation_index = 0
-    return match
+    return _planted(Match(MatchConfig(seed=0, round_cap=2)), (attacker, left, right), (attacker.unit_id,))
 
 
 def test_match_order_resolution_consumes_rng_only_for_automatic_strikes() -> None:
@@ -381,12 +406,22 @@ def test_capture_scoring_and_all_end_condition_score_formulas() -> None:
     capped = elimination_result({"red": 25, "blue": 10}, {"red": 30, "blue": 30}, round_cap=True)
     assert (capped.red, capped.blue, capped.winner) == (85, 15, "red")
     assert elimination_result({"red": 10, "blue": 10}, {"red": 30, "blue": 30}, round_cap=True).red == 50
-    assert capture_result({"red": 1, "blue": 0}, {"red": 0, "blue": 0}, 20, reason="elimination").red == 100
-    assert capture_result({"red": 10, "blue": 10}, {"red": 20, "blue": 10}, 20, reason="capture").red == 85
-    blue_capture = capture_result({"red": 10, "blue": 10}, {"red": 10, "blue": 20}, 20, reason="capture")
+    eliminated = capture_result(
+        {"red": 1, "blue": 0}, {"red": 0, "blue": 0}, 20, capture_won=False, capped=True
+    )
+    # Elimination outranks the round cap, and names itself whatever the caller was expecting.
+    assert (eliminated.red, eliminated.reason) == (100, "elimination")
+    won = capture_result({"red": 10, "blue": 10}, {"red": 20, "blue": 10}, 20, capture_won=True, capped=False)
+    assert (won.red, won.reason) == (85, "capture")
+    blue_capture = capture_result(
+        {"red": 10, "blue": 10}, {"red": 10, "blue": 20}, 20, capture_won=True, capped=False
+    )
     assert (blue_capture.red, blue_capture.blue, blue_capture.winner) == (15, 85, "blue")
-    assert capture_result({"red": 10, "blue": 10}, {"red": 5, "blue": 5}, 20, reason="round_cap").red == 50
-    hp_tiebreak = capture_result({"red": 11, "blue": 10}, {"red": 5, "blue": 5}, 20, reason="round_cap")
+    drawn = capture_result({"red": 10, "blue": 10}, {"red": 5, "blue": 5}, 20, capture_won=False, capped=True)
+    assert (drawn.red, drawn.reason) == (50, "round_cap")
+    hp_tiebreak = capture_result(
+        {"red": 11, "blue": 10}, {"red": 5, "blue": 5}, 20, capture_won=False, capped=True
+    )
     assert (hp_tiebreak.red, hp_tiebreak.blue, hp_tiebreak.winner) == (70, 30, "red")
 
 
@@ -400,9 +435,7 @@ def test_killed_unit_is_skipped_and_initial_roster_survives() -> None:
     original_red_roster = match.initial_rosters["red"]
     killer = Unit("red_archer_0", "red", "archer", (5, 5), 6)
     victim = Unit("blue_archer_0", "blue", "archer", (6, 5), 1)
-    match.units = {killer.unit_id: killer, victim.unit_id: victim}
-    match.activation_order = [killer.unit_id, victim.unit_id]
-    match.activation_index = 0
+    _planted(match, (killer, victim))
     activation = match.apply_order(Order(target=victim.unit_id))
     assert activation.killed_id == victim.unit_id
     assert victim.unit_id not in match.units
@@ -413,13 +446,46 @@ def test_killed_unit_is_skipped_and_initial_roster_survives() -> None:
         match.initial_rosters["red"] = ()  # type: ignore[index]
 
 
+def test_orders_with_unwalkable_paths_or_unnameable_targets_are_rejected() -> None:
+    """The ruleset rejects both outright, so neither may quietly degrade into something legal."""
+    match = Match(MatchConfig(seed=17))
+    archer = Unit("red_archer_0", "red", "archer", (7, 7), 6)
+    adjacent = Unit("blue_footman_0", "blue", "footman", (8, 7), 12)
+    unseen = Unit("blue_footman_1", "blue", "footman", (0, 10), 12)
+    _planted(match, (archer, adjacent, unseen))
+    assert distance(archer.position, unseen.position) > archer.stats.vision
+
+    with pytest.raises(ValueError, match="not walkable"):
+        match.apply_order(Order(path=(5, 5, 5)))  # three steps on two movement points
+    with pytest.raises(ValueError, match="not walkable"):
+        match.apply_order(Order(path=(2,)))  # the only step lands on an occupied tile
+    with pytest.raises(ValueError, match="not nameable"):
+        match.apply_order(Order(target=unseen.unit_id))
+    with pytest.raises(ValueError, match="not nameable"):
+        match.apply_order(Order(target="red_archer_0"))
+    assert (archer.position, match.activation_index) == ((7, 7), 0)
+
+    activation = match.apply_order(Order(path=(5,), target=adjacent.unit_id))
+    assert (activation.end, activation.strike is not None) == ((6, 7), True)
+
+
 def test_elimination_on_the_capped_round_uses_elimination_scoring() -> None:
     match = Match(MatchConfig(seed=13, round_cap=1))
     killer = Unit("red_archer_0", "red", "archer", (5, 5), 6)
     victim = Unit("blue_archer_0", "blue", "archer", (6, 5), 1)
-    match.units = {killer.unit_id: killer, victim.unit_id: victim}
+    _planted(match, (killer, victim))
     match.starting_hit_points = {"red": 6, "blue": 6}
-    match.activation_order = [killer.unit_id, victim.unit_id]
+    match.apply_order(Order(target=victim.unit_id))
+    assert match.result is not None
+    assert (match.result.reason, match.result.red, match.result.blue) == ("elimination", 100, 0)
+
+
+def test_capture_elimination_on_the_capped_round_reports_elimination_not_round_cap() -> None:
+    """The terminal reason is decided once, by the scorer, not by the caller."""
+    match = Match(MatchConfig(seed=13, capture_zones=1, round_cap=1))
+    killer = Unit("red_archer_0", "red", "archer", (7, 7), 6)
+    victim = Unit("blue_archer_0", "blue", "archer", (8, 7), 1)
+    _planted(match, (killer, victim))
     match.apply_order(Order(target=victim.unit_id))
     assert match.result is not None
     assert (match.result.reason, match.result.red, match.result.blue) == ("elimination", 100, 0)

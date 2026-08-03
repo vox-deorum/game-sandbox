@@ -1,4 +1,4 @@
-# The Tactical Game: PettingZoo Environment
+# Skirmish at Crane Reach: PettingZoo Environment
 
 This document defines how the [ruleset](ruleset.md) appears through the platform's PettingZoo interface: seats and players, gameplay parameters, the agent-environment cycle, the action and observation spaces, scoring, and messaging. It is an internal design document for the environment implementation, written against the [platform environment contract](../sandbox-doc/specs/environment.md). The ruleset stays the source of game truth; this document only fixes the representation.
 
@@ -149,7 +149,7 @@ The messages variant maps onto the platform messaging layer, so it changes neith
 
 ## Rendering and human input
 
-The `tactical-field` renderer draws only from the semantic overlay. The overlay is self-contained so live play and a replay seek to the same state produce the same frame. It contains:
+The `crane-reach-field` renderer draws only from the semantic overlay. The overlay is self-contained so live play and a replay seek to the same state produce the same frame. It contains:
 
 - The battlefield, capture zones, round, capture scores, living units, current activation, and the visible-unit ids for each living player.
 - The most recent resolved move, attack, damage, death, and capture-score changes for optional animation.
@@ -166,8 +166,8 @@ A human controls either the primary player in the selected seat or the whole sid
 
 | Entry | Value |
 | --- | --- |
-| Environment id | tactical_game |
-| Display name | The Tactical Game |
+| Environment id | skirmish_crane |
+| Display name | Skirmish at Crane Reach |
 | Description | A seeded, turn-based team tactics game in which separately running units coordinate through perception and delayed messages. |
 | Layout | seat plans skirmish and army |
 | Builtin agents, in order | naive (Naive), bronze (Bronze), silver (Silver), gold (Gold) |
@@ -183,7 +183,7 @@ A human controls either the primary player in the selected seat or the whole sid
 | LLM API | off |
 | Seat order | changes the game |
 | Forfeit floor | 0 |
-| Renderer | tactical-field |
+| Renderer | crane-reach-field |
 
 The four builtins are separately declared agents. `naive` is the platform baseline required on every board, while bronze, silver, and gold are the instructor anchors used by the course. The first implementation ships `naive` alone; the anchors are later work, added before the course needs them. Season configurations may assign any declared builtin to an unrestricted seat.
 
@@ -191,7 +191,7 @@ All players are human-capable so a student can control a side's primary unit, wi
 
 ## Package and student materials
 
-The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's tactical helper module owns the stable path encoding and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
+The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's crane helper module owns the stable path encoding and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
 
 ## Conformance notes
 
