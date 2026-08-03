@@ -67,6 +67,11 @@ function seasonLabel(view: { id: string; label: string | null }): string {
 const currentCounts = computed(() =>
   season.value === null ? undefined : history.value.find((entry) => entry.id === season.value?.id),
 )
+const hasLeaderboardMetadata = computed(
+  () =>
+    currentCounts.value !== undefined ||
+    (!operatorPreview.value && season.value?.released_at !== null && season.value?.released_at !== undefined),
+)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -145,7 +150,7 @@ watch(requestedSeasonId, load, { immediate: true })
         Season: {{ seasonLabel(season) }}
         <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
       </h2>
-      <p v-if="season !== null" class="leaderboards-metadata">
+      <p v-if="hasLeaderboardMetadata && season !== null" class="leaderboards-metadata">
         <span v-if="!operatorPreview && season.released_at !== null">
           released {{ formatDate(season.released_at) }}
         </span>
@@ -156,7 +161,12 @@ watch(requestedSeasonId, load, { immediate: true })
           <span>{{ currentCounts.game_count }} games run</span>
         </template>
       </p>
-      <SeasonChanges v-if="settings !== null && meta !== null" :meta="meta" :settings="settings" />
+      <SeasonChanges
+        v-if="settings !== null && meta !== null && season !== null"
+        :meta="meta"
+        :settings="settings"
+        :list-label="`Settings for season ${seasonLabel(season)}`"
+      />
     </header>
 
     <main class="leaderboards-main">

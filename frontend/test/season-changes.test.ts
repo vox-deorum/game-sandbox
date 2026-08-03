@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/vue'
+import { render, screen, within } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 import type { SeasonSettings } from '../src/api/client.js'
 import SeasonChanges from '../src/components/SeasonChanges.vue'
@@ -20,14 +20,18 @@ const changed: SeasonSettings = {
 
 describe('SeasonChanges', () => {
   it('shows each changed setting as a default-to-season pair', () => {
-    render(SeasonChanges, { props: { meta: flappyMeta(), settings: changed } })
+    render(SeasonChanges, {
+      props: { meta: flappyMeta(), settings: changed, listLabel: 'Settings for season Week 4' },
+    })
 
     expect(screen.getByText('Settings:')).toBeInTheDocument()
-    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent('Pipe gap 100 → 90')
-    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent(
-      'Decision limit 1 s → 0.5 s',
-    )
-    expect(screen.getByText('Pipe gap from 100 to 90')).toHaveClass('sr-only')
+    expect(screen.getByRole('group', { name: 'Settings for season Week 4' })).toBeInTheDocument()
+    const changes = screen.getByRole('list', { name: 'Settings for season Week 4' })
+    expect(within(changes).getByText('Pipe gap')).toBeInTheDocument()
+    expect(within(changes).getByText('100 → 90')).toBeInTheDocument()
+    expect(within(changes).getByText('Decision limit')).toBeInTheDocument()
+    expect(within(changes).getByText('1 s → 0.5 s')).toBeInTheDocument()
+    expect(screen.getByText('Pipe gap from 100 to 90')).toBeInTheDocument()
   })
 
   it('states when every setting stays at the environment default', () => {
@@ -39,9 +43,11 @@ describe('SeasonChanges', () => {
           values: { players: 1, pipe_gap: 100 },
           rules: { ...changed.rules, step_timeout_ms: 1000 },
         },
+        listLabel: 'Settings for season Week 4',
       },
     })
 
     expect(screen.getByText('This season uses the default settings.')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Settings for season Week 4' })).toBeInTheDocument()
   })
 })

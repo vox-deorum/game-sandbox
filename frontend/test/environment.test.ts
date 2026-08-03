@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/vue'
+import { fireEvent, screen, within } from '@testing-library/vue'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -144,6 +144,9 @@ describe('EnvironmentPage', () => {
     // (`players` is fixed at one for Flappy Bird and stays out of a player-facing line).
     await renderPage()
     expect(await screen.findByText('This season uses the default settings.')).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: 'Settings for play season Playground' }),
+    ).toBeInTheDocument()
   })
 
   it('leaves the season settings block absent when its explanatory read fails', async () => {
@@ -192,10 +195,11 @@ describe('EnvironmentPage', () => {
 
   it('lists play-season changes in declaration order', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(listSeasons).mockResolvedValue([])
     vi.mocked(getSeasonSettings).mockResolvedValue({
       play: {
         season_id: 'iter-1',
-        season_label: 'Playground',
+        season_label: null,
         template_repo: { url: 'https://example.test/template', branch: 'main' },
         values: { players: 1, pipe_gap: 90 },
         rules: {
@@ -210,13 +214,16 @@ describe('EnvironmentPage', () => {
     })
     await renderPage()
     await screen.findByText('Game limit')
-    const changes = screen.getAllByRole('list', { name: 'Settings' })[0] as HTMLElement
-    expect(changes).toHaveTextContent('Pipe gap 100 → 90')
-    expect(changes).toHaveTextContent('Decision limit 1 s → 0.5 s')
-    expect(changes).toHaveTextContent('Game limit 120 s → 60 s')
+    const changes = screen.getByRole('list', { name: 'Settings for play season Season iter-1' })
+    expect(within(changes).getByText('Pipe gap')).toBeInTheDocument()
+    expect(within(changes).getByText('100 → 90')).toBeInTheDocument()
+    expect(within(changes).getByText('Decision limit')).toBeInTheDocument()
+    expect(within(changes).getByText('1 s → 0.5 s')).toBeInTheDocument()
+    expect(within(changes).getByText('Game limit')).toBeInTheDocument()
+    expect(within(changes).getByText('120 s → 60 s')).toBeInTheDocument()
   })
 
-  it('names the released season in the boards heading with its release date beside it', async () => {
+  it('uses the play-season summary when the released and play seasons match', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: {
@@ -254,7 +261,112 @@ describe('EnvironmentPage', () => {
       await screen.findByRole('heading', { name: 'Leaderboard: Partnership Cup', level: 2 }),
     ).toBeInTheDocument()
     expect(screen.getByText(/^released /)).toBeInTheDocument()
-    expect(screen.getAllByText('Settings:')).toHaveLength(2)
+    expect(screen.getByText('This season uses the default settings.')).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: 'Settings for play season Playground' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('list', { name: 'Settings for leaderboard season Partnership Cup' }),
+    ).toBeNull()
+  })
+
+  it('falls back to the leaderboard summary when matching play-season settings cannot load', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getSeasonSettings).mockRejectedValue(new Error('settings unavailable'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: {
+        season: {
+          id: 'iter-1',
+          env_id: 'flappy_bird',
+          submission_status: 'closed',
+          play_status: 'closed',
+          release_status: 'released',
+          label: 'Partnership Cup',
+          description_markdown: null,
+          config: { deps_version: 1, matches: [] },
+          rating_prompt: null,
+          created_at: '2026-06-10T00:00:00Z',
+          released_at: '2026-06-12T00:00:00Z',
+        },
+        settings: {
+          values: { players: 1, pipe_gap: 90 },
+          rules: {
+            step_timeout_ms: 1000,
+            episode_timeout_ms: 120_000,
+            messaging_enabled: false,
+            message_cap: null,
+            llm_enabled: false,
+          },
+        },
+        board: { automated: [], human: [], games: [] },
+      },
+      submission_season_id: 'iter-1',
+      play_season_id: 'iter-1',
+    })
+    await renderPage()
+
+    expect(
+      await screen.findByRole('list', { name: 'Settings for leaderboard season Partnership Cup' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Settings for play season Playground' })).toBeNull()
+  })
+
+  it('keeps contextual all-default summaries distinct for play and leaderboard seasons', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getSeasonSettings).mockResolvedValue({
+      play: {
+        season_id: 'iter-1',
+        season_label: 'Playground',
+        template_repo: { url: 'https://example.test/template', branch: 'main' },
+        values: { players: 1, pipe_gap: 100 },
+        rules: {
+          step_timeout_ms: 1000,
+          episode_timeout_ms: 120_000,
+          messaging_enabled: false,
+          message_cap: null,
+          llm_enabled: false,
+        },
+      },
+      submission: null,
+    })
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: {
+        season: {
+          id: 'iter-0',
+          env_id: 'flappy_bird',
+          submission_status: 'closed',
+          play_status: 'closed',
+          release_status: 'released',
+          label: 'Partnership Cup',
+          description_markdown: null,
+          config: { deps_version: 1, matches: [] },
+          rating_prompt: null,
+          created_at: '2026-06-10T00:00:00Z',
+          released_at: '2026-06-12T00:00:00Z',
+        },
+        settings: {
+          values: { players: 1, pipe_gap: 100 },
+          rules: {
+            step_timeout_ms: 1000,
+            episode_timeout_ms: 120_000,
+            messaging_enabled: false,
+            message_cap: null,
+            llm_enabled: false,
+          },
+        },
+        board: { automated: [], human: [], games: [] },
+      },
+      submission_season_id: 'iter-1',
+      play_season_id: 'iter-1',
+    })
+    await renderPage()
+
+    expect(
+      await screen.findByRole('group', { name: 'Settings for play season Playground' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: 'Settings for leaderboard season Partnership Cup' }),
+    ).toBeInTheDocument()
   })
 
   it('names the play-open season in the season section and in the peer play heading', async () => {

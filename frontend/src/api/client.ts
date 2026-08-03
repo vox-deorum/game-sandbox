@@ -193,19 +193,17 @@ export interface SeasonRules {
   llm_enabled: boolean
 }
 
-/** One public season's effective local-development settings. */
-export interface SeasonSettings {
-  season_id: string
-  season_label: string | null
-  template_repo: TemplateRepository
-  values: Record<string, ParameterValue>
-  rules: SeasonRules
-}
-
 /** The resolved gameplay settings included with a season's leaderboard result. */
 export interface ResolvedSeasonSettings {
   values: Record<string, ParameterValue>
   rules: SeasonRules
+}
+
+/** One public season's effective local-development settings. */
+export interface SeasonSettings extends ResolvedSeasonSettings {
+  season_id: string
+  season_label: string | null
+  template_repo: TemplateRepository
 }
 
 /** The play and submission seasons' settings, independently absent when their windows are closed. */

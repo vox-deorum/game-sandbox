@@ -9,9 +9,9 @@
 import type { FastifyInstance } from 'fastify'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
-import type { LlmOptions } from '../config/config.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
+import type { ResolveLlmOptions } from '../llm/config.js'
 import {
   agentOwnerIds,
   gameOwnerIds,
@@ -31,7 +31,7 @@ export interface LeaderboardDeps {
   /** The environment registry, read to enrich a built-in agent ref with its declared label. */
   environments: EnvironmentRegistry
   /** Deployment LLM configuration needed to resolve each season's effective display settings. */
-  llm: LlmOptions
+  llm: ResolveLlmOptions
 }
 
 /**

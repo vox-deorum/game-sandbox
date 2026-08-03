@@ -46,7 +46,7 @@ The scales:
 1. `tokens.css` defines the tokens.
 2. `base.css` provides the reset, element defaults, global `:focus-visible` style, and reduced-motion block.
 3. `app.css` contains only the application shell layout.
-4. `season-rows.css` provides the compact row, status stripe, date, and visually hidden utilities shared by My Agents and agent profiles.
+4. `season-rows.css` provides the compact row, status stripe, and date styles shared by My Agents and agent profiles. Global accessibility utilities, including visually hidden text, live in `base.css`.
 5. Highlight.js's `github-dark.css` colors syntax tokens in the in-app documentation's code blocks.
 
 All other styles are component-scoped CSS that uses the tokens.

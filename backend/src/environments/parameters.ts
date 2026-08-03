@@ -51,6 +51,21 @@ export function resolveSeasonParameters(
   return issue === undefined ? { values: resolved.values } : { values: resolved.values, issue }
 }
 
+/**
+ * Public reads keep a season available when stored parameter overrides drift: rejected values use
+ * environment defaults, while this warning records the operator action needed to correct them.
+ */
+export function warnForParameterDrift(
+  seasonId: string | undefined,
+  resolved: SeasonParameters,
+): void {
+  if (resolved.issue === undefined) return
+  // The app is built with `logger: false`, so `request.log` would discard this.
+  console.warn(
+    `season ${seasonId} parameter override ${resolved.issue.name} ${resolved.issue.message}; using the environment default`,
+  )
+}
+
 /** Resolve every environment and season rule that reaches a launched game. */
 export function resolveSeasonRules(
   meta: EnvironmentMeta,

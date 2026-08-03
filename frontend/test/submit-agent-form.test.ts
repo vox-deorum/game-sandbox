@@ -1,8 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { SeasonSettings, SubmissionDetail } from '../src/api/client.js'
-import { flappyMeta } from './helpers/fixtures.js'
+import type { SubmissionDetail } from '../src/api/client.js'
 
 vi.mock('../src/api/client.js', () => ({
   getSubmissionCapabilities: vi.fn(),
@@ -60,29 +59,17 @@ function detail(
   }
 }
 
-const seasonSettings: SeasonSettings = {
-  season_id: 'flappy_bird-iter-1',
-  season_label: 'Week 1',
-  template_repo: { url: 'https://example.test/template', branch: 'main' },
-  values: { players: 1, pipe_gap: 90 },
-  rules: {
-    step_timeout_ms: 1000,
-    episode_timeout_ms: 120_000,
-    messaging_enabled: false,
-    message_cap: null,
-    llm_enabled: false,
-  },
-}
-
-function renderForm(withSettings = false) {
+function renderForm(withActionBefore = false) {
   return render(SubmitAgentForm, {
     props: {
       envId: 'flappy_bird',
       submissionSeasonId: 'flappy_bird-iter-1',
-      ...(withSettings ? { meta: flappyMeta(), settings: seasonSettings } : {}),
       pollIntervalMs: 5,
       stallAfterPolls: 2,
     },
+    slots: withActionBefore
+      ? { 'actions-before': '<button type="button">Set Up Locally</button>' }
+      : {},
   })
 }
 
@@ -101,14 +88,18 @@ describe('SubmitAgentForm', () => {
     vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: true, prompt: 'reward smooth play' })
   })
 
-  it('puts local setup before verification and submission when settings are available', () => {
+  it('renders an optional action before verification and submission', () => {
     renderForm(true)
-    const actions = screen.getByRole('button', { name: 'Set Up Locally' }).parentElement
-    expect(
-      within(actions as HTMLElement)
-        .getAllByRole('button')
-        .map((button) => button.textContent?.trim()),
-    ).toEqual(['Set Up Locally', 'Verify reachability', 'Submit agent'])
+    const form = screen.getByLabelText('Public Repository URL').closest('form')
+    const setup = within(form as HTMLElement).getByRole('button', { name: 'Set Up Locally' })
+    const verify = within(form as HTMLElement).getByRole('button', { name: 'Verify reachability' })
+    const submit = within(form as HTMLElement).getByRole('button', { name: 'Submit agent' })
+    const actions = within(form as HTMLElement).getByRole('group', { name: 'Submission actions' })
+    expect(actions).toContainElement(setup)
+    expect(actions).toContainElement(verify)
+    expect(actions).toContainElement(submit)
+    expect(setup.nextElementSibling).toBe(verify)
+    expect(verify.nextElementSibling).toBe(submit)
   })
 
   it('keeps submit disabled until the repository verifies reachable', async () => {

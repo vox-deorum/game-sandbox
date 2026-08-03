@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 
-import type { LlmOptions } from '../config/config.js'
+import type { ResolveLlmOptions } from '../llm/config.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { Season } from '../storage/schema.js'
-import { resolveSeasonParameters, type SeasonParameters } from './parameters.js'
+import { resolveSeasonParameters, warnForParameterDrift } from './parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from './registry.js'
 import { resolveSeasonDisplaySettings } from './season-settings.js'
 
@@ -12,15 +12,7 @@ export interface EnvironmentRouteDeps {
   environments: EnvironmentRegistry
   storage: Pick<Storage, 'getOpenSubmissionSeason' | 'getPublicPlaySeason'>
   templateRepoUrl: string
-  llm: LlmOptions
-}
-
-function warnForParameterDrift(season: Season | undefined, resolved: SeasonParameters): void {
-  if (resolved.issue === undefined) return
-  // The app is built with `logger: false`, so `request.log` would discard this.
-  console.warn(
-    `season ${season?.id} parameter override ${resolved.issue.name} ${resolved.issue.message}; using the environment default`,
-  )
+  llm: ResolveLlmOptions
 }
 
 /** Compare repository URLs without treating an optional trailing slash as a distinct repository. */
@@ -32,7 +24,7 @@ function seasonSettings(
   meta: EnvironmentMeta,
   season: Season,
   templateRepoUrl: string,
-  llmOptions: LlmOptions,
+  llmOptions: ResolveLlmOptions,
 ) {
   const url = season.template_repo_url ?? templateRepoUrl
   return {
@@ -62,10 +54,7 @@ export function registerEnvironmentRoutes(app: FastifyInstance, deps: Environmen
         meta,
         season === undefined ? {} : decodeSeasonConfig(season.config).overrides?.parameters,
       )
-      // A stored override the current declarations no longer accept is an operator problem, not a
-      // reason to take play offline: the rejected override falls back to the environment default and
-      // the remaining values are unaffected, so serve them and record the drift for the operator.
-      warnForParameterDrift(season, resolved)
+      warnForParameterDrift(season?.id, resolved)
       return { season_id: season?.id ?? null, values: resolved.values }
     },
   )

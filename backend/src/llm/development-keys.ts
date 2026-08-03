@@ -1,12 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { UserStatus } from '../auth/identity.js'
-import type { LlmOptions } from '../config/config.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { createDevelopmentRecordSink } from '../storage/llm/development-ledger/sink.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import type { LlmDevelopmentKey, Season } from '../storage/schema.js'
 import { decodeSeasonConfig } from '../storage/season-config.js'
-import { type EncodedLlmLimits, encodeLimits, type ResolvedLlm, resolveLlm } from './config.js'
+import {
+  type EncodedLlmLimits,
+  encodeLimits,
+  type ResolvedLlm,
+  type ResolveLlmOptions,
+  resolveLlm,
+} from './config.js'
 import { LlmError } from './errors.js'
 import type { LlmGrant, ModelAlias } from './types.js'
 import { MODEL_ALIASES, modelCostWeights } from './types.js'
@@ -28,7 +33,7 @@ export interface DevelopmentKeyStorage {
 export interface DevelopmentKeyServiceDeps {
   storage: DevelopmentKeyStorage
   environments: EnvironmentRegistry
-  llm: LlmOptions
+  llm: ResolveLlmOptions
   ledger: DevelopmentLedgerStore
   publicOrigin: string
   readUserStatus: (userId: string) => Promise<UserStatus | null>

@@ -40,6 +40,7 @@ import {
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
 import SeasonChanges from '../components/SeasonChanges.vue'
+import SetUpLocallyButton from '../components/SetUpLocallyButton.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -250,6 +251,9 @@ const currentSeasonSubmission = computed(() => {
     ) ?? null
   )
 })
+const currentSeasonStatus = computed(() =>
+  currentSeasonSubmission.value === null ? null : statusBadge(currentSeasonSubmission.value),
+)
 
 // Public season metadata improves the header label, but it is owner-only and non-blocking. The short
 // id fallback renders immediately and remains if this secondary read fails.
@@ -565,11 +569,11 @@ const seasonLabel = (label: string | null, id: string): string =>
           <span>Season: {{ currentSeasonName }}</span>
           <span aria-hidden="true">·</span>
           <UiStatusBadge
-            v-if="currentSeasonSubmission !== null && statusBadge(currentSeasonSubmission).tone === 'danger'"
-            v-bind="statusBadge(currentSeasonSubmission)"
+            v-if="currentSeasonStatus?.tone === 'danger'"
+            v-bind="currentSeasonStatus"
           />
           <span v-else>
-            {{ currentSeasonSubmission === null ? 'Not submitted' : statusBadge(currentSeasonSubmission).label }}
+            {{ currentSeasonStatus?.label ?? 'Not submitted' }}
           </span>
         </p>
         <p v-else class="submit-none">No Season is accepting submissions right now.</p>
@@ -578,6 +582,9 @@ const seasonLabel = (label: string | null, id: string): string =>
         v-if="submissionSeasonSettings !== null && meta !== null"
         :meta="meta"
         :settings="submissionSeasonSettings"
+        :list-label="`Settings for submission season ${
+          submissionSeasonSettings.season_label ?? currentSeasonName ?? 'current season'
+        }`"
       />
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
@@ -585,11 +592,17 @@ const seasonLabel = (label: string | null, id: string): string =>
         <SubmitAgentForm
           :env-id="envId"
           :submission-season-id="profile.submission_season_id"
-          :meta="meta"
-          :settings="submissionSeasonSettings"
           @accepted="refreshProfile"
           @settled="refreshProfile"
-        />
+        >
+          <template #actions-before>
+            <SetUpLocallyButton
+              v-if="submissionSeasonSettings !== null && meta !== null"
+              :meta="meta"
+              :settings="submissionSeasonSettings"
+            />
+          </template>
+        </SubmitAgentForm>
       </template>
       <UiEmptyState v-else-if="profile.submission_season_id !== null">
         Your account is awaiting approval, so you can't submit yet.

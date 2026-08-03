@@ -8,18 +8,19 @@ import { describeSeasonChanges } from '../lib/season-settings.js'
 const props = defineProps<{
   meta: EnvironmentMeta
   settings: ResolvedSeasonSettings
+  listLabel: string
 }>()
 
 const changes = computed(() => describeSeasonChanges(props.meta, props.settings))
 </script>
 
 <template>
-  <div class="season-settings">
+  <div class="season-settings" role="group" :aria-label="listLabel">
     <span class="season-settings-label">Settings:</span>
-    <ul v-if="changes.length > 0" class="season-changes" aria-label="Settings">
+    <ul v-if="changes.length > 0" class="season-changes" :aria-label="listLabel">
       <li v-for="change in changes" :key="change.label">
         <span class="season-change-visual" aria-hidden="true">
-          <span class="season-change-label">{{ `${change.label} ` }}</span>
+          <span class="season-change-label">{{ change.label }}</span>
           <span class="season-change-values">{{ change.from }} → {{ change.to }}</span>
         </span>
         <span class="sr-only">{{ change.label }} from {{ change.from }} to {{ change.to }}</span>

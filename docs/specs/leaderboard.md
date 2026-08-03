@@ -4,7 +4,7 @@ There are two leaderboards per environment per season: an automated board and a 
 
 ## Leaderboard views
 
-A selected season's leaderboard header shows a compact **Settings** summary from the server-resolved settings returned with that season's boards. It uses the same default-to-season differences as the environment overview and My Submissions. The **All Seasons** section is a clean season index and does not repeat the selected season's settings.
+A selected season's leaderboard header shows release time and board counts as plain metadata, followed by a compact **Settings** summary from the server-resolved settings returned with that season's boards. An unreleased operator preview uses a semantic badge for its exceptional state. The summary uses the same default-to-season differences as the environment overview and My Submissions. The **All Seasons** section is a clean season index and does not repeat the selected season's settings.
 
 ## Automated board
 

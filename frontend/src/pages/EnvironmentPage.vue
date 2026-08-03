@@ -106,6 +106,17 @@ const playableSeason = computed(() => {
     ? null
     : publicSeasons.value.find((season) => season.id === seasonId) ?? null
 })
+const playSeasonSettingsLabel = computed(() => {
+  const settings = playSeasonSettings.value
+  if (settings === null) {
+    return 'Settings for play season'
+  }
+  const season = playableSeason.value ?? {
+    id: settings.season_id,
+    label: settings.season_label,
+  }
+  return `Settings for play season ${formatSeasonName(season)}`
+})
 // The peer play and rate section names the season its runs are played under, so the viewer knows
 // which settings and which roster of agents they are watching and rating.
 const playSectionHeading = computed(() =>
@@ -117,7 +128,17 @@ const playSectionHeading = computed(() =>
 // The last released season — the one whose boards are embedded below, named in the section heading
 // ("Leaderboard: <season>"); with nothing released the heading stays the plain plural.
 const releasedSeason = computed(() => leaderboards.value?.current?.season ?? null)
-const releasedSeasonSettings = computed(() => leaderboards.value?.current?.settings ?? null)
+// When the open play season is also the released season, its settings belong beside the play entry
+// point. If that optional play-settings read fails, preserve the embedded leaderboard's copy.
+const releasedSeasonSettings = computed(() => {
+  const settings = leaderboards.value?.current?.settings ?? null
+  return releasedSeason.value?.id === playSeasonSettings.value?.season_id ? null : settings
+})
+const releasedSeasonSettingsLabel = computed(() =>
+  releasedSeason.value === null
+    ? 'Settings for leaderboard season'
+    : `Settings for leaderboard season ${formatSeasonName(releasedSeason.value)}`,
+)
 const boardsHeading = computed(() =>
   releasedSeason.value === null
     ? 'Leaderboards'
@@ -309,6 +330,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
         v-if="playSeasonSettings !== null"
         :meta="meta"
         :settings="playSeasonSettings"
+        :list-label="playSeasonSettingsLabel"
       />
     </section>
 
@@ -347,6 +369,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
         v-if="releasedSeasonSettings !== null"
         :meta="meta"
         :settings="releasedSeasonSettings"
+        :list-label="releasedSeasonSettingsLabel"
       />
       <LeaderboardBoards
         v-if="leaderboards?.current != null"

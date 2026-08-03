@@ -56,9 +56,15 @@ export interface ResolvedLlm {
   development: LlmLimits
 }
 
+/** The deployment LLM settings needed to resolve a season's effective policy. */
+export type ResolveLlmOptions = Pick<
+  LlmOptions,
+  'upstreamUrl' | 'models' | 'sessionLimits' | 'developmentLimits'
+>
+
 /** Resolve current deployment, environment, and season settings without consulting any gate status. */
 export function resolveLlm(
-  deployment: Pick<LlmOptions, 'upstreamUrl' | 'models' | 'sessionLimits' | 'developmentLimits'>,
+  deployment: ResolveLlmOptions,
   environment: Pick<EnvironmentMeta, 'llm'>,
   season: SeasonConfig,
 ): ResolvedLlm {

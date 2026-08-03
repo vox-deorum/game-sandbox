@@ -35,11 +35,16 @@ import { z } from 'zod'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../build/deps-version.js'
-import { isSafeTemplateRepoUrl, type LlmOptions } from '../config/config.js'
+import { isSafeTemplateRepoUrl } from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
-import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
+import {
+  officialPolicy,
+  type ResolveLlmOptions,
+  resolveLlm,
+  unavailableLlmAliases,
+} from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
 import {
   developmentCallPageView,
@@ -84,7 +89,7 @@ export interface AdminDeps {
   /** The display-name directory; run/board/submission views batch their user ids through it. */
   userDirectory: UserDirectory
   /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
-  llm: Pick<LlmOptions, 'upstreamUrl' | 'models' | 'sessionLimits' | 'developmentLimits'>
+  llm: ResolveLlmOptions
   llmDevelopment?: {
     keys: Pick<DevelopmentKeyService, 'resolveReadPolicy'>
     ledger: DevelopmentLedgerStore

@@ -33,9 +33,11 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   const playSection = page.locator('section').filter({
     has: page.getByRole('heading', { name: 'Open for Play: Playground' }),
   })
-  const changes = playSection.getByRole('list', { name: 'Settings' })
-  await expect(changes).toContainText('Pipe gap 100 → 90')
-  await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
+  const changes = playSection.getByRole('list', { name: 'Settings for play season Playground' })
+  await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()
+  await expect(changes.getByText('100 → 90', { exact: true })).toBeVisible()
+  await expect(changes.getByText('Decision limit', { exact: true })).toBeVisible()
+  await expect(changes.getByText('1 s → 0.8 s', { exact: true })).toBeVisible()
 
   // The Play entry point in the play-season section opens the start form; submit it to start a
   // human session.
@@ -159,9 +161,13 @@ test('shows submission-season changes and downloads its local setup file', async
   const submissionSection = page.locator('section').filter({
     has: page.getByRole('heading', { name: 'Submit an Agent' }),
   })
-  const changes = submissionSection.getByRole('list', { name: 'Settings' })
-  await expect(changes).toContainText('Pipe gap 100 → 90')
-  await expect(changes).toContainText('Decision limit 1 s → 0.8 s')
+  const changes = submissionSection.getByRole('list', {
+    name: 'Settings for submission season Playground',
+  })
+  await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()
+  await expect(changes.getByText('100 → 90', { exact: true })).toBeVisible()
+  await expect(changes.getByText('Decision limit', { exact: true })).toBeVisible()
+  await expect(changes.getByText('1 s → 0.8 s', { exact: true })).toBeVisible()
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Set Up Locally' }).click()

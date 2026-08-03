@@ -484,8 +484,24 @@ describe('AgentProfilePage', () => {
     expect(currentSeasonHeader.tagName).toBe('HEADER')
     expect(currentSeasonHeader.closest('.ui-card')).toBeNull()
     expect(currentSeasonHeader.querySelector('.ui-card')).toBeNull()
-    expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Not submitted')).toBeNull()
+    expect(within(currentSeasonHeader).getByText('load check failed')).toBeInTheDocument()
+    expect(currentSeasonHeader.querySelector('.ui-status-badge .dot.danger')).not.toBeNull()
+    expect(within(currentSeasonHeader).queryByText('Not submitted')).toBeNull()
+  })
+
+  it('renders a non-failing current status as plain text', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [submission({ id: 'current-ready', season_id: 'iter-next', status: 'ready' })],
+    })
+
+    await screen.findByRole('heading', { name: 'Submit an Agent' })
+    const currentSeasonHeader = document.getElementById('current-season-banner') as HTMLElement
+    expect(within(currentSeasonHeader).getByText('ready to compete')).toBeInTheDocument()
+    expect(currentSeasonHeader.querySelector('.ui-status-badge')).toBeNull()
   })
 
   it('shows submission season changes and offers local setup', async () => {
@@ -514,8 +530,11 @@ describe('AgentProfilePage', () => {
     })
 
     const localSetup = await screen.findByRole('button', { name: 'Set Up Locally' })
-    expect(localSetup.closest('.submit-actions')).not.toBeNull()
-    expect(screen.getByRole('list', { name: 'Settings' })).toHaveTextContent('Pipe gap 100 → 90')
+    const form = screen.getByLabelText('Public Repository URL').closest('form')
+    expect(form).toContainElement(localSetup)
+    expect(
+      screen.getByRole('list', { name: 'Settings for submission season Week 4' }),
+    ).toBeInTheDocument()
   })
 
   it('says when the submission season uses the environment defaults', async () => {
