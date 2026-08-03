@@ -1,6 +1,6 @@
-# The Tactical Game: Pedagogy Design
+# Skirmish at Crane Reach: Pedagogy Design
 
-The tactical game is the course's performance track. Students design game AI that wins team battles, judged mainly by the automated leaderboard (the ladder). Grade credit is anchored to beating instructor baseline bots, not peer rank; the ladder itself is for glory.
+Skirmish at Crane Reach is the course's performance track. Students design game AI that wins team battles, judged mainly by the automated leaderboard (the ladder). Grade credit is anchored to beating instructor baseline bots, not peer rank; the ladder itself is for glory.
 
 Game format: the game runs in rounds. Every living unit acts once per round, in an order reshuffled each round. A unit selects its order from its current observation, receives any inbox messages after that selection, and then its selected order resolves immediately. Each submission is code for one individual unit; a team is separately constructed instances of that code running independently, with no shared controller or shared memory. Coordination happens through observations, stable unit IDs, and delayed unit-to-unit messages only.
 

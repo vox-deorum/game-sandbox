@@ -1,6 +1,6 @@
-# The Tactical Game: Ruleset
+# Skirmish at Crane Reach: Ruleset
 
-The tactical game is a battle between two detachments, Red and Blue, fighting over ground in Crane Reach. Every unit on a side runs a separately constructed copy of one submitted program. Coordination happens through perception and delayed messages, never through a shared controller or shared memory.
+Skirmish at Crane Reach is a battle between two detachments, Red and Blue, fighting over ground in Crane Reach. Every unit on a side runs a separately constructed copy of one submitted program. Coordination happens through perception and delayed messages, never through a shared controller or shared memory.
 
 The game is one environment plus four variants: terrain, abilities, messages, and capture. Seasons switch variants on and set parameters such as field size and unit counts. The season schedule is at the end of this document; the teaching arc behind it lives in [pedagogy.md](pedagogy.md).
 

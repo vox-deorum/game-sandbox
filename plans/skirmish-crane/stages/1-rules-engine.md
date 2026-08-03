@@ -1,6 +1,6 @@
 # Step 1: Rules Engine
 
-Status: planned.
+Status: complete.
 
 Part of [the tactical game plan](../README.md). This is build-order step 1: the complete [ruleset](../ruleset.md) as pure, heavily tested Python, with every variant and reproducible results for a seed and scripted orders. No PettingZoo, Gymnasium, or harness imports. The hands-on surface is a seeded scripted match runner on the command line.
 
