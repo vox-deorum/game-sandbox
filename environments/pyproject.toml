@@ -29,7 +29,7 @@ build-backend = "hatchling.build"
 # Each environment is its own top-level package. This block is regenerated so the wheel
 # keeps ignored shared helper packages such as `local_play` alongside recognized environments.
 # BEGIN GENERATED WHEEL PACKAGES
-packages = ["flappy_bird", "hearts", "local_play", "spades"]
+packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades"]
 # END GENERATED WHEEL PACKAGES
 artifacts = ["flappy_bird/UPSTREAM_LICENSE.md"]
 exclude = ["*/environment.md", "*/renderer", "*/tests", "*/template", "*/examples"]

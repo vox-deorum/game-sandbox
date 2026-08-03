@@ -1,2 +1,3 @@
 # Packages in this list remain installable shared helpers, not publishable environments.
 local_play/
+skirmish_crane/

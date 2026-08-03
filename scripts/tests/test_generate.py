@@ -124,7 +124,23 @@ def test_environment_wheel_excludes_canonical_guides_and_keeps_license(tmp_path:
         names = set(archive.namelist())
 
     assert "flappy_bird/UPSTREAM_LICENSE.md" in names
+    assert "skirmish_crane/__init__.py" in names
     assert not any(name.endswith("/environment.md") for name in names)
+
+
+def test_skirmish_rules_are_installable_but_absent_from_environment_discovery():
+    package_names = {path.name for path in _envs.package_dirs()}
+    patterns = _envs._ignore_patterns()
+    recognized_names = {path.name for path in _envs.recognized_package_dirs()}
+    discovered_names = set(_envs.discover_environments())
+    pyproject = (REPO_ROOT / "environments" / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "skirmish_crane" in package_names
+    assert _envs._is_ignored("skirmish_crane", patterns)
+    assert "skirmish_crane" not in recognized_names
+    assert "skirmish_crane" not in discovered_names
+    assert 'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades"]' in pyproject
+    assert 'skirmish_crane = "skirmish_crane:ENTRY"' not in pyproject
 
 
 def test_source_import_replaces_a_cached_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

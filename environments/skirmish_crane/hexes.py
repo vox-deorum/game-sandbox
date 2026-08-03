@@ -1,0 +1,101 @@
+"""Hexagonal field geometry shared by every tactical rules module."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from dataclasses import dataclass
+
+Position = tuple[int, int]
+
+# Clockwise from northeast.  These digits are part of the student contract.
+DIRECTIONS: dict[int, Position] = {
+    1: (1, -1),
+    2: (1, 0),
+    3: (0, 1),
+    4: (-1, 1),
+    5: (-1, 0),
+    6: (0, -1),
+}
+
+
+@dataclass(frozen=True)
+class Tile:
+    """A field cell. Void and water are impassable."""
+
+    terrain: str = "grass"
+    feature: str = "none"
+
+    @property
+    def passable(self) -> bool:
+        return self.terrain not in {"void", "water"}
+
+    @property
+    def move_cost(self) -> int:
+        if not self.passable:
+            raise ValueError("an impassable tile has no movement cost")
+        return 1 + (self.terrain == "hill") + (self.feature == "forest") + 2 * (self.feature == "marsh")
+
+
+VOID = Tile("void")
+
+
+def on_field(position: Position, extent: int) -> bool:
+    q, r = position
+    return 0 <= q <= 2 * extent and 0 <= r <= 2 * extent and extent <= q + r <= 3 * extent
+
+
+def field_positions(extent: int) -> Iterator[Position]:
+    for q in range(2 * extent + 1):
+        for r in range(2 * extent + 1):
+            if on_field((q, r), extent):
+                yield q, r
+
+
+def neighbor(position: Position, direction: int) -> Position:
+    if type(direction) is not int or direction not in DIRECTIONS:
+        raise ValueError(f"direction must be 1 through 6, got {direction!r}")
+    try:
+        dq, dr = DIRECTIONS[direction]
+    except KeyError as error:
+        raise ValueError(f"direction must be 1 through 6, got {direction!r}") from error
+    return position[0] + dq, position[1] + dr
+
+
+def neighbors(position: Position, extent: int) -> tuple[Position, ...]:
+    return tuple(
+        candidate
+        for digit in DIRECTIONS
+        for candidate in (neighbor(position, digit),)
+        if on_field(candidate, extent)
+    )
+
+
+def distance(first: Position, second: Position) -> int:
+    dq = first[0] - second[0]
+    dr = first[1] - second[1]
+    return (abs(dq) + abs(dr) + abs(dq + dr)) // 2
+
+
+def opposite(direction: int) -> int:
+    if type(direction) is not int or direction not in DIRECTIONS:
+        raise ValueError(f"direction must be 1 through 6, got {direction!r}")
+    return ((direction + 2) % 6) + 1
+
+
+def rotate_position(position: Position, extent: int) -> Position:
+    return 2 * extent - position[0], 2 * extent - position[1]
+
+
+def rotate_path(path: tuple[int, ...] | list[int]) -> tuple[int, ...]:
+    return tuple(opposite(direction) for direction in path)
+
+
+def retrace_path(path: tuple[int, ...] | list[int]) -> tuple[int, ...]:
+    return tuple(opposite(direction) for direction in reversed(path))
+
+
+def tile_array(extent: int, tiles: dict[Position, Tile]) -> tuple[tuple[Tile, ...], ...]:
+    return tuple(
+        tuple(tiles.get((q, r), VOID) if on_field((q, r), extent) else VOID for q in range(2 * extent + 1))
+        for r in range(2 * extent + 1)
+    )

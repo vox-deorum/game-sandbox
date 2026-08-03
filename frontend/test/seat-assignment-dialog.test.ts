@@ -439,13 +439,12 @@ describe('SeatAssignmentDialog', () => {
     const start = screen.getByRole('button', { name: 'Start playing' })
     expect(start).toBeDisabled()
     expect(
-      within(screen.getByRole('combobox', { name: "Seat 2's other players" })).queryByRole(
-        'option',
-        { name: 'Play them yourself' },
-      ),
+      within(screen.getByRole('combobox', { name: "Seat 2's companions" })).queryByRole('option', {
+        name: 'Play them yourself',
+      }),
     ).toBeNull()
     await fireEvent.update(
-      screen.getByRole('combobox', { name: "Seat 2's other players" }),
+      screen.getByRole('combobox', { name: "Seat 2's companions" }),
       'submission:sub1',
     )
     await fireEvent.click(start)
@@ -469,7 +468,7 @@ describe('SeatAssignmentDialog', () => {
     expect(screen.getAllByText('2 players')).toHaveLength(2)
     const start = screen.getByRole('button', { name: 'Start playing' })
     expect(start).toBeDisabled()
-    const companion = screen.getByRole('combobox', { name: "Seat 1's other players" })
+    const companion = screen.getByRole('combobox', { name: "Seat 1's companions" })
     expect(companion).toHaveValue('')
     expect(within(companion).getByRole('option', { name: 'Play them yourself' })).toHaveValue(
       'self',
@@ -497,7 +496,7 @@ describe('SeatAssignmentDialog', () => {
     const rows = screen.getAllByRole('listitem')
     expect(within(rows[0] as HTMLElement).getByText('You')).toBeInTheDocument()
     expect(screen.getByText('Cautious bidder controls the other players.')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: "Seat 1's other players" })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: "Seat 1's companions" })).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     expect(lastStart(emitted).seats).toEqual({
@@ -639,13 +638,13 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's other players" }), 'self')
+    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's companions" }), 'self')
     const rows = screen.getAllByRole('listitem')
     await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: "Seat 2's other players" })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 2's companions" })).toHaveValue('')
 
     await fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: "Seat 1's other players" })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
   })
 
@@ -660,12 +659,12 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's other players" }), 'self')
+    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's companions" }), 'self')
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat 2' }), 'submission:sub2')
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'solo')
 
     expect(screen.getAllByText('1 player')).toHaveLength(4)
-    expect(screen.queryByRole('combobox', { name: /other players/ })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: /companions/ })).toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'human' },
@@ -675,7 +674,7 @@ describe('SeatAssignmentDialog', () => {
     })
 
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'partnership')
-    expect(screen.getByRole('combobox', { name: "Seat 1's other players" })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
   })
 
