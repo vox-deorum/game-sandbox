@@ -479,8 +479,7 @@ function onSubmit(): void {
             </div>
             <UiField
               v-if="needsCompanionChoice(seatId)"
-              :label="`Seat ${index + 1}'s other players`"
-              hint="Required. Choose one companion agent or play them yourself."
+              :label="`Seat ${index + 1}'s companions`"
             >
               <template #default="{ id, describedby }">
                 <UiSelect
