@@ -34,7 +34,7 @@ Parchment and ink. The board and all writing, warm whites and browned ink, clear
 | grid | #6f6757 | dilute ink | tile edges (width 1.5, alpha 0.55), move trails |
 | text | #efe7d3 | bone | primary canvas text, glyphs, healthy rim gauge |
 | mutedText | #b3ab99 | faded ink | secondary HUD text |
-| event | #e8dfc7 | pale bone | caption line, arrow streaks |
+| event | #e8dfc7 | pale bone | arrow streaks, event accents |
 
 Terrain washes. Muted estuary pigments, each far enough from its neighbors to survive a 25 px hex:
 
@@ -93,8 +93,8 @@ One hand-drawn set, all original art, shipped with the renderer. Raster pieces a
 | seal-ring.png | 96 x 96 | brushy circle: activation ring, target seal |
 | rune-dash.png | 96 x 24 | zone border segments |
 | mote.png | 32 x 32 | zone light motes |
-| glyph-sword.svg, glyph-bow.svg, glyph-horse.svg | 64 x 64 each | token glyphs, roster marks |
-| fig-footman.svg, fig-archer.svg, fig-cavalry.svg | 128 x 128 each | near-zoom silhouettes |
+| glyph-sword.svg, glyph-bow.svg, glyph-horse.svg | 64 x 64 each | token glyphs |
+| fig-footman.svg, fig-archer.svg, fig-cavalry.svg | 128 x 128 each | near-zoom silhouettes, roster marks |
 | pennant.svg | 48 x 64 | capture zone standard |
 | crane.svg | 192 x 96 | terminal banner and thumbnail motif |
 
@@ -113,7 +113,7 @@ Zoom level is a first-class scene fact. The scene exposes `zoomLevel: 'near' | '
 ### Zones, activation, and events
 
 - Capture zones read as consecrated ground. All seven tiles take a mulberry wash at alpha 0.16 with a pale-orchid luminance rising toward the center tile. The zone's outer boundary (the union outline, not per-tile rings) is drawn in `rune-dash` segments tinted pale orchid, circulating slowly on the same tick-derived cycle as the mist. Two or three `mote` sprites drift above the zone on that cycle. The center tile carries the standard: the `pennant` sprite at near zoom, a mulberry seal-ring at far zoom. At far zoom the motes shrink and the luminance softens so the army board stays calm.
-- Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12.
+- Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
 - Events: the animation budget becomes `min(450, 0.6 x transitionMs)`: 450 ms at the 750 ms watch cadence, 300 ms at the 500 ms live cadence. An activation that walks and strikes spends the first 60 percent walking, the rest striking. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
 
 | Event | Shape | Color | Timing within budget |
@@ -126,7 +126,7 @@ Zoom level is a first-class scene fact. The scene exposes `zoomLevel: 'near' | '
 | capture score | the zone's luminance swells, its motes flare, and a `+1` in the scoring side's color drifts up from the standard | side color, pale orchid | 300 ms in the settle phase |
 
 - Snap and seek: any seek, any repeated render of the same tick, and any mount renders the final frame instantly; only a fresh forward transition animates. Idle motion (mist, runes, motes) is a pure function of the tick, so a paused board is still and a seek lands on an identical frame.
-- Reduced motion: every glide, lunge, streak, dissolve, pulse, and drift snaps to its final frame; damage shows as a static numeral; the flash is dropped. The board never depends on motion to be a complete picture.
+- Reduced motion: glides, lunges, dissolves, pulses, and drift snap to their final frames; an attack shows as a static hairline thread from actor to target for that frame, damage as a static numeral, and the flash is dropped. The animations are the only carrier of strike information (no HUD text repeats it), so these static forms keep every frame readable.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 

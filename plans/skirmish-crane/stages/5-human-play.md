@@ -12,7 +12,7 @@ The input layer contains the riskiest renderer deliverable: a TypeScript legalit
 
 ### Legality from the overlay
 
-A renderer-local module computes, for the acting controlled player, the walkable path set and the nameable target set from the overlay state alone. Its scope is step costs, occupancy, the always-permitted first step, the four-step limit, and the visibility sets the overlay already carries. Range bands explain likely strike results but do not filter nameable targets: every living visible enemy is nameable.
+A renderer-local module computes, for the acting controlled player, the walkable path set and the nameable target set from the overlay state alone. Its scope is step costs, occupancy, the always-permitted first step, the four-step limit, and the visibility sets the overlay already carries. It grows the step 4.2 reachability helper, which already computes destination sets for the movement-range displays, into full path enumeration. Range bands explain likely strike results but do not filter nameable targets: every living visible enemy is nameable.
 
 ### Order composition
 
