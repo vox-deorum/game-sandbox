@@ -64,6 +64,10 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await expect(slider).toHaveAttribute('aria-valuenow', lastFrame as string)
   await expect(page.getByRole('dialog', { name: 'Game over' }).locator('.row')).toHaveCount(2)
 
+  // While the game-over card is up the stage ignores transport keys, so dismiss it before seeking.
+  await stage.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Game over' })).toHaveCount(0)
+
   await stage.press('Home')
   await expect(slider).toHaveAttribute('aria-valuenow', '0')
   await expect(position).toContainText('1/')
