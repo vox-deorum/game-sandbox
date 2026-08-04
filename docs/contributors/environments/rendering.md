@@ -10,7 +10,7 @@ Read the [interaction specification](../../specs/interaction.md) for the product
 2. Add a `PixiRenderer` subclass and declare `internalSize`.
 3. Put pure state-to-scene logic in `computeScene` and reconciliation in `update`.
 4. Add `inputs()` when humans can control the environment.
-5. Add `thumbnail.svg`, default-export `{ key, renderer, thumbnail }`, and ensure the key equals `ENTRY.meta.renderer`.
+5. Add one `thumbnail.svg` or `thumbnail.png`, default-export `{ key, renderer, thumbnail }`, and ensure the key equals `ENTRY.meta.renderer`.
 6. Add renderer unit tests and update browser journeys.
 
 `environments/flappy_bird/renderer/` is the reference for a realtime draw-only renderer, and `environments/hearts/renderer/` for turn-based card input and animation.
@@ -29,7 +29,7 @@ The renderer owns the game frame and environment-specific controls. The host pag
 
 The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
 
-The registry stores each `PixiRenderer` subclass with its static SVG thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
+The registry stores each `PixiRenderer` subclass with its static image thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
 
 `PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.
 
