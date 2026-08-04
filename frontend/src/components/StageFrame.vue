@@ -76,6 +76,7 @@ onBeforeUnmount(() => emit('rendererHost', null))
 .stage.beside .stage-log { grid-column: 2; }
 .stage.beside .stage-canvas, .stage.beside .stage-log { display: flex; flex-direction: column; min-height: 0; }
 .stage.below { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+.stage.below .stage-canvas { width: 100%; }
 .renderer-host { position: relative; width: 100%; margin: 0 auto; background: var(--color-stage-backdrop); border-radius: var(--radius-md); overflow: hidden; }
 .stage.portrait .renderer-host { max-width: 480px; }
 .stage.landscape .renderer-host { max-width: calc(min(70vh, 640px) * var(--stage-aspect, 1.333)); }

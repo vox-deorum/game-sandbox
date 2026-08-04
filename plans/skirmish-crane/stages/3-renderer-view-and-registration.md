@@ -6,7 +6,7 @@ Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order st
 
 ## Why this is its own seam
 
-Registration is atomic: `environments/test_conformance.py` requires the complete authoring shape (environment.md, renderer/index.ts, renderer/thumbnail.svg, tests/, template/agent.py, template/README.md, at least one example agent, and the pyproject entry point) the moment an environment is recognized, and forbids a renderer directory on an ignored package. So the renderer cannot land before registration, and registration cannot land without seed versions of every participant artifact. This step carries both: the smaller, safer half of the renderer (drawing, no input), and honest v1 seeds that steps 5 through 7 complete. Splitting drawing from input also keeps the riskiest renderer work, the legality engine, in its own step.
+Registration is atomic: `environments/test_conformance.py` requires the complete authoring shape (environment.md, renderer/index.ts, one renderer thumbnail, tests/, template/agent.py, template/README.md, at least one example agent, and the pyproject entry point) the moment an environment is recognized, and forbids a renderer directory on an ignored package. So the renderer cannot land before registration, and registration cannot land without seed versions of every participant artifact. This step carries both: the smaller, safer half of the renderer (drawing, no input), and honest v1 seeds that steps 5 through 7 complete. Splitting drawing from input also keeps the riskiest renderer work, the legality engine, in its own step.
 
 ## What to build
 
@@ -19,7 +19,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 - `environment.md` v1: a short, correct guide (step 6 completes it).
 - `template/agent.py` v1: a legal starter that observes and stands still, with `template/README.md` v1 (step 6 completes both).
 - One internal example's v1 under `examples/` (step 6 completes it). `PUBLISHED_EXAMPLES` stays empty.
-- `renderer/thumbnail.svg` placeholder (step 4.1 finalizes it).
+- A renderer thumbnail placeholder (step 4.1 finalizes it).
 
 ### Renderer
 

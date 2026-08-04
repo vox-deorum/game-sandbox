@@ -81,7 +81,7 @@ export interface InternalSize {
  * {@link PixiRenderer} subclass itself satisfies this, so there is no separate module object to keep
  * in sync. `mount` is a static factory that constructs the mounted instance (which carries the
  * `internalSize`/`aspectRatio` shape). The home-card thumbnail is not on the renderer at all: it is a
- * static SVG asset passed alongside the class to `registerRenderer`, so the cards never mount a
+ * static image asset passed alongside the class to `registerRenderer`, so the cards never mount a
  * renderer to show its art.
  */
 export interface Renderer {
@@ -94,6 +94,6 @@ export interface RendererDefinition {
   /** Must equal the environment metadata's `renderer` value. */
   key: string
   renderer: Renderer
-  /** Static SVG asset URL used by environment cards. */
+  /** Static image asset URL used by environment cards. */
   thumbnail: string
 }
