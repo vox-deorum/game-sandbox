@@ -19,13 +19,13 @@ Registration demands them now; their completing steps finish them. Each seed is 
 - `environment.md` v1: a short, correct guide (step 6 completes it).
 - `template/agent.py` v1: a legal starter that observes and stands still, with `template/README.md` v1 (step 6 completes both).
 - One internal example's v1 under `examples/` (step 6 completes it). `PUBLISHED_EXAMPLES` stays empty.
-- `renderer/thumbnail.svg` placeholder (step 4 finalizes it).
+- `renderer/thumbnail.svg` placeholder (step 4.1 finalizes it).
 
 ### Renderer
 
 `environments/skirmish_crane/renderer/` in TypeScript on PixiJS: `index.ts` default-exports `{key: "crane-reach-field", renderer, thumbnail}`, and a pure `computeScene(state, config)` in `scene.ts` maps overlay state to drawable structures. Pointy-top hexes on axial coordinates. Decisions:
 
-- Placeholder visual style on purpose: functional flat shapes and labels that make the game readable (terrain, features, zones, units with hit points, activation highlight, round and capture HUD) without committing to an identity. Step 4 designs the identity using this renderer as the workbench, so `computeScene` keeps style swappable: geometry and content in the scene, appearance in one styling layer.
+- Placeholder visual style on purpose: functional flat shapes and labels that make the game readable (terrain, features, zones, units with hit points, activation highlight, round and capture HUD) without committing to an identity. Step 4.1 designs the identity using this renderer as the workbench, so `computeScene` keeps style swappable: geometry and content in the scene, appearance in one styling layer.
 - Draw-only: `sendAction` unused, and without `controlledPlayers` the view is the full board, which is the spectator and replay rule.
 - Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 750 ms watch cadence.
 - Reuse from `frontend/src/renderers/base/PixiRenderer.ts` (mount loop, resize, pending-state cache); the card-table stack does not apply, so grid scaffolding is renderer-local.

@@ -16,7 +16,7 @@ A renderer-local module computes, for the acting controlled player, the walkable
 
 ### Order composition
 
-Legal-by-construction, per the step 4 interaction design:
+Legal-by-construction, per the [step 4.2 interaction design](4-2-hud.md):
 
 - Click an adjacent highlighted hex to append a step, up to four; only legal continuations are ever highlighted. Undo steps. An empty path is stay.
 - Optionally name a visible enemy as the target. The UI shows that the strike resolves automatically from the final tile even with no target named.
