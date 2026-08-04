@@ -12,6 +12,8 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 It also defines `default_action(env, player_id)`, which returns the legal action applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card. Return plain Python values, because the result is recorded like any other move.
 
+An environment that removes players before their final outcome is known may implement `result_scores()`. Return `None` until the environment reaches natural completion. At natural completion, return a mapping whose keys exactly match the episode player ids and whose values are finite real numbers. The harness validates and caches the mapping before `env.close()`, then uses it for the reported episode scores. It does not call the hook when an episode stops, fails, or reaches a compute or tick limit before natural completion.
+
 Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but only `__init__.py` may import the [harness](../../specs/overview.md#core-model).
 
 The factory must use the values it owns:

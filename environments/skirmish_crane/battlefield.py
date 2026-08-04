@@ -20,6 +20,10 @@ from .hexes import (
 )
 
 MAX_REDRAWS = 12
+# Inclusive bounds this generator enforces. The environment package reuses them for its
+# metadata declarations and observation spaces, so they are stated only here.
+FIELD_EXTENT_BOUNDS = (5, 22)
+CAPTURE_ZONES_BOUNDS = (0, 5)
 
 
 @dataclass(frozen=True)
@@ -199,10 +203,12 @@ def generate_battlefield(
     units_per_side: int = 3,
 ) -> Battlefield:
     """Build a connected field using only the supplied battlefield RNG stream."""
-    if not 5 <= extent <= 22:
-        raise ValueError("field extent must be from 5 through 22")
-    if not 0 <= capture_zones <= 5:
-        raise ValueError("capture zones must be from 0 through 5")
+    extent_low, extent_high = FIELD_EXTENT_BOUNDS
+    if not extent_low <= extent <= extent_high:
+        raise ValueError(f"field extent must be from {extent_low} through {extent_high}")
+    zones_low, zones_high = CAPTURE_ZONES_BOUNDS
+    if not zones_low <= capture_zones <= zones_high:
+        raise ValueError(f"capture zones must be from {zones_low} through {zones_high}")
     for redraw in range(MAX_REDRAWS):
         tiles, passages = _terrain_tiles(extent, rng, terrain, capture_zones)
         try:

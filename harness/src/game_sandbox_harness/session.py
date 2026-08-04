@@ -20,10 +20,12 @@ or overage accounting.
 from __future__ import annotations
 
 import contextlib
+import math
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from numbers import Real
 from typing import Any, cast
 
 from .chat import ChatRouter
@@ -196,6 +198,8 @@ class Episode:
         self._parallel_observations: Mapping[str, object] | None = None
         self._parallel_infos: Mapping[str, object] | None = None
         self._saw_natural_truncation = False
+        self._complete_result_scores: dict[str, float] | None = None
+        self._result_scores_checked = False
         self._participant_runner = ParticipantRunner(
             entry,
             players,
@@ -523,7 +527,7 @@ class Episode:
     def _finish_without_recorded_step(self) -> None:
         """Resolve a natural AEC ending reached while consuming a dead step."""
         if not self._env.agents:
-            self._reason = REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED
+            self._mark_natural_end()
 
     def _finish_step(self, acted_players: tuple[str, ...]) -> None:
         """Advance once, then apply budget, natural-ending, and tick-cap precedence."""
@@ -538,17 +542,48 @@ class Episode:
             self._failed_player = over_budget[0]
             self._stopped = True
             return
-        if not self._env.agents:
-            self._reason = REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED
-            self._stopped = True
+        if not self._logical_active_players():
+            self._mark_natural_end()
+            # An AEC env still holds agents queued for their required dead steps; only an env with
+            # nothing left to consume stops the loop here.
+            self._stopped = not self._env.agents
             return
         if self._max_steps is not None and self._tick >= self._max_steps:
-            self._reason = (
-                REASON_TRUNCATED
-                if self._logical_active_players()
-                else (REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED)
-            )
+            self._reason = REASON_TRUNCATED
             self._stopped = True
+
+    def _mark_natural_end(self) -> None:
+        """Record the natural ending reason and its complete scores in one place."""
+        self._reason = REASON_TRUNCATED if self._saw_natural_truncation else REASON_TERMINATED
+        self._capture_complete_result_scores()
+
+    def _capture_complete_result_scores(self) -> None:
+        """Cache an environment's optional complete scores at natural completion, before close."""
+        if self._result_scores_checked:
+            return
+        self._result_scores_checked = True
+        complete_scores = getattr(self._env, "result_scores", None)
+        if not callable(complete_scores):
+            return
+        reported = complete_scores()
+        if reported is None:
+            return
+        if not isinstance(reported, Mapping):
+            raise TypeError("environment result_scores must return a player-keyed mapping or None")
+        result_scores = cast("Mapping[object, object]", reported)
+        expected_players = set(self._players)
+        if set(result_scores) != expected_players:
+            raise ValueError("environment result_scores must cover exactly the episode players")
+        normalized: dict[str, float] = {}
+        for player_id in self._players:
+            value = result_scores[player_id]
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise TypeError("environment result_scores values must be real numbers")
+            score = float(value)
+            if not math.isfinite(score):
+                raise ValueError("environment result_scores values must be finite")
+            normalized[player_id] = score
+        self._complete_result_scores = normalized
 
     def close(self) -> None:
         """Flush and close the recording, then close the environment. Idempotent."""
@@ -563,9 +598,12 @@ class Episode:
 
     def result(self) -> EpisodeResult:
         """The outcome accumulated so far. Valid after the loop ends; safe after :meth:`close`."""
+        scores = {player_id: self._state[player_id].score for player_id in self._players}
+        if self._complete_result_scores is not None:
+            scores = dict(self._complete_result_scores)
         return EpisodeResult(
             ticks=self._tick,
-            scores={player_id: self._state[player_id].score for player_id in self._players},
+            scores=scores,
             reason=self._reason,
             step_timeouts={player_id: self._state[player_id].step_timeouts for player_id in self._players},
             recording_id=self._recording_id if self._store is not None else None,

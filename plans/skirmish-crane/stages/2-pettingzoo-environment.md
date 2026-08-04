@@ -1,6 +1,6 @@
 # Step 2: PettingZoo Environment, Metadata, and Naive
 
-Status: planned.
+Status: complete.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 2: the platform-facing environment on the step 1 engine, exactly as [environment.md](../environment.md) specifies it, plus the naive agent's code. The package stays unregistered behind `environments/.envignore`. The hands-on surface is full recorded episodes through the harness.
 
@@ -37,11 +37,11 @@ Gymnasium `Text` spaces have no production precedent in this repo, so a small sp
 
 ### Match flow, rewards, and results
 
-Dead-step choreography exactly as the spec's Match flow section: a killed player is terminated on the killing transition, exposed for `step(None)` cleanup before the next real activation, and receives no later hook. The final real step terminates (or at the round cap truncates) every player still active, and the reported result carries the side's 0-100 team score for every id in `possible_agents`, including players removed earlier.
+Dead-step choreography exactly as the spec's Match flow section: a killed player is terminated on the killing transition, exposed for `step(None)` cleanup before the next real activation, and receives no later hook. The final real step terminates (or at the round cap truncates) every player still active. The environment's optional `result_scores()` hook returns every id in `possible_agents` with its side's 0-100 team score after natural completion. The harness validates and caches that complete mapping before closing the environment, so players removed earlier receive the authoritative result without another participant hook.
 
 ### Overlay
 
-Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode records to at most 10 MB. The budget deliberately forces tight encoding; candidates are one character per tile combining terrain and feature, flat unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
+Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode in the full-variant season shape (`field_extent=10`, terrain and abilities enabled, three capture zones, and `round_cap=150`) records to at most 10 MiB. The budget deliberately forces tight encoding: one character per tile combining terrain and feature, fixed-width unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
 
 `current_activation` follows the [environment spec](../environment.md#rendering-and-human-input). The dead-step choreography above is what makes it subtle: derive it from the engine's next living activation rather than from `agent_selection`, which also names players queued for cleanup.
 
@@ -88,10 +88,10 @@ Under `environments/skirmish_crane/tests/`, mirroring the shared conformance sui
 - Emitted masks agree with the engine: a sampled set of masked-1 paths walk successfully, masked-0 paths and targets are rejected by `env.step()`, and the stay and none bits are always 1.
 - Dead-step choreography, complete final results for all of `possible_agents`, and the truncation path at a small round_cap.
 - Seeded golden rollouts at both plans: same seed and scripted actions produce identical recordings.
-- The recording-size test: a full-variant 6000-tick army episode through `run_episode` stays at or under 10 MB.
+- The recording-size test: a full-variant 6000-tick army episode through `run_episode`, using the season field extent of 10 and the shape pinned above, stays at or under 10 MiB.
 - A season-table test: every row of the spec's season schedule resolves as a valid parameter payload via `resolve_parameters` against the declared parameters.
 - Naive plays full legal games at both plans. Its actions are legal, it takes a one-step move whenever no enemy is visible and one is legal, it pursues visible enemies without naming targets, and two runs at one seed match while different seeds diverge.
 
 ## Done when
 
-Full skirmish and army episodes run through the harness with naive in every seat and record to JSONL, the step 1 ASCII runner replays those recordings, the army recording stays within 10 MB, and the whole local conformance suite is green. The package still does not appear in the entry points or the shared suite.
+Full skirmish and army episodes run through the harness with naive in every seat and record to JSONL, the step 1 ASCII runner replays those recordings, the army recording stays within 10 MiB, and the whole local conformance suite is green. The package still does not appear in the entry points or the shared suite.

@@ -3,8 +3,44 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from .engine import Match, MatchConfig, OrderSource, scripted_order
+from .overlay import TILE_CODES, decode_overlay
+
+# One ASCII glyph per compact overlay tile code.
+_TILE_MARKS = {"g": ".", "h": "^", "w": "~", "v": " ", "f": "f", "m": "m"}
+
+
+def render_overlay(overlay: dict[str, object]) -> str:
+    """Render one compact Stage 2 overlay without reconstructing the live rules engine."""
+    decoded = decode_overlay(overlay)
+    battlefield = decoded["battlefield"]
+    capture = decoded["capture"]
+    units = decoded["units"]
+    marks = {(unit["position"]["q"], unit["position"]["r"]): unit["side"][0].upper() for unit in units}
+    rows = [f"round {decoded['round']}  red={capture['red']} blue={capture['blue']}"]
+    for r, row in enumerate(battlefield["tiles"]):
+        rows.append(
+            "".join(
+                marks.get((q, r), _TILE_MARKS[TILE_CODES[cell["terrain"], cell["feature"]]])
+                for q, cell in enumerate(row)
+            ).rstrip()
+        )
+    return "\n".join(rows)
+
+
+def replay_jsonl(path: Path | str) -> str:
+    """Replay the recorded Skirmish overlays in a JSONL recording as ASCII frames."""
+    frames: list[str] = []
+    with Path(path).open(encoding="utf-8") as handle:
+        for line in handle:
+            state = json.loads(line)
+            overlay = state.get("overlay")
+            if overlay is not None:
+                frames.append(render_overlay(overlay))
+    return "\n\n".join(frames)
 
 
 def render(match: Match, *, round_number: int | None = None) -> str:
@@ -14,24 +50,12 @@ def render(match: Match, *, round_number: int | None = None) -> str:
         f"round {shown_round}  red={match.capture_scores['red']} blue={match.capture_scores['blue']}"
     ]
     for r, row in enumerate(match.battlefield.tiles):
-        cells = []
-        for q, tile in enumerate(row):
-            position = (q, r)
-            if position in marks:
-                cells.append(marks[position])
-            elif tile.terrain == "void":
-                cells.append(" ")
-            elif tile.terrain == "water":
-                cells.append("~")
-            elif tile.terrain == "hill":
-                cells.append("^")
-            elif tile.feature == "forest":
-                cells.append("f")
-            elif tile.feature == "marsh":
-                cells.append("m")
-            else:
-                cells.append(".")
-        rows.append("".join(cells).rstrip())
+        rows.append(
+            "".join(
+                marks.get((q, r), _TILE_MARKS[TILE_CODES[tile.terrain, tile.feature]])
+                for q, tile in enumerate(row)
+            ).rstrip()
+        )
     return "\n".join(rows)
 
 

@@ -95,6 +95,12 @@ The harness creates the environment only after it resolves the session parameter
 
 Parallel environments use a stricter subset of the PettingZoo parallel API. After reset, `env.agents`, observations, and infos exactly cover the resolved players in canonical order. The active set only shrinks. Each joint action and every returned observation, reward, termination, truncation, and info mapping exactly cover the players active before that step. After a step, `env.agents` is the canonical nonterminal subsequence of that earlier active set.
 
+### Complete result scores
+
+PettingZoo rewards remain the default source of final player scores. An environment that removes players before the match outcome is known may also implement `result_scores()`. The hook returns `None` before natural completion and a mapping from every episode player id to its final real, finite score after natural completion. The keys must exactly match the episode roster, and booleans are not scores.
+
+The harness reads and validates this optional mapping once when the environment naturally finishes, before it calls `env.close()`. A valid mapping replaces accumulated rewards in the reported episode result. An episode that stops, fails, or reaches a compute or tick limit before natural completion does not consult the hook, so its partial scores continue to come from accumulated rewards.
+
 ## Configurable gameplay parameters
 
 An environment may declare gameplay parameters beside its metadata. Each declaration has a stable snake_case name, a friendly title and description, a type, and an environment default. Integer and float parameters may set inclusive bounds. Choice and multi-choice parameters declare nonempty string values with friendly labels.

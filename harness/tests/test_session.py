@@ -78,6 +78,33 @@ class FakeEnv:
             self.terminations[a] = True
 
 
+class FakeResultEnv(FakeEnv):
+    """A fake env that reports a final score only after its natural terminal transition."""
+
+    def result_scores(self) -> dict[str, float] | None:
+        return {"player_0": 99.0} if self._i >= self._n else None
+
+
+class ProbedResultEnv(FakeEnv):
+    """A result-hook fixture that can prove call timing and validation behavior."""
+
+    def __init__(self, n_steps: int, reported: object) -> None:
+        super().__init__(n_steps)
+        self.reported = reported
+        self.result_calls = 0
+
+    def result_scores(self) -> object:
+        self.result_calls += 1
+        return self.reported
+
+
+class CloseClearsResultEnv(FakeResultEnv):
+    """Clear the state the score hook needs when the environment closes."""
+
+    def close(self) -> None:
+        self._i = 0
+
+
 def make_entry(
     n_steps: int = 3,
     *,
@@ -479,6 +506,98 @@ def test_terminal_rewards_credited_to_every_player_not_just_the_actor():
     assert result.reason == REASON_TERMINATED
     assert result.scores == finals
     assert result.failed_player is None  # a clean episode charges no player
+
+
+def test_complete_result_scores_override_rewards_only_after_natural_completion():
+    entry = make_entry()
+    entry = replace(entry, make=lambda _parameters: FakeResultEnv(3))
+    players = {"player_0": ExternalPlayer(ScriptedSource([0, 0, 0]))}
+    complete = run_episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1)
+    partial = run_episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, max_steps=1)
+    assert complete.scores == {"player_0": 99.0}
+    assert partial.scores == {"player_0": 1.0}
+
+
+def test_complete_result_scores_are_cached_before_environment_close():
+    env = CloseClearsResultEnv(1)
+    entry = replace(make_entry(n_steps=1), make=lambda _parameters: env)
+    result = run_episode(
+        entry,
+        {"player_0": ExternalPlayer(ScriptedSource([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+    )
+    assert env._i == 0
+    assert result.scores == {"player_0": 99.0}
+
+
+def test_partial_episode_does_not_consult_an_early_non_none_result_hook():
+    env = ProbedResultEnv(3, {"player_0": 99.0})
+    entry = replace(make_entry(), make=lambda _parameters: env)
+    result = run_episode(
+        entry,
+        {"player_0": ExternalPlayer(ScriptedSource([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        max_steps=1,
+    )
+    assert env.result_calls == 0
+    assert result.scores == {"player_0": 1.0}
+
+
+def test_max_steps_on_the_natural_terminal_transition_keeps_complete_result_scores():
+    env = ProbedResultEnv(1, {"player_0": 99.0})
+    entry = replace(make_entry(n_steps=1), make=lambda _parameters: env)
+    result = run_episode(
+        entry,
+        {"player_0": ExternalPlayer(ScriptedSource([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        max_steps=1,
+    )
+    assert env.result_calls == 1
+    assert env.agents == []
+    assert result.reason == REASON_TERMINATED
+    assert result.scores == {"player_0": 99.0}
+
+
+def test_stopped_episode_does_not_consult_an_early_non_none_result_hook():
+    env = ProbedResultEnv(3, {"player_0": 99.0})
+    entry = replace(make_entry(), make=lambda _parameters: env)
+    episode = Episode(
+        entry,
+        {"player_0": ExternalPlayer(ScriptedSource([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+    )
+    with episode:
+        episode.stop()
+    assert env.result_calls == 0
+    assert episode.result().scores == {"player_0": 0.0}
+
+
+@pytest.mark.parametrize(
+    ("reported", "error"),
+    (
+        ([99.0], TypeError),
+        ({"wrong_player": 99.0}, ValueError),
+        ({"player_0": True}, TypeError),
+        ({"player_0": "99"}, TypeError),
+        ({"player_0": float("nan")}, ValueError),
+        ({"player_0": float("inf")}, ValueError),
+    ),
+)
+def test_complete_result_scores_reject_malformed_reports(reported: object, error: type[Exception]):
+    env = ProbedResultEnv(1, reported)
+    entry = replace(make_entry(n_steps=1), make=lambda _parameters: env)
+    with pytest.raises(error):
+        run_episode(
+            entry,
+            {"player_0": ExternalPlayer(ScriptedSource([0]))},
+            parameters=resolve_parameters(entry.meta),
+            seed=1,
+        )
+    assert env.result_calls == 1
 
 
 def test_aec_terminal_rewards_record_nonacting_players_without_synthetic_actions(tmp_path: Path):
