@@ -363,6 +363,7 @@ def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_c
         ("hearts", "duck"),
         ("hearts", "moonshot"),
         ("hearts", "oracle"),
+        ("skirmish_crane", "stand_still"),
         ("spades", "counter"),
         ("spades", "daredevil"),
         ("spades", "signaler"),

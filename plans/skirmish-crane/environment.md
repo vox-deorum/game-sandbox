@@ -175,8 +175,8 @@ A human controls either the primary player in the selected seat or the whole sid
 | Human-capable players | all players; default move clock 30 seconds |
 | Stepping | sequential |
 | Pace interval | none; the game is turn-based |
-| Viewing cadence | 150 milliseconds per recorded transition |
-| Live playout cadence | 150 milliseconds per nonhuman transition |
+| Viewing cadence | 750 milliseconds per recorded transition |
+| Live playout cadence | 500 milliseconds per nonhuman transition |
 | Recommended episode length | 6000 ticks |
 | Compute limits | 1 second per decision, 600 seconds per game |
 | Messaging | available; text limit 200 code points |

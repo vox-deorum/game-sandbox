@@ -100,6 +100,220 @@
   {
     "builtin_agents": [
       {
+        "label": "Naive",
+        "name": "naive"
+      }
+    ],
+    "description": "A seeded, turn-based team tactics game in which separately running units coordinate through perception and delayed messages.",
+    "display_name": "Skirmish at Crane Reach",
+    "env_id": "skirmish_crane",
+    "episode_limit_ms": 600000,
+    "human_players": [
+      "player_0",
+      "player_1",
+      "player_2",
+      "player_3",
+      "player_4",
+      "player_5",
+      "player_6",
+      "player_7",
+      "player_8",
+      "player_9",
+      "player_10",
+      "player_11",
+      "player_12",
+      "player_13",
+      "player_14",
+      "player_15",
+      "player_16",
+      "player_17",
+      "player_18",
+      "player_19",
+      "player_20",
+      "player_21",
+      "player_22",
+      "player_23",
+      "player_24",
+      "player_25",
+      "player_26",
+      "player_27",
+      "player_28",
+      "player_29",
+      "player_30",
+      "player_31",
+      "player_32",
+      "player_33",
+      "player_34",
+      "player_35",
+      "player_36",
+      "player_37",
+      "player_38",
+      "player_39"
+    ],
+    "human_timeout_ms": 30000,
+    "layout": {
+      "kind": "seat_plans",
+      "plans": [
+        {
+          "key": "skirmish",
+          "seats": [
+            {
+              "players": [
+                0,
+                1,
+                2
+              ]
+            },
+            {
+              "players": [
+                3,
+                4,
+                5
+              ]
+            }
+          ],
+          "title": "Skirmish"
+        },
+        {
+          "key": "army",
+          "seats": [
+            {
+              "players": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19
+              ]
+            },
+            {
+              "players": [
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30,
+                31,
+                32,
+                33,
+                34,
+                35,
+                36,
+                37,
+                38,
+                39
+              ]
+            }
+          ],
+          "title": "Army"
+        }
+      ]
+    },
+    "live_interval_ms": 500,
+    "llm": false,
+    "message_cap": 200,
+    "messaging": true,
+    "pace_interval_ms": null,
+    "parameters": [
+      {
+        "choices": [
+          {
+            "label": "Skirmish",
+            "value": "skirmish"
+          },
+          {
+            "label": "Army",
+            "value": "army"
+          }
+        ],
+        "default": "skirmish",
+        "description": "Seat-to-player layout for each game.",
+        "name": "seat_plan",
+        "title": "Seat plan",
+        "type": "choice"
+      },
+      {
+        "default": 7,
+        "description": "Hex distance from the center to the field edge.",
+        "max": 22,
+        "min": 5,
+        "name": "field_extent",
+        "title": "Field extent",
+        "type": "int"
+      },
+      {
+        "default": false,
+        "description": "Enables water, hills, forests, and marshes.",
+        "name": "terrain",
+        "title": "Terrain",
+        "type": "bool"
+      },
+      {
+        "default": false,
+        "description": "Enables cavalry charge and footman shield wall.",
+        "name": "unit_abilities",
+        "title": "Unit abilities",
+        "type": "bool"
+      },
+      {
+        "default": 0,
+        "description": "Number of scoring zones. Zero disables capture play.",
+        "max": 5,
+        "min": 0,
+        "name": "capture_zones",
+        "title": "Capture zones",
+        "type": "int"
+      },
+      {
+        "default": 200,
+        "description": "Score needed to end a capture match.",
+        "max": 10000,
+        "min": 10,
+        "name": "capture_target",
+        "title": "Capture target",
+        "type": "int"
+      },
+      {
+        "default": 1000,
+        "description": "Maximum number of completed rounds.",
+        "max": 10000,
+        "min": 100,
+        "name": "round_cap",
+        "title": "Round cap",
+        "type": "int"
+      }
+    ],
+    "recommended_episode_ticks": 6000,
+    "renderer": "crane-reach-field",
+    "seat_order_matters": true,
+    "step_limit_ms": 1000,
+    "stepping": "sequential",
+    "view_interval_ms": 750
+  },
+  {
+    "builtin_agents": [
+      {
         "label": "Naive agent",
         "name": "naive"
       },

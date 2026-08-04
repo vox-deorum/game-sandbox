@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import warnings
 from collections.abc import Iterator
@@ -14,8 +15,10 @@ import pytest
 from gymnasium import spaces
 from pettingzoo.test import api_test
 
+import skirmish_crane.naive
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import action_mask_problems, resolve_parameters
+from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import REASON_TERMINATED, REASON_TRUNCATED, AgentPlayer, run_episode
 from game_sandbox_harness.state import json_default
@@ -28,6 +31,17 @@ from skirmish_crane.naive import Agent, _decode_path, _distance, _end
 from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay
 from skirmish_crane.paths import MAX_PATH_ID, decode_path, encode_path
 from skirmish_crane.scoring import Result
+
+BUILTIN_SKIRMISH_CRANE_NAIVE_AGENT_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "backend"
+    / "images"
+    / "session-base"
+    / "deps-v1"
+    / "builtin"
+    / "skirmish_crane"
+    / "naive"
+)
 
 
 def _parameters(**overrides: Any) -> dict[str, Any]:
@@ -260,6 +274,27 @@ def test_default_action_is_legal_and_harness_reports_complete_team_scores() -> N
     assert result.reason in (REASON_TERMINATED, REASON_TRUNCATED)
     assert result.scores.keys() == {f"player_{player}" for player in range(6)}
     assert all(0.0 <= score <= 100.0 for score in result.scores.values())
+
+
+def test_staged_builtin_naive_agent_plays_a_full_legal_skirmish() -> None:
+    """The session image's copied baseline loads and finishes a normal six-unit game."""
+    players = {
+        f"player_{index}": AgentPlayer(load_agent(BUILTIN_SKIRMISH_CRANE_NAIVE_AGENT_DIR))
+        for index in range(6)
+    }
+    result = run_episode(ENTRY, players, parameters=_parameters(), seed=4)
+    assert result.reason in (REASON_TERMINATED, REASON_TRUNCATED)
+    assert result.ticks > 0
+
+
+def test_staged_builtin_naive_agent_matches_the_package_copy() -> None:
+    """The package copy drives fixtures while the image copy runs sessions, so they must not drift."""
+    package_copy = Path(inspect.getfile(skirmish_crane.naive)).read_bytes()
+    staged_copy = (BUILTIN_SKIRMISH_CRANE_NAIVE_AGENT_DIR / "agent.py").read_bytes()
+    assert package_copy == staged_copy, (
+        "environments/skirmish_crane/naive.py and the staged builtin agent.py have diverged; "
+        "copy the package version into backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/"
+    )
 
 
 def test_overlay_is_deterministic_for_a_seeded_scripted_rollout() -> None:

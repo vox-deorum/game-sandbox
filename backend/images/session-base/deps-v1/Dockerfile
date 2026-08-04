@@ -58,8 +58,8 @@ RUN chmod -R a+rX /opt/agents/builtin \
 
 # Fail the build, not a session, if the packages or a named built-in agent cannot load. Reading the
 # installed environment metadata makes a missing directory fail whenever a declaration adds an agent.
-RUN python -c "import game_sandbox_harness, flappy_bird, hearts, spades" \
-    && python -c "from game_sandbox_harness.environment import load_environment; from game_sandbox_harness.manifest import load_agent; [load_agent(f'/opt/agents/builtin/{env_id}/{builtin.name}') for env_id in ('flappy_bird', 'hearts', 'spades') for builtin in load_environment(env_id).meta.builtin_agents]"
+RUN python -c "import game_sandbox_harness, flappy_bird, hearts, skirmish_crane, spades" \
+    && python -c "from game_sandbox_harness.environment import load_environment; from game_sandbox_harness.manifest import load_agent; [load_agent(f'/opt/agents/builtin/{env_id}/{builtin.name}') for env_id in ('flappy_bird', 'hearts', 'skirmish_crane', 'spades') for builtin in load_environment(env_id).meta.builtin_agents]"
 
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element
 # by the orchestrator. The recordings volume is mounted at /recordings and named in that config.

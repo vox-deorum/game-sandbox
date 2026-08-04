@@ -58,7 +58,7 @@ The chat policy lists the living allied players in player order, excluding the s
 | parameters | field_extent, terrain, unit_abilities, capture_zones, capture_target, round_cap per the spec table |
 | human_players, human_timeout_ms | all players, 30_000 |
 | stepping, pace_interval_ms | sequential, None |
-| view_interval_ms, live_interval_ms | 150, 150 |
+| view_interval_ms, live_interval_ms | 750, 500 |
 | recommended_episode_ticks | 6000 |
 | step_limit_ms, episode_limit_ms | 1_000, 600_000 |
 | messaging, message_cap | True, 200 |

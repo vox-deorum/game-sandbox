@@ -1,6 +1,6 @@
 # Step 3: Crane Reach Renderer, View and Replay, and Registration
 
-Status: planned.
+Status: in progress.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 3: the first hex-grid renderer, draw-only and in a deliberate placeholder style, and the registration step that makes the environment public. The hands-on surface is the web app: the Crane Reach card on the home page, a watchable live match, a scrubbable replay, and `npm run play` in watch mode.
 
@@ -10,7 +10,7 @@ Registration is atomic: `environments/test_conformance.py` requires the complete
 
 ## What to build
 
-Remove `skirmish_crane` from `environments/.envignore` and run `npm run sync:envs`: the entry point and `backend/src/environments/generated/environments.json` regenerate, the shared conformance suite starts covering Skirmish at Crane Reach at default parameters, and `scripts/play.py` can load the environment. Stage the naive builtin under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/`.
+Remove `skirmish_crane` from `environments/.envignore` and run `npm run sync:envs`: the entry point and `backend/src/environments/generated/environments.json` regenerate, the shared conformance suite starts covering Skirmish at Crane Reach at default parameters, and `scripts/play.py` can load the environment. Stage the naive builtin under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/`. The versioned session image explicitly imports and validates Crane Reach with the other registered builtins during its build.
 
 ### Seed participant artifacts
 
@@ -27,7 +27,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 
 - Placeholder visual style on purpose: functional flat shapes and labels that make the game readable (terrain, features, zones, units with hit points, activation highlight, round and capture HUD) without committing to an identity. Step 4 designs the identity using this renderer as the workbench, so `computeScene` keeps style swappable: geometry and content in the scene, appearance in one styling layer.
 - Draw-only: `sendAction` unused, and without `controlledPlayers` the view is the full board, which is the spectator and replay rule.
-- Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 150 ms cadence.
+- Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 750 ms watch cadence.
 - Reuse from `frontend/src/renderers/base/PixiRenderer.ts` (mount loop, resize, pending-state cache); the card-table stack does not apply, so grid scaffolding is renderer-local.
 
 ### Fixtures and tests
@@ -52,4 +52,4 @@ Registration makes Skirmish at Crane Reach the platform's first shipped Dict-act
 
 ## Done when
 
-The Crane Reach card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 150 ms cadence, replay seeks land on identical frames, and `npm run play -- skirmish_crane` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.
+The Crane Reach card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 750 ms cadence, replay seeks land on identical frames, and `npm run play -- skirmish_crane watch` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.

@@ -18,6 +18,7 @@ dependencies = [
 # BEGIN GENERATED ENTRY POINTS
 flappy_bird = "flappy_bird:ENTRY"
 hearts = "hearts:ENTRY"
+skirmish_crane = "skirmish_crane:ENTRY"
 spades = "spades:ENTRY"
 # END GENERATED ENTRY POINTS
 
