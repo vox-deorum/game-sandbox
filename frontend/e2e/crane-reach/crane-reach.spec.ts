@@ -280,8 +280,10 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
   // Every full-variant flag stays on: this test exists to prove the army seat plan, terrain, unit
   // abilities, and capture zones survive a real run and release. Only the two knobs that decide how
   // long the battle lasts are turned down, since the length is what costs the wall clock and nothing
-  // about the pipeline depends on it. The renderer's own coverage of a long army battle is offline,
-  // over frontend/test/fixtures/crane-reach-army-recording.jsonl.
+  // about the pipeline depends on it. round_cap sits at 100 because that is the floor the environment
+  // declares (see ROUND_CAP_BOUNDS); a season override below it is refused. The renderer's own
+  // coverage of a long army battle is offline, over
+  // frontend/test/fixtures/crane-reach-army-recording.jsonl.
   await setSeasonOverrides(admin, season.id, {
     parameters: {
       seat_plan: 'army',
@@ -290,7 +292,7 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
       unit_abilities: true,
       capture_zones: 3,
       capture_target: 60,
-      round_cap: 40,
+      round_cap: 100,
     },
   })
 

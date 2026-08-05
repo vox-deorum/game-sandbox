@@ -1,14 +1,5 @@
 /** Reachable Crane Reach destinations for the draw-only movement-range display. */
-import type { HexTile, SceneUnit } from './scene.js'
-
-const DIRECTIONS = [
-  [1, -1],
-  [1, 0],
-  [0, 1],
-  [-1, 1],
-  [-1, 0],
-  [0, -1],
-] as const
+import { HEX_DIRECTIONS, type HexTile, type SceneUnit } from './scene.js'
 
 const TERRAIN_COST = { grass: 1, hill: 2, water: 0, void: 0 } as const
 const FEATURE_COST = { none: 0, forest: 1, marsh: 2, waste: 0 } as const
@@ -32,7 +23,7 @@ export function reachableTileKeys(
   while (frontier.length > 0) {
     const current = frontier.shift()
     if (current === undefined || current.steps === 4) continue
-    for (const [dq, dr] of DIRECTIONS) {
+    for (const [dq, dr] of HEX_DIRECTIONS) {
       const q = current.q + dq
       const r = current.r + dr
       const key = `${q},${r}`

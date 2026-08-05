@@ -230,14 +230,6 @@ function readTileCodes(): Record<string, readonly [TerrainName, FeatureName]> {
 }
 
 const TILE_CODES = readTileCodes()
-const DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
-  [1, -1],
-  [1, 0],
-  [0, 1],
-  [-1, 1],
-  [-1, 0],
-  [0, -1],
-]
 
 const COMPOSITIONS = {
   skirmish: { footman: 1, archer: 1, cavalry: 1 },
@@ -395,6 +387,20 @@ function hexCorners(center: Point, radius: number): Point[] {
   })
 }
 
+/**
+ * The six axial neighbor offsets, in an order two other things depend on. Index i is the neighbor
+ * across the edge running from corner i to corner i + 1 of `hexCorners`, which is how the renderer
+ * finds the outer edges of a region. A wire path direction d is index d - 1.
+ */
+export const HEX_DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
+  [1, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [0, -1],
+]
+
 function readTiles(
   overlay: CompactOverlay,
   radius: number,
@@ -432,7 +438,7 @@ function readZones(
     const q = decodeBase36(record.slice(0, 2), 'Crane Reach overlay has an invalid zone')
     const r = decodeBase36(record.slice(2), 'Crane Reach overlay has an invalid zone')
     const tileKeys = [tileKey(q, r)]
-    for (const [dq, dr] of DIRECTIONS) {
+    for (const [dq, dr] of HEX_DIRECTIONS) {
       const nq = q + dq
       const nr = r + dr
       if (nq >= 0 && nq < overlay.side && nr >= 0 && nr < overlay.side) {
@@ -533,7 +539,7 @@ function routeForPath(
   const route = [{ ...from }]
   const extent = (overlay.side - 1) / 2
   for (const direction of decodePathId(pathId)) {
-    const delta = DIRECTIONS[direction - 1]
+    const delta = HEX_DIRECTIONS[direction - 1]
     if (delta === undefined) throw new Error('Crane Reach event has an invalid path direction')
     const previous = route[route.length - 1] as Coordinate
     const next = { q: previous.q + delta[0], r: previous.r + delta[1] }

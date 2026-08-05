@@ -22,7 +22,7 @@ import {
   stopSessionAndAwaitFree,
   submitReadyAgent,
 } from '../support/api.js'
-import { authenticateBrowser } from '../support/auth.js'
+import { authenticateBrowser, displayNameOf } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 import {
   SPADES_ENV_ID,
@@ -477,8 +477,12 @@ test('human Spades self-controls both face-up partnership hands to game over', a
     await expect(gameOver.locator('.row')).toHaveCount(2)
     const selfControlledSeat = gameOver.locator('.row').filter({ hasText: 'S0' })
     await expect(selfControlledSeat.locator('.members')).toHaveText('P0, P2')
-    // The seat's `who` line names both occupants, so a wide seat reads as its people, not its index.
-    await expect(selfControlledSeat.locator('.who > span').first()).toHaveText(/.+, Naive agent/)
+    // A wide seat reads as its people, not its index: the members line names both hands, and the
+    // label above it names who played them. One person played both, so the label is that person once
+    // rather than a name repeated.
+    await expect(selfControlledSeat.locator('.who > span').first()).toHaveText(
+      await displayNameOf(admin),
+    )
     await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
 
     // The same standings hydrate from the recording: the replay's own game-over card, reached by

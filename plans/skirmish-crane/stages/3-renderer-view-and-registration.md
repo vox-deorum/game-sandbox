@@ -30,6 +30,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 - Draw-only: `sendAction` unused, and without `controlledPlayers` the view is the full board, which is the spectator and replay rule.
 - Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 1000 ms watch cadence. Compact overlay version 2 supplies each event's exact executed path id, which the event layer expands into its entered-tile route.
 - Reuse from `frontend/src/renderers/base/PixiRenderer.ts` (mount loop, resize, pending-state cache); the card-table stack does not apply, so grid scaffolding is renderer-local.
+- Behind the `index.ts` entry, which owns the renderer's state and decides what to draw when, the work is split into modules: `presentation.ts`, `timeline.ts`, and `transitions.ts` hold the tunable logic (sizes at a given display scale, the beats of an event, when an event animates), and `board.ts`, `units.ts`, `hud.ts`, and `draw.ts` hold the drawing. Each is independently testable, and `scene.ts` stays the pure model with no Pixi imports.
 
 ### Fixtures and tests
 

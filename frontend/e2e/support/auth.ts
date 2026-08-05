@@ -83,3 +83,16 @@ export async function userIdOf(ctx: APIRequestContext): Promise<string> {
   expect(body.user, 'expected a signed-in user').not.toBeNull()
   return (body.user as { id: string }).id
 }
+
+/**
+ * The display name a signed-in context shows up as in attribution lines and standings. A member's
+ * name is its handle, but the bootstrap admin's comes from the deployment's `ADMIN_NAME`, which the
+ * suite does not pin, so a spec asserting on the admin's label reads it from here.
+ */
+export async function displayNameOf(ctx: APIRequestContext): Promise<string> {
+  const res = await ctx.get('/api/me')
+  expect(res.ok(), `GET /api/me failed (${res.status()}): ${await res.text()}`).toBeTruthy()
+  const body = (await res.json()) as { user: { name: string } | null }
+  expect(body.user, 'expected a signed-in user').not.toBeNull()
+  return (body.user as { name: string }).name
+}
