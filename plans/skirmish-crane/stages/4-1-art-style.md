@@ -137,7 +137,6 @@ Each level identifies unit type differently:
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | starts with resolution for capture-only events; when paired with an attack, starts one quarter into resolution; ends at 1000 ms |
 
 - A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
-- Reduced motion: the event timeline plays regardless of the OS reduced-motion preference. Motion is the replay's content, and remote desktop sessions report that preference unconditionally.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 
