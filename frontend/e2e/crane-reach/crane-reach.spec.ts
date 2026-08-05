@@ -124,7 +124,6 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
       attributeFilter: ['data-crane-event-phase', 'data-crane-event-handoff'],
     })
   })
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.getByRole('button', { name: 'Play', exact: true }).click()
   await expect(rendererHost).toHaveAttribute('data-crane-event-phase', 'movement', {
     timeout: 30_000,

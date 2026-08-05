@@ -307,13 +307,12 @@ export function transitionSceneFor(
   return animate && progress < 1 && previousScene !== null ? previousScene : finalScene
 }
 
-/** Transition eligibility keeps mount, seeks, repeats, and reduced-motion frames deterministic. */
+/** Transition eligibility keeps mount, seeks, and repeated ticks deterministic. */
 export function transitionFor(
   event: SceneEvent | null,
   freshForwardEvent: boolean,
   hasPriorScene: boolean,
   options: RenderOptions | undefined,
-  reducedMotion: boolean,
 ): { budgetMs: number; animate: boolean } {
   const budgetMs = eventBudget(options)
   return {
@@ -323,23 +322,7 @@ export function transitionFor(
       freshForwardEvent &&
       hasPriorScene &&
       options?.snap !== true &&
-      !reducedMotion &&
       budgetMs > 0,
-  }
-}
-
-/** Reduced motion preserves the informational residue of each event without a flash or tween. */
-export function reducedMotionCuesFor(event: SceneEvent): {
-  attackThread: boolean
-  damageNumeral: boolean
-  captureNumeral: boolean
-  flash: false
-} {
-  return {
-    attackThread: event.targetId !== null,
-    damageNumeral: event.damage > 0,
-    captureNumeral: event.redCapture !== 0 || event.blueCapture !== 0,
-    flash: false,
   }
 }
 
@@ -354,27 +337,14 @@ export function isFreshForwardEvent(
   return nextTick > previousTick || (nextTick === previousTick && previousEvent === null)
 }
 
-/** Decide whether a fresh state needs one painted final frame before its event can begin. */
-export function eventUpdateDisposition(
+/** A fresh nonsnap event waits for the in-flight or already-deferred event to paint its final frame. */
+export function shouldDeferEventUpdate(
   eventIncomplete: boolean,
   freshForwardEvent: boolean,
   immediate: boolean,
-  pendingTick: number | null,
-): 'apply' | 'defer' | 'replace-pending' {
-  if (immediate || !freshForwardEvent) return 'apply'
-  if (eventIncomplete) return pendingTick === null ? 'defer' : 'replace-pending'
-  if (pendingTick !== null) return 'replace-pending'
-  return 'apply'
-}
-
-/** Advance the two-frame handoff that gives a completed event one composited frame of its own. */
-export function pendingEventFrameAction(holdFinalFrame: boolean): {
-  action: 'hold-final-frame' | 'install-pending'
-  holdFinalFrame: boolean
-} {
-  return holdFinalFrame
-    ? { action: 'hold-final-frame', holdFinalFrame: false }
-    : { action: 'install-pending', holdFinalFrame: false }
+  hasPendingUpdate: boolean,
+): boolean {
+  return !immediate && freshForwardEvent && (eventIncomplete || hasPendingUpdate)
 }
 
 /** Static terrain survives state changes and rebuilds only for a new battlefield identity. */
@@ -521,7 +491,6 @@ export class CraneReachRenderer extends PixiRenderer {
   private presentedScene: CraneReachScene | null = null
   private deathSnapshot: DeathSnapshot | null = null
   private eventAnimating = false
-  private reducedMotionFrame = false
   private pendingEventUpdate: PendingEventUpdate | null = null
   private inspection: InspectionState = EMPTY_INSPECTION
 
@@ -564,17 +533,20 @@ export class CraneReachRenderer extends PixiRenderer {
       this.event,
       scene.event,
     )
+    // Only an explicit seek, mount, or repeat snap stills an event. The OS reduced-motion preference
+    // does not: motion is the replay's content, and remote desktop sessions force the preference on.
     const snap = options?.snap === true
-    const disposition = eventUpdateDisposition(
-      this.eventAnimating && this.eventProgress < 1 && this.currentScene !== null,
-      freshForwardEvent,
-      snap,
-      this.pendingEventUpdate?.state.tick ?? null,
-    )
-    if (disposition !== 'apply') {
-      if (this.eventAnimating && this.eventProgress < 1 && this.currentScene !== null) {
-        this.completeEvent()
-      }
+    const eventIncomplete =
+      this.eventAnimating && this.eventProgress < 1 && this.currentScene !== null
+    if (
+      shouldDeferEventUpdate(
+        eventIncomplete,
+        freshForwardEvent,
+        snap,
+        this.pendingEventUpdate !== null,
+      )
+    ) {
+      if (eventIncomplete) this.completeEvent()
       const holdFinalFrame = this.pendingEventUpdate?.holdFinalFrame ?? true
       this.pendingEventUpdate = {
         state,
@@ -588,7 +560,7 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     this.pendingEventUpdate = null
     this.ctx.container.dataset.craneEventHandoff = 'idle'
-    this.installSceneUpdate(state, scene, options, freshForwardEvent, snap)
+    this.installSceneUpdate(state, scene, options, freshForwardEvent)
   }
 
   /** Redraw the retained frame without replacing an active or deferred event with the newest state. */
@@ -617,9 +589,10 @@ export class CraneReachRenderer extends PixiRenderer {
 
   protected override onFrame(dtMs: number): boolean {
     if (this.pendingEventUpdate !== null) {
-      const pendingFrame = pendingEventFrameAction(this.pendingEventUpdate.holdFinalFrame)
-      if (pendingFrame.action === 'hold-final-frame') {
-        this.pendingEventUpdate.holdFinalFrame = pendingFrame.holdFinalFrame
+      // The first ticker frame after a deferral holds the completed event so the browser composites
+      // it; only the following frame installs the pending event at progress zero.
+      if (this.pendingEventUpdate.holdFinalFrame) {
+        this.pendingEventUpdate.holdFinalFrame = false
         this.ctx.container.dataset.craneEventHandoff = 'final-frame-held'
         return true
       }
@@ -634,8 +607,7 @@ export class CraneReachRenderer extends PixiRenderer {
         this.event,
         scene.event,
       )
-      const snap = pending.options?.snap === true
-      this.installSceneUpdate(pending.state, scene, pending.options, freshForwardEvent, snap)
+      this.installSceneUpdate(pending.state, scene, pending.options, freshForwardEvent)
       this.ctx.container.dataset.craneEventHandoff = 'pending-installed'
       return true
     }
@@ -656,7 +628,6 @@ export class CraneReachRenderer extends PixiRenderer {
     scene: CraneReachScene,
     options: RenderOptions | undefined,
     freshForwardEvent: boolean,
-    snap: boolean,
   ): void {
     const previousScene = this.currentScene
     if (this.battlefieldKey !== scene.battlefieldKey) {
@@ -681,7 +652,6 @@ export class CraneReachRenderer extends PixiRenderer {
       freshForwardEvent,
       previousScene !== null,
       options,
-      snap,
     )
     const freshForward = transition.animate
     this.previousScene = previousScene
@@ -691,10 +661,6 @@ export class CraneReachRenderer extends PixiRenderer {
     this.eventProgress = freshForward ? 0 : 1
     this.eventDurationMs = transition.budgetMs
     this.eventAnimating = freshForward
-    // Event motion is the content of a battle replay, so the OS reduced-motion preference never
-    // selects the static residue presentation. Remote desktop sessions force that preference on,
-    // which would otherwise hide the choreography entirely.
-    this.reducedMotionFrame = false
     this.deathSnapshot = freshForward ? this.snapshotDeath(scene) : null
     this.updateEventPhaseProbe()
 
@@ -1213,7 +1179,7 @@ export class CraneReachRenderer extends PixiRenderer {
   private reconcileEvent(): void {
     clear(this.eventLayer)
     clear(this.transientLayer)
-    if (this.event === null || (!this.eventAnimating && !this.reducedMotionFrame)) return
+    if (this.event === null || !this.eventAnimating) return
     const progress = this.eventProgress
     const timeline = eventTimelineProgress(
       progress,
@@ -1230,8 +1196,6 @@ export class CraneReachRenderer extends PixiRenderer {
         ? Number.POSITIVE_INFINITY
         : Math.hypot(target.x - this.event.to.x, target.y - this.event.to.y)
     const melee = targetDistance <= (this.presentedScene?.hexRadius ?? 0) * 1.8
-    const reducedMotion = this.reducedMotionFrame
-    const reducedCues = reducedMotion ? reducedMotionCuesFor(this.event) : null
     const event = new Graphics()
     const trail = routeTrailFor(this.event.route, move)
     if (trail.length >= 2 && move < 1) {
@@ -1242,29 +1206,22 @@ export class CraneReachRenderer extends PixiRenderer {
         event.stroke({ color: CRANE_STYLE.grid, width: 3, alpha: 0.5 * (1 - move) })
       }
     }
-    if (target !== null) {
-      if (reducedCues?.attackThread === true) {
-        event
-          .moveTo(this.event.to.x, this.event.to.y)
-          .lineTo(target.x, target.y)
-          .stroke({ color: CRANE_STYLE.event, width: 1.5 })
-      } else if (!melee && strike > 0) {
-        const dx = target.x - this.event.to.x
-        const dy = target.y - this.event.to.y
-        const length = Math.max(1, Math.hypot(dx, dy))
-        const arc = length * 0.12
-        event
-          .moveTo(this.event.to.x, this.event.to.y)
-          .quadraticCurveTo(
-            (this.event.to.x + target.x) / 2 - (dy / length) * arc,
-            (this.event.to.y + target.y) / 2 + (dx / length) * arc,
-            target.x,
-            target.y,
-          )
-          .stroke({ color: CRANE_STYLE.event, width: 1.5, alpha: 1 - strike })
-      }
+    if (target !== null && !melee && strike > 0) {
+      const dx = target.x - this.event.to.x
+      const dy = target.y - this.event.to.y
+      const length = Math.max(1, Math.hypot(dx, dy))
+      const arc = length * 0.12
+      event
+        .moveTo(this.event.to.x, this.event.to.y)
+        .quadraticCurveTo(
+          (this.event.to.x + target.x) / 2 - (dy / length) * arc,
+          (this.event.to.y + target.y) / 2 + (dx / length) * arc,
+          target.x,
+          target.y,
+        )
+        .stroke({ color: CRANE_STYLE.event, width: 1.5, alpha: 1 - strike })
     }
-    if (target !== null && this.event.damage > 0 && reaction > 0 && !reducedMotion) {
+    if (target !== null && this.event.damage > 0 && reaction > 0) {
       const flash = reaction < 0.25
       event.circle(target.x, target.y, (this.presentedScene?.hexRadius ?? 10) * 0.44).fill({
         color: flash ? CRANE_STYLE.text : CRANE_STYLE.danger,
@@ -1273,7 +1230,7 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     const captureScene = captureCueSceneFor(this.currentScene, this.presentedScene)
     const captureCues = captureScene === null ? [] : captureCuesFor(captureScene, this.event)
-    if (reaction > 0 && !reducedMotion) {
+    if (reaction > 0) {
       for (const cue of captureCues) {
         event
           .circle(
@@ -1286,7 +1243,7 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     this.eventLayer.addChild(event)
     const textMetrics = eventTextMetrics(this.displayScale())
-    if (this.event.damage > 0 && (reaction > 0 || reducedCues?.damageNumeral === true)) {
+    if (this.event.damage > 0 && reaction > 0) {
       const damage = this.makeText(
         `-${this.event.damage}`,
         textMetrics.size,
@@ -1298,21 +1255,21 @@ export class CraneReachRenderer extends PixiRenderer {
       )
       damage.position.set(
         target?.x ?? this.event.to.x,
-        (target?.y ?? this.event.to.y) - textMetrics.rise * (reducedMotion ? 1 : reaction),
+        (target?.y ?? this.event.to.y) - textMetrics.rise * reaction,
       )
-      damage.alpha = reducedMotion ? 1 : 1 - reaction
+      damage.alpha = 1 - reaction
       this.eventLayer.addChild(damage)
     }
-    if (reaction > 0 || reducedCues?.captureNumeral === true) {
+    if (reaction > 0) {
       for (const cue of captureCues) {
         const color = cue.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
         const sign = cue.delta > 0 ? '+' : ''
         const capture = this.makeText(`${sign}${cue.delta}`, textMetrics.size, color, 'center', mono())
         capture.position.set(
           cue.position.x,
-          cue.position.y - textMetrics.rise * (reducedMotion ? 1 : reaction),
+          cue.position.y - textMetrics.rise * reaction,
         )
-        capture.alpha = reducedMotion ? 1 : 1 - reaction
+        capture.alpha = 1 - reaction
         this.eventLayer.addChild(capture)
       }
     }
@@ -1322,7 +1279,7 @@ export class CraneReachRenderer extends PixiRenderer {
       const position = routePositionFor(this.event.route, move)
       let x = position.x
       let y = position.y
-      if (target !== null && melee && !reducedMotion) {
+      if (target !== null && melee) {
         const lunge = Math.sin(strike * Math.PI) * 0.2
         x += (target.x - this.event.to.x) * lunge
         y += (target.y - this.event.to.y) * lunge

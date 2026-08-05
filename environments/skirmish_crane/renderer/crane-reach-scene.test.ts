@@ -22,8 +22,6 @@ import {
   captureCueSceneFor,
   deathSnapshotFor,
   eventBudget,
-  pendingEventFrameAction,
-  eventUpdateDisposition,
   eventPhaseAt,
   eventTimelineBounds,
   eventTimelineProgress,
@@ -36,9 +34,9 @@ import {
   isFreshForwardEvent,
   labelRowLayout,
   presentationFor,
-  reducedMotionCuesFor,
   routePositionFor,
   routeTrailFor,
+  shouldDeferEventUpdate,
   shouldRebuildBattlefield,
   TERRAIN_MARKS,
   transitionFor,
@@ -646,12 +644,10 @@ describe('Crane Reach Estuary Ink presentation', () => {
         deathId: victim?.unitId ?? null,
       },
     }
-    expect(transitionFor(after.event, true, true, { transitionMs: 500 }, false).animate).toBe(true)
-    expect(transitionFor(after.event, true, true, { snap: true }, false).animate).toBe(false)
-    expect(transitionFor(after.event, false, true, { transitionMs: 500 }, false).animate).toBe(
-      false,
-    )
-    expect(transitionFor(after.event, true, true, { transitionMs: 500 }, true).animate).toBe(false)
+    expect(transitionFor(after.event, true, true, { transitionMs: 500 }).animate).toBe(true)
+    expect(transitionFor(after.event, true, true, { snap: true }).animate).toBe(false)
+    expect(transitionFor(after.event, false, true, { transitionMs: 500 }).animate).toBe(false)
+    expect(transitionFor(after.event, true, false, { transitionMs: 500 }).animate).toBe(false)
     const snapshot = deathSnapshotFor(before, after)
     expect(snapshot?.unitId).toBe(after.event.deathId)
     expect(eventTargetPositionFor(after.event, after, after, snapshot)).toEqual(victim?.position)
@@ -665,19 +661,15 @@ describe('Crane Reach Estuary Ink presentation', () => {
   })
 
   it('paints a completed event before beginning the next forward event', () => {
-    // The first state is deferred. Its render call can therefore paint the event that just completed,
-    // and the next ticker frame installs the pending event at progress zero before advancing it.
-    expect(eventUpdateDisposition(true, true, false, null)).toBe('defer')
-    expect(eventUpdateDisposition(false, true, false, 12)).toBe('replace-pending')
+    // A fresh state arriving over an unfinished or already-deferred event is deferred, so the
+    // completed event paints its final frame before the next event installs at progress zero.
+    expect(shouldDeferEventUpdate(true, true, false, false)).toBe(true)
+    expect(shouldDeferEventUpdate(false, true, false, true)).toBe(true)
 
-    // Seeks, repeats, and reduced-motion frames always replace the scene immediately.
-    expect(eventUpdateDisposition(true, true, true, null)).toBe('apply')
-    expect(eventUpdateDisposition(false, false, false, 12)).toBe('apply')
-
-    // The first ticker preserves the completed scene. Only the following ticker may install the
-    // pending event at progress zero, so a browser can composite the completed event in between.
-    expect(pendingEventFrameAction(true)).toEqual({ action: 'hold-final-frame', holdFinalFrame: false })
-    expect(pendingEventFrameAction(false)).toEqual({ action: 'install-pending', holdFinalFrame: false })
+    // Snap frames always replace the scene immediately, and so does a fresh state over a settled one.
+    expect(shouldDeferEventUpdate(true, true, true, false)).toBe(false)
+    expect(shouldDeferEventUpdate(false, false, false, true)).toBe(false)
+    expect(shouldDeferEventUpdate(false, true, false, false)).toBe(false)
   })
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {
@@ -701,27 +693,6 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(captureCueSceneFor(null, prior)).toBe(prior)
   })
 
-  it('keeps every event cue readable when reduced motion snaps the frame', () => {
-    const event = {
-      actorId: 'red_archer_0',
-      from: { x: 0, y: 0 },
-      to: { x: 10, y: 10 },
-      route: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
-      movementTiles: 1,
-      targetId: 'blue_footman_0',
-      damage: 3,
-      automatic: false,
-      deathId: null,
-      redCapture: 1,
-      blueCapture: 0,
-    }
-    expect(reducedMotionCuesFor(event)).toEqual({
-      attackThread: true,
-      damageNumeral: true,
-      captureNumeral: true,
-      flash: false,
-    })
-  })
 })
 
 describe('Crane Reach generated fixture legality', () => {

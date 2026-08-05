@@ -137,7 +137,7 @@ Each level identifies unit type differently:
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | starts with resolution for capture-only events; when paired with an attack, starts one quarter into resolution; ends at 1000 ms |
 
 - A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
-- Reduced motion: the event timeline plays regardless of the OS reduced-motion preference. Motion is the replay's content, and remote desktop sessions report that preference unconditionally. The static cue vocabulary (a hairline attack thread, static numerals, no flash) stays specified in `reducedMotionCuesFor` for a future stilled presentation.
+- Reduced motion: the event timeline plays regardless of the OS reduced-motion preference. Motion is the replay's content, and remote desktop sessions report that preference unconditionally.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 
@@ -171,7 +171,6 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 - A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
 - Transition tests cover cadence scaling, tile-route timing for one through four tiles, overlapping resolution, targetless capture reaction, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
-- A reduced-motion test keeps the static cue vocabulary readable: attack thread, damage numeral, capture numeral, and no flash.
 - The step 3 perf smoke stays green with the real assets on the army fixture, and asserts the battlefield layer builds once per episode with textures in place.
 - The e2e spectate journey stays green (it asserts on behavior, not pixels).
 
