@@ -6,16 +6,16 @@ import {
   setSeasonRatingPrompt,
   submitLocal,
   waitForTerminal,
-} from './support/api.js'
-import { authenticateBrowser, userIdOf } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+} from '../support/api.js'
+import { authenticateBrowser, userIdOf } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 import {
   AUTHOR_RATING_PROMPT,
   ENV_ID,
   JUDGES,
   OPERATOR_RATING_PROMPT,
   OWNERS,
-} from './support/names.js'
+} from '../support/names.js'
 
 /**
  * The submission journey (Stage 5). It needs a Docker daemon — building an overlay and running the
@@ -33,8 +33,10 @@ import {
  * Both submit into whichever season currently holds the open submission window (the seeded Playground).
  */
 
-const GOOD_FIXTURE = fileURLToPath(new URL('./fixtures/submission/glider', import.meta.url))
-const BAD_CLASS_FIXTURE = fileURLToPath(new URL('./fixtures/submission/bad-class', import.meta.url))
+const GOOD_FIXTURE = fileURLToPath(new URL('../fixtures/submission/glider', import.meta.url))
+const BAD_CLASS_FIXTURE = fileURLToPath(
+  new URL('../fixtures/submission/bad-class', import.meta.url),
+)
 
 test('a submitted agent validates to ready and runs in a watch session', async ({
   page,

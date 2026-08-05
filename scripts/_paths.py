@@ -30,8 +30,16 @@ BUILD_DIR = REPO_ROOT / "build"
 # seasons) under its "main" backend's data dir; `npm run demo` (scripts/demo.py) reuses that
 # instead of seeding fresh, snapshotting it into a sibling demo/ dir on every launch. The whole
 # .data/ tree is gitignored.
-E2E_DATA_DIR = REPO_ROOT / "frontend" / "e2e" / ".data"
-E2E_MAIN_DATA_DIR = E2E_DATA_DIR / "main"
+E2E_DIR = REPO_ROOT / "frontend" / "e2e"
+E2E_DATA_DIR = E2E_DIR / ".data"
+# Which subdirectory of .data/ a browser-suite run owns. The backend wipes whichever one it is
+# launched with, so `frontend/playwright.config.ts` defaults to the partial one: a run must claim
+# main/ before it can touch the database `npm run demo` serves, and only a complete `ci.py
+# frontend-e2e` claims it. That keeps a narrowed run, or a hand-typed `playwright test`, from
+# replacing a full fixture with one group's data.
+E2E_MAIN_DATA_SUBDIR = "main"
+E2E_PARTIAL_DATA_SUBDIR = "partial"
+E2E_MAIN_DATA_DIR = E2E_DATA_DIR / E2E_MAIN_DATA_SUBDIR
 E2E_MAIN_DB = E2E_MAIN_DATA_DIR / "sandbox.db"
 DEMO_DATA_DIR = E2E_DATA_DIR / "demo"
 FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"

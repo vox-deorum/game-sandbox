@@ -198,6 +198,22 @@ describe('LeaderboardsPage', () => {
     expect(vi.mocked(getSeasonLeaderboards)).not.toHaveBeenCalled()
   })
 
+  it('shows the empty-automated-board copy and keeps Human Ratings after Scoreboard in DOM order', async () => {
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: { ...board(), automated: [] } },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    expect(await screen.findByText('No automated results yet.')).toBeInTheDocument()
+    const scoreboard = screen.getByText('Scoreboard').closest('section') as HTMLElement
+    const humanRatings = screen.getByText('Human Ratings').closest('section') as HTMLElement
+    expect(
+      scoreboard.compareDocumentPosition(humanRatings) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('ranks the human board at three ratings and leaves under-threshold rows unranked', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: { season: season(), settings: settings(), board: board() },

@@ -4,9 +4,9 @@ import {
   release,
   setSeasonOverrides,
   startSession,
-} from './support/api.js'
-import { authenticateBrowser } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+} from '../support/api.js'
+import { authenticateBrowser } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 
 const ENV_ID = 'skirmish_crane'
 const SEASON_LABEL = 'Crane Reach Army'
@@ -162,8 +162,11 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await expect(position).toContainText('1/')
 })
 
-test('run and release a full-variant Crane Reach army season', async ({ page, admin }) => {
-  test.setTimeout(900_000)
+test('run and release a full-variant Crane Reach army season', { tag: '@slow' }, async ({
+  page,
+  admin,
+}) => {
+  test.setTimeout(400_000)
   await authenticateBrowser(page.context(), admin)
 
   const season = await declareSeason(admin, SEASON_LABEL, ENV_ID)
@@ -174,6 +177,11 @@ test('run and release a full-variant Crane Reach army season', async ({ page, ad
       games: 1,
     },
   ])
+  // Every full-variant flag stays on: this test exists to prove the army seat plan, terrain, unit
+  // abilities, and capture zones survive a real run and release. Only the two knobs that decide how
+  // long the battle lasts are turned down, since the length is what costs the wall clock and nothing
+  // about the pipeline depends on it. The renderer's own coverage of a long army battle is offline,
+  // over frontend/test/fixtures/crane-reach-army-recording.jsonl.
   await setSeasonOverrides(admin, season.id, {
     parameters: {
       seat_plan: 'army',
@@ -181,8 +189,8 @@ test('run and release a full-variant Crane Reach army season', async ({ page, ad
       terrain: true,
       unit_abilities: true,
       capture_zones: 3,
-      capture_target: 200,
-      round_cap: 150,
+      capture_target: 60,
+      round_cap: 40,
     },
   })
 
@@ -196,7 +204,7 @@ test('run and release a full-variant Crane Reach army season', async ({ page, ad
   )
   await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
   await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
-    timeout: 720_000,
+    timeout: 240_000,
   })
 
   await release(admin, season.id)

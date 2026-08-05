@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig, devices } from '@playwright/test'
@@ -41,6 +43,38 @@ const MAIN_USE = {
   launchOptions: { args: SOFTWARE_WEBGL_ARGS },
 }
 
+/**
+ * One project per group, so a change can run just the slice it touches: `playwright test --project
+ * hearts`. With no `--project` every group runs.
+ *
+ * A group is any directory under `e2e/` holding at least one spec, which makes the filesystem the only
+ * registry: adding a directory with a spec in it adds a project, and `support/` and `fixtures/` are
+ * excluded because they hold no specs rather than because a list says so. scripts/ci.py discovers the
+ * same set the same way, so the two runners cannot drift apart.
+ *
+ * Every group depends on `season-fixture`: journey.spec.ts asserts against the Playground overrides it
+ * writes (pipe gap 90, decision limit 750). Playwright runs a setup project once per run rather than
+ * once per dependent project, so selecting several groups still pays for it once. Never pass
+ * `--no-deps`, which would skip that setup and fail those assertions against an unmodified season.
+ *
+ * The long season arcs carry a `@slow` tag rather than living in a project or a file suffix, so each
+ * stays beside its siblings in the environment it belongs to. Drop them with `--grep-invert @slow`.
+ * This config deliberately applies no filter of its own: a default that hid `@slow` would make a bare
+ * `npm run e2e` quietly produce a run missing every released season.
+ *
+ * `crane-reach` is named after its spec, not its `skirmish_crane` environment id, so every group name
+ * matches the file it contains.
+ */
+const E2E_DIR = fileURLToPath(new URL('./e2e', import.meta.url))
+const GROUPS = readdirSync(E2E_DIR, { withFileTypes: true })
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      readdirSync(join(E2E_DIR, entry.name)).some((file) => file.endsWith('.spec.ts')),
+  )
+  .map((entry) => entry.name)
+  .sort()
+
 function backendEnv(
   port: number,
   dataSubdir: string,
@@ -72,6 +106,9 @@ export default defineConfig({
   // A real container session takes a few seconds to come up; give each test room.
   timeout: 60_000,
   expect: { timeout: 15_000 },
+  // One project per group is not an invitation to parallelize. Every group shares one database, one
+  // backend, one 8090/8091 port pair, and one active-session reservation per user, so the suite stays
+  // serial no matter how many projects it holds.
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
@@ -81,7 +118,12 @@ export default defineConfig({
       cwd: REPO_ROOT,
       // The backend also enables the dev-only local-folder submission source so submission.spec can
       // drive the real validate-and-build pipeline from a checked-in fixture, with no network.
-      env: backendEnv(MAIN_PORT, 'main', {
+      // Which data dir this run owns. The backend wipes whichever one it is launched with, so the
+      // default is the throwaway: a run has to say it is complete before it can touch the database
+      // `npm run demo` serves. Only `scripts/ci.py frontend-e2e` with no narrowing flags says so, which
+      // means running Playwright directly (any `--project`, any `--grep`, or even the whole suite by
+      // hand) can never replace a complete fixture with a partial one.
+      env: backendEnv(MAIN_PORT, process.env.E2E_DATA_SUBDIR ?? 'partial', {
         ALLOW_LOCAL_SUBMISSIONS: 'true',
         LLM_UPSTREAM_KEY: 'upstream-secret',
         LLM_MODEL_SMALL: 'provider-small',
@@ -119,11 +161,11 @@ export default defineConfig({
       testMatch: '**/season-fixture.setup.ts',
       use: MAIN_USE,
     },
-    {
-      name: 'main',
+    ...GROUPS.map((name) => ({
+      name,
+      testDir: `./e2e/${name}`,
       dependencies: ['season-fixture'],
-      testIgnore: '**/season-fixture.setup.ts',
       use: MAIN_USE,
-    },
+    })),
   ],
 })

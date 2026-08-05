@@ -13,12 +13,11 @@ import {
   rateSession,
   release,
   setAuthorPrompt,
-  setSeasonDescription,
   setSeasonRatingPrompt,
   submitReadyAgent,
-} from './support/api.js'
-import { authenticateBrowser, userIdOf } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+} from '../support/api.js'
+import { authenticateBrowser, userIdOf } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 import {
   AUTHOR_RATING_PROMPT,
   ENV_ID,
@@ -26,141 +25,10 @@ import {
   OPERATOR_RATING_PROMPT,
   OWNERS,
   SEASONS,
-} from './support/names.js'
+} from '../support/names.js'
 
 const fixturePath = (name: string): string =>
-  fileURLToPath(new URL(`./fixtures/submission/${name}`, import.meta.url))
-
-test('the Seasons index shows the refreshed released-season card and navigates to its boards', async ({
-  page,
-  admin,
-}) => {
-  const season = await declareSeason(admin, SEASONS.releasedCard)
-  await release(admin, season.id)
-
-  // The browser browses as the bootstrap admin, the operator throughout this spec.
-  await authenticateBrowser(page.context(), admin)
-  await page.goto('/seasons')
-
-  const card = page.locator('li').filter({ hasText: SEASONS.releasedCard })
-  await expect(card.getByRole('link', { name: 'Results released' })).toBeVisible()
-  await expect(card.getByText(/0 Submissions · 0 Games/)).toBeVisible()
-  await expect(card.locator('img.season-thumb')).toBeVisible()
-  await expect(card.getByText('Open now')).toHaveCount(0)
-
-  await card.getByRole('link', { name: `Open season ${SEASONS.releasedCard}` }).click()
-  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
-})
-
-test('an unreleased Season description becomes public with submissions and keeps safe card navigation', async ({
-  page,
-  admin,
-}) => {
-  const original = await activeWindows(admin)
-  if (original.submissionSeasonId !== null) {
-    await closeSubmissions(admin, original.submissionSeasonId)
-  }
-
-  const label = 'Description preview'
-  const markdown =
-    'A *focused* **Season** uses `safe code` and [Season docs](https://example.com/season-docs).'
-  const season = await declareSeason(admin, label)
-  try {
-    await setSeasonDescription(admin, season.id, markdown)
-    await openSubmissions(admin, season.id)
-
-    await authenticateBrowser(page.context(), admin)
-    await page.goto('/seasons')
-
-    const card = page.locator('li').filter({ hasText: label })
-    const description = card.locator('.season-description')
-    await expect(description).toContainText('A focused Season uses safe code and Season docs.')
-    await expect(description.locator('em')).toHaveText('focused')
-    await expect(description.locator('strong')).toHaveText('Season')
-    await expect(description.locator('code')).toHaveText('safe code')
-    const external = description.getByRole('link', { name: 'Season docs' })
-    await expect(external).toHaveAttribute('href', 'https://example.com/season-docs')
-    await expect(external).toHaveAttribute('target', '_blank')
-    await expect(external).toHaveAttribute('rel', 'noopener noreferrer')
-
-    // Assert the safe link's properties without following it, then exercise the card's ordinary primary route.
-    await card.getByRole('link', { name: `Open season ${label}` }).click()
-    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/agents/`))
-  } finally {
-    await closeSubmissions(admin, season.id).catch(() => {})
-    await setSeasonDescription(admin, season.id, null).catch(() => {})
-    await deleteSeason(admin, season.id).catch(() => {})
-    if (original.submissionSeasonId !== null) {
-      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
-    }
-  }
-})
-
-test('released leaderboard history is visible and navigates by season URL', async ({
-  page,
-  admin,
-}) => {
-  const older = await declareSeason(admin, SEASONS.historyOlder)
-  await release(admin, older.id)
-  const newer = await declareSeason(admin, SEASONS.historyNewer)
-  await release(admin, newer.id)
-
-  // The browser browses as the bootstrap admin, the operator throughout this spec.
-  await authenticateBrowser(page.context(), admin)
-  await page.goto(`/environments/${ENV_ID}/leaderboards`)
-
-  await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.historyNewer)
-  await expect(page.getByText('Scoreboard')).toBeVisible()
-  await expect(page.getByText('Human Ratings')).toBeVisible()
-  await expect(page.getByText('No automated results yet.')).toBeVisible()
-
-  const boards = page.locator('.boards > .board')
-  const scoreboardBox = await boards.nth(0).boundingBox()
-  const ratingsBox = await boards.nth(1).boundingBox()
-  expect(scoreboardBox).not.toBeNull()
-  expect(ratingsBox).not.toBeNull()
-  expect(ratingsBox?.y).toBeGreaterThan((scoreboardBox?.y ?? 0) + (scoreboardBox?.height ?? 0))
-
-  await page.getByRole('link', { name: SEASONS.historyOlder }).click()
-  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${older.id}$`))
-  await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.historyOlder)
-})
-
-test('operator leaderboard history includes unreleased seasons', async ({ page, admin }) => {
-  const season = await declareSeason(admin, SEASONS.operatorPreview)
-  try {
-    // This test depends on the browser being the operator: only the operator's history lists an
-    // unreleased season, so the browser authenticates as the bootstrap admin before browsing.
-    await authenticateBrowser(page.context(), admin)
-    await page.goto(`/environments/${ENV_ID}/leaderboards`)
-
-    const link = page.getByRole('link', { name: SEASONS.operatorPreview })
-    await expect(link).toBeVisible()
-    await link.click()
-
-    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
-    await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.operatorPreview)
-    await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
-
-    // The fixture has served its purpose. Remove it through the operator UI so the demo keeps only
-    // meaningful seasons, and prove the destructive action waits for explicit confirmation.
-    await page.goto(`/environments/${ENV_ID}/admin`)
-    await page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }).click()
-    await page.getByRole('button', { name: 'Delete season' }).click()
-    const confirmation = page.getByRole('dialog', { name: 'Delete season?' })
-    await confirmation.getByRole('button', { name: 'Cancel' }).click()
-    await expect(
-      page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }),
-    ).toBeVisible()
-    await page.getByRole('button', { name: 'Delete season' }).click()
-    await confirmation.getByRole('button', { name: 'Delete season' }).click()
-    await expect(
-      page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }),
-    ).toHaveCount(0)
-  } finally {
-    await deleteSeason(admin, season.id).catch(() => {})
-  }
-})
+  fileURLToPath(new URL(`../fixtures/submission/${name}`, import.meta.url))
 
 test('operator season configuration exposes and validates LLM controls', async ({
   page,
@@ -299,19 +167,16 @@ test('operator season configuration exposes and validates LLM controls', async (
  * needs a wide timeout. It borrows the env's single open submission/play windows from the seeded
  * Playground season and restores them at the end so the rest of the suite still sees the default world.
  *
- * Before the field settles, the competitors submit a first round of entries that their final agents
- * supersede, so several owners — including the glider owner whose account `npm run demo` prints for
- * sign-in — carry multiple submissions within the season. That richer history is verified on the agent profiles
- * at the end. The superseded entries are inactive, so they never run, place, or change the boards.
+ * Before the field settles, the glider owner (the account `npm run demo` prints for sign-in) submits a
+ * first entry that their final agent supersedes, so one profile carries an in-season iteration. That
+ * history is verified on the agent profiles at the end. The superseded entry is inactive, so it never
+ * runs, places, or changes the boards.
  */
-test('a full season: submissions, an automated run, several judges rate, then release', async ({
-  page,
-  admin,
-  as,
-}) => {
-  // A first round of re-submissions (each competitor replaces an earlier entry) adds real container
-  // builds beyond the bare arc, so widen the budget past the original 900s for slow runners.
-  test.setTimeout(1_200_000)
+test('a full season: submissions, an automated run, several judges rate, then release', {
+  tag: '@slow',
+}, async ({ page, admin, as }) => {
+  // Four real container builds: the glider owner's superseded first entry plus the three that compete.
+  test.setTimeout(900_000)
 
   // The browser drives the admin console and rates one agent as the bootstrap admin, the operator
   // throughout this spec.
@@ -338,15 +203,11 @@ test('a full season: submissions, an automated run, several judges rate, then re
       { owner: OWNERS.drifter, fixture: 'good', scores: [2, 2, 3, 2] },
     ]
 
-    // A first round the field later replaced: every competitor submits an earlier entry, and the glider
-    // owner (the data-rich member the demo mocks) iterates once more — so the season carries a spread of
-    // re-submissions across owners. Each owner's roster agent below supersedes their latest entry here,
-    // so these stay inactive: they never run, place, or change the boards, living only in the history.
-    await Promise.all(
-      roster.map(async (entry) =>
-        submitReadyAgent(await as(entry.owner), fixturePath(entry.fixture)),
-      ),
-    )
+    // A first round the field later replaced. Only the glider owner (the data-rich member the demo
+    // mocks) submits here, so exactly one profile carries a superseded entry alongside its current one.
+    // The roster agent below supersedes it, so it stays inactive: it never runs, places, or changes the
+    // boards, and lives only in the history. Every extra first-round entry would cost a real container
+    // build for history no assertion reads, which is why the other two owners submit once.
     await submitReadyAgent(await as(OWNERS.glider), fixturePath('glider'))
 
     const submissions = await Promise.all(
@@ -445,16 +306,16 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await expect(
       page.getByRole('heading', { name: `${OWNERS.glider}'s Submissions` }),
     ).toBeVisible()
-    // The glider owner iterated deepest: two superseded entries plus the current one. Each superseded
-    // entry carries the "superseded" status badge that the profile folds the old lifecycle marker into.
-    await expect(page.locator('.submission-item')).toHaveCount(3)
-    await expect(page.getByText('superseded', { exact: true })).toHaveCount(2)
-
-    // The other competitors re-submitted too, so their profiles show the same in-season iteration: one
-    // superseded entry and the current one.
-    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.flapper))}`)
+    // The glider owner is the only one who iterated in-season: one superseded entry plus the current
+    // one. The superseded entry carries the "superseded" status badge that the profile folds the old
+    // lifecycle marker into.
     await expect(page.locator('.submission-item')).toHaveCount(2)
     await expect(page.getByText('superseded', { exact: true })).toHaveCount(1)
+
+    // A competitor who submitted once shows exactly that: a single entry and no superseded badge.
+    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.flapper))}`)
+    await expect(page.locator('.submission-item')).toHaveCount(1)
+    await expect(page.getByText('superseded', { exact: true })).toHaveCount(0)
 
     // Restore Playground before checking the glider owner's cross-season index. Updraft Open is now
     // released history, so its successful status stripe must remain visually distinct from the

@@ -83,9 +83,10 @@ describe('ChatPanel', () => {
     expect(screen.getByText('3/3')).toBeInTheDocument()
     expect(send).toBeEnabled()
 
-    // One more emoji is over the cap: send is disabled.
+    // One more emoji is over the cap: send is disabled and the counter carries the over-cap modifier.
     await fireEvent.update(input, '😀😀😀😀')
     expect(send).toBeDisabled()
+    expect(screen.getByText('4/3')).toHaveClass('chat-counter--over')
   })
 
   it('emits the pinned send payload and clears the draft', async () => {

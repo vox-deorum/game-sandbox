@@ -209,6 +209,21 @@ describe('api client', () => {
     })
   })
 
+  it('maps a 409 play_season_changed to its typed reason', async () => {
+    stubFetch(async () => jsonResponse({ error: 'stale', code: 'play_season_changed' }, 409))
+    expect(
+      await startSession({
+        envId: 'flappy_bird',
+        seasonId: 'season-1',
+        parameters: { players: 1 },
+        seats: { seat_0: { kind: 'human' } },
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'play_season_changed',
+    })
+  })
+
   it('sends env_id, the seat assignment, and the human timeout override in the body', async () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201),
@@ -217,6 +232,7 @@ describe('api client', () => {
       envId: 'hearts',
       seasonId: 'season-1',
       parameters: { players: 4 },
+      seed: 4242,
       humanTimeoutMs: 2000,
       seats: {
         seat_0: { kind: 'human' },
@@ -231,6 +247,7 @@ describe('api client', () => {
     // and no derived `mode` field because the backend derives it from the assignment.
     expect(body).toMatchObject({
       env_id: 'hearts',
+      seed: 4242,
       human_timeout_ms: 2000,
       seats: {
         seat_0: { kind: 'human' },

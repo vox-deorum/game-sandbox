@@ -4,9 +4,9 @@ import {
   authenticateBrowser,
   emailFor,
   MEMBER_PASSWORD,
-} from './support/auth.js'
-import { expect, signInThroughUi, test } from './support/fixtures.js'
-import { ENV_ID } from './support/names.js'
+} from '../support/auth.js'
+import { expect, signInThroughUi, test } from '../support/fixtures.js'
+import { ENV_ID } from '../support/names.js'
 
 /**
  * The authentication journeys (Stage 12.5), the executable form of the stage's experiential criteria

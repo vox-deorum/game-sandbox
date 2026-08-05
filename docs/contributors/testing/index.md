@@ -56,7 +56,7 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | `docs` | `mkdocs build --strict` |
 | `publish-dry-run` | Build the local frontend once, stage runnable student-repository snapshots, and do not push |
 | `backend-integration` | Real Docker backend suite |
-| `frontend-e2e` | Real backend, built frontend, Playwright Chromium |
+| `frontend-e2e` | Real backend, built frontend, Playwright Chromium (narrow it with `--group` or `--fast`) |
 | `compose-smoke` | Build the app image and boot `compose.yaml` against a real Linux daemon |
 
 The full local pull-request bar runs every non-Docker job plus the docs build and publish dry run, then the two Docker-heavy suites:
@@ -93,12 +93,18 @@ Integration tests live under `backend/test/integration/`.
 ## Browser end-to-end
 
 ```console
+# The group covering your change, while you iterate.
+uv run python scripts/ci.py frontend-e2e --group hearts
+
+# Everything, before handing the change over.
 uv run python scripts/ci.py frontend-e2e
 ```
 
-This job runs on its own manually dispatched workflow instead of per-push CI; see [Browser end-to-end tests](browser-e2e.md) for why, how to trigger it, and how to add a spec or fixture.
+This job runs on its own manually dispatched workflow instead of per-push CI; see [Browser end-to-end tests](browser-e2e.md) for why, how to trigger it, the group names, and how to add a spec or fixture.
 
 The suite builds the frontend and session image, starts the real backend, and covers browser flows for sessions, submissions, authentication, replays, seasons, and leaderboards. Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
+
+The complete run is also what `npm run demo` serves as its fixture, so it stays the default. A narrowed run writes a throwaway database instead.
 
 Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
 

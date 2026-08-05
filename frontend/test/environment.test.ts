@@ -572,6 +572,24 @@ describe('EnvironmentPage', () => {
     expect(await screen.findByText('active-9')).toBeInTheDocument()
   })
 
+  it('shows the stale-season message and keeps the form open when the play season changed', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(startSession).mockResolvedValue({
+      ok: false,
+      reason: 'play_season_changed',
+    })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    expect(
+      await screen.findByText(
+        'The play season changed. Refresh this page and reopen the start form.',
+      ),
+    ).toBeInTheDocument()
+    // No navigation happened: the start form is still open on the environment page, not a session route.
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeInTheDocument()
+  })
+
   it('opens the multi-seat play grid for Hearts and starts with one human seat', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])

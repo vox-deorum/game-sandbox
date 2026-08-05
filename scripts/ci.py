@@ -17,10 +17,19 @@ ci.yml (runs on every push and pull request):
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
   fail if any environment template layer ships no example.
 
-e2e.yml (manually dispatched from the Actions tab — too Docker-heavy and slow for every push):
-- ``frontend-e2e``: the Docker-gated browser suite — Playwright drives Chromium against the real
+e2e.yml (manually dispatched from the Actions tab, too Docker-heavy and slow for every push):
+- ``frontend-e2e``: the Docker-gated browser suite. Playwright drives Chromium against the real
   backend serving the production frontend and the scripted loopback bridge serving the local bundle.
   A production session launches a container, so the job needs Docker and is *not* part of ``all``.
+  Bare, it runs every group with the long season arcs included, which is what CI checks and what
+  ``scripts/demo.py`` turns into the demo's fixture database. For a local loop it narrows::
+
+      ci.py frontend-e2e --group hearts     # just the Hearts specs, arcs skipped
+      ci.py frontend-e2e --fast             # every group, arcs skipped
+      ci.py frontend-e2e --group spades --include-slow --no-build
+
+  Only the bare form claims the data dir the demo serves; everything else, including a hand-typed
+  ``playwright test``, writes a throwaway one, so no narrowed run can thin that fixture.
 
 compose-smoke.yml (manually dispatched from the Actions tab):
 - ``compose-smoke``: the containerized-deployment rehearsal from
@@ -46,6 +55,7 @@ cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration``, ``fro
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -53,8 +63,13 @@ from pathlib import Path
 from _paths import (
     BACKEND_GENERATED_DIR,
     BUILD_DIR,
+    E2E_DIR,
+    E2E_MAIN_DATA_SUBDIR,
+    E2E_PARTIAL_DATA_SUBDIR,
     ENVIRONMENTS_PYPROJECT,
     FIXTURES_DIR,
+    FRONTEND_DIST_DIR,
+    FRONTEND_LOCAL_DIST_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
     SCHEMA_DIR,
@@ -62,6 +77,18 @@ from _paths import (
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
+
+
+def e2e_groups() -> tuple[str, ...]:
+    """The browser suite's groups: every directory under frontend/e2e/ that holds a spec.
+
+    The filesystem is the only registry. ``frontend/playwright.config.ts`` derives its projects with
+    the same rule, so a new group needs no edit in either file, and neither can list a group the other
+    does not. ``support/`` and ``fixtures/`` fall out because they hold no specs.
+    """
+    return tuple(
+        sorted(entry.name for entry in E2E_DIR.iterdir() if entry.is_dir() and any(entry.glob("*.spec.ts")))
+    )
 
 
 def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
@@ -102,12 +129,54 @@ def job_backend_integration() -> None:
     _run([_NPM, "run", "--workspace", "@game-sandbox/backend", "test:integration"])
 
 
-def job_frontend_e2e() -> None:
-    # Playwright drives Chromium against both the real backend and the Python local-play bridge.
-    # Production sessions launch real containers, so this job needs the same Docker gate as
-    # backend-integration. The local journey also needs the repository's Python environment.
-    # Build the image, install Chromium, then run the gated suite. The frontend package's e2e script
-    # rebuilds both browser entries itself, so direct and CI-driven Playwright runs cannot use stale bundles.
+def _e2e_playwright_args(groups: list[str], *, include_slow: bool) -> list[str]:
+    """Translate a group selection into Playwright's own flags.
+
+    Kept as a pure function so a test can assert the translation without running the suite.
+    """
+    args: list[str] = []
+    for group in groups:
+        args += ["--project", group]
+    if not include_slow:
+        args += ["--grep-invert", "@slow"]
+    return args
+
+
+def job_frontend_e2e(
+    groups: list[str] | None = None,
+    *,
+    include_slow: bool | None = None,
+    build: bool = True,
+) -> None:
+    """Run the browser suite. With no arguments this is the complete run.
+
+    Playwright drives Chromium against both the real backend and the Python local-play bridge.
+    Production sessions launch real containers, so this job needs the same Docker gate as
+    backend-integration. The local journey also needs the repository's Python environment.
+
+    ``groups`` narrows the run to those Playwright projects (the directories under ``frontend/e2e/``).
+    A narrowed run also drops the long ``@slow`` season arcs, since the point of picking a group is a
+    fast loop; pass ``include_slow=True`` to keep them.
+
+    Only a complete run claims the data dir ``npm run demo`` serves, by setting ``E2E_DATA_SUBDIR``.
+    The Playwright config defaults to the throwaway dir, so a narrowed run here, and any hand-typed
+    ``playwright test``, leaves that fixture alone without having to remember to.
+
+    scripts/demo.py calls this with no arguments to build that fixture, and CI runs the bare
+    ``ci.py frontend-e2e``, so "every group, arcs included, freshly built" must stay the default.
+    """
+    selected = sorted(set(groups or []))
+    slow = include_slow if include_slow is not None else not selected
+    complete = not selected and slow
+
+    if not build:
+        if os.environ.get("CI"):
+            raise SystemExit("--no-build is a local convenience; CI always rebuilds the bundles.")
+        for entry in (FRONTEND_DIST_DIR / "index.html", FRONTEND_LOCAL_DIST_DIR / "local.html"):
+            if not entry.exists():
+                raise SystemExit(f"--no-build needs {entry}; run the job once without it first.")
+        print("--no-build: reusing the existing frontend bundles, which may be stale", flush=True)
+
     _run([_NPM, "run", "build:image"])
     install_chromium = [
         _NPM,
@@ -121,7 +190,17 @@ def job_frontend_e2e() -> None:
         "chromium",
     ]
     _run(install_chromium)
-    _run([_NPM, "run", "e2e", "--workspace", "@game-sandbox/frontend"])
+    if build:
+        _run([_NPM, "run", "e2e:build", "--workspace", "@game-sandbox/frontend"])
+    # Claim the demo's data dir only for a complete run. The config defaults to the throwaway one, so a
+    # narrowed run here, and any direct Playwright invocation, leaves the fixture alone by default.
+    subdir = E2E_MAIN_DATA_SUBDIR if complete else E2E_PARTIAL_DATA_SUBDIR
+    env = {**os.environ, "E2E_DATA_SUBDIR": subdir}
+    _run(
+        [_NPM, "exec", "--workspace", "@game-sandbox/frontend", "--", "playwright", "test"]
+        + _e2e_playwright_args(selected, include_slow=slow),
+        env=env,
+    )
 
 
 def _wait_for_http(url: str, timeout_s: float) -> None:
@@ -366,9 +445,39 @@ _JOBS = {
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a CI job locally or in CI.")
     parser.add_argument("job", choices=sorted(_JOBS), help="which job to run")
+    e2e = parser.add_argument_group(
+        "frontend-e2e options",
+        "Narrow the browser suite. With none of these the job runs everything, which is what CI and "
+        "scripts/demo.py depend on.",
+    )
+    e2e.add_argument(
+        "--group",
+        action="append",
+        choices=e2e_groups(),
+        metavar="NAME",
+        help="run only this group's specs (repeatable); also skips the @slow season arcs",
+    )
+    slow = e2e.add_mutually_exclusive_group()
+    slow.add_argument("--fast", action="store_true", help="skip the long @slow season arcs")
+    slow.add_argument("--include-slow", action="store_true", help="keep the @slow arcs in a narrowed run")
+    e2e.add_argument(
+        "--no-build",
+        dest="build",
+        action="store_false",
+        help="reuse the existing frontend bundles instead of rebuilding them",
+    )
     args = parser.parse_args(argv)
+
+    narrowing = args.group or args.fast or args.include_slow or not args.build
+    if narrowing and args.job != "frontend-e2e":
+        parser.error("--group, --fast, --include-slow and --no-build apply only to frontend-e2e")
+
     BUILD_DIR.mkdir(exist_ok=True)
-    _JOBS[args.job]()
+    if args.job == "frontend-e2e":
+        include_slow = True if args.include_slow else (False if args.fast else None)
+        job_frontend_e2e(args.group, include_slow=include_slow, build=args.build)
+    else:
+        _JOBS[args.job]()
     return 0
 
 

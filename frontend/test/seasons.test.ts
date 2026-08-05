@@ -181,6 +181,7 @@ describe('SeasonsPage', () => {
     expect(environment).not.toBeNull()
     expect(description).toHaveTextContent('Try careful timing notes at 60 FPS.')
     expect(description.innerHTML).toContain('<strong>careful</strong>')
+    expect(description.querySelector('code')).toHaveTextContent('60 FPS')
     const descriptionLink = description.querySelector('a') as HTMLAnchorElement
     expect(descriptionLink).toHaveAttribute('href', 'https://example.test/notes')
     expect(descriptionLink).toHaveAttribute('target', '_blank')

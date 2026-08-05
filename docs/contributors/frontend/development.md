@@ -46,9 +46,10 @@ When making a change:
 4. Update the jsdom and Playwright tests with any UI change, as [Testing](../testing/index.md#browser-end-to-end) requires.
 5. Run `npm run check`, `npm test`, and `npm run build`.
 
-After a UI change, also run the browser suite from the repository root, with Docker running:
+After a UI change, also run the browser suite from the repository root, with Docker running. Run the group that covers your change while iterating, then the whole suite before handing the change over. [Browser end-to-end tests](../testing/browser-e2e.md#groups) lists which group covers which area.
 
 ```console
+uv run python scripts/ci.py frontend-e2e --group play
 uv run python scripts/ci.py frontend-e2e
 ```
 

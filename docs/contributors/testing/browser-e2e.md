@@ -6,34 +6,63 @@ For the wider verification matrix and how this job fits the pipeline, see [Testi
 
 ## Running it
 
+Each directory under `frontend/e2e/` is a group, and each group is a Playwright project. Run the group that covers your change while you iterate, then run the whole suite before handing the change over.
+
 ```console
-# Full job: build frontend + session image, install Chromium, run the suite.
+# Everything. This is what CI runs and what builds the demo fixture.
 uv run python scripts/ci.py frontend-e2e
 
-# Rebuild both frontend bundles and run the tests (session image already built).
-npm run e2e --workspace @game-sandbox/frontend
+# One group, skipping the long season arcs. Repeat --group to pick several.
+uv run python scripts/ci.py frontend-e2e --group hearts
 
-# Rebuild both frontend bundles and run one spec.
-npm run e2e --workspace @game-sandbox/frontend -- leaderboards-admin.spec.ts
+# Every group, still skipping the arcs.
+uv run python scripts/ci.py frontend-e2e --fast
+
+# Keep the arcs in a narrowed run, and reuse the bundles from the last run.
+uv run python scripts/ci.py frontend-e2e --group spades --include-slow --no-build
 ```
 
-The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend.
+Once the session image and Chromium are in place, drive Playwright directly:
 
-## Suite setup and spec inventory
+```console
+npm run e2e --workspace @game-sandbox/frontend -- --project seasons
+npm run e2e:run --workspace @game-sandbox/frontend -- --project seasons   # skip both Vite builds
+```
+
+These write the throwaway database, including the form with no `--project`. Only the bare `scripts/ci.py frontend-e2e` builds the fixture `npm run demo` serves, so reach for it when you want that fixture refreshed.
+
+The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend. One project per group does not change that: every group shares one backend, one database, and one port pair.
+
+## Groups
+
+| Group | Covers | Run it after changing |
+| --- | --- | --- |
+| `auth` | Sign in, sign out, roster creation, the pending gate, and the ban lifecycle. | `LoginPage.vue`, `ProfilePage.vue`, `AccountMenu.vue`, `me.ts`, `auth.ts` |
+| `play` | Live Flappy Bird play, pause and resume, stop, replay, pin, and the season-settings download. | `SessionPage.vue`, `ReplayPage.vue`, `StageFrame.vue`, `useSessionSocket.ts`, `api/socket.ts` |
+| `seasons` | Operator season configuration, the LLM controls, and a complete competition workflow. | `LeaderboardsPage.vue`, `SeasonsPage.vue`, `components/admin/`, `lib/standings.ts` |
+| `submissions` | The resolve, static, build, and load pipeline: a ready agent watched, and a load failure. | `SubmitAgentForm.vue`, `SubmissionStageTimeline.vue`, `MyAgentsPage.vue`, `AgentProfilePage.vue` |
+| `local` | The standalone local bundle against the loopback bridge, with canvas device-pixel-ratio and resize behavior. | `src/local/`, `vite.local.config.ts` |
+| `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey, human seat play, and replay attribution. | `environments/hearts/renderer/` |
+| `spades` | Chat filtering and replay, seat-ranked results on both seat plans, and the partnership matchup. | `environments/spades/renderer/` |
+| `crane-reach` | A skirmish watched to game over with exact replay seeking, and a full-variant army season. | `environments/skirmish_crane/renderer/` |
+
+A change to something shared, such as `src/renderers/base/`, `components/ui/`, `styles/tokens.css`, or `api/client.ts`, needs the whole suite. A change to `src/renderers/cards/` needs `hearts` and `spades`.
+
+Nothing that submits a ready agent into the Flappy Bird Playground season may join the `submissions` group. That group's watch-list assertion finds its agent by the anonymized label `Agent 1`, which is only unambiguous while its agent is the sole ready one.
+
+## The slow tier
+
+Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each is minutes on its own. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them.
+
+The configuration applies no filter of its own. A default that hid `@slow` would let a bare `npm run e2e` quietly produce a demo database with no released seasons in it.
+
+## Suite setup
 
 `playwright.config.ts` starts the main backend on port 8090 and the loopback local-play bridge on port 8091. The suite uses the bootstrap admin as its operator and creates owners, judges, and spectators as real member accounts through `e2e/support/fixtures.ts`.
 
-| Spec | Project | What it covers |
-| --- | --- | --- |
-| `journey.spec.ts` | main | Live play → pause/resume → stop → replay → pin. |
-| `watch.spec.ts` | main | Watch a scripted session; a second context is a controls-less spectator. |
-| `submission.spec.ts` | main | The resolve → static → build → load pipeline; a ready agent watched, and a load failure. |
-| `leaderboards-admin.spec.ts` | main | Season cards, released history, operator preview, and a complete competition workflow. |
-| `hearts.spec.ts` | main | Four-player rendering, scheduled matches, LLM journeys, seat selection, human play, and replay attribution. |
-| `spades.spec.ts` | main | Messaging controls and a partnership matchup. |
-| `auth.spec.ts` | main | Three authentication journeys: the admin signs in, sees the admin navigation, and signs out; the admin creates a user who then signs in and participates; a pending user is gated, an admin approves them on the Users page, and the controls unlock. |
-| `local-play.spec.ts` | main | The standalone local bundle against the loopback bridge: a scripted run plus canvas device-pixel-ratio and resize behavior. |
-| `simultaneous-metadata.spec.ts` | main | Synthetic simultaneous environment metadata offers an input window without a human-timeout override. |
+Every group project depends on the `season-fixture` setup project, which gives the retained Playground season its local settings before any journey creates activity. Playwright runs a setup project once per run rather than once per dependent project, so selecting several groups still pays for it once. Do not pass `--no-deps`: the `play` group asserts against exactly those settings.
+
+Shared helpers stay at `e2e/support/`, and the submission fixtures at `e2e/fixtures/`, so a spec reaches them with `../support/` and `../fixtures/`. Neither moves into a group.
 
 ## Manual GitHub OAuth check
 
@@ -54,6 +83,10 @@ GitHub OAuth depends on an external provider, so the frontend Vitest suite cover
 
 `npm run demo` copies `frontend/e2e/.data/main/` to `demo/` and serves that copy. The e2e suite creates the source data, including recordings, submissions, and real sign-in accounts, so the demo and browser tests exercise the same workflows. After changing the data a journey creates, run `npm run demo -- --rerun-e2e` to rebuild the source fixture before starting the demo.
 
+Only a complete run writes `.data/main/`, and a run has to claim that directory before it can touch it. `playwright.config.ts` defaults to `.data/partial/`, and `scripts/ci.py frontend-e2e` overrides it to `main` only when no narrowing flag is set. Everything else, a `--group` run or a hand-typed `playwright test`, lands in `partial`.
+
+The default has to be the throwaway one because the backend wipes whichever directory it is launched with. If `main` were the default, running a single group would replace a complete fixture with that group's data, and `npm run demo` would then serve it without noticing.
+
 ## Naming and shared helpers
 
 Shared identities live in `e2e/support/names.ts` and shared API flows in `e2e/support/api.ts`. Reuse them instead of repeating request and assertion code.
@@ -64,6 +97,9 @@ Shared identities live in `e2e/support/names.ts` and shared API flows in `e2e/su
 
 ## Adding a test or fixture
 
+- Put the spec in the group whose area it covers, or add a group by creating a directory under `e2e/` and putting a spec in it. That is the whole procedure: a group is any directory holding at least one `*.spec.ts`, and both `playwright.config.ts` and `scripts/ci.py` discover them that way, so neither holds a list to update. `support/` and `fixtures/` are not groups because they hold no specs.
+- Tag a test `@slow` when it submits agents and runs a scheduled season. Anything cheaper belongs in the default tier, where contributors will actually run it.
+- Prefer the jsdom suite under `frontend/test/`. A browser test earns its place by needing a real container, a real socket, a second browser context, a painted canvas, a real download, or real navigation and cookies. Assertions about text, disabled controls, validation, and markup structure belong in jsdom, where they run in milliseconds.
 - Add identities to `support/names.ts` and flows to `support/api.ts`; keep specs declarative.
 - A new agent fixture is a folder under `fixtures/submission/` with a `manifest.json` (mirror `good/manifest.json`) and an `agent.py` exposing a callable `Agent` with `reset`/`act`.
 - Assert DOM facts such as visible controls, a painted canvas, and board rows. Never assert pixels: font and GPU differences between runners would make the suite unreliable.

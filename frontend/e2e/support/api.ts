@@ -133,32 +133,6 @@ export async function setSeasonOverrides(
 }
 
 /**
- * Set (or clear) a season's messaging-enabled override in place, preserving its existing match design
- * and every other override. The config endpoint is a full replace (no server-side merge), so this reads
- * the current document first and PUTs it back with only the `messaging.enabled` field touched — the
- * same read-mutate-write a caller would do against `SeasonConfigEditor`'s save. Passing `null` clears the
- * override back to the environment default (the shape `SeasonConfigEditor` writes for its "default"
- * radio), which is how a test restores the season it silenced. Clearing drops only `enabled`; it may
- * leave an empty `messaging: {}` block, which the backend's `resolveMessaging` treats identically to an
- * absent block (`enabled ?? true`), so the effect is the environment default either way.
- */
-export async function setMessagingOverride(
-  admin: APIRequestContext,
-  seasonId: string,
-  enabled: boolean | null,
-): Promise<void> {
-  const config = await getSeasonConfig(admin, seasonId)
-  const { enabled: _drop, ...restMessaging } = config.overrides?.messaging ?? {}
-  const messaging: MessagingOverride =
-    enabled === null ? restMessaging : { ...restMessaging, enabled }
-  const overrides = { ...config.overrides, messaging }
-  const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
-    data: { deps_version: config.deps_version, matches: config.matches, overrides },
-  })
-  expect(res.status(), await res.text()).toBe(200)
-}
-
-/**
  * Replace only the LLM block while preserving the rest of the full-replace season configuration.
  * This mirrors the administrator editor and lets E2E exercise a genuinely enabled season.
  */

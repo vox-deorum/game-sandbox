@@ -1,16 +1,8 @@
 import { readFile } from 'node:fs/promises'
 
-import {
-  activeWindows,
-  closePlay,
-  declareSeason,
-  deleteSeason,
-  getRecordingHeader,
-  getSession,
-  openPlay,
-} from './support/api.js'
-import { authenticateBrowser, userIdOf } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+import { activeWindows, getRecordingHeader, getSession } from '../support/api.js'
+import { authenticateBrowser, userIdOf } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 
 /**
  * The main journey, the executable form of the stage's experiential criteria: the browser signs in as
@@ -120,28 +112,6 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   // Pin the recording (the viewer owns it).
   await page.getByRole('button', { name: 'Pin recording' }).click()
   await expect(page.getByRole('button', { name: 'Pinned ✓' })).toBeVisible()
-})
-
-test('rejects a start form loaded for a stale play season', async ({ page, admin }) => {
-  await authenticateBrowser(page.context(), admin)
-  const original = await activeWindows(admin)
-  if (original.playSeasonId === null) throw new Error('the seeded play season is missing')
-  const replacement = await declareSeason(admin, 'Stale season replacement')
-  try {
-    await page.goto('/environments/flappy_bird')
-    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
-    await closePlay(admin, original.playSeasonId)
-    await openPlay(admin, replacement.id)
-
-    await page.getByRole('button', { name: 'Play', exact: true }).click()
-    await page.getByRole('button', { name: 'Start playing' }).click()
-    await expect(page.getByText(/The play season changed/)).toBeVisible()
-    await expect(page).toHaveURL(/\/environments\/flappy_bird/)
-  } finally {
-    await closePlay(admin, replacement.id).catch(() => {})
-    await openPlay(admin, original.playSeasonId).catch(() => {})
-    await deleteSeason(admin, replacement.id).catch(() => {})
-  }
 })
 
 test('shows submission-season changes and downloads its local setup file', async ({

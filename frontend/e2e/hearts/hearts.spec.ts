@@ -14,17 +14,17 @@ import {
   startSession,
   stopSessionAndAwaitFree,
   submitReadyAgent,
-} from './support/api.js'
-import { authenticateBrowser, userIdOf } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+} from '../support/api.js'
+import { authenticateBrowser, userIdOf } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 import {
   HEARTS_ENV_ID,
   HEARTS_HUMAN_LEAD_SEED,
   HEARTS_OWNERS,
   HEARTS_SEASON,
   LLM_PERSONAS,
-} from './support/names.js'
-import { stageExampleAgent } from './support/stage-example-agent.js'
+} from '../support/names.js'
+import { stageExampleAgent } from '../support/stage-example-agent.js'
 
 /**
  * The dedicated Hearts coverage. Unlike the flappy specs, Hearts is a four-seat, turn-based game, so
@@ -34,14 +34,6 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
  * renderer in a live four-seat session. The agents are the colocated Hearts reference examples, each
  * a different strategy, submitted into a real season whose released Scoreboard the demo then serves.
  */
-
-/** A four-seat, all-Naive Hearts session: no human seat, so it runs itself to completion (scripted). */
-const ALL_BUILTIN_SEATS = {
-  seat_0: { kind: 'builtin-agent' as const, name: 'naive' },
-  seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
-  seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
-  seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
-}
 
 /** Two distinct strategies are enough to exercise both ordered two-submission seatings. */
 const ROSTER = [
@@ -69,31 +61,9 @@ async function openNarrowDecisionLog(page: Page): Promise<void> {
   await expect(disclosure).toHaveAttribute('open', '')
 }
 
-test('a four-seat Hearts session renders in the browser', async ({ page, admin }) => {
-  // Container launch plus the first rendered frame for a four-seat game is slower than a DOM-only check.
-  test.setTimeout(120_000)
-
-  // The browser watches as the bootstrap admin, the operator throughout this spec.
-  await authenticateBrowser(page.context(), admin)
-
-  // The seeded Hearts Playground is play-open on a fresh backend, which is all an all-builtin session
-  // needs (no submission seats to attach). Watch it render, the one live-DOM check of the Hearts renderer.
-  const sessionId = await startSession(admin, HEARTS_ENV_ID, ALL_BUILTIN_SEATS)
-  await page.goto(`/sessions/${sessionId}`)
-  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-
-  // Free the user's active-session reservation (the scripted game also ends on its own).
-  await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
-})
-
-test('a Hearts season: two example agents, a scheduled multi-seat matchup, then release', async ({
-  page,
-  browser,
-  baseURL,
-  request,
-  admin,
-  as,
-}) => {
+test('a Hearts season: two example agents, a scheduled multi-seat matchup, then release', {
+  tag: '@slow',
+}, async ({ page, browser, baseURL, request, admin, as }) => {
   // Two real overlay builds plus both ordered seatings and the Naive baseline produce three real
   // four-seat container games. This is the minimum roster that still proves seat-order expansion.
   test.setTimeout(900_000)
@@ -514,63 +484,6 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     for (const dir of stagedDirs) {
       rmSync(dir, { recursive: true, force: true })
     }
-  }
-})
-
-test('the watch seat dialog starts a session with the chosen seed reaching the start payload', async ({
-  page,
-  admin,
-}) => {
-  // Container launch plus the first rendered frame is slower than a DOM-only check.
-  test.setTimeout(120_000)
-
-  // The browser attaches as the bootstrap admin, the operator throughout this spec.
-  await authenticateBrowser(page.context(), admin)
-
-  // Hearts is a four-seat environment, so the watch flow opens the multi-seat SeatAssignmentDialog
-  // (WatchAgentPicker routes a single-seat environment straight to a start instead). The seeded Hearts
-  // Playground is play-open on a fresh backend, so the watch picker renders for the signed-in admin.
-  await page.goto(`/environments/${HEARTS_ENV_ID}`)
-
-  // The built-in Naive row is pinned atop the watch list; its Watch button opens the seat dialog with
-  // the Naive baseline preselected into every seat (the default, valid assignment), so Start is enabled
-  // without touching a dropdown. Clicking it covers "assign every required seat": all four seats already
-  // hold the Naive agent. (The dropdowns are exercised by the play test below.)
-  const builtinRow = page.locator('.agent-row').filter({ hasText: 'Naive agent' })
-  await builtinRow.getByRole('button', { name: 'Watch' }).click()
-  await expect(page.getByRole('heading', { name: 'Watch Hearts' })).toBeVisible()
-
-  // Confirm every seat carries an agent: the four seat dropdowns (labelled "Seat 1".."Seat 4" through
-  // their aria-labelledby) all default to the Naive baseline, so the composition is full and valid.
-  for (let seat = 1; seat <= 4; seat++) {
-    await expect(page.getByLabel(`Seat ${seat}`)).toHaveValue('builtin:naive')
-  }
-
-  // A chosen, non-default seed entered into the dialog's seed field. The payload assertion below proves
-  // this exact value rode the POST /api/sessions body rather than being dropped or defaulted.
-  const chosenSeed = 4242
-  await page.getByLabel('Seed (optional)').fill(String(chosenSeed))
-
-  // Start, intercepting the start request so we can read the body the dialog composed. waitForRequest is
-  // armed before the click so the request can never slip past us; the request is the authoritative proof
-  // the seed reached the wire (the dialog encodes `seed` into the JSON the client POSTs).
-  const [startRequest] = await Promise.all([
-    page.waitForRequest((req) => req.url().includes('/api/sessions') && req.method() === 'POST'),
-    page.getByRole('button', { name: 'Start watching' }).click(),
-  ])
-  const body = startRequest.postDataJSON() as { env_id: string; seed?: number }
-  expect(body.env_id).toBe(HEARTS_ENV_ID)
-  expect(body.seed).toBe(chosenSeed)
-
-  // (a) The session started and its Hearts renderer paints: the dialog navigated to the live session and
-  // the canvas mounts. This is the DOM-observable consequence of a successful start.
-  await expect(page).toHaveURL(/\/sessions\//)
-  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-
-  // Free the user's active-session reservation (the scripted game also ends on its own).
-  const sessionId = page.url().split('/sessions/')[1]
-  if (sessionId !== undefined) {
-    await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
   }
 })
 

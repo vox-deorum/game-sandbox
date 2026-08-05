@@ -159,6 +159,20 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
+  it('watch: defaults every seat to the Naive builtin and carries a chosen seed to the start payload', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
+    })
+    // With no preselect, every unrestricted seat falls back to the built-in Naive baseline.
+    for (const name of ['Seat 1', 'Seat 2', 'Seat 3', 'Seat 4']) {
+      expect(seat(name).value).toBe('builtin:naive')
+    }
+
+    await fireEvent.update(screen.getByRole('spinbutton', { name: 'Seed (optional)' }), '4242')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).seed).toBe(4242)
+  })
+
   it('rate: locks the intended agent, season parameters, and seed while keeping Start enabled', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {

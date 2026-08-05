@@ -1,31 +1,37 @@
 import { rmSync } from 'node:fs'
 
 import type { BrowserContext, Locator, Page } from '@playwright/test'
-import { CARD_W, handFanGeometry, SMALL_H, SMALL_W, WIDTH } from '../src/renderers/cards/scene.js'
+import {
+  CARD_W,
+  handFanGeometry,
+  SMALL_H,
+  SMALL_W,
+  WIDTH,
+} from '../../src/renderers/cards/scene.js'
 import {
   activeWindows,
   closePlay,
   closeSubmissions,
   configureMatches,
   declareSeason,
+  finishedSeatedSession,
   openPlay,
   openSubmissions,
   release,
-  setMessagingOverride,
   startSession,
   stopSessionAndAwaitFree,
   submitReadyAgent,
-} from './support/api.js'
-import { authenticateBrowser } from './support/auth.js'
-import { expect, test } from './support/fixtures.js'
+} from '../support/api.js'
+import { authenticateBrowser } from '../support/auth.js'
+import { expect, test } from '../support/fixtures.js'
 import {
   SPADES_ENV_ID,
   SPADES_OWNERS,
   SPADES_SEASON,
   SPECTATOR,
   SPECTATOR_TWO,
-} from './support/names.js'
-import { stageExampleAgent } from './support/stage-example-agent.js'
+} from '../support/names.js'
+import { stageExampleAgent } from '../support/stage-example-agent.js'
 
 /**
  * The focused Stage 8 browser journey. A human in player_0 queues one broadcast and one targeted
@@ -42,40 +48,6 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
 
 const BROADCAST = 'good luck everyone'
 const TARGETED = 'partner, cover the ace'
-
-test('narrow Play keeps wide-seat player counts in the heading column', async ({ page, admin }) => {
-  await authenticateBrowser(page.context(), admin)
-  await page.setViewportSize({ width: 480, height: 900 })
-  await page.goto(`/environments/${SPADES_ENV_ID}`)
-  await page.getByRole('button', { name: 'Play', exact: true }).click()
-
-  const firstSeat = page.locator('.seat-row').first()
-  await expect(firstSeat.locator('.seat-heading')).toContainText(/Seat 1\s*2 players/)
-  await expect(firstSeat.locator('.seat-control .player-count')).toHaveCount(0)
-
-  const seatLabel = firstSeat.locator('.seat-label')
-  const playerCount = firstSeat.locator('.player-count')
-  const assignmentControl = firstSeat.locator('.seat-control')
-  const [seatLabelBox, playerCountBox, assignmentControlBox] = await Promise.all([
-    seatLabel.boundingBox(),
-    playerCount.boundingBox(),
-    assignmentControl.boundingBox(),
-  ])
-  if (seatLabelBox === null) throw new Error('narrow Play seat label has no bounding box')
-  if (playerCountBox === null) throw new Error('narrow Play player count has no bounding box')
-  if (assignmentControlBox === null) {
-    throw new Error('narrow Play assignment control has no bounding box')
-  }
-
-  expect(
-    playerCountBox.y,
-    'narrow Play player count is below its seat label',
-  ).toBeGreaterThanOrEqual(seatLabelBox.y + seatLabelBox.height)
-  expect(
-    playerCountBox.x + playerCountBox.width,
-    'narrow Play player count ends before the assignment control',
-  ).toBeLessThan(assignmentControlBox.x)
-})
 
 function decisionRows(page: Page): Locator {
   return page.locator('.decision-log tbody:last-of-type tr')
@@ -192,57 +164,6 @@ async function bidOneForSelfControlledHand(
   return player
 }
 
-/** Play one currently legal card from the controlled player's raised hand. */
-async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Promise<void> {
-  // Trick winners can reorder the next lead, so a variable number of agent rows may separate P0's
-  // decisions. Once the row stream has stayed still longer than the 900 ms live cadence, the agents
-  // are done and the harness is waiting for P0. This replaces the old turn-gated chat signal.
-  const rows = decisionRows(page)
-  let observedCount = -1
-  let unchangedSince = Date.now()
-  await expect
-    .poll(
-      async () => {
-        const count = await rows.count()
-        if (count !== observedCount) {
-          observedCount = count
-          unchangedSince = Date.now()
-        }
-        return Date.now() - unchangedSince
-      },
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThanOrEqual(1_500)
-
-  const box = await canvas.boundingBox()
-  expect(box, 'Spades canvas bounding box').not.toBeNull()
-  if (box === null) {
-    throw new Error('no Spades canvas bounding box')
-  }
-  const { startX, step } = handFanGeometry(cardCount)
-  const humanDecisions = humanDecisionRows(page)
-  const before = await humanDecisions.count()
-
-  // Legal cards are raised to internal y=600 while illegal cards begin at y=610. Clicking y=604
-  // therefore reaches only a legal card, without duplicating the rules in the test. Chat now remains
-  // available across every turn, so the new P0 decision row is the proof that a click advanced play.
-  for (let index = 0; index < cardCount; index += 1) {
-    await canvas.click({
-      position: {
-        x: ((startX + index * step + CARD_W / 2) / WIDTH) * box.width,
-        y: (604 / 720) * box.height,
-      },
-    })
-    try {
-      await expect(humanDecisions).toHaveCount(before + 1, { timeout: 1_200 })
-      return
-    } catch {
-      // This card was not raised, so the renderer emitted no action. Try the next card.
-    }
-  }
-  throw new Error(`no legal card click advanced a ${cardCount}-card Spades hand`)
-}
-
 /**
  * Try every card in the acting controlled hand. South uses the full fanned hand; North uses its
  * compact, face-up opponent row. Only a legal card advances play.
@@ -305,21 +226,6 @@ async function completeSelfControlledSpadesHand(
     plays[player] += 1
   }
   return { bids, plays }
-}
-
-/** Drive player 0 through bidding and all thirteen tricks, waiting for every external turn. */
-async function completeHumanSpadesHand(page: Page, canvas: Locator): Promise<void> {
-  const composer = page.getByRole('group', { name: 'Chat', exact: true })
-  await expect(composer).toBeVisible({ timeout: 30_000 })
-  await bidOne(page, canvas)
-  await expect(composer).toBeVisible()
-
-  for (let cardCount = 13; cardCount >= 1; cardCount -= 1) {
-    await playLegalCard(page, canvas, cardCount)
-    if (cardCount > 1) {
-      await expect(composer).toBeVisible()
-    }
-  }
 }
 
 test('Spades chat is filtered live and complete in replay', async ({
@@ -482,78 +388,50 @@ test('Spades chat is filtered live and complete in replay', async ({
   }
 })
 
-test('human Spades completes with seat-ranked results on partnership and solo plans', async ({
+/**
+ * The solo seat plan seats four independent players, so its results rank every seat on its own. A
+ * scripted all-Naive hand reaches that game-over card without a single canvas click, which is why this
+ * runs from a finished recording rather than a played session: the partnership plan below already
+ * proves the human input wiring, and nothing about seat ranking needs a human to produce it.
+ */
+test('a scripted solo Spades hand ranks every seat on its own in the replay', async ({
   page,
   admin,
 }) => {
-  test.setTimeout(900_000)
+  test.setTimeout(180_000)
   await authenticateBrowser(page.context(), admin)
 
-  for (const seatPlan of ['partnership', 'solo'] as const) {
-    const seats =
-      seatPlan === 'partnership'
-        ? {
-            seat_0: {
-              kind: 'human' as const,
-              companion: { kind: 'builtin-agent' as const, name: 'naive' },
-            },
-            seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
-          }
-        : {
-            seat_0: { kind: 'human' as const },
-            seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
-            seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
-            seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
-          }
-    const sessionId = await startSession(admin, SPADES_ENV_ID, seats, {
-      seed: 0,
-      humanTimeoutMs: 30_000,
-      parameters: { seat_plan: seatPlan },
-    })
-    try {
-      await page.goto(`/sessions/${sessionId}`)
-      const canvas = page.locator('canvas.renderer-canvas')
-      await expect(canvas).toBeVisible({ timeout: 60_000 })
-      const rendererHost = page.locator('.renderer-host')
-      if (seatPlan === 'partnership') {
-        await expect(rendererHost).toHaveAttribute(
-          'aria-label',
-          'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
-        )
-      } else {
-        await expect(rendererHost).not.toHaveAttribute('role', 'img')
-        await expect(rendererHost).not.toHaveAttribute('aria-label', /Wide seats/)
-      }
+  const recordingId = await finishedSeatedSession(
+    admin,
+    SPADES_ENV_ID,
+    {
+      seat_0: { kind: 'builtin-agent', name: 'naive' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
+    },
+    { seed: 0, parameters: { seat_plan: 'solo' } },
+  )
 
-      await completeHumanSpadesHand(page, canvas)
-      const gameOver = page.getByRole('dialog', { name: 'Game over' })
-      await expect(gameOver).toBeVisible({ timeout: 60_000 })
-      if (seatPlan === 'partnership') {
-        await expect(gameOver.locator('.row')).toHaveCount(2)
-        const mixedSeat = gameOver.locator('.row').filter({ hasText: 'S0' })
-        await expect(mixedSeat.locator('.members')).toHaveText('P0, P2')
-        await expect(mixedSeat.locator('.who > span').first()).toHaveText(/.+, Naive agent/)
-        await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
-      } else {
-        await expect(gameOver.locator('.row')).toHaveCount(4)
-        await expect(gameOver.locator('.members')).toHaveCount(0)
-        await expect(gameOver.locator('.winner')).toHaveText('Tied')
-      }
+  await page.goto(`/replays/${recordingId}`)
+  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
-      await page.getByRole('link', { name: 'Open replay' }).click()
-      const stage = page.getByRole('group', { name: 'Replay stage' })
-      await stage.click()
-      await stage.press('End')
-      const replayGameOver = page.getByRole('dialog', { name: 'Game over' })
-      await expect(replayGameOver).toBeVisible({ timeout: 30_000 })
-      await expect(replayGameOver.locator('.row')).toHaveCount(seatPlan === 'partnership' ? 2 : 4)
-      await expect(replayGameOver.locator('.winner')).toHaveText(
-        seatPlan === 'partnership' ? /S[01] won/ : 'Tied',
-      )
-    } finally {
-      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
-    }
-  }
+  // No wide seats on the solo plan, so the table exposes neither the grouping label nor the image role
+  // the partnership plan carries. This is also the season-silenced spec's old solo-plan coverage.
+  const rendererHost = page.locator('.renderer-host')
+  await expect(rendererHost).not.toHaveAttribute('role', 'img')
+  await expect(rendererHost).not.toHaveAttribute('aria-label', /Wide seats/)
+
+  const stage = page.getByRole('group', { name: 'Replay stage' })
+  await stage.click()
+  await stage.press('End')
+  const gameOver = page.getByRole('dialog', { name: 'Game over' })
+  await expect(gameOver).toBeVisible({ timeout: 30_000 })
+  // Four separately ranked rows and no `.members` line: the structural difference from partnership.
+  // The winner varies with how the Naive baselines play the deal, so assert the standing exists, not who.
+  await expect(gameOver.locator('.row')).toHaveCount(4)
+  await expect(gameOver.locator('.members')).toHaveCount(0)
+  await expect(gameOver.locator('.winner')).toBeVisible()
 })
 
 test('human Spades self-controls both face-up partnership hands to game over', async ({
@@ -599,124 +477,51 @@ test('human Spades self-controls both face-up partnership hands to game over', a
     await expect(gameOver.locator('.row')).toHaveCount(2)
     const selfControlledSeat = gameOver.locator('.row').filter({ hasText: 'S0' })
     await expect(selfControlledSeat.locator('.members')).toHaveText('P0, P2')
+    // The seat's `who` line names both occupants, so a wide seat reads as its people, not its index.
+    await expect(selfControlledSeat.locator('.who > span').first()).toHaveText(/.+, Naive agent/)
     await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
+
+    // The same standings hydrate from the recording: the replay's own game-over card, reached by
+    // seeking to the end, repeats the two-row partnership result the live card just showed.
+    await page.getByRole('link', { name: 'Open replay' }).click()
+    const stage = page.getByRole('group', { name: 'Replay stage' })
+    await stage.click()
+    await stage.press('End')
+    const replayGameOver = page.getByRole('dialog', { name: 'Game over' })
+    await expect(replayGameOver).toBeVisible({ timeout: 30_000 })
+    await expect(replayGameOver.locator('.row')).toHaveCount(2)
+    await expect(replayGameOver.locator('.winner')).toHaveText(/S[01] won/)
   } finally {
     await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
   }
 })
 
-test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
-  // Container launch for a single-composer DOM check.
-  test.setTimeout(120_000)
-
-  // The browser authenticates as the same admin actor that starts the session, so it owns and controls
-  // the human seat's composer.
-  const sessionId = await startSession(admin, SPADES_ENV_ID, {
-    seat_0: { kind: 'human', companion: { kind: 'builtin-agent', name: 'naive' } },
-    seat_1: { kind: 'builtin-agent', name: 'naive' },
-  })
-  try {
-    await authenticateBrowser(page.context(), admin)
-    await page.goto(`/sessions/${sessionId}`)
-    await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-    const chat = page.getByRole('group', { name: 'Chat', exact: true })
-    await expect(chat).toBeVisible()
-
-    // The Spades environment declares a 120-code-point cap and no season override is in force here, so
-    // this session's effective cap is the environment default. A draft one code point over it must
-    // disable Send — the DOM proxy for "an over-cap message is rejected" the harness enforces server-side.
-    const message = chat.getByLabel('Message')
-    const overCapDraft = 'x'.repeat(121)
-    await message.fill(overCapDraft)
-    // Over the cap the inline counter reddens (the .chat-counter--over modifier) and Send is disabled —
-    // the functional proof the composer refuses an over-cap message. The counter is asserted by its
-    // content, and Send's disabled state is the real, layout-independent signal.
-    await expect(chat.locator('.chat-counter')).toHaveText('121/120')
-    await expect(chat.locator('.chat-counter')).toHaveClass(/chat-counter--over/)
-    await expect(chat.getByRole('button', { name: 'Send' })).toBeDisabled()
-
-    // Trimming back to exactly the cap clears the over-cap state and re-enables Send — the negative
-    // control proving the disablement tracked the draft length, not a stuck state.
-    await message.fill(overCapDraft.slice(0, 120))
-    await expect(chat.locator('.chat-counter')).toHaveText('120/120')
-    await expect(chat.locator('.chat-counter')).not.toHaveClass(/chat-counter--over/)
-    await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled()
-  } finally {
-    await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
-  }
-})
-
-test('a season-silenced Spades session mounts no chat panel', async ({ page, admin }) => {
-  // Container launch for a single-DOM-absence check.
-  test.setTimeout(120_000)
-
-  // The seeded Spades Playground is play-open on a fresh backend; silence its messaging override so the
-  // live session it serves mounts no chat, then restore it in `finally` for any later spec.
-  const { playSeasonId } = await activeWindows(admin, SPADES_ENV_ID)
-  expect(playSeasonId, 'Spades env has an open play season').not.toBeNull()
-  const seasonId = playSeasonId
-  if (seasonId === null) {
-    throw new Error('no open Spades play season to silence')
-  }
-
-  await setMessagingOverride(admin, seasonId, false)
-  let sessionId: string | null = null
-  try {
-    sessionId = await startSession(
-      admin,
-      SPADES_ENV_ID,
-      {
-        seat_0: { kind: 'human' },
-        seat_1: { kind: 'builtin-agent', name: 'naive' },
-        seat_2: { kind: 'builtin-agent', name: 'naive' },
-        seat_3: { kind: 'builtin-agent', name: 'naive' },
-      },
-      {
-        parameters: { seat_plan: 'solo' },
-      },
-    )
-    await authenticateBrowser(page.context(), admin)
-    await page.goto(`/sessions/${sessionId}`)
-    await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.renderer-host')).not.toHaveAttribute('role', 'img')
-    await expect(page.locator('.renderer-host')).not.toHaveAttribute('aria-label', /Wide seats/)
-
-    // SessionPage.vue guards both the beside and stacked chat panels with `v-if="messagingEnabled"`
-    // (reading the session row's resolved `messaging_enabled`): neither the sendable "Chat" composer
-    // nor a read-only "Chat log" mounts, the DOM-observable consequence of the override.
-    await expect(page.getByRole('group', { name: 'Chat', exact: true })).toHaveCount(0)
-    await expect(page.getByRole('group', { name: 'Chat log' })).toHaveCount(0)
-  } finally {
-    if (sessionId !== null) {
-      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
-    }
-    await setMessagingOverride(admin, seasonId, null).catch(() => {})
-  }
-})
-
-/** The three example strategies submitted into the matchup, each under its own owner handle. */
+/**
+ * The two example strategies submitted into the matchup, each under its own owner handle. Two is the
+ * minimum that still proves ordered-seat expansion, and the pair is chosen to be structurally
+ * different: counter bids its hand honestly, signaler talks to its partner through bid and early play.
+ */
 const ROSTER = [
   { owner: SPADES_OWNERS.counter, agent: 'counter' },
-  { owner: SPADES_OWNERS.daredevil, agent: 'daredevil' },
   { owner: SPADES_OWNERS.signaler, agent: 'signaler' },
 ] as const
 
-test('a Spades season: three example agents, a scheduled partnership matchup, then release', async ({
-  page,
-  admin,
-  as,
-}) => {
-  // Three real overlay builds plus a multi-seat schedule of real container games. The matchup below
-  // fills the two submission seats with the three ready submissions: with `seat_order_matters=true`
-  // Spades' partnership scheduler expands that into P(3,2)=6 ordered seatings, plus the always-appended
-  // all-Naive baseline game = 7 full four-seat hands (bid phase + 13 tricks each). That is comparable to
-  // Hearts' 13-game schedule, so the budget mirrors hearts.spec.ts's wide window.
-  test.setTimeout(1_800_000)
+test('a Spades season: two example agents, a scheduled partnership matchup, then release', {
+  tag: '@slow',
+}, async ({ page, admin, as }) => {
+  // Two real overlay builds plus a multi-seat schedule of real container games. The matchup below fills
+  // the two submission seats with the two ready submissions: with `seat_order_matters=true` Spades'
+  // partnership scheduler expands that into P(2,2)=2 ordered seatings, plus the always-appended
+  // all-Naive baseline game = 3 full four-seat hands (bid phase + 13 tricks each), matching hearts.
+  //
+  // Each ordered seating composes its own session image (the warm overlay is reused only for a lone
+  // submission in seat_0), so a third agent would cost four more games and four more image builds.
+  test.setTimeout(900_000)
 
   // The browser drives the admin console as the bootstrap admin, the operator throughout this spec.
   await authenticateBrowser(page.context(), admin)
 
-  // Stage the three example agents as submittable folders before touching any windows.
+  // Stage both example agents as submittable folders before touching any windows.
   const stagedDirs: string[] = []
   const staged: Record<string, string> = {}
   for (const { agent } of ROSTER) {
@@ -747,12 +552,12 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     )
 
     // The matchup assigns submissions to both partnership seats. Each assignment controls the two
-    // players named by its resolved seat, so every scheduled game pits two of the three submissions
-    // against one another. `seat_order_matters` makes the scheduler emit one game per ordered pairing
-    // of the ready submissions across the two seats, plus the appended Naive baseline.
+    // players named by its resolved seat, so every scheduled game pits the two submissions against one
+    // another. `seat_order_matters` makes the scheduler emit one game per ordered pairing of the ready
+    // submissions across the two seats, plus the appended Naive baseline.
     // Seed 0 is used throughout: which player opens the bidding is a property of the deal (player 0
-    // always opens, independent of who is seated there), so the choice of seed does not affect determinism here
-    // — it is kept at 0 to match hearts.spec.ts's convention.
+    // always opens, independent of who is seated there), so the choice of seed does not affect
+    // determinism here. It is kept at 0 to match hearts.spec.ts's convention.
     await configureMatches(admin, season.id, [
       {
         seats: ['submission', 'submission'],
@@ -766,20 +571,20 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     await page.goto(`/environments/${SPADES_ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SPADES_SEASON) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SPADES_SEASON}` })).toBeVisible()
-    await expect(page.getByText('Projected total: 7 games', { exact: true })).toBeVisible()
+    await expect(page.getByText('Projected total: 3 games', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow' }).click()
     await expect(page).toHaveURL(
       new RegExp(`/environments/${SPADES_ENV_ID}/admin/seasons/${season.id}/runs/`),
     )
     await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
-    // Seven four-seat games run serially, several needing a composed multi-submission image, so give the
+    // Three four-seat games run serially, two needing a composed multi-submission image, so give the
     // run a wide window before its header status badge settles on completed.
     await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
-      timeout: 1_500_000,
+      timeout: 420_000,
     })
 
-    // Release, then verify the public board the demo serves: a Scoreboard ranking all three agents and
-    // the Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty
+    // Release, then verify the public board the demo serves: a Scoreboard ranking both agents and the
+    // Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty
     // state.
     await release(admin, season.id)
     await page.goto(`/environments/${SPADES_ENV_ID}/leaderboards/${season.id}`)
@@ -796,7 +601,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     await expect(page.getByText(/[1-9]\d* games run/)).toBeVisible()
 
     // The public Matchups table lists every game of the run, each with its seats and its own replay
-    // link. More than one game proves the multi-seat schedule expanded (seven here: six ordered
+    // link. More than one game proves the multi-seat schedule expanded (three here: two ordered
     // submission seatings plus the Naive-only baseline).
     const matchups = page.getByRole('region', { name: 'Matchups' })
     await expect(matchups).toBeVisible()

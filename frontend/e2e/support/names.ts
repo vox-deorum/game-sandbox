@@ -62,15 +62,16 @@ export const SPADES_ENV_ID = 'spades'
 export const SPADES_SEASON = 'Partnership Cup'
 
 /**
- * The three Spades agent owners, one per example strategy submitted into the matchup. The owner id is
+ * The two Spades agent owners, one per example strategy submitted into the matchup. The owner id is
  * the public agent identity (the scoreboard row links to it), so these read like real handles and are
  * distinct from {@link OWNERS} and {@link HEARTS_OWNERS}. Each maps to an `environments/spades/examples/<name>/` agent.
+ *
+ * Two agents rather than every example: the ordered-seat expansion is quadratic in the roster, and
+ * each ordered seating costs a composed image and a full four-seat hand.
  */
 export const SPADES_OWNERS = {
   /** environments/spades/examples/counter: bids its hand's honest trick count and plays to make it. */
   counter: 'ada-byron',
-  /** environments/spades/examples/daredevil: hunts nil bids and bags. */
-  daredevil: 'evel-knievel',
   /** environments/spades/examples/signaler: uses its bid and early plays to signal its hand to its partner. */
   signaler: 'samuel-morse',
 } as const
@@ -79,13 +80,6 @@ export const SPADES_OWNERS = {
 export const SEASONS = {
   /** The leaderboards arc: a full competition (submissions → run → ratings → release). */
   competition: 'Updraft Open',
-  /** The released-season card on the cross-game Seasons index. */
-  releasedCard: 'Thermals Cup',
-  /** The two released seasons the history test walks between. */
-  historyOlder: 'Crosswind Open',
-  historyNewer: 'Tailwind Classic',
-  /** An unreleased season only the operator's history shows. */
-  operatorPreview: 'Gale Trials',
 } as const
 
 /**
