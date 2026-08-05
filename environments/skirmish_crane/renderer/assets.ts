@@ -157,7 +157,7 @@ export const CRANE_ASSET_MANIFEST = [
     path: './assets/crane.png',
     width: 192,
     height: 96,
-    consumer: 'terminal banner and thumbnail motif',
+    consumer: 'thumbnail motif source',
   },
   {
     name: 'iconHp',

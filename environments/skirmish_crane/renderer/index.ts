@@ -135,11 +135,11 @@ export interface EventTimelineProgress {
   reaction: number
 }
 
-export type EventPhase = 'idle' | 'activation' | 'movement' | 'attack' | 'reaction'
+export type EventPhase = 'idle' | 'activation' | 'movement' | 'settle' | 'attack' | 'reaction'
 
 /**
- * Hold the activation seal before movement. A targeted event then gets separate attack and reaction
- * phases; movement-only activations spend the remaining budget on their glide.
+ * Hold the activation seal before movement. Targeted and capture events pause at the destination so
+ * movement settles visibly before the attack or capture reaction begins.
  */
 export function eventTimelineProgress(
   progress: number,
@@ -148,11 +148,12 @@ export function eventTimelineProgress(
 ): EventTimelineProgress {
   const value = Math.max(0, Math.min(1, progress))
   const activationEnd = hasTarget || hasReaction ? 0.2 : 0.25
-  const movementEnd = hasTarget ? 0.58 : hasReaction ? 0.75 : 1
-  const reactionStart = hasTarget ? 0.74 : movementEnd
+  const movementEnd = hasTarget ? 0.52 : hasReaction ? 0.66 : 1
+  const attackStart = 0.62
+  const reactionStart = 0.76
   return {
     movement: hostEase(phase(value, activationEnd, movementEnd)),
-    attack: hasTarget ? hostEase(phase(value, movementEnd, 0.74)) : 0,
+    attack: hasTarget ? hostEase(phase(value, attackStart, reactionStart)) : 0,
     reaction: hasReaction ? hostEase(phase(value, reactionStart, 1)) : 0,
   }
 }
@@ -166,10 +167,12 @@ export function eventPhaseAt(
 ): EventPhase {
   if (!animating || progress >= 1) return 'idle'
   const activationEnd = hasTarget || hasReaction ? 0.2 : 0.25
-  const movementEnd = hasTarget ? 0.58 : hasReaction ? 0.75 : 1
+  const movementEnd = hasTarget ? 0.52 : hasReaction ? 0.66 : 1
   if (progress < activationEnd) return 'activation'
   if (progress < movementEnd) return 'movement'
-  if (hasTarget && progress < 0.74) return 'attack'
+  const nextEventStart = hasTarget ? 0.62 : hasReaction ? 0.76 : 1
+  if (progress < nextEventStart) return 'settle'
+  if (hasTarget && progress < 0.76) return 'attack'
   return hasReaction ? 'reaction' : 'movement'
 }
 
@@ -1053,6 +1056,8 @@ export class CraneReachRenderer extends PixiRenderer {
         CRANE_STYLE.danger,
         'center',
         'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        // Keep a two-CSS-pixel opaque edge even when the logical canvas is scaled down.
+        { color: '#000000', width: 2 / Math.max(0.01, this.displayScale()) },
       )
       damage.position.set(
         target?.x ?? this.event.to.x,
@@ -1143,10 +1148,6 @@ export class CraneReachRenderer extends PixiRenderer {
     round.position.set(28, 43)
     this.hudLayer.addChild(roundLabel, round)
     if (scene.hud.capture !== null) this.drawCaptureStrip(scene.hud.capture)
-    if (scene.hud.terminal !== null) {
-      this.drawTerminal(scene.hud.terminal)
-      return
-    }
     this.drawRoster(scene, 'red')
     this.drawRoster(scene, 'blue')
   }
@@ -1216,21 +1217,23 @@ export class CraneReachRenderer extends PixiRenderer {
       const count = this.makeText(String(scene.hud.rosters[side][type]), 24, CRANE_STYLE.text, direction === 1 ? 'left' : 'right', mono())
       count.position.set(x + direction * 31, 804)
       pair.addChild(count)
-      const hit = new Graphics()
-      const hitX = direction === 1 ? x - 4 : x - 64
-      hit.roundRect(hitX, 780, 68, 48, 6).fill({ color: CRANE_STYLE.board, alpha: 0.001 })
-      hit.eventMode = 'static'
-      hit.cursor = 'pointer'
-      hit.on('pointerover', () => {
-        this.setInspection({ type: 'hover-roster', target: { kind: 'roster', side, type } })
-      })
-      hit.on('pointerout', () => this.setInspection({ type: 'hover-roster', target: null }))
-      hit.on('pointertap', (event) => {
-        event.stopPropagation()
-        if (!pinsInspectionForPointer(event.pointerType)) return
-        this.setInspection({ type: 'inspect', target: { kind: 'roster', side, type } })
-      })
-      pair.addChild(hit)
+      if (scene.hud.terminal === null) {
+        const hit = new Graphics()
+        const hitX = direction === 1 ? x - 4 : x - 64
+        hit.roundRect(hitX, 780, 68, 48, 6).fill({ color: CRANE_STYLE.board, alpha: 0.001 })
+        hit.eventMode = 'static'
+        hit.cursor = 'pointer'
+        hit.on('pointerover', () => {
+          this.setInspection({ type: 'hover-roster', target: { kind: 'roster', side, type } })
+        })
+        hit.on('pointerout', () => this.setInspection({ type: 'hover-roster', target: null }))
+        hit.on('pointertap', (event) => {
+          event.stopPropagation()
+          if (!pinsInspectionForPointer(event.pointerType)) return
+          this.setInspection({ type: 'inspect', target: { kind: 'roster', side, type } })
+        })
+        pair.addChild(hit)
+      }
       this.hudLayer.addChild(pair)
     }
   }
@@ -1292,26 +1295,6 @@ export class CraneReachRenderer extends PixiRenderer {
     card.addChild(text)
   }
 
-  private drawTerminal(terminal: NonNullable<CraneReachScene['hud']['terminal']>): void {
-    const color = terminal.winner === 'red' ? CRANE_STYLE.red : terminal.winner === 'blue' ? CRANE_STYLE.blue : CRANE_STYLE.grid
-    const card = new Graphics()
-    card
-      .roundRect(320, 772, 560, 72, 8)
-      .fill({ color: CRANE_STYLE.board, alpha: 0.98 })
-      .stroke({ color, width: 3 })
-    this.hudLayer.addChild(card)
-    const crane = this.sprite('crane', 362, 808, 68, 34)
-    if (crane !== null) {
-      crane.tint = color
-      this.hudLayer.addChild(crane)
-    }
-    const headline = this.makeText('Battle complete', 28, color, 'left', 'EB Garamond, Georgia, serif')
-    headline.position.set(408, 794)
-    const result = this.makeText(terminal.result, 16, CRANE_STYLE.shadow, 'left', mono())
-    result.position.set(410, 821)
-    this.hudLayer.addChild(headline, result)
-  }
-
   private sprite(
     name: CraneAssetName,
     x: number,
@@ -1352,10 +1335,11 @@ export class CraneReachRenderer extends PixiRenderer {
     fill: string,
     align: 'left' | 'center' | 'right',
     fontFamily = 'system-ui, sans-serif',
+    stroke?: { color: string; width: number },
   ): Text {
     const text = new Text({
       text: value,
-      style: { fontFamily, fontWeight: 'bold', fontSize: size, fill },
+      style: { fontFamily, fontWeight: 'bold', fontSize: size, fill, stroke },
     })
     text.resolution = this.textResolution()
     text.anchor.set(

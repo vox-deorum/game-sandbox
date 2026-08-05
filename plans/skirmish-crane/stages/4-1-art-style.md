@@ -97,7 +97,7 @@ One hand-drawn set, all original art, ships as individually bundled renderer-loc
 | glyph-sword.png, glyph-bow.png, glyph-horse.png, glyph-move.png | 64 x 64 each | token, roster, and move marks |
 | fig-footman.png, fig-archer.png, fig-cavalry.png | 128 x 128 each | figure-level silhouettes, roster marks |
 | pennant.png | 48 x 64 | capture zone standard |
-| crane.png | 192 x 96 | terminal banner and thumbnail motif |
+| crane.png | 192 x 96 | thumbnail motif |
 | icon-hp.png, icon-move.png, icon-attack.png, icon-range.png, icon-vision.png | 32 x 32 each | step 4.2 unit and order information |
 
 Thirty runtime source files are grayscale-alpha PNGs. Everything is tintable where the treatment calls for it, and nothing is borrowed.
@@ -123,16 +123,17 @@ Each level identifies unit type differently:
 
 - Capture zones use a restrained static mark. All seven tiles take a mulberry wash at alpha 0.16 with a pale-orchid center emphasis. The zone's outer boundary is a union outline, not per-tile rings, drawn in static `zone-dash` segments tinted pale orchid. The center tile carries the `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels. At smaller levels the wash and border stay quiet so the army board remains readable.
 - Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
-- Events use one budget, `B = 0.9 * (transitionMs ?? 500)`. Every transition completes inside B, including 675 ms at the 750 ms watch cadence, and scales with slower replay speeds. The timeline is strictly sequential: a visible activation hold, movement, an attack only when the event names a target, then reaction for a target or capture change. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
+- Events use one budget, `B = 0.9 * (transitionMs ?? 500)`. Every transition completes inside B, including 675 ms at the 750 ms watch cadence, and scales with slower replay speeds. The timeline is strictly sequential: a visible activation hold, movement, a settle beat, an attack only when the event names a target, then reaction for a target or capture change. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
 
 | Event | Shape | Color | Timing within budget |
 | --- | --- | --- | --- |
 | activation | the acting unit holds under its gilt seal before moving | gilt | first 20 percent of B, or 25 percent for movement without a reaction |
-| move | the unit glides origin to final tile, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | after activation, ending at 58 percent with an attack, 75 percent with capture only, or 100 percent with movement only |
-| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | 58 to 74 percent of B |
-| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | 58 to 74 percent of B |
-| damage | target flashes bone, then a pale-ember tint and mono `-3` rise 12 px and fade, minimum 12 px text | pale ember | 74 to 100 percent of B |
-| death | the ink-dissolve treatment, starting with the reaction | dilute ink | 74 to 100 percent of B |
+| move | the unit glides origin to final tile, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | after activation, ending at 52 percent with an attack, 66 percent with capture only, or 100 percent with movement only |
+| settle | the actor holds at its destination with no movement or attack mark | gilt activation | 52 to 62 percent before an attack, or 66 to 76 percent before capture reaction |
+| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | 62 to 76 percent of B |
+| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | 62 to 76 percent of B |
+| damage | target flashes bone, then a pale-ember tint and mono `-3` with an opaque two-CSS-pixel black outline rises 12 px and fades, minimum 12 px text | pale ember | 76 to 100 percent of B |
+| death | the ink-dissolve treatment, starting with the reaction | dilute ink | 76 to 100 percent of B |
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | the final reaction phase |
 
 - A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer reconciles the final scene only at completion. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
@@ -161,7 +162,7 @@ A short written record of the choices distilled from this file: palette, logical
 
 ### Review workflow
 
-Candidate styles render over the two step 3 fixtures and are reviewed in the browser via replay and `npm run play` at 390 px, 640 px, and the maximum host width. Iteration continues until the owner signs off; the sign-off is recorded in this file's Status line. The placeholder HUD text remains through this step. Step 4.1 shares its palette and move/stat assets with step 4.2 but does not implement the HUD typography, strips, roster, chips, or terminal card.
+Candidate styles render over the two step 3 fixtures and are reviewed in the browser via replay and `npm run play` at 390 px, 640 px, and the maximum host width. Iteration continues until the owner signs off; the sign-off is recorded in this file's Status line. The placeholder HUD text remains through this step. Step 4.1 shares its palette and move/stat assets with step 4.2 but does not implement the HUD typography, strips, roster, or chips.
 
 ## Tests
 

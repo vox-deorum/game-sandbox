@@ -1,8 +1,8 @@
 # Step 4.2: HUD
 
-Status: complete. The owner approved the HUD design and `Battle complete` headline. Implementation and verification finished on 2026-08-04.
+Status: complete. The owner approved the HUD design and removed the in-canvas terminal banner on 2026-08-04. Implementation and verification finished on 2026-08-04.
 
-Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 4.2: the information layer inside the canvas, styled over the [step 4.1](4-1-art-style.md) board: the round and score strip, rosters, the unit hover chip, the terminal banner, and the interaction UI design that step 5 wires up. Attack results and the current activation are not HUD text: the step 4.1 event animations and the gilt activation highlight carry them on the board, and this step removes the step 3 placeholder caption and activation lines. Review replays both fixture recordings with the finished HUD and confirms that hovering a unit shows its chip.
+Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 4.2: the information layer inside the canvas, styled over the [step 4.1](4-1-art-style.md) board: the round and score strip, rosters, the unit hover chip, and the interaction UI design that step 5 wires up. Attack results and the current activation are not HUD text: the step 4.1 event animations and the gilt activation highlight carry them on the board, and this step removes the step 3 placeholder caption and activation lines. Review replays both fixture recordings with the finished HUD and confirms that hovering a unit shows its chip.
 
 ## Why this is its own seam
 
@@ -12,7 +12,7 @@ The HUD is information design: what a spectator needs at 40 units, in which type
 
 ### Typography
 
-Canvas typography adopts the host's families deliberately: EB Garamond (fallback Georgia, serif) for the terminal banner headline, Lato (fallback system-ui) for labels, ui-monospace for every number and identifier: round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary.
+Canvas typography adopts the host's families deliberately: Lato (fallback system-ui) for labels and ui-monospace for every number and identifier, including round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary.
 
 ### Canvas layout
 
@@ -87,18 +87,9 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
 
 The chip is view-only and never blocks the board.
 
-### Terminal banner
+### Match end
 
-At match end the bottom strip is replaced by a centered parchment card, 560 x 72: parchment fill, the crane presentation asset at the left edge, `Battle complete` in EB Garamond, the outcome in mono. The card's border and headline tint toward the winner, cinnabar or indigo, and stay dilute ink on a draw.
-
-```
-        +--------------------------------------------------+
-        |  {crane}   Battle complete                        |
-        |            red wins 84 - 16                       |
-        +--------------------------------------------------+
-```
-
-`{crane}` is `crane.png` from the asset manifest. The example border reads cinnabar because Red won.
+The canvas keeps the normal round, capture, and roster strips at match end. The host owns the game-over result and presents it outside the renderer. Terminal state still suppresses movement range and inspection cards.
 
 ### Interaction UI for step 5 (design only; the working input code is step 5)
 
@@ -117,7 +108,7 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 
 ## Tests
 
-- Scene tests assert the HUD content: round text, both capture readouts and their absence without the variant, roster counts falling as units die, the icon-led unit and roster type fields, ability lines only for enabled abilities, the winner-tinted terminal banner (cinnabar, indigo, and draw cases), and that no caption or activation text remains.
+- Scene tests assert the HUD content: round text, both capture readouts and their absence without the variant, roster counts falling as units die, the icon-led unit and roster type fields, ability lines only for enabled abilities, terminal range and inspection suppression, and that no caption or activation text remains.
 - Hover and touch jsdom tests cover board-unit and roster-pair chips: their stat fields, ability variants, opening, replacement, and dismissal behavior, the board-unit highlight ring and range wash, and that nothing sends actions in a draw-only mount.
 - The reachability helper is covered on hand-built boards (terrain costs, occupancy, the always-permitted first step, the four-step limit) and, for acting units, against the destination sets implied by the fixture legality files.
 - The step 4.1 perf smoke stays green with the styled HUD and the acting unit's range wash on the army fixture.
@@ -125,4 +116,4 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 
 ## Done when
 
-Both fixtures replay with the strips, rosters, and terminal banner styled as mocked above, every board unit and roster pair opens its complete icon-led chip, the acting unit's movement range shows on the board, board-unit inspection has priority over the acting unit's range, and the path-only interaction design is ready for step 5. The art direction note gains its HUD section, the tests above are green, and the owner's sign-off is recorded in the Status line.
+Both fixtures replay with the strips and rosters styled as mocked above, including terminal frames, every board unit and roster pair opens its complete icon-led chip, the acting unit's movement range shows on the board, board-unit inspection has priority over the acting unit's range, and the path-only interaction design is ready for step 5. The art direction note gains its HUD section, the tests above are green, and the owner's sign-off is recorded in the Status line.

@@ -12,7 +12,7 @@ Units use Sengoku visual language. Footmen are ashigaru with a jingasa, yari, an
 
 The exact high-resolution generated originals live in `source-art/`, including superseded variants. Runtime assets in `assets/` are optimized grayscale-alpha PNG masks at their manifest dimensions.
 
-Motion only describes a change: glides, short lunges, pale-bone arrows, rising damage, ink dissolves, and brief capture blooms. A transition uses 90 percent of the host transition duration and follows a sequential activation hold, movement, optional attack, and reaction. The preceding units and HUD remain on screen until the timeline completes, with the event actor's gilt seal and no next-actor range. A defeated target stays intact until reaction begins. Seeking, mounting, resizing, repeated ticks, and reduced motion show the completed frame directly.
+Motion only describes a change: glides, short lunges, pale-bone arrows, rising damage, ink dissolves, and brief capture blooms. A transition uses 90 percent of the host transition duration and follows a sequential activation hold, movement, settle beat, optional attack, and reaction. Movement completes before the attack or capture reaction begins. Damage numerals use an opaque black outline that stays two CSS pixels wide across display scales. The preceding units and HUD remain on screen until the timeline completes, with the event actor's gilt seal and no next-actor range. A defeated target stays intact until reaction begins. Seeking, mounting, resizing, repeated ticks, and reduced motion show the completed frame directly.
 
 ## HUD
 
@@ -20,4 +20,4 @@ The canvas keeps the battlefield clear between y 90 and y 746. A quiet top strip
 
 Inspection is parchment, not chrome. A board unit or roster pair opens a dilute-ink card with its name and icon-led hit points, movement, damage, range, and vision. Board inspection adds a bone ring and bone range wash. The acting unit keeps its gilt range wash when no board unit is inspected. Ability lines appear only in episodes with unit abilities enabled.
 
-The terminal card replaces the lower roster strip. It is a centered parchment panel with the crane mark, an EB Garamond `Battle complete` headline, and a mono result line. The border and headline take the winning side's cinnabar or indigo, or dilute ink for a draw.
+At match end the canvas keeps its normal top strip and bottom rosters. The host owns the game-over result and presents it outside the renderer.
