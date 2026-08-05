@@ -172,6 +172,15 @@ export abstract class PixiRenderer implements RendererInstance {
   protected abstract update(state: StepState, options?: RenderOptions): void
 
   /**
+   * Redraw after a renderer-owned visual change such as a resize or an asset becoming available.
+   * Draw-only renderers retain the established snap-to-latest-state behavior. Animated renderers can
+   * override this to preserve an in-flight presentation without replacing their transition target.
+   */
+  protected refreshVisual(): void {
+    if (this.latestState !== null) this.update(this.latestState, { snap: true })
+  }
+
+  /**
    * Advance any in-progress animation by `dtMs` wall-clock milliseconds and reconcile the affected
    * display objects. Return true while more frames are still needed (a transition is running, or an
    * ambient animation is live), false when the renderer has settled. Only called on an {@link animated}
@@ -318,7 +327,7 @@ export abstract class PixiRenderer implements RendererInstance {
     if (this.app === null || !this.ready || this.latestState === null) {
       return
     }
-    this.update(this.latestState, { snap: true })
+    this.refreshVisual()
     this.app.render()
   }
 
@@ -370,10 +379,7 @@ export abstract class PixiRenderer implements RendererInstance {
       return
     }
     this.resizeSurface(size)
-    if (this.latestState !== null) {
-      // A resize only relays out the current state; it must not re-fire a transition, so it snaps.
-      this.update(this.latestState, { snap: true })
-    }
+    this.refreshVisual()
     this.app.render()
   }
 

@@ -41,7 +41,7 @@ Dead-step choreography exactly as the spec's Match flow section: a killed player
 
 ### Overlay
 
-Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode in the full-variant season shape (`field_extent=10`, terrain and abilities enabled, three capture zones, and `round_cap=150`) records to at most 10 MiB. The budget deliberately forces tight encoding: one character per tile combining terrain and feature, fixed-width unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
+Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode in the full-variant season shape (`field_extent=10`, terrain and abilities enabled, three capture zones, and `round_cap=150`) records to at most 10 MiB. The budget deliberately forces tight encoding: one character per tile combining terrain and feature, fixed-width unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. Compact overlay version 2 appends each resolved event's exact executed path id, so the renderer can animate every entered tile rather than inferring a straight endpoint route. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
 
 `current_activation` follows the [environment spec](../environment.md#rendering-and-human-input). The dead-step choreography above is what makes it subtle: derive it from the engine's next living activation rather than from `agent_selection`, which also names players queued for cleanup.
 
@@ -58,7 +58,7 @@ The chat policy lists the living allied players in player order, excluding the s
 | parameters | field_extent, terrain, wasteland, unit_abilities, capture_zones, capture_target, round_cap per the spec table |
 | human_players, human_timeout_ms | all players, 30_000 |
 | stepping, pace_interval_ms | sequential, None |
-| view_interval_ms, live_interval_ms | 750, 500 |
+| view_interval_ms, live_interval_ms | 1_000, 1_000 |
 | recommended_episode_ticks | 6000 |
 | step_limit_ms, episode_limit_ms | 1_000, 600_000 |
 | messaging, message_cap | True, 200 |

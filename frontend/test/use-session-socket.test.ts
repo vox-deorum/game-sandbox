@@ -1,4 +1,4 @@
-import type { StepState } from '@game-sandbox/schema'
+import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
@@ -29,19 +29,35 @@ import { useSessionSocket } from '../src/composables/useSessionSocket.js'
 
 function mountSessionSocket() {
   let session!: ReturnType<typeof useSessionSocket>
-  const drawn: StepState[] = []
+  const drawn: Array<{ state: StepState; options?: { transitionMs?: number } }> = []
   const wrapper = mount(
     defineComponent({
       setup() {
         session = useSessionSocket('s1', {
           onHeader: () => {},
-          onState: (state) => drawn.push(state),
+          onState: (state, options) => drawn.push({ state, options }),
         })
         return () => h('div')
       },
     }),
   )
   return { drawn, session, wrapper }
+}
+
+function header(human: boolean): RecordingHeader {
+  return {
+    schema_version: 1,
+    environment: 'skirmish_crane',
+    seed: 0,
+    parameters: {},
+    players: {
+      player_0: human
+        ? { kind: 'human', label: 'You', user: 'you' }
+        : { kind: 'agent', builtin_name: 'naive', label: 'Naive' },
+    },
+    seats: { seat_0: ['player_0'] },
+    seat_plan: 'skirmish',
+  }
 }
 
 function state(tick: number): StepState {
@@ -112,7 +128,110 @@ describe('useSessionSocket', () => {
     vi.advanceTimersByTime(200)
     await nextTick()
 
-    expect(drawn.map((entry) => entry.tick)).toEqual([4])
+    expect(drawn.map((entry) => entry.state.tick)).toEqual([4])
+    wrapper.unmount()
+  })
+
+  it('uses watch pacing after an all-agent header arrives', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ paceWhenSpectating: true, paceMs: 100, liveMs: 50 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onHeader(header(false))
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+
+    expect(drawn).toEqual([])
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(drawn).toEqual([{ state: state(0), options: { transitionMs: 100 } }])
+    wrapper.unmount()
+  })
+
+  it('keeps a human-attributed session on the live throttle after its header arrives', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ paceWhenSpectating: true, paceMs: 100, liveMs: 50 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onHeader(header(true))
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+
+    expect(drawn).toEqual([{ state: state(0), options: undefined }])
+    vi.advanceTimersByTime(50)
+    await nextTick()
+    expect(drawn).toEqual([
+      { state: state(0), options: undefined },
+      { state: state(1), options: { transitionMs: 50 } },
+    ])
+    wrapper.unmount()
+  })
+
+  it('keeps explicit watch pacing when its header attributes a human', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ pace: true, paceWhenSpectating: true, paceMs: 100, liveMs: 50 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onHeader(header(true))
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(drawn).toEqual([{ state: state(0), options: { transitionMs: 100 } }])
+    wrapper.unmount()
+  })
+
+  it('holds a paced result through the cadence after its last frame draws', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ pace: true, paceMs: 100 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+    handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
+    handlers?.onSessionStatus?.('ended', 'terminated')
+
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(drawn).toHaveLength(1)
+    expect(session.status.value).toBe('starting')
+
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(drawn).toHaveLength(2)
+    expect(session.status.value).toBe('starting')
+    expect(session.finalResult.value).toBeNull()
+
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(session.status.value).toBe('ended')
+    expect(session.finalResult.value?.scores).toEqual({ player_0: 7 })
+    wrapper.unmount()
+  })
+
+  it('holds an end that arrives after the last paced frame has begun', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ pace: true, paceMs: 100 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+    vi.advanceTimersByTime(200)
+    await nextTick()
+    expect(drawn).toHaveLength(2)
+
+    handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
+    handlers?.onSessionStatus?.('ended', 'terminated')
+    expect(session.status.value).toBe('starting')
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(session.status.value).toBe('ended')
     wrapper.unmount()
   })
 

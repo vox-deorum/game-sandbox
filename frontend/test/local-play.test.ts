@@ -11,6 +11,7 @@ import {
   playerState,
   spadesHeader,
   spadesMeta,
+  spadesPlayers,
 } from './helpers/fixtures.js'
 
 let handlers: SessionSocketHandlers
@@ -207,7 +208,7 @@ describe('LocalPlayPage', () => {
     handlers.onHeader(
       flappyHeader({
         players: {
-          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_0: { kind: 'human', label: 'North', user: 'north' },
           player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
         },
         seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
@@ -237,7 +238,7 @@ describe('LocalPlayPage', () => {
     handlers.onHeader(
       flappyHeader({
         players: {
-          player_0: { kind: 'agent', builtin_name: 'naive', label: 'North' },
+          player_0: { kind: 'human', label: 'North', user: 'north' },
           player_1: { kind: 'agent', builtin_name: 'naive', label: 'South' },
         },
         seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
@@ -264,6 +265,21 @@ describe('LocalPlayPage', () => {
     expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
     expect(gameOver).toHaveTextContent('4')
     expect(gameOver).toHaveTextContent('2')
+  })
+
+  it('buffers an all-agent local session at its viewing cadence', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    await renderLocal()
+    vi.useFakeTimers()
+    handlers.onHeader(spadesHeader({ players: spadesPlayers(null) }))
+    const watched = playerState(9)
+    handlers.onState(watched)
+    handlers.onState(playerState(10))
+
+    expect(drawn).toEqual([])
+    vi.advanceTimersByTime(3_000)
+    await Promise.resolve()
+    expect(drawn).toEqual([watched])
   })
 
   it('sends tick-free local chat and keeps the composer available across actions', async () => {

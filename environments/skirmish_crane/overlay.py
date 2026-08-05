@@ -9,10 +9,11 @@ from typing import Any
 
 from .combat import visible_units
 from .engine import COMPOSITIONS
-from .hexes import neighbors
+from .hexes import neighbors, on_field, path_positions
+from .paths import decode_path, encode_path
 from .tile_types import TILE_CODES
 
-OVERLAY_VERSION = 1
+OVERLAY_VERSION = 2
 
 _BASE64 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_"
 _TILE_FROM_CODE = {code: tile for tile, code in TILE_CODES.items()}
@@ -86,6 +87,7 @@ def _event(env: Any) -> list[Any] | None:
         -1 if activation.killed_id is None else _player_index(env, activation.killed_id),
         env.last_capture_changes["red"],
         env.last_capture_changes["blue"],
+        encode_path(activation.path),
     ]
 
 
@@ -146,13 +148,15 @@ def extract_overlay(env: Any) -> dict[str, Any]:
 def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
     """Validate and decode the versioned compact recording overlay.
 
-    Version 1 uses one-character tiles, four-character zone centers, seven-character unit records,
-    base-64 visibility bitmasks, and an eleven-value event record. This decoder is the authority for
+    Versions 1 and 2 use one-character tiles, four-character zone centers, seven-character unit
+    records, and base-64 visibility bitmasks. Version 1 has eleven-value event records. Version 2
+    appends an encoded movement path as its twelfth event value. This decoder is the authority for
     replay consumers and rejects unknown versions or malformed fields.
     """
     if set(compact) != {"k", "p", "b", "r", "c", "u", "a", "v", "e", "x", "o"}:
         raise ValueError("compact overlay has unexpected fields")
-    if type(compact["k"]) is not int or compact["k"] != OVERLAY_VERSION:
+    version = compact["k"]
+    if type(version) is not int or version not in (1, OVERLAY_VERSION):
         raise ValueError("compact overlay has an unsupported version")
 
     seat_plan = compact["p"]
@@ -240,10 +244,11 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
     event_record = compact["e"]
     event = None
     if event_record is not None:
-        if not isinstance(event_record, list) or len(event_record) != 11:
-            raise ValueError("compact overlay event must have eleven values")
+        event_length = 11 if version == 1 else 12
+        if not isinstance(event_record, list) or len(event_record) != event_length:
+            raise ValueError(f"compact overlay version {version} event must have {event_length} values")
         actor, start_q, start_r, end_q, end_r, target, damage, automatic, death, red_delta, blue_delta = (
-            event_record
+            event_record[:11]
         )
         indexes = (actor, target, death)
         if any(type(value) is not int for value in indexes) or not 0 <= actor < player_count:
@@ -257,12 +262,27 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
             for value in (start_q, start_r, end_q, end_r, damage, red_delta, blue_delta)
         ):
             raise ValueError("compact overlay event numeric fields are malformed")
+        if not on_field((start_q, start_r), extent) or not on_field((end_q, end_r), extent):
+            raise ValueError("compact overlay event coordinates are outside the battlefield")
         if not isinstance(automatic, bool):
             raise ValueError("compact overlay event automatic flag must be boolean")
+        path = None
+        if version == 2:
+            try:
+                path = decode_path(event_record[11])
+            except ValueError as error:
+                raise ValueError("compact overlay event path id is malformed") from error
+            entered = path_positions((start_q, start_r), path)
+            if any(not on_field(position, extent) for position in entered):
+                raise ValueError("compact overlay event path leaves the battlefield")
+            path_end = entered[-1] if entered else (start_q, start_r)
+            if path_end != (end_q, end_r):
+                raise ValueError("compact overlay event path does not reach its endpoint")
         event = {
             "unit_id": roster[actor]["unit_id"],
             "from": {"q": start_q, "r": start_r},
             "to": {"q": end_q, "r": end_r},
+            "path": path,
             "attack": None
             if target == -1
             else {
@@ -296,7 +316,7 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("nonterminal compact overlay cannot contain outcome scores")
 
     return {
-        "version": OVERLAY_VERSION,
+        "version": version,
         "seat_plan": seat_plan,
         "battlefield": {"side": side, "tiles": tiles, "zones": zones},
         "round": round_number,

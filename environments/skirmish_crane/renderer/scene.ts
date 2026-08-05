@@ -95,6 +95,7 @@ export const UNIT_STATS: Record<SceneUnit['type'], UnitStats> = {
 
 export interface HudStatField {
   icon: 'iconHp' | 'iconMove' | 'iconAttack' | 'iconRange' | 'iconVision'
+  label: 'HP' | 'MOV' | 'ATK' | 'RNG' | 'VIS'
   value: string
 }
 
@@ -114,19 +115,18 @@ export function unitCardFor(
   return {
     title: type.toUpperCase(),
     fields: [
-      { icon: 'iconHp', value: currentHitPoints === null ? String(stats.hitPoints) : `${currentHitPoints}/${stats.hitPoints}` },
-      { icon: 'iconMove', value: String(stats.movement) },
-      { icon: 'iconAttack', value: String(stats.damage) },
-      { icon: 'iconRange', value: String(stats.range) },
-      { icon: 'iconVision', value: String(stats.vision) },
+      {
+        icon: 'iconHp',
+        label: 'HP',
+        value: currentHitPoints === null ? String(stats.hitPoints) : `${currentHitPoints}/${stats.hitPoints}`,
+      },
+      { icon: 'iconMove', label: 'MOV', value: String(stats.movement) },
+      { icon: 'iconAttack', label: 'ATK', value: String(stats.damage) },
+      { icon: 'iconRange', label: 'RNG', value: String(stats.range) },
+      { icon: 'iconVision', label: 'VIS', value: String(stats.vision) },
     ],
     ability: unitAbilities ? (type === 'footman' ? 'Shield wall' : type === 'cavalry' ? 'Charge' : null) : null,
   }
-}
-
-/** Bottom roster pairs always use the full figure silhouette, even when board units are compact. */
-export function rosterFigureFor(type: SceneUnit['type']): 'figFootman' | 'figArcher' | 'figCavalry' {
-  return type === 'footman' ? 'figFootman' : type === 'archer' ? 'figArcher' : 'figCavalry'
 }
 
 export interface SceneActivation {
@@ -139,6 +139,10 @@ export interface SceneEvent {
   actorId: string
   from: Point
   to: Point
+  /** The actual centers entered by the activation, beginning with its start tile. */
+  route: Point[]
+  /** Route segments, capped by the game's four-step movement limit. */
+  movementTiles: number
   targetId: string | null
   damage: number
   automatic: boolean
@@ -181,6 +185,7 @@ interface RosterEntry {
 }
 
 interface CompactOverlay {
+  version: 1 | 2
   plan: 'skirmish' | 'army'
   side: number
   rows: string[]
@@ -276,12 +281,11 @@ function decodeBase36(value: string, message: string): number {
   return [...value].reduce((total, digit) => total * 36 + BASE36.indexOf(digit), 0)
 }
 
-/** Decode the compact v1 wire overlay into the few values the scene needs. */
+/** Decode compact v1 and v2 overlays into the few values the scene needs. */
 export function decodeOverlay(state: StepState): CompactOverlay {
   const overlay = asRecord(state.overlay, 'Crane Reach state has no compact overlay')
-  if (asInteger(overlay.k, 'Crane Reach overlay has an invalid version') !== 1) {
-    throw new Error('Crane Reach renderer only supports compact overlay version 1')
-  }
+  const version = asInteger(overlay.k, 'Crane Reach overlay has an invalid version')
+  if (version !== 1 && version !== 2) throw new Error('Crane Reach overlay has an unsupported version')
   const plan = asString(overlay.p, 'Crane Reach overlay has an invalid seat plan')
   if (plan !== 'skirmish' && plan !== 'army') {
     throw new Error('Crane Reach overlay has an unknown seat plan')
@@ -316,7 +320,7 @@ export function decodeOverlay(state: StepState): CompactOverlay {
     throw new Error('Crane Reach overlay has an invalid activation')
   }
   const event = overlay.e
-  if (event !== null && (!Array.isArray(event) || event.length !== 11)) {
+  if (event !== null && (!Array.isArray(event) || event.length !== (version === 1 ? 11 : 12))) {
     throw new Error('Crane Reach overlay has an invalid event')
   }
   const terminal = overlay.x
@@ -333,6 +337,7 @@ export function decodeOverlay(state: StepState): CompactOverlay {
     throw new Error('Crane Reach overlay has an invalid outcome')
   }
   return {
+    version,
     plan,
     side,
     rows: rows as string[],
@@ -475,24 +480,104 @@ function readUnits(
   })
 }
 
-function pointFromRecord(
-  q: unknown,
-  r: unknown,
-  overlay: CompactOverlay,
-  centerFor: (q: number, r: number) => Point,
-): Point {
+interface Coordinate {
+  q: number
+  r: number
+}
+
+function coordinateFromRecord(q: unknown, r: unknown, overlay: CompactOverlay): Coordinate {
   const qValue = asInteger(q, 'Crane Reach event has an invalid coordinate')
   const rValue = asInteger(r, 'Crane Reach event has an invalid coordinate')
-  if (qValue < 0 || qValue >= overlay.side || rValue < 0 || rValue >= overlay.side) {
+  const extent = (overlay.side - 1) / 2
+  if (
+    qValue < 0 ||
+    qValue >= overlay.side ||
+    rValue < 0 ||
+    rValue >= overlay.side ||
+    qValue + rValue < extent ||
+    qValue + rValue > 3 * extent
+  ) {
     throw new Error('Crane Reach event has an out-of-range coordinate')
   }
-  return centerFor(qValue, rValue)
+  return { q: qValue, r: rValue }
+}
+
+/** Match the fixed Python codec: zero through four base-six direction digits in lexical order. */
+function decodePathId(pathId: unknown): number[] {
+  if (typeof pathId !== 'number' || !Number.isInteger(pathId) || pathId < 0 || pathId > 1554) {
+    throw new Error('Crane Reach event has an invalid path id')
+  }
+  if (pathId === 0) return []
+  let remaining = pathId - 1
+  let length = 1
+  while (remaining >= 6 ** length) {
+    remaining -= 6 ** length
+    length += 1
+  }
+  const directions: number[] = []
+  for (let power = length - 1; power >= 0; power -= 1) {
+    const place = 6 ** power
+    const digit = Math.floor(remaining / place)
+    remaining %= place
+    directions.push(digit + 1)
+  }
+  return directions
+}
+
+function routeForPath(
+  pathId: unknown,
+  from: Coordinate,
+  to: Coordinate,
+  overlay: CompactOverlay,
+): Coordinate[] {
+  const route = [{ ...from }]
+  const extent = (overlay.side - 1) / 2
+  for (const direction of decodePathId(pathId)) {
+    const delta = DIRECTIONS[direction - 1]
+    if (delta === undefined) throw new Error('Crane Reach event has an invalid path direction')
+    const previous = route[route.length - 1] as Coordinate
+    const next = { q: previous.q + delta[0], r: previous.r + delta[1] }
+    if (
+      next.q < 0 ||
+      next.q >= overlay.side ||
+      next.r < 0 ||
+      next.r >= overlay.side ||
+      next.q + next.r < extent ||
+      next.q + next.r > 3 * extent
+    ) {
+      throw new Error('Crane Reach event path leaves the battlefield')
+    }
+    route.push(next)
+  }
+  const end = route[route.length - 1] as Coordinate
+  if (end.q !== to.q || end.r !== to.r) throw new Error('Crane Reach event path does not reach its endpoint')
+  return route
+}
+
+function endpointDistance(from: Coordinate, to: Coordinate): number {
+  return Math.max(Math.abs(to.q - from.q), Math.abs(to.r - from.r), Math.abs(to.q + to.r - from.q - from.r))
+}
+
+function fallbackRoute(from: Coordinate, to: Coordinate): { route: Coordinate[]; movementTiles: number } {
+  const movementTiles = Math.min(4, endpointDistance(from, to))
+  return { route: movementTiles === 0 ? [from] : [from, to], movementTiles }
+}
+
+function legacyActionPath(state: StepState, actorId: string): unknown {
+  const agents = state.agents as unknown
+  if (agents === null || typeof agents !== 'object' || Array.isArray(agents)) return undefined
+  const agent = (agents as Record<string, unknown>)[actorId]
+  if (agent === null || typeof agent !== 'object' || Array.isArray(agent)) return undefined
+  const action = (agent as Record<string, unknown>).action
+  if (action === null || typeof action !== 'object' || Array.isArray(action)) return undefined
+  return (action as Record<string, unknown>).path
 }
 
 function readEvent(
   overlay: CompactOverlay,
   roster: RosterEntry[],
   centerFor: (q: number, r: number) => Point,
+  state: StepState,
 ): SceneEvent | null {
   if (overlay.event === null) return null
   const [actor, fromQ, fromR, toQ, toR, target, damage, automatic, death, redCapture, blueCapture] =
@@ -512,10 +597,30 @@ function readEvent(
   }
   if (typeof automatic !== 'boolean')
     throw new Error('Crane Reach event has an invalid automatic flag')
+  const fromCoordinate = coordinateFromRecord(fromQ, fromR, overlay)
+  const toCoordinate = coordinateFromRecord(toQ, toR, overlay)
+  const pathId = overlay.event[11]
+  let route: Coordinate[]
+  let movementTiles: number
+  if (overlay.version === 2) {
+    route = routeForPath(pathId, fromCoordinate, toCoordinate, overlay)
+    movementTiles = route.length - 1
+  } else {
+    try {
+      route = routeForPath(legacyActionPath(state, actorEntry.playerId), fromCoordinate, toCoordinate, overlay)
+      movementTiles = route.length - 1
+    } catch {
+      const fallback = fallbackRoute(fromCoordinate, toCoordinate)
+      route = fallback.route
+      movementTiles = fallback.movementTiles
+    }
+  }
   return {
     actorId: actorEntry.unitId,
-    from: pointFromRecord(fromQ, fromR, overlay, centerFor),
-    to: pointFromRecord(toQ, toR, overlay, centerFor),
+    from: centerFor(fromCoordinate.q, fromCoordinate.r),
+    to: centerFor(toCoordinate.q, toCoordinate.r),
+    route: route.map((coordinate) => centerFor(coordinate.q, coordinate.r)),
+    movementTiles,
     targetId: targetEntry?.unitId ?? null,
     damage: asInteger(damage, 'Crane Reach event has an invalid damage value'),
     automatic,
@@ -575,7 +680,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): CraneR
             unitId: activeUnit.unitId,
             position: activeUnit.position,
           },
-    event: readEvent(overlay, roster, battlefield.centerFor),
+    event: readEvent(overlay, roster, battlefield.centerFor, state),
     hud: {
       round: overlay.round,
       capture:

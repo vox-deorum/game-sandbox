@@ -31,8 +31,8 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     view_interval_ms: number | null
   }>
   expect(environments.find((environment) => environment.env_id === ENV_ID)).toMatchObject({
-    live_interval_ms: 500,
-    view_interval_ms: 750,
+    live_interval_ms: 1_000,
+    view_interval_ms: 1_000,
   })
 
   await page.goto('/')
@@ -83,6 +83,10 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   const unitPoint = logicalPoint(unitX, unitY)
   await page.mouse.move(unitPoint.x, unitPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
+  await expect(rendererHost).toHaveAttribute(
+    'data-crane-inspection-fields',
+    'iconHp:HP,iconMove:MOV,iconAttack:ATK,iconRange:RNG,iconVision:VIS',
+  )
   const awayPoint = logicalPoint(600, 40)
   await page.mouse.move(awayPoint.x, awayPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
@@ -97,34 +101,131 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     if (host === null) throw new Error('Crane Reach renderer host is missing')
     const probe = globalThis as typeof globalThis & {
       craneEventObserver?: MutationObserver
-      craneEventPhases?: string[]
+      craneEventSamples?: Array<{ phase: string; handoff: string }>
     }
     probe.craneEventObserver?.disconnect()
-    probe.craneEventPhases = [host.dataset.craneEventPhase ?? 'idle']
+    probe.craneEventSamples = [
+      {
+        phase: host.dataset.craneEventPhase ?? 'idle',
+        handoff: host.dataset.craneEventHandoff ?? 'idle',
+      },
+    ]
     probe.craneEventObserver = new MutationObserver(() => {
-      const phase = host.dataset.craneEventPhase ?? 'idle'
-      if (probe.craneEventPhases?.at(-1) !== phase) probe.craneEventPhases?.push(phase)
+      const sample = {
+        phase: host.dataset.craneEventPhase ?? 'idle',
+        handoff: host.dataset.craneEventHandoff ?? 'idle',
+      }
+      const previous = probe.craneEventSamples?.at(-1)
+      if (previous?.phase === sample.phase && previous.handoff === sample.handoff) return
+      probe.craneEventSamples?.push(sample)
     })
     probe.craneEventObserver.observe(host, {
       attributes: true,
-      attributeFilter: ['data-crane-event-phase'],
+      attributeFilter: ['data-crane-event-phase', 'data-crane-event-handoff'],
     })
   })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(rendererHost).toHaveAttribute('data-crane-event-phase', 'movement', {
+    timeout: 30_000,
+  })
+  const beforeResize = await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.renderer-canvas')
+    if (host === null || canvas === null) throw new Error('Crane Reach renderer surface is missing')
+    const hostBox = host.getBoundingClientRect()
+    const canvasBox = canvas.getBoundingClientRect()
+    return {
+      host: { width: hostBox.width, height: hostBox.height },
+      canvas: { width: canvasBox.width, height: canvasBox.height, pixels: canvas.width },
+    }
+  })
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    if (host === null) throw new Error('Crane Reach renderer host is missing')
+    const probe = globalThis as typeof globalThis & {
+      craneResizeAnimationFrame?: number
+      craneResizeStartedAt?: number
+      craneResizeSamples?: Array<{ phase: string; at: number }>
+    }
+    if (probe.craneResizeAnimationFrame !== undefined) {
+      cancelAnimationFrame(probe.craneResizeAnimationFrame)
+    }
+    probe.craneResizeStartedAt = performance.now()
+    probe.craneResizeSamples = []
+    const record = () => {
+      probe.craneResizeSamples?.push({
+        phase: host.dataset.craneEventPhase ?? 'idle',
+        at: performance.now(),
+      })
+      probe.craneResizeAnimationFrame = requestAnimationFrame(record)
+    }
+    record()
+  })
+  // Changing height changes StageFrame's 70vh cap, forcing both the host and Pixi surface to resize.
+  await page.setViewportSize({ width: 1_600, height: 700 })
+  await page.waitForTimeout(150)
+  await expect(rendererHost).toHaveAttribute(
+    'data-crane-event-phase',
+    /^(activation|movement|settle|resolution)$/,
+  )
+  const resizeResult = await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.renderer-canvas')
+    if (host === null || canvas === null) throw new Error('Crane Reach renderer surface is missing')
+    const hostBox = host.getBoundingClientRect()
+    const canvasBox = canvas.getBoundingClientRect()
+    const probe = globalThis as typeof globalThis & {
+      craneResizeAnimationFrame?: number
+      craneResizeStartedAt?: number
+      craneResizeSamples?: Array<{ phase: string; at: number }>
+    }
+    if (probe.craneResizeAnimationFrame !== undefined) {
+      cancelAnimationFrame(probe.craneResizeAnimationFrame)
+      delete probe.craneResizeAnimationFrame
+    }
+    return {
+      elapsed: performance.now() - (probe.craneResizeStartedAt ?? performance.now()),
+      samples: probe.craneResizeSamples ?? [],
+      host: { width: hostBox.width, height: hostBox.height },
+      canvas: { width: canvasBox.width, height: canvasBox.height, pixels: canvas.width },
+    }
+  })
+  expect(resizeResult.elapsed).toBeLessThan(1_000)
+  expect(resizeResult.host.height).toBeLessThan(beforeResize.host.height)
+  expect(resizeResult.canvas.height).toBeLessThan(beforeResize.canvas.height)
+  expect(resizeResult.canvas.pixels).not.toBe(beforeResize.canvas.pixels)
+  expect(resizeResult.samples).not.toHaveLength(0)
+  expect(resizeResult.samples.some((sample) => sample.phase === 'idle')).toBe(false)
+  expect(resizeResult.samples.at(-1)?.phase).toMatch(/^(activation|movement|settle|resolution)$/)
   await expect
     .poll(
       () =>
         page.evaluate(() => {
-          const phases =
-            (globalThis as typeof globalThis & { craneEventPhases?: string[] }).craneEventPhases ??
-            []
-          let sequence = 0
-          for (const phase of phases) {
-            if (phase === 'activation') sequence = 1
-            else if (phase === 'movement' && sequence === 1) sequence = 2
-            else if (phase === 'attack' && sequence === 2) sequence = 3
-            else if (phase === 'reaction' && sequence === 3) return true
-            else if (phase === 'idle') sequence = 0
+          const samples =
+            (
+              globalThis as typeof globalThis & {
+                craneEventSamples?: Array<{ phase: string; handoff: string }>
+              }
+            ).craneEventSamples ?? []
+          let awaitingSeen = false
+          let heldSeen = false
+          for (const sample of samples) {
+            if (sample.phase === 'idle' && sample.handoff === 'awaiting-final-frame') {
+              awaitingSeen = true
+            } else if (
+              awaitingSeen &&
+              sample.phase === 'idle' &&
+              sample.handoff === 'final-frame-held'
+            ) {
+              heldSeen = true
+            } else if (
+              heldSeen &&
+              sample.phase === 'activation' &&
+              sample.handoff === 'pending-installed'
+            ) {
+              return true
+            }
           }
           return false
         }),

@@ -124,7 +124,11 @@ onMounted(async () => {
       return
     }
     meta.value = environment
-    connect({ liveMs: environment.live_interval_ms })
+    connect({
+      paceWhenSpectating: true,
+      paceMs: environment.view_interval_ms,
+      liveMs: environment.live_interval_ms,
+    })
   } catch {
     loadError.value = true
   }

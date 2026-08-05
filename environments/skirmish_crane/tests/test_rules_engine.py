@@ -232,6 +232,17 @@ def test_entering_wasteland_wounds_a_unit_once_for_every_tile_it_enters() -> Non
     assert _waste_walk("footman", 12, ((7, 7),), ()).hit_points == 12
 
 
+def test_activation_retains_the_executed_direction_path() -> None:
+    unit = Unit("red_cavalry_0", "red", "cavalry", (7, 7), 10)
+    enemy = Unit("blue_archer_0", "blue", "archer", (0, 14), 6)
+    match = _planted(Match(MatchConfig(seed=0, round_cap=5)), (unit, enemy), (unit.unit_id,))
+
+    activation = match.apply_order(Order(path=(2, 5, 2, 5)))
+
+    assert activation.path == (2, 5, 2, 5)
+    assert activation.end == unit.position == (7, 7)
+
+
 def test_wasteland_damage_floors_at_one_hit_point_and_never_kills() -> None:
     match = _planted(
         Match(MatchConfig(seed=0, round_cap=5)),

@@ -12,7 +12,7 @@ The HUD is information design: what a spectator needs at 40 units, in which type
 
 ### Typography
 
-Canvas typography adopts the host's families deliberately: Lato (fallback system-ui) for labels and ui-monospace for every number and identifier, including round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary.
+Canvas typography adopts the host's families deliberately: Lato (fallback system-ui) for labels and ui-monospace for every number and identifier, including round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary. Every icon-and-text row uses one shared centerline layout in both reading directions. HUD labels use the larger 16 to 30 px scale, and inspection-card labels use 17 px type.
 
 ### Canvas layout
 
@@ -31,11 +31,11 @@ The scene stays 1200 x 860 with the board between y 90 and 746. The HUD occupies
 +--------------------------------------------------------------------+
 ```
 
-Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cinnabar and indigo, not letters. `[f]`, `[a]`, `[c]` are the figure-level footman, archer, and cavalry silhouettes from the asset manifest, tinted the side color.
+Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cinnabar and indigo, not letters. `[f]`, `[a]`, `[c]` are the footman sword, archer bow, and cavalry horse glyphs from the asset manifest, tinted the side color.
 
 ### Top strip (y 24 to 64)
 
-- Left: `ROUND` in small Lato caps, faded ink, then the round number in 28 px bone mono.
+- Left: `ROUND` in 16 px Lato caps, faded ink, then the round number in 30 px bone mono.
 - Right: the capture score as a cinnabar seal dot with Red's number, an indigo seal dot with Blue's number, then `/ 200` in faded ink. Without the capture variant the right side is empty.
 
 ```
@@ -44,8 +44,8 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 
 ### Bottom strip (y 760 to 844)
 
-- Left: Red's roster as three figure-plus-count pairs, using the figure-level silhouettes at roughly 28 px tinted cinnabar, with mono counts; losses show through the counts. Right: Blue's mirrored in indigo. Hovering a pair opens its type card. On touch, tap a pair to open its card; tapping elsewhere dismisses it and tapping another pair replaces it.
-- A type card has the type name and icon-led maximum hit points, movement, damage, attack range, and vision fields. When `unit_abilities` is on, the footman card adds `Shield wall` and the cavalry card adds `Charge`; the archer has no ability line. Cards show no ability text when the variant is off.
+- Left: Red's roster as three glyph-plus-count pairs, using the weapon and horse glyphs at roughly 30 px tinted cinnabar, with 26 px mono counts; losses show through the counts. Right: Blue's mirrored in indigo. Hovering a pair opens its type card. On touch, tap a pair to open its card; tapping elsewhere dismisses it and tapping another pair replaces it.
+- A type card has the type name and maximum hit points, movement, damage, attack range, and vision fields. Every field pairs its icon with its short text label and value: `HP`, `MOV`, `ATK`, `RNG`, and `VIS`. When `unit_abilities` is on, the footman card adds `Shield wall` and the cavalry card adds `Charge` on a separate line; the archer has no ability line. Cards show no ability text when the variant is off.
 - The strip carries no event or activation text. An attack and its damage play as the step 4.1 event animations, and the actor reads from the gilt activation highlight, so the HUD repeats neither. The center stays clear; on a human turn the step 5 order controls live there.
 
 ```
@@ -55,9 +55,9 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 ```
    +-----------------------------+
    | FOOTMAN                     |
-   | {hp} 12       {move} 2      |
-   | {attack} 3   {range} 1      |
-   | {vision} 4                  |
+   | {hp} HP 12       {move} MOV 2   |
+   | {attack} ATK 3   {range} RNG 1  |
+   | {vision} VIS 4                  |
    | Shield wall                 |
    +-----------------------------+
 ```
@@ -72,16 +72,16 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 
 Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping elsewhere or a different unit dismisses or replaces it:
 
-- A parchment chip appears beside the unit: the unit id, current and maximum hit points, movement, damage, attack range, and vision in icon-led fields on a parchment fill with a dilute-ink border. When `unit_abilities` is on, it adds `Shield wall` for footmen and `Charge` for cavalry. It completes the step 4.1 rim gauge, which shows state but not numerals.
+- A parchment chip appears beside the unit: the unit id, current and maximum hit points, movement, damage, attack range, and vision in icon, label, and value fields on a parchment fill with a dilute-ink border. When `unit_abilities` is on, it adds `Shield wall` for footmen and `Charge` for cavalry. It completes the step 4.1 rim gauge, which shows state but not numerals.
 - The hovered unit wears a temporary bone highlight ring for as long as the hover lasts.
 - Its movement range appears on the board: reachable tiles take a bone wash at alpha 0.18 inside a dashed dilute-ink outline around the set.
 
 ```
    +-----------------------------+
    | red_archer_2               |
-   | {hp} 4/6     {attack} 2    |
-   | {move} 2     {range} 6     |
-   | {vision} 6                 |
+   | {hp} HP 4/6     {move} MOV 2   |
+   | {attack} ATK 2  {range} RNG 6  |
+   | {vision} VIS 6                 |
    +-----------------------------+
 ```
 

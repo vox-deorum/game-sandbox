@@ -445,7 +445,7 @@ def test_ascii_runner_replays_a_harness_jsonl_recording(tmp_path: Any) -> None:
     assert "red=0 blue=0" in transcript
 
 
-def test_compact_overlay_version_one_decodes_every_state_field() -> None:
+def test_compact_overlay_decodes_every_state_field() -> None:
     env = make_env(
         _parameters(
             seat_plan="army",
@@ -503,25 +503,43 @@ def test_compact_overlay_decodes_event_capture_death_and_terminal_outcome() -> N
     env.reset(seed=2)
     actor_id = "red_archer_0"
     target_id = "blue_footman_0"
-    actor = env.match.units[actor_id]
     target = env.match.units.pop(target_id)
+    start = (7, 7)
+    end = (8, 8)
     env.last_activation = Activation(
         actor_id,
-        actor.position,
-        actor.position,
+        start,
+        end,
         Strike(actor_id, target_id, 2, True),
         target_id,
+        (2, 3),
     )
     env.last_capture_changes = {"red": 1, "blue": 0}
     env.match.result = Result(100.0, 0.0, "red", "elimination")
 
-    decoded = decode_overlay(extract_overlay(env))
+    compact = extract_overlay(env)
+    assert compact["e"] == [
+        1,
+        start[0],
+        start[1],
+        end[0],
+        end[1],
+        3,
+        2,
+        True,
+        3,
+        1,
+        0,
+        encode_path((2, 3)),
+    ]
+    decoded = decode_overlay(compact)
     assert target.unit_id not in {unit["unit_id"] for unit in decoded["units"]}
     assert decoded["current_activation"] is None
     assert decoded["event"] == {
         "unit_id": actor_id,
-        "from": {"q": actor.position[0], "r": actor.position[1]},
-        "to": {"q": actor.position[0], "r": actor.position[1]},
+        "from": {"q": start[0], "r": start[1]},
+        "to": {"q": end[0], "r": end[1]},
+        "path": (2, 3),
         "attack": {"target_id": target_id, "damage": 2, "automatic": True},
         "death": target_id,
         "capture": {"red": 1, "blue": 0},
@@ -537,6 +555,70 @@ def test_compact_overlay_rejects_unknown_versions() -> None:
     compact = extract_overlay(env)
     compact["k"] = OVERLAY_VERSION + 1
     with pytest.raises(ValueError, match="unsupported version"):
+        decode_overlay(compact)
+    env.close()
+
+
+def test_compact_overlay_version_one_event_remains_compatible() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=2)
+    actor_id = "red_archer_0"
+    actor = env.match.units[actor_id]
+    env.last_activation = Activation(actor_id, actor.position, actor.position, None, None, (2,))
+    compact = extract_overlay(env)
+    compact["k"] = 1
+    compact["e"] = compact["e"][:11]
+
+    assert decode_overlay(compact)["event"]["path"] is None
+    env.close()
+
+
+def test_compact_overlay_rejects_a_malformed_version_two_path_id() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=2)
+    actor_id = "red_archer_0"
+    actor = env.match.units[actor_id]
+    env.last_activation = Activation(actor_id, actor.position, actor.position, None, None, (2,))
+    compact = extract_overlay(env)
+    compact["e"][11] = MAX_PATH_ID + 1
+
+    with pytest.raises(ValueError, match="path id"):
+        decode_overlay(compact)
+    env.close()
+
+
+def test_compact_overlay_rejects_a_version_two_path_endpoint_mismatch() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=2)
+    actor_id = "red_archer_0"
+    env.last_activation = Activation(actor_id, (7, 7), (7, 7), None, None, (2,))
+    compact = extract_overlay(env)
+
+    with pytest.raises(ValueError, match="does not reach its endpoint"):
+        decode_overlay(compact)
+    env.close()
+
+
+def test_compact_overlay_rejects_event_coordinates_outside_the_field() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=2)
+    actor_id = "red_archer_0"
+    env.last_activation = Activation(actor_id, (0, 0), (0, 0), None, None, ())
+    compact = extract_overlay(env)
+
+    with pytest.raises(ValueError, match="coordinates are outside the battlefield"):
+        decode_overlay(compact)
+    env.close()
+
+
+def test_compact_overlay_rejects_a_version_two_path_that_leaves_the_field() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=2)
+    actor_id = "red_archer_0"
+    env.last_activation = Activation(actor_id, (0, 7), (0, 7), None, None, (5,))
+    compact = extract_overlay(env)
+
+    with pytest.raises(ValueError, match="leaves the battlefield"):
         decode_overlay(compact)
     env.close()
 

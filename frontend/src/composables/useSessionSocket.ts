@@ -63,6 +63,11 @@ export interface ConnectOptions {
   /** The environment's pace interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
   paceMs?: number | null
   /**
+   * Wait for the recording header, then use watch pacing only when every attributed player is an agent.
+   * This lets the standalone local page share one socket entry point for human and watch launches.
+   */
+  paceWhenSpectating?: boolean
+  /**
    * A live human session's cadence (ms) for throttling the *other* players' moves, so a burst of fast AI
    * replies animates one at a time. The owner's own move still renders on arrival. Absent/`null`/`0`
    * (a realtime env, or any env with no `live_interval_ms`) keeps the unbuffered on-arrival behaviour.
@@ -102,6 +107,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const frameQueue: StepState[] = []
   let paceTimer: ReturnType<typeof setInterval> | null = null
   let endHeld = false
+  let finalFrameInFlight = false
   let heldEndReason: string | null = null
   let heldResult: Record<string, unknown> | null = null
   // The protocol promises one result at session end. Keep the first result from the active connection
@@ -165,6 +171,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     leadFrames = 1
     playing = false
     endHeld = false
+    finalFrameInFlight = false
     heldEndReason = null
     heldResult = null
     resultSeen = false
@@ -174,18 +181,22 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     socket.value = null
   }
 
-  /** Play the next buffered frame; once the buffer drains and the stream has ended, reveal game over.
+  /** Play the next buffered frame; hold end facts for one final cadence after the last draw.
    *  An empty buffer with the stream still live is an underrun: hold the last frame and flag waiting. */
   function drainOne(): void {
     const state = frameQueue.shift()
     if (state !== undefined) {
       buffering.value = false
-      frames.onState(state)
+      frames.onState(state, { transitionMs: cadence })
+      finalFrameInFlight = frameQueue.length === 0
     } else if (!endHeld) {
       buffering.value = true
     }
-    if (frameQueue.length === 0 && endHeld) {
+    if (frameQueue.length === 0 && endHeld && !finalFrameInFlight) {
       applyEnd(heldEndReason)
+    } else if (state === undefined && finalFrameInFlight) {
+      finalFrameInFlight = false
+      if (endHeld) applyEnd(heldEndReason)
     }
   }
 
@@ -223,6 +234,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   function connect(options: ConnectOptions = {}): void {
     retireConnection()
     const activeConnectionId = connectionId
+    const paceWhenSpectating = options.pace !== true && options.paceWhenSpectating === true
+    const requestedLiveMs =
+      typeof options.liveMs === 'number' && options.liveMs > 0 ? options.liveMs : 0
     pacing = options.pace === true
     cadence =
       pacing && typeof options.paceMs === 'number' && options.paceMs > 0
@@ -231,11 +245,19 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
     // The live human throttle is the alternative to watch pacing (never both); off unless the env
     // declares a positive cadence.
-    liveMs =
-      !pacing && typeof options.liveMs === 'number' && options.liveMs > 0 ? options.liveMs : 0
+    liveMs = !pacing && !paceWhenSpectating ? requestedLiveMs : 0
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
       onHeader: (header) => {
         if (connectionId === activeConnectionId) {
+          if (paceWhenSpectating) {
+            pacing = !Object.values(header.players).some((player) => player.kind === 'human')
+            cadence =
+              pacing && typeof options.paceMs === 'number' && options.paceMs > 0
+                ? options.paceMs
+                : DEFAULT_WATCH_CADENCE_MS
+            leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
+            liveMs = pacing ? 0 : requestedLiveMs
+          }
           frames.onHeader(header)
         }
       },
@@ -267,7 +289,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         }
         // ended: hold it while paced frames are still draining, so the result lands with the final
         // frame rather than ahead of it; else reveal it now.
-        if (pacing && frameQueue.length > 0) {
+        if (pacing && (frameQueue.length > 0 || finalFrameInFlight)) {
           endHeld = true
           heldEndReason = reason ?? null
           maybeStart(true)

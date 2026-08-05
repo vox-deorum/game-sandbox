@@ -22,16 +22,23 @@ import {
   captureCueSceneFor,
   deathSnapshotFor,
   eventBudget,
+  pendingEventFrameAction,
+  eventUpdateDisposition,
   eventPhaseAt,
+  eventTimelineBounds,
   eventTimelineProgress,
   eventTargetPositionFor,
   eventTextMetrics,
   FEATURE_MARKS,
   gaugeFor,
   hostEase,
+  HUD_TEXT_SIZES,
   isFreshForwardEvent,
+  labelRowLayout,
   presentationFor,
   reducedMotionCuesFor,
+  routePositionFor,
+  routeTrailFor,
   shouldRebuildBattlefield,
   TERRAIN_MARKS,
   transitionFor,
@@ -42,7 +49,6 @@ import {
   CRANE_STYLE,
   computeScene,
   decodeOverlay,
-  rosterFigureFor,
   type HexTile,
   type SceneUnit,
   unitCardFor,
@@ -262,6 +268,44 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     expect(scene?.event?.to).toEqual(
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
     )
+    expect(scene?.event?.route).toEqual(expect.any(Array))
+    expect(scene?.event?.movementTiles).toBeGreaterThanOrEqual(0)
+  })
+
+  it('decodes v2 routes and recovers v1 paths before falling back to endpoint geometry', () => {
+    const source = armyStates[0] as StepState
+    const overlay = source.overlay as Record<string, unknown>
+    const event = [0, 10, 10, 10, 11, -1, 0, false, -1, 0, 0]
+    const pathId = 58 // Directions 1, 3, 4: a turn that retraces q before ending at 10,11.
+    const v2 = computeScene({ ...source, overlay: { ...overlay, k: 2, e: [...event, pathId] } })
+    expect(v2.event?.movementTiles).toBe(3)
+    expect(v2.event?.route).toHaveLength(4)
+    expect(v2.event?.route[0]).toEqual(v2.tiles.find((tile) => tile.key === '10,10')?.center)
+    expect(v2.event?.route.at(-1)).toEqual(v2.tiles.find((tile) => tile.key === '10,11')?.center)
+
+    const withActorPath = (path: unknown): StepState => ({
+      ...source,
+      agents: {
+        ...source.agents,
+        player_0: {
+          reward: source.agents.player_0?.reward ?? 0,
+          score: source.agents.player_0?.score ?? 0,
+          action: { path },
+        },
+      },
+    })
+    const v1 = computeScene({
+      ...withActorPath(pathId),
+      overlay: { ...overlay, k: 1, e: event },
+    })
+    expect(v1.event?.route).toEqual(v2.event?.route)
+
+    const degraded = computeScene({
+      ...withActorPath(true),
+      overlay: { ...overlay, k: 1, e: [0, 10, 10, 14, 14, -1, 0, false, -1, 0, 0] },
+    })
+    expect(degraded.event?.route).toHaveLength(2)
+    expect(degraded.event?.movementTiles).toBe(4)
   })
 
   it('keeps structured HUD and terminal state in the scene rather than renderer history', () => {
@@ -291,29 +335,51 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     expect(afterLoss.hud.rosters.red.footman).toBe(7)
   })
 
-  it('includes every icon-led stat and enables ability lines only from header configuration', () => {
+  it('pairs every inspection stat icon with a label and enables configured ability lines', () => {
     const withoutAbilities = computeScene(armyStates[0] as StepState)
     const withAbilities = computeScene(armyStates[0] as StepState, { unitAbilities: true })
     expect(withoutAbilities.hud.unitAbilities).toBe(false)
     expect(withAbilities.hud.unitAbilities).toBe(true)
     expect(unitCardFor('footman', 4, true)).toMatchObject({
       fields: [
-        { icon: 'iconHp', value: '4/12' },
-        { icon: 'iconMove', value: '2' },
-        { icon: 'iconAttack', value: '3' },
-        { icon: 'iconRange', value: '1' },
-        { icon: 'iconVision', value: '4' },
+        { icon: 'iconHp', label: 'HP', value: '4/12' },
+        { icon: 'iconMove', label: 'MOV', value: '2' },
+        { icon: 'iconAttack', label: 'ATK', value: '3' },
+        { icon: 'iconRange', label: 'RNG', value: '1' },
+        { icon: 'iconVision', label: 'VIS', value: '4' },
       ],
       ability: 'Shield wall',
     })
     expect(unitCardFor('cavalry', null, true).ability).toBe('Charge')
     expect(unitCardFor('archer', null, true).ability).toBeNull()
     expect(unitCardFor('footman', null, false).ability).toBeNull()
-    expect((['footman', 'archer', 'cavalry'] as const).map(rosterFigureFor)).toEqual([
-      'figFootman',
-      'figArcher',
-      'figCavalry',
-    ])
+  })
+
+  it('lays out icon labels on one centerline in both directions at the larger HUD scale', () => {
+    const rightward = labelRowLayout(40, 100, 20, [30, 12], 1, 6)
+    expect(rightward).toEqual({
+      mark: { x: 40, y: 100, anchorX: 0.5, anchorY: 0.5 },
+      texts: [
+        { x: 56, y: 100, anchorX: 0, anchorY: 0.5 },
+        { x: 92, y: 100, anchorX: 0, anchorY: 0.5 },
+      ],
+    })
+    expect(labelRowLayout(40, 100, 20, [30, 12], -1, 6)).toEqual({
+      mark: { x: 40, y: 100, anchorX: 0.5, anchorY: 0.5 },
+      texts: [
+        { x: 24, y: 100, anchorX: 1, anchorY: 0.5 },
+        { x: -12, y: 100, anchorX: 1, anchorY: 0.5 },
+      ],
+    })
+    expect(HUD_TEXT_SIZES).toEqual({
+      roundLabel: 16,
+      roundValue: 30,
+      score: 26,
+      scoreTarget: 20,
+      cardHeading: 17,
+      cardStat: 17,
+      ability: 16,
+    })
   })
 
   it('derives red, blue, and draw terminal tints without legacy caption text', () => {
@@ -340,9 +406,9 @@ describe('Crane Reach scene geometry and compact overlay', () => {
       tick: 0,
       agents: {},
       timing: { started_at: 0, duration_ms: 0 },
-      overlay: { k: 2 },
+      overlay: { k: 3 },
     }
-    expect(() => decodeOverlay(state)).toThrow('only supports compact overlay version 1')
+    expect(() => decodeOverlay(state)).toThrow('unsupported version')
   })
 })
 
@@ -490,11 +556,11 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(loaded.figCavalry).toBe('stub:figCavalry')
   })
 
-  it('scales events to 90 percent of the host cadence and snaps a zero-duration seek', () => {
-    expect(eventBudget()).toBe(450)
-    expect(eventBudget({ transitionMs: 300 })).toBe(270)
-    expect(eventBudget({ transitionMs: 750 })).toBe(675)
-    expect(eventBudget({ transitionMs: 1_000 })).toBe(900)
+  it('uses the full host cadence and snaps a zero-duration seek', () => {
+    expect(eventBudget()).toBe(1_000)
+    expect(eventBudget({ transitionMs: 300 })).toBe(300)
+    expect(eventBudget({ transitionMs: 750 })).toBe(750)
+    expect(eventBudget({ transitionMs: 1_000 })).toBe(1_000)
     expect(eventBudget({ snap: true, transitionMs: 0 })).toBe(0)
     expect(hostEase(0)).toBe(0)
     expect(hostEase(0.2)).toBeCloseTo(0.5, 4)
@@ -504,33 +570,59 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(compactMetrics.rise * (390 / 1_200)).toBeCloseTo(12)
   })
 
-  it('orders activation, movement, optional attack, and reaction without overlap', () => {
-    expect(eventPhaseAt(0, true)).toBe('activation')
-    expect(eventPhaseAt(0.4, true)).toBe('movement')
-    expect(eventPhaseAt(0.65, true)).toBe('attack')
-    expect(eventPhaseAt(0.9, true)).toBe('reaction')
+  it('interpolates tile-aware movement into one overlapping resolution phase', () => {
+    expect(eventTimelineBounds(0)).toMatchObject({ movementEnd: 0.15, resolutionStart: 0.65 })
+    expect(eventTimelineBounds(1)).toMatchObject({ movementEnd: 0.5, resolutionStart: 0.65 })
+    expect(eventTimelineBounds(2)).toMatchObject({
+      movementEnd: 7 / 12,
+      resolutionStart: 41 / 60,
+    })
+    expect(eventTimelineBounds(3)).toMatchObject({
+      movementEnd: 2 / 3,
+      resolutionStart: 43 / 60,
+    })
+    expect(eventTimelineBounds(4)).toMatchObject({ movementEnd: 0.75, resolutionStart: 0.75 })
+    expect(eventPhaseAt(0, true, true, true, 1)).toBe('activation')
+    expect(eventPhaseAt(0.4, true, true, true, 1)).toBe('movement')
+    expect(eventPhaseAt(0.55, true, true, true, 1)).toBe('settle')
+    expect(eventPhaseAt(0.65, true, true, true, 1)).toBe('resolution')
+    expect(eventPhaseAt(0.74, true, true, true, 4)).toBe('movement')
+    expect(eventPhaseAt(0.75, true, true, true, 4)).toBe('resolution')
     expect(eventPhaseAt(1, true)).toBe('idle')
     expect(eventPhaseAt(0.4, true, true, false)).toBe('idle')
-    expect(eventTimelineProgress(0.1, true)).toEqual({ movement: 0, attack: 0, reaction: 0 })
-    const movement = eventTimelineProgress(0.4, true)
+    expect(eventTimelineProgress(0.1, true, true, 1)).toEqual({ movement: 0, attack: 0, reaction: 0 })
+    const movement = eventTimelineProgress(0.4, true, true, 1)
     expect(movement.movement).toBeGreaterThan(0)
     expect(movement).toMatchObject({ attack: 0, reaction: 0 })
-    const attack = eventTimelineProgress(0.65, true)
+    const attack = eventTimelineProgress(0.7, true, true, 1)
     expect(attack.attack).toBeGreaterThan(0)
     expect(attack).toMatchObject({ movement: 1, reaction: 0 })
-    const reaction = eventTimelineProgress(0.9, true)
+    const reaction = eventTimelineProgress(0.8, true, true, 1)
     expect(reaction.reaction).toBeGreaterThan(0)
-    expect(reaction).toMatchObject({ movement: 1, attack: 1 })
+    expect(reaction.attack).toBeGreaterThan(0)
 
-    const movementOnly = eventTimelineProgress(0.9, false, false)
-    expect(movementOnly.movement).toBeGreaterThan(0)
+    const movementOnly = eventTimelineProgress(0.9, false, false, 1)
+    expect(movementOnly.movement).toBe(1)
     expect(movementOnly.attack).toBe(0)
     expect(movementOnly.reaction).toBe(0)
 
-    const captureOnly = eventTimelineProgress(0.8, false, true)
-    expect(captureOnly).toMatchObject({ movement: 1, attack: 0 })
+    const captureOnly = eventTimelineProgress(0.7, false, true, 0)
+    expect(captureOnly).toMatchObject({ movement: 0, attack: 0 })
     expect(captureOnly.reaction).toBeGreaterThan(0)
-    expect(eventPhaseAt(0.8, false, true)).toBe('reaction')
+    expect(eventPhaseAt(0.7, false, true, true, 0)).toBe('resolution')
+
+    const route = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+      { x: 0, y: 20 },
+    ]
+    expect(routePositionFor(route, 0.25)).toEqual({ x: 10, y: 0 })
+    expect(routePositionFor(route, 0.5)).toEqual({ x: 10, y: 10 })
+    expect(routePositionFor(route, 0.75)).toEqual({ x: 0, y: 10 })
+    expect(routePositionFor(route, 1)).toEqual({ x: 0, y: 20 })
+    expect(routeTrailFor(route, 0.5)).toEqual(route.slice(0, 3))
   })
 
   it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
@@ -567,9 +659,25 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, false)).toBe(false)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, true)).toBe(true)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, true, true)).toBe(false)
-    expect(transitionSceneFor(before, after, true, 0.99)).toBe(before)
+    expect(transitionSceneFor(before, after, true, 0.999)).toBe(before)
     expect(transitionSceneFor(before, after, true, 1)).toBe(after)
     expect(transitionSceneFor(before, after, false, 0)).toBe(after)
+  })
+
+  it('paints a completed event before beginning the next forward event', () => {
+    // The first state is deferred. Its render call can therefore paint the event that just completed,
+    // and the next ticker frame installs the pending event at progress zero before advancing it.
+    expect(eventUpdateDisposition(true, true, false, null)).toBe('defer')
+    expect(eventUpdateDisposition(false, true, false, 12)).toBe('replace-pending')
+
+    // Seeks, repeats, and reduced-motion frames always replace the scene immediately.
+    expect(eventUpdateDisposition(true, true, true, null)).toBe('apply')
+    expect(eventUpdateDisposition(false, false, false, 12)).toBe('apply')
+
+    // The first ticker preserves the completed scene. Only the following ticker may install the
+    // pending event at progress zero, so a browser can composite the completed event in between.
+    expect(pendingEventFrameAction(true)).toEqual({ action: 'hold-final-frame', holdFinalFrame: false })
+    expect(pendingEventFrameAction(false)).toEqual({ action: 'install-pending', holdFinalFrame: false })
   })
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {
@@ -598,6 +706,8 @@ describe('Crane Reach Estuary Ink presentation', () => {
       actorId: 'red_archer_0',
       from: { x: 0, y: 0 },
       to: { x: 10, y: 10 },
+      route: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+      movementTiles: 1,
       targetId: 'blue_footman_0',
       damage: 3,
       automatic: false,

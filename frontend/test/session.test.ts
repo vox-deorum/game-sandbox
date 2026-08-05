@@ -960,10 +960,13 @@ describe('SessionPage', () => {
       expect(drawn).toHaveLength(2)
       expect(screen.queryByText('Game over')).toBeNull()
 
-      // The last frame plays and only then is game over revealed, with the held result.
+      // The last frame starts its cadence-long transition, so game over remains held for one more tick.
       vi.advanceTimersByTime(50)
       await nextTick()
       expect(drawn).toHaveLength(3)
+      expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
+      vi.advanceTimersByTime(50)
+      await nextTick()
       // The held end is revealed: both the status badge (reasonText) and the new game-over
       // leaderboard card show, so disambiguate to the card and check the held result fact.
       const gameOver = screen.getByRole('dialog', { name: 'Game over' })
@@ -990,7 +993,7 @@ describe('SessionPage', () => {
       handlers.onResult?.({ ticks: 99, reason: 'stopped', scores: { player_0: 99 } })
       handlers.onSessionStatus?.('ended')
 
-      vi.advanceTimersByTime(150)
+      vi.advanceTimersByTime(200)
       await nextTick()
 
       const gameOver = screen.getByRole('dialog', { name: 'Game over' })

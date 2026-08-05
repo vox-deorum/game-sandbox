@@ -28,7 +28,7 @@ Registration demands them now; their completing steps finish them. Each seed is 
 - Placeholder visual style on purpose: functional flat shapes and labels that make the game readable (terrain, features, zones, units with hit points, activation highlight, round and capture HUD) without committing to an identity. Step 4.1 designs the identity using this renderer as the workbench, so `computeScene` keeps style swappable: geometry and content in the scene, appearance in one styling layer.
 - The scene builder derives its tile-code table (which single-character wire code maps to which terrain and feature pair) from the package's `tile_types.json` directly, rather than keeping its own copy, so the rules engine and the renderer cannot drift. The renderer's own style and mark tables, colors and terrain and feature marks, stay hand-written, keyed by the names `tile_types.json` declares.
 - Draw-only: `sendAction` unused, and without `controlledPlayers` the view is the full board, which is the spectator and replay rule.
-- Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 750 ms watch cadence.
+- Layering for 40 units across 6000 ticks: a static battlefield layer built once per episode, a reconciled unit layer, and an event layer animating the overlay's most recent events, with snap semantics on seeks and durations scaled to the 1000 ms watch cadence. Compact overlay version 2 supplies each event's exact executed path id, which the event layer expands into its entered-tile route.
 - Reuse from `frontend/src/renderers/base/PixiRenderer.ts` (mount loop, resize, pending-state cache); the card-table stack does not apply, so grid scaffolding is renderer-local.
 
 ### Fixtures and tests
@@ -53,4 +53,4 @@ Registration makes Skirmish at Crane Reach the platform's first shipped Dict-act
 
 ## Done when
 
-The Crane Reach card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 750 ms cadence, replay seeks land on identical frames, and `npm run play -- skirmish_crane watch` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.
+The Crane Reach card appears on the home page with its thumbnail, a live naive-vs-naive skirmish and an army match are watchable in the web app at the 1000 ms cadence, replay seeks land on identical frames, and `npm run play -- skirmish_crane watch` runs a rendered local match in watch mode. The shared conformance suite, the scene tests, the perf smoke, the docs lane, and the spectate journey are green.

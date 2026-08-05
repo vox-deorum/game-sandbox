@@ -138,6 +138,7 @@ class Activation:
     end: Position
     strike: Strike | None
     killed_id: str | None
+    path: tuple[int, ...] = ()
 
 
 @dataclass
@@ -254,6 +255,7 @@ class Match:
         visible = visible_units(unit, self.units, self.battlefield)
         visible_at_activation = {other.unit_id for other in visible}
         start = unit.position
+        entered = path_positions(start, order.path)
         # walk is the sole authority on path legality, so ask it rather than searching
         # the enumeration that perception uses to advertise every walkable path.
         try:
@@ -265,7 +267,7 @@ class Match:
         if order.target is not None and order.target not in _nameable_targets(unit, visible):
             raise ValueError("order target is not nameable")
         unit.position = end
-        apply_entry_damage(self.battlefield, unit, path_positions(start, order.path))
+        apply_entry_damage(self.battlefield, unit, entered)
         strike = resolve_strike(
             unit,
             self.units,
@@ -280,7 +282,7 @@ class Match:
         if strike is not None and self.units[strike.target_id].hit_points <= 0:
             killed_id = strike.target_id
             del self.units[killed_id]
-        activation = Activation(unit_id, start, unit.position, strike, killed_id)
+        activation = Activation(unit_id, start, unit.position, strike, killed_id, order.path)
         self.history.append(activation)
         self.activation_index += 1
         self._advance_after_activation()

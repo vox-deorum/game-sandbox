@@ -230,7 +230,7 @@
         }
       ]
     },
-    "live_interval_ms": 500,
+    "live_interval_ms": 1000,
     "llm": false,
     "message_cap": 200,
     "messaging": true,
@@ -316,7 +316,7 @@
     "seat_order_matters": true,
     "step_limit_ms": 1000,
     "stepping": "sequential",
-    "view_interval_ms": 750
+    "view_interval_ms": 1000
   },
   {
     "builtin_agents": [

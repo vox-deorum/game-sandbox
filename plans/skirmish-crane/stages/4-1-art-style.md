@@ -6,7 +6,7 @@ Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order st
 
 ## Why this is its own seam
 
-A renderer owns its game's visual identity, but a new visual pattern needs owner confirmation, and design decisions are the owner's to make ([design system](../../../docs/contributors/frontend/design-system.md)). Skirmish at Crane Reach is the first battlefield renderer, so its identity is entirely new. Concentrating the board art in one step, on a working renderer, means candidate styles are judged on real frames: a live army match, a replay seek, the 750 ms watch cadence. Step 3 built the scene layer style-swappable for exactly this reason. The HUD is its own step (4.2) because it is information design over the finished board, reviewed as text mockups rather than painted frames.
+A renderer owns its game's visual identity, but a new visual pattern needs owner confirmation, and design decisions are the owner's to make ([design system](../../../docs/contributors/frontend/design-system.md)). Skirmish at Crane Reach is the first battlefield renderer, so its identity is entirely new. Concentrating the board art in one step, on a working renderer, means candidate styles are judged on real frames: a live army match, a replay seek, the 1000 ms watch cadence. Step 3 built the scene layer style-swappable for exactly this reason. The HUD is its own step (4.2) because it is information design over the finished board, reviewed as text mockups rather than painted frames.
 
 ## The design: Estuary Ink
 
@@ -123,21 +123,21 @@ Each level identifies unit type differently:
 
 - Capture zones use a restrained static mark. All seven tiles take a mulberry wash at alpha 0.16 with a pale-orchid center emphasis. The zone's outer boundary is a union outline, not per-tile rings, drawn in static `zone-dash` segments tinted pale orchid. The center tile carries the `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels. At smaller levels the wash and border stay quiet so the army board remains readable.
 - Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
-- Events use one budget, `B = 0.9 * (transitionMs ?? 500)`. Every transition completes inside B, including 675 ms at the 750 ms watch cadence, and scales with slower replay speeds. The timeline is strictly sequential: a visible activation hold, movement, a settle beat, an attack only when the event names a target, then reaction for a target or capture change. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
+- Events use the full host transition duration, `B = transitionMs ?? 1000`. At the normal 1000 ms cadence, activation is 0 to 150 ms. Exact executed path tiles divide movement evenly: movement ends at 500, 583, 667, or 750 ms for paths of one, two, three, or four tiles. The actor settles until resolution starts at 650, 683, 717, or 750 ms respectively, so a one-tile move remains visibly in motion without a long pause. Resolution merges attack and reaction: the attack starts at resolution, a targeted reaction joins one quarter of the way through it, and a capture-only reaction begins immediately. All finish at 1000 ms. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
 
-| Event | Shape | Color | Timing within budget |
+| Event | Shape | Color | Timing at the 1000 ms cadence |
 | --- | --- | --- | --- |
-| activation | the acting unit holds under its gilt seal before moving | gilt | first 20 percent of B, or 25 percent for movement without a reaction |
-| move | the unit glides origin to final tile, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | after activation, ending at 52 percent with an attack, 66 percent with capture only, or 100 percent with movement only |
-| settle | the actor holds at its destination with no movement or attack mark | gilt activation | 52 to 62 percent before an attack, or 66 to 76 percent before capture reaction |
-| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | 62 to 76 percent of B |
-| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | 62 to 76 percent of B |
-| damage | target flashes bone, then a pale-ember tint and mono `-3` with an opaque two-CSS-pixel black outline rises 12 px and fades, minimum 12 px text | pale ember | 76 to 100 percent of B |
-| death | the ink-dissolve treatment, starting with the reaction | dilute ink | 76 to 100 percent of B |
-| capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | the final reaction phase |
+| activation | the acting unit holds under its gilt seal before moving | gilt | 0 to 150 ms |
+| move | the unit follows every tile in its executed route, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | 150 ms to 500, 583, 667, or 750 ms for one through four tiles |
+| settle | the actor holds at its destination with no movement or attack mark | gilt activation | until resolution starts at 650, 683, 717, or 750 ms; none for a four-tile route |
+| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | from resolution start to 1000 ms |
+| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | from resolution start to 1000 ms |
+| damage | target flashes bone, then a pale-ember tint and mono `-3` with an opaque two-CSS-pixel black outline rises 12 px and fades, minimum 12 px text | pale ember | starts one quarter into resolution and ends at 1000 ms |
+| death | the ink-dissolve treatment, starting with the reaction | dilute ink | starts one quarter into resolution and ends at 1000 ms |
+| capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | starts with resolution for capture-only events; when paired with an attack, starts one quarter into resolution; ends at 1000 ms |
 
-- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer reconciles the final scene only at completion. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
-- Reduced motion: every glide, lunge, streak, dissolve, and bloom snaps to its final frame. An attack shows as a static hairline thread from actor to target for that frame, damage as a static numeral, and the flash is dropped. The board never depends on motion to be a complete picture.
+- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
+- Reduced motion: the event timeline plays regardless of the OS reduced-motion preference. Motion is the replay's content, and remote desktop sessions report that preference unconditionally. The static cue vocabulary (a hairline attack thread, static numerals, no flash) stays specified in `reducedMotionCuesFor` for a future stilled presentation.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 
@@ -170,8 +170,8 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 - Presentation-helper tests cover 18 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms figure, token, and compact presentation changes without changing logical scene geometry, including the host's wide-layout decision-log column.
 - A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
-- Transition tests cover cadence scaling, sequential phase ordering, targetless capture reaction, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
-- A reduced-motion test asserts snap rendering produces each event's final frame.
+- Transition tests cover cadence scaling, tile-route timing for one through four tiles, overlapping resolution, targetless capture reaction, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
+- A reduced-motion test keeps the static cue vocabulary readable: attack thread, damage numeral, capture numeral, and no flash.
 - The step 3 perf smoke stays green with the real assets on the army fixture, and asserts the battlefield layer builds once per episode with textures in place.
 - The e2e spectate journey stays green (it asserts on behavior, not pixels).
 
