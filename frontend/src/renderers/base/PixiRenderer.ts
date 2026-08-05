@@ -322,6 +322,12 @@ export abstract class PixiRenderer implements RendererInstance {
     this.app.render()
   }
 
+  /** Draw display-object mutations that do not come from a new game state, such as view-only hover. */
+  protected redrawCurrentFrame(): void {
+    if (this.app === null || !this.ready) return
+    this.app.render()
+  }
+
   private observeResize(): void {
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize())
     this.resizeObserver.observe(this.ctx.container)

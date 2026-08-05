@@ -123,18 +123,19 @@ Each level identifies unit type differently:
 
 - Capture zones use a restrained static mark. All seven tiles take a mulberry wash at alpha 0.16 with a pale-orchid center emphasis. The zone's outer boundary is a union outline, not per-tile rings, drawn in static `zone-dash` segments tinted pale orchid. The center tile carries the `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels. At smaller levels the wash and border stay quiet so the army board remains readable.
 - Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
-- Events use one budget, `B = min(450, 0.9 * (transitionMs ?? 500))`. Every transition completes inside B. An activation that walks and strikes uses the move phase from 0 to 55 percent, the strike phase from 48 to 74 percent, and the reaction phase from 65 to 100 percent. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
+- Events use one budget, `B = 0.9 * (transitionMs ?? 500)`. Every transition completes inside B, including 675 ms at the 750 ms watch cadence, and scales with slower replay speeds. The timeline is strictly sequential: a visible activation hold, movement, an attack only when the event names a target, then reaction for a target or capture change. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
 
 | Event | Shape | Color | Timing within budget |
 | --- | --- | --- | --- |
-| move | the unit glides origin to final tile, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | 0 to 55 percent of B |
-| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | 48 to 74 percent of B |
-| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | 48 to 74 percent of B |
-| damage | target flashes bone, then a pale-ember tint and mono `-3` rise 12 px and fade, minimum 12 px text | pale ember | 65 to 100 percent of B |
-| death | the ink-dissolve treatment, starting with the reaction | dilute ink | 65 to 100 percent of B |
-| capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | 65 to 100 percent of B |
+| activation | the acting unit holds under its gilt seal before moving | gilt | first 20 percent of B, or 25 percent for movement without a reaction |
+| move | the unit glides origin to final tile, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | after activation, ending at 58 percent with an attack, 75 percent with capture only, or 100 percent with movement only |
+| melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | 58 to 74 percent of B |
+| ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | 58 to 74 percent of B |
+| damage | target flashes bone, then a pale-ember tint and mono `-3` rise 12 px and fade, minimum 12 px text | pale ember | 74 to 100 percent of B |
+| death | the ink-dissolve treatment, starting with the reaction | dilute ink | 74 to 100 percent of B |
+| capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | the final reaction phase |
 
-- Snap and seek: any seek, repeated render of the same tick, resize, and mount renders the final frame instantly. Only a fresh nonsnap forward transition animates. For that transition only, the renderer snapshots the preceding pure scene into a transient layer before it reconciles the final scene. The snapshot supplies a dead target's prior position, type, and side for the dissolve, so the existing 11-field event record remains unchanged. The transient layer is discarded at completion and is never used for mount, seek, or repeated-tick rendering.
+- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer reconciles the final scene only at completion. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
 - Reduced motion: every glide, lunge, streak, dissolve, and bloom snaps to its final frame. An attack shows as a static hairline thread from actor to target for that frame, damage as a static numeral, and the flash is dropped. The board never depends on motion to be a complete picture.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
@@ -168,7 +169,7 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 - Presentation-helper tests cover 18 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms figure, token, and compact presentation changes without changing logical scene geometry, including the host's wide-layout decision-log column.
 - A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
-- Transition tests cover a fresh forward death using its transient prior-scene snapshot, plus mount, seek, resize, and repeated-tick rendering that draw the final frame only.
+- Transition tests cover cadence scaling, sequential phase ordering, targetless capture reaction, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
 - A reduced-motion test asserts snap rendering produces each event's final frame.
 - The step 3 perf smoke stays green with the real assets on the army fixture, and asserts the battlefield layer builds once per episode with textures in place.
 - The e2e spectate journey stays green (it asserts on behavior, not pixels).

@@ -51,6 +51,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   const rendererHost = page.locator('.renderer-host')
   await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
+  await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
 
   await page.setViewportSize({ width: 390, height: 900 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'compact')
@@ -63,6 +64,78 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.setViewportSize({ width: 1_600, height: 1_000 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
+
+  const canvas = page.locator('canvas.renderer-canvas')
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  if (canvasBox === null) throw new Error('Crane Reach canvas has no browser bounds')
+  const unitId = await rendererHost.getAttribute('data-crane-inspect-unit')
+  const unitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
+  const unitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
+  expect(unitId).not.toBeNull()
+  expect(Number.isFinite(unitX)).toBe(true)
+  expect(Number.isFinite(unitY)).toBe(true)
+  const logicalPoint = (x: number, y: number) => ({
+    x: canvasBox.x + (x / 1_200) * canvasBox.width,
+    y: canvasBox.y + (y / 860) * canvasBox.height,
+  })
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
+  const unitPoint = logicalPoint(unitX, unitY)
+  await page.mouse.move(unitPoint.x, unitPoint.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
+  const awayPoint = logicalPoint(600, 40)
+  await page.mouse.move(awayPoint.x, awayPoint.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
+  const rosterPoint = logicalPoint(42, 804)
+  await page.mouse.move(rosterPoint.x, rosterPoint.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'roster:red:footman')
+  await page.mouse.move(awayPoint.x, awayPoint.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
+
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    if (host === null) throw new Error('Crane Reach renderer host is missing')
+    const probe = globalThis as typeof globalThis & {
+      craneEventObserver?: MutationObserver
+      craneEventPhases?: string[]
+    }
+    probe.craneEventObserver?.disconnect()
+    probe.craneEventPhases = [host.dataset.craneEventPhase ?? 'idle']
+    probe.craneEventObserver = new MutationObserver(() => {
+      const phase = host.dataset.craneEventPhase ?? 'idle'
+      if (probe.craneEventPhases?.at(-1) !== phase) probe.craneEventPhases?.push(phase)
+    })
+    probe.craneEventObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ['data-crane-event-phase'],
+    })
+  })
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const phases =
+            (globalThis as typeof globalThis & { craneEventPhases?: string[] }).craneEventPhases ??
+            []
+          let sequence = 0
+          for (const phase of phases) {
+            if (phase === 'activation') sequence = 1
+            else if (phase === 'movement' && sequence === 1) sequence = 2
+            else if (phase === 'attack' && sequence === 2) sequence = 3
+            else if (phase === 'reaction' && sequence === 3) return true
+            else if (phase === 'idle') sequence = 0
+          }
+          return false
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true)
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  const replayStage = page.getByRole('group', { name: 'Replay stage' })
+  await replayStage.click()
+  await replayStage.press('Home')
+  await expect(rendererHost).toHaveAttribute('data-crane-event-phase', 'idle')
 
   const position = page.locator('.replay-position')
   await expect(position).toContainText('1/')
@@ -139,4 +212,5 @@ test('run and release a full-variant Crane Reach army season', async ({ page, ad
   const rendererHost = page.locator('.renderer-host')
   await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
+  await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
 })

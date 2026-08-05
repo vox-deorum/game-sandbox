@@ -10,9 +10,20 @@ import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmis
 import tileTypes from '../tile_types.json'
 import { CRANE_ASSET_MANIFEST, craneAssetSources, loadCraneAssets } from './assets.js'
 import {
+  EMPTY_INSPECTION,
+  inspectionPresentation,
+  pinsInspectionForPointer,
+  rangePresentation,
+  reduceInspection,
+  resolveInspection,
+} from './inspection.js'
+import {
   captureCuesFor,
+  captureCueSceneFor,
   deathSnapshotFor,
   eventBudget,
+  eventPhaseAt,
+  eventTimelineProgress,
   eventTargetPositionFor,
   eventTextMetrics,
   FEATURE_MARKS,
@@ -24,8 +35,18 @@ import {
   shouldRebuildBattlefield,
   TERRAIN_MARKS,
   transitionFor,
+  transitionSceneFor,
 } from './index.js'
-import { CRANE_STYLE, computeScene, decodeOverlay } from './scene.js'
+import { reachableTileKeys } from './reachability.js'
+import {
+  CRANE_STYLE,
+  computeScene,
+  decodeOverlay,
+  rosterFigureFor,
+  type HexTile,
+  type SceneUnit,
+  unitCardFor,
+} from './scene.js'
 
 interface LegalityEntry {
   opening?: StepState
@@ -67,6 +88,51 @@ function verifyBitVector(encoded: string, bitCount: number): Uint8Array {
 function expectAllowed(bytes: Uint8Array, action: number): void {
   const byte = bytes[Math.floor(action / 8)] as number
   expect(byte & (1 << (action % 8))).not.toBe(0)
+}
+
+function pathForId(pathId: number): number[] {
+  if (pathId === 0) return []
+  let remaining = pathId - 1
+  let length = 1
+  while (remaining >= 6 ** length) {
+    remaining -= 6 ** length
+    length += 1
+  }
+  const path: number[] = []
+  for (let power = length - 1; power >= 0; power -= 1) {
+    const digit = Math.floor(remaining / 6 ** power)
+    remaining %= 6 ** power
+    path.push(digit + 1)
+  }
+  return path
+}
+
+function destinationForPath(start: string, path: number[]): string {
+  const directions = [
+    [1, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [0, -1],
+  ] as const
+  let [q, r] = start.split(',').map(Number) as [number, number]
+  for (const direction of path) {
+    const [dq, dr] = directions[direction - 1] as (typeof directions)[number]
+    q += dq
+    r += dr
+  }
+  return `${q},${r}`
+}
+
+function expectedDestinations(entry: LegalityEntry, unit: SceneUnit): Set<string> {
+  const paths = verifyBitVector(entry.path, 1555)
+  const destinations = new Set<string>()
+  for (let pathId = 0; pathId <= 1554; pathId += 1) {
+    const byte = paths[Math.floor(pathId / 8)] as number
+    if ((byte & (1 << (pathId % 8))) !== 0) destinations.add(destinationForPath(unit.tileKey, pathForId(pathId)))
+  }
+  return destinations
 }
 
 function verifyLegalityFixture(
@@ -198,12 +264,67 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     )
   })
 
-  it('keeps HUD and terminal state in the scene rather than renderer history', () => {
+  it('keeps structured HUD and terminal state in the scene rather than renderer history', () => {
     const first = computeScene(skirmishStates[0] as StepState)
     const final = computeScene(skirmishStates.at(-1) as StepState)
-    expect(first.hud.round).toMatch(/^Round /)
-    expect(first.hud.capture).toMatch(/^(Capture|Control) {2}Red /)
-    expect(final.hud.terminal).toMatch(/^Battle complete/)
+    expect(first.hud.round).toEqual(expect.any(Number))
+    expect(first.hud.capture).toBeNull()
+    expect(first.hud.rosters.red).toEqual({ footman: 1, archer: 1, cavalry: 1 })
+    expect(final.hud.rosters.red.footman).toBeLessThanOrEqual(1)
+    expect(final.hud.terminal).toMatchObject({ winner: expect.any(String), result: expect.any(String) })
+  })
+
+  it('keeps capture seals absent outside capture variants and exposes live roster losses', () => {
+    const armyScenes = armyStates.map((state) => computeScene(state))
+    const captureScene = armyScenes.find((scene) => scene.hud.capture !== null)
+    expect(captureScene?.hud.capture).toMatchObject({
+      red: expect.any(Number),
+      blue: expect.any(Number),
+      target: 200,
+    })
+    const source = armyStates[0] as StepState
+    const overlay = source.overlay as Record<string, unknown>
+    const records = [...(overlay.u as string[])]
+    const removed = records.shift()
+    expect(removed).toBeDefined()
+    const afterLoss = computeScene({ ...source, overlay: { ...overlay, u: records } })
+    expect(afterLoss.hud.rosters.red.footman).toBe(7)
+  })
+
+  it('includes every icon-led stat and enables ability lines only from header configuration', () => {
+    const withoutAbilities = computeScene(armyStates[0] as StepState)
+    const withAbilities = computeScene(armyStates[0] as StepState, { unitAbilities: true })
+    expect(withoutAbilities.hud.unitAbilities).toBe(false)
+    expect(withAbilities.hud.unitAbilities).toBe(true)
+    expect(unitCardFor('footman', 4, true)).toMatchObject({
+      fields: [
+        { icon: 'iconHp', value: '4/12' },
+        { icon: 'iconMove', value: '2' },
+        { icon: 'iconAttack', value: '3' },
+        { icon: 'iconRange', value: '1' },
+        { icon: 'iconVision', value: '4' },
+      ],
+      ability: 'Shield wall',
+    })
+    expect(unitCardFor('cavalry', null, true).ability).toBe('Charge')
+    expect(unitCardFor('archer', null, true).ability).toBeNull()
+    expect(unitCardFor('footman', null, false).ability).toBeNull()
+    expect((['footman', 'archer', 'cavalry'] as const).map(rosterFigureFor)).toEqual([
+      'figFootman',
+      'figArcher',
+      'figCavalry',
+    ])
+  })
+
+  it('derives red, blue, and draw terminal tints without legacy caption text', () => {
+    const source = skirmishStates.at(-1) as StepState
+    const terminal = (outcome: [number, number]) =>
+      computeScene({ ...source, overlay: { ...(source.overlay as object), x: true, o: outcome } })
+        .hud.terminal
+    expect(terminal([84, 16])).toEqual({ winner: 'red', result: 'red wins 84 - 16' })
+    expect(terminal([16, 84])).toEqual({ winner: 'blue', result: 'blue wins 84 - 16' })
+    expect(terminal([50, 50])).toEqual({ winner: 'draw', result: 'draw 50 - 50' })
+    expect(JSON.stringify(computeScene(source).hud)).not.toMatch(/Control|activation|caption/i)
   })
 
   it('is deterministic when a replay seeks to a previously rendered state', () => {
@@ -231,6 +352,99 @@ describe('Crane Reach scene performance', () => {
     for (const state of armyStates) computeScene(state)
     const elapsedMs = performance.now() - started
     expect(elapsedMs).toBeLessThan(5_000)
+  })
+})
+
+describe('Crane Reach HUD inspection and range', () => {
+  it('keeps mouse hover transient while touch inspection persists, replaces, and dismisses', () => {
+    const footman = { kind: 'roster', side: 'red', type: 'footman' } as const
+    const archer = { kind: 'unit', unitId: 'blue_archer_0' } as const
+    expect(pinsInspectionForPointer('mouse')).toBe(false)
+    expect(pinsInspectionForPointer('touch')).toBe(true)
+    expect(pinsInspectionForPointer('pen')).toBe(true)
+
+    const pinnedRoster = reduceInspection(EMPTY_INSPECTION, { type: 'inspect', target: footman })
+    const boardHover = reduceInspection(pinnedRoster, { type: 'hover-unit', unitId: archer.unitId })
+    expect(resolveInspection(boardHover)).toEqual(archer)
+    expect(inspectionPresentation(boardHover)).toEqual({ target: archer, range: 'inspected' })
+    expect(rangePresentation(boardHover)).toEqual({
+      wash: 'bone',
+      alpha: 0.18,
+      outline: 'dashed',
+      outlineInk: 'dilute-ink',
+      ring: true,
+    })
+
+    const restored = reduceInspection(boardHover, { type: 'hover-unit', unitId: null })
+    expect(resolveInspection(restored)).toEqual(footman)
+    expect(rangePresentation(restored)).toMatchObject({ wash: 'gilt', outline: 'solid', ring: false })
+    const rosterHover = reduceInspection(restored, { type: 'hover-roster', target: footman })
+    expect(inspectionPresentation(rosterHover)).toEqual({ target: footman, range: 'acting' })
+
+    const pinnedUnit = reduceInspection(restored, { type: 'inspect', target: archer })
+    expect(resolveInspection(reduceInspection(pinnedUnit, { type: 'hover-unit', unitId: null }))).toEqual(
+      archer,
+    )
+    expect(rangePresentation(pinnedUnit, false)).toMatchObject({
+      wash: 'gilt',
+      outline: 'solid',
+      ring: false,
+    })
+    expect(reduceInspection(pinnedUnit, { type: 'inspect', target: footman }).target).toEqual(footman)
+    expect(reduceInspection(pinnedUnit, { type: 'dismiss' })).toEqual(EMPTY_INSPECTION)
+  })
+
+  it('mirrors terrain cost, occupancy, the first expensive step, and the four-step limit', () => {
+    const tile = (q: number, r: number, terrain: HexTile['terrain'] = 'grass', feature: HexTile['feature'] = 'none'): HexTile => ({
+      key: `${q},${r}`,
+      q,
+      r,
+      terrain,
+      feature,
+      center: { x: q, y: r },
+      corners: [],
+    })
+    const unit = { unitId: 'red_footman_0', tileKey: '0,0', type: 'footman' } as SceneUnit
+    const tiles = [tile(0, 0), tile(1, 0, 'hill'), tile(2, 0), tile(3, 0), tile(4, 0), tile(0, 1, 'grass', 'marsh'), tile(1, 1)]
+    const reachable = reachableTileKeys(unit, tiles, [unit, { ...unit, unitId: 'blue_archer_0', tileKey: '1,1' }])
+    expect(reachable).toEqual(new Set(['0,0', '1,0', '0,1']))
+    expect(reachable.has('2,0')).toBe(false)
+    expect(reachable.has('1,1')).toBe(false)
+    const cavalry = { ...unit, type: 'cavalry' as const }
+    const line = Array.from({ length: 6 }, (_, q) => tile(q, 0))
+    expect(reachableTileKeys(cavalry, line, [cavalry]).has('4,0')).toBe(true)
+    expect(reachableTileKeys(cavalry, line, [cavalry]).has('5,0')).toBe(false)
+  })
+
+  it('matches fixture legality destination sets for each acting unit', () => {
+    for (const [recording, legalityRaw] of [
+      [skirmishFixture, skirmishLegalityRaw],
+      [armyFixture, armyLegalityRaw],
+    ] as const) {
+      const states = statesFrom(recording)
+      const legality = JSON.parse(legalityRaw) as LegalityFixture
+      const opening = legality.entries[0]?.opening as StepState
+      const openingScene = computeScene(opening)
+      const openingUnit = openingScene.units.find(
+        (candidate) => candidate.playerId === openingScene.activation?.playerId,
+      )
+      expect(openingUnit).toBeDefined()
+      expect(reachableTileKeys(openingUnit as SceneUnit, openingScene.tiles, openingScene.units)).toEqual(
+        expectedDestinations(legality.entries[0] as LegalityEntry, openingUnit as SceneUnit),
+      )
+      const actionable = states.filter(
+        (state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null,
+      )
+      for (const [index, state] of actionable.entries()) {
+        const scene = computeScene(state)
+        const unit = scene.units.find((candidate) => candidate.playerId === scene.activation?.playerId)
+        const entry = legality.entries[index + 1] as LegalityEntry
+        expect(unit).toBeDefined()
+        expect(reachableTileKeys(unit as SceneUnit, scene.tiles, scene.units)).toEqual(
+          expectedDestinations(entry, unit as SceneUnit),
+        )
+      }
+    }
   })
 })
 
@@ -276,10 +490,11 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(loaded.figCavalry).toBe('stub:figCavalry')
   })
 
-  it('fits events inside the prescribed cadence budget and snaps a zero-duration seek', () => {
+  it('scales events to 90 percent of the host cadence and snaps a zero-duration seek', () => {
     expect(eventBudget()).toBe(450)
     expect(eventBudget({ transitionMs: 300 })).toBe(270)
-    expect(eventBudget({ transitionMs: 1_000 })).toBe(450)
+    expect(eventBudget({ transitionMs: 750 })).toBe(675)
+    expect(eventBudget({ transitionMs: 1_000 })).toBe(900)
     expect(eventBudget({ snap: true, transitionMs: 0 })).toBe(0)
     expect(hostEase(0)).toBe(0)
     expect(hostEase(0.2)).toBeCloseTo(0.5, 4)
@@ -287,6 +502,35 @@ describe('Crane Reach Estuary Ink presentation', () => {
     const compactMetrics = eventTextMetrics(390 / 1_200)
     expect(compactMetrics.size * (390 / 1_200)).toBeCloseTo(12)
     expect(compactMetrics.rise * (390 / 1_200)).toBeCloseTo(12)
+  })
+
+  it('orders activation, movement, optional attack, and reaction without overlap', () => {
+    expect(eventPhaseAt(0, true)).toBe('activation')
+    expect(eventPhaseAt(0.4, true)).toBe('movement')
+    expect(eventPhaseAt(0.65, true)).toBe('attack')
+    expect(eventPhaseAt(0.9, true)).toBe('reaction')
+    expect(eventPhaseAt(1, true)).toBe('idle')
+    expect(eventPhaseAt(0.4, true, true, false)).toBe('idle')
+    expect(eventTimelineProgress(0.1, true)).toEqual({ movement: 0, attack: 0, reaction: 0 })
+    const movement = eventTimelineProgress(0.4, true)
+    expect(movement.movement).toBeGreaterThan(0)
+    expect(movement).toMatchObject({ attack: 0, reaction: 0 })
+    const attack = eventTimelineProgress(0.65, true)
+    expect(attack.attack).toBeGreaterThan(0)
+    expect(attack).toMatchObject({ movement: 1, reaction: 0 })
+    const reaction = eventTimelineProgress(0.9, true)
+    expect(reaction.reaction).toBeGreaterThan(0)
+    expect(reaction).toMatchObject({ movement: 1, attack: 1 })
+
+    const movementOnly = eventTimelineProgress(0.9, false, false)
+    expect(movementOnly.movement).toBeGreaterThan(0)
+    expect(movementOnly.attack).toBe(0)
+    expect(movementOnly.reaction).toBe(0)
+
+    const captureOnly = eventTimelineProgress(0.8, false, true)
+    expect(captureOnly).toMatchObject({ movement: 1, attack: 0 })
+    expect(captureOnly.reaction).toBeGreaterThan(0)
+    expect(eventPhaseAt(0.8, false, true)).toBe('reaction')
   })
 
   it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
@@ -323,6 +567,9 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, false)).toBe(false)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, true)).toBe(true)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, true, true)).toBe(false)
+    expect(transitionSceneFor(before, after, true, 0.99)).toBe(before)
+    expect(transitionSceneFor(before, after, true, 1)).toBe(after)
+    expect(transitionSceneFor(before, after, false, 0)).toBe(after)
   })
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {
@@ -341,6 +588,9 @@ describe('Crane Reach Estuary Ink presentation', () => {
       ['blue', scoredScene.event.blueCapture],
     ])
     expect(cues[0]?.position).not.toEqual(cues[1]?.position)
+    const prior = { ...scoredScene, units: [] }
+    expect(captureCueSceneFor(scoredScene, prior)).toBe(scoredScene)
+    expect(captureCueSceneFor(null, prior)).toBe(prior)
   })
 
   it('keeps every event cue readable when reduced motion snaps the frame', () => {

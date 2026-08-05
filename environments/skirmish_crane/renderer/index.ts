@@ -6,6 +6,18 @@ import { Assets, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js
 
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import {
+  EMPTY_INSPECTION,
+  inspectionPresentation,
+  inspectionTargetLabel,
+  pinsInspectionForPointer,
+  rangePresentation,
+  reduceInspection,
+  type InspectionEvent,
+  type InspectionState,
+  type RosterInspectionTarget,
+} from './inspection.js'
+import { reachableTileKeys } from './reachability.js'
+import {
   CRANE_STYLE,
   type CraneReachScene,
   computeScene,
@@ -15,6 +27,8 @@ import {
   type SceneEvent,
   type SceneUnit,
   type TerrainName,
+  rosterFigureFor,
+  unitCardFor,
 } from './scene.js'
 import thumbnail from './thumbnail.png'
 
@@ -110,9 +124,67 @@ export function gaugeFor(unit: Pick<SceneUnit, 'type' | 'hitPoints'>): GaugeStat
   }
 }
 
-/** Every Crane event finishes within the replay cadence budget. */
+/** Every Crane event uses 90 percent of its host cadence, leaving time for the settled frame. */
 export function eventBudget(options?: RenderOptions): number {
-  return Math.min(450, 0.9 * (options?.transitionMs ?? 500))
+  return 0.9 * (options?.transitionMs ?? 500)
+}
+
+export interface EventTimelineProgress {
+  movement: number
+  attack: number
+  reaction: number
+}
+
+export type EventPhase = 'idle' | 'activation' | 'movement' | 'attack' | 'reaction'
+
+/**
+ * Hold the activation seal before movement. A targeted event then gets separate attack and reaction
+ * phases; movement-only activations spend the remaining budget on their glide.
+ */
+export function eventTimelineProgress(
+  progress: number,
+  hasTarget: boolean,
+  hasReaction = hasTarget,
+): EventTimelineProgress {
+  const value = Math.max(0, Math.min(1, progress))
+  const activationEnd = hasTarget || hasReaction ? 0.2 : 0.25
+  const movementEnd = hasTarget ? 0.58 : hasReaction ? 0.75 : 1
+  const reactionStart = hasTarget ? 0.74 : movementEnd
+  return {
+    movement: hostEase(phase(value, activationEnd, movementEnd)),
+    attack: hasTarget ? hostEase(phase(value, movementEnd, 0.74)) : 0,
+    reaction: hasReaction ? hostEase(phase(value, reactionStart, 1)) : 0,
+  }
+}
+
+/** Classify the current sequential phase for browser diagnostics and focused ordering tests. */
+export function eventPhaseAt(
+  progress: number,
+  hasTarget: boolean,
+  hasReaction = hasTarget,
+  animating = true,
+): EventPhase {
+  if (!animating || progress >= 1) return 'idle'
+  const activationEnd = hasTarget || hasReaction ? 0.2 : 0.25
+  const movementEnd = hasTarget ? 0.58 : hasReaction ? 0.75 : 1
+  if (progress < activationEnd) return 'activation'
+  if (progress < movementEnd) return 'movement'
+  if (hasTarget && progress < 0.74) return 'attack'
+  return hasReaction ? 'reaction' : 'movement'
+}
+
+function eventHasReaction(event: SceneEvent): boolean {
+  return event.targetId !== null || event.redCapture !== 0 || event.blueCapture !== 0
+}
+
+/** Retain the prior pure scene until the transition has completely settled. */
+export function transitionSceneFor(
+  previousScene: CraneReachScene | null,
+  finalScene: CraneReachScene,
+  animate: boolean,
+  progress: number,
+): CraneReachScene {
+  return animate && progress < 1 && previousScene !== null ? previousScene : finalScene
 }
 
 /** Transition eligibility keeps mount, seeks, repeats, and reduced-motion frames deterministic. */
@@ -244,8 +316,17 @@ export function captureCuesFor(scene: CraneReachScene, event: SceneEvent): Captu
   return cues
 }
 
+/** Capture ownership is a result of the completed action, so placement reads final occupancy. */
+export function captureCueSceneFor(
+  finalScene: CraneReachScene | null,
+  presentedScene: CraneReachScene | null,
+): CraneReachScene | null {
+  return finalScene ?? presentedScene
+}
+
 interface UnitNode {
   root: Container
+  unitId: string
   shadowArt: Sprite
   shadow: Graphics
   body: Graphics
@@ -269,11 +350,13 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private battlefieldLayer!: Container
   private zoneMarkerLayer!: Container
+  private rangeLayer!: Container
   private unitLayer!: Container
   private activationLayer!: Container
   private eventLayer!: Container
   private transientLayer!: Container
   private hudLayer!: Container
+  private inspectionLayer!: Container
   private battlefieldKey: string | null = null
   private readonly unitNodes = new Map<string, UnitNode>()
   private readonly textures = new Map<CraneAssetName, Texture>()
@@ -286,33 +369,46 @@ export class CraneReachRenderer extends PixiRenderer {
   private eventTick: number | null = null
   private previousScene: CraneReachScene | null = null
   private currentScene: CraneReachScene | null = null
+  private presentedScene: CraneReachScene | null = null
   private deathSnapshot: DeathSnapshot | null = null
   private eventAnimating = false
   private reducedMotionFrame = false
+  private inspection: InspectionState = EMPTY_INSPECTION
 
   protected setup(root: Container): void {
     this.battlefieldLayer = new Container()
     this.zoneMarkerLayer = new Container()
+    this.rangeLayer = new Container()
     this.unitLayer = new Container()
     this.activationLayer = new Container()
     this.eventLayer = new Container()
     this.transientLayer = new Container()
     this.hudLayer = new Container()
+    this.inspectionLayer = new Container()
     root.addChild(
       this.battlefieldLayer,
       this.zoneMarkerLayer,
+      this.rangeLayer,
       this.unitLayer,
       this.activationLayer,
       this.eventLayer,
       this.transientLayer,
       this.hudLayer,
+      this.inspectionLayer,
     )
+    root.eventMode = 'passive'
+    root.interactiveChildren = true
+    const stage = root.parent
+    if (stage !== null) {
+      stage.eventMode = 'static'
+      stage.interactiveChildren = true
+    }
     void this.loadTextures()
   }
 
   protected update(state: StepState, options?: RenderOptions): void {
-    const scene = computeScene(state)
-    this.currentScene = scene
+    const scene = computeScene(state, { unitAbilities: this.ctx.header.parameters.unit_abilities === true })
+    const previousScene = this.currentScene
     if (this.battlefieldKey !== scene.battlefieldKey) {
       this.battlefieldBuilds = 0
       this.battlefieldTextured = false
@@ -340,11 +436,13 @@ export class CraneReachRenderer extends PixiRenderer {
     const transition = transitionFor(
       scene.event,
       freshForwardEvent,
-      this.previousScene !== null,
+      previousScene !== null,
       options,
       snap,
     )
     const freshForward = transition.animate
+    this.previousScene = previousScene
+    this.currentScene = scene
     this.eventTick = state.tick
     this.event = scene.event
     this.eventProgress = freshForward ? 0 : 1
@@ -352,23 +450,58 @@ export class CraneReachRenderer extends PixiRenderer {
     this.eventAnimating = freshForward
     this.reducedMotionFrame = scene.event !== null && this.prefersReducedMotion()
     this.deathSnapshot = freshForward ? this.snapshotDeath(scene) : null
+    this.updateEventPhaseProbe()
 
-    this.reconcileUnits(scene)
-    this.reconcileZoneMarkers(scene)
-    this.reconcileActivation(scene)
+    // A moving event owns the prior frame until its timeline ends. This prevents the next actor,
+    // final HUD, and death removal from flashing before the action that produced them is visible.
+    const presented = transitionSceneFor(previousScene, scene, freshForward, this.eventProgress)
+    this.reconcilePresentedScene(presented, freshForward)
     this.reconcileEvent()
-    this.reconcileHud(scene)
-    this.previousScene = scene
   }
 
   protected override onFrame(dtMs: number): boolean {
     if (this.event === null || this.eventProgress >= 1) return false
     this.eventProgress = Math.min(1, this.eventProgress + dtMs / this.eventDurationMs)
-    this.reconcileEvent()
-    if (this.eventProgress < 1) return true
+    if (this.eventProgress < 1) {
+      this.updateEventPhaseProbe()
+      if (this.presentedScene !== null) this.reconcileEventActivation(this.presentedScene)
+      this.reconcileEvent()
+      return true
+    }
     this.eventAnimating = false
+    this.updateEventPhaseProbe()
+    if (this.currentScene !== null) this.reconcilePresentedScene(this.currentScene, false)
     this.reconcileEvent()
     return false
+  }
+
+  private reconcilePresentedScene(scene: CraneReachScene, transitioning: boolean): void {
+    this.presentedScene = scene
+    this.updateInspectionProbe(scene)
+    this.reconcileUnits(scene)
+    this.reconcileZoneMarkers(scene)
+    if (transitioning) {
+      clear(this.rangeLayer)
+      this.reconcileEventActivation(scene)
+    } else {
+      this.reconcileRange(scene)
+      this.reconcileActivation(scene)
+    }
+    this.reconcileHud(scene)
+    this.reconcileInspection(scene)
+  }
+
+  private updateEventPhaseProbe(): void {
+    const event = this.event
+    this.ctx.container.dataset.craneEventPhase =
+      event === null
+        ? 'idle'
+        : eventPhaseAt(
+            this.eventProgress,
+            event.targetId !== null,
+            eventHasReaction(event),
+            this.eventAnimating,
+          )
   }
 
   private async loadTextures(): Promise<void> {
@@ -392,6 +525,8 @@ export class CraneReachRenderer extends PixiRenderer {
     this.ctx.container.dataset.craneBattlefieldBuilds = String(this.battlefieldBuilds)
     clear(this.battlefieldLayer)
     const board = new Graphics()
+    board.eventMode = 'static'
+    board.on('pointertap', () => this.setInspection({ type: 'dismiss' }))
     board.rect(0, 0, scene.width, scene.height).fill(CRANE_STYLE.backdrop)
     const outer = scene.tiles.filter((tile) => tile.terrain !== 'void')
     const field = bleedPolygon(
@@ -632,7 +767,7 @@ export class CraneReachRenderer extends PixiRenderer {
     for (const unit of scene.units) {
       let node = this.unitNodes.get(unit.unitId)
       if (node === undefined) {
-        node = this.createUnitNode()
+        node = this.createUnitNode(unit.unitId)
         this.unitNodes.set(unit.unitId, node)
         this.unitLayer.addChild(node.root)
       }
@@ -640,8 +775,19 @@ export class CraneReachRenderer extends PixiRenderer {
     }
   }
 
-  private createUnitNode(): UnitNode {
+  private createUnitNode(unitId: string, inspectable = true): UnitNode {
     const root = new Container()
+    if (inspectable) {
+      root.eventMode = 'static'
+      root.cursor = 'pointer'
+      root.on('pointerover', () => this.setInspection({ type: 'hover-unit', unitId }))
+      root.on('pointerout', () => this.setInspection({ type: 'hover-unit', unitId: null }))
+      root.on('pointertap', (event) => {
+        event.stopPropagation()
+        if (!pinsInspectionForPointer(event.pointerType)) return
+        this.setInspection({ type: 'inspect', target: { kind: 'unit', unitId } })
+      })
+    }
     const shadowArt = new Sprite()
     shadowArt.anchor.set(0.5)
     const shadow = new Graphics()
@@ -651,7 +797,7 @@ export class CraneReachRenderer extends PixiRenderer {
     const art = new Sprite()
     art.anchor.set(0.5)
     root.addChild(shadowArt, shadow, body, artEdge, art)
-    return { root, shadowArt, shadow, body, artEdge, art }
+    return { root, unitId, shadowArt, shadow, body, artEdge, art }
   }
 
   private drawUnit(
@@ -670,6 +816,9 @@ export class CraneReachRenderer extends PixiRenderer {
     const unitGauge = gaugeFor(unit)
     const gauge = palette === undefined ? unitGauge : { ...unitGauge, color: palette.gauge }
     node.root.position.set(unit.position.x, unit.position.y)
+    node.root.visible = true
+    node.root.alpha = 1
+    node.root.rotation = 0
     const shadowTexture = this.textureFor('shadowOval')
     node.shadowArt.visible = shadowTexture !== null
     if (shadowTexture !== null) {
@@ -732,24 +881,93 @@ export class CraneReachRenderer extends PixiRenderer {
   private reconcileActivation(scene: CraneReachScene): void {
     clear(this.activationLayer)
     if (scene.activation === null) return
+    this.drawActivation(scene.activation.position, scene.hexRadius)
+  }
+
+  private reconcileEventActivation(scene: CraneReachScene): void {
+    clear(this.activationLayer)
+    if (this.event === null) return
+    const timeline = eventTimelineProgress(
+      this.eventProgress,
+      this.event.targetId !== null,
+      eventHasReaction(this.event),
+    )
+    const position = {
+      x: this.event.from.x + (this.event.to.x - this.event.from.x) * timeline.movement,
+      y: this.event.from.y + (this.event.to.y - this.event.from.y) * timeline.movement,
+    }
+    this.drawActivation(position, scene.hexRadius)
+  }
+
+  private drawActivation(position: { x: number; y: number }, hexRadius: number): void {
     const glow = new Graphics()
     glow
-      .circle(scene.activation.position.x, scene.activation.position.y, scene.hexRadius * 0.74)
+      .circle(position.x, position.y, hexRadius * 0.74)
       .fill({ color: CRANE_STYLE.activation, alpha: 0.12 })
     glow
-      .circle(scene.activation.position.x, scene.activation.position.y, scene.hexRadius * 0.82)
-      .stroke({ color: CRANE_STYLE.activation, width: Math.max(2, scene.hexRadius * 0.08) })
+      .circle(position.x, position.y, hexRadius * 0.82)
+      .stroke({ color: CRANE_STYLE.activation, width: Math.max(2, hexRadius * 0.08) })
     this.activationLayer.addChild(glow)
     const ring = this.sprite(
       'sealRing',
-      scene.activation.position.x,
-      scene.activation.position.y,
-      scene.hexRadius * 1.8,
-      scene.hexRadius * 1.8,
+      position.x,
+      position.y,
+      hexRadius * 1.8,
+      hexRadius * 1.8,
     )
     if (ring !== null) {
       ring.tint = CRANE_STYLE.activation
       this.activationLayer.addChild(ring)
+    }
+  }
+
+  private setInspection(event: InspectionEvent): void {
+    this.inspection = reduceInspection(this.inspection, event)
+    if (this.presentedScene !== null) {
+      if (this.eventAnimating) clear(this.rangeLayer)
+      else this.reconcileRange(this.presentedScene)
+      this.reconcileInspection(this.presentedScene)
+      this.redrawCurrentFrame()
+    }
+  }
+
+  private inspectedUnit(scene: CraneReachScene): SceneUnit | null {
+    const target = inspectionPresentation(this.inspection).target
+    return target?.kind !== 'unit'
+      ? null
+      : scene.units.find((unit) => unit.unitId === target.unitId) ?? null
+  }
+
+  private reconcileRange(scene: CraneReachScene): void {
+    clear(this.rangeLayer)
+    if (scene.hud.terminal !== null) return
+    const inspected = this.inspectedUnit(scene)
+    const unit = inspected ?? (scene.activation === null ? null : scene.units.find((candidate) => candidate.unitId === scene.activation?.unitId) ?? null)
+    if (unit === null) return
+    const presentation = rangePresentation(this.inspection, inspected !== null)
+    const color = presentation.wash === 'bone' ? CRANE_STYLE.text : CRANE_STYLE.activation
+    const outlineColor = presentation.outlineInk === 'dilute-ink' ? CRANE_STYLE.grid : CRANE_STYLE.activation
+    const reachable = reachableTileKeys(unit, scene.tiles, scene.units)
+    const range = new Graphics()
+    for (const tile of scene.tiles) {
+      if (!reachable.has(tile.key)) continue
+      range.poly(points(tile.corners)).fill({ color, alpha: presentation.alpha })
+      for (let index = 0; index < tile.corners.length; index += 1) {
+        const [dq, dr] = HEX_DIRECTIONS[index] as readonly [number, number]
+        if (reachable.has(`${tile.q + dq},${tile.r + dr}`)) continue
+        const current = tile.corners[index]
+        const next = tile.corners[(index + 1) % tile.corners.length]
+        if (current !== undefined && next !== undefined)
+          drawRangeEdge(range, current, next, outlineColor, presentation.outline === 'dashed')
+      }
+    }
+    this.rangeLayer.addChild(range)
+    if (presentation.ring) {
+      const ring = new Graphics()
+      ring
+        .circle(unit.position.x, unit.position.y, scene.hexRadius * 0.69)
+        .stroke({ color: CRANE_STYLE.text, width: Math.max(2, scene.hexRadius * 0.055) })
+      this.rangeLayer.addChild(ring)
     }
   }
 
@@ -758,22 +976,32 @@ export class CraneReachRenderer extends PixiRenderer {
     clear(this.transientLayer)
     if (this.event === null || (!this.eventAnimating && !this.reducedMotionFrame)) return
     const progress = this.eventProgress
-    const move = hostEase(Math.min(1, progress / 0.55))
-    const strike = hostEase(phase(progress, 0.48, 0.74))
-    const reaction = hostEase(phase(progress, 0.65, 1))
+    const timeline = eventTimelineProgress(
+      progress,
+      this.event.targetId !== null,
+      eventHasReaction(this.event),
+    )
+    const move = timeline.movement
+    const strike = timeline.attack
+    const reaction = timeline.reaction
     const target = this.eventTargetPosition()
     const targetDistance =
       target === null
         ? Number.POSITIVE_INFINITY
         : Math.hypot(target.x - this.event.to.x, target.y - this.event.to.y)
-    const melee = targetDistance <= (this.currentScene?.hexRadius ?? 0) * 1.8
+    const melee = targetDistance <= (this.presentedScene?.hexRadius ?? 0) * 1.8
     const reducedMotion = this.reducedMotionFrame
     const reducedCues = reducedMotion ? reducedMotionCuesFor(this.event) : null
     const event = new Graphics()
-    event
-      .moveTo(this.event.from.x, this.event.from.y)
-      .lineTo(this.event.to.x, this.event.to.y)
-      .stroke({ color: CRANE_STYLE.grid, width: 3, alpha: 0.5 * (1 - move) })
+    if (move > 0 && move < 1) {
+      event
+        .moveTo(this.event.from.x, this.event.from.y)
+        .lineTo(
+          this.event.from.x + (this.event.to.x - this.event.from.x) * move,
+          this.event.from.y + (this.event.to.y - this.event.from.y) * move,
+        )
+        .stroke({ color: CRANE_STYLE.grid, width: 3, alpha: 0.5 * (1 - move) })
+    }
     if (target !== null) {
       if (reducedCues?.attackThread === true) {
         event
@@ -798,20 +1026,20 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     if (target !== null && this.event.damage > 0 && reaction > 0 && !reducedMotion) {
       const flash = reaction < 0.25
-      event.circle(target.x, target.y, (this.currentScene?.hexRadius ?? 10) * 0.44).fill({
+      event.circle(target.x, target.y, (this.presentedScene?.hexRadius ?? 10) * 0.44).fill({
         color: flash ? CRANE_STYLE.text : CRANE_STYLE.danger,
         alpha: flash ? 0.72 * (1 - reaction / 0.25) : 0.5 * (1 - (reaction - 0.25) / 0.75),
       })
     }
-    const captureCues =
-      this.currentScene === null ? [] : captureCuesFor(this.currentScene, this.event)
+    const captureScene = captureCueSceneFor(this.currentScene, this.presentedScene)
+    const captureCues = captureScene === null ? [] : captureCuesFor(captureScene, this.event)
     if (reaction > 0 && !reducedMotion) {
       for (const cue of captureCues) {
         event
           .circle(
             cue.position.x,
             cue.position.y,
-            (this.currentScene?.hexRadius ?? 10) * (0.18 + reaction * 0.42),
+            (this.presentedScene?.hexRadius ?? 10) * (0.18 + reaction * 0.42),
           )
           .stroke({ color: CRANE_STYLE.zoneGlow, width: 3, alpha: 1 - reaction })
       }
@@ -837,7 +1065,7 @@ export class CraneReachRenderer extends PixiRenderer {
       for (const cue of captureCues) {
         const color = cue.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
         const sign = cue.delta > 0 ? '+' : ''
-        const capture = this.makeText(`${sign}${cue.delta}`, textMetrics.size, color, 'center')
+        const capture = this.makeText(`${sign}${cue.delta}`, textMetrics.size, color, 'center', mono())
         capture.position.set(
           cue.position.x,
           cue.position.y - textMetrics.rise * (reducedMotion ? 1 : reaction),
@@ -857,14 +1085,22 @@ export class CraneReachRenderer extends PixiRenderer {
       }
       actor.root.position.set(x, y)
     }
-    if (this.deathSnapshot !== null && reaction > 0)
-      this.drawDeathSnapshot(this.deathSnapshot.unit, reaction)
+    if (this.event.deathId !== null && reaction > 0) {
+      const defeated = this.unitNodes.get(this.event.deathId)
+      const defeatedUnit = this.deathSnapshot?.unit
+      if (defeated !== undefined && defeatedUnit !== undefined) {
+        // The colored prior node remains intact until reaction starts. The reaction replaces it with
+        // a dilute-ink snapshot, while final reconciliation performs the actual removal.
+        defeated.root.visible = false
+        this.drawDeathSnapshot(defeatedUnit, reaction)
+      }
+    }
   }
 
   private drawDeathSnapshot(unit: SceneUnit, reaction: number): void {
-    const radius = this.previousScene?.hexRadius ?? 10
+    const radius = this.presentedScene?.hexRadius ?? 10
     const level = presentationFor(radius, this.displayScale()).level
-    const ghost = this.createUnitNode()
+    const ghost = this.createUnitNode(unit.unitId, false)
     this.drawUnit(ghost, unit, radius, level, {
       side: CRANE_STYLE.grid,
       deep: CRANE_STYLE.shadow,
@@ -900,16 +1136,180 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private reconcileHud(scene: CraneReachScene): void {
     clear(this.hudLayer)
-    const round = this.makeText(scene.hud.round, 28, CRANE_STYLE.text, 'left')
-    round.position.set(28, 24)
-    const capture = this.makeText(scene.hud.capture, 22, CRANE_STYLE.mutedText, 'right')
-    capture.position.set(SCENE_WIDTH - 28, 29)
-    this.hudLayer.addChild(round, capture)
+    this.ctx.container.dataset.craneHud = 'ready'
+    const roundLabel = this.makeText('ROUND', 14, CRANE_STYLE.mutedText, 'left', lato())
+    const round = this.makeText(String(scene.hud.round), 28, CRANE_STYLE.text, 'left', mono())
+    roundLabel.position.set(28, 28)
+    round.position.set(28, 43)
+    this.hudLayer.addChild(roundLabel, round)
+    if (scene.hud.capture !== null) this.drawCaptureStrip(scene.hud.capture)
     if (scene.hud.terminal !== null) {
-      const terminal = this.makeText(scene.hud.terminal, 26, CRANE_STYLE.danger, 'center')
-      terminal.position.set(SCENE_WIDTH / 2, 818)
-      this.hudLayer.addChild(terminal)
+      this.drawTerminal(scene.hud.terminal)
+      return
     }
+    this.drawRoster(scene, 'red')
+    this.drawRoster(scene, 'blue')
+  }
+
+  private reconcileInspection(scene: CraneReachScene): void {
+    clear(this.inspectionLayer)
+    this.inspectionLayer.eventMode = 'none'
+    if (scene.hud.terminal !== null) {
+      this.ctx.container.dataset.craneInspection = 'none'
+      return
+    }
+    const target = inspectionPresentation(this.inspection).target
+    this.ctx.container.dataset.craneInspection = inspectionTargetLabel(target)
+    if (target?.kind === 'unit') {
+      const unit = scene.units.find((candidate) => candidate.unitId === target.unitId)
+      if (unit !== undefined) this.drawUnitCard(scene, unit)
+    } else if (target?.kind === 'roster') {
+      this.drawRosterCard(scene, target)
+    }
+  }
+
+  private updateInspectionProbe(scene: CraneReachScene): void {
+    const unit = scene.units[0]
+    if (unit === undefined) {
+      delete this.ctx.container.dataset.craneInspectUnit
+      delete this.ctx.container.dataset.craneInspectUnitX
+      delete this.ctx.container.dataset.craneInspectUnitY
+      return
+    }
+    this.ctx.container.dataset.craneInspectUnit = unit.unitId
+    this.ctx.container.dataset.craneInspectUnitX = String(unit.position.x)
+    this.ctx.container.dataset.craneInspectUnitY = String(unit.position.y)
+  }
+
+  private drawCaptureStrip(capture: { red: number; blue: number; target: number }): void {
+    const group = new Container()
+    const seals = new Graphics()
+    group.addChild(seals)
+    const entries = [
+      { side: 'red' as const, value: capture.red, x: SCENE_WIDTH - 258 },
+      { side: 'blue' as const, value: capture.blue, x: SCENE_WIDTH - 150 },
+    ]
+    for (const entry of entries) {
+      seals.circle(entry.x, 43, 9).fill(entry.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue)
+      const value = this.makeText(String(entry.value), 24, CRANE_STYLE.text, 'left', mono())
+      value.position.set(entry.x + 16, 43)
+      group.addChild(value)
+    }
+    const target = this.makeText(`/ ${capture.target}`, 18, CRANE_STYLE.mutedText, 'left', mono())
+    target.position.set(SCENE_WIDTH - 83, 43)
+    group.addChild(target)
+    this.hudLayer.addChild(group)
+  }
+
+  private drawRoster(scene: CraneReachScene, side: 'red' | 'blue'): void {
+    const types: SceneUnit['type'][] = ['footman', 'archer', 'cavalry']
+    const direction = side === 'red' ? 1 : -1
+    const start = side === 'red' ? 28 : SCENE_WIDTH - 28
+    for (const [index, type] of types.entries()) {
+      const x = start + direction * index * 78
+      const pair = new Container()
+      const mark = this.sprite(rosterFigureFor(type), x + direction * 14, 804, 31, 31)
+      if (mark !== null) {
+        mark.tint = side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
+        pair.addChild(mark)
+      }
+      const count = this.makeText(String(scene.hud.rosters[side][type]), 24, CRANE_STYLE.text, direction === 1 ? 'left' : 'right', mono())
+      count.position.set(x + direction * 31, 804)
+      pair.addChild(count)
+      const hit = new Graphics()
+      const hitX = direction === 1 ? x - 4 : x - 64
+      hit.roundRect(hitX, 780, 68, 48, 6).fill({ color: CRANE_STYLE.board, alpha: 0.001 })
+      hit.eventMode = 'static'
+      hit.cursor = 'pointer'
+      hit.on('pointerover', () => {
+        this.setInspection({ type: 'hover-roster', target: { kind: 'roster', side, type } })
+      })
+      hit.on('pointerout', () => this.setInspection({ type: 'hover-roster', target: null }))
+      hit.on('pointertap', (event) => {
+        event.stopPropagation()
+        if (!pinsInspectionForPointer(event.pointerType)) return
+        this.setInspection({ type: 'inspect', target: { kind: 'roster', side, type } })
+      })
+      pair.addChild(hit)
+      this.hudLayer.addChild(pair)
+    }
+  }
+
+  private drawUnitCard(scene: CraneReachScene, unit: SceneUnit): void {
+    const x = Math.min(SCENE_WIDTH - 254, Math.max(18, unit.position.x + scene.hexRadius * 0.75))
+    const y = Math.min(670, Math.max(106, unit.position.y - scene.hexRadius * 1.2))
+    this.drawCard(x, y, unit.unitId, mono(), unit.type, unit.hitPoints, scene.hud.unitAbilities)
+  }
+
+  private drawRosterCard(scene: CraneReachScene, target: RosterInspectionTarget): void {
+    const x = target.side === 'red' ? 28 : SCENE_WIDTH - 254
+    this.drawCard(x, 656, target.type.toUpperCase(), lato(), target.type, null, scene.hud.unitAbilities)
+  }
+
+  private drawCard(
+    x: number,
+    y: number,
+    title: string,
+    titleFont: string,
+    type: SceneUnit['type'],
+    currentHitPoints: number | null,
+    abilities: boolean,
+  ): void {
+    const height = abilities && type !== 'archer' ? 150 : 128
+    const card = new Container()
+    const parchment = new Graphics()
+    parchment
+      .roundRect(x, y, 236, height, 7)
+      .fill({ color: CRANE_STYLE.board, alpha: 0.97 })
+      .stroke({ color: CRANE_STYLE.grid, width: 2, alpha: 0.85 })
+    card.addChild(parchment)
+    const heading = this.makeText(title, 15, CRANE_STYLE.shadow, 'left', titleFont)
+    heading.position.set(x + 14, y + 16)
+    card.addChild(heading)
+    const specification = unitCardFor(type, currentHitPoints, abilities)
+    for (const [index, field] of specification.fields.entries()) {
+      const column = index % 2
+      const row = Math.floor(index / 2)
+      this.drawStat(card, field.icon, field.value, x + 14 + column * 108, y + 43 + row * 29)
+    }
+    if (specification.ability !== null) {
+      const ability = this.makeText(specification.ability, 14, CRANE_STYLE.grid, 'left', lato())
+      ability.position.set(x + 122, y + 103)
+      card.addChild(ability)
+    }
+    card.eventMode = 'none'
+    this.inspectionLayer.addChild(card)
+  }
+
+  private drawStat(card: Container, icon: CraneAssetName, value: string, x: number, y: number): void {
+    const mark = this.sprite(icon, x + 8, y, 17, 17)
+    if (mark !== null) {
+      mark.tint = CRANE_STYLE.grid
+      card.addChild(mark)
+    }
+    const text = this.makeText(value, 15, CRANE_STYLE.shadow, 'left', mono())
+    text.position.set(x + 20, y)
+    card.addChild(text)
+  }
+
+  private drawTerminal(terminal: NonNullable<CraneReachScene['hud']['terminal']>): void {
+    const color = terminal.winner === 'red' ? CRANE_STYLE.red : terminal.winner === 'blue' ? CRANE_STYLE.blue : CRANE_STYLE.grid
+    const card = new Graphics()
+    card
+      .roundRect(320, 772, 560, 72, 8)
+      .fill({ color: CRANE_STYLE.board, alpha: 0.98 })
+      .stroke({ color, width: 3 })
+    this.hudLayer.addChild(card)
+    const crane = this.sprite('crane', 362, 808, 68, 34)
+    if (crane !== null) {
+      crane.tint = color
+      this.hudLayer.addChild(crane)
+    }
+    const headline = this.makeText('Battle complete', 28, color, 'left', 'EB Garamond, Georgia, serif')
+    headline.position.set(408, 794)
+    const result = this.makeText(terminal.result, 16, CRANE_STYLE.shadow, 'left', mono())
+    result.position.set(410, 821)
+    this.hudLayer.addChild(headline, result)
   }
 
   private sprite(
@@ -1227,6 +1627,14 @@ function figureAsset(type: SceneUnit['type']): CraneAssetName {
   return type === 'footman' ? 'figFootman' : type === 'archer' ? 'figArcher' : 'figCavalry'
 }
 
+function lato(): string {
+  return 'Lato, system-ui, sans-serif'
+}
+
+function mono(): string {
+  return 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+}
+
 function glyphAsset(type: SceneUnit['type']): CraneAssetName {
   return type === 'footman' ? 'glyphSword' : type === 'archer' ? 'glyphBow' : 'glyphHorse'
 }
@@ -1300,6 +1708,30 @@ function bleedPolygon(
 
 function points(corners: ReadonlyArray<{ x: number; y: number }>): number[] {
   return corners.flatMap((corner) => [corner.x, corner.y])
+}
+
+/** The hovered range reads as a hand-dashed dilute-ink perimeter, not a grid of hex outlines. */
+function drawRangeEdge(
+  graphics: Graphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  color: string,
+  dashed: boolean,
+): void {
+  if (!dashed) {
+    graphics.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color, width: 1.2, alpha: 0.72 })
+    return
+  }
+  const length = Math.hypot(end.x - start.x, end.y - start.y)
+  const segments = Math.max(2, Math.floor(length / 10))
+  for (let index = 0; index < segments; index += 2) {
+    const from = index / segments
+    const to = Math.min(1, (index + 0.62) / segments)
+    graphics
+      .moveTo(start.x + (end.x - start.x) * from, start.y + (end.y - start.y) * from)
+      .lineTo(start.x + (end.x - start.x) * to, start.y + (end.y - start.y) * to)
+      .stroke({ color, width: 1.5, alpha: 0.82 })
+  }
 }
 
 function clear(layer: Container): void {

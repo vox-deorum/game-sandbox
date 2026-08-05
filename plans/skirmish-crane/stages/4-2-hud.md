@@ -1,6 +1,6 @@
 # Step 4.2: HUD
 
-Status: planned. This file carries the first design draft; exit requires explicit owner sign-off on the HUD design, recorded here.
+Status: complete. The owner approved the HUD design and `Battle complete` headline. Implementation and verification finished on 2026-08-04.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 4.2: the information layer inside the canvas, styled over the [step 4.1](4-1-art-style.md) board: the round and score strip, rosters, the unit hover chip, the terminal banner, and the interaction UI design that step 5 wires up. Attack results and the current activation are not HUD text: the step 4.1 event animations and the gilt activation highlight carry them on the board, and this step removes the step 3 placeholder caption and activation lines. Review replays both fixture recordings with the finished HUD and confirms that hovering a unit shows its chip.
 
@@ -126,7 +126,3 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 ## Done when
 
 Both fixtures replay with the strips, rosters, and terminal banner styled as mocked above, every board unit and roster pair opens its complete icon-led chip, the acting unit's movement range shows on the board, board-unit inspection has priority over the acting unit's range, and the path-only interaction design is ready for step 5. The art direction note gains its HUD section, the tests above are green, and the owner's sign-off is recorded in the Status line.
-
-## Open items for the review round
-
-1. Owner decision: accept the proposed `Battle complete` headline or provide its replacement before sign-off.

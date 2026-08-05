@@ -79,6 +79,56 @@ export interface SceneUnit {
   tileKey: string
 }
 
+export interface UnitStats {
+  hitPoints: number
+  movement: number
+  damage: number
+  range: number
+  vision: number
+}
+
+export const UNIT_STATS: Record<SceneUnit['type'], UnitStats> = {
+  footman: { hitPoints: 12, movement: 2, damage: 3, range: 1, vision: 4 },
+  archer: { hitPoints: 6, movement: 2, damage: 2, range: 6, vision: 6 },
+  cavalry: { hitPoints: 10, movement: 4, damage: 3, range: 1, vision: 6 },
+}
+
+export interface HudStatField {
+  icon: 'iconHp' | 'iconMove' | 'iconAttack' | 'iconRange' | 'iconVision'
+  value: string
+}
+
+export interface HudCard {
+  title: string
+  fields: HudStatField[]
+  ability: string | null
+}
+
+/** The card specification is pure so display and coverage share the exact icon-led content. */
+export function unitCardFor(
+  type: SceneUnit['type'],
+  currentHitPoints: number | null,
+  unitAbilities: boolean,
+): HudCard {
+  const stats = UNIT_STATS[type]
+  return {
+    title: type.toUpperCase(),
+    fields: [
+      { icon: 'iconHp', value: currentHitPoints === null ? String(stats.hitPoints) : `${currentHitPoints}/${stats.hitPoints}` },
+      { icon: 'iconMove', value: String(stats.movement) },
+      { icon: 'iconAttack', value: String(stats.damage) },
+      { icon: 'iconRange', value: String(stats.range) },
+      { icon: 'iconVision', value: String(stats.vision) },
+    ],
+    ability: unitAbilities ? (type === 'footman' ? 'Shield wall' : type === 'cavalry' ? 'Charge' : null) : null,
+  }
+}
+
+/** Bottom roster pairs always use the full figure silhouette, even when board units are compact. */
+export function rosterFigureFor(type: SceneUnit['type']): 'figFootman' | 'figArcher' | 'figCavalry' {
+  return type === 'footman' ? 'figFootman' : type === 'archer' ? 'figArcher' : 'figCavalry'
+}
+
 export interface SceneActivation {
   playerId: string
   unitId: string
@@ -108,15 +158,19 @@ export interface CraneReachScene {
   activation: SceneActivation | null
   event: SceneEvent | null
   hud: {
-    round: string
-    capture: string
-    terminal: string | null
+    round: number
+    capture: { red: number; blue: number; target: number } | null
+    rosters: Record<'red' | 'blue', Record<SceneUnit['type'], number>>
+    unitAbilities: boolean
+    terminal: { winner: 'red' | 'blue' | 'draw'; result: string } | null
   }
 }
 
 export interface SceneConfig {
   /** Reserved for renderer mount-time facts. The spectator view always reveals the full board. */
   controlledPlayers?: readonly string[]
+  /** Abilities are a fixed episode parameter, supplied from the recording header rather than overlay v1. */
+  unitAbilities?: boolean
 }
 
 interface RosterEntry {
@@ -472,7 +526,11 @@ function readEvent(
 }
 
 /** Convert one compact recorded state into the complete static Crane Reach frame. */
-export function computeScene(state: StepState, _config: SceneConfig = {}): CraneReachScene {
+function scoreText(score: number): string {
+  return Number.isInteger(score) ? String(score) : String(Number(score.toFixed(2)))
+}
+
+export function computeScene(state: StepState, config: SceneConfig = {}): CraneReachScene {
   const overlay = decodeOverlay(state)
   const battlefield = battlefieldFor(overlay)
   const roster = rosterFor(overlay.plan)
@@ -483,11 +541,24 @@ export function computeScene(state: StepState, _config: SceneConfig = {}): Crane
   }
   const activeUnit =
     active === undefined ? undefined : units.find((unit) => unit.unitId === active.unitId)
-  const terminal = overlay.terminal
-    ? overlay.outcome === null
-      ? 'Battle complete'
-      : `Battle complete: Red ${overlay.outcome[0]} · Blue ${overlay.outcome[1]}`
-    : null
+  const rosters = { red: { footman: 0, archer: 0, cavalry: 0 }, blue: { footman: 0, archer: 0, cavalry: 0 } }
+  for (const unit of units) rosters[unit.side][unit.type] += 1
+  const terminal =
+    !overlay.terminal || overlay.outcome === null
+      ? null
+      : {
+          winner: (
+            overlay.outcome[0] === overlay.outcome[1]
+              ? 'draw'
+              : overlay.outcome[0] > overlay.outcome[1]
+                ? 'red'
+                : 'blue'
+          ) as 'red' | 'blue' | 'draw',
+          result:
+            overlay.outcome[0] === overlay.outcome[1]
+              ? `draw ${scoreText(overlay.outcome[0])} - ${scoreText(overlay.outcome[1])}`
+              : `${overlay.outcome[0] > overlay.outcome[1] ? 'red' : 'blue'} wins ${scoreText(Math.max(...overlay.outcome))} - ${scoreText(Math.min(...overlay.outcome))}`,
+        }
   return {
     width: SCENE_WIDTH,
     height: SCENE_HEIGHT,
@@ -506,11 +577,13 @@ export function computeScene(state: StepState, _config: SceneConfig = {}): Crane
           },
     event: readEvent(overlay, roster, battlefield.centerFor),
     hud: {
-      round: `Round ${overlay.round}`,
+      round: overlay.round,
       capture:
         overlay.capture[2] > 0
-          ? `Capture  Red ${overlay.capture[0]} · Blue ${overlay.capture[1]} / ${overlay.capture[2]}`
-          : `Control  Red ${overlay.capture[0]} · Blue ${overlay.capture[1]}`,
+          ? { red: overlay.capture[0], blue: overlay.capture[1], target: overlay.capture[2] }
+          : null,
+      rosters,
+      unitAbilities: config.unitAbilities === true,
       terminal,
     },
   }
