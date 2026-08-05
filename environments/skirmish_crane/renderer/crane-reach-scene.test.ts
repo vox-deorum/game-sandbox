@@ -7,7 +7,22 @@ import armyLegalityRaw from '../../../frontend/test/fixtures/crane-reach-army-le
 import armyFixture from '../../../frontend/test/fixtures/crane-reach-army-recording.jsonl?raw'
 import skirmishLegalityRaw from '../../../frontend/test/fixtures/crane-reach-skirmish-legality.json?raw'
 import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmish-recording.jsonl?raw'
-import { computeScene, decodeOverlay } from './scene.js'
+import { CRANE_ASSET_MANIFEST, craneAssetSources, loadCraneAssets } from './assets.js'
+import {
+  captureCuesFor,
+  deathSnapshotFor,
+  eventBudget,
+  eventTargetPositionFor,
+  eventTextMetrics,
+  gaugeFor,
+  hostEase,
+  isFreshForwardEvent,
+  presentationFor,
+  reducedMotionCuesFor,
+  shouldRebuildBattlefield,
+  transitionFor,
+} from './index.js'
+import { CRANE_STYLE, computeScene, decodeOverlay } from './scene.js'
 
 interface LegalityEntry {
   opening?: StepState
@@ -198,6 +213,136 @@ describe('Crane Reach scene performance', () => {
     for (const state of armyStates) computeScene(state)
     const elapsedMs = performance.now() - started
     expect(elapsedMs).toBeLessThan(5_000)
+  })
+})
+
+describe('Crane Reach Estuary Ink presentation', () => {
+  it('switches artwork at the exact CSS-radius boundaries without changing scene geometry', () => {
+    expect(presentationFor(18, 1)).toMatchObject({ level: 'figure', effectiveHexRadius: 18 })
+    expect(presentationFor(17.999, 1).level).toBe('token')
+    expect(presentationFor(12, 1).level).toBe('token')
+    expect(presentationFor(11.999, 1).level).toBe('compact')
+  })
+
+  it('maps maximum hit points to healthy, low, and critical gauge states at both boundaries', () => {
+    expect(gaugeFor({ type: 'footman', hitPoints: 12 })).toMatchObject({
+      fraction: 1,
+      color: CRANE_STYLE.text,
+      critical: false,
+    })
+    expect(gaugeFor({ type: 'footman', hitPoints: 6 })).toMatchObject({
+      fraction: 0.5,
+      color: CRANE_STYLE.hpLow,
+      critical: false,
+    })
+    expect(gaugeFor({ type: 'footman', hitPoints: 3 })).toMatchObject({
+      fraction: 0.25,
+      color: CRANE_STYLE.danger,
+      critical: true,
+    })
+    expect(gaugeFor({ type: 'archer', hitPoints: 2 })).toMatchObject({
+      fraction: 2 / 6,
+      critical: false,
+    })
+    expect(gaugeFor({ type: 'archer', hitPoints: 6 }).fraction).toBe(1)
+    expect(gaugeFor({ type: 'cavalry', hitPoints: 10 }).fraction).toBe(1)
+  })
+
+  it('keeps one typed 30-source loading contract and makes it injectable without decoding', async () => {
+    expect(CRANE_ASSET_MANIFEST).toHaveLength(30)
+    expect(CRANE_ASSET_MANIFEST.every((asset) => asset.path.endsWith('.png'))).toBe(true)
+    expect(CRANE_ASSET_MANIFEST.every((asset) => asset.width > 0 && asset.height > 0)).toBe(true)
+    expect(Object.keys(craneAssetSources())).toHaveLength(30)
+    const loaded = await loadCraneAssets(async (asset) => `stub:${asset.name}`)
+    expect(loaded.paperField).toBe('stub:paperField')
+    expect(loaded.figCavalry).toBe('stub:figCavalry')
+  })
+
+  it('fits events inside the prescribed cadence budget and snaps a zero-duration seek', () => {
+    expect(eventBudget()).toBe(450)
+    expect(eventBudget({ transitionMs: 300 })).toBe(270)
+    expect(eventBudget({ transitionMs: 1_000 })).toBe(450)
+    expect(eventBudget({ snap: true, transitionMs: 0 })).toBe(0)
+    expect(hostEase(0)).toBe(0)
+    expect(hostEase(0.2)).toBeCloseTo(0.5, 4)
+    expect(hostEase(1)).toBe(1)
+    const compactMetrics = eventTextMetrics(390 / 1_200)
+    expect(compactMetrics.size * (390 / 1_200)).toBeCloseTo(12)
+    expect(compactMetrics.rise * (390 / 1_200)).toBeCloseTo(12)
+  })
+
+  it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
+    const before = computeScene(armyStates[0] as StepState)
+    const victim = before.units[0]
+    const sourceEvent = armyStates
+      .map((state) => computeScene(state))
+      .find((scene) => scene.event !== null)?.event
+    expect(victim).toBeDefined()
+    expect(sourceEvent).not.toBeNull()
+    expect(isFreshForwardEvent(4, 5, sourceEvent ?? null, sourceEvent ?? null)).toBe(true)
+    expect(isFreshForwardEvent(5, 5, sourceEvent ?? null, sourceEvent ?? null)).toBe(false)
+    expect(isFreshForwardEvent(5, 4, sourceEvent ?? null, sourceEvent ?? null)).toBe(false)
+    expect(isFreshForwardEvent(0, 0, null, sourceEvent ?? null)).toBe(true)
+    const after = {
+      ...before,
+      units: before.units.filter((unit) => unit.unitId !== victim?.unitId),
+      event: {
+        ...(sourceEvent as NonNullable<typeof sourceEvent>),
+        targetId: victim?.unitId ?? null,
+        deathId: victim?.unitId ?? null,
+      },
+    }
+    expect(transitionFor(after.event, true, true, { transitionMs: 500 }, false).animate).toBe(true)
+    expect(transitionFor(after.event, true, true, { snap: true }, false).animate).toBe(false)
+    expect(transitionFor(after.event, false, true, { transitionMs: 500 }, false).animate).toBe(
+      false,
+    )
+    expect(transitionFor(after.event, true, true, { transitionMs: 500 }, true).animate).toBe(false)
+    const snapshot = deathSnapshotFor(before, after)
+    expect(snapshot?.unitId).toBe(after.event.deathId)
+    expect(eventTargetPositionFor(after.event, after, after, snapshot)).toEqual(victim?.position)
+    expect(shouldRebuildBattlefield(null, after, false, false)).toBe(true)
+    expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, false)).toBe(false)
+    expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, true)).toBe(true)
+    expect(shouldRebuildBattlefield(after.battlefieldKey, after, true, true)).toBe(false)
+  })
+
+  it('keeps both sides and the actual deltas in simultaneous capture cues', () => {
+    const scoredScene = armyStates
+      .map((state) => computeScene(state))
+      .find(
+        (scene) =>
+          scene.event !== null && scene.event.redCapture !== 0 && scene.event.blueCapture !== 0,
+      )
+    if (scoredScene?.event === null || scoredScene?.event === undefined) {
+      throw new Error('The army fixture needs a simultaneous capture event')
+    }
+    const cues = captureCuesFor(scoredScene, scoredScene.event)
+    expect(cues.map((cue) => [cue.side, cue.delta])).toEqual([
+      ['red', scoredScene.event.redCapture],
+      ['blue', scoredScene.event.blueCapture],
+    ])
+    expect(cues[0]?.position).not.toEqual(cues[1]?.position)
+  })
+
+  it('keeps every event cue readable when reduced motion snaps the frame', () => {
+    const event = {
+      actorId: 'red_archer_0',
+      from: { x: 0, y: 0 },
+      to: { x: 10, y: 10 },
+      targetId: 'blue_footman_0',
+      damage: 3,
+      automatic: false,
+      deathId: null,
+      redCapture: 1,
+      blueCapture: 0,
+    }
+    expect(reducedMotionCuesFor(event)).toEqual({
+      attackThread: true,
+      damageNumeral: true,
+      captureNumeral: true,
+      flash: false,
+    })
   })
 })
 

@@ -9,7 +9,7 @@
  * its instances are the mounted {@link RendererInstance} and carry the `internalSize`/`aspectRatio`
  * shape. There is no separate module object — a subclass supplies `internalSize` and implements three
  * protected hooks: {@link setup}, {@link update}, and {@link inputs}. The home-card thumbnail is not
- * the renderer's concern: it is passed as an SVG asset to `registerRenderer`.
+ * the renderer's concern: it is passed as a static image asset to `registerRenderer`.
  */
 import type { StepState } from '@game-sandbox/schema'
 import { Application, Container } from 'pixi.js'
@@ -311,6 +311,15 @@ export abstract class PixiRenderer implements RendererInstance {
    */
   protected textResolution(): number {
     return this.devicePixelRatio() * this.scaleFactor
+  }
+
+  /** Reapply and draw the latest state after an asynchronous renderer resource becomes ready. */
+  protected rerenderCurrentState(): void {
+    if (this.app === null || !this.ready || this.latestState === null) {
+      return
+    }
+    this.update(this.latestState, { snap: true })
+    this.app.render()
   }
 
   private observeResize(): void {

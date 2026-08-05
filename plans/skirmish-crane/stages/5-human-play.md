@@ -20,7 +20,7 @@ Legal-by-construction, per the [step 4.2 interaction design](4-2-hud.md):
 
 - Click an adjacent highlighted hex to append a step, up to four; only legal continuations are ever highlighted. Undo or reselect on the board. An empty path is stay.
 - Each endpoint change previews the automatic strike from the projected final tile. A unique nearest in-range enemy is shown, tied nearest candidates are all shown as uncertain, and no in-range enemy produces no preview. The preview is informational and never sends an action.
-- The single `glyph-move.svg` confirmation button sends `{path, target: 0}` through `sendAction`. It has no reset control.
+- The single `glyph-move.png` confirmation button sends `{path, target: 0}` through `sendAction`. It has no reset control.
 - No auto-routing: click-to-destination pathfinding is deliberately absent, because pathfinding is the student's work in this course.
 
 ### Fog of war

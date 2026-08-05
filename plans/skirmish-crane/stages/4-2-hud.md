@@ -98,7 +98,7 @@ At match end the bottom strip is replaced by a centered parchment card, 560 x 72
         +--------------------------------------------------+
 ```
 
-`{crane}` is `crane.svg` from the asset manifest. The example border reads cinnabar because Red won.
+`{crane}` is `crane.png` from the asset manifest. The example border reads cinnabar because Red won.
 
 ### Interaction UI for step 5 (design only; the working input code is step 5)
 
@@ -108,7 +108,7 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 - The composed path: chosen tiles connect with a wet-ink gilt stroke, each carrying its step number in small mono. The final tile shows the unit ghosted at alpha 0.5. Continuations stay highlighted until four steps are placed or none remain legal.
 - Reselect or undo: clicking the last path tile removes that step; clicking the activated unit clears the path. The reverted tile's highlight pulses once. The person may revise the path until confirming it, so there is no reset control.
 - Automatic-strike preview: every endpoint change shows an informational ink-thread pulse from the projected final tile. It points to the unique nearest in-range enemy when there is one. Tied nearest candidates all pulse and carry an `automatic strike: one of` label. When no enemy is in range, there is no preview. The preview reads the current living units, sends nothing, and never advances the match. Under reduced motion it snaps to the final highlight.
-- Confirm: one bottom-center icon button uses `glyph-move.svg`, with accessible name and tooltip `Confirm order`. It sends the selected path with `target: 0`; with an empty path it sends the usual stand-still-and-strike order.
+- Confirm: one bottom-center icon button uses `glyph-move.png`, with accessible name and tooltip `Confirm order`. It sends the selected path with `target: 0`; with an empty path it sends the usual stand-still-and-strike order.
 - The move clock: the confirm button's full gilt perimeter is the authoritative move-clock fill. It drains clockwise to empty and turns ember under 10 seconds. There is no separate countdown. A timeout resolves as stand-still-and-strike, playing as the usual event animation.
 
 ```

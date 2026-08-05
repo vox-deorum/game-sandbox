@@ -1,6 +1,6 @@
 # Step 4.1: Art Style
 
-Status: planned. This file carries the first design draft; exit requires explicit owner sign-off on the art direction, recorded here.
+Status: complete. The owner approved the Estuary Ink art direction on 2026-08-04, with more salient terrain marks, muted unmarked grassland, and Sengoku unit iconography. Implementation and verification finished on 2026-08-04.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 4.1: the crane-reach-field visual identity, named Estuary Ink, replacing the step 3 placeholder styling on the live renderer. The information layer over the board is [step 4.2](4-2-hud.md). Review replays both fixture recordings in the final style.
 
@@ -72,12 +72,12 @@ The battlefield layer still builds once per episode; everything here is placed a
 
 - The sheet: one parchment polygon covers the field's outer hexagon, bleeding 4 to 6 px past the outer tile edges, with the paper-grain texture multiplied over it once. The boundary gets a dry-brush ink stroke with deliberate gaps, the way a loaded brush skips.
 - Tiles: a flat terrain fill plus one `wash-hex` sprite tinted the same color at alpha 0.5, variant and rotation picked by a hash of the tile key, so pigment pools differently tile to tile and rebuilds are deterministic. Grid strokes are dilute ink, so the hexes read as penciled construction lines under the paint, not as a game grid.
-- Grass is the bare reed wash. Hill adds a `contour` sprite (two curved strokes tinted #8f7550), water adds a `ripple` sprite at alpha 0.4, forest adds a `canopy` sprite at 0.75 tile width, and marsh adds one or two `sedge` tufts. Fill and marks together identify terrain at small sizes.
+- Grass is the quietest terrain: a muted bare reed wash with no tuft mark. Hill adds a bold `contour` sprite (two curved strokes tinted #8f7550), water adds a clear `ripple` sprite, forest adds a `canopy` sprite at 0.75 tile width, and marsh adds one or two `sedge` tufts. `feature-waste` is asset-only artwork for a magic-polluted map feature, not a terrain type or gameplay rule. The marks carry enough contrast and stroke weight to identify terrain at token size.
 - Void and mist: void tiles are never drawn. The night-ink backdrop shows through, and four to six static `mist-band` sprites lie along the parchment boundary, overlapping the sheet's edge by half a tile. They give the sheet an irregular boundary without decorative ambient motion.
 
 ### Asset manifest
 
-One hand-drawn set, all original art, ships as individually bundled renderer-local source assets. The 15 grayscale-alpha PNGs tint at draw. The 14 SVGs scale crisply. A manifest names every source file, its intended dimensions, and its consumer. It is the one loading contract, with no generated spritesheet or atlas metadata. The pennant, crane, move glyph, and stat icons also serve the step 4.2 HUD.
+One hand-drawn set, all original art, ships as individually bundled renderer-local PNG assets. All 30 runtime assets are grayscale-alpha PNG masks that tint at draw. The exact high-resolution generated originals, including superseded variants, are preserved under `renderer/source-art/`. A manifest names every runtime source file, its intended dimensions, and its consumer. It is the one loading contract, with no generated spritesheet or atlas metadata. The pennant, crane, move glyph, and stat icons also serve the step 4.2 HUD.
 
 | Asset | Size | For |
 | --- | --- | --- |
@@ -86,19 +86,20 @@ One hand-drawn set, all original art, ships as individually bundled renderer-loc
 | edge-stroke.png | 256 x 64 | dry-brush boundary, tiled along edges |
 | mist-band-a/b.png | 512 x 192 each | static void mist |
 | canopy.png | 96 x 96 | forest |
+| feature-waste.png | 96 x 96 | asset-only magic-polluted map feature, not a terrain type or gameplay rule |
 | sedge-a/b.png | 96 x 48 each | marsh tufts |
 | ripple.png | 96 x 32 | water |
 | contour.png | 96 x 96 | hill strokes |
 | shadow-oval.png | 64 x 64 | unit shadows |
 | seal-ring.png | 96 x 96 | brushy circle: activation ring, target seal |
 | zone-dash.png | 96 x 24 | static zone border segments |
-| glyph-sword.svg, glyph-bow.svg, glyph-horse.svg, glyph-move.svg | 64 x 64 each | token, roster, and move marks |
-| fig-footman.svg, fig-archer.svg, fig-cavalry.svg | 128 x 128 each | figure-level silhouettes, roster marks |
-| pennant.svg | 48 x 64 | capture zone standard |
-| crane.svg | 192 x 96 | terminal banner and thumbnail motif |
-| icon-hp.svg, icon-move.svg, icon-attack.svg, icon-range.svg, icon-vision.svg | 32 x 32 each | step 4.2 unit and order information |
+| glyph-sword.png, glyph-bow.png, glyph-horse.png, glyph-move.png | 64 x 64 each | token, roster, and move marks |
+| fig-footman.png, fig-archer.png, fig-cavalry.png | 128 x 128 each | figure-level silhouettes, roster marks |
+| pennant.png | 48 x 64 | capture zone standard |
+| crane.png | 192 x 96 | terminal banner and thumbnail motif |
+| icon-hp.png, icon-move.png, icon-attack.png, icon-range.png, icon-vision.png | 32 x 32 each | step 4.2 unit and order information |
 
-Twenty-nine source files: 15 PNGs and 14 SVGs. Everything is tintable where the treatment calls for it, and nothing is borrowed.
+Thirty runtime source files are grayscale-alpha PNGs. Everything is tintable where the treatment calls for it, and nothing is borrowed.
 
 ### Units and presentation level
 
@@ -110,8 +111,8 @@ The scene retains logical geometry only. During reconciliation, Crane derives `d
 
 Each level identifies unit type differently:
 
-- Token uses a lacquered round token at 0.62 hexRadius: a side-color disc with a bone weapon glyph showing a point-up straight blade, a drawn bow with nocked arrow, or a left-facing horse head.
-- Figure uses three silhouettes: a standing spearman with shield, a kneeling archer at full draw, and a mounted rider. Each is tinted the side's deep shade with a thin bone edge light and stands on the accepted side-color oval base plate.
+- Token uses a lacquered round token at 0.62 hexRadius: a side-color disc with a bold bone mon showing a curved katana, an asymmetric yumi with nocked arrow, or a warhorse head. The glyphs use heavy strokes and few interior details so they remain clear at token size.
+- Figure uses three Sengoku silhouettes: an ashigaru in jingasa with a long yari and restrained tate shield, a kneeling armored archer at full draw with an asymmetric yumi, and a mounted samurai in kabuto and lamellar armor carrying a yari. Each is tinted the side's deep shade with a thin bone edge light and stands on the accepted side-color oval base plate.
 - Compact uses three shape-coded ink markers: a square shield for footman, a chevron for archer, and a diamond hoof mark for cavalry. The shapes identify type when a detailed glyph is too small.
 - Hit points are the border: the token outer rim, figure base edge, or compact marker edge is a gauge arc. The lit portion spans hit points over the type maximum, starting at the top and sweeping clockwise; the depleted remainder is the side's deep shade. The lit arc is bone at healthy, amber ink at or below half, and pale ember at or below a quarter. A critical unit also gets a doubled, broken outer rim, so critical state has a non-color cue. The exact numeral appears on hover in the step 4.2 chip.
 - Shadow: every unit stands on a `shadow-oval` tinted pooled ink at alpha 0.35, 1.4 x 0.5 of the token radius. It is the strongest depth cue at token level.
@@ -146,7 +147,7 @@ Terrain is standing knowledge, so the painted battlefield never dims structurall
 
 ### The thumbnail
 
-`thumbnail.svg`, 320 x 180, hand-composed, all paths, no font dependency. Night ink fills the frame. A parchment band with torn, brush-broken edges crosses the lower two thirds at a slight tilt, carrying five or six hex washes: reed flats, a slack-water passage, one silt rise. A cinnabar token with the sword glyph stands left of the water; an indigo token with the bow glyph faces it. Mist wisps cross the parchment's upper edge, a bone crane flies upper right, and `CRANE REACH` sits lower left in EB Garamond letterforms converted to outlines over a short gilt rule.
+`thumbnail.png`, 320 x 180, is generated artwork in the approved Estuary Ink style. Night ink fills the frame. A parchment band with torn, brush-broken edges crosses the lower two thirds at a slight tilt, carrying muted unmarked reed flats, a salient slack-water passage, and one salient silt rise. A cinnabar Sengoku token stands left of the water; an indigo token faces it. Mist wisps cross the parchment's upper edge, and a bone crane flies above the battlefield.
 
 ### Living inside the host chrome
 
@@ -163,8 +164,8 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 ## Tests
 
 - Scene tests updated where they assert on style-bearing output; geometry and content assertions from step 3 stay unchanged. They cover each unit's gauge state, including the half and quarter boundaries and the critical broken-rim cue.
-- Presentation-helper tests cover 18 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage at 390 px, 640 px, and the maximum host width confirms figure, token, and compact presentation changes without changing logical scene geometry.
-- A renderer-local asset manifest lists all 29 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
+- Presentation-helper tests cover 18 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms figure, token, and compact presentation changes without changing logical scene geometry, including the host's wide-layout decision-log column.
+- A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
 - Transition tests cover a fresh forward death using its transient prior-scene snapshot, plus mount, seek, resize, and repeated-tick rendering that draw the final frame only.
 - A reduced-motion test asserts snap rendering produces each event's final frame.
@@ -173,4 +174,4 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 
 ## Done when
 
-Both fixtures replay in the Estuary Ink style at figure, token, or compact presentation levels appropriate to 390 px, 640 px, and the maximum host width. A live match and `npm run play` show the same identity. All 29 source assets are original art and load in the production build, the thumbnail is final, the art direction note sits beside the renderer, the perf smoke and scene tests are green, the forward-death and final-frame paths behave as specified, and the owner's sign-off is recorded in the Status line.
+Both fixtures replay in the Estuary Ink style at figure, token, or compact presentation levels appropriate to 390 px, 640 px, and the maximum host width. A live match and `npm run play` show the same identity. All 30 source assets are original art and load in the production build, the thumbnail is final, the art direction note sits beside the renderer, the perf smoke and scene tests are green, the forward-death and final-frame paths behave as specified, and the owner's sign-off is recorded in the Status line.

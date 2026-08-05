@@ -8,31 +8,38 @@ import type { StepState } from '@game-sandbox/schema'
 export const SCENE_WIDTH = 1200
 export const SCENE_HEIGHT = 860
 
-/** Placeholder appearance, intentionally kept apart from board geometry and game content. */
-export const PLACEHOLDER_STYLE = {
-  backdrop: '#101820',
-  board: '#16232b',
-  grid: '#314654',
-  void: '#0a1015',
+/** Estuary Ink appearance, intentionally kept apart from board geometry and game content. */
+export const CRANE_STYLE = {
+  backdrop: '#101816',
+  mist: '#a9b4ab',
+  shadow: '#14201b',
+  fog: '#101816',
+  board: '#cfc5a9',
+  grid: '#6f6757',
+  void: '#131c19',
   terrain: {
-    grass: '#4d7b4b',
-    hill: '#896b42',
-    water: '#346b8d',
-    void: '#0a1015',
+    grass: '#a9ae8a',
+    hill: '#bfa072',
+    water: '#5a7680',
+    void: '#131c19',
   },
   feature: {
     none: null,
-    forest: '#24543d',
-    marsh: '#5b6770',
+    forest: '#4f6a4b',
+    marsh: '#7f8261',
   },
-  red: '#d95d53',
-  blue: '#5b9bd5',
-  activation: '#ffd166',
-  zone: '#e8c65d',
-  event: '#f7f3d7',
-  text: '#f4f7f8',
-  mutedText: '#bac6cd',
-  danger: '#f28c7d',
+  red: '#b0402e',
+  redDeep: '#7e2a1e',
+  blue: '#3a5f8f',
+  blueDeep: '#27436b',
+  activation: '#d9a441',
+  zone: '#7d5a7e',
+  zoneGlow: '#b98cc0',
+  hpLow: '#e6b054',
+  danger: '#ffb08e',
+  event: '#e8dfc7',
+  text: '#efe7d3',
+  mutedText: '#b3ab99',
 } as const
 
 export interface Point {
@@ -44,8 +51,8 @@ export interface HexTile {
   key: string
   q: number
   r: number
-  terrain: keyof typeof PLACEHOLDER_STYLE.terrain
-  feature: keyof typeof PLACEHOLDER_STYLE.feature
+  terrain: keyof typeof CRANE_STYLE.terrain
+  feature: keyof typeof CRANE_STYLE.feature
   center: Point
   corners: Point[]
 }
