@@ -7,6 +7,7 @@ import armyLegalityRaw from '../../../frontend/test/fixtures/crane-reach-army-le
 import armyFixture from '../../../frontend/test/fixtures/crane-reach-army-recording.jsonl?raw'
 import skirmishLegalityRaw from '../../../frontend/test/fixtures/crane-reach-skirmish-legality.json?raw'
 import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmish-recording.jsonl?raw'
+import tileTypes from '../tile_types.json'
 import { CRANE_ASSET_MANIFEST, craneAssetSources, loadCraneAssets } from './assets.js'
 import {
   captureCuesFor,
@@ -14,12 +15,14 @@ import {
   eventBudget,
   eventTargetPositionFor,
   eventTextMetrics,
+  FEATURE_MARKS,
   gaugeFor,
   hostEase,
   isFreshForwardEvent,
   presentationFor,
   reducedMotionCuesFor,
   shouldRebuildBattlefield,
+  TERRAIN_MARKS,
   transitionFor,
 } from './index.js'
 import { CRANE_STYLE, computeScene, decodeOverlay } from './scene.js'
@@ -150,6 +153,21 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     expect(scene.tiles.some((tile) => tile.terrain === 'water')).toBe(true)
     expect(scene.tiles.some((tile) => tile.feature === 'forest')).toBe(true)
     expect(scene.tiles.some((tile) => tile.feature === 'marsh')).toBe(true)
+    expect(scene.tiles.some((tile) => tile.feature === 'waste')).toBe(true)
+  })
+
+  it('styles and marks every tile type the shared source declares', () => {
+    expect(Object.keys(tileTypes.terrains).sort()).toEqual(Object.keys(CRANE_STYLE.terrain).sort())
+    expect(Object.keys(tileTypes.features).sort()).toEqual(Object.keys(CRANE_STYLE.feature).sort())
+    // Grass and the empty feature draw their wash alone. Everything else earns a mark.
+    for (const terrain of Object.keys(tileTypes.terrains)) {
+      expect(terrain in TERRAIN_MARKS).toBe(terrain !== 'grass' && terrain !== 'void')
+    }
+    for (const feature of Object.keys(tileTypes.features)) {
+      expect(feature in FEATURE_MARKS).toBe(feature !== 'none')
+    }
+    expect(FEATURE_MARKS.waste?.asset).toBe('waste')
+    expect(FEATURE_MARKS.waste?.tint).toBe(CRANE_STYLE.feature.waste)
   })
 
   it('draws capture zones, all unit types, hit points, and the active unit', () => {

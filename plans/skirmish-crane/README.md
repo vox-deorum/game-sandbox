@@ -8,7 +8,7 @@ Ship Skirmish at Crane Reach as a complete Game Sandbox environment: a student c
 
 ## Scope
 
-Build everything the [environment specification](environment.md) calls the platform implementation: the rules engine for the [ruleset](ruleset.md) with all four variants, the PettingZoo environment with its two-component Dict action space and masks, the `crane-reach-field` hex renderer with human play, the template layer with the skirmish helper module, the canonical student guide, one worked example, and the Season 4 starter tactical block library from [pedagogy.md](pedagogy.md).
+Build everything the [environment specification](environment.md) calls the platform implementation: the rules engine for the [ruleset](ruleset.md) with all five variants, the PettingZoo environment with its two-component Dict action space and masks, the `crane-reach-field` hex renderer with human play, the template layer with the skirmish helper module, the canonical student guide, one worked example, and the Season 4 starter tactical block library from [pedagogy.md](pedagogy.md).
 
 Non-goals, recorded so they stay deliberate:
 

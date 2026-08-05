@@ -227,6 +227,7 @@ def generate(output_dir: Path = FIXTURES_DIR) -> None:
             "seat_plan": "army",
             "field_extent": 10,
             "terrain": True,
+            "wasteland": True,
             "unit_abilities": True,
             "capture_zones": 3,
             "round_cap": 150,

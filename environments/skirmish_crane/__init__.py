@@ -57,6 +57,13 @@ META = EnvironmentMeta(
         ),
         EnvParameter("terrain", "Terrain", "Enables water, hills, forests, and marshes.", "bool", False),
         EnvParameter(
+            "wasteland",
+            "Wasteland",
+            "Scatters magical waste that wounds any unit entering it. Needs terrain.",
+            "bool",
+            False,
+        ),
+        EnvParameter(
             "unit_abilities",
             "Unit abilities",
             "Enables cavalry charge and footman shield wall.",

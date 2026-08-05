@@ -46,6 +46,7 @@ Terrain washes. Muted estuary pigments, paired with drawn terrain marks so the b
 | terrain.void   | #131c19 | deep mist   |
 | feature.forest | #4f6a4b | pine        |
 | feature.marsh  | #7f8261 | sedge       |
+| feature.waste  | #6b5d72 | ash violet  |
 
 Sides. Traditional pigments, deep and saturated, well away from the host's coral #ff7a76 and sky #6ab8ff:
 
@@ -72,7 +73,7 @@ The battlefield layer still builds once per episode; everything here is placed a
 
 - The sheet: one parchment polygon covers the field's outer hexagon, bleeding 4 to 6 px past the outer tile edges, with the paper-grain texture multiplied over it once. The boundary gets a dry-brush ink stroke with deliberate gaps, the way a loaded brush skips.
 - Tiles: a flat terrain fill plus one `wash-hex` sprite tinted the same color at alpha 0.5, variant and rotation picked by a hash of the tile key, so pigment pools differently tile to tile and rebuilds are deterministic. Grid strokes are dilute ink, so the hexes read as penciled construction lines under the paint, not as a game grid.
-- Grass is the quietest terrain: a muted bare reed wash with no tuft mark. Hill adds a bold `contour` sprite (two curved strokes tinted #8f7550), water adds a clear `ripple` sprite, forest adds a `canopy` sprite at 0.75 tile width, and marsh adds one or two `sedge` tufts. `feature-waste` is asset-only artwork for a magic-polluted map feature, not a terrain type or gameplay rule. The marks carry enough contrast and stroke weight to identify terrain at token size.
+- Grass is the quietest terrain: a muted bare reed wash with no tuft mark. Hill adds a bold `contour` sprite (two curved strokes tinted #8f7550), water adds a clear `ripple` sprite, forest adds a `canopy` sprite at 0.75 tile width, marsh adds one or two `sedge` tufts, and wasteland adds a `feature-waste` sprite tinted ash violet. A tile draws its terrain mark first and its feature mark over it, so a hill carrying a feature shows both. The marks carry enough contrast and stroke weight to identify terrain at token size.
 - Void and mist: void tiles are never drawn. The night-ink backdrop shows through, and four to six static `mist-band` sprites lie along the parchment boundary, overlapping the sheet's edge by half a tile. They give the sheet an irregular boundary without decorative ambient motion.
 
 ### Asset manifest
@@ -86,7 +87,7 @@ One hand-drawn set, all original art, ships as individually bundled renderer-loc
 | edge-stroke.png | 256 x 64 | dry-brush boundary, tiled along edges |
 | mist-band-a/b.png | 512 x 192 each | static void mist |
 | canopy.png | 96 x 96 | forest |
-| feature-waste.png | 96 x 96 | asset-only magic-polluted map feature, not a terrain type or gameplay rule |
+| feature-waste.png | 96 x 96 | wasteland feature mark, magic-polluted ground |
 | sedge-a/b.png | 96 x 48 each | marsh tufts |
 | ripple.png | 96 x 32 | water |
 | contour.png | 96 x 96 | hill strokes |

@@ -63,7 +63,7 @@ export const CRANE_ASSET_MANIFEST = [
     path: './assets/feature-waste.png',
     width: 96,
     height: 96,
-    consumer: 'asset-only magic-polluted map feature',
+    consumer: 'wasteland mark',
   },
   { name: 'sedgeA', path: './assets/sedge-a.png', width: 96, height: 48, consumer: 'marsh tuft' },
   { name: 'sedgeB', path: './assets/sedge-b.png', width: 96, height: 48, consumer: 'marsh tuft' },

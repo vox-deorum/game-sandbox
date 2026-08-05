@@ -26,7 +26,9 @@ Use the visible units to decide whether to approach, retreat, or attack. The act
 
 ## Match settings
 
-Seasons may choose the `skirmish` or `army` seat plan and adjust field size, terrain, unit abilities, capture zones, capture target, and round cap. Your observation includes the resolved values, so an agent can adapt to the match it is playing.
+Seasons may choose the `skirmish` or `army` seat plan and adjust field size, terrain, wasteland, unit abilities, capture zones, capture target, and round cap. Your observation includes the resolved values, so an agent can adapt to the match it is playing.
+
+When wasteland is on, a unit that enters a wasteland tile takes 2 damage. This damage never reduces the unit below 1 hit point, so wasteland alone can never remove a unit.
 
 ## First improvement
 

@@ -271,6 +271,13 @@
       },
       {
         "default": false,
+        "description": "Scatters magical waste that wounds any unit entering it. Needs terrain.",
+        "name": "wasteland",
+        "title": "Wasteland",
+        "type": "bool"
+      },
+      {
+        "default": false,
         "description": "Enables cavalry charge and footman shield wall.",
         "name": "unit_abilities",
         "title": "Unit abilities",

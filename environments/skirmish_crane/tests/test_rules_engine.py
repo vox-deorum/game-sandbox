@@ -22,12 +22,13 @@ from skirmish_crane.hexes import (
     neighbors,
     on_field,
     opposite,
+    path_positions,
     retrace_path,
     rotate_path,
     rotate_position,
     tile_array,
 )
-from skirmish_crane.movement import walk
+from skirmish_crane.movement import legal_paths, walk
 from skirmish_crane.paths import MAX_PATH_ID, decode_path, encode_path
 from skirmish_crane.scoring import capture_result, elimination_result, score_capture
 
@@ -73,6 +74,7 @@ def test_battlefields_hold_topology_symmetry_and_zone_guarantees(
         extent,
         Random(f"{extent}:{terrain}:{capture_zones}:{seed}"),
         terrain=terrain,
+        wasteland=terrain,
         capture_zones=capture_zones,
         units_per_side=20,
     )
@@ -166,6 +168,86 @@ def test_hex_field_shape_rotation_and_void_array_are_pinned() -> None:
     assert rotate_position((0, 2), 2) == (4, 2)
     assert rotate_path((1, 2)) == (4, 5)
     assert retrace_path((1, 2)) == (5, 4)
+    assert path_positions((7, 7), ()) == ()
+    assert path_positions((7, 7), (2, 3)) == ((8, 7), (8, 8))
+
+
+def test_wasteland_scatters_only_when_its_parameter_and_terrain_are_both_on() -> None:
+    def field(terrain: bool, wasteland: bool) -> Battlefield:
+        return generate_battlefield(
+            10, Random("waste"), terrain=terrain, wasteland=wasteland, units_per_side=20
+        )
+
+    scattered = field(True, True)
+    withheld = field(True, False)
+    bare = field(False, True)
+    assert any(scattered.tile_at(position).feature == "waste" for position in field_positions(10))
+    assert not any(withheld.tile_at(position).feature == "waste" for position in field_positions(10))
+    assert all(bare.tile_at(position) == Tile() for position in field_positions(10))
+    assert all(
+        scattered.tile_at(position) == scattered.tile_at(rotate_position(position, 10))
+        for position in field_positions(10)
+    )
+    # Withholding wasteland leaves the rest of the draw untouched: those tiles stay plain.
+    for position in field_positions(10):
+        drawn = scattered.tile_at(position)
+        expected = Tile(drawn.terrain) if drawn.feature == "waste" else drawn
+        assert withheld.tile_at(position) == expected
+
+
+def test_features_sit_on_any_passable_terrain_and_stack_their_costs() -> None:
+    assert Tile("grass", "waste").move_cost == 1
+    assert Tile("hill", "waste").move_cost == 2
+    assert Tile("hill", "forest").move_cost == 3
+    assert Tile("hill", "marsh").move_cost == 4
+    # A path costs the same across wasteland as across the plain ground it replaces.
+    field = generate_battlefield(5, Random(1))
+    plain = legal_paths(field, (5, 5), 2, set())
+    wasted = _with_tile(field, (6, 5), Tile("grass", "waste"))
+    assert legal_paths(wasted, (5, 5), 2, set()) == plain
+
+
+def _waste_walk(
+    kind: str, hit_points: int, waste: tuple[tuple[int, int], ...], path: tuple[int, ...]
+) -> Unit:
+    """Walk one planted unit over a field carrying wasteland on the given tiles."""
+    unit = Unit(f"red_{kind}_0", "red", kind, (7, 7), hit_points)
+    # The enemy sits outside every attack range so only the walk changes hit points.
+    enemy = Unit("blue_archer_0", "blue", "archer", (0, 14), 6)
+    match = _planted(Match(MatchConfig(seed=0, round_cap=5)), (unit, enemy), (unit.unit_id,))
+    for position in waste:
+        match.battlefield = _with_tile(match.battlefield, position, Tile("grass", "waste"))
+    match.apply_order(Order(path=path))
+    return unit
+
+
+def test_entering_wasteland_wounds_a_unit_once_for_every_tile_it_enters() -> None:
+    # Two waste tiles walked in one order, the second of them the tile the unit ends on.
+    assert _waste_walk("footman", 12, ((8, 7), (9, 7)), (2, 2)).hit_points == 8
+    # Crossing wasteland still costs even when the unit ends on clean ground.
+    assert _waste_walk("footman", 12, ((8, 7),), (2, 2)).hit_points == 10
+    # A path that re-enters the same tile pays for it again.
+    assert _waste_walk("cavalry", 10, ((8, 7),), (2, 5, 2, 5)).hit_points == 6
+    # Standing still is safe, even standing on wasteland.
+    assert _waste_walk("footman", 12, ((7, 7),), ()).hit_points == 12
+
+
+def test_wasteland_damage_floors_at_one_hit_point_and_never_kills() -> None:
+    match = _planted(
+        Match(MatchConfig(seed=0, round_cap=5)),
+        (
+            Unit("red_footman_0", "red", "footman", (7, 7), 2),
+            Unit("blue_archer_0", "blue", "archer", (0, 14), 6),
+        ),
+        ("red_footman_0",),
+    )
+    match.battlefield = _with_tile(match.battlefield, (8, 7), Tile("grass", "waste"))
+    match.battlefield = _with_tile(match.battlefield, (9, 7), Tile("grass", "waste"))
+    activation = match.apply_order(Order(path=(2, 2)))
+
+    assert match.units["red_footman_0"].hit_points == 1
+    assert activation.killed_id is None
+    assert "red_footman_0" in match.units
 
 
 def test_movement_matrix_covers_cost_balance_blocking_and_length() -> None:

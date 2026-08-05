@@ -18,6 +18,7 @@ from .hexes import (
     rotate_position,
     tile_array,
 )
+from .tile_types import FEATURE_SCATTER, TERRAIN_SCATTER
 
 MAX_REDRAWS = 12
 # Inclusive bounds this generator enforces. The environment package reuses them for its
@@ -108,7 +109,7 @@ def _passage_ranges(extent: int, count: int, rng: Random) -> tuple[range, ...]:
 
 
 def _terrain_tiles(
-    extent: int, rng: Random, terrain: bool, zone_count: int
+    extent: int, rng: Random, terrain: bool, zone_count: int, wasteland: bool
 ) -> tuple[dict[Position, Tile], tuple[tuple[Position, ...], ...]]:
     tiles = {position: Tile() for position in field_positions(extent)}
     if not terrain:
@@ -125,21 +126,18 @@ def _terrain_tiles(
 
     # Only select one representative from each reflected pair. The seam was
     # already made symmetric and is left alone so passage metadata stays exact.
+    flags = {"wasteland": wasteland}
     for position in sorted(tiles):
         mirror = rotate_position(position, extent)
         if position > mirror or position[0] == extent:
             continue
         if not tiles[position].passable:
             continue
-        roll = rng.randrange(20)
-        if roll == 0:
-            tile = Tile("hill")
-        elif roll == 1:
-            tile = Tile("grass", "forest")
-        elif roll == 2:
-            tile = Tile("grass", "marsh")
-        else:
-            continue
+        # Terrain and feature draw independently, so a feature may land on any passable
+        # terrain and each kind keeps its own density.
+        drawn_terrain = TERRAIN_SCATTER.value_for(rng.randrange(TERRAIN_SCATTER.die), flags)
+        drawn_feature = FEATURE_SCATTER.value_for(rng.randrange(FEATURE_SCATTER.die), flags)
+        tile = Tile(drawn_terrain, drawn_feature)
         tiles[position] = tile
         tiles[mirror] = tile
     passage_tiles = tuple(tuple((extent, r) for r in passage) for passage in passages)
@@ -199,6 +197,7 @@ def generate_battlefield(
     rng: Random,
     *,
     terrain: bool = False,
+    wasteland: bool = False,
     capture_zones: int = 0,
     units_per_side: int = 3,
 ) -> Battlefield:
@@ -210,7 +209,7 @@ def generate_battlefield(
     if not zones_low <= capture_zones <= zones_high:
         raise ValueError(f"capture zones must be from {zones_low} through {zones_high}")
     for redraw in range(MAX_REDRAWS):
-        tiles, passages = _terrain_tiles(extent, rng, terrain, capture_zones)
+        tiles, passages = _terrain_tiles(extent, rng, terrain, capture_zones, wasteland)
         try:
             zones = _zones(extent, tiles, capture_zones)
             field = Battlefield(

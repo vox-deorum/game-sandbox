@@ -57,7 +57,7 @@ The arc across the six seasons: Season 1 builds the first tactical blocks (small
 
 ### Season 6: The Rivals (Week 6)
 
-- What unlocks: nothing new; deliberately light because the design document draft is due the same week. After five seasons, the field of opponents is well known.
+- What unlocks: wasteland, one light map twist, kept deliberately small because the design document draft is due the same week. Crossing wasteland trades hit points for position, a concrete reward-shaping decision: route choice now carries a cost the reward function has to price. After five seasons, the field of opponents is well known.
 - Design issue: robustness and counter-strategy against a known field of named opponents, with each unit policy still acting from separate local state.
 - Core techniques: reinforcement learning over the same decentralized strategic assignment interface established in Season 4, with reward design shaping it (what you reward is what you get); self-play plus adversarial training against the strongest available pools. A unit receives no later learning hook after it dies, so training that assigns the eventual team outcome to that unit consumes the completed episode result outside the per-step hook.
 - Optional: evolutionary methods to tune block parameters or assignment heuristics.

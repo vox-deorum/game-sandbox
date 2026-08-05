@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from random import Random
 from types import MappingProxyType
 
 from .battlefield import Battlefield, generate_battlefield
 from .combat import Strike, resolve_strike, visible_units
-from .hexes import DIRECTIONS, Position
+from .hexes import DIRECTIONS, Position, path_positions
 from .movement import legal_paths, walk
 from .paths import MAX_PATH_STEPS
 from .scoring import Result, capture_result, elimination_result, score_capture
@@ -44,6 +44,7 @@ class MatchConfig:
     seat_plan: str = "skirmish"
     field_extent: int = 7
     terrain: bool = False
+    wasteland: bool = False
     unit_abilities: bool = False
     messages: bool = False
     capture_zones: int = 0
@@ -113,6 +114,18 @@ def _nameable_targets(unit: Unit, visible: tuple[Unit, ...]) -> tuple[str, ...]:
     return tuple(other.unit_id for other in visible if other.side != unit.side)
 
 
+def apply_entry_damage(battlefield: Battlefield, unit: Unit, entered: Iterable[Position]) -> None:
+    """Wound a unit for each damaging tile it enters, never below one hit point.
+
+    Tile damage is paid on entry, so standing still is always safe and no tile can kill.
+    Any future rule that forces a unit onto new ground belongs here too.
+    """
+    for position in entered:
+        damage = battlefield.tile_at(position).entry_damage
+        if damage:
+            unit.hit_points = max(1, unit.hit_points - damage)
+
+
 def scripted_order(source: OrderSource, match: Match, unit_id: str) -> Order:
     """Read one order from a callable or a lookup table, defaulting to standing still."""
     return source(match, unit_id) if callable(source) else source.get(unit_id, Order())
@@ -151,6 +164,7 @@ class Match:
             self.config.field_extent,
             self.battlefield_rng,
             terrain=self.config.terrain,
+            wasteland=self.config.wasteland,
             capture_zones=self.config.capture_zones,
             units_per_side=sum(counts.values()),
         )
@@ -251,6 +265,7 @@ class Match:
         if order.target is not None and order.target not in _nameable_targets(unit, visible):
             raise ValueError("order target is not nameable")
         unit.position = end
+        apply_entry_damage(self.battlefield, unit, path_positions(start, order.path))
         strike = resolve_strike(
             unit,
             self.units,

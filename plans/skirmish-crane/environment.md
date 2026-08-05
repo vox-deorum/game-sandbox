@@ -29,27 +29,28 @@ Seat order matters: the field is symmetric, but a fixed seed gives the two seats
 | seat_plan | Army size | choice (reserved) | skirmish | skirmish (Skirmish), army (Army) | Selects the declared seat plan and unit roster. |
 | field_extent | Field extent | int | 7 | 5 to 22 | Sets the field radius: the hex distance from the center tile to the field edge. |
 | terrain | Terrain | bool | false |  | Enables water, hills, forests, and marshes. |
+| wasteland | Wasteland | bool | false |  | Scatters magical waste that wounds any unit entering it. Needs terrain. |
 | unit_abilities | Unit abilities | bool | false |  | Enables cavalry charge and footman shield wall. |
 | capture_zones | Capture zones | int | 0 | 0 to 5 | Sets the number of scoring zones; zero disables capture play. |
 | capture_target | Capture target | int | 200 | 10 to 10000 | Sets the capture score needed to end a capture match. |
 | round_cap | Round cap | int | 1000 | 100 to 10000 | Sets the maximum number of completed rounds. |
 
 - field_extent is the ruleset's field radius: the field holds 3 × field_extent^2 + 3 × field_extent + 1 tiles and measures 2 × field_extent + 1 tiles across (169 tiles, 15 across at the default; 331 tiles, 21 across at extent 10).
-- terrain switches the terrain variant, unit_abilities switches the abilities variant, and a capture_zones value above 0 switches the capture variant. capture_target is inert at 0 zones.
+- terrain switches the terrain variant, wasteland switches the wasteland variant and needs terrain on to have any effect, unit_abilities switches the abilities variant, and a capture_zones value above 0 switches the capture variant. capture_target is inert at 0 zones.
 - Zone placement generalizes the ruleset symmetrically to any count: an odd count places one central zone, and the rest are placed as mirrored pairs. The field always has a center tile, so a central zone fits any declared field_extent and every declared parameter combination is constructible.
 - Messaging is platform metadata that a season toggles, not a gameplay parameter.
 - round_cap sets the ruleset's round cap.
 
 Defaults reproduce Season 1. The season schedule resolves to:
 
-| Season | seat_plan | field_extent | terrain | unit_abilities | capture_zones | messaging |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | skirmish | 7 (15 across) | false | false | 0 | off |
-| 2 | skirmish | 7 (15 across) | true | false | 0 | off |
-| 3 | army | 10 (21 across) | true | true | 0 | on |
-| 4 | army | 10 (21 across) | true | true | 1 | on |
-| 5 | army | 10 (21 across) | true | true | 3 | on |
-| 6 | army | 10 (21 across) | true | true | 3 | on |
+| Season | seat_plan | field_extent | terrain | wasteland | unit_abilities | capture_zones | messaging |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | skirmish | 7 (15 across) | false | false | false | 0 | off |
+| 2 | skirmish | 7 (15 across) | true | false | false | 0 | off |
+| 3 | army | 10 (21 across) | true | false | true | 0 | on |
+| 4 | army | 10 (21 across) | true | false | true | 1 | on |
+| 5 | army | 10 (21 across) | true | false | true | 3 | on |
+| 6 | army | 10 (21 across) | true | true | true | 3 | on |
 
 capture_target stays 200 and round_cap stays 1000 in every season.
 
@@ -124,9 +125,9 @@ Its schema is fixed by the resolved parameters at construction and stays constan
 - Text fields use lowercase letters, digits, and underscore. `unit_id` is `Text(max_length=16)`, `player` is `Text(max_length=9)`, `side` is `Text(max_length=4)`, and `type` is `Text(max_length=7)`. Every Text field has minimum length 1.
 - `hit_points` is `Discrete(13)` and `movement_points` is `Discrete(5)`.
 - `round` is `Discrete(round_cap, start=1)`. Each capture score is `Discrete(capture_target + max(1, capture_zones))`, which includes the largest score reachable on the round that crosses the target. The capture target is `Discrete(capture_target + 1)`.
-- battlefield.tiles is a Tuple of field_side rows, each a Tuple of field_side tile Dicts `{"terrain", "feature"}`, indexed tiles[r][q]. terrain is grass, hill, water, or void and feature is none, forest, or marsh. Cells outside the hexagonal field hold terrain void and feature none; void is impassable and never occurs inside the field. battlefield.zones is a Tuple of capture_zones zone Dicts `{"center", "tiles"}` listing each zone's center and its seven tile positions.
-- In `battlefield.tiles`, terrain is `Text(max_length=5)` and feature is `Text(max_length=6)`, both with minimum length 1. battlefield.side is `Discrete(field_side + 1)` and always contains field_side; the tile array is square, so one field describes it.
-- `parameters` contains `seat_plan` as `Text(max_length=8)`; `field_extent` as `Discrete(18, start=5)`; `terrain` and `unit_abilities` as `Discrete(2)` flags; `capture_zones` as `Discrete(6)`; `capture_target` as `Discrete(9991, start=10)`; and `round_cap` as `Discrete(9901, start=100)`.
+- battlefield.tiles is a Tuple of field_side rows, each a Tuple of field_side tile Dicts `{"terrain", "feature"}`, indexed tiles[r][q]. terrain is grass, hill, water, or void and feature is none, forest, marsh, or waste. Cells outside the hexagonal field hold terrain void and feature none; void is impassable and never occurs inside the field. battlefield.zones is a Tuple of capture_zones zone Dicts `{"center", "tiles"}` listing each zone's center and its seven tile positions.
+- In `battlefield.tiles`, terrain is `Text(max_length=5)` and feature is `Text(max_length=6)`, both with minimum length 1. These declared bounds do not change with wasteland: "waste" is five characters, inside the existing feature bound. battlefield.side is `Discrete(field_side + 1)` and always contains field_side; the tile array is square, so one field describes it.
+- `parameters` contains `seat_plan` as `Text(max_length=8)`; `field_extent` as `Discrete(18, start=5)`; `terrain`, `wasteland`, and `unit_abilities` as `Discrete(2)` flags; `capture_zones` as `Discrete(6)`; `capture_target` as `Discrete(9991, start=10)`; and `round_cap` as `Discrete(9901, start=100)`.
 - visible_units excludes the observing unit itself and is emitted as a tuple.
 - movement_points always equals the type's movement stat, since a unit starts every activation with full points and an activation is a single step.
 - `action_mask` carries one binary vector per action component, in that component's value order. The stay bit and the none bit are always 1. A player receives no later observation after it terminates.

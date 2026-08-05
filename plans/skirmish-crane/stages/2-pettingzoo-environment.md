@@ -55,7 +55,7 @@ The chat policy lists the living allied players in player order, excluding the s
 | description | A seeded, turn-based team tactics game in which separately running units coordinate through perception and delayed messages. |
 | layout | seat plans skirmish (default) and army |
 | builtin_agents | naive (Naive) only; the instructor anchors are later work |
-| parameters | field_extent, terrain, unit_abilities, capture_zones, capture_target, round_cap per the spec table |
+| parameters | field_extent, terrain, wasteland, unit_abilities, capture_zones, capture_target, round_cap per the spec table |
 | human_players, human_timeout_ms | all players, 30_000 |
 | stepping, pace_interval_ms | sequential, None |
 | view_interval_ms, live_interval_ms | 750, 500 |

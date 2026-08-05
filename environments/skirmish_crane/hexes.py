@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from .tile_types import FEATURES, TERRAINS
+
 Position = tuple[int, int]
 
 # Clockwise from northeast.  These digits are part of the student contract.
@@ -20,20 +22,24 @@ DIRECTIONS: dict[int, Position] = {
 
 @dataclass(frozen=True)
 class Tile:
-    """A field cell. Void and water are impassable."""
+    """A field cell. Terrain and feature properties both come from the tile-type source."""
 
     terrain: str = "grass"
     feature: str = "none"
 
     @property
     def passable(self) -> bool:
-        return self.terrain not in {"void", "water"}
+        return TERRAINS[self.terrain].passable
 
     @property
     def move_cost(self) -> int:
         if not self.passable:
             raise ValueError("an impassable tile has no movement cost")
-        return 1 + (self.terrain == "hill") + (self.feature == "forest") + 2 * (self.feature == "marsh")
+        return TERRAINS[self.terrain].move_cost + FEATURES[self.feature].move_cost_delta
+
+    @property
+    def entry_damage(self) -> int:
+        return FEATURES[self.feature].entry_damage
 
 
 VOID = Tile("void")
@@ -85,6 +91,16 @@ def rotate_path(path: tuple[int, ...] | list[int]) -> tuple[int, ...]:
 
 def retrace_path(path: tuple[int, ...] | list[int]) -> tuple[int, ...]:
     return tuple(opposite(direction) for direction in reversed(path))
+
+
+def path_positions(start: Position, path: tuple[int, ...] | list[int]) -> tuple[Position, ...]:
+    """Return every tile a walked path enters, in order, including the final tile."""
+    positions: list[Position] = []
+    position = start
+    for direction in path:
+        position = neighbor(position, direction)
+        positions.append(position)
+    return tuple(positions)
 
 
 def tile_array(extent: int, tiles: dict[Position, Tile]) -> tuple[tuple[Tile, ...], ...]:

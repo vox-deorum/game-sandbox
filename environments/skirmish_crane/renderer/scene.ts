@@ -5,6 +5,8 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 
+import tileTypes from '../tile_types.json'
+
 export const SCENE_WIDTH = 1200
 export const SCENE_HEIGHT = 860
 
@@ -27,6 +29,7 @@ export const CRANE_STYLE = {
     none: null,
     forest: '#4f6a4b',
     marsh: '#7f8261',
+    waste: '#6b5d72',
   },
   red: '#b0402e',
   redDeep: '#7e2a1e',
@@ -47,12 +50,15 @@ export interface Point {
   y: number
 }
 
+export type TerrainName = keyof typeof CRANE_STYLE.terrain
+export type FeatureName = keyof typeof CRANE_STYLE.feature
+
 export interface HexTile {
   key: string
   q: number
   r: number
-  terrain: keyof typeof CRANE_STYLE.terrain
-  feature: keyof typeof CRANE_STYLE.feature
+  terrain: TerrainName
+  feature: FeatureName
   center: Point
   corners: Point[]
 }
@@ -143,14 +149,28 @@ interface BattlefieldScene {
 }
 
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz'
-const TILE_CODES = {
-  g: ['grass', 'none'],
-  h: ['hill', 'none'],
-  w: ['water', 'none'],
-  v: ['void', 'none'],
-  f: ['grass', 'forest'],
-  m: ['grass', 'marsh'],
-} as const
+
+/**
+ * The wire codes come from the same tile-type file the rules engine reads, so the two sides
+ * cannot drift. Appearance stays here: every declared name must have a style entry.
+ */
+function readTileCodes(): Record<string, readonly [TerrainName, FeatureName]> {
+  const codes: Record<string, readonly [TerrainName, FeatureName]> = {}
+  for (const [terrain, row] of Object.entries(tileTypes.tile_codes)) {
+    if (!(terrain in CRANE_STYLE.terrain)) {
+      throw new Error(`Crane Reach has no style for terrain ${terrain}`)
+    }
+    for (const [feature, code] of Object.entries(row)) {
+      if (!(feature in CRANE_STYLE.feature)) {
+        throw new Error(`Crane Reach has no style for feature ${feature}`)
+      }
+      codes[code] = [terrain as TerrainName, feature as FeatureName]
+    }
+  }
+  return codes
+}
+
+const TILE_CODES = readTileCodes()
 const DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
   [1, -1],
   [1, 0],
@@ -327,7 +347,7 @@ function readTiles(
     if (row === undefined) throw new Error('Crane Reach overlay has a missing tile row')
     for (let q = 0; q < overlay.side; q += 1) {
       const code = row[q]
-      const mapped = code === undefined ? undefined : TILE_CODES[code as keyof typeof TILE_CODES]
+      const mapped = code === undefined ? undefined : TILE_CODES[code]
       if (mapped === undefined) throw new Error('Crane Reach overlay has an unknown tile code')
       const [terrain, feature] = mapped
       const center = centerFor(q, r)

@@ -2,7 +2,7 @@
 
 Skirmish at Crane Reach is a battle between two detachments, Red and Blue, fighting over ground in Crane Reach. Every unit on a side runs a separately constructed copy of one submitted program. Coordination happens through perception and delayed messages, never through a shared controller or shared memory.
 
-The game is one environment plus four variants: terrain, abilities, messages, and capture. Seasons switch variants on and set parameters such as field size and unit counts. The season schedule is at the end of this document; the teaching arc behind it lives in [pedagogy.md](pedagogy.md).
+The game is one environment plus five variants: terrain, abilities, messages, capture, and wasteland. Seasons switch variants on and set parameters such as field size and unit counts. The season schedule is at the end of this document; the teaching arc behind it lives in [pedagogy.md](pedagogy.md).
 
 ## Conventions
 
@@ -25,10 +25,10 @@ Every match plays on a field generated from the match seed, under fixed guarante
 
 - The field is point-symmetric: rotated 180 degrees about the center, (q, r) onto (2R - q, 2R - r), it maps onto itself, and the two sides' spawn positions mirror each other. Neither side gets better ground.
 - All passable tiles form one connected region.
-- Without the terrain variant, every tile is grass. With it, the generator lays water that leaves two or three passages, each 2 to 4 tiles wide, between the two halves of the field, and scatters hills, forests, and marshes symmetrically.
+- Without the terrain variant, every tile is grass. With it, the generator lays water that leaves two or three passages, each 2 to 4 tiles wide, between the two halves of the field, then scatters hills, forests, and marshes symmetrically, adding wasteland when that variant is on. Terrain and feature are drawn independently for each tile, so roughly one tile in twenty carries each kind and a feature on a hill is rare.
 - With the capture variant, zones sit on passable tiles, placed symmetrically: one central zone when there is one, one central and two mirrored when there are three.
 
-Each tile has a terrain and at most one feature. Effects stack.
+Each tile has a terrain and at most one feature. Effects stack. A feature may sit on any passable terrain, hills included: a hill carrying a feature applies both effects, for example a hill with forest costs 3 to enter and gives the hill's high-ground and vision effects along with the forest's cover.
 
 | Tile | Move cost | Effect |
 | --- | --- | --- |
@@ -36,7 +36,8 @@ Each tile has a terrain and at most one feature. Effects stack.
 | Hill (terrain) | 2 | High ground: attacks from a hill against lower ground deal 1 extra damage, and attacks from lower ground against a hill deal 1 less. A unit on a hill sees 1 tile farther. |
 | Water (terrain) | impassable | Shapes the passages. |
 | Forest (feature) | +1 | Cover: a unit in forest takes 1 less damage from attacks made at a distance greater than 1, and the charge bonus never applies against it. |
-| Marsh (feature) | +2 | Slow ground. Occurs on grass only. |
+| Marsh (feature) | +2 | Slow ground. |
+| Wasteland (feature) | +0 | Magical waste: a unit takes 2 damage each time it enters the tile, never reduced below 1 hit point. Entering is the only cost, so standing on wasteland is safe. |
 
 Vision and attacks ignore terrain everywhere: terrain prices movement and adjusts damage, and it never blocks sight or arrows.
 
@@ -51,7 +52,7 @@ Vision and attacks ignore terrain everywhere: terrain prices movement and adjust
 | Vision          | 4       | 6      | 6       |
 
 - Every unit has a stable id of the form side_type_index, such as red_archer_2, fixed for the whole match.
-- A unit at 0 or fewer hit points is removed immediately.
+- A unit at 0 or fewer hit points is removed immediately. Wasteland damage can never bring a unit that low, so it never removes a unit by itself.
 
 Composition per side: Seasons 1 and 2 field one unit of each type. Season 3 onward fields 8 footmen, 6 archers, and 6 cavalry.
 
@@ -63,7 +64,7 @@ Each path step enters a tile adjacent to the previous one. The order is legal on
 
 - A step needs an empty, passable tile and enough unspent points to pay its cost. A unit that still has all of its movement points may always take one step onto any empty passable tile, whatever the cost.
 - Each step spends the tile's cost. The balance may fall below zero after the always-permitted first step, in which case that tile must be the end of the path.
-- After the path passes these checks, the unit walks the complete path.
+- After the path passes these checks, the unit walks the complete path. Entering a tile applies its feature's entry damage, once per tile entered along the path, including the final tile: entering the same tile twice in one path pays twice.
 
 The engine never plans a route. Turning a pathfinder's route into legal orders, and re-planning on later activations as the battlefield changes, is the unit's own code.
 
@@ -105,6 +106,10 @@ A unit may send short text messages to living allied units, and broadcasts, whic
 
 A capture zone is seven tiles: a passable center tile plus its six neighbors, all passable. After each round, each zone is checked: if exactly one side has a living unit standing in it, that side earns 1 point. A contested or empty zone earns nobody anything. The first side to reach the capture target wins.
 
+### wasteland (Season 6)
+
+Scatters wasteland, ground polluted by overuse of magic, during battlefield generation. It needs the terrain variant on, since wasteland is one of the features the terrain generation pass scatters.
+
 ## Match end and team score
 
 Every player on a side receives the identical final team score, between 0 and 100, including players whose units were removed earlier. Any win scores 70 to 100, a draw scores 50, and any loss scores 0 to 30.
@@ -125,13 +130,13 @@ Capture matches end when a side is eliminated, when a side reaches the capture t
 
 ## Seasons
 
-| Season | Field | Per side | terrain | abilities | messages | capture |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | radius 7 (15 across) | 1-1-1 | off | off | off | off |
-| 2 | radius 7 (15 across) | 1-1-1 | on | off | off | off |
-| 3 | radius 10 (21 across) | 8-6-6 | on | on | on | off |
-| 4 | radius 10 (21 across) | 8-6-6 | on | on | on | 1 zone, target 200 |
-| 5 | radius 10 (21 across) | 8-6-6 | on | on | on | 3 zones, target 200 |
-| 6 | radius 10 (21 across) | 8-6-6 | on | on | on | 3 zones, target 200 |
+| Season | Field | Per side | terrain | abilities | messages | capture | wasteland |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | radius 7 (15 across) | 1-1-1 | off | off | off | off | off |
+| 2 | radius 7 (15 across) | 1-1-1 | on | off | off | off | off |
+| 3 | radius 10 (21 across) | 8-6-6 | on | on | on | off | off |
+| 4 | radius 10 (21 across) | 8-6-6 | on | on | on | 1 zone, target 200 | off |
+| 5 | radius 10 (21 across) | 8-6-6 | on | on | on | 3 zones, target 200 | off |
+| 6 | radius 10 (21 across) | 8-6-6 | on | on | on | 3 zones, target 200 | on |
 
 Per side is footmen-archers-cavalry.

@@ -140,6 +140,7 @@ def _api_test_tolerating_1211(env: Any) -> None:
             seat_plan="army",
             field_extent=22,
             terrain=True,
+            wasteland=True,
             unit_abilities=True,
             capture_zones=5,
             capture_target=10_000,
@@ -171,7 +172,7 @@ def _assert_text_leaves(space: spaces.Space[Any], value: Any) -> None:
 
 
 def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip() -> None:
-    env = make_env(_parameters(terrain=True, capture_zones=3))
+    env = make_env(_parameters(terrain=True, wasteland=True, capture_zones=3))
     env.reset(seed=0)
     observation, *_ = env.last()
     state = observation["observation"]
@@ -299,7 +300,7 @@ def test_staged_builtin_naive_agent_matches_the_package_copy() -> None:
 
 def test_overlay_is_deterministic_for_a_seeded_scripted_rollout() -> None:
     def rollout() -> list[dict[str, Any]]:
-        env = make_env(_parameters(round_cap=100, terrain=True, capture_zones=2))
+        env = make_env(_parameters(round_cap=100, terrain=True, wasteland=True, capture_zones=2))
         env.reset(seed=11)
         states = []
         for observation in _turns(env, 18):
@@ -450,6 +451,7 @@ def test_compact_overlay_version_one_decodes_every_state_field() -> None:
             seat_plan="army",
             field_extent=10,
             terrain=True,
+            wasteland=True,
             unit_abilities=True,
             capture_zones=3,
         )
@@ -459,6 +461,8 @@ def test_compact_overlay_version_one_decodes_every_state_field() -> None:
     decoded = decode_overlay(compact)
 
     assert compact["k"] == OVERLAY_VERSION
+    # The full variant exercises every wire code the renderer has to read back.
+    assert any(tile["feature"] == "waste" for row in decoded["battlefield"]["tiles"] for tile in row)
     assert all(len(row) == env.match.battlefield.side for row in compact["b"]["t"])
     assert all(len(zone) == 4 for zone in compact["b"]["z"])
     assert all(len(unit) == 7 for unit in compact["u"])
@@ -599,6 +603,7 @@ def test_full_army_recording_stays_under_ten_megabytes(tmp_path: Any) -> None:
             "seat_plan": "army",
             "field_extent": 10,
             "terrain": True,
+            "wasteland": True,
             "unit_abilities": True,
             "capture_zones": 3,
         },
@@ -609,6 +614,8 @@ def test_every_season_schedule_row_resolves_to_a_valid_environment(season: dict[
     parameters = _parameters(**season)
     assert parameters["capture_target"] == 200
     assert parameters["round_cap"] == 1000
+    # Wasteland belongs to Season 6 alone, so every earlier row must resolve it off.
+    assert parameters["wasteland"] is season.get("wasteland", False)
     env = make_env(parameters)
     env.reset(seed=0)
     env.close()

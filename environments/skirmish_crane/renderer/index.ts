@@ -9,14 +9,43 @@ import {
   CRANE_STYLE,
   type CraneReachScene,
   computeScene,
+  type FeatureName,
   SCENE_HEIGHT,
   SCENE_WIDTH,
   type SceneEvent,
   type SceneUnit,
+  type TerrainName,
 } from './scene.js'
 import thumbnail from './thumbnail.png'
 
 const UNIT_MAX_HIT_POINTS = { footman: 12, archer: 6, cavalry: 10 } as const
+
+/** How one tile mark is drawn. ``alternate`` gives a mark its scattered second tuft. */
+interface MarkSpec {
+  asset: CraneAssetName
+  alternate?: CraneAssetName
+  tint: string
+  alpha: number
+  shape: 'square' | 'wide' | 'tuft' | 'canopy'
+}
+
+/** A tile type earns its mark by appearing here. Anything absent draws its wash alone. */
+export const TERRAIN_MARKS: Partial<Record<TerrainName, MarkSpec>> = {
+  hill: { asset: 'contour', tint: '#8f7550', alpha: 0.88, shape: 'square' },
+  water: { asset: 'ripple', tint: CRANE_STYLE.void, alpha: 0.58, shape: 'wide' },
+}
+
+export const FEATURE_MARKS: Partial<Record<FeatureName, MarkSpec>> = {
+  forest: { asset: 'canopy', tint: CRANE_STYLE.feature.forest, alpha: 0.88, shape: 'canopy' },
+  marsh: {
+    asset: 'sedgeA',
+    alternate: 'sedgeB',
+    tint: CRANE_STYLE.feature.marsh,
+    alpha: 0.88,
+    shape: 'tuft',
+  },
+  waste: { asset: 'waste', tint: CRANE_STYLE.feature.waste, alpha: 0.88, shape: 'square' },
+}
 
 function cubicCoordinate(t: number, first: number, second: number): number {
   const inverse = 1 - t
@@ -411,61 +440,53 @@ export class CraneReachRenderer extends PixiRenderer {
       wash.rotation = (hash(`${tile.key}:turn`) % 6) * (Math.PI / 3)
       this.battlefieldLayer.addChild(wash)
     }
-    const mark =
-      tile.terrain === 'hill'
-        ? 'contour'
-        : tile.terrain === 'water'
-          ? 'ripple'
-          : tile.feature === 'forest'
-            ? 'canopy'
-            : tile.feature === 'marsh'
-              ? hash(tile.key) % 2 === 0
-                ? 'sedgeA'
-                : 'sedgeB'
-              : null
-    if (mark !== null) {
-      const width =
-        mark === 'canopy'
-          ? Math.sqrt(3) * radius * 0.75
-          : mark === 'ripple'
-            ? radius * 1.4
-            : radius * 1.45
-      const height =
-        mark === 'ripple' ? width / 3 : mark === 'sedgeA' || mark === 'sedgeB' ? width / 2 : width
-      const sprite = this.sprite(mark, tile.center.x, tile.center.y, width, height)
-      if (sprite !== null) {
-        sprite.tint =
-          tile.terrain === 'hill'
-            ? '#8f7550'
-            : tile.terrain === 'water'
-              ? CRANE_STYLE.void
-              : tile.feature === 'forest'
-                ? CRANE_STYLE.feature.forest
-                : CRANE_STYLE.feature.marsh
-        sprite.alpha = tile.terrain === 'water' ? 0.58 : 0.88
-        this.battlefieldLayer.addChild(sprite)
-      }
-      if ((mark === 'sedgeA' || mark === 'sedgeB') && hash(`${tile.key}:second-sedge`) % 2 === 0) {
-        const second = this.sprite(
-          mark === 'sedgeA' ? 'sedgeB' : 'sedgeA',
-          tile.center.x + radius * 0.2,
-          tile.center.y + radius * 0.12,
-          width * 0.72,
-          height * 0.72,
-        )
-        if (second !== null) {
-          second.tint = CRANE_STYLE.feature.marsh
-          second.alpha = 0.78
-          this.battlefieldLayer.addChild(second)
-        }
-      }
-      return
+    // Terrain draws first so a feature sitting on a hill reads over its contours. Grass and
+    // the empty feature carry no mark: the muted reed wash leaves room for the salient ones.
+    const terrainMark = TERRAIN_MARKS[tile.terrain]
+    if (terrainMark !== undefined) this.drawMark(terrainMark, tile, radius)
+    const featureMark = FEATURE_MARKS[tile.feature]
+    if (featureMark !== undefined) this.drawMark(featureMark, tile, radius)
+  }
+
+  private drawMark(
+    spec: MarkSpec,
+    tile: CraneReachScene['tiles'][number],
+    radius: number,
+  ): void {
+    const alternate = spec.alternate
+    const flipped = alternate !== undefined && hash(tile.key) % 2 !== 0
+    const width =
+      spec.shape === 'canopy'
+        ? Math.sqrt(3) * radius * 0.75
+        : spec.shape === 'wide'
+          ? radius * 1.4
+          : radius * 1.45
+    const height = spec.shape === 'wide' ? width / 3 : spec.shape === 'tuft' ? width / 2 : width
+    const sprite = this.sprite(
+      flipped && alternate !== undefined ? alternate : spec.asset,
+      tile.center.x,
+      tile.center.y,
+      width,
+      height,
+    )
+    if (sprite !== null) {
+      sprite.tint = spec.tint
+      sprite.alpha = spec.alpha
+      this.battlefieldLayer.addChild(sprite)
     }
-    // Grass deliberately carries no paired tuft. Its muted reed wash leaves room for the salient marks.
-    if (tile.terrain === 'hill') return
-    if (tile.terrain === 'water') return
-    if (tile.feature === 'forest') return
-    if (tile.feature === 'marsh') return
+    if (alternate === undefined || hash(`${tile.key}:second-sedge`) % 2 !== 0) return
+    const second = this.sprite(
+      flipped ? spec.asset : alternate,
+      tile.center.x + radius * 0.2,
+      tile.center.y + radius * 0.12,
+      width * 0.72,
+      height * 0.72,
+    )
+    if (second !== null) {
+      second.tint = spec.tint
+      second.alpha = 0.78
+      this.battlefieldLayer.addChild(second)
+    }
   }
 
   private drawBoundaryAndMist(tiles: CraneReachScene['tiles'], radius: number): void {

@@ -9,8 +9,19 @@ from pathlib import Path
 from .engine import Match, MatchConfig, OrderSource, scripted_order
 from .overlay import TILE_CODES, decode_overlay
 
-# One ASCII glyph per compact overlay tile code.
-_TILE_MARKS = {"g": ".", "h": "^", "w": "~", "v": " ", "f": "f", "m": "m"}
+# One ASCII glyph per compact overlay tile code. Uppercase marks a feature sitting on a hill.
+_TILE_MARKS = {
+    "g": ".",
+    "h": "^",
+    "w": "~",
+    "v": " ",
+    "f": "f",
+    "m": "m",
+    "s": "s",
+    "F": "F",
+    "M": "M",
+    "S": "S",
+}
 
 
 def render_overlay(overlay: dict[str, object]) -> str:
@@ -85,6 +96,7 @@ def main() -> None:
         seed=arguments.seed,
         seat_plan=arguments.seat_plan,
         terrain=True,
+        wasteland=True,
         unit_abilities=True,
         messages=True,
         capture_zones=3,

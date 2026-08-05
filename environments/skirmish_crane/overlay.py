@@ -10,17 +10,10 @@ from typing import Any
 from .combat import visible_units
 from .engine import COMPOSITIONS
 from .hexes import neighbors
+from .tile_types import TILE_CODES
 
 OVERLAY_VERSION = 1
 
-TILE_CODES = {
-    ("grass", "none"): "g",
-    ("hill", "none"): "h",
-    ("water", "none"): "w",
-    ("void", "none"): "v",
-    ("grass", "forest"): "f",
-    ("grass", "marsh"): "m",
-}
 _BASE64 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_"
 _TILE_FROM_CODE = {code: tile for tile, code in TILE_CODES.items()}
 

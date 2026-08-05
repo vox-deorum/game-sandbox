@@ -23,7 +23,7 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 ### Template and guide
 
-`template/agent.py` completed as an intentionally weak starter that demonstrates one stay, one move, and one named-target order through the helpers, so Season 1's design issue stays open. `template/README.md` completed. The canonical guide `environments/skirmish_crane/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, teaching the observation, the mask, the helpers, messaging, and local play, with season variants described as instructor-controlled.
+`template/agent.py` completed as an intentionally weak starter that demonstrates one stay, one move, and one named-target order through the helpers, so Season 1's design issue stays open. `template/README.md` completed. The canonical guide `environments/skirmish_crane/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, teaching the observation, the mask, the helpers, messaging, and local play, with season variants, terrain, abilities, capture, and wasteland among them, described as instructor-controlled.
 
 ### The worked example
 
