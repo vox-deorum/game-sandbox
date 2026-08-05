@@ -70,6 +70,12 @@ export function eventTimelineBounds(movementTiles: number): EventTimelineBounds 
   }
 }
 
+/** Keep the acting unit's movement range until resolution begins. */
+export function eventRangeVisibleAt(progress: number, movementTiles: number): boolean {
+  const value = Math.max(0, Math.min(1, progress))
+  return value < eventTimelineBounds(movementTiles).resolutionStart
+}
+
 /** How far each of the three animated tracks has run at this point in the event. */
 export function eventTimelineProgress(
   progress: number,

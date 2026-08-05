@@ -64,7 +64,7 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 
 ### Movement range on the board
 
-- The acting unit always shows its movement range during watch and replay: every tile it could reach this activation takes a soft gilt wash at alpha 0.10, with a thin gilt outline around the reachable set, extending the activation highlight.
+- The acting unit shows its movement range through activation, movement, and settle during watch and replay. Resolution clears it before the next actor's range appears. Every tile it could reach this activation takes a soft gilt wash at alpha 0.10, with a thin gilt outline around the reachable set, extending the activation highlight.
 - While any unit is hovered, its bone range wash and dashed outline replace only the acting unit's soft gilt reachability wash and outline. The activation seal-ring remains visible. On a human turn, continuation, path, and endpoint composition marks stay above the hover display. Leaving the hover restores the acting unit's soft reachability display.
 - Reachability comes from a renderer-local helper over the overlay state: step costs, occupancy, the always-permitted first step, the four-step limit. Step 5 grows this helper into the full legality module and proves it against the environment's masks.
 

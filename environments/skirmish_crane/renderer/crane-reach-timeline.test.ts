@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   eventBudget,
   eventPhaseAt,
+  eventRangeVisibleAt,
   eventTimelineBounds,
   eventTimelineProgress,
   hostEase,
@@ -42,6 +43,15 @@ describe('Crane Reach event timeline', () => {
     expect(eventPhaseAt(0.75, true, true, true, 4)).toBe('resolution')
     expect(eventPhaseAt(1, true)).toBe('idle')
     expect(eventPhaseAt(0.4, true, true, false)).toBe('idle')
+    expect(eventRangeVisibleAt(0, 0)).toBe(true)
+    expect(eventRangeVisibleAt(0.649, 0)).toBe(true)
+    expect(eventRangeVisibleAt(0.65, 0)).toBe(false)
+    expect(eventRangeVisibleAt(0.649, 1)).toBe(true)
+    expect(eventRangeVisibleAt(0.65, 1)).toBe(false)
+    expect(eventRangeVisibleAt(43 / 60 - 0.001, 3)).toBe(true)
+    expect(eventRangeVisibleAt(43 / 60, 3)).toBe(false)
+    expect(eventRangeVisibleAt(0.749, 4)).toBe(true)
+    expect(eventRangeVisibleAt(0.75, 4)).toBe(false)
     expect(eventTimelineProgress(0.1, true, true, 1)).toEqual({
       movement: 0,
       attack: 0,

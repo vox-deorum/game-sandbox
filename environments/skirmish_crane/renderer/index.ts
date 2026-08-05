@@ -47,6 +47,7 @@ import {
   type EventTimelineProgress,
   eventBudget,
   eventPhaseAt,
+  eventRangeVisibleAt,
   eventTimelineProgress,
   routePositionFor,
   routeTrailFor,
@@ -207,7 +208,10 @@ export class CraneReachRenderer extends PixiRenderer {
     this.eventProgress = Math.min(1, this.eventProgress + dtMs / this.eventDurationMs)
     if (this.eventProgress < 1) {
       this.updateEventPhaseProbe()
-      if (this.presentedScene !== null) this.reconcileEventActivation(this.presentedScene)
+      if (this.presentedScene !== null) {
+        this.reconcileEventActivation(this.presentedScene)
+        if (!this.eventRangeVisible()) clear(this.rangeLayer)
+      }
       this.reconcileEvent()
       return true
     }
@@ -275,7 +279,7 @@ export class CraneReachRenderer extends PixiRenderer {
       presentationFor(scene.hexRadius, this.displayScale()).level,
     )
     if (transitioning) {
-      clear(this.rangeLayer)
+      this.reconcileEventRange(scene)
       this.reconcileEventActivation(scene)
     } else {
       this.reconcileRange(scene)
@@ -400,7 +404,7 @@ export class CraneReachRenderer extends PixiRenderer {
   private setInspection(event: InspectionEvent): void {
     this.inspection = reduceInspection(this.inspection, event)
     if (this.presentedScene !== null) {
-      if (this.eventAnimating) clear(this.rangeLayer)
+      if (this.eventAnimating) this.reconcileEventRange(this.presentedScene)
       else this.reconcileRange(this.presentedScene)
       this.reconcileInspection(this.presentedScene)
       this.redrawCurrentFrame()
@@ -432,6 +436,16 @@ export class CraneReachRenderer extends PixiRenderer {
       reachableTileKeys(unit, scene.tiles, scene.units),
       rangePresentation(this.inspection, inspected !== null),
     )
+  }
+
+  private eventRangeVisible(): boolean {
+    return this.event !== null && eventRangeVisibleAt(this.eventProgress, this.event.movementTiles)
+  }
+
+  /** The retained acting range stays visible until the event begins resolving. */
+  private reconcileEventRange(scene: CraneReachScene): void {
+    if (this.eventRangeVisible()) this.reconcileRange(scene)
+    else clear(this.rangeLayer)
   }
 
   /**

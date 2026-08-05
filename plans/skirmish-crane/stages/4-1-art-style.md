@@ -136,7 +136,7 @@ Each level identifies unit type differently:
 | death | the ink-dissolve treatment, starting with the reaction | dilute ink | starts one quarter into resolution and ends at 1000 ms |
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | starts with resolution for capture-only events; when paired with an attack, starts one quarter into resolution; ends at 1000 ms |
 
-- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units, HUD, and acting-unit seal stay visible while the actor moves, the next actor's range stays hidden, and a defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
+- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units and HUD stay visible while the actor moves. The acting-unit seal follows the actor, and its movement range stays visible through settle before clearing for resolution. A defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 
