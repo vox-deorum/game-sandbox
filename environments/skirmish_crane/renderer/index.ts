@@ -13,10 +13,6 @@
  * renderer's live state at once. Its arithmetic lives in `timeline.ts` and `transitions.ts`.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
-import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
-import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
-
 import {
   type CameraLimits,
   type CameraView,
@@ -28,11 +24,12 @@ import {
   viewPoint,
   worldTransform,
   zoomCamera,
-} from '../../../frontend/src/renderers/base/camera.js'
-import {
-  type CameraGestures,
-  wireCameraGestures,
-} from '../../../frontend/src/renderers/base/camera-gestures.js'
+} from '@renderers/base/camera.js'
+import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
+import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
+import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
+import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
+
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
 import { MONO } from './draw.js'

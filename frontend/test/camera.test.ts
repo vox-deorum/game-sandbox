@@ -13,7 +13,10 @@ import {
   worldTransform,
   zoomCamera,
 } from '../src/renderers/base/camera.js'
-import { wireCameraGestures } from '../src/renderers/base/camera-gestures.js'
+import {
+  type CameraGestures,
+  wireCameraGestures,
+} from '../src/renderers/base/camera-gestures.js'
 
 const view = { width: 1200, height: 860 }
 const limits = cameraLimits({ minX: 140, minY: 90, maxX: 1060, maxY: 746 }, view)
@@ -30,12 +33,15 @@ describe('camera reducers', () => {
     expect(fitCamera(limits, view)).toEqual({ zoom: limits.minZoom, x: 600, y: 418 })
   })
 
-  it('clamps zoom and pan, including the unique fit view', () => {
+  it('clamps low zoom and stray pans back to the unique fit view', () => {
     const fit = fitCamera(limits, view)
     expect(clampCamera({ zoom: 0, x: -100, y: -100 }, limits, view)).toEqual(fit)
     expect(clampCamera({ ...fit, x: fit.x + 30, y: fit.y - 30 }, limits, view)).toEqual(fit)
     expect(panCamera(fit, limits, view, 80, -80)).toEqual(fit)
+  })
 
+  it('clamps zoom and pan at the padded world edges', () => {
+    const fit = fitCamera(limits, view)
     const zoomed = { ...fit, zoom: limits.maxZoom }
     const atEdge = panCamera(zoomed, limits, view, 50_000, 50_000)
     expect(atEdge.x).toBeCloseTo(limits.bounds.minX + view.width / (2 * limits.maxZoom))
@@ -43,12 +49,15 @@ describe('camera reducers', () => {
     expect(clampCamera({ ...fit, zoom: 50 }, limits, view).zoom).toBe(limits.maxZoom)
   })
 
-  it('keeps anchors fixed while zooming and pinching', () => {
+  it('keeps the anchor fixed while zooming', () => {
     const camera = { zoom: 1.6, x: 600, y: 408 }
     const anchor = { x: 850, y: 250 }
     const zoomed = zoomCamera(camera, limits, view, 1.4, anchor)
     expectPointClose(viewPoint(zoomed, view, viewPointToWorld(camera, anchor)), anchor)
+  })
 
+  it('keeps the moving midpoint anchored while pinching', () => {
+    const camera = { zoom: 1.6, x: 600, y: 408 }
     const world = viewPointToWorld(camera, { x: 500, y: 430 })
     const pinched = pinchCamera(
       camera,
@@ -58,6 +67,10 @@ describe('camera reducers', () => {
       { midpoint: { x: 700, y: 380 }, distance: 160 },
     )
     expectPointClose(viewPoint(pinched, view, world), { x: 700, y: 380 })
+  })
+
+  it('ignores a pinch without usable distances', () => {
+    const camera = { zoom: 1.6, x: 600, y: 408 }
     expect(
       pinchCamera(
         camera,
@@ -69,26 +82,39 @@ describe('camera reducers', () => {
     ).toEqual(camera)
   })
 
-  it('maps wheel deltas, transforms, points, and probes', () => {
+  it('maps wheel deltas in pixel, line, and page modes', () => {
     expect(wheelZoomFactor(-100, 0)).toBeGreaterThan(1)
     expect(wheelZoomFactor(100, 0)).toBeLessThan(1)
     expect(wheelZoomFactor(1, 1)).toBeCloseTo(wheelZoomFactor(16, 0))
+    expect(wheelZoomFactor(1, 2)).toBeCloseTo(wheelZoomFactor(384, 0))
+  })
 
+  it('projects points in agreement with the world transform', () => {
     const camera = { zoom: 1.24, x: 600, y: 418 }
     const transform = worldTransform(camera, view)
     const world = { x: 712, y: 360 }
     const projected = viewPoint(camera, view, world)
     expect((projected.x - transform.x) / transform.scale).toBeCloseTo(world.x)
     expect((projected.y - transform.y) / transform.scale).toBeCloseTo(world.y)
-    expect(cameraProbeValue(camera)).toBe('1.24@600,418')
+  })
+
+  it('formats the camera probe value', () => {
+    expect(cameraProbeValue({ zoom: 1.24, x: 600, y: 418 })).toBe('1.24@600,418')
   })
 })
 
 describe('camera gestures', () => {
-  it('wires wheel, drag, reset, touch behavior, and detach', () => {
+  const attached: CameraGestures[] = []
+
+  afterEach(() => {
+    for (const gestures of attached.splice(0)) {
+      gestures.detach()
+    }
+  })
+
+  function wire() {
     const target = document.createElement('div')
     document.body.append(target)
-    const originalTouchAction = target.style.touchAction
     const handlers = {
       toView: vi.fn((point: { x: number; y: number }) => ({ x: point.x - 10, y: point.y - 20 })),
       zoomAt: vi.fn(),
@@ -97,17 +123,26 @@ describe('camera gestures', () => {
       reset: vi.fn(),
     }
     const gestures = wireCameraGestures(target, handlers)
-    let draggingDuringTargetPointerUp = false
-    target.addEventListener('pointerup', () => {
-      draggingDuringTargetPointerUp = gestures.dragging()
-    })
-    expect(target.style.touchAction).toBe('none')
+    attached.push(gestures)
+    return { target, handlers, gestures }
+  }
 
+  it('zooms at the converted wheel point and blocks page scroll', () => {
+    const { target, handlers } = wire()
     const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -40 })
     target.dispatchEvent(wheel)
     expect(wheel.defaultPrevented).toBe(true)
     expect(handlers.zoomAt).toHaveBeenCalledWith(wheelZoomFactor(-40, 0), { x: -10, y: -20 })
+  })
 
+  it('cancels pointer down so a drag cannot select page text', () => {
+    const { target } = wire()
+    const down = pointer(target, 'pointerdown', 1, 100, 100)
+    expect(down.defaultPrevented).toBe(true)
+  })
+
+  it('pans only after the drag threshold', () => {
+    const { target, handlers, gestures } = wire()
     pointer(target, 'pointerdown', 1, 100, 100)
     pointer(window, 'pointermove', 1, 103, 100)
     expect(gestures.dragging()).toBe(false)
@@ -115,10 +150,23 @@ describe('camera gestures', () => {
     pointer(window, 'pointermove', 1, 105, 100)
     expect(gestures.dragging()).toBe(true)
     expect(handlers.panBy).toHaveBeenLastCalledWith(5, 0)
-    pointer(target, 'pointerup', 1, 105, 100)
+  })
+
+  it('keeps the drag flag through the target pointerup and clears it afterward', () => {
+    const { target, gestures } = wire()
+    let draggingDuringTargetPointerUp = false
+    target.addEventListener('pointerup', () => {
+      draggingDuringTargetPointerUp = gestures.dragging()
+    })
+    pointer(target, 'pointerdown', 1, 100, 100)
+    pointer(window, 'pointermove', 1, 110, 100)
+    pointer(target, 'pointerup', 1, 110, 100)
     expect(draggingDuringTargetPointerUp).toBe(true)
     expect(gestures.dragging()).toBe(false)
+  })
 
+  it('treats two touches as a pinch and never as a tap', () => {
+    const { target, handlers, gestures } = wire()
     pointer(target, 'pointerdown', 6, 50, 50, 'touch')
     pointer(target, 'pointerdown', 7, 100, 50, 'touch')
     expect(gestures.dragging()).toBe(true)
@@ -130,22 +178,42 @@ describe('camera gestures', () => {
     pointer(window, 'pointerup', 6, 50, 50, 'touch')
     pointer(window, 'pointerup', 7, 100, 50, 'touch')
     expect(gestures.dragging()).toBe(false)
+    expect(handlers.reset).not.toHaveBeenCalled()
+  })
 
+  it('resets on double click', () => {
+    const { target, handlers } = wire()
     fireEvent.dblClick(target)
     expect(handlers.reset).toHaveBeenCalledTimes(1)
+  })
 
+  it('resets on a touch double tap', () => {
+    const { target, handlers } = wire()
     pointer(target, 'pointerdown', 2, 100, 100, 'touch')
     pointer(window, 'pointerup', 2, 100, 100, 'touch')
+    expect(handlers.reset).not.toHaveBeenCalled()
     pointer(target, 'pointerdown', 3, 105, 102, 'touch')
     pointer(window, 'pointerup', 3, 105, 102, 'touch')
-    expect(handlers.reset).toHaveBeenCalledTimes(2)
+    expect(handlers.reset).toHaveBeenCalledTimes(1)
+  })
 
+  it('claims touch-action while attached and restores the host on detach', () => {
+    const { target, gestures } = wire()
+    expect(target.style.touchAction).toBe('none')
     gestures.detach()
-    expect(target.style.touchAction).toBe(originalTouchAction)
+    expect(target.style.touchAction).toBe('')
+  })
+
+  it('stops listening after detach', () => {
+    const { target, handlers, gestures } = wire()
+    gestures.detach()
     target.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -40 }))
     fireEvent.dblClick(target)
-    expect(handlers.zoomAt).toHaveBeenCalledTimes(1)
-    expect(handlers.reset).toHaveBeenCalledTimes(2)
+    pointer(target, 'pointerdown', 1, 100, 100)
+    pointer(window, 'pointermove', 1, 200, 200)
+    expect(handlers.zoomAt).not.toHaveBeenCalled()
+    expect(handlers.reset).not.toHaveBeenCalled()
+    expect(handlers.panBy).not.toHaveBeenCalled()
   })
 })
 
@@ -156,7 +224,7 @@ function pointer(
   clientX: number,
   clientY: number,
   pointerType = 'mouse',
-): void {
+): PointerEvent {
   const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
@@ -165,6 +233,7 @@ function pointer(
     pointerType: { value: pointerType },
   })
   target.dispatchEvent(event)
+  return event
 }
 
 function expectPointClose(

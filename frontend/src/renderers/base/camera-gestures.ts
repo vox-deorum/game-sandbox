@@ -76,6 +76,9 @@ export function wireCameraGestures(
   }
 
   const onPointerDown = (event: PointerEvent): void => {
+    // Cancel the mouse defaults so a drag past the canvas cannot select page text. Click and
+    // double-click still fire for a canceled pointerdown, so the reset gesture keeps working.
+    event.preventDefault()
     const pointer = pointerPosition(event, handlers)
     pointers.set(event.pointerId, pointer)
     if (pointers.size === 1) {

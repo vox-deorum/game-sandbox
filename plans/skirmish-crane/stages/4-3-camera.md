@@ -29,7 +29,7 @@ maxZoom = 4 * fit
 
 The world bounds receive 20 logical pixels of padding on each side. Reset uses the fit zoom and the padded bounds center. At fit zoom, panning is a no-op and reset is the unique minimum-zoom state. At larger zooms, each axis stops when the padded edge reaches the corresponding view edge. An axis stays centered whenever the view covers that full padded extent.
 
-Wheel zoom uses `exp(-delta * 0.0015)`, with line-mode deltas multiplied by 16. Cursor zoom keeps the world point below the cursor fixed. Pinch uses the distance ratio for zoom, keeps the midpoint anchored, and also applies midpoint movement as a pan. All point calculations use the renderer's 1200 by 860 logical view.
+Wheel zoom uses `exp(-delta * 0.0015)` on pixel deltas, converting line deltas at 16 pixels and page deltas at 384 pixels. Cursor zoom keeps the world point below the cursor fixed. Pinch uses the distance ratio for zoom, keeps the midpoint anchored, and also applies midpoint movement as a pan. All point calculations use the renderer's 1200 by 860 logical view.
 
 ## Renderer composition
 
@@ -41,7 +41,7 @@ The host element carries `data-crane-camera` in the form `zoom@x,y`, rounded to 
 
 ## Gestures and teardown
 
-The canvas owns touch gestures and sets `touch-action: none` on its host. Wheel prevents the page from scrolling. A pointer drag begins after 4 CSS pixels of movement. Pointer movement and release are observed on `window`, without pointer capture, so Pixi hover continues to work. The drag flag remains set through the canvas `pointertap` and clears on the later window `pointerup`.
+The canvas owns touch gestures and sets `touch-action: none` on its host. Wheel prevents the page from scrolling. Pointer down cancels the browser's mouse defaults, so a drag that leaves the canvas cannot select page text, while clicks and double-clicks still fire. A pointer drag begins after 4 CSS pixels of movement. Pointer movement and release are observed on `window`, without pointer capture, so Pixi hover continues to work. The drag flag remains set through the canvas `pointertap` and clears on the later window `pointerup`.
 
 Two active pointers drive pinch. Pointer cancellation and window blur clear gesture state. Two taps within 300 ms and 30 logical view pixels reset the camera. Native double-click resets it as well. Destroying the renderer removes every listener and clears the delayed art rebuild.
 

@@ -85,7 +85,7 @@ export function clampCamera(
   limits: CameraLimits,
   view: CameraSize,
 ): CameraView {
-  const zoom = Math.min(limits.maxZoom, Math.max(limits.minZoom, camera.zoom))
+  const zoom = clampZoom(camera.zoom, limits)
   // Fit is the one reset state even when rounding makes an axis appear fractionally pannable.
   if (zoom === limits.minZoom) return fitCamera(limits, view)
   return {
@@ -103,17 +103,7 @@ export function zoomCamera(
   factor: number,
   anchor: CameraPoint,
 ): CameraView {
-  const world = worldPoint(camera, view, anchor)
-  const zoom = Math.min(limits.maxZoom, Math.max(limits.minZoom, camera.zoom * factor))
-  return clampCamera(
-    {
-      zoom,
-      x: world.x - (anchor.x - view.width / 2) / zoom,
-      y: world.y - (anchor.y - view.height / 2) / zoom,
-    },
-    limits,
-    view,
-  )
+  return anchoredZoom(camera, limits, view, factor, anchor, anchor)
 }
 
 /** Pan by a logical-view drag delta. Moving the pointer right reveals world space to the left. */
@@ -147,24 +137,22 @@ export function pinchCamera(
   ) {
     return clampCamera(camera, limits, view)
   }
-  const anchor = worldPoint(camera, view, before.midpoint)
-  const factor = after.distance / before.distance
-  const zoom = Math.min(limits.maxZoom, Math.max(limits.minZoom, camera.zoom * factor))
-  return clampCamera(
-    {
-      zoom,
-      x: anchor.x - (after.midpoint.x - view.width / 2) / zoom,
-      y: anchor.y - (after.midpoint.y - view.height / 2) / zoom,
-    },
+  return anchoredZoom(
+    camera,
     limits,
     view,
+    after.distance / before.distance,
+    before.midpoint,
+    after.midpoint,
   )
 }
 
+/** Logical pixels per wheel delta unit in pixel, line, and page delta modes. */
+const WHEEL_PIXELS_PER_UNIT = [1, 16, 384]
+
 /** Turn a browser wheel delta into the matching multiplicative zoom factor. */
 export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
-  const normalized = deltaY * (deltaMode === 1 ? 16 : 1)
-  return Math.exp(-normalized * 0.0015)
+  return Math.exp(-deltaY * (WHEEL_PIXELS_PER_UNIT[deltaMode] ?? 1) * 0.0015)
 }
 
 /** Convert a camera into the position and scale for its world container. */
@@ -194,6 +182,32 @@ export function viewPoint(camera: CameraView, view: CameraSize, world: CameraPoi
 /** A compact camera value for renderer probes and browser assertions. */
 export function cameraProbeValue(camera: CameraView): string {
   return `${camera.zoom.toFixed(2)}@${Math.round(camera.x)},${Math.round(camera.y)}`
+}
+
+/** Rescale by a factor while moving the world point under `from` to sit under `to`. */
+function anchoredZoom(
+  camera: CameraView,
+  limits: CameraLimits,
+  view: CameraSize,
+  factor: number,
+  from: CameraPoint,
+  to: CameraPoint,
+): CameraView {
+  const world = worldPoint(camera, view, from)
+  const zoom = clampZoom(camera.zoom * factor, limits)
+  return clampCamera(
+    {
+      zoom,
+      x: world.x - (to.x - view.width / 2) / zoom,
+      y: world.y - (to.y - view.height / 2) / zoom,
+    },
+    limits,
+    view,
+  )
+}
+
+function clampZoom(zoom: number, limits: CameraLimits): number {
+  return Math.min(limits.maxZoom, Math.max(limits.minZoom, zoom))
 }
 
 function worldPoint(camera: CameraView, view: CameraSize, point: CameraPoint): CameraPoint {
