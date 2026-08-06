@@ -6,6 +6,9 @@ import {
   eventTextMetrics,
   FEATURE_MARKS,
   gaugeFor,
+  HUD_CORNER_PANELS,
+  HUD_PANEL_ALPHA,
+  HUD_PANEL_RADIUS,
   HUD_TEXT_SIZES,
   labelRowLayout,
   presentationFor,
@@ -90,6 +93,19 @@ describe('Crane Reach Estuary Ink presentation', () => {
       cardStat: 17,
       ability: 16,
     })
+  })
+
+  it('backs every corner HUD group with one consistent translucent night-ink field', () => {
+    expect(HUD_CORNER_PANELS).toEqual({
+      round: { x: 16, y: 16, width: 82, height: 66 },
+      capture: { x: 924, y: 16, width: 260, height: 54 },
+      redRoster: { x: 16, y: 772, width: 230, height: 64 },
+      blueRoster: { x: 954, y: 772, width: 230, height: 64 },
+    })
+    expect(HUD_PANEL_ALPHA).toBeGreaterThan(0)
+    expect(HUD_PANEL_ALPHA).toBeLessThan(1)
+    expect(HUD_PANEL_RADIUS).toBe(8)
+    expect(CRANE_STYLE.backdrop).toBe('#101816')
   })
 
   it('keeps transient event text at a legible CSS size on the narrowest viewport', () => {

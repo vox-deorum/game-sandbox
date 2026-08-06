@@ -20,7 +20,7 @@ Motion only describes a change: glides, short lunges, pale-bone arrows, rising d
 
 ## HUD
 
-The canvas keeps the battlefield clear between y 90 and y 746. A quiet top strip holds the small Lato `ROUND` label, its bone mono number, and optional cinnabar and indigo capture seals with their scores. The lower strip holds each side's live footman, archer, and cavalry figures with mono counts. It carries no control, caption, or activation text.
+The canvas keeps the battlefield clear between y 90 and y 746. A quiet top strip holds the small Lato `ROUND` label, its bone mono number, and optional cinnabar and indigo capture seals with their scores. The lower strip holds each side's live footman, archer, and cavalry figures with mono counts. Each corner group sits on a rounded rectangular field of translucent night ink, using the exact scene backdrop color so the fixed HUD stays legible while the board pans and zooms below it. The strip carries no control, caption, or activation text.
 
 Inspection is parchment, not chrome. A board unit or roster pair opens a dilute-ink card with its name and icon-led hit points, movement, damage, range, and vision. A board-unit card also shows its terrain and feature when the terrain parameter is enabled. Skill rows use a skill mark with the literal `shield_wall` or `charge` code when unit abilities are enabled. Board inspection adds a bone ring and bone range wash. This inspected range owns the layer through every event phase, so another unit's activation cannot replace it. The acting unit keeps its gilt range wash only when no board unit is inspected.
 

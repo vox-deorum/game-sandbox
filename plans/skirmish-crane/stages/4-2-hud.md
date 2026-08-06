@@ -39,6 +39,7 @@ The top and bottom strips are screen-fixed above the [step 4.3 camera](4-3-camer
 
 - Left: `ROUND` in 16 px Lato caps, faded ink, then the round number in 30 px bone mono.
 - Right: the capture score as a cinnabar seal dot with Red's number, an indigo seal dot with Blue's number, then `/ 200` in faded ink. Without the capture variant the right side is empty.
+- Each populated corner group has a rounded rectangular, semi-translucent night-ink field behind it. The field uses the scene backdrop color and remains fixed above the moving board.
 
 ```
   ROUND 47                                  (R) 128   (B)  96 / 200

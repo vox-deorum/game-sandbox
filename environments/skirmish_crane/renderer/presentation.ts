@@ -23,6 +23,17 @@ export const HUD_TEXT_SIZES = {
   ability: 16,
 } as const
 
+/** Screen-fixed night-ink panels keep the corner HUD readable over a panned or zoomed board. */
+export const HUD_CORNER_PANELS = {
+  round: { x: 16, y: 16, width: 82, height: 68 },
+  capture: { x: 924, y: 16, width: 260, height: 54 },
+  redRoster: { x: 16, y: 772, width: 230, height: 64 },
+  blueRoster: { x: 954, y: 772, width: 230, height: 64 },
+} as const
+
+export const HUD_PANEL_ALPHA = 0.84
+export const HUD_PANEL_RADIUS = 8
+
 export interface LabelRowItemLayout {
   x: number
   y: number

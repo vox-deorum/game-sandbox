@@ -11,7 +11,13 @@ import { Container, Graphics } from 'pixi.js'
 import type { CraneAssetName } from './assets.js'
 import { LATO, MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { InspectionEvent, InspectionTarget, RosterInspectionTarget } from './inspection.js'
-import { HUD_TEXT_SIZES, labelRowLayout } from './presentation.js'
+import {
+  HUD_CORNER_PANELS,
+  HUD_PANEL_ALPHA,
+  HUD_PANEL_RADIUS,
+  HUD_TEXT_SIZES,
+  labelRowLayout,
+} from './presentation.js'
 import {
   CRANE_STYLE,
   type CraneReachScene,
@@ -55,6 +61,8 @@ export function drawHud(
   scene: CraneReachScene,
   hooks: HudInspectionHooks,
 ): void {
+  const roundGroup = new Container()
+  drawCornerPanel(roundGroup, HUD_CORNER_PANELS.round)
   const roundLabel = paint.text(
     'ROUND',
     HUD_TEXT_SIZES.roundLabel,
@@ -70,8 +78,9 @@ export function drawHud(
     MONO,
   )
   roundLabel.position.set(28, 28)
-  round.position.set(28, 43)
-  layer.addChild(roundLabel, round)
+  round.position.set(28, 45)
+  roundGroup.addChild(roundLabel, round)
+  layer.addChild(roundGroup)
   if (scene.hud.capture !== null) drawCaptureStrip(layer, paint, scene.hud.capture)
   drawRoster(layer, paint, scene, 'red', hooks)
   drawRoster(layer, paint, scene, 'blue', hooks)
@@ -84,6 +93,7 @@ function drawCaptureStrip(
   capture: { red: number; blue: number; target: number },
 ): void {
   const group = new Container()
+  drawCornerPanel(group, HUD_CORNER_PANELS.capture)
   const entries = [
     { side: 'red' as const, value: capture.red, x: SCENE_WIDTH - 258 },
     { side: 'blue' as const, value: capture.blue, x: SCENE_WIDTH - 150 },
@@ -131,6 +141,11 @@ function drawRoster(
 ): void {
   const direction = side === 'red' ? 1 : -1
   const start = side === 'red' ? 28 : SCENE_WIDTH - 28
+  const group = new Container()
+  drawCornerPanel(
+    group,
+    side === 'red' ? HUD_CORNER_PANELS.redRoster : HUD_CORNER_PANELS.blueRoster,
+  )
   for (const [index, type] of ROSTER_TYPES.entries()) {
     const x = start + direction * index * 78
     const pair = new Container()
@@ -173,8 +188,21 @@ function drawRoster(
       })
       pair.addChild(hit)
     }
-    layer.addChild(pair)
+    group.addChild(pair)
   }
+  layer.addChild(group)
+}
+
+/** Paint one rectangular HUD field in the same night ink as the scene backdrop. */
+function drawCornerPanel(
+  parent: Container,
+  panel: { x: number; y: number; width: number; height: number },
+): void {
+  const background = new Graphics()
+  background
+    .roundRect(panel.x, panel.y, panel.width, panel.height, HUD_PANEL_RADIUS)
+    .fill({ color: CRANE_STYLE.backdrop, alpha: HUD_PANEL_ALPHA })
+  parent.addChild(background)
 }
 
 /**

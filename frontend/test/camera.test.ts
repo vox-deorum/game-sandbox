@@ -13,10 +13,7 @@ import {
   worldTransform,
   zoomCamera,
 } from '../src/renderers/base/camera.js'
-import {
-  type CameraGestures,
-  wireCameraGestures,
-} from '../src/renderers/base/camera-gestures.js'
+import { type CameraGestures, wireCameraGestures } from '../src/renderers/base/camera-gestures.js'
 
 const view = { width: 1200, height: 860 }
 const limits = cameraLimits({ minX: 140, minY: 90, maxX: 1060, maxY: 746 }, view)
