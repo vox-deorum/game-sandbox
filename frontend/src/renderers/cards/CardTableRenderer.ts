@@ -17,9 +17,9 @@
  * than breaking the scrubber.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { Container, FillGradient, Graphics, Rectangle, Text } from 'pixi.js'
+import { Container, FillGradient, Graphics, Rectangle } from 'pixi.js'
 
-import { PixiRenderer } from '../base/PixiRenderer.js'
+import { clear, PixiRenderer } from '../base/PixiRenderer.js'
 import type { RendererContext, RenderOptions } from '../types.js'
 import {
   type Card,
@@ -848,37 +848,6 @@ export abstract class CardTableRenderer<
       cx - size * 0.06,
       cy + size * 0.1,
     ]).fill(ink)
-  }
-
-  /**
-   * A Text node baked at the right device resolution. `left`/`right` anchor at the top edge (the status
-   * strip positions from the top), while `center` anchors at the middle (badges, pills, the move clock
-   * position from their center point).
-   */
-  protected text(
-    value: string,
-    size: number,
-    fill: string,
-    align: 'left' | 'center' | 'right',
-  ): Text {
-    const node = new Text({
-      text: value,
-      style: { fontFamily: 'system-ui, sans-serif', fontWeight: 'bold', fontSize: size, fill },
-    })
-    node.resolution = this.textResolution()
-    if (align === 'center') {
-      node.anchor.set(0.5, 0.5)
-    } else {
-      node.anchor.set(align === 'left' ? 0 : 1, 0)
-    }
-    return node
-  }
-}
-
-/** Remove and destroy every child of a layer (its scene graph and any baked text textures). */
-function clear(layer: Container): void {
-  for (const child of layer.removeChildren()) {
-    child.destroy({ children: true })
   }
 }
 

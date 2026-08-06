@@ -86,18 +86,10 @@ export const FEATURE_MARKS: Partial<Record<FeatureName, MarkSpec>> = {
 
 export type PresentationLevel = 'figure' | 'token' | 'compact'
 
-export interface UnitPresentation {
-  level: PresentationLevel
-  effectiveHexRadius: number
-}
-
 /** Choose artwork from the actual CSS size, not logical battlefield geometry. */
-export function presentationFor(hexRadius: number, displayScale: number): UnitPresentation {
+export function presentationFor(hexRadius: number, displayScale: number): PresentationLevel {
   const effectiveHexRadius = hexRadius * displayScale
-  return {
-    level: effectiveHexRadius >= 18 ? 'figure' : effectiveHexRadius >= 12 ? 'token' : 'compact',
-    effectiveHexRadius,
-  }
+  return effectiveHexRadius >= 18 ? 'figure' : effectiveHexRadius >= 12 ? 'token' : 'compact'
 }
 
 /**

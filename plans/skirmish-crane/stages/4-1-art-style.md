@@ -104,7 +104,7 @@ Thirty runtime source files are grayscale-alpha PNGs. Everything is tintable whe
 
 ### Units and presentation level
 
-The scene retains logical geometry only. During reconciliation, Crane derives `displayScale` as `ctx.container.getBoundingClientRect().width / SCENE_WIDTH` and passes it to the pure `presentationFor(hexRadius, displayScale)` helper. Resize reruns `update`, so the artwork responds to its actual display size while `computeScene` remains independent of the viewport. The helper selects a presentation level from the effective CSS hex radius:
+The scene retains logical geometry only. During reconciliation, Crane reads the display scale the base renderer tracks (the canvas width in CSS pixels over the internal scene width, refreshed on every resize) and passes it to the pure `presentationFor(hexRadius, displayScale)` helper, which returns the level. A resize redraws the retained frame, so the artwork responds to its actual display size while `computeScene` remains independent of the viewport. The helper selects a presentation level from the effective CSS hex radius:
 
 - Figure: 18 CSS px or more.
 - Token: 12 CSS px through less than 18 CSS px.

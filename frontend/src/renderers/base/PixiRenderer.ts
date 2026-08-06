@@ -12,7 +12,7 @@
  * the renderer's concern: it is passed as a static image asset to `registerRenderer`.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { Application, Container } from 'pixi.js'
+import { Application, Container, Text } from 'pixi.js'
 
 import type { InternalSize, RendererContext, RendererInstance, RenderOptions } from '../types.js'
 import './renderer.css'
@@ -22,6 +22,13 @@ export const RENDERER_CANVAS_CLASS = 'renderer-canvas'
 
 /** Debounce window for the resize observer, so a drag-resize settles before we rebuild the surface. */
 const RESIZE_DEBOUNCE_MS = 100
+
+/** Empty a layer and release what it held, including any text bitmaps its children baked. */
+export function clear(layer: Container): void {
+  for (const child of layer.removeChildren()) {
+    child.destroy({ children: true })
+  }
+}
 
 /**
  * A device-input intent a renderer declares from {@link PixiRenderer.inputs}: a gesture (keys and/or
@@ -320,6 +327,37 @@ export abstract class PixiRenderer implements RendererInstance {
    */
   protected textResolution(): number {
     return this.devicePixelRatio() * this.scaleFactor
+  }
+
+  /** The canvas width in CSS pixels over the logical scene width, tracked on every resize. */
+  protected displayScale(): number {
+    return this.scaleFactor
+  }
+
+  /**
+   * A `Text` node baked at the right device resolution (see {@link textResolution}). `left` and
+   * `right` anchor at the top edge, so a caller positions from the top of the line; `center` anchors
+   * at the middle, so a caller positions from the center point. The font and the optional outline are
+   * the caller's, since type is part of a game's visual identity.
+   */
+  protected text(
+    value: string,
+    size: number,
+    fill: string,
+    align: 'left' | 'center' | 'right',
+    fontFamily = 'system-ui, sans-serif',
+    stroke?: { color: string; width: number },
+  ): Text {
+    const node = new Text({
+      text: value,
+      style: { fontFamily, fontWeight: 'bold', fontSize: size, fill, stroke },
+    })
+    node.resolution = this.textResolution()
+    node.anchor.set(
+      align === 'left' ? 0 : align === 'right' ? 1 : 0.5,
+      align === 'center' ? 0.5 : 0,
+    )
+    return node
   }
 
   /** Reapply and draw the latest state after an asynchronous renderer resource becomes ready. */

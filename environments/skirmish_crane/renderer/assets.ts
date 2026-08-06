@@ -1,5 +1,5 @@
 /** The complete bundled art contract for the Estuary Ink renderer. */
-export interface CraneAsset {
+interface CraneAsset {
   name: CraneAssetName
   path: `./assets/${string}`
   width: number
@@ -210,7 +210,7 @@ export async function loadCraneAssets<T>(
 }
 
 /** Vite bundles every local source asset and returns its production URL. */
-export function craneAssetUrls(): Record<string, string> {
+function craneAssetUrls(): Record<string, string> {
   return import.meta.glob('./assets/*', {
     eager: true,
     import: 'default',

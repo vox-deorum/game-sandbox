@@ -13,13 +13,13 @@
  * renderer's live state at once. Its arithmetic lives in `timeline.ts` and `transitions.ts`.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
+import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
 import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
-import { Assets, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js'
+import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
-import { clear, MONO } from './draw.js'
+import { MONO } from './draw.js'
 import { drawHud, drawInspectionCard, type HudPaint } from './hud.js'
 import {
   EMPTY_INSPECTION,
@@ -72,6 +72,9 @@ interface PendingEventUpdate {
   options: RenderOptions | undefined
   holdFinalFrame: boolean
 }
+
+/** Where an update stands in the deferred-event handoff. The browser suite observes these names. */
+type EventHandoff = 'idle' | 'awaiting-final-frame' | 'final-frame-held' | 'pending-installed'
 
 export class CraneReachRenderer extends PixiRenderer {
   readonly internalSize = { width: SCENE_WIDTH, height: SCENE_HEIGHT } as const
@@ -163,13 +166,11 @@ export class CraneReachRenderer extends PixiRenderer {
         options,
         holdFinalFrame,
       }
-      this.ctx.container.dataset.craneEventHandoff = holdFinalFrame
-        ? 'awaiting-final-frame'
-        : 'final-frame-held'
+      this.setEventHandoff(holdFinalFrame ? 'awaiting-final-frame' : 'final-frame-held')
       return
     }
     this.pendingEventUpdate = null
-    this.ctx.container.dataset.craneEventHandoff = 'idle'
+    this.setEventHandoff('idle')
     this.installSceneUpdate(state, scene, options, freshForwardEvent)
   }
 
@@ -188,7 +189,7 @@ export class CraneReachRenderer extends PixiRenderer {
       // it; only the following frame installs the pending event at progress zero.
       if (this.pendingEventUpdate.holdFinalFrame) {
         this.pendingEventUpdate.holdFinalFrame = false
-        this.ctx.container.dataset.craneEventHandoff = 'final-frame-held'
+        this.setEventHandoff('final-frame-held')
         return true
       }
       const pending = this.pendingEventUpdate
@@ -201,7 +202,7 @@ export class CraneReachRenderer extends PixiRenderer {
         scene.event,
       )
       this.installSceneUpdate(pending.state, scene, pending.options, freshForwardEvent)
-      this.ctx.container.dataset.craneEventHandoff = 'pending-installed'
+      this.setEventHandoff('pending-installed')
       return true
     }
     if (this.event === null || this.eventProgress >= 1) return false
@@ -262,7 +263,7 @@ export class CraneReachRenderer extends PixiRenderer {
     if (this.currentScene === null) return
     this.eventProgress = 1
     this.eventAnimating = false
-    this.ctx.container.dataset.craneEventHandoff = 'idle'
+    this.setEventHandoff('idle')
     this.updateEventPhaseProbe()
     this.reconcilePresentedScene(this.currentScene, false)
     this.reconcileEvent()
@@ -276,7 +277,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.zoneMarkerLayer,
       this.sprite,
       scene,
-      presentationFor(scene.hexRadius, this.displayScale()).level,
+      presentationFor(scene.hexRadius, this.displayScale()),
     )
     if (transitioning) {
       this.reconcileEventRange(scene)
@@ -289,30 +290,50 @@ export class CraneReachRenderer extends PixiRenderer {
     this.reconcileInspection(scene)
   }
 
-  /** The timeline arguments for the event in flight, which three call sites all need. */
+  private setEventHandoff(value: EventHandoff): void {
+    this.ctx.container.dataset.craneEventHandoff = value
+  }
+
+  /** What the schedule needs to know about an event: whether it strikes, reacts, and how far it moves. */
+  private eventShape(event: SceneEvent): {
+    hasTarget: boolean
+    hasReaction: boolean
+    movementTiles: number
+  } {
+    return {
+      hasTarget: event.targetId !== null,
+      hasReaction: eventHasReaction(event),
+      movementTiles: event.movementTiles,
+    }
+  }
+
+  /** Where the event in flight sits on each of its three tracks. */
   private eventTimeline(): EventTimelineProgress {
     const event = this.event
     if (event === null) return { movement: 0, attack: 0, reaction: 0 }
+    const shape = this.eventShape(event)
     return eventTimelineProgress(
       this.eventProgress,
-      event.targetId !== null,
-      eventHasReaction(event),
-      event.movementTiles,
+      shape.hasTarget,
+      shape.hasReaction,
+      shape.movementTiles,
     )
   }
 
   private updateEventPhaseProbe(): void {
     const event = this.event
-    this.ctx.container.dataset.craneEventPhase =
-      event === null
-        ? 'idle'
-        : eventPhaseAt(
-            this.eventProgress,
-            event.targetId !== null,
-            eventHasReaction(event),
-            this.eventAnimating,
-            event.movementTiles,
-          )
+    if (event === null) {
+      this.ctx.container.dataset.craneEventPhase = 'idle'
+      return
+    }
+    const shape = this.eventShape(event)
+    this.ctx.container.dataset.craneEventPhase = eventPhaseAt(
+      this.eventProgress,
+      shape.hasTarget,
+      shape.hasReaction,
+      this.eventAnimating,
+      shape.movementTiles,
+    )
   }
 
   private async loadTextures(): Promise<void> {
@@ -365,8 +386,8 @@ export class CraneReachRenderer extends PixiRenderer {
         node.root.destroy({ children: true })
       }
     }
-    const presentation = presentationFor(scene.hexRadius, this.displayScale())
-    this.ctx.container.dataset.cranePresentation = presentation.level
+    const level = presentationFor(scene.hexRadius, this.displayScale())
+    this.ctx.container.dataset.cranePresentation = level
     for (const unit of scene.units) {
       let node = this.unitNodes.get(unit.unitId)
       if (node === undefined) {
@@ -378,7 +399,7 @@ export class CraneReachRenderer extends PixiRenderer {
         this.unitNodes.set(unit.unitId, node)
         this.unitLayer.addChild(node.root)
       }
-      drawUnit(node, unit, scene.hexRadius, presentation.level, this.textureFor)
+      drawUnit(node, unit, scene.hexRadius, level, this.textureFor)
     }
   }
 
@@ -513,7 +534,7 @@ export class CraneReachRenderer extends PixiRenderer {
     this.eventLayer.addChild(event)
     const textMetrics = eventTextMetrics(this.displayScale())
     if (this.event.damage > 0 && reaction > 0) {
-      const damage = this.makeText(
+      const damage = this.text(
         `-${this.event.damage}`,
         textMetrics.size,
         CRANE_STYLE.danger,
@@ -533,7 +554,7 @@ export class CraneReachRenderer extends PixiRenderer {
       for (const cue of captureCues) {
         const color = cue.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
         const sign = cue.delta > 0 ? '+' : ''
-        const capture = this.makeText(
+        const capture = this.text(
           `${sign}${cue.delta}`,
           textMetrics.size,
           color,
@@ -546,7 +567,6 @@ export class CraneReachRenderer extends PixiRenderer {
       }
     }
     const actor = this.unitNodes.get(this.event.actorId)
-    this.ctx.container.dataset.craneEventActor = this.event.actorId
     if (actor !== undefined) {
       const position = routePositionFor(this.event.route, move)
       let x = position.x
@@ -557,9 +577,6 @@ export class CraneReachRenderer extends PixiRenderer {
         y += (target.y - this.event.to.y) * lunge
       }
       actor.root.position.set(x, y)
-      this.ctx.container.dataset.craneEventActorPosition = `${x.toFixed(2)},${y.toFixed(2)}`
-    } else {
-      this.ctx.container.dataset.craneEventActorPosition = 'missing'
     }
     if (this.event.deathId !== null && reaction > 0) {
       const defeated = this.unitNodes.get(this.event.deathId)
@@ -576,7 +593,7 @@ export class CraneReachRenderer extends PixiRenderer {
   /** The defeated unit in dilute ink, tipping and rising as a wisp before it is simply absent. */
   private drawDeathSnapshot(unit: SceneUnit, reaction: number): void {
     const radius = this.presentedScene?.hexRadius ?? 10
-    const level = presentationFor(radius, this.displayScale()).level
+    const level = presentationFor(radius, this.displayScale())
     const ghost = createUnitNode(unit.unitId, null, pinsInspectionForPointer)
     drawUnit(ghost, unit, radius, level, this.textureFor, {
       side: CRANE_STYLE.grid,
@@ -644,7 +661,7 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   private paint(): HudPaint {
-    return { sprite: this.sprite, text: this.makeText }
+    return { sprite: this.sprite, text: this.text.bind(this) }
   }
 
   private readonly sprite = (
@@ -668,31 +685,6 @@ export class CraneReachRenderer extends PixiRenderer {
     return this.textures.get(name) ?? null
   }
 
-  /** The canvas width in CSS pixels over the logical scene width, which picks the artwork level. */
-  private displayScale(): number {
-    const width = this.ctx.container.getBoundingClientRect().width
-    return width > 0 ? width / SCENE_WIDTH : 1
-  }
-
-  private readonly makeText = (
-    value: string,
-    size: number,
-    fill: string,
-    align: 'left' | 'center' | 'right',
-    fontFamily = 'system-ui, sans-serif',
-    stroke?: { color: string; width: number },
-  ): Text => {
-    const text = new Text({
-      text: value,
-      style: { fontFamily, fontWeight: 'bold', fontSize: size, fill, stroke },
-    })
-    text.resolution = this.textResolution()
-    text.anchor.set(
-      align === 'left' ? 0 : align === 'right' ? 1 : 0.5,
-      align === 'center' ? 0.5 : 0,
-    )
-    return text
-  }
 }
 
 const definition = {

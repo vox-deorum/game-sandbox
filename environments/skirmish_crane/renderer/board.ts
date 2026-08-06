@@ -7,10 +7,11 @@
  * key and comes back identical on a rebuild. The zone, activation, and range functions redraw per
  * frame instead, because what they mark changes with the state.
  */
+import { clear } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics } from 'pixi.js'
 
 import type { CraneAssetName } from './assets.js'
-import { clear, type SpriteFactory } from './draw.js'
+import type { SpriteFactory } from './draw.js'
 import type { rangePresentation } from './inspection.js'
 import {
   FEATURE_MARKS,
@@ -23,6 +24,7 @@ import {
   type CraneReachScene,
   HEX_DIRECTIONS,
   type HexTile,
+  type Point,
   SCENE_HEIGHT,
   SCENE_WIDTH,
 } from './scene.js'
@@ -144,39 +146,25 @@ function drawBoundaryAndMist(
   radius: number,
 ): void {
   const byKey = new Set(tiles.map((tile) => tile.key))
-  const boundaryEdges: Array<{
-    key: string
-    tile: HexTile
-    current: { x: number; y: number }
-    next: { x: number; y: number }
-  }> = []
-  for (const tile of tiles) {
-    for (let index = 0; index < tile.corners.length; index += 1) {
-      const next = tile.corners[(index + 1) % tile.corners.length]
-      const current = tile.corners[index]
-      if (next === undefined || current === undefined) continue
-      const [dq, dr] = HEX_DIRECTIONS[index] as readonly [number, number]
-      if (!byKey.has(`${tile.q + dq},${tile.r + dr}`)) {
-        boundaryEdges.push({ key: `${tile.key}:${index}`, tile, current, next })
-        const stroke = sprite(
-          'edgeStroke',
-          (current.x + next.x) / 2,
-          (current.y + next.y) / 2,
-          radius * 1.75,
-          radius * 0.28,
-        )
-        if (stroke !== null) {
-          stroke.tint = CRANE_STYLE.grid
-          stroke.alpha = 0.64
-          stroke.rotation = Math.atan2(next.y - current.y, next.x - current.x)
-          layer.addChild(stroke)
-        }
-      }
+  const edges = boundaryEdges(tiles, (key) => byKey.has(key))
+  for (const edge of edges) {
+    const stroke = sprite(
+      'edgeStroke',
+      (edge.current.x + edge.next.x) / 2,
+      (edge.current.y + edge.next.y) / 2,
+      radius * 1.75,
+      radius * 0.28,
+    )
+    if (stroke !== null) {
+      stroke.tint = CRANE_STYLE.grid
+      stroke.alpha = 0.64
+      stroke.rotation = Math.atan2(edge.next.y - edge.current.y, edge.next.x - edge.current.x)
+      layer.addChild(stroke)
     }
   }
   // Six mist bands, chosen by hash so they scatter around the sheet and stay put across rebuilds.
-  for (const [index, edge] of boundaryEdges
-    .sort((left, right) => hash(left.key) - hash(right.key))
+  for (const [index, edge] of [...edges]
+    .sort((left, right) => hash(edgeKey(left)) - hash(edgeKey(right)))
     .slice(0, 6)
     .entries()) {
     const midpoint = {
@@ -222,25 +210,18 @@ function drawZones(layer: Container, sprite: SpriteFactory, scene: CraneReachSce
       .map((key) => tilesByKey.get(key))
       .filter((tile): tile is HexTile => tile !== undefined)
     const zoneKeys = new Set(zoneTiles.map((tile) => tile.key))
-    for (const tile of zoneTiles) {
-      for (let index = 0; index < tile.corners.length; index += 1) {
-        const [dq, dr] = HEX_DIRECTIONS[index] as readonly [number, number]
-        if (zoneKeys.has(`${tile.q + dq},${tile.r + dr}`)) continue
-        const current = tile.corners[index]
-        const next = tile.corners[(index + 1) % tile.corners.length]
-        if (current === undefined || next === undefined) continue
-        const dash = sprite(
-          'zoneDash',
-          (current.x + next.x) / 2,
-          (current.y + next.y) / 2,
-          scene.hexRadius * 1.6,
-          scene.hexRadius * 0.2,
-        )
-        if (dash !== null) {
-          dash.tint = CRANE_STYLE.zoneGlow
-          dash.rotation = Math.atan2(next.y - current.y, next.x - current.x)
-          layer.addChild(dash)
-        }
+    for (const edge of boundaryEdges(zoneTiles, (key) => zoneKeys.has(key))) {
+      const dash = sprite(
+        'zoneDash',
+        (edge.current.x + edge.next.x) / 2,
+        (edge.current.y + edge.next.y) / 2,
+        scene.hexRadius * 1.6,
+        scene.hexRadius * 0.2,
+      )
+      if (dash !== null) {
+        dash.tint = CRANE_STYLE.zoneGlow
+        dash.rotation = Math.atan2(edge.next.y - edge.current.y, edge.next.x - edge.current.x)
+        layer.addChild(dash)
       }
     }
   }
@@ -312,17 +293,12 @@ export function drawRangeWash(
   const outlineColor =
     presentation.outlineInk === 'dilute-ink' ? CRANE_STYLE.grid : CRANE_STYLE.activation
   const range = new Graphics()
-  for (const tile of scene.tiles) {
-    if (!reachable.has(tile.key)) continue
+  const reachableTiles = scene.tiles.filter((tile) => reachable.has(tile.key))
+  for (const tile of reachableTiles) {
     range.poly(points(tile.corners)).fill({ color, alpha: presentation.alpha })
-    for (let index = 0; index < tile.corners.length; index += 1) {
-      const [dq, dr] = HEX_DIRECTIONS[index] as readonly [number, number]
-      if (reachable.has(`${tile.q + dq},${tile.r + dr}`)) continue
-      const current = tile.corners[index]
-      const next = tile.corners[(index + 1) % tile.corners.length]
-      if (current !== undefined && next !== undefined)
-        drawRangeEdge(range, current, next, outlineColor, presentation.outline === 'dashed')
-    }
+  }
+  for (const edge of boundaryEdges(reachableTiles, (key) => reachable.has(key))) {
+    drawRangeEdge(range, edge.current, edge.next, outlineColor, presentation.outline === 'dashed')
   }
   layer.addChild(range)
   if (presentation.ring) {
@@ -359,6 +335,41 @@ function drawRangeEdge(
       .lineTo(start.x + (end.x - start.x) * to, start.y + (end.y - start.y) * to)
       .stroke({ color, width: 1.5, alpha: 0.82 })
   }
+}
+
+/** One outer edge of a tile group: the corner pair to paint, and which tile and slot it came from. */
+interface BoundaryEdge {
+  tile: HexTile
+  index: number
+  current: Point
+  next: Point
+}
+
+/**
+ * The outer edges of a tile group: every corner pair whose neighbor across it falls outside the
+ * group. The sheet outline, the capture zones, and the movement range all draw their perimeter
+ * this way, differing only in which tiles count as inside and what they paint along each edge.
+ */
+function boundaryEdges(
+  tiles: readonly HexTile[],
+  inside: (tileKey: string) => boolean,
+): BoundaryEdge[] {
+  const edges: BoundaryEdge[] = []
+  for (const tile of tiles) {
+    for (let index = 0; index < tile.corners.length; index += 1) {
+      const current = tile.corners[index]
+      const next = tile.corners[(index + 1) % tile.corners.length]
+      if (current === undefined || next === undefined) continue
+      const [dq, dr] = HEX_DIRECTIONS[index] as readonly [number, number]
+      if (!inside(`${tile.q + dq},${tile.r + dr}`)) edges.push({ tile, index, current, next })
+    }
+  }
+  return edges
+}
+
+/** A stable identity for one edge, so the hash-driven choices along it survive a rebuild. */
+function edgeKey(edge: BoundaryEdge): string {
+  return `${edge.tile.key}:${edge.index}`
 }
 
 /** Flatten hex corners into the flat coordinate list Pixi's polygon calls expect. */

@@ -1,7 +1,7 @@
 /** Reachable Crane Reach destinations for the draw-only movement-range display. */
 import { HEX_DIRECTIONS, type HexTile, type SceneUnit } from './scene.js'
 
-const TERRAIN_COST = { grass: 1, hill: 2, water: 0, void: 0 } as const
+const TERRAIN_COST = { grass: 1, hill: 2 } as const
 const FEATURE_COST = { none: 0, forest: 1, marsh: 2, waste: 0 } as const
 
 /** The HUD has no action affordance. It only mirrors the environment's walk rules for a range wash. */

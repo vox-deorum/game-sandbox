@@ -27,10 +27,10 @@ describe('Crane Reach Estuary Ink presentation', () => {
   })
 
   it('switches artwork at the exact CSS-radius boundaries without changing scene geometry', () => {
-    expect(presentationFor(18, 1)).toMatchObject({ level: 'figure', effectiveHexRadius: 18 })
-    expect(presentationFor(17.999, 1).level).toBe('token')
-    expect(presentationFor(12, 1).level).toBe('token')
-    expect(presentationFor(11.999, 1).level).toBe('compact')
+    expect(presentationFor(18, 1)).toBe('figure')
+    expect(presentationFor(17.999, 1)).toBe('token')
+    expect(presentationFor(12, 1)).toBe('token')
+    expect(presentationFor(11.999, 1)).toBe('compact')
   })
 
   it('maps maximum hit points to healthy, low, and critical gauge states at both boundaries', () => {

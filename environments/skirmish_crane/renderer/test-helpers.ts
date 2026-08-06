@@ -9,7 +9,7 @@ import armyLegalityRaw from '../../../frontend/test/fixtures/crane-reach-army-le
 import armyFixture from '../../../frontend/test/fixtures/crane-reach-army-recording.jsonl?raw'
 import skirmishLegalityRaw from '../../../frontend/test/fixtures/crane-reach-skirmish-legality.json?raw'
 import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmish-recording.jsonl?raw'
-import { computeScene, type SceneUnit } from './scene.js'
+import { computeScene, HEX_DIRECTIONS, type SceneUnit } from './scene.js'
 
 export { armyFixture, armyLegalityRaw, skirmishFixture, skirmishLegalityRaw }
 
@@ -75,17 +75,9 @@ export function pathForId(pathId: number): number[] {
 }
 
 export function destinationForPath(start: string, path: number[]): string {
-  const directions = [
-    [1, -1],
-    [1, 0],
-    [0, 1],
-    [-1, 1],
-    [-1, 0],
-    [0, -1],
-  ] as const
   let [q, r] = start.split(',').map(Number) as [number, number]
   for (const direction of path) {
-    const [dq, dr] = directions[direction - 1] as (typeof directions)[number]
+    const [dq, dr] = HEX_DIRECTIONS[direction - 1] as readonly [number, number]
     q += dq
     r += dr
   }

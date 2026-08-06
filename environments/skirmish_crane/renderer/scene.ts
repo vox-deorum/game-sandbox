@@ -171,8 +171,6 @@ export interface CraneReachScene {
 }
 
 export interface SceneConfig {
-  /** Reserved for renderer mount-time facts. The spectator view always reveals the full board. */
-  controlledPlayers?: readonly string[]
   /** Abilities are a fixed episode parameter, supplied from the recording header rather than overlay v1. */
   unitAbilities?: boolean
 }

@@ -3,7 +3,7 @@
  * needs the loaded texture map and building text needs the host's device resolution, both of which
  * live on the renderer class. Drawing modules take them as arguments rather than reaching back.
  */
-import type { Container, Sprite, Text } from 'pixi.js'
+import type { Sprite, Text } from 'pixi.js'
 
 import type { CraneAssetName } from './assets.js'
 
@@ -27,8 +27,3 @@ export type TextFactory = (
   fontFamily?: string,
   stroke?: { color: string; width: number },
 ) => Text
-
-/** Empty a layer and release what it held. Layers are rebuilt from the scene, never patched. */
-export function clear(layer: Container): void {
-  for (const child of layer.removeChildren()) child.destroy({ children: true })
-}
