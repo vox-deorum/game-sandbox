@@ -28,6 +28,8 @@ Use the visible units to decide whether to approach, retreat, or attack. The act
 
 Seasons may choose the `skirmish` or `army` seat plan and adjust field size, terrain, wasteland, unit abilities, capture zones, capture target, and round cap. Your observation includes the resolved values, so an agent can adapt to the match it is playing.
 
+The start dialog offers Season 1 through Season 6 presets for these settings. In a local student sandbox, pass a preset such as `python -m sandbox play --preset season_4`; a repeated `--parameter` for the same setting wins and the preset replaces the `season.json` gameplay parameters for that command.
+
 When wasteland is on, a unit that enters a wasteland tile takes 2 damage. This damage never reduces the unit below 1 hit point, so wasteland alone can never remove a unit.
 
 ## First improvement

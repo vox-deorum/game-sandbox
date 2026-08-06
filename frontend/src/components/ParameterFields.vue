@@ -1,18 +1,25 @@
 <script setup lang="ts">
-import type { EnvParameter, ParameterValue } from '@game-sandbox/schema/environment'
-import { computed, watch } from 'vue'
+import type { EnvParameter, EnvPreset, ParameterValue } from '@game-sandbox/schema/environment'
+import { computed, ref, watch } from 'vue'
 
-import { validateParameters, visibleParameters } from '../lib/parameters.js'
+import { initializeParameters, validateParameters, visibleParameters } from '../lib/parameters.js'
 import UiCheckboxGroup from './ui/UiCheckboxGroup.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 import UiSelect from './ui/UiSelect.vue'
 
-const props = defineProps<{ declarations: readonly EnvParameter[]; disabled?: boolean }>()
+const props = defineProps<{
+  declarations: readonly EnvParameter[]
+  presets?: readonly EnvPreset[]
+  disabled?: boolean
+}>()
 const model = defineModel<Record<string, ParameterValue>>({ required: true })
 const emit = defineEmits<{ validity: [boolean] }>()
 const visible = computed(() => visibleParameters(props.declarations))
 const validation = computed(() => validateParameters(props.declarations, model.value))
+const presets = computed(() => props.presets ?? [])
+// The picker only fills the fields: it names the preset applied last, and hand edits stay put.
+const appliedPreset = ref('')
 
 watch(
   validation,
@@ -24,13 +31,36 @@ function update(name: string, value: unknown): void {
   model.value = { ...model.value, [name]: value as ParameterValue }
 }
 
+function applyPreset(name: string): void {
+  const preset = presets.value.find((candidate) => candidate.name === name)
+  if (preset === undefined) return
+  appliedPreset.value = name
+  model.value = initializeParameters(props.declarations, preset.values)
+}
+
 function numericHint(parameter: Extract<EnvParameter, { type: 'int' | 'float' }>): string {
   return `${parameter.description} ${parameter.min}–${parameter.max}.`
 }
 </script>
 
 <template>
-  <div v-if="visible.length > 0" class="parameter-fields">
+  <div v-if="visible.length > 0 || presets.length > 0" class="parameter-fields">
+    <UiField v-if="presets.length > 0" label="Preset">
+      <template #default="{ id, describedby }">
+        <UiSelect
+          :id="id"
+          :model-value="appliedPreset"
+          :disabled="disabled"
+          :aria-describedby="describedby"
+          @update:model-value="applyPreset"
+        >
+          <option value="" disabled>Choose a preset</option>
+          <option v-for="preset in presets" :key="preset.name" :value="preset.name">
+            {{ preset.title }}
+          </option>
+        </UiSelect>
+      </template>
+    </UiField>
     <template v-for="parameter in visible" :key="parameter.name">
       <UiField
         v-if="parameter.type === 'int' || parameter.type === 'float' || parameter.type === 'string'"

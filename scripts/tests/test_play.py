@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentMeta,
     EnvParameter,
+    EnvPreset,
     PlayerBounds,
     SeatDeclaration,
     SeatPlan,
@@ -333,6 +335,56 @@ def test_repeatable_typed_parameters_select_the_layout_and_validate_values():
         play.resolve_cli_parameters(entry, ["missing=1"])
 
 
+def test_preset_parameters_apply_without_cli_overrides():
+    entry = _wide_entry()
+    entry = EnvironmentEntry(
+        meta=replace(
+            entry.meta,
+            presets=(EnvPreset("solo_fast", "Solo fast", {"seat_plan": "solo", "speed": 2}),),
+        ),
+        make=entry.make,
+        default_action=entry.default_action,
+    )
+
+    values = play.resolve_cli_parameters(entry, [], preset="solo_fast")
+
+    assert values == {"seat_plan": "solo", "speed": 2}
+
+
+def test_cli_parameter_overrides_a_preset_value():
+    entry = _wide_entry()
+    entry = EnvironmentEntry(
+        meta=replace(
+            entry.meta,
+            presets=(EnvPreset("solo_fast", "Solo fast", {"seat_plan": "solo", "speed": 2}),),
+        ),
+        make=entry.make,
+        default_action=entry.default_action,
+    )
+
+    values = play.resolve_cli_parameters(entry, ["speed=3"], preset="solo_fast")
+
+    assert values == {"seat_plan": "solo", "speed": 3}
+
+
+def test_unknown_preset_names_the_sorted_available_choices():
+    entry = _wide_entry()
+    named = EnvironmentEntry(
+        meta=replace(
+            entry.meta,
+            presets=(EnvPreset("zeta", "Zeta", {}), EnvPreset("alpha", "Alpha", {})),
+        ),
+        make=entry.make,
+        default_action=entry.default_action,
+    )
+
+    with pytest.raises(ValueError, match="unknown environment preset 'missing'; available: alpha, zeta"):
+        play.resolve_cli_parameters(named, [], preset="missing")
+
+    with pytest.raises(ValueError, match="available: none"):
+        play.resolve_cli_parameters(entry, [], preset="missing")
+
+
 def test_companion_accepts_a_manifest_path(monkeypatch, tmp_path: Path):
     entry = _wide_entry()
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
@@ -385,6 +437,31 @@ def test_cli_applies_plan_parameter_before_validating_seat_and_companion(
         == 0
     )
     assert captured["parameters"] == {"seat_plan": "solo", "speed": 2}
+    assert captured["player_bindings"]["player_3"] == {"kind": "external"}  # type: ignore[index]
+
+
+def test_cli_applies_preset_plan_before_validating_the_seat(monkeypatch):
+    entry = _wide_entry()
+    entry = EnvironmentEntry(
+        meta=replace(
+            entry.meta,
+            presets=(EnvPreset("solo", "Solo", {"seat_plan": "solo"}),),
+        ),
+        make=entry.make,
+        default_action=entry.default_action,
+    )
+    monkeypatch.setattr(play, "load_environment", lambda _env_id: entry)
+    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id, _name: "builtin")
+    captured: dict[str, object] = {}
+
+    def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:
+        captured.update(config)
+        return 0
+
+    monkeypatch.setattr(play, "launch_browser", launch)
+
+    assert play.main(["fixture", "human", "--preset", "solo", "--seat", "3", "--no-browser"]) == 0
+    assert captured["parameters"] == {"seat_plan": "solo", "speed": 1}
     assert captured["player_bindings"]["player_3"] == {"kind": "external"}  # type: ignore[index]
 
 

@@ -86,6 +86,7 @@ The template also accepts these options and commands:
 
 - `--player N` chooses your player by number when a game has more than one. The commands use player `0` unless you pick another.
 - A `season.json` file downloaded through **Set Up Locally** applies the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Put it beside `manifest.json`. Every affected command prints the season it loaded. Delete the file to return to the environment defaults.
+- `--preset NAME` selects a named gameplay preset for one `human` or `play` command. It replaces the gameplay parameters from `season.json` for that command, but keeps the season's decision and game limits. A repeated `--parameter` for the same setting wins.
 - `--parameter NAME=VALUE`, `--decision-limit-ms N`, and `--game-limit-ms N` override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change more than one gameplay setting.
 - `python -m sandbox setup` prepares the virtual environment without starting a game.
 - `play --seed N` repeats the same starting condition and random generator every time, so you can study one specific game.

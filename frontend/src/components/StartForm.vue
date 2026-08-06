@@ -78,7 +78,12 @@ function onSubmit(): void {
 
 <template>
   <form class="start-form" @submit.prevent="onSubmit">
-    <ParameterFields v-model="parameters" :declarations="meta.parameters" @validity="parametersValid = $event" />
+    <ParameterFields
+      v-model="parameters"
+      :declarations="meta.parameters"
+      :presets="meta.presets"
+      @validity="parametersValid = $event"
+    />
     <UiField label="Seed (optional)" hint="Leave blank for a random seed.">
       <template #default="{ id, describedby }">
         <UiInput

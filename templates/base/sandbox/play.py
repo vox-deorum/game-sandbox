@@ -23,6 +23,7 @@ from sandbox.env import META, PLAYER_ID, default_action, extract_overlay, make_e
 from sandbox.harness.environment import (
     EnvironmentEntry,
     ParameterValue,
+    preset_values,
     resolve_layout,
     resolve_parameters,
 )
@@ -320,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         metavar="NAME=VALUE",
         help="typed environment parameter override; repeat for several values",
     )
+    parser.add_argument("--preset", help="named environment preset")
     parser.add_argument("--decision-limit-ms", type=int, help="override the agent decision limit")
     parser.add_argument("--game-limit-ms", type=int, help="override the game time limit")
     timeouts = parser.add_mutually_exclusive_group()
@@ -334,9 +336,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         season = load_season_settings(REPO_ROOT, META)
         parameter_overrides = parse_parameter_overrides(META, args.parameter)
-        parameters = resolve_parameters(
-            META, {} if season is None else season.parameters, parameter_overrides
-        )
+        if args.preset is not None:
+            base = preset_values(META, args.preset)
+        else:
+            base = {} if season is None else season.parameters
+        parameters = resolve_parameters(META, base, parameter_overrides)
     except ValueError as error:
         parser.error(str(error))
     if args.decision_limit_ms is not None and args.decision_limit_ms <= 0:
@@ -357,7 +361,12 @@ def main(argv: list[str] | None = None) -> int:
         if season is None
         else season.game_limit_ms
     )
-    announce(season)
+    if args.preset is None:
+        announce(season)
+    elif season is None:
+        print(f"Using the {args.preset} preset.")
+    else:
+        print(f"Using the {args.preset} preset with the time limits from season.json.")
     player_ids = possible_players(parameters)
     if args.player < 0 or args.player >= len(player_ids):
         parser.error(f"--player must name one of 0..{len(player_ids) - 1}")

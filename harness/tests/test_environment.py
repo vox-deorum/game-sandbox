@@ -15,6 +15,7 @@ from game_sandbox_harness.environment import (
     EnvParameter,
     EnvParameterChoice,
     EnvParameterValueError,
+    EnvPreset,
     PlayerBounds,
     SeatDeclaration,
     SeatPlan,
@@ -22,6 +23,7 @@ from game_sandbox_harness.environment import (
     discover_environments,
     effective_parameters,
     load_environment,
+    preset_values,
     resolve_layout,
     resolve_parameters,
 )
@@ -64,6 +66,61 @@ def test_meta_to_json_round_trips():
     assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
     assert parsed["live_interval_ms"] is None  # defaulted, present in the serialized shape
     assert parsed["parameters"][0]["name"] == "players"
+    assert parsed["presets"] == []
+
+
+def test_preset_to_json_round_trips():
+    preset = EnvPreset("small_game", "Small game", {"players": 1})
+    assert json.loads(json.dumps(preset.to_json())) == {
+        "name": "small_game",
+        "title": "Small game",
+        "values": {"players": 1},
+    }
+
+
+def test_preset_rejects_non_mapping_values():
+    with pytest.raises(ValueError, match="values must be a parameter-value mapping"):
+        EnvPreset("invalid", "Invalid", None)  # type: ignore[arg-type]
+
+
+def test_meta_serializes_and_resolves_presets():
+    meta = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "layout": PlayerBounds(1, 2),
+            "parameters": (EnvParameter("terrain", "Terrain", "Enables terrain.", "bool", False),),
+            "presets": (EnvPreset("duel", "Duel", {"players": 2, "terrain": True}),),
+        }
+    )
+    assert meta.to_json()["presets"] == [
+        {"name": "duel", "title": "Duel", "values": {"players": 2, "terrain": True}}
+    ]
+    assert resolve_parameters(meta, meta.presets[0].values) == {"players": 2, "terrain": True}
+
+
+def test_preset_values_looks_up_by_name():
+    meta = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "layout": PlayerBounds(1, 2),
+            "presets": (EnvPreset("duel", "Duel", {"players": 2}),),
+        }
+    )
+    assert preset_values(meta, "duel") == {"players": 2}
+    with pytest.raises(ValueError, match="unknown environment preset 'other'; available: duel"):
+        preset_values(meta, "other")
+
+
+def test_meta_rejects_duplicate_preset_names():
+    presets = (EnvPreset("duel", "Duel", {}), EnvPreset("duel", "Again", {}))
+    with pytest.raises(ValueError, match="preset names must be unique"):
+        EnvironmentMeta(**{**_meta().__dict__, "presets": presets})
+
+
+@pytest.mark.parametrize("values", [{"players": 2}, {"unknown": True}])
+def test_meta_rejects_presets_with_invalid_parameter_values(values: dict[str, object]):
+    with pytest.raises(ValueError, match="invalid parameter values"):
+        EnvironmentMeta(**{**_meta().__dict__, "presets": (EnvPreset("invalid", "Invalid", values),)})
 
 
 def test_flappy_bird_is_discoverable():

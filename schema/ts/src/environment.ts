@@ -30,6 +30,7 @@ export type {
   EnvParameter,
   EnvParameterChoice,
   EnvParameterType,
+  EnvPreset,
   PlayerBoundsLayout,
   SeatDeclaration,
   SeatPlan,

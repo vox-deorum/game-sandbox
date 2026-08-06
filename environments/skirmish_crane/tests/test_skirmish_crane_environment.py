@@ -17,7 +17,7 @@ from pettingzoo.test import api_test
 
 import skirmish_crane.naive
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import action_mask_problems, resolve_parameters
+from game_sandbox_harness.environment import EnvPreset, action_mask_problems, resolve_parameters
 from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import REASON_TERMINATED, REASON_TRUNCATED, AgentPlayer, run_episode
@@ -643,61 +643,110 @@ def test_full_army_recording_stays_under_ten_megabytes(tmp_path: Any) -> None:
     assert (tmp_path / "army" / "recording.jsonl").stat().st_size <= 10 * 1024 * 1024
 
 
-@pytest.mark.parametrize(
-    "season",
-    (
-        {
-            "seat_plan": "skirmish",
-            "field_extent": 7,
-            "terrain": False,
-            "unit_abilities": False,
-            "capture_zones": 0,
-        },
-        {
-            "seat_plan": "skirmish",
-            "field_extent": 7,
-            "terrain": True,
-            "unit_abilities": False,
-            "capture_zones": 0,
-        },
-        {
-            "seat_plan": "army",
-            "field_extent": 10,
-            "terrain": True,
-            "unit_abilities": True,
-            "capture_zones": 0,
-        },
-        {
-            "seat_plan": "army",
-            "field_extent": 10,
-            "terrain": True,
-            "unit_abilities": True,
-            "capture_zones": 1,
-        },
-        {
-            "seat_plan": "army",
-            "field_extent": 10,
-            "terrain": True,
-            "unit_abilities": True,
-            "capture_zones": 3,
-        },
-        {
-            "seat_plan": "army",
-            "field_extent": 10,
-            "terrain": True,
-            "wasteland": True,
-            "unit_abilities": True,
-            "capture_zones": 3,
-        },
-    ),
-    ids=("season-1", "season-2", "season-3", "season-4", "season-5", "season-6"),
-)
-def test_every_season_schedule_row_resolves_to_a_valid_environment(season: dict[str, Any]) -> None:
-    parameters = _parameters(**season)
+def test_season_presets_match_the_published_schedule():
+    expected = (
+        (
+            "season_1",
+            "Season 1: The Skirmish",
+            {
+                "seat_plan": "skirmish",
+                "field_extent": 7,
+                "terrain": False,
+                "wasteland": False,
+                "unit_abilities": False,
+                "capture_zones": 0,
+            },
+        ),
+        (
+            "season_2",
+            "Season 2: The March",
+            {
+                "seat_plan": "skirmish",
+                "field_extent": 7,
+                "terrain": True,
+                "wasteland": False,
+                "unit_abilities": False,
+                "capture_zones": 0,
+            },
+        ),
+        (
+            "season_3",
+            "Season 3: The Army",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "wasteland": False,
+                "unit_abilities": True,
+                "capture_zones": 0,
+            },
+        ),
+        (
+            "season_4",
+            "Season 4: The Commander",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "wasteland": False,
+                "unit_abilities": True,
+                "capture_zones": 1,
+            },
+        ),
+        (
+            "season_5",
+            "Season 5: The General",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "wasteland": False,
+                "unit_abilities": True,
+                "capture_zones": 3,
+            },
+        ),
+        (
+            "season_6",
+            "Season 6: The Rivals",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "wasteland": True,
+                "unit_abilities": True,
+                "capture_zones": 3,
+            },
+        ),
+    )
+    assert (
+        tuple(
+            (
+                preset.name,
+                preset.title,
+                {
+                    name: resolve_parameters(META, preset.values)[name]
+                    for name in (
+                        "seat_plan",
+                        "field_extent",
+                        "terrain",
+                        "wasteland",
+                        "unit_abilities",
+                        "capture_zones",
+                    )
+                },
+            )
+            for preset in META.presets
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize("preset", META.presets, ids=lambda preset: preset.name)
+def test_every_season_preset_resolves_to_a_valid_environment(preset: EnvPreset) -> None:
+    parameters = resolve_parameters(META, preset.values)
     assert parameters["capture_target"] == 200
     assert parameters["round_cap"] == 1000
-    # Wasteland belongs to Season 6 alone, so every earlier row must resolve it off.
-    assert parameters["wasteland"] is season.get("wasteland", False)
+    assert parameters["wasteland"] is (preset.name == "season_6")
     env = make_env(parameters)
     env.reset(seed=0)
     env.close()

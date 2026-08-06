@@ -58,6 +58,7 @@ It needs no backend, Docker, or external network connection. `mode` defaults to 
 
 Every mode starts paused at the first frame. Use Start when ready, then the shared pause, resume, and stop controls. The flags:
 
+- `--preset name` fills the gameplay parameters from a named environment preset. A repeated `--parameter` for the same setting wins.
 - `--parameter name=value` overrides one gameplay parameter, repeated once per override.
 - `--seat` selects a seat from the resolved layout.
 - `--companion naive` or `--companion <manifest-path>` supplies the independently constructed agents for a human seat that covers more than one player.

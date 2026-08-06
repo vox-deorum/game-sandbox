@@ -185,6 +185,27 @@ class EnvParameter:
         return payload
 
 
+@dataclass(frozen=True)
+class EnvPreset:
+    """One named partial parameter configuration an environment recommends."""
+
+    name: str
+    title: str
+    values: Mapping[str, ParameterValue]
+
+    def __post_init__(self) -> None:
+        if not _is_parameter_name(self.name):
+            raise ValueError("preset name must be a snake_case identifier")
+        if not _is_nonempty_string(self.title):
+            raise ValueError("preset title must be a non-empty string")
+        if not isinstance(cast("object", self.values), Mapping):
+            raise ValueError("preset values must be a parameter-value mapping")
+
+    def to_json(self) -> dict[str, Any]:
+        """Return the public wire representation."""
+        return {"name": self.name, "title": self.title, "values": dict(self.values)}
+
+
 def _is_nonempty_string(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value)
 
@@ -393,6 +414,8 @@ class EnvironmentMeta:
     live_interval_ms: int | None = None
     #: Explicit gameplay parameters. The public layout parameter is synthesized from ``layout``.
     parameters: tuple[EnvParameter, ...] = ()
+    #: Named partial parameter configurations an environment recommends.
+    presets: tuple[EnvPreset, ...] = ()
 
     def __post_init__(self) -> None:
         if self.stepping not in {"sequential", "simultaneous"}:
@@ -424,6 +447,18 @@ class EnvironmentMeta:
         collisions = sorted(set(names) & _RESERVED_PARAMETER_NAMES)
         if collisions:
             raise ValueError(f"{collisions[0]!r} is synthesized from the environment layout")
+        if any(type(preset) is not EnvPreset for preset in self.presets):
+            raise ValueError("environment presets must be EnvPreset entries")
+        preset_names = [preset.name for preset in self.presets]
+        if len(preset_names) != len(set(preset_names)):
+            raise ValueError("environment preset names must be unique")
+        for preset in self.presets:
+            try:
+                resolve_parameters(self, preset.values)
+            except EnvParameterValueError as error:
+                raise ValueError(
+                    f"environment preset {preset.name!r} has invalid parameter values: {error}"
+                ) from error
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -448,6 +483,7 @@ class EnvironmentMeta:
             "view_interval_ms": self.view_interval_ms,
             "live_interval_ms": self.live_interval_ms,
             "parameters": [parameter.to_json() for parameter in effective_parameters(self)],
+            "presets": [preset.to_json() for preset in self.presets],
         }
 
 
@@ -855,6 +891,15 @@ def resolve_parameters(
                 raise EnvParameterValueError(f"unknown environment parameter {name!r}") from None
             values[name] = declaration.validate_value(value)
     return values
+
+
+def preset_values(meta: EnvironmentMeta, name: str) -> Mapping[str, ParameterValue]:
+    """Return the named preset's partial parameter layer for :func:`resolve_parameters`."""
+    for preset in meta.presets:
+        if preset.name == name:
+            return preset.values
+    available = ", ".join(sorted(preset.name for preset in meta.presets)) or "none"
+    raise ValueError(f"unknown environment preset {name!r}; available: {available}")
 
 
 def validate_complete_parameters(

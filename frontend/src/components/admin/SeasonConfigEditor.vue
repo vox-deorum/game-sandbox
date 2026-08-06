@@ -27,6 +27,7 @@
 import {
   type EnvironmentMeta,
   type EnvParameter,
+  type EnvPreset,
   type ParameterValue,
   resolveLayout,
 } from '@game-sandbox/schema/environment'
@@ -71,6 +72,7 @@ const props = defineProps<{
 const environmentParameters = computed<readonly EnvParameter[]>(
   () => props.environment?.parameters ?? [],
 )
+const environmentPresets = computed<readonly EnvPreset[]>(() => props.environment?.presets ?? [])
 const emit = defineEmits<{
   (e: 'changed', season: SeasonView): void
   /** Whether the form holds edits not yet persisted; drives the Run confirmation prompt upstream. */
@@ -349,6 +351,26 @@ function updateParameter(name: string, value: unknown): void {
   parameterValues.value = { ...parameterValues.value, [name]: value as ParameterValue }
   // An edit that moves the resolved layout carries the match rows with it. Any other parameter edit
   // leaves them alone, so a row that already drifted stays drifted until the operator conforms it.
+  if (layoutKey.value !== before) conformLayout()
+}
+
+// The picker only fills the rows: it names the preset applied last, and hand edits stay put.
+const appliedParameterPreset = ref('')
+
+function applyParameterPreset(name: string): void {
+  const preset = environmentPresets.value.find((candidate) => candidate.name === name)
+  if (preset === undefined) return
+
+  appliedParameterPreset.value = name
+  const declarations = environmentParameters.value
+  const before = layoutKey.value
+  parameterModes.value = Object.fromEntries(
+    declarations.map((parameter) => [
+      parameter.name,
+      Object.hasOwn(preset.values, parameter.name) ? 'override' : 'inherit',
+    ]),
+  )
+  parameterValues.value = initializeParameters(declarations, preset.values)
   if (layoutKey.value !== before) conformLayout()
 }
 
@@ -808,6 +830,21 @@ watch(confirmOpen, (open) => {
       aria-labelledby="environment-parameters-title"
     >
       <h3 id="environment-parameters-title" class="config-title">Environment Parameters</h3>
+      <UiField v-if="environmentPresets.length > 0" label="Preset">
+        <template #default="{ id, describedby }">
+          <UiSelect
+            :id="id"
+            :model-value="appliedParameterPreset"
+            :aria-describedby="describedby"
+            @update:model-value="applyParameterPreset"
+          >
+            <option value="" disabled>Choose a preset</option>
+            <option v-for="preset in environmentPresets" :key="preset.name" :value="preset.name">
+              {{ preset.title }}
+            </option>
+          </UiSelect>
+        </template>
+      </UiField>
       <div v-for="parameter in environmentParameters" :key="parameter.name" class="parameter-row">
         <UiField :label="parameter.title" :hint="parameterHint(parameter)">
           <template #default="{ id }">

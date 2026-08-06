@@ -113,7 +113,7 @@ function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
   }
 }
 
-function configurableMeta(): EnvironmentMeta {
+function configurableMeta(overrides: Partial<EnvironmentMeta> = {}): EnvironmentMeta {
   return flappyMeta({
     parameters: [
       {
@@ -147,6 +147,7 @@ function configurableMeta(): EnvironmentMeta {
         ],
       },
     ],
+    ...overrides,
   })
 }
 
@@ -459,6 +460,37 @@ describe('AdminConsolePage', () => {
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
     expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
       pipe_gap: 90,
+    })
+  })
+
+  it('applies an environment preset as overrides and keeps further edits', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([
+      configurableMeta({
+        presets: [
+          {
+            name: 'night_rules',
+            title: 'Night rules',
+            values: { pipe_gap: 75, extras: ['night'] },
+          },
+        ],
+      }),
+    ])
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    const preset = await screen.findByRole('combobox', { name: 'Preset' })
+    expect(preset).toHaveDisplayValue('Choose a preset')
+    await fireEvent.update(preset, 'night_rules')
+    expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
+    expect(screen.getByLabelText('Extras')).toHaveDisplayValue('Override')
+    expect(preset).toHaveDisplayValue('Night rules')
+    await fireEvent.update(screen.getByRole('spinbutton', { name: 'Pipe gap override' }), '80')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
+      pipe_gap: 80,
+      extras: ['night'],
     })
   })
 

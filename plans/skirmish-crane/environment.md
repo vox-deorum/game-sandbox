@@ -52,6 +52,8 @@ Defaults reproduce Season 1. The season schedule resolves to:
 | 5 | army | 10 (21 across) | true | false | true | 3 | on |
 | 6 | army | 10 (21 across) | true | true | true | 3 | on |
 
+Each row ships as a declared `META.presets` entry, choosable in the web dialogs and with `--preset season_1` through `--preset season_6`. Tests pin the table.
+
 capture_target stays 200 and round_cap stays 1000 in every season.
 
 ## Match flow

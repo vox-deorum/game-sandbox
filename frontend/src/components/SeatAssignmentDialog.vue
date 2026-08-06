@@ -428,6 +428,7 @@ function onSubmit(): void {
       <ParameterFields
         v-model="parameters"
         :declarations="meta.parameters"
+        :presets="meta.presets"
         :disabled="configurationLocked"
         @validity="parametersValid = $event"
       />

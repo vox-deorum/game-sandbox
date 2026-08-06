@@ -44,6 +44,7 @@
         "type": "int"
       }
     ],
+    "presets": [],
     "recommended_episode_ticks": 1000,
     "renderer": "flappy-bird",
     "seat_order_matters": false,
@@ -90,6 +91,7 @@
         "type": "int"
       }
     ],
+    "presets": [],
     "recommended_episode_ticks": 52,
     "renderer": "hearts",
     "seat_order_matters": true,
@@ -311,6 +313,64 @@
         "type": "int"
       }
     ],
+    "presets": [
+      {
+        "name": "season_1",
+        "title": "Season 1: The Skirmish",
+        "values": {}
+      },
+      {
+        "name": "season_2",
+        "title": "Season 2: The March",
+        "values": {
+          "terrain": true
+        }
+      },
+      {
+        "name": "season_3",
+        "title": "Season 3: The Army",
+        "values": {
+          "field_extent": 10,
+          "seat_plan": "army",
+          "terrain": true,
+          "unit_abilities": true
+        }
+      },
+      {
+        "name": "season_4",
+        "title": "Season 4: The Commander",
+        "values": {
+          "capture_zones": 1,
+          "field_extent": 10,
+          "seat_plan": "army",
+          "terrain": true,
+          "unit_abilities": true
+        }
+      },
+      {
+        "name": "season_5",
+        "title": "Season 5: The General",
+        "values": {
+          "capture_zones": 3,
+          "field_extent": 10,
+          "seat_plan": "army",
+          "terrain": true,
+          "unit_abilities": true
+        }
+      },
+      {
+        "name": "season_6",
+        "title": "Season 6: The Rivals",
+        "values": {
+          "capture_zones": 3,
+          "field_extent": 10,
+          "seat_plan": "army",
+          "terrain": true,
+          "unit_abilities": true,
+          "wasteland": true
+        }
+      }
+    ],
     "recommended_episode_ticks": 6000,
     "renderer": "crane-reach-field",
     "seat_order_matters": true,
@@ -413,6 +473,7 @@
         "type": "choice"
       }
     ],
+    "presets": [],
     "recommended_episode_ticks": 56,
     "renderer": "spades",
     "seat_order_matters": true,

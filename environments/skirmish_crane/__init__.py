@@ -5,6 +5,7 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentMeta,
     EnvParameter,
+    EnvPreset,
     SeatDeclaration,
     SeatPlan,
     SeatPlans,
@@ -88,6 +89,62 @@ META = EnvironmentMeta(
         ),
         EnvParameter(
             "round_cap", "Round cap", "Maximum number of completed rounds.", "int", 1000, *ROUND_CAP_BOUNDS
+        ),
+    ),
+    presets=(
+        EnvPreset(
+            "season_1",
+            "Season 1: The Skirmish",
+            {},
+        ),
+        EnvPreset(
+            "season_2",
+            "Season 2: The March",
+            {"terrain": True},
+        ),
+        EnvPreset(
+            "season_3",
+            "Season 3: The Army",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "unit_abilities": True,
+            },
+        ),
+        EnvPreset(
+            "season_4",
+            "Season 4: The Commander",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "unit_abilities": True,
+                "capture_zones": 1,
+            },
+        ),
+        EnvPreset(
+            "season_5",
+            "Season 5: The General",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "unit_abilities": True,
+                "capture_zones": 3,
+            },
+        ),
+        EnvPreset(
+            "season_6",
+            "Season 6: The Rivals",
+            {
+                "seat_plan": "army",
+                "field_extent": 10,
+                "terrain": True,
+                "wasteland": True,
+                "unit_abilities": True,
+                "capture_zones": 3,
+            },
         ),
     ),
 )

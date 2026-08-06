@@ -89,11 +89,23 @@ const VALID: EnvironmentMeta = {
   view_interval_ms: null,
   live_interval_ms: null,
   parameters: PARAMETER_FIXTURES.declarations,
+  presets: [
+    {
+      name: 'gentle_start',
+      title: 'Gentle start',
+      values: { pipe_gap: 140, enabled: false, powerups: ['shield'] },
+    },
+  ],
 }
 
 describe('isEnvironmentMeta', () => {
   it('accepts a field-complete entry', () => {
     expect(isEnvironmentMeta(VALID)).toBe(true)
+  })
+
+  it('accepts metadata without optional named parameter presets', () => {
+    const { presets: _presets, ...withoutPresets } = VALID
+    expect(isEnvironmentMeta(withoutPresets)).toBe(true)
   })
 
   it('accepts the int-or-null fields as either', () => {
@@ -235,6 +247,27 @@ describe('isEnvironmentMeta', () => {
       isEnvironmentMeta({
         ...VALID,
         parameters: [{ ...PARAMETER_FIXTURES.declarations[0], min: 4, max: 1 }],
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects malformed presets and non-record values', () => {
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        presets: [{ name: 'Gentle start', title: 'Gentle start', values: {} }],
+      }),
+    ).toBe(false)
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        presets: [{ name: 'gentle_start', title: '', values: {} }],
+      }),
+    ).toBe(false)
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        presets: [{ name: 'gentle_start', title: 'Gentle start', values: null }],
       }),
     ).toBe(false)
   })

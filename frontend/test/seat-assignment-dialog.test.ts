@@ -167,10 +167,33 @@ describe('SeatAssignmentDialog', () => {
     for (const name of ['Seat 1', 'Seat 2', 'Seat 3', 'Seat 4']) {
       expect(seat(name).value).toBe('builtin:naive')
     }
+    expect(screen.queryByRole('combobox', { name: 'Preset' })).toBeNull()
 
     await fireEvent.update(screen.getByRole('spinbutton', { name: 'Seed (optional)' }), '4242')
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
     expect(lastStart(emitted).seed).toBe(4242)
+  })
+
+  it('watch: applies a preset and keeps further edits', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { players: 1, pipe_gap: 90 },
+        meta: flappyMeta({
+          presets: [{ name: 'narrow', title: 'Narrow gap', values: { pipe_gap: 70 } }],
+        }),
+        agents: AGENTS,
+        mode: 'watch',
+      },
+    })
+
+    const preset = screen.getByRole('combobox', { name: 'Preset' })
+    await fireEvent.update(preset, 'narrow')
+    expect(preset).toHaveDisplayValue('Narrow gap')
+    expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).toHaveValue(70)
+    await fireEvent.update(screen.getByRole('spinbutton', { name: 'Pipe gap' }), '80')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).parameters).toEqual({ players: 1, pipe_gap: 80 })
   })
 
   it('rate: locks the intended agent, season parameters, and seed while keeping Start enabled', async () => {
@@ -178,7 +201,9 @@ describe('SeatAssignmentDialog', () => {
       props: {
         seasonId: 'season-1',
         parameters: { players: 1, pipe_gap: 90 },
-        meta: flappyMeta(),
+        meta: flappyMeta({
+          presets: [{ name: 'narrow', title: 'Narrow gap', values: { pipe_gap: 70 } }],
+        }),
         agents: AGENTS,
         mode: 'rate',
         preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
@@ -189,6 +214,7 @@ describe('SeatAssignmentDialog', () => {
       screen.getByText('This rating run uses the selected agent and season settings.'),
     ).toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Preset' })).toBeDisabled()
     expect(seat('Seat 1')).toBeDisabled()
     expect(seat('Seat 1')).toHaveValue('submission:sub1')
     expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()

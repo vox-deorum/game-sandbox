@@ -502,6 +502,7 @@ describe('EnvironmentPage', () => {
     await renderPage()
     // The play-season section's Play button opens the start form.
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    expect(screen.queryByRole('combobox', { name: 'Preset' })).toBeNull()
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
     // A single-seat environment fills only the lone human seat; the backend derives the human mode.
@@ -513,6 +514,32 @@ describe('EnvironmentPage', () => {
       seed: undefined,
       humanTimeoutMs: undefined,
     })
+  })
+
+  it('applies a preset in the single-seat start form and keeps further edits', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getEnvironments).mockResolvedValue([
+      flappyMeta({
+        presets: [{ name: 'narrow', title: 'Narrow gap', values: { pipe_gap: 70 } }],
+      }),
+    ])
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
+    })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    const preset = screen.getByRole('combobox', { name: 'Preset' })
+    expect(preset).toHaveDisplayValue('Choose a preset')
+    await fireEvent.update(preset, 'narrow')
+    expect(preset).toHaveDisplayValue('Narrow gap')
+    expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).toHaveValue(70)
+    await fireEvent.update(screen.getByRole('spinbutton', { name: 'Pipe gap' }), '80')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith(
+      expect.objectContaining({ parameters: { players: 1, pipe_gap: 80 } }),
+    )
   })
 
   it('sends the human timeout override entered in the start form', async () => {

@@ -180,6 +180,25 @@ export const EnvParameterSchema = z
   })
 export type EnvParameter = z.infer<typeof EnvParameterSchema>
 
+// -- Presets ----------------------------------------------------------------------------------
+
+/** A named set of parameter values an environment offers as a convenient starting point. */
+export const EnvPresetSchema = z
+  .strictObject({
+    name: z.string().regex(SNAKE_CASE),
+    title: NonEmptyString,
+    values: z.record(
+      z.string(),
+      z.union([z.boolean(), z.number(), z.string(), z.array(z.string())]),
+    ),
+  })
+  .meta({
+    id: 'env_preset',
+    description:
+      'A named set of parameter values an environment offers as a convenient starting point.',
+  })
+export type EnvPreset = z.infer<typeof EnvPresetSchema>
+
 // -- Layout -----------------------------------------------------------------------------------
 
 /** A player-count range where every player receives one assignable seat. */
@@ -325,6 +344,7 @@ export const EnvironmentMetaSchema = z
     view_interval_ms: z.number().nullable(),
     live_interval_ms: z.number().nullable(),
     parameters: z.array(EnvParameterSchema).min(1),
+    presets: z.array(EnvPresetSchema).optional(),
   })
   .superRefine((meta, ctx) => {
     if (meta.stepping === 'simultaneous') {

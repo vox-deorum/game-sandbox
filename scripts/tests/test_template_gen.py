@@ -16,6 +16,7 @@ from game_sandbox_harness.environment import (  # noqa: E402
     EnvironmentMeta,
     EnvParameter,
     EnvParameterChoice,
+    EnvPreset,
     PlayerBounds,
     SeatDeclaration,
     SeatPlan,
@@ -110,7 +111,26 @@ def test_rendered_metadata_constructs_declared_seats() -> None:
     assert "SeatDeclaration(players=(1,), restricted_builtin=None)" in rendered
 
 
-def test_render_parameters_uses_evaluable_dataclass_representation() -> None:
+def test_rendered_metadata_imports_and_preserves_preset_tuples() -> None:
+    meta = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "presets": (
+                EnvPreset("starter", "Starter", {}),
+                EnvPreset("faster", "Faster", {"players": 2}),
+            ),
+        }
+    )
+    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
+
+    rendered = template_gen._render_sandbox_init("example", spec, meta)
+
+    assert "    EnvPreset," in rendered
+    assert "\"presets\": (EnvPreset(name='starter', title='Starter', values={}), EnvPreset(" in rendered
+    assert "name='faster', title='Faster', values={'players': 2}" in rendered
+
+
+def test_render_declaration_tuple_uses_evaluable_dataclass_representation() -> None:
     parameters = (
         EnvParameter(
             name="mode",
@@ -122,7 +142,7 @@ def test_render_parameters_uses_evaluable_dataclass_representation() -> None:
         ),
     )
 
-    rendered = template_gen._render_parameters(parameters)
+    rendered = template_gen._render_declaration_tuple("parameters", parameters)
 
     assert rendered == repr(parameters)
     assert (

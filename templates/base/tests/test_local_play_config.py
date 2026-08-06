@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 from sandbox import evaluate, live_local, play
 from sandbox.harness.environment import (
+    EnvPreset,
     PlayerBounds,
     SeatDeclaration,
     SeatPlan,
@@ -19,6 +20,7 @@ from sandbox.harness.environment import (
     resolve_parameters,
 )
 from sandbox.harness.live import parse_config
+from sandbox.season import SeasonSettings
 
 
 def _rival_repo(tmp_path: Path) -> Path:
@@ -40,7 +42,7 @@ def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
             ),
         )
     )
-    monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=plans, presets=()))
 
 
 def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypatch, tmp_path: Path):
@@ -108,6 +110,62 @@ def test_template_play_does_not_offer_unsupported_watch_mode():
         play.main(["watch"])
 
     assert error.value.code == 2
+
+
+def test_preset_replaces_season_parameters_even_when_its_values_are_empty(monkeypatch, capsys):
+    monkeypatch.setattr(play, "META", replace(play.META, presets=(EnvPreset("season_1", "Season 1", {}),)))
+    monkeypatch.setattr(
+        play,
+        "load_season_settings",
+        lambda _root, _meta: SeasonSettings("Downloaded season", {"round_cap": 150}, 123, 456),
+    )
+    captured: dict[str, object] = {}
+
+    def run_headless(**kwargs: object) -> float:
+        captured.update(kwargs)
+        return 2.0
+
+    monkeypatch.setattr(play, "run_headless", run_headless)
+
+    assert play.main(["agent", "--headless", "--preset", "season_1"]) == 0
+    assert captured["parameters"] == resolve_parameters(play.META)
+    assert captured["decision_limit_ms"] == 123
+    assert captured["game_limit_ms"] == 456
+    assert capsys.readouterr().out == (
+        "Using the season_1 preset with the time limits from season.json.\nseed 0: score 2.00\n"
+    )
+
+
+def test_preset_parameters_yield_to_explicit_parameter_overrides(monkeypatch):
+    monkeypatch.setattr(
+        play,
+        "META",
+        replace(play.META, presets=(EnvPreset("short", "Short", {"round_cap": 150}),)),
+    )
+    captured: dict[str, object] = {}
+
+    def run_headless(**kwargs: object) -> float:
+        captured.update(kwargs)
+        return 2.0
+
+    monkeypatch.setattr(play, "run_headless", run_headless)
+
+    assert play.main(["agent", "--headless", "--preset", "short", "--parameter", "round_cap=200"]) == 0
+    assert captured["parameters"] == resolve_parameters(play.META, {"round_cap": 200})
+
+
+def test_unknown_preset_reports_the_available_names(monkeypatch, capsys):
+    monkeypatch.setattr(
+        play,
+        "META",
+        replace(play.META, presets=(EnvPreset("season_1", "Season 1", {}),)),
+    )
+
+    with pytest.raises(SystemExit) as error:
+        play.main(["agent", "--preset", "missing"])
+
+    assert error.value.code == 2
+    assert "unknown environment preset 'missing'; available: season_1" in capsys.readouterr().err
 
 
 def test_evaluate_forwards_the_selected_player(monkeypatch, capsys):
@@ -190,7 +248,7 @@ def test_resolve_rival_rejects_missing_and_manifestless_paths(tmp_path: Path):
 def test_vs_fills_every_opposing_player_in_a_one_player_per_seat_layout(monkeypatch, tmp_path: Path):
     player_ids = ("player_0", "player_1", "player_2", "player_3")
     monkeypatch.setattr(play, "possible_players", lambda parameters=None: player_ids)
-    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=4, max=4)))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=4, max=4), presets=()))
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
     rival = _rival_repo(tmp_path)
 
@@ -273,7 +331,7 @@ def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatc
 
 def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
     monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0",))
-    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=1, max=1)))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=1, max=1), presets=()))
 
     with pytest.raises(SystemExit) as error:
         play.main(["agent", "--vs", str(tmp_path)])
@@ -290,7 +348,7 @@ def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_pa
     players = ("player_0", "player_1", "player_2")
     monkeypatch.setattr(play, "possible_players", lambda parameters=None: players)
     plans = SeatPlans((SeatPlan("coop", "Cooperative", (SeatDeclaration((0, 1, 2)),)),))
-    monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=plans, presets=()))
 
     with pytest.raises(SystemExit) as error:
         play.main(["agent", "--vs", str(tmp_path)])
@@ -381,7 +439,7 @@ def test_play_episode_binds_other_agents_and_defaults(monkeypatch):
 
 
 def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=2, max=2)))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=2, max=2), presets=()))
     monkeypatch.setattr(evaluate.play, "possible_players", lambda parameters: ("player_0", "player_1"))
     parameters = resolve_parameters(evaluate.play.META)
     rival = _rival_repo(tmp_path)

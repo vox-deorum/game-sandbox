@@ -28,10 +28,8 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
             lines.append("        ),")
         elif isinstance(value, str):
             lines.append(f"{prefix}{json.dumps(value)},")
-        elif key == "parameters":
-            lines.append(f"{prefix}{_render_parameters(value)},")
-        elif key == "builtin_agents":
-            lines.append(f"{prefix}{_render_builtin_agents(value)},")
+        elif key in {"parameters", "builtin_agents", "presets"}:
+            lines.append(f"{prefix}{_render_declaration_tuple(key, value)},")
         elif isinstance(value, tuple):
             items = ", ".join(json.dumps(item) for item in value)
             trailing_comma = "," if len(value) == 1 else ""
@@ -42,21 +40,13 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _render_parameters(value: object) -> str:
-    """Render internal parameter declarations without serializing the synthesized layout parameter."""
-    from game_sandbox_harness.environment import EnvParameter
+def _render_declaration_tuple(key: str, value: object) -> str:
+    """Render internal declaration tuples through their eval-ready dataclass repr."""
+    from game_sandbox_harness.environment import BuiltinAgent, EnvParameter, EnvPreset
 
-    if not isinstance(value, tuple) or not all(isinstance(item, EnvParameter) for item in value):
-        raise TypeError("metadata parameters must be an EnvParameter tuple")
-    return repr(value)
-
-
-def _render_builtin_agents(value: object) -> str:
-    """Render internal built-in declarations instead of their serialized dictionaries."""
-    from game_sandbox_harness.environment import BuiltinAgent
-
-    if not isinstance(value, tuple) or not all(isinstance(item, BuiltinAgent) for item in value):
-        raise TypeError("metadata builtin_agents must be a BuiltinAgent tuple")
+    item_type = {"parameters": EnvParameter, "builtin_agents": BuiltinAgent, "presets": EnvPreset}[key]
+    if not isinstance(value, tuple) or not all(isinstance(item, item_type) for item in value):
+        raise TypeError(f"metadata {key} must be a tuple of {item_type.__name__}")
     return repr(value)
 
 
@@ -71,6 +61,7 @@ def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: objec
     metadata["layout"] = meta.layout
     metadata["human_players"] = tuple(metadata["human_players"])
     metadata["parameters"] = meta.parameters
+    metadata["presets"] = meta.presets
     metadata_text = _render_metadata_mapping(metadata)
     surface_import = f"from .{spec.inner_package} import {spec.default_action}, extract_overlay, make_env"
     return f'''\
@@ -89,6 +80,7 @@ from sandbox.harness.environment import (
     BuiltinAgent,
     EnvParameter,
     EnvParameterChoice,
+    EnvPreset,
     EnvironmentMeta,
     PlayerBounds,
     SeatPlan,

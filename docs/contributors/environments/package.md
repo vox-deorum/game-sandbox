@@ -51,6 +51,7 @@ The environment owns its display state. Test that every overlay field exists and
 | `layout` | Player bounds or seat plans. See [Players and seats](../../specs/environment.md#players-and-seats). |
 | `human_players` | Human-capable players. See [Players and seats](../../specs/environment.md#players-and-seats). |
 | `parameters` | Typed gameplay parameter declarations. See [Configurable gameplay parameters](../../specs/environment.md#configurable-gameplay-parameters). |
+| `presets` | Named partial parameter maps for common configurations. |
 | `human_timeout_ms` | Human move clock, or `None` when pacing is the deadline. |
 | `stepping` | Required `sequential` or `simultaneous` contract. See [Stepping contract](../../specs/environment.md#stepping-contract). |
 | `recommended_episode_ticks` | Suggested episode length. |
@@ -63,7 +64,7 @@ The environment owns its display state. Test that every overlay field exists and
 
 The harness checks the constructed environment against `stepping` after receiving the resolved parameters. A simultaneous environment has no separate `human_timeout_ms` and must declare a positive `pace_interval_ms`.
 
-Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
+Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels. Declare common partial configurations with `EnvPreset`; preset names must be unique, and every value must satisfy its parameter declaration.
 
 Use `effective_parameters(meta)` when a consumer needs declarations including the synthesized layout parameter, and `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
 

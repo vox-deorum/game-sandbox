@@ -62,6 +62,7 @@ Game Sandbox metadata includes:
 - Either minimum and maximum players, or the seat plans a season may choose between.
 - The ordered named builtin agents available to seats.
 - Typed gameplay parameter declarations and their environment defaults.
+- Named parameter presets that fill the controls for common configurations.
 - Human-capable players and their default timeout.
 - Recommended episode length.
 - Required stepping mode: `sequential` or `simultaneous`.
@@ -105,6 +106,8 @@ The harness reads and validates this optional mapping once when the environment 
 
 An environment may declare gameplay parameters beside its metadata. Each declaration has a stable snake_case name, a friendly title and description, a type, and an environment default. Integer and float parameters may set inclusive bounds. Choice and multi-choice parameters declare nonempty string values with friendly labels.
 
+An environment may also declare named presets as partial parameter maps. Each preset has a stable name and a friendly title. The website and local launchers use a preset to fill the parameter controls, where the player may still change individual values before starting a session.
+
 ### Parameter types
 
 The supported parameter types are:
@@ -129,6 +132,8 @@ Parameter values resolve in layers:
 1. Environment defaults.
 2. Overrides from the play-open season or the automated run's season.
 3. Player tweaks for one live watch or play session.
+
+A preset is a shortcut for filling one of these existing override layers, not an additional layer. The website applies it to the live-session controls. The platform launcher applies it before explicit `--parameter` values. The student sandbox uses it in place of the `season.json` parameter layer for that command, while retaining the season's time limits. In every case, individual parameter tweaks win over preset values.
 
 Automated games stop after the second layer and always use the season values. Every resolved map contains exactly the environment's effective parameter names, including whichever of `players` and `seat_plan` that environment has.
 

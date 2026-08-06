@@ -22,6 +22,7 @@ from game_sandbox_harness.environment import (
     ResolvedLayout,
     effective_parameters,
     load_environment,
+    preset_values,
     resolve_layout,
     resolve_parameters,
 )
@@ -80,7 +81,12 @@ def _parse_parameter_value(declaration: EnvParameter, raw: str) -> ParameterValu
     return declaration.validate_value(value)
 
 
-def resolve_cli_parameters(entry: EnvironmentEntry, raw_parameters: list[str]) -> dict[str, ParameterValue]:
+def resolve_cli_parameters(
+    entry: EnvironmentEntry,
+    raw_parameters: list[str],
+    *,
+    preset: str | None = None,
+) -> dict[str, ParameterValue]:
     """Apply repeatable ``NAME=VALUE`` CLI overrides through the environment declarations."""
     declarations = {declaration.name: declaration for declaration in effective_parameters(entry.meta)}
     overrides: dict[str, ParameterValue] = {}
@@ -92,7 +98,8 @@ def resolve_cli_parameters(entry: EnvironmentEntry, raw_parameters: list[str]) -
         if declaration is None:
             raise ValueError(f"unknown environment parameter {name!r}")
         overrides[name] = _parse_parameter_value(declaration, value)
-    return resolve_parameters(entry.meta, overrides)
+    layer = {} if preset is None else preset_values(entry.meta, preset)
+    return resolve_parameters(entry.meta, layer, overrides)
 
 
 def builtin_agent_path(env_id: str, name: str = "naive") -> str:
@@ -255,6 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME=VALUE",
         help="typed environment parameter override; repeat for several values",
     )
+    parser.add_argument("--preset", help="named environment preset")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, help="positive local episode step cap")
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
@@ -283,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.human_timeout_ms is not None and args.human_timeout_ms <= 0:
         parser.error("--human-timeout-ms must be positive")
     try:
-        parameters = resolve_cli_parameters(entry, args.parameter)
+        parameters = resolve_cli_parameters(entry, args.parameter, preset=args.preset)
         layout = default_layout(entry, parameters)
     except ValueError as error:
         parser.error(str(error))

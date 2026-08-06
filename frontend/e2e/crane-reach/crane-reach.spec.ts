@@ -1,20 +1,9 @@
-import {
-  configureMatches,
-  declareSeason,
-  release,
-  setSeasonOverrides,
-  startSession,
-} from '../support/api.js'
+import { configureMatches, declareSeason, release, setSeasonOverrides } from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 
 const ENV_ID = 'skirmish_crane'
 const SEASON_LABEL = 'Crane Reach Army'
-
-const ALL_NAIVE_SEATS = {
-  seat_0: { kind: 'builtin-agent' as const, name: 'naive' },
-  seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
-}
 
 test('watch a Crane Reach skirmish to game over and seek its exact replay frames', async ({
   page,
@@ -38,8 +27,16 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Skirmish at Crane Reach' })).toBeVisible()
 
-  const sessionId = await startSession(admin, ENV_ID, ALL_NAIVE_SEATS, { seed: 7 })
-  await page.goto(`/sessions/${sessionId}`)
+  await page.goto(`/environments/${ENV_ID}`)
+  const naive = page.locator('.agent-row--builtin', { hasText: 'Naive' })
+  await naive.getByRole('button', { name: 'Watch' }).click()
+  const dialog = page.getByRole('dialog', { name: /Watch Skirmish at Crane Reach/ })
+  const preset = dialog.getByRole('combobox', { name: 'Preset' })
+  await preset.selectOption('season_1')
+  await expect(preset).toHaveValue('season_1')
+  await dialog.getByRole('spinbutton', { name: 'Seed (optional)' }).fill('7')
+  await dialog.getByRole('button', { name: 'Start watching' }).click()
+  await expect(page).toHaveURL(/\/sessions\//)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
   const replayLink = page.getByRole('link', { name: 'Open replay' })

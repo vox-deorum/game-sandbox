@@ -18,7 +18,7 @@ from typing import Any
 
 from _fixture_common import FIXTURES_DIR
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import resolve_parameters
+from game_sandbox_harness.environment import preset_values, resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import AgentPlayer, Episode
 from game_sandbox_harness.state import PlayerAttribution, StepState
@@ -214,7 +214,7 @@ def generate(output_dir: Path = FIXTURES_DIR) -> None:
         legality_name="crane-reach-skirmish-legality.json",
         recording_id="crane-reach-skirmish-fixture",
         seed=4,
-        overrides={},
+        overrides=dict(preset_values(ENTRY.meta, "season_1")),
         policy=NaiveAgent,
     )
     _write_fixture(
@@ -223,15 +223,7 @@ def generate(output_dir: Path = FIXTURES_DIR) -> None:
         legality_name="crane-reach-army-legality.json",
         recording_id="crane-reach-army-fixture",
         seed=4,
-        overrides={
-            "seat_plan": "army",
-            "field_extent": 10,
-            "terrain": True,
-            "wasteland": True,
-            "unit_abilities": True,
-            "capture_zones": 3,
-            "round_cap": 150,
-        },
+        overrides={**preset_values(ENTRY.meta, "season_6"), "round_cap": 150},
         policy=RetreatAgent,
     )
 
