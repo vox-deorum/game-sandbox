@@ -71,3 +71,11 @@ export function rangePresentation(state: InspectionState, inspectedUnitAvailable
     ? { wash: 'bone', alpha: 0.18, outline: 'dashed', outlineInk: 'dilute-ink', ring: true }
     : { wash: 'gilt', alpha: 0.1, outline: 'solid', outlineInk: 'gilt', ring: false }
 }
+
+/** Event timing may hide the acting range, but never a range owned by an inspected board unit. */
+export function rangeVisibleDuringEvent(
+  inspectedUnitAvailable: boolean,
+  actingRangeVisible: boolean,
+): boolean {
+  return inspectedUnitAvailable || actingRangeVisible
+}

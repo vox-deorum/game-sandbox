@@ -152,10 +152,15 @@ describe('Crane Reach scene geometry and compact overlay', () => {
 
   it('pairs every inspection stat icon with a label and enables configured ability lines', () => {
     const withoutAbilities = computeScene(armyStates[0] as StepState)
-    const withAbilities = computeScene(armyStates[0] as StepState, { unitAbilities: true })
+    const withAbilities = computeScene(armyStates[0] as StepState, {
+      terrainEnabled: true,
+      unitAbilities: true,
+    })
     expect(withoutAbilities.hud.unitAbilities).toBe(false)
+    expect(withoutAbilities.hud.terrainEnabled).toBe(false)
     expect(withAbilities.hud.unitAbilities).toBe(true)
-    expect(unitCardFor('footman', 4, true)).toMatchObject({
+    expect(withAbilities.hud.terrainEnabled).toBe(true)
+    expect(unitCardFor('footman', 4, true, { terrain: 'hill', feature: 'forest' })).toMatchObject({
       fields: [
         { icon: 'iconHp', label: 'HP', value: '4/12' },
         { icon: 'iconMove', label: 'MOV', value: '2' },
@@ -163,9 +168,10 @@ describe('Crane Reach scene geometry and compact overlay', () => {
         { icon: 'iconRange', label: 'RNG', value: '1' },
         { icon: 'iconVision', label: 'VIS', value: '4' },
       ],
-      ability: 'Shield wall',
+      tile: { terrain: 'hill', feature: 'forest' },
+      ability: 'shield_wall',
     })
-    expect(unitCardFor('cavalry', null, true).ability).toBe('Charge')
+    expect(unitCardFor('cavalry', null, true).ability).toBe('charge')
     expect(unitCardFor('archer', null, true).ability).toBeNull()
     expect(unitCardFor('footman', null, false).ability).toBeNull()
   })

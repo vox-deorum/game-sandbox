@@ -1,4 +1,5 @@
 import type { StepState } from '@game-sandbox/schema'
+import type { FederatedPointerEvent } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,11 +7,13 @@ import {
   inspectionPresentation,
   pinsInspectionForPointer,
   rangePresentation,
+  rangeVisibleDuringEvent,
   reduceInspection,
   resolveInspection,
 } from './inspection.js'
 import { reachableTileKeys } from './reachability.js'
 import { computeScene, type HexTile, type SceneUnit } from './scene.js'
+import { createUnitNode } from './units.js'
 import {
   armyFixture,
   armyLegalityRaw,
@@ -23,6 +26,25 @@ import {
 } from './test-helpers.js'
 
 describe('Crane Reach HUD inspection and range', () => {
+  it('ignores bubbling pointerout and clears hover only when the pointer leaves the unit', () => {
+    const events: string[] = []
+    const node = createUnitNode(
+      'red_footman_0',
+      (event) => {
+        if (event.type === 'hover-unit') events.push(event.unitId ?? 'none')
+      },
+      pinsInspectionForPointer,
+    )
+
+    const pointer = {} as FederatedPointerEvent
+    node.root.emit('pointerenter', pointer)
+    node.root.emit('pointerout', pointer)
+    expect(events).toEqual(['red_footman_0'])
+    node.root.emit('pointerleave', pointer)
+    expect(events).toEqual(['red_footman_0', 'none'])
+    node.root.destroy({ children: true })
+  })
+
   it('keeps mouse hover transient while touch inspection persists, replaces, and dismisses', () => {
     const footman = { kind: 'roster', side: 'red', type: 'footman' } as const
     const archer = { kind: 'unit', unitId: 'blue_archer_0' } as const
@@ -41,6 +63,9 @@ describe('Crane Reach HUD inspection and range', () => {
       outlineInk: 'dilute-ink',
       ring: true,
     })
+    expect(rangeVisibleDuringEvent(true, false)).toBe(true)
+    expect(rangeVisibleDuringEvent(false, true)).toBe(true)
+    expect(rangeVisibleDuringEvent(false, false)).toBe(false)
 
     const restored = reduceInspection(boardHover, { type: 'hover-unit', unitId: null })
     expect(resolveInspection(restored)).toEqual(footman)

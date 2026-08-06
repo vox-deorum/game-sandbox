@@ -102,7 +102,8 @@ export interface HudStatField {
 export interface HudCard {
   title: string
   fields: HudStatField[]
-  ability: string | null
+  tile: Pick<HexTile, 'terrain' | 'feature'> | null
+  ability: 'shield_wall' | 'charge' | null
 }
 
 /** The card specification is pure so display and coverage share the exact icon-led content. */
@@ -110,6 +111,7 @@ export function unitCardFor(
   type: SceneUnit['type'],
   currentHitPoints: number | null,
   unitAbilities: boolean,
+  tile: Pick<HexTile, 'terrain' | 'feature'> | null = null,
 ): HudCard {
   const stats = UNIT_STATS[type]
   return {
@@ -125,7 +127,15 @@ export function unitCardFor(
       { icon: 'iconRange', label: 'RNG', value: String(stats.range) },
       { icon: 'iconVision', label: 'VIS', value: String(stats.vision) },
     ],
-    ability: unitAbilities ? (type === 'footman' ? 'Shield wall' : type === 'cavalry' ? 'Charge' : null) : null,
+    tile,
+    ability:
+      unitAbilities
+        ? type === 'footman'
+          ? 'shield_wall'
+          : type === 'cavalry'
+            ? 'charge'
+            : null
+        : null,
   }
 }
 
@@ -165,12 +175,15 @@ export interface CraneReachScene {
     round: number
     capture: { red: number; blue: number; target: number } | null
     rosters: Record<'red' | 'blue', Record<SceneUnit['type'], number>>
+    terrainEnabled: boolean
     unitAbilities: boolean
     terminal: { winner: 'red' | 'blue' | 'draw'; result: string } | null
   }
 }
 
 export interface SceneConfig {
+  /** Terrain is a fixed episode parameter, supplied from the recording header rather than overlay v1. */
+  terrainEnabled?: boolean
   /** Abilities are a fixed episode parameter, supplied from the recording header rather than overlay v1. */
   unitAbilities?: boolean
 }
@@ -692,6 +705,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): CraneR
           ? { red: overlay.capture[0], blue: overlay.capture[1], target: overlay.capture[2] }
           : null,
       rosters,
+      terrainEnabled: config.terrainEnabled === true,
       unitAbilities: config.unitAbilities === true,
       terminal,
     },

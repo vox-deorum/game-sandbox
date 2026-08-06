@@ -17,6 +17,22 @@ import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
 import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 
+import {
+  type CameraLimits,
+  type CameraView,
+  cameraLimits,
+  cameraProbeValue,
+  fitCamera,
+  panCamera,
+  pinchCamera,
+  viewPoint,
+  worldTransform,
+  zoomCamera,
+} from '../../../frontend/src/renderers/base/camera.js'
+import {
+  type CameraGestures,
+  wireCameraGestures,
+} from '../../../frontend/src/renderers/base/camera-gestures.js'
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
 import { MONO } from './draw.js'
@@ -29,6 +45,7 @@ import {
   inspectionTargetLabel,
   pinsInspectionForPointer,
   rangePresentation,
+  rangeVisibleDuringEvent,
   reduceInspection,
 } from './inspection.js'
 import { eventTextMetrics, presentationFor } from './presentation.js'
@@ -87,6 +104,7 @@ export class CraneReachRenderer extends PixiRenderer {
   private activationLayer!: Container
   private eventLayer!: Container
   private transientLayer!: Container
+  private worldLayer!: Container
   private hudLayer!: Container
   private inspectionLayer!: Container
   private battlefieldKey: string | null = null
@@ -106,6 +124,10 @@ export class CraneReachRenderer extends PixiRenderer {
   private eventAnimating = false
   private pendingEventUpdate: PendingEventUpdate | null = null
   private inspection: InspectionState = EMPTY_INSPECTION
+  private camera: CameraView | null = null
+  private cameraLimits: CameraLimits | null = null
+  private cameraGestures: CameraGestures | null = null
+  private cameraRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   protected setup(root: Container): void {
     this.battlefieldLayer = new Container()
@@ -115,9 +137,10 @@ export class CraneReachRenderer extends PixiRenderer {
     this.activationLayer = new Container()
     this.eventLayer = new Container()
     this.transientLayer = new Container()
+    this.worldLayer = new Container()
     this.hudLayer = new Container()
     this.inspectionLayer = new Container()
-    root.addChild(
+    this.worldLayer.addChild(
       this.battlefieldLayer,
       this.zoneMarkerLayer,
       this.rangeLayer,
@@ -125,9 +148,8 @@ export class CraneReachRenderer extends PixiRenderer {
       this.activationLayer,
       this.eventLayer,
       this.transientLayer,
-      this.hudLayer,
-      this.inspectionLayer,
     )
+    root.addChild(this.worldLayer, this.hudLayer, this.inspectionLayer)
     root.eventMode = 'passive'
     root.interactiveChildren = true
     const stage = root.parent
@@ -135,6 +157,29 @@ export class CraneReachRenderer extends PixiRenderer {
       stage.eventMode = 'static'
       stage.interactiveChildren = true
     }
+    this.cameraGestures = wireCameraGestures(this.ctx.container, {
+      toView: (clientPoint) => {
+        const bounds = this.ctx.container.getBoundingClientRect()
+        const scale = this.displayScale()
+        return { x: (clientPoint.x - bounds.left) / scale, y: (clientPoint.y - bounds.top) / scale }
+      },
+      zoomAt: (factor, anchor) => {
+        if (this.camera === null || this.cameraLimits === null) return
+        this.camera = zoomCamera(this.camera, this.cameraLimits, this.internalSize, factor, anchor)
+        this.applyCamera()
+      },
+      panBy: (dx, dy) => {
+        if (this.camera === null || this.cameraLimits === null) return
+        this.camera = panCamera(this.camera, this.cameraLimits, this.internalSize, dx, dy)
+        this.applyCamera()
+      },
+      pinch: (before, after) => {
+        if (this.camera === null || this.cameraLimits === null) return
+        this.camera = pinchCamera(this.camera, this.cameraLimits, this.internalSize, before, after)
+        this.applyCamera()
+      },
+      reset: () => this.resetCamera(),
+    })
     void this.loadTextures()
   }
 
@@ -211,7 +256,14 @@ export class CraneReachRenderer extends PixiRenderer {
       this.updateEventPhaseProbe()
       if (this.presentedScene !== null) {
         this.reconcileEventActivation(this.presentedScene)
-        if (!this.eventRangeVisible()) clear(this.rangeLayer)
+        if (
+          !rangeVisibleDuringEvent(
+            this.inspectedUnit(this.presentedScene) !== null,
+            this.eventRangeVisible(),
+          )
+        ) {
+          this.clearRange()
+        }
       }
       this.reconcileEvent()
       return true
@@ -222,6 +274,7 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private sceneFor(state: StepState): CraneReachScene {
     return computeScene(state, {
+      terrainEnabled: this.ctx.header.parameters.terrain === true,
       unitAbilities: this.ctx.header.parameters.unit_abilities === true,
     })
   }
@@ -277,7 +330,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.zoneMarkerLayer,
       this.sprite,
       scene,
-      presentationFor(scene.hexRadius, this.displayScale()),
+      presentationFor(scene.hexRadius, this.effectiveScale()),
     )
     if (transitioning) {
       this.reconcileEventRange(scene)
@@ -324,8 +377,10 @@ export class CraneReachRenderer extends PixiRenderer {
     const event = this.event
     if (event === null) {
       this.ctx.container.dataset.craneEventPhase = 'idle'
+      delete this.ctx.container.dataset.craneEventActor
       return
     }
+    this.ctx.container.dataset.craneEventActor = event.actorId
     const shape = this.eventShape(event)
     this.ctx.container.dataset.craneEventPhase = eventPhaseAt(
       this.eventProgress,
@@ -357,6 +412,18 @@ export class CraneReachRenderer extends PixiRenderer {
     if (this.battlefieldKey !== scene.battlefieldKey) {
       this.battlefieldBuilds = 0
       this.battlefieldTextured = false
+      const tiles = scene.tiles.filter((tile) => tile.terrain !== 'void')
+      const horizontalExtent = (Math.sqrt(3) / 2) * scene.hexRadius
+      this.cameraLimits = cameraLimits(
+        {
+          minX: Math.min(...tiles.map((tile) => tile.center.x - horizontalExtent)),
+          minY: Math.min(...tiles.map((tile) => tile.center.y - scene.hexRadius)),
+          maxX: Math.max(...tiles.map((tile) => tile.center.x + horizontalExtent)),
+          maxY: Math.max(...tiles.map((tile) => tile.center.y + scene.hexRadius)),
+        },
+        this.internalSize,
+      )
+      this.resetCamera()
     }
     if (
       !shouldRebuildBattlefield(
@@ -386,7 +453,7 @@ export class CraneReachRenderer extends PixiRenderer {
         node.root.destroy({ children: true })
       }
     }
-    const level = presentationFor(scene.hexRadius, this.displayScale())
+    const level = presentationFor(scene.hexRadius, this.effectiveScale())
     this.ctx.container.dataset.cranePresentation = level
     for (const unit of scene.units) {
       let node = this.unitNodes.get(unit.unitId)
@@ -423,6 +490,12 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   private setInspection(event: InspectionEvent): void {
+    if (
+      (event.type === 'inspect' || event.type === 'dismiss') &&
+      this.cameraGestures?.dragging() === true
+    ) {
+      return
+    }
     this.inspection = reduceInspection(this.inspection, event)
     if (this.presentedScene !== null) {
       if (this.eventAnimating) this.reconcileEventRange(this.presentedScene)
@@ -442,14 +515,20 @@ export class CraneReachRenderer extends PixiRenderer {
   /** The range wash follows the inspected unit when there is one, the acting unit otherwise. */
   private reconcileRange(scene: CraneReachScene): void {
     clear(this.rangeLayer)
-    if (scene.hud.terminal !== null) return
+    if (scene.hud.terminal !== null) {
+      this.ctx.container.dataset.craneRangeUnit = 'none'
+      return
+    }
     const inspected = this.inspectedUnit(scene)
     const unit =
       inspected ??
       (scene.activation === null
         ? null
         : (scene.units.find((candidate) => candidate.unitId === scene.activation?.unitId) ?? null))
-    if (unit === null) return
+    if (unit === null) {
+      this.ctx.container.dataset.craneRangeUnit = 'none'
+      return
+    }
     drawRangeWash(
       this.rangeLayer,
       scene,
@@ -457,6 +536,7 @@ export class CraneReachRenderer extends PixiRenderer {
       reachableTileKeys(unit, scene.tiles, scene.units),
       rangePresentation(this.inspection, inspected !== null),
     )
+    this.ctx.container.dataset.craneRangeUnit = unit.unitId
   }
 
   private eventRangeVisible(): boolean {
@@ -465,8 +545,16 @@ export class CraneReachRenderer extends PixiRenderer {
 
   /** The retained acting range stays visible until the event begins resolving. */
   private reconcileEventRange(scene: CraneReachScene): void {
-    if (this.eventRangeVisible()) this.reconcileRange(scene)
-    else clear(this.rangeLayer)
+    if (rangeVisibleDuringEvent(this.inspectedUnit(scene) !== null, this.eventRangeVisible())) {
+      this.reconcileRange(scene)
+    } else {
+      this.clearRange()
+    }
+  }
+
+  private clearRange(): void {
+    clear(this.rangeLayer)
+    this.ctx.container.dataset.craneRangeUnit = 'none'
   }
 
   /**
@@ -532,7 +620,7 @@ export class CraneReachRenderer extends PixiRenderer {
       }
     }
     this.eventLayer.addChild(event)
-    const textMetrics = eventTextMetrics(this.displayScale())
+    const textMetrics = eventTextMetrics(this.effectiveScale())
     if (this.event.damage > 0 && reaction > 0) {
       const damage = this.text(
         `-${this.event.damage}`,
@@ -541,8 +629,9 @@ export class CraneReachRenderer extends PixiRenderer {
         'center',
         MONO,
         // Keep a two-CSS-pixel opaque edge even when the logical canvas is scaled down.
-        { color: '#000000', width: 2 / Math.max(0.01, this.displayScale()) },
+        { color: '#000000', width: 2 / Math.max(0.01, this.effectiveScale()) },
       )
+      damage.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
       damage.position.set(
         target?.x ?? this.event.to.x,
         (target?.y ?? this.event.to.y) - textMetrics.rise * reaction,
@@ -554,13 +643,8 @@ export class CraneReachRenderer extends PixiRenderer {
       for (const cue of captureCues) {
         const color = cue.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
         const sign = cue.delta > 0 ? '+' : ''
-        const capture = this.text(
-          `${sign}${cue.delta}`,
-          textMetrics.size,
-          color,
-          'center',
-          MONO,
-        )
+        const capture = this.text(`${sign}${cue.delta}`, textMetrics.size, color, 'center', MONO)
+        capture.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
         capture.position.set(cue.position.x, cue.position.y - textMetrics.rise * reaction)
         capture.alpha = 1 - reaction
         this.eventLayer.addChild(capture)
@@ -593,7 +677,7 @@ export class CraneReachRenderer extends PixiRenderer {
   /** The defeated unit in dilute ink, tipping and rising as a wisp before it is simply absent. */
   private drawDeathSnapshot(unit: SceneUnit, reaction: number): void {
     const radius = this.presentedScene?.hexRadius ?? 10
-    const level = presentationFor(radius, this.displayScale())
+    const level = presentationFor(radius, this.effectiveScale())
     const ghost = createUnitNode(unit.unitId, null, pinsInspectionForPointer)
     drawUnit(ghost, unit, radius, level, this.textureFor, {
       side: CRANE_STYLE.grid,
@@ -636,28 +720,95 @@ export class CraneReachRenderer extends PixiRenderer {
     clear(this.inspectionLayer)
     this.inspectionLayer.eventMode = 'none'
     delete this.ctx.container.dataset.craneInspectionFields
+    delete this.ctx.container.dataset.craneInspectionDetails
     if (scene.hud.terminal !== null) {
       this.ctx.container.dataset.craneInspection = 'none'
       return
     }
     const target = inspectionPresentation(this.inspection).target
     this.ctx.container.dataset.craneInspection = inspectionTargetLabel(target)
-    const fields = drawInspectionCard(this.inspectionLayer, this.paint(), scene, target)
-    if (fields !== null) this.ctx.container.dataset.craneInspectionFields = fields
+    const card = drawInspectionCard(this.inspectionLayer, this.paint(), scene, target, {
+      toView: (point) => this.viewPoint(point),
+      zoom: this.camera?.zoom ?? 1,
+    })
+    if (card !== null) {
+      this.ctx.container.dataset.craneInspectionFields = card.fields
+      if (card.details !== null) this.ctx.container.dataset.craneInspectionDetails = card.details
+    }
   }
 
-  /** Anchor for the browser test that hovers a unit, which needs one unit's live position. */
+  /** Anchor for the browser test that hovers a visible unit after camera movement. */
   private updateInspectionProbe(scene: CraneReachScene): void {
-    const unit = scene.units[0]
-    if (unit === undefined) {
+    const projected = scene.units.map((unit) => ({ unit, point: this.viewPoint(unit.position) }))
+    const visible = projected.filter(
+      ({ point }) =>
+        point.x >= 0 && point.x <= SCENE_WIDTH && point.y >= 0 && point.y <= SCENE_HEIGHT,
+    )
+    const stationary = visible.filter(
+      ({ unit }) =>
+        unit.unitId !== this.event?.actorId && unit.unitId !== this.event?.targetId,
+    )
+    const probe =
+      stationary.find(({ unit }) => unit.type === 'footman') ??
+      stationary[0] ??
+      visible.find(({ unit }) => unit.type === 'footman') ??
+      visible[0] ??
+      projected.find(({ unit }) => unit.type === 'footman') ??
+      projected[0]
+    if (probe === undefined) {
       delete this.ctx.container.dataset.craneInspectUnit
       delete this.ctx.container.dataset.craneInspectUnitX
       delete this.ctx.container.dataset.craneInspectUnitY
       return
     }
-    this.ctx.container.dataset.craneInspectUnit = unit.unitId
-    this.ctx.container.dataset.craneInspectUnitX = String(unit.position.x)
-    this.ctx.container.dataset.craneInspectUnitY = String(unit.position.y)
+    this.ctx.container.dataset.craneInspectUnit = probe.unit.unitId
+    this.ctx.container.dataset.craneInspectUnitX = String(probe.point.x)
+    this.ctx.container.dataset.craneInspectUnitY = String(probe.point.y)
+  }
+
+  /** The board's actual CSS scale combines the host fit and the user camera. */
+  private effectiveScale(): number {
+    return this.displayScale() * (this.camera?.zoom ?? 1)
+  }
+
+  /** Project a world point into the fixed HUD and inspection coordinate space. */
+  private viewPoint(point: { x: number; y: number }): { x: number; y: number } {
+    const camera = this.camera
+    return camera === null ? point : viewPoint(camera, this.internalSize, point)
+  }
+
+  /** Apply the camera immediately, then rebuild the retained artwork after gestures settle. */
+  private applyCamera(): void {
+    if (this.camera === null) return
+    const transform = worldTransform(this.camera, this.internalSize)
+    this.worldLayer.position.set(transform.x, transform.y)
+    this.worldLayer.scale.set(transform.scale)
+    this.ctx.container.dataset.craneCamera = cameraProbeValue(this.camera)
+    if (this.presentedScene !== null) {
+      this.updateInspectionProbe(this.presentedScene)
+      this.reconcileInspection(this.presentedScene)
+    }
+    this.redrawCurrentFrame()
+    if (this.cameraRefreshTimer !== null) clearTimeout(this.cameraRefreshTimer)
+    this.cameraRefreshTimer = setTimeout(() => {
+      this.cameraRefreshTimer = null
+      this.rerenderCurrentState()
+    }, 100)
+  }
+
+  /** Return the current battlefield to the every-tile-visible fit. */
+  private resetCamera(): void {
+    if (this.cameraLimits === null) return
+    this.camera = fitCamera(this.cameraLimits, this.internalSize)
+    this.applyCamera()
+  }
+
+  override destroy(): void {
+    this.cameraGestures?.detach()
+    this.cameraGestures = null
+    if (this.cameraRefreshTimer !== null) clearTimeout(this.cameraRefreshTimer)
+    this.cameraRefreshTimer = null
+    super.destroy()
   }
 
   private paint(): HudPaint {
@@ -684,7 +835,6 @@ export class CraneReachRenderer extends PixiRenderer {
   private readonly textureFor = (name: CraneAssetName): Texture | null => {
     return this.textures.get(name) ?? null
   }
-
 }
 
 const definition = {

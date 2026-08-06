@@ -13,6 +13,7 @@ import { Container, Graphics, Sprite, type Texture } from 'pixi.js'
 import type { CraneAssetName } from './assets.js'
 import type { InspectionEvent } from './inspection.js'
 import {
+  FIGURE_BASE_Y_FACTOR,
   type GaugeState,
   gaugeFor,
   type PresentationLevel,
@@ -47,8 +48,10 @@ export function createUnitNode(
   if (onInspect !== null) {
     root.eventMode = 'static'
     root.cursor = 'pointer'
-    root.on('pointerover', () => onInspect({ type: 'hover-unit', unitId }))
-    root.on('pointerout', () => onInspect({ type: 'hover-unit', unitId: null }))
+    // Enter and leave do not bubble between the figure's child sprites, so the inspected range stays
+    // stable while the pointer crosses the art, gauge, and shadow inside one unit.
+    root.on('pointerenter', () => onInspect({ type: 'hover-unit', unitId }))
+    root.on('pointerleave', () => onInspect({ type: 'hover-unit', unitId: null }))
     root.on('pointertap', (event) => {
       event.stopPropagation()
       if (!pins(event.pointerType)) return
@@ -85,27 +88,28 @@ export function drawUnit(
   node.root.visible = true
   node.root.alpha = 1
   node.root.rotation = 0
+  const groundY = level === 'figure' ? radius * FIGURE_BASE_Y_FACTOR : radius * 0.32
   const shadowTexture = textureFor('shadowOval')
   node.shadowArt.visible = shadowTexture !== null
   if (shadowTexture !== null) {
     node.shadowArt.texture = shadowTexture
     node.shadowArt.width = radius * 1.4
     node.shadowArt.height = radius * 0.5
-    node.shadowArt.position.set(0, radius * 0.32)
+    node.shadowArt.position.set(0, groundY)
     node.shadowArt.tint = CRANE_STYLE.shadow
     node.shadowArt.alpha = 0.35
     node.shadow.clear()
   } else {
     node.shadow
       .clear()
-      .ellipse(0, radius * 0.32, radius * 0.9, radius * 0.3)
+      .ellipse(0, groundY, radius * 0.9, radius * 0.3)
       .fill({ color: CRANE_STYLE.shadow, alpha: 0.35 })
   }
   node.body.clear()
   node.artEdge.visible = false
   node.art.visible = false
   if (level === 'figure') {
-    node.body.ellipse(0, radius * 0.28, radius * 0.94, radius * 0.3).fill(side)
+    node.body.ellipse(0, groundY, radius * 0.94, radius * 0.3).fill(side)
     const texture = textureFor(figureAsset(unit.type))
     if (texture !== null) {
       // The edge copy sits slightly larger behind the figure, which is what gives the silhouette
@@ -123,7 +127,7 @@ export function drawUnit(
     } else {
       drawSengokuFigure(node.body, unit.type, radius, deep)
     }
-    drawEllipseGauge(node.body, 0, radius * 0.28, radius * 0.94, radius * 0.3, gauge, deep)
+    drawEllipseGauge(node.body, 0, groundY, radius * 0.94, radius * 0.3, gauge, deep)
     return
   }
   if (level === 'token') {
@@ -334,26 +338,26 @@ function drawWeaponGlyph(
     graphics
       .moveTo(0, radius * 0.58)
       .lineTo(0, -radius * 0.62)
-      .stroke({ color, width: radius * 0.14 })
+      .stroke({ color, width: radius * 0.18 })
     graphics
       .poly([-radius * 0.16, -radius * 0.42, 0, -radius * 0.72, radius * 0.16, -radius * 0.42])
       .fill(color)
   } else if (type === 'archer') {
     graphics
       .arc(-radius * 0.1, 0, radius * 0.5, -Math.PI / 2, Math.PI / 2)
-      .stroke({ color, width: radius * 0.11 })
+      .stroke({ color, width: radius * 0.15 })
     graphics
       .moveTo(radius * 0.3, -radius * 0.54)
       .lineTo(radius * 0.3, radius * 0.54)
-      .stroke({ color, width: radius * 0.08 })
+      .stroke({ color, width: radius * 0.11 })
   } else {
     graphics
       .circle(-radius * 0.13, -radius * 0.12, radius * 0.25)
-      .stroke({ color, width: radius * 0.1 })
+      .stroke({ color, width: radius * 0.14 })
     graphics
       .moveTo(radius * 0.06, radius * 0.18)
       .lineTo(radius * 0.53, radius * 0.31)
-      .stroke({ color, width: radius * 0.14 })
+      .stroke({ color, width: radius * 0.18 })
   }
 }
 

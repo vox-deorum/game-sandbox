@@ -35,6 +35,8 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 
 ### Top strip (y 24 to 64)
 
+The top and bottom strips are screen-fixed above the [step 4.3 camera](4-3-camera.md) world view. At the default fit, the full board remains visible and may extend below the sparse strips near the field edges.
+
 - Left: `ROUND` in 16 px Lato caps, faded ink, then the round number in 30 px bone mono.
 - Right: the capture score as a cinnabar seal dot with Red's number, an indigo seal dot with Blue's number, then `/ 200` in faded ink. Without the capture variant the right side is empty.
 
@@ -45,7 +47,7 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 ### Bottom strip (y 760 to 844)
 
 - Left: Red's roster as three glyph-plus-count pairs, using the weapon and horse glyphs at roughly 30 px tinted cinnabar, with 26 px mono counts; losses show through the counts. Right: Blue's mirrored in indigo. Hovering a pair opens its type card. On touch, tap a pair to open its card; tapping elsewhere dismisses it and tapping another pair replaces it.
-- A type card has the type name and maximum hit points, movement, damage, attack range, and vision fields. Every field pairs its icon with its short text label and value: `HP`, `MOV`, `ATK`, `RNG`, and `VIS`. When `unit_abilities` is on, the footman card adds `Shield wall` and the cavalry card adds `Charge` on a separate line; the archer has no ability line. Cards show no ability text when the variant is off.
+- A type card has the type name and maximum hit points, movement, damage, attack range, and vision fields. Every field pairs its icon with its short text label and value: `HP`, `MOV`, `ATK`, `RNG`, and `VIS`. When `unit_abilities` is on, the footman card adds `{skill} shield_wall` and the cavalry card adds `{skill} charge` on a separate line; the archer has no skill line. Cards show no skill text when the variant is off.
 - The strip carries no event or activation text. An attack and its damage play as the step 4.1 event animations, and the actor reads from the gilt activation highlight, so the HUD repeats neither. The center stays clear; on a human turn the step 5 order controls live there.
 
 ```
@@ -58,21 +60,21 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
    | {hp} HP 12       {move} MOV 2   |
    | {attack} ATK 3   {range} RNG 1  |
    | {vision} VIS 4                  |
-   | Shield wall                 |
+   | {skill} shield_wall         |
    +-----------------------------+
 ```
 
 ### Movement range on the board
 
 - The acting unit shows its movement range through activation, movement, and settle during watch and replay. Resolution clears it before the next actor's range appears. Every tile it could reach this activation takes a soft gilt wash at alpha 0.10, with a thin gilt outline around the reachable set, extending the activation highlight.
-- While any unit is hovered, its bone range wash and dashed outline replace only the acting unit's soft gilt reachability wash and outline. The activation seal-ring remains visible. On a human turn, continuation, path, and endpoint composition marks stay above the hover display. Leaving the hover restores the acting unit's soft reachability display.
+- While any unit is hovered, its bone range wash and dashed outline replace only the acting unit's soft gilt reachability wash and outline. Non-bubbling unit enter and leave events keep this range stable while the pointer crosses the figure's child artwork. The inspected range retains ownership through another unit's activation, movement, settle, and resolution, so the actor's range never replaces or clears it. The activation seal-ring remains visible. On a human turn, continuation, path, and endpoint composition marks stay above the hover display. Leaving the unit restores the acting unit's soft reachability display when event timing permits it.
 - Reachability comes from a renderer-local helper over the overlay state: step costs, occupancy, the always-permitted first step, the four-step limit. Step 5 grows this helper into the full legality module and proves it against the environment's masks.
 
 ### The unit hover chip
 
 Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping elsewhere or a different unit dismisses or replaces it:
 
-- A parchment chip appears beside the unit: the unit id, current and maximum hit points, movement, damage, attack range, and vision in icon, label, and value fields on a parchment fill with a dilute-ink border. When `unit_abilities` is on, it adds `Shield wall` for footmen and `Charge` for cavalry. It completes the step 4.1 rim gauge, which shows state but not numerals.
+- A parchment chip appears beside the unit: the unit id, current and maximum hit points, movement, damage, attack range, and vision in icon, label, and value fields on a parchment fill with a dilute-ink border. When `terrain` is on, a board-unit card adds `{terrain} terrain {feature} feature` for its current tile. When `unit_abilities` is on, the following line adds `{skill} shield_wall` for footmen or `{skill} charge` for cavalry. Roster cards have no current tile and omit terrain context. The chip completes the step 4.1 rim gauge, which shows state but not numerals.
 - The hovered unit wears a temporary bone highlight ring for as long as the hover lasts.
 - Its movement range appears on the board: reachable tiles take a bone wash at alpha 0.18 inside a dashed dilute-ink outline around the set.
 
@@ -82,6 +84,7 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
    | {hp} HP 4/6     {move} MOV 2   |
    | {attack} ATK 2  {range} RNG 6  |
    | {vision} VIS 6                 |
+   | {terrain} hill {feature} forest|
    +-----------------------------+
 ```
 
@@ -108,11 +111,11 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 
 ## Tests
 
-- Scene tests assert the HUD content: round text, both capture readouts and their absence without the variant, roster counts falling as units die, the icon-led unit and roster type fields, ability lines only for enabled abilities, terminal range and inspection suppression, and that no caption or activation text remains.
-- Hover and touch jsdom tests cover board-unit and roster-pair chips: their stat fields, ability variants, opening, replacement, and dismissal behavior, the board-unit highlight ring and range wash, and that nothing sends actions in a draw-only mount.
+- Scene tests assert the HUD content: round text, both capture readouts and their absence without the variant, roster counts falling as units die, icon-led stat fields, board-only terrain context, typed skill lines only for enabled abilities, terminal range and inspection suppression, and that no caption or activation text remains.
+- Hover and touch jsdom tests cover board-unit and roster-pair chips: their stat fields, ability variants, opening, replacement, dismissal behavior, stable board-unit highlight, inspected-range precedence through another unit's event, and that nothing sends actions in a draw-only mount.
 - The reachability helper is covered on hand-built boards (terrain costs, occupancy, the always-permitted first step, the four-step limit) and, for acting units, against the destination sets implied by the fixture legality files.
 - The step 4.1 perf smoke stays green with the styled HUD and the acting unit's range wash on the army fixture.
-- The e2e spectate journey stays green (it asserts on behavior, not pixels).
+- The e2e spectate journey keeps one non-acting unit hovered across an event handoff and asserts that every observed range owner remains that unit.
 
 ## Done when
 

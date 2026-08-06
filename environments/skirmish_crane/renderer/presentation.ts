@@ -89,7 +89,7 @@ export type PresentationLevel = 'figure' | 'token' | 'compact'
 /** Choose artwork from the actual CSS size, not logical battlefield geometry. */
 export function presentationFor(hexRadius: number, displayScale: number): PresentationLevel {
   const effectiveHexRadius = hexRadius * displayScale
-  return effectiveHexRadius >= 18 ? 'figure' : effectiveHexRadius >= 12 ? 'token' : 'compact'
+  return effectiveHexRadius >= 28 ? 'figure' : effectiveHexRadius >= 12 ? 'token' : 'compact'
 }
 
 /**
@@ -102,6 +102,9 @@ export const UNIT_RADIUS_FACTORS: Record<PresentationLevel, number> = {
   token: 0.62,
   compact: 0.36,
 }
+
+/** Vertical center of the figure's base, HP ellipse, and shadow as a fraction of figure radius. */
+export const FIGURE_BASE_Y_FACTOR = 0.75
 
 /** Keep transient event labels and their rise legible in CSS pixels at every presentation level. */
 export function eventTextMetrics(displayScale: number): { size: number; rise: number } {

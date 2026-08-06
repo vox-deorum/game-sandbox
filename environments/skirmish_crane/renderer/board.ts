@@ -201,11 +201,11 @@ function drawZones(layer: Container, sprite: SpriteFactory, scene: CraneReachSce
     for (const key of zone.tileKeys) {
       const tile = tilesByKey.get(key)
       if (tile !== undefined)
-        wash.poly(points(tile.corners)).fill({ color: CRANE_STYLE.zone, alpha: 0.16 })
+        wash.poly(points(tile.corners)).fill({ color: CRANE_STYLE.zone, alpha: 0.2 })
     }
     wash
       .circle(zone.center.x, zone.center.y, scene.hexRadius * 0.18)
-      .fill({ color: CRANE_STYLE.zoneGlow, alpha: 0.38 })
+      .fill({ color: CRANE_STYLE.zoneGlow, alpha: 0.5 })
     const zoneTiles = zone.tileKeys
       .map((key) => tilesByKey.get(key))
       .filter((tile): tile is HexTile => tile !== undefined)
@@ -216,7 +216,7 @@ function drawZones(layer: Container, sprite: SpriteFactory, scene: CraneReachSce
         (edge.current.x + edge.next.x) / 2,
         (edge.current.y + edge.next.y) / 2,
         scene.hexRadius * 1.6,
-        scene.hexRadius * 0.2,
+        scene.hexRadius * 0.32,
       )
       if (dash !== null) {
         dash.tint = CRANE_STYLE.zoneGlow
@@ -241,9 +241,9 @@ export function drawZoneMarkers(
         ? sprite(
             'pennant',
             zone.center.x,
-            zone.center.y - scene.hexRadius * 0.14,
-            scene.hexRadius * 0.48,
-            scene.hexRadius * 0.65,
+            zone.center.y - scene.hexRadius * 0.12,
+            scene.hexRadius * 0.78,
+            scene.hexRadius * 1.04,
           )
         : sprite(
             'sealRing',

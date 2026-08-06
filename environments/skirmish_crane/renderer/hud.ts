@@ -15,6 +15,8 @@ import { HUD_TEXT_SIZES, labelRowLayout } from './presentation.js'
 import {
   CRANE_STYLE,
   type CraneReachScene,
+  type HexTile,
+  type Point,
   SCENE_WIDTH,
   type SceneUnit,
   unitCardFor,
@@ -31,6 +33,17 @@ export interface HudPaint {
 export interface HudInspectionHooks {
   onInspect: (event: InspectionEvent) => void
   pins: (pointerType: string) => boolean
+}
+
+/** Projects a world unit into the screen-fixed inspection layer while preserving card size. */
+export interface InspectionProjection {
+  toView: (point: Point) => Point
+  zoom: number
+}
+
+export interface InspectionCardProbe {
+  fields: string
+  details: string | null
 }
 
 const ROSTER_TYPES: SceneUnit['type'][] = ['footman', 'archer', 'cavalry']
@@ -173,13 +186,20 @@ export function drawInspectionCard(
   paint: HudPaint,
   scene: CraneReachScene,
   target: InspectionTarget,
-): string | null {
+  projection?: InspectionProjection,
+): InspectionCardProbe | null {
   if (target?.kind === 'unit') {
     const unit = scene.units.find((candidate) => candidate.unitId === target.unitId)
     if (unit === undefined) return null
+    const tile = scene.hud.terrainEnabled
+      ? (scene.tiles.find((candidate) => candidate.key === unit.tileKey) ?? null)
+      : null
+    const height = cardHeight(unit.type, scene.hud.unitAbilities, tile)
     // The card sits beside the unit, pushed back inside the field near the edges.
-    const x = Math.min(SCENE_WIDTH - 254, Math.max(18, unit.position.x + scene.hexRadius * 0.75))
-    const y = Math.min(670, Math.max(106, unit.position.y - scene.hexRadius * 1.2))
+    const position = projection?.toView(unit.position) ?? unit.position
+    const zoom = projection?.zoom ?? 1
+    const x = Math.min(SCENE_WIDTH - 254, Math.max(18, position.x + scene.hexRadius * zoom * 0.75))
+    const y = Math.min(746 - height - 12, Math.max(106, position.y - scene.hexRadius * zoom * 1.2))
     return drawCard(layer, paint, {
       x,
       y,
@@ -188,6 +208,7 @@ export function drawInspectionCard(
       type: unit.type,
       currentHitPoints: unit.hitPoints,
       abilities: scene.hud.unitAbilities,
+      tile,
     })
   }
   if (target?.kind === 'roster') {
@@ -201,7 +222,7 @@ function drawRosterCard(
   paint: HudPaint,
   scene: CraneReachScene,
   target: RosterInspectionTarget,
-): string {
+): InspectionCardProbe {
   const x = target.side === 'red' ? 28 : SCENE_WIDTH - 254
   return drawCard(layer, paint, {
     x,
@@ -211,6 +232,7 @@ function drawRosterCard(
     type: target.type,
     currentHitPoints: null,
     abilities: scene.hud.unitAbilities,
+    tile: null,
   })
 }
 
@@ -222,13 +244,21 @@ interface CardOptions {
   type: SceneUnit['type']
   currentHitPoints: number | null
   abilities: boolean
+  tile: Pick<HexTile, 'terrain' | 'feature'> | null
 }
 
-/** A parchment chip with a heading, the icon-led stats in two columns, and any ability line. */
-function drawCard(layer: Container, paint: HudPaint, options: CardOptions): string {
+type CardDetailIcon = 'skill' | 'terrain' | 'feature'
+
+/** A parchment chip with icon-led stats, optional terrain context, and an optional skill line. */
+function drawCard(layer: Container, paint: HudPaint, options: CardOptions): InspectionCardProbe {
   const { x, y } = options
-  const specification = unitCardFor(options.type, options.currentHitPoints, options.abilities)
-  const height = specification.ability !== null ? 150 : 128
+  const specification = unitCardFor(
+    options.type,
+    options.currentHitPoints,
+    options.abilities,
+    options.tile,
+  )
+  const height = cardHeight(options.type, options.abilities, options.tile)
   const card = new Container()
   const parchment = new Graphics()
   parchment
@@ -258,21 +288,83 @@ function drawCard(layer: Container, paint: HudPaint, options: CardOptions): stri
       y + 47 + row * 28,
     )
   }
+  let detailY = y + 130
+  if (specification.tile !== null) {
+    drawCardDetail(card, paint, 'terrain', specification.tile.terrain, x + 14, detailY)
+    drawCardDetail(card, paint, 'feature', specification.tile.feature, x + 126, detailY)
+    detailY += 24
+  }
   if (specification.ability !== null) {
-    const ability = paint.text(
-      specification.ability,
-      HUD_TEXT_SIZES.ability,
-      CRANE_STYLE.grid,
-      'left',
-      LATO,
-    )
-    ability.anchor.set(0, 0.5)
-    ability.position.set(x + 14, y + 130)
-    card.addChild(ability)
+    drawCardDetail(card, paint, 'skill', specification.ability, x + 14, detailY)
   }
   card.eventMode = 'none'
   layer.addChild(card)
-  return specification.fields.map((field) => `${field.icon}:${field.label}`).join(',')
+  const details = [
+    ...(specification.tile === null
+      ? []
+      : [
+          `iconTerrain:${specification.tile.terrain}`,
+          `iconFeature:${specification.tile.feature}`,
+        ]),
+    ...(specification.ability === null ? [] : [`iconSkill:${specification.ability}`]),
+  ]
+  return {
+    fields: specification.fields.map((field) => `${field.icon}:${field.label}`).join(','),
+    details: details.length === 0 ? null : details.join(','),
+  }
+}
+
+/** Card height follows the same 24-unit rhythm as its optional context rows. */
+function cardHeight(
+  type: SceneUnit['type'],
+  abilities: boolean,
+  tile: Pick<HexTile, 'terrain' | 'feature'> | null,
+): number {
+  const hasSkill = abilities && type !== 'archer'
+  return 128 + (tile === null ? 0 : 24) + (hasSkill ? 24 : 0)
+}
+
+/** One compact context item, using renderer-drawn ink marks instead of another asset family. */
+function drawCardDetail(
+  card: Container,
+  paint: HudPaint,
+  icon: CardDetailIcon,
+  value: string,
+  x: number,
+  y: number,
+): void {
+  drawCardDetailIcon(card, icon, x + 9, y)
+  const text = paint.text(value, HUD_TEXT_SIZES.ability, CRANE_STYLE.shadow, 'left', MONO)
+  text.anchor.set(0, 0.5)
+  text.position.set(x + 24, y)
+  card.addChild(text)
+}
+
+/** Skill spark, terrain contour, and feature leaf in the same dilute ink as the stat icons. */
+function drawCardDetailIcon(
+  card: Container,
+  icon: CardDetailIcon,
+  x: number,
+  y: number,
+): void {
+  const mark = new Graphics()
+  if (icon === 'skill') {
+    mark.poly([0, -8, 2.5, -2.5, 8, 0, 2.5, 2.5, 0, 8, -2.5, 2.5, -8, 0, -2.5, -2.5]).fill(
+      CRANE_STYLE.grid,
+    )
+  } else if (icon === 'terrain') {
+    mark
+      .moveTo(-8, 5)
+      .quadraticCurveTo(-4, -5, 0, 2)
+      .quadraticCurveTo(4, -5, 8, 5)
+      .stroke({ color: CRANE_STYLE.grid, width: 2, cap: 'round', join: 'round' })
+    mark.moveTo(-6, 7).lineTo(6, 7).stroke({ color: CRANE_STYLE.grid, width: 2, cap: 'round' })
+  } else {
+    mark.ellipse(0, -1, 5, 7).stroke({ color: CRANE_STYLE.grid, width: 2 })
+    mark.moveTo(-4, 6).lineTo(4, -7).stroke({ color: CRANE_STYLE.grid, width: 1.5 })
+  }
+  mark.position.set(x, y)
+  card.addChild(mark)
 }
 
 /** One stat line: icon, label at a fixed column width, then the value. */

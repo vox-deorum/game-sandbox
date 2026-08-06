@@ -33,6 +33,8 @@ The registry stores each `PixiRenderer` subclass with its static image thumbnail
 
 `PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.
 
+Renderers that need pan and zoom can compose the shared pure camera reducers and DOM gesture wiring under `frontend/src/renderers/base/`. Keep the movable world in its own container so screen-fixed overlays remain outside the camera transform.
+
 ## Deterministic retained rendering
 
 Keep drawing logic in two layers:

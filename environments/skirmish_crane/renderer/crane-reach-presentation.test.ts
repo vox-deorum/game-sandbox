@@ -27,10 +27,18 @@ describe('Crane Reach Estuary Ink presentation', () => {
   })
 
   it('switches artwork at the exact CSS-radius boundaries without changing scene geometry', () => {
-    expect(presentationFor(18, 1)).toBe('figure')
-    expect(presentationFor(17.999, 1)).toBe('token')
+    expect(presentationFor(28, 1)).toBe('figure')
+    expect(presentationFor(27.999, 1)).toBe('token')
     expect(presentationFor(12, 1)).toBe('token')
     expect(presentationFor(11.999, 1)).toBe('compact')
+  })
+
+  it('keeps the fitted desktop boards on tokens until the camera zooms further in', () => {
+    const desktopScale = (893 / 1_200) * 1.236
+    expect(presentationFor(28.522, desktopScale)).toBe('token')
+    expect(presentationFor(20.5, desktopScale)).toBe('token')
+    expect(presentationFor(28.522, desktopScale * 1.1)).toBe('figure')
+    expect(presentationFor(20.5, desktopScale * 1.5)).toBe('figure')
   })
 
   it('maps maximum hit points to healthy, low, and critical gauge states at both boundaries', () => {

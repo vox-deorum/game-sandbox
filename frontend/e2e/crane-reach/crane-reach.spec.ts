@@ -49,45 +49,139 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
   await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
+  await expect(rendererHost).toHaveAttribute('data-crane-camera', '1.24@600,418')
 
   await page.setViewportSize({ width: 390, height: 900 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'compact')
+  await page.setViewportSize({ width: 500, height: 900 })
+  await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await page.setViewportSize({ width: 640, height: 900 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await page.setViewportSize({ width: 900, height: 900 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await page.setViewportSize({ width: 1_100, height: 1_000 })
-  await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'figure')
+  await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await page.setViewportSize({ width: 1_600, height: 1_000 })
   await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'token')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
 
+  await page.setViewportSize({ width: 390, height: 900 })
+  await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'compact')
   const canvas = page.locator('canvas.renderer-canvas')
-  const canvasBox = await canvas.boundingBox()
+  let canvasBox = await canvas.boundingBox()
   expect(canvasBox).not.toBeNull()
   if (canvasBox === null) throw new Error('Crane Reach canvas has no browser bounds')
+  const canvasCenter = {
+    x: canvasBox.x + canvasBox.width / 2,
+    y: canvasBox.y + canvasBox.height / 2,
+  }
+  const parseCamera = (value: string | null) => {
+    const match = /^(\d+(?:\.\d+)?)@(-?\d+),(-?\d+)$/.exec(value ?? '')
+    if (match === null) throw new Error(`Unexpected Crane Reach camera probe: ${value}`)
+    return { zoom: Number(match[1]), x: Number(match[2]), y: Number(match[3]) }
+  }
+  const viewPoint = (
+    bounds: { x: number; y: number; width: number; height: number },
+    x: number,
+    y: number,
+  ) => ({
+    x: bounds.x + (x / 1_200) * bounds.width,
+    y: bounds.y + (y / 860) * bounds.height,
+  })
+  const fittedCamera = parseCamera(await rendererHost.getAttribute('data-crane-camera'))
+  const zoomAnchorX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
+  const zoomAnchorY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
+  expect(Number.isFinite(zoomAnchorX)).toBe(true)
+  expect(Number.isFinite(zoomAnchorY)).toBe(true)
+  const zoomAnchor = viewPoint(canvasBox, zoomAnchorX, zoomAnchorY)
+
+  await page.mouse.move(zoomAnchor.x, zoomAnchor.y)
+  await page.mouse.wheel(0, -700)
+  await expect(rendererHost).toHaveAttribute('data-crane-presentation', 'figure')
+  await expect
+    .poll(async () => parseCamera(await rendererHost.getAttribute('data-crane-camera')).zoom)
+    .toBeGreaterThan(fittedCamera.zoom)
+
+  const zoomedCamera = parseCamera(await rendererHost.getAttribute('data-crane-camera'))
+  await page.mouse.move(canvasCenter.x, canvasCenter.y)
+  await page.mouse.down()
+  await page.mouse.move(canvasCenter.x + 80, canvasCenter.y)
+  await page.mouse.up()
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
+  await expect
+    .poll(async () => parseCamera(await rendererHost.getAttribute('data-crane-camera')).x)
+    .not.toBe(zoomedCamera.x)
+
   const unitId = await rendererHost.getAttribute('data-crane-inspect-unit')
   const unitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
   const unitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
   expect(unitId).not.toBeNull()
   expect(Number.isFinite(unitX)).toBe(true)
   expect(Number.isFinite(unitY)).toBe(true)
-  const logicalPoint = (x: number, y: number) => ({
-    x: canvasBox.x + (x / 1_200) * canvasBox.width,
-    y: canvasBox.y + (y / 860) * canvasBox.height,
-  })
-  await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
-  const unitPoint = logicalPoint(unitX, unitY)
+  // The inspection probe is in the camera's logical view space, then mapped to canvas CSS pixels.
+  const unitPoint = viewPoint(canvasBox, unitX, unitY)
   await page.mouse.move(unitPoint.x, unitPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
   await expect(rendererHost).toHaveAttribute(
     'data-crane-inspection-fields',
     'iconHp:HP,iconMove:MOV,iconAttack:ATK,iconRange:RNG,iconVision:VIS',
   )
-  const awayPoint = logicalPoint(600, 40)
+  await expect(rendererHost).not.toHaveAttribute('data-crane-inspection-details')
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    if (host === null) throw new Error('Crane Reach renderer host is missing')
+    const probe = globalThis as typeof globalThis & {
+      craneInspectionObserver?: MutationObserver
+      craneInspectionSamples?: string[]
+    }
+    probe.craneInspectionObserver?.disconnect()
+    probe.craneInspectionSamples = [host.dataset.craneInspection ?? 'missing']
+    probe.craneInspectionObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        probe.craneInspectionSamples?.push(record.oldValue ?? 'missing')
+      }
+      probe.craneInspectionSamples?.push(host.dataset.craneInspection ?? 'missing')
+    })
+    probe.craneInspectionObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ['data-crane-inspection'],
+      attributeOldValue: true,
+    })
+  })
+  for (const [dx, dy] of [
+    [-4, -4],
+    [4, -2],
+    [-3, 3],
+    [4, 4],
+    [0, 0],
+  ]) {
+    await page.mouse.move(unitPoint.x + dx, unitPoint.y + dy)
+  }
+  const inspectionSamples = await page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    const probe = globalThis as typeof globalThis & {
+      craneInspectionObserver?: MutationObserver
+      craneInspectionSamples?: string[]
+    }
+    probe.craneInspectionObserver?.disconnect()
+    return probe.craneInspectionSamples ?? []
+  })
+  expect([...new Set(inspectionSamples)]).toEqual([`unit:${unitId}`])
+
+  await page.mouse.dblclick(canvasCenter.x, canvasCenter.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-camera', '1.24@600,418')
+
+  await page.setViewportSize({ width: 1_600, height: 1_000 })
+  await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0).toBeGreaterThan(600)
+  canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  if (canvasBox === null) throw new Error('Crane Reach canvas has no browser bounds after reset')
+  const awayPoint = viewPoint(canvasBox, 600, 40)
   await page.mouse.move(awayPoint.x, awayPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'none')
-  const rosterPoint = logicalPoint(42, 804)
+  const rosterPoint = viewPoint(canvasBox, 42, 804)
   await page.mouse.move(rosterPoint.x, rosterPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', 'roster:red:footman')
   await page.mouse.move(awayPoint.x, awayPoint.y)
@@ -124,6 +218,38 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.getByRole('button', { name: 'Play', exact: true }).click()
   await expect(rendererHost).toHaveAttribute('data-crane-event-phase', 'movement', {
     timeout: 30_000,
+  })
+  const eventHoverUnitId = await rendererHost.getAttribute('data-crane-inspect-unit')
+  const eventActorId = await rendererHost.getAttribute('data-crane-event-actor')
+  const eventHoverUnitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
+  const eventHoverUnitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
+  expect(eventHoverUnitId).not.toBeNull()
+  if (eventHoverUnitId === null) throw new Error('Crane Reach event hover unit is missing')
+  expect(eventHoverUnitId).not.toBe(eventActorId)
+  expect(Number.isFinite(eventHoverUnitX)).toBe(true)
+  expect(Number.isFinite(eventHoverUnitY)).toBe(true)
+  const eventHoverPoint = viewPoint(canvasBox, eventHoverUnitX, eventHoverUnitY)
+  await page.mouse.move(eventHoverPoint.x, eventHoverPoint.y)
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${eventHoverUnitId}`)
+  await expect(rendererHost).toHaveAttribute('data-crane-range-unit', eventHoverUnitId)
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('.renderer-host')
+    if (host === null) throw new Error('Crane Reach renderer host is missing')
+    const probe = globalThis as typeof globalThis & {
+      craneRangeObserver?: MutationObserver
+      craneRangeSamples?: string[]
+    }
+    probe.craneRangeObserver?.disconnect()
+    probe.craneRangeSamples = [host.dataset.craneRangeUnit ?? 'missing']
+    probe.craneRangeObserver = new MutationObserver((records) => {
+      for (const record of records) probe.craneRangeSamples?.push(record.oldValue ?? 'missing')
+      probe.craneRangeSamples?.push(host.dataset.craneRangeUnit ?? 'missing')
+    })
+    probe.craneRangeObserver.observe(host, {
+      attributes: true,
+      attributeFilter: ['data-crane-range-unit'],
+      attributeOldValue: true,
+    })
   })
   const beforeResize = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>('.renderer-host')
@@ -228,6 +354,18 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
       { timeout: 30_000 },
     )
     .toBe(true)
+  const eventRangeSamples = await page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    const probe = globalThis as typeof globalThis & {
+      craneRangeObserver?: MutationObserver
+      craneRangeSamples?: string[]
+    }
+    probe.craneRangeObserver?.disconnect()
+    return probe.craneRangeSamples ?? []
+  })
+  expect([...new Set(eventRangeSamples)]).toEqual([eventHoverUnitId])
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
   const replayStage = page.getByRole('group', { name: 'Replay stage' })
   await replayStage.click()
@@ -320,4 +458,22 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
   await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
   await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
   await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
+
+  const canvas = page.locator('canvas.renderer-canvas')
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  if (canvasBox === null) throw new Error('Crane Reach army canvas has no browser bounds')
+  const unitId = await rendererHost.getAttribute('data-crane-inspect-unit')
+  const unitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
+  const unitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
+  expect(unitId).not.toBeNull()
+  await page.mouse.move(
+    canvasBox.x + (unitX / 1_200) * canvasBox.width,
+    canvasBox.y + (unitY / 860) * canvasBox.height,
+  )
+  await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
+  await expect(rendererHost).toHaveAttribute(
+    'data-crane-inspection-details',
+    /^iconTerrain:(grass|hill),iconFeature:(none|forest|marsh),iconSkill:shield_wall$/,
+  )
 })

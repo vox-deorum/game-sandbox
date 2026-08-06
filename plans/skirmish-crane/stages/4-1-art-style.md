@@ -104,16 +104,16 @@ Thirty runtime source files are grayscale-alpha PNGs. Everything is tintable whe
 
 ### Units and presentation level
 
-The scene retains logical geometry only. During reconciliation, Crane reads the display scale the base renderer tracks (the canvas width in CSS pixels over the internal scene width, refreshed on every resize) and passes it to the pure `presentationFor(hexRadius, displayScale)` helper, which returns the level. A resize redraws the retained frame, so the artwork responds to its actual display size while `computeScene` remains independent of the viewport. The helper selects a presentation level from the effective CSS hex radius:
+The scene retains logical geometry only. During reconciliation, Crane multiplies the display scale the base renderer tracks (the canvas width in CSS pixels over the internal scene width, refreshed on every resize) by the [step 4.3 camera](4-3-camera.md) zoom and passes the result to the pure `presentationFor(hexRadius, effectiveScale)` helper. A resize or camera change redraws the retained frame, so the artwork responds to its effective CSS hex radius while `computeScene` remains independent of the viewport. The helper selects a presentation level from that radius:
 
-- Figure: 18 CSS px or more.
-- Token: 12 CSS px through less than 18 CSS px.
+- Figure: 28 CSS px or more.
+- Token: 12 CSS px through less than 28 CSS px.
 - Compact: below 12 CSS px.
 
 Each level identifies unit type differently:
 
-- Token uses a lacquered round token at 0.62 hexRadius: a side-color disc with a bold bone mon showing a curved katana, an asymmetric yumi with nocked arrow, or a warhorse head. The glyphs use heavy strokes and few interior details so they remain clear at token size.
-- Figure uses three Sengoku silhouettes: an ashigaru in jingasa with a long yari and restrained tate shield, a kneeling armored archer at full draw with an asymmetric yumi, and a mounted samurai in kabuto and lamellar armor carrying a yari. Each is tinted the side's deep shade with a thin bone edge light and stands on the accepted side-color oval base plate.
+- Token uses a lacquered round token at 0.62 hexRadius: a side-color disc with a bold bone mon showing a curved katana, an asymmetric yumi with nocked arrow, or a warhorse head. Each mon is one texture with a heavier white stroke, few interior details, and the original-width black contour.
+- Figure uses three Sengoku silhouettes: an ashigaru in jingasa with a long yari and restrained tate shield, a kneeling armored archer at full draw with an asymmetric yumi, and a mounted samurai in kabuto and lamellar armor carrying a yari. Each is tinted the side's deep shade with a thin bone edge light and stands above a side-color oval base plate placed near its feet. One `FIGURE_BASE_Y_FACTOR` parameter positions the base plate, its HP ellipse, and its shadow together.
 - Compact uses three shape-coded ink markers: a square shield for footman, a chevron for archer, and a diamond hoof mark for cavalry. The shapes identify type when a detailed glyph is too small.
 - Hit points are the border: the token outer rim, figure base edge, or compact marker edge is a gauge arc. The lit portion spans hit points over the type maximum, starting at the top and sweeping clockwise; the depleted remainder is the side's deep shade. The lit arc is bone at healthy, amber ink at or below half, and pale ember at or below a quarter. A critical unit also gets a doubled, broken outer rim, so critical state has a non-color cue. The exact numeral appears on hover in the step 4.2 chip.
 - Shadow: every unit stands on a `shadow-oval` tinted pooled ink at alpha 0.35, 1.4 x 0.5 of the token radius. It is the strongest depth cue at token level.
@@ -121,7 +121,7 @@ Each level identifies unit type differently:
 
 ### Zones, activation, and events
 
-- Capture zones use a restrained static mark. All seven tiles take a mulberry wash at alpha 0.16 with a pale-orchid center emphasis. The zone's outer boundary is a union outline, not per-tile rings, drawn in static `zone-dash` segments tinted pale orchid. The center tile carries the `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels. At smaller levels the wash and border stay quiet so the army board remains readable.
+- Capture zones use a strong static mark. All seven tiles take a mulberry wash at alpha 0.20 with a pale-orchid center emphasis at alpha 0.50. The zone's outer boundary is a union outline, not per-tile rings, drawn in heavy `zone-dash` segments tinted pale orchid. The center tile carries a large `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels.
 - Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
 - Events use the full host transition duration, `B = transitionMs ?? 1000`. At the normal 1000 ms cadence, activation is 0 to 150 ms. Exact executed path tiles divide movement evenly: movement ends at 500, 583, 667, or 750 ms for paths of one, two, three, or four tiles. The actor settles until resolution starts at 650, 683, 717, or 750 ms respectively, so a one-tile move remains visibly in motion without a long pause. Resolution merges attack and reaction: the attack starts at resolution, a targeted reaction joins one quarter of the way through it, and a capture-only reaction begins immediately. All finish at 1000 ms. All easing uses the host curve, cubic-bezier(0.2, 0, 0, 1).
 
@@ -136,7 +136,7 @@ Each level identifies unit type differently:
 | death | the ink-dissolve treatment, starting with the reaction | dilute ink | starts one quarter into resolution and ends at 1000 ms |
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | starts with resolution for capture-only events; when paired with an attack, starts one quarter into resolution; ends at 1000 ms |
 
-- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units and HUD stay visible while the actor moves. The acting-unit seal follows the actor, and its movement range stays visible through settle before clearing for resolution. A defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
+- A fresh nonsnap forward transition retains the preceding pure scene until its timeline completes. Its units and HUD stay visible while the actor moves. The acting-unit seal follows the actor, and its movement range stays visible through settle before clearing for resolution. A different inspected unit's bone range remains visible through every phase and is never replaced by the actor's range. A defeated target remains intact until reaction begins. The renderer atomically reconciles the final scene at exactly 1000 ms. Any seek, repeated render of the same tick, resize, or mount renders the final frame instantly.
 
 ### Fog treatment for step 5 (visual spec only; step 5 wires it)
 
@@ -166,10 +166,10 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 ## Tests
 
 - Scene tests updated where they assert on style-bearing output; geometry and content assertions from step 3 stay unchanged. They cover each unit's gauge state, including the half and quarter boundaries and the critical broken-rim cue.
-- Presentation-helper tests cover 18 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms figure, token, and compact presentation changes without changing logical scene geometry, including the host's wide-layout decision-log column.
+- Presentation-helper tests cover 28 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms that fitted views stay compact or token-sized and that camera zoom promotes tokens to figures without changing logical scene geometry.
 - A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
-- Transition tests cover cadence scaling, tile-route timing for one through four tiles, overlapping resolution, targetless capture reaction, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
+- Transition and inspection tests cover cadence scaling, tile-route timing for one through four tiles, overlapping resolution, targetless capture reaction, inspected-range ownership throughout another unit's event, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
 - The step 3 perf smoke stays green with the real assets on the army fixture, and asserts the battlefield layer builds once per episode with textures in place.
 - The e2e spectate journey stays green (it asserts on behavior, not pixels).
 
