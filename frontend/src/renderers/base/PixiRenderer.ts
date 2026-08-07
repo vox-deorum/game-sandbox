@@ -16,6 +16,7 @@ import { Application, Container, Text } from 'pixi.js'
 
 import type { InternalSize, RendererContext, RendererInstance, RenderOptions } from '../types.js'
 import './renderer.css'
+import { TransitionGate } from './transition-gate.js'
 
 /** The class assigned to the PixiJS canvas. The end-to-end suite locates the canvas through it. */
 export const RENDERER_CANVAS_CLASS = 'renderer-canvas'
@@ -98,6 +99,10 @@ export abstract class PixiRenderer implements RendererInstance {
   private animating = false
   private ready = false
   private destroyed = false
+  /** True once {@link initApp} found no GPU context, so no state will ever reach a PixiJS scene. */
+  private headless = false
+  /** Holds the promise the last {@link render} handed out until its transition finishes. */
+  private readonly transition = new TransitionGate()
   private resizeObserver: ResizeObserver | null = null
   private resizeTimer: ReturnType<typeof setTimeout> | null = null
   private devicePixelRatioQuery: MediaQueryList | null = null
@@ -121,23 +126,35 @@ export abstract class PixiRenderer implements RendererInstance {
 
   // --- RendererInstance ---
 
-  render(state: StepState, options?: RenderOptions): void {
+  render(state: StepState, options?: RenderOptions): Promise<void> {
     this.latestState = state
-    if (this.ready && this.app !== null) {
-      this.update(state, options)
-      // Draw the just-updated scene now, so it is visible and hit-testable this frame rather than only
-      // after the next ticker tick (which matters for click-to-play right as a hand rebuilds).
-      this.app.render()
-      if (this.animated) {
-        // An animated renderer then drives its own frames off the ticker: `update` set the new target
-        // (and may have started a transition), and `onFrame` advances it until it reports idle.
-        this.startAnimating()
-      }
+    // A new state supersedes whatever was in flight: the host that was waiting on it has moved on.
+    this.transition.settle()
+    if (this.destroyed || this.headless) {
+      // Nothing will animate, and the state is cached for a scene layer that is unit-tested directly.
+      return Promise.resolve()
     }
+    if (!this.ready || this.app === null) {
+      // PixiJS is still initializing; `initApp` applies this state and settles the promise once it has.
+      return this.transition.wait()
+    }
+    this.update(state, options)
+    // Draw the just-updated scene now, so it is visible and hit-testable this frame rather than only
+    // after the next ticker tick (which matters for click-to-play right as a hand rebuilds).
+    this.app.render()
+    if (!this.animated) {
+      return Promise.resolve()
+    }
+    // An animated renderer then drives its own frames off the ticker: `update` set the new target
+    // (and may have started a transition), and `onFrame` advances it until it reports idle.
+    this.startAnimating()
+    // Ambient motion keeps the ticker running forever, so the promise follows the transition alone.
+    return this.transitionActive() ? this.transition.wait() : Promise.resolve()
   }
 
   destroy(): void {
     this.destroyed = true
+    this.transition.settle()
     this.stopAnimating()
     this.detachInput?.()
     this.detachInput = null
@@ -197,6 +214,17 @@ export abstract class PixiRenderer implements RendererInstance {
     return false
   }
 
+  /**
+   * Whether a state-to-state transition is still playing. This is deliberately narrower than "the
+   * ticker is running": the card table's ambient candle glow animates forever, so a host waiting for
+   * one move to land would wait for the whole session. A renderer reports only the motion that belongs
+   * to the state it was last given — the cards' fly-in and trick sweep, Spades' bid effect, Crane
+   * Reach's event. The default false means a renderer that never overrides this settles on arrival.
+   */
+  protected transitionActive(): boolean {
+    return false
+  }
+
   /** Declare the device-input intents. Renderers with no human control may leave this returning []. */
   protected inputs(): readonly InputIntent[] {
     return []
@@ -234,6 +262,11 @@ export abstract class PixiRenderer implements RendererInstance {
     // UPDATE_PRIORITY.LOW, and this callback runs at the default (higher) priority, so the frame is
     // drawn right after `onFrame` mutates the scene. Rendering again would double the GPU work.
     const more = this.onFrame(this.app.ticker.deltaMS)
+    // Release the waiting host the moment the transition ends, even if ambient motion keeps the
+    // ticker attached for the rest of the session.
+    if (!this.transitionActive()) {
+      this.transition.settle()
+    }
     if (!more) {
       this.stopAnimating()
     }
@@ -243,8 +276,11 @@ export abstract class PixiRenderer implements RendererInstance {
 
   private async initApp(): Promise<void> {
     // Headless guard: under jsdom there is no WebGL/WebGPU context, so skip PixiJS entirely. The pure
-    // scene layer stays unit-testable and pixels are the end-to-end suite's job.
+    // scene layer stays unit-testable and pixels are the end-to-end suite's job. This runs before the
+    // first await, so `render` sees the flag from the very first call.
     if (!hasWebGL()) {
+      this.headless = true
+      this.transition.settle()
       return
     }
     const app = new Application()
@@ -292,6 +328,8 @@ export abstract class PixiRenderer implements RendererInstance {
         this.startAnimating()
       }
     }
+    // That first reconciliation is what a render received during initialization was waiting for.
+    this.transition.settle()
   }
 
   /** The container's current displayed size in CSS pixels, or null before it has been laid out. */

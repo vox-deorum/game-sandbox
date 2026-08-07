@@ -19,12 +19,13 @@ export function useReplayTransport() {
   const transport = shallowRef<ReplayTransport | null>(null)
 
   /** Build the transport over the parsed states. `onFrame` draws the state at the current index, with
-   *  the presentation options (snap or transition budget) the transport chose for that change. */
+   *  the presentation options (snap or transition scale) the transport chose for that change, and
+   *  returns the renderer's transition so play can wait for it alongside the cadence. */
   function init(
     states: readonly StepState[],
     options: {
       paceIntervalMs?: number | null
-      onFrame: (state: StepState, renderOptions: RenderOptions) => void
+      onFrame: (state: StepState, renderOptions: RenderOptions) => void | Promise<void>
     },
   ): ReplayTransport {
     const created = new ReplayTransport(states, {

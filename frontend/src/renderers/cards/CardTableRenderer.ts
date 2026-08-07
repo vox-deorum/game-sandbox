@@ -20,7 +20,7 @@ import type { StepState } from '@game-sandbox/schema'
 import { Container, FillGradient, Graphics, Rectangle } from 'pixi.js'
 
 import { clear, PixiRenderer } from '../base/PixiRenderer.js'
-import type { RendererContext, RenderOptions } from '../types.js'
+import { type RendererContext, type RenderOptions, transitionScaleOf } from '../types.js'
 import {
   type Card,
   type CardTableScene,
@@ -53,14 +53,10 @@ import {
   wideSeatsAccessibilityLabel,
 } from './scene.js'
 
-/** The natural trick-won sweep length in live play (ms); a replay scales it to fit its cadence. */
+/** The natural trick-won sweep length (ms); the host's scale speeds it up or slows it down. */
 const SWEEP_NATURAL_MS = 700
-/** The slowest and fastest a sweep is ever allowed to run, so a long or tiny budget still reads. */
-const SWEEP_MIN_MS = 220
-/** The natural card-play fly-in length in live play (ms); a replay scales it to a slice of cadence. */
+/** The natural card-play fly-in length (ms); the host's scale speeds it up or slows it down. */
 const PLAY_NATURAL_MS = 480
-/** The slowest and fastest a fly-in is ever allowed to run, so a long or tiny budget still reads. */
-const PLAY_MIN_MS = 180
 /** The active-player glow's breathing period (ms): a gentle pulse, the only ambient animation. */
 const PULSE_PERIOD_MS = 1100
 /** How far (px) a hovered hand card lifts, so the user sees which card is under the cursor. */
@@ -182,6 +178,15 @@ export abstract class CardTableRenderer<
     return false
   }
 
+  /**
+   * The fly-in and the sweep are the table's transition; the candle glow under the active seat is
+   * ambient and runs for the whole hand, so it is deliberately not counted here. A game with its own
+   * state-to-state flourish (Spades' bid effects) ORs it in.
+   */
+  protected override transitionActive(): boolean {
+    return this.active !== null
+  }
+
   /** The mount-time scene config, assembled from the renderer context; a game's `computeSceneFor` uses it. */
   protected sceneConfig(): SceneConfig {
     return {
@@ -258,9 +263,9 @@ export abstract class CardTableRenderer<
     const scene = this.computeSceneFor(state)
     this.scene = scene
 
-    // A scrub or seek snaps, so it never animates; otherwise a newly-played card kicks off a fly-in
-    // and a newly-completed trick kicks off the sweep.
-    const snap = options?.snap === true
+    // A scrub or seek snaps, and so does a zero scale, so neither animates; otherwise a newly-played
+    // card kicks off a fly-in and a newly-completed trick kicks off the sweep.
+    const snap = options?.snap === true || transitionScaleOf(options) === 0
     const play = snap ? null : detectPlay(prev, state, scene.viewPlayer, this.geometry)
     const sweep = snap ? null : detectSweep(prev, state, scene.viewPlayer, this.geometry)
 
@@ -295,8 +300,8 @@ export abstract class CardTableRenderer<
           .map((c) => ({ ...c, controllable: false })),
       )
       // The fourth card resolves the trick in the same step, so its fly-in chains into the sweep;
-      // cards 1–3 have no sweep to chain to. When it chains, both phases are sized from one shared
-      // budget so the fly-in plus the sweep finish inside the replay cadence (see playPhaseDurations).
+      // cards 1–3 have no sweep to chain to. Both phases keep their natural length at the host's
+      // scale, and the chained pair simply runs longer (see playPhaseDurations).
       const chained = play.completesTrick && sweep !== null
       const { playMs, sweepMs } = playPhaseDurations(options, chained)
       this.active = {
@@ -851,40 +856,21 @@ export abstract class CardTableRenderer<
   }
 }
 
-/**
- * How long the sweep should run. Live play (no budget) uses the natural length; a replay passes its
- * cadence as the budget, and we fit the sweep inside ~85% of it so it finishes before the next state.
- */
+/** How long the sweep runs: its natural length at whatever speed the host asked for. */
 function sweepDuration(options?: RenderOptions): number {
-  if (options?.transitionMs && options.transitionMs > 0) {
-    return Math.max(SWEEP_MIN_MS, Math.min(SWEEP_NATURAL_MS, options.transitionMs * 0.85))
-  }
-  return SWEEP_NATURAL_MS
+  return SWEEP_NATURAL_MS * transitionScaleOf(options)
 }
 
 /**
- * How long the fly-in runs, and the sweep that may chain after it on the fourth card. Live play (no
- * budget) gives each phase its natural length. A replay passes its cadence as the budget: the fly-in
- * takes ~45% of it (so the card rests in the center for most of the step) and the chained sweep ~50%
- * (`sweepMs` is 0 when no sweep chains). The two are then scaled down together if they would still
- * overflow the budget, so a chained fly-in + sweep always finish inside one cadence — the next snapshot
- * never cuts the sweep short — while keeping their relative pacing.
+ * How long the fly-in runs, and the sweep that may chain after it on the fourth card, each at its
+ * natural length times the host's scale (`sweepMs` is 0 when no sweep chains). The two run back to
+ * back, so a chained pair takes as long as both together and the host waits for the pair rather than
+ * squeezing them into one cadence.
  */
 function playPhaseDurations(
   options: RenderOptions | undefined,
   chained: boolean,
 ): { playMs: number; sweepMs: number } {
-  if (!options?.transitionMs || options.transitionMs <= 0) {
-    return { playMs: PLAY_NATURAL_MS, sweepMs: chained ? SWEEP_NATURAL_MS : 0 }
-  }
-  const budget = options.transitionMs
-  let playMs = Math.max(PLAY_MIN_MS, Math.min(PLAY_NATURAL_MS, budget * 0.45))
-  let sweepMs = chained ? Math.max(SWEEP_MIN_MS, Math.min(SWEEP_NATURAL_MS, budget * 0.5)) : 0
-  const cap = budget * 0.95
-  if (playMs + sweepMs > cap) {
-    const scale = cap / (playMs + sweepMs)
-    playMs *= scale
-    sweepMs *= scale
-  }
-  return { playMs, sweepMs }
+  const scale = transitionScaleOf(options)
+  return { playMs: PLAY_NATURAL_MS * scale, sweepMs: chained ? SWEEP_NATURAL_MS * scale : 0 }
 }

@@ -9,40 +9,47 @@
 import type { RenderOptions } from '@renderers/types.js'
 
 import type { CraneReachScene, SceneEvent, SceneUnit } from './scene.js'
-import { eventBudget } from './timeline.js'
+import { type EventShape, eventScale } from './timeline.js'
 
-/** An event reacts if it hits something or moves the capture score. */
+/** Something visibly reacts when a blow lands, a unit falls, or ground changes hands. */
 export function eventHasReaction(event: SceneEvent): boolean {
-  return event.targetId !== null || event.redCapture !== 0 || event.blueCapture !== 0
+  return (
+    event.damage > 0 || event.deathId !== null || event.redCapture !== 0 || event.blueCapture !== 0
+  )
 }
 
-/** Retain the prior pure scene until the transition has completely settled. */
+/** What the schedule needs from an event: how far it travels, whether it strikes and provokes. */
+export function eventShapeFor(event: SceneEvent): EventShape {
+  return {
+    movementTiles: event.movementTiles,
+    hasTarget: event.targetId !== null,
+    hasReaction: eventHasReaction(event),
+  }
+}
+
+/** Retain the prior pure scene for as long as the transition is playing over it. */
 export function transitionSceneFor(
   previousScene: CraneReachScene | null,
   finalScene: CraneReachScene,
   animate: boolean,
-  progress: number,
 ): CraneReachScene {
-  return animate && progress < 1 && previousScene !== null ? previousScene : finalScene
+  return animate && previousScene !== null ? previousScene : finalScene
 }
 
 /** Transition eligibility keeps mount, seeks, and repeated ticks deterministic. */
-export function transitionFor(
+export function shouldAnimateEvent(
   event: SceneEvent | null,
   freshForwardEvent: boolean,
   hasPriorScene: boolean,
   options: RenderOptions | undefined,
-): { budgetMs: number; animate: boolean } {
-  const budgetMs = eventBudget(options)
-  return {
-    budgetMs,
-    animate:
-      event !== null &&
-      freshForwardEvent &&
-      hasPriorScene &&
-      options?.snap !== true &&
-      budgetMs > 0,
-  }
+): boolean {
+  return (
+    event !== null &&
+    freshForwardEvent &&
+    hasPriorScene &&
+    options?.snap !== true &&
+    eventScale(options) > 0
+  )
 }
 
 /** Recognize a new forward state while rejecting repeats and backward seeks. */

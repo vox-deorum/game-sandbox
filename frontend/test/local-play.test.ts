@@ -40,7 +40,10 @@ vi.mock('../src/renderers/registry.js', () => ({
       mountContext = context
       return {
         aspectRatio: 288 / 512,
-        render: (state: unknown) => drawn.push(state),
+        render: (state: unknown) => {
+          drawn.push(state)
+          return Promise.resolve()
+        },
         destroy: () => {},
       }
     },

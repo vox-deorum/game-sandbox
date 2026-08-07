@@ -39,7 +39,8 @@ vi.mock('../src/api/socket.js', () => ({
 }))
 
 // A fake renderer that records what it was mounted with, the states it drew, and the per-state render
-// options (so a test can assert the paced transition budget the live throttle passes).
+// options (so a test can assert the transition scale the live throttle passes). Its transitions settle
+// on arrival, which leaves the cadence as the only thing paced playout waits for.
 let mountCtx: RendererContext | null
 let drawn: unknown[]
 let drawnOptions: unknown[]
@@ -52,6 +53,7 @@ vi.mock('../src/renderers/registry.js', () => ({
         render: (s: unknown, o?: unknown) => {
           drawn.push(s)
           drawnOptions.push(o)
+          return Promise.resolve()
         },
         destroy: () => {},
       }
@@ -657,22 +659,20 @@ describe('SessionPage', () => {
       await nextTick()
       expect(screen.getAllByText('Paused').length).toBeGreaterThan(0)
 
-      // The cadence timer keeps running while paused, but drainLive no-ops: the burst does not animate.
-      vi.advanceTimersByTime(1800)
-      await nextTick()
+      // The pump stops while paused, so the burst holds where it is however long the pause lasts.
+      await vi.advanceTimersByTimeAsync(1800)
       expect(drawn).toHaveLength(1)
 
       handlers.onResume?.()
       await nextTick()
       expect(screen.queryByText('Paused')).toBeNull()
 
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      // The leading edge served its cadence during the pause, so the first queued move plays at once.
+      await vi.advanceTimersByTimeAsync(0)
       expect(drawn).toHaveLength(2)
-      expect(drawnOptions.at(-1)).toEqual({ transitionMs: 900 })
+      expect(drawnOptions.at(-1)).toEqual({ transitionScale: 0.9 })
 
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(900)
       expect(drawn).toHaveLength(3)
     } finally {
       vi.useRealTimers()
@@ -1073,32 +1073,28 @@ describe('SessionPage', () => {
       // after time passes nothing draws — the buffer is still filling to absorb network jitter.
       handlers.onState(flappyState(0, 1))
       handlers.onState(flappyState(1, 2))
-      vi.advanceTimersByTime(200)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(200)
       expect(drawn).toHaveLength(0)
 
-      // A third frame fills the lead; playout begins and plays one buffered frame per cadence tick.
+      // A third frame fills the lead; playout begins with the frame at the head of the buffer and
+      // then plays the rest one per cadence.
       handlers.onState(flappyState(2, 3))
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(0)
       expect(drawn).toHaveLength(1)
       expect(screen.queryByText('Game over')).toBeNull()
 
       // The stream ends while frames remain buffered; game over stays hidden until they drain.
       handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
       handlers.onSessionStatus?.('ended', 'terminated')
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(50)
       expect(drawn).toHaveLength(2)
       expect(screen.queryByText('Game over')).toBeNull()
 
-      // The last frame starts its cadence-long transition, so game over remains held for one more tick.
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      // The last frame still owes its own cadence, so game over remains held through it.
+      await vi.advanceTimersByTimeAsync(50)
       expect(drawn).toHaveLength(3)
       expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(50)
       // The held end is revealed: both the status badge (reasonText) and the new game-over
       // leaderboard card show, so disambiguate to the card and check the held result fact.
       const gameOver = screen.getByRole('dialog', { name: 'Game over' })
@@ -1125,8 +1121,7 @@ describe('SessionPage', () => {
       handlers.onResult?.({ ticks: 99, reason: 'stopped', scores: { player_0: 99 } })
       handlers.onSessionStatus?.('ended')
 
-      vi.advanceTimersByTime(200)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(200)
 
       const gameOver = screen.getByRole('dialog', { name: 'Game over' })
       expect(within(gameOver).getByText('7')).toBeInTheDocument()
@@ -1155,20 +1150,17 @@ describe('SessionPage', () => {
       handlers.onState(flappyState(0, 1))
       handlers.onState(flappyState(1, 2))
       handlers.onState(flappyState(2, 3))
-      vi.advanceTimersByTime(150)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(100)
       expect(drawn).toHaveLength(3)
-      expect(screen.queryByText('Waiting…')).toBeNull()
 
-      // The next tick finds the buffer empty with the stream still live: the indicator appears.
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      // Once the last of them has served its cadence the buffer is empty with the stream still live,
+      // so the indicator appears over the held frame.
+      await vi.advanceTimersByTimeAsync(50)
       expect(screen.getByText('Waiting…')).toBeInTheDocument()
 
-      // A fresh frame arrives and plays on the next tick; the indicator clears.
+      // A fresh frame restarts playout and clears the indicator.
       handlers.onState(flappyState(3, 4))
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(0)
       expect(drawn).toHaveLength(4)
       expect(screen.queryByText('Waiting…')).toBeNull()
     } finally {
@@ -1190,7 +1182,7 @@ describe('SessionPage', () => {
       handlers.onSessionStatus?.('running')
 
       // Leading edge: the first frame after the idle gap (the deal, or the human's own move) draws at
-      // once, at the renderer's natural duration (no transition budget) — immediate input feedback.
+      // once, at the renderer's natural duration (no scale), for immediate input feedback.
       handlers.onState(flappyState(0, 0))
       await nextTick()
       expect(drawn).toHaveLength(1)
@@ -1208,27 +1200,23 @@ describe('SessionPage', () => {
       handlers.onResult?.({ ticks: 4, reason: 'terminated', scores: { player_0: 3 } })
       handlers.onSessionStatus?.('ended', 'terminated')
 
-      // Each cadence tick plays exactly one queued move, with the cadence as its transition budget so
+      // Each cadence plays exactly one queued move, carrying the cadence as its transition scale so
       // the renderer animates it rather than snapping.
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(900)
       expect(drawn).toHaveLength(2)
-      expect(drawnOptions.at(-1)).toEqual({ transitionMs: 900 })
+      expect(drawnOptions.at(-1)).toEqual({ transitionScale: 0.9 })
       expect(screen.queryByText('Game over')).toBeNull()
 
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(900)
       expect(drawn).toHaveLength(3)
 
       // The last queued move draws; the end is still held (revealed only once the queue is empty).
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(900)
       expect(drawn).toHaveLength(4)
       expect(screen.queryByText('Game over')).toBeNull()
 
-      // The next tick finds the queue empty and reveals game over (held until the last move drew).
-      vi.advanceTimersByTime(900)
-      await nextTick()
+      // Once that final move has served its own cadence, the held game over is revealed.
+      await vi.advanceTimersByTimeAsync(900)
       expect(screen.getByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
@@ -1451,22 +1439,19 @@ describe('SessionPage', () => {
       handlers.onState(
         playerState(1, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] }),
       )
-      // Below the lead (150 ms / 50 ms = 3 frames): nothing has drained, so the message is not shown.
-      vi.advanceTimersByTime(200)
-      await nextTick()
+      // Below the lead (150 ms / 50 ms = 3 frames): nothing has played out, so the message is hidden.
+      await vi.advanceTimersByTimeAsync(200)
       expect(drawn).toHaveLength(0)
       expect(screen.queryByText('hello table')).toBeNull()
 
-      // A third frame fills the lead; playout begins and the first tick drains frame 0 (no message).
+      // A third frame fills the lead; playout begins with frame 0, which carries no message.
       handlers.onState(playerState(2))
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      await vi.advanceTimersByTimeAsync(0)
       expect(drawn).toHaveLength(1)
       expect(screen.queryByText('hello table')).toBeNull()
 
-      // The next tick drains frame 1, which carries the message: only now does it render.
-      vi.advanceTimersByTime(50)
-      await nextTick()
+      // The next cadence plays frame 1, which carries the message: only now does it render.
+      await vi.advanceTimersByTimeAsync(50)
       expect(drawn).toHaveLength(2)
       expect(screen.getByText('hello table')).toBeInTheDocument()
     } finally {

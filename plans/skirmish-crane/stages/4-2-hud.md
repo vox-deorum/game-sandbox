@@ -67,8 +67,8 @@ The top and bottom strips are screen-fixed above the [step 4.3 camera](4-3-camer
 
 ### Movement range on the board
 
-- The acting unit shows its movement range through activation, movement, and settle during watch and replay. Resolution clears it before the next actor's range appears. Every tile it could reach this activation takes a soft gilt wash at alpha 0.10, with a thin gilt outline around the reachable set, extending the activation highlight.
-- While any unit is hovered, its bone range wash and dashed outline replace only the acting unit's soft gilt reachability wash and outline. Non-bubbling unit enter and leave events keep this range stable while the pointer crosses the figure's child artwork. The inspected range retains ownership through another unit's activation, movement, settle, and resolution, so the actor's range never replaces or clears it. The activation seal-ring remains visible. On a human turn, continuation, path, and endpoint composition marks stay above the hover display. Leaving the unit restores the acting unit's soft reachability display when event timing permits it.
+- The acting unit shows its movement range through activation and movement during watch and replay. It clears the moment the attack or a capture reaction starts, before the next actor's range appears. Every tile it could reach this activation takes a soft gilt wash at alpha 0.10, with a thin gilt outline around the reachable set, extending the activation highlight.
+- While any unit is hovered, its bone range wash and dashed outline replace only the acting unit's soft gilt reachability wash and outline. Non-bubbling unit enter and leave events keep this range stable while the pointer crosses the figure's child artwork. The inspected range retains ownership through another unit's activation, movement, attack, and reaction, so the actor's range never replaces or clears it. The activation seal-ring remains visible. On a human turn, continuation, path, and endpoint composition marks stay above the hover display. Leaving the unit restores the acting unit's soft reachability display when event timing permits it.
 - Reachability comes from a renderer-local helper over the overlay state: step costs, occupancy, the always-permitted first step, the four-step limit. Step 5 grows this helper into the full legality module and proves it against the environment's masks.
 
 ### The unit hover chip
@@ -116,7 +116,7 @@ On a human-controlled activation the order controls occupy the bottom strip's cl
 - Hover and touch jsdom tests cover board-unit and roster-pair chips: their stat fields, ability variants, opening, replacement, dismissal behavior, stable board-unit highlight, inspected-range precedence through another unit's event, and that nothing sends actions in a draw-only mount.
 - The reachability helper is covered on hand-built boards (terrain costs, occupancy, the always-permitted first step, the four-step limit) and, for acting units, against the destination sets implied by the fixture legality files.
 - The step 4.1 perf smoke stays green with the styled HUD and the acting unit's range wash on the army fixture.
-- The e2e spectate journey keeps one non-acting unit hovered across an event handoff and asserts that every observed range owner remains that unit.
+- The e2e spectate journey keeps one non-acting unit hovered across an event and asserts that every observed range owner remains that unit.
 
 ## Done when
 

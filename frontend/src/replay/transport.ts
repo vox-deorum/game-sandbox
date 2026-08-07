@@ -9,13 +9,24 @@
  * the state to draw and `onChange` with its own state, so the host page stays a thin reactive shell.
  *
  * It also tells the renderer how to present each frame (the {@link RenderOptions}): a play step passes
- * the cadence as the animation budget, so an animated renderer (Hearts) runs its transitions at
- * replay-time scale, while a scrub, step, or seek snaps, since jumping to an arbitrary frame must not
- * trigger a transition. A draw-only renderer (Flappy Bird) ignores all of this.
+ * the cadence relative to one second as the animation scale, so an animated renderer (Hearts, Crane
+ * Reach) runs its transitions at replay-time speed, while a scrub, step, or seek snaps, since jumping
+ * to an arbitrary frame must not trigger a transition. A draw-only renderer (Flappy Bird) ignores all
+ * of this.
+ *
+ * Play is a serialized pump rather than an interval. Each frame starts two clocks at once, the cadence
+ * and the renderer's own transition, and the next frame waits for both. A draw-only recording therefore
+ * still plays exactly on its cadence, while a frame whose animation is genuinely longer (a four-tile
+ * Crane Reach charge into a kill) holds the pump until it has finished rather than being cut off. A
+ * generation token retires the running pump, so a pause, a seek, or a teardown can never leave an
+ * obsolete one advancing behind the live one.
  */
 import type { StepState } from '@game-sandbox/schema'
 
 import type { RenderOptions } from '../renderers/types.js'
+
+/** The cadence a scale of 1 corresponds to: a one-second beat is a renderer's natural speed. */
+const NATURAL_CADENCE_MS = 1_000
 
 /** A fixed viewing cadence for an unpaced environment (turn timings are think time, not pace). */
 const DEFAULT_CADENCE_MS = 500
@@ -32,9 +43,10 @@ export interface ReplayTransportOptions {
   paceIntervalMs?: number | null
   /**
    * Draw the current state. Called for every index change (play, step, scrub, seek). `options` tells
-   * an animated renderer how to present it: a budget while playing, snap for any direct jump.
+   * an animated renderer how to present it: a scale while playing, snap for any direct jump. A
+   * returned promise is the renderer's transition, which play waits on alongside the cadence.
    */
-  onFrame: (state: StepState, options: RenderOptions) => void
+  onFrame: (state: StepState, options: RenderOptions) => void | Promise<void>
   /** Notify the host of the transport's state so it can render controls. */
   onChange?: (state: ReplayState) => void
 }
@@ -42,7 +54,8 @@ export interface ReplayTransportOptions {
 export class ReplayTransport {
   private idx = 0
   private isPlaying = false
-  private timer: ReturnType<typeof setInterval> | null = null
+  /** Bumped whenever playback is retired, so a pump from a superseded run stops at its next step. */
+  private generation = 0
   private readonly cadence: number
 
   constructor(
@@ -73,18 +86,16 @@ export class ReplayTransport {
     // Restarting from the end replays from the top.
     if (this.idx >= this.total - 1) {
       this.idx = 0
-      this.render({ snap: true })
+      void this.render({ snap: true })
     }
     this.isPlaying = true
-    this.timer = setInterval(() => this.advance(), this.cadence)
     this.emit()
+    this.startPump()
   }
 
   pause(): void {
-    if (this.timer !== null) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+    // Retiring the generation is what stops the pump: it checks the token before every step.
+    this.generation += 1
     this.isPlaying = false
     this.emit()
   }
@@ -109,8 +120,11 @@ export class ReplayTransport {
   seek(index: number): void {
     const clamped = Math.max(0, Math.min(this.total - 1, index))
     this.idx = clamped
-    this.render({ snap: true })
+    void this.render({ snap: true })
     this.emit()
+    // A seek while playing restarts the pump, so the frame landed on gets a whole cadence rather than
+    // whatever was left of the one it interrupted.
+    if (this.isPlaying) this.startPump()
   }
 
   /** Seek to the frame at a tick (exact, else the latest frame at or before it) — the `?t=` deep link. */
@@ -134,7 +148,7 @@ export class ReplayTransport {
 
   /** Render the current frame without changing the index (the initial draw after mount); snaps. */
   renderCurrent(): void {
-    this.render({ snap: true })
+    void this.render({ snap: true })
     this.emit()
   }
 
@@ -142,27 +156,40 @@ export class ReplayTransport {
     this.pause()
   }
 
-  private advance(): void {
-    if (this.idx >= this.total - 1) {
-      this.pause()
-      return
-    }
-    this.idx += 1
-    // Playing forward: give an animated renderer the cadence as its transition budget, so it animates
-    // the step (a Hearts trick sweep) at replay-time scale rather than jumping.
-    this.render({ transitionMs: this.cadence })
-    this.emit()
-    // Stop as soon as the last frame is shown, rather than waiting one more cadence to notice.
-    if (this.idx >= this.total - 1) {
-      this.pause()
-    }
+  /** Retire any running pump and start a fresh one for the current position. */
+  private startPump(): void {
+    this.generation += 1
+    void this.pump(this.generation)
   }
 
-  private render(options: RenderOptions): void {
-    const state = this.states[this.idx]
-    if (state !== undefined) {
-      this.opts.onFrame(state, options)
+  /**
+   * Advance one frame at a time, each step waiting for the cadence and the previous frame's transition
+   * together. The frame already on screen holds for a cadence before the first advance, exactly as the
+   * interval this replaced did.
+   */
+  private async pump(generation: number): Promise<void> {
+    let ready: Promise<unknown> = delay(this.cadence)
+    while (true) {
+      await ready
+      if (this.generation !== generation) return
+      if (this.idx >= this.total - 1) break
+      this.idx += 1
+      // Playing forward: give an animated renderer the cadence as its transition scale, so it animates
+      // the step (a Hearts trick sweep) at replay-time speed rather than jumping.
+      const drawn = this.render({ transitionScale: this.cadence / NATURAL_CADENCE_MS })
+      this.emit()
+      // Stop as soon as the last frame is shown, rather than waiting one more cadence to notice.
+      if (this.idx >= this.total - 1) break
+      ready = Promise.all([delay(this.cadence), drawn])
     }
+    this.pause()
+  }
+
+  private render(options: RenderOptions): Promise<void> {
+    const state = this.states[this.idx]
+    return state === undefined
+      ? Promise.resolve()
+      : Promise.resolve(this.opts.onFrame(state, options))
   }
 
   private emit(): void {
@@ -173,4 +200,9 @@ export class ReplayTransport {
       tick: this.states[this.idx]?.tick ?? null,
     })
   }
+}
+
+/** The cadence floor for one paced frame. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

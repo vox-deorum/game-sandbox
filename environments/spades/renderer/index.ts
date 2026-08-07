@@ -15,7 +15,11 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 import { CardTableRenderer } from '@renderers/cards/CardTableRenderer.js'
-import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
+import {
+  type RendererDefinition,
+  type RenderOptions,
+  transitionScaleOf,
+} from '@renderers/types.js'
 import { Container, Graphics, Rectangle } from 'pixi.js'
 import {
   asNumberList,
@@ -42,8 +46,6 @@ import thumbnail from './thumbnail.svg'
 
 /** The natural length (ms) of the gold pulse that marks a player just after it bids. */
 const BID_PULSE_NATURAL_MS = 620
-/** The shortest that pulse is ever allowed to run, so a tiny replay budget still reads. */
-const BID_PULSE_MIN_MS = 240
 /** The muted spade-pip colour when spades are not yet broken. */
 const SPADE_MUTED = '#5c7066'
 
@@ -257,14 +259,14 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
   /**
    * Celebrate a bid: a gold pulse on the player that just moved from "not yet bid" to a bid, and a gold
    * flash on the chip it chose in the centre grid — so a watcher catches both who bid and what. Both are
-   * skipped on a snap (a scrub/seek lands statically, so nothing animates).
+   * skipped on a snap or a zero scale (a scrub/seek lands statically, so nothing animates).
    */
   protected override afterUpdate(
     prev: StepState | null,
     state: StepState,
     options?: RenderOptions,
   ): void {
-    if (options?.snap === true) {
+    if (options?.snap === true || transitionScaleOf(options) === 0) {
       this.bidPulse = null
       this.bidFlash = null
       this.flyLayer.getChildByLabel?.('bid-flash')?.destroy()
@@ -281,6 +283,11 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
         break
       }
     }
+  }
+
+  /** The bid pulse and flash are state-to-state flourishes, so a paced host waits for them too. */
+  protected override transitionActive(): boolean {
+    return super.transitionActive() || this.bidPulse !== null || this.bidFlash !== null
   }
 
   /** Drive both bid flourishes each frame (the player pulse and the chosen-chip flash); alive if either is. */
@@ -372,15 +379,9 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
   }
 }
 
-/**
- * How long the bid pulse runs: the natural length in live play (no budget), or a slice of the replay
- * cadence clamped so a long or tiny budget still reads.
- */
+/** How long the bid pulse runs: its natural length at whatever speed the host asked for. */
 function bidPulseDuration(options?: RenderOptions): number {
-  if (options?.transitionMs && options.transitionMs > 0) {
-    return Math.max(BID_PULSE_MIN_MS, Math.min(BID_PULSE_NATURAL_MS, options.transitionMs * 0.85))
-  }
-  return BID_PULSE_NATURAL_MS
+  return BID_PULSE_NATURAL_MS * transitionScaleOf(options)
 }
 
 const definition = {

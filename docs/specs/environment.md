@@ -91,7 +91,9 @@ Every environment declares `stepping` in its metadata. The declaration is requir
 
 The **pace interval** sets the cadence within an environment's declared stepping mode. A sequential environment with an interval advances on a wall-clock schedule, and without one it advances when its acting player provides an action. A simultaneous environment always declares a positive interval; [Interaction](interaction.md#session-loop) defines how that interval becomes each human player's input window.
 
-The **viewing cadence** is the optional pace for watch and replay playback, independent of the pace interval. The **live playout cadence** is the optional pace at which a live turn-based session with a human plays out the other players' moves one at a time. Neither affects stepping, timing budgets, or scoring.
+The **viewing cadence** is the optional pace for watch and replay playback, independent of the pace interval. The **live playout cadence** is the optional pace at which a live turn-based session with a human plays out the other players' moves one at a time. Neither is a stepping, agent timing, or scoring input: they only pace how the frontend delivers frames to a renderer.
+
+Each cadence is a minimum delivery interval, not a fixed budget. The frontend starts the cadence timer and the renderer's transition together and waits for both before delivering the next frame, so an animation that legitimately runs longer than the cadence still finishes rather than being cut off. A renderer also receives the cadence, relative to one second, as its animation scale, so a faster cadence plays its transitions faster and a slower one plays them slower. See [Rendering](../contributors/environments/rendering.md#shared-contract) for the renderer contract this feeds.
 
 The harness creates the environment only after it resolves the session parameters. It checks the constructed instance against the declared mode before participant reset, recording creation, or live stepping. Discovery does not construct an environment, because default parameters can describe a different roster from the selected layout.
 

@@ -3,17 +3,37 @@ import { describe, expect, it } from 'vitest'
 
 import { computeScene } from './scene.js'
 import { armyStates } from './test-helpers.js'
+import type { SceneEvent } from './scene.js'
 import {
   captureCueSceneFor,
   captureCuesFor,
   deathSnapshotFor,
+  eventHasReaction,
+  eventShapeFor,
   eventTargetPositionFor,
   isFreshForwardEvent,
-  shouldDeferEventUpdate,
+  shouldAnimateEvent,
   shouldRebuildBattlefield,
-  transitionFor,
   transitionSceneFor,
 } from './transitions.js'
+
+/** A plain move: nothing struck, nobody hurt, no ground taken. */
+const QUIET: SceneEvent = {
+  actorId: 'red-0',
+  from: { x: 0, y: 0 },
+  to: { x: 10, y: 0 },
+  route: [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+  ],
+  movementTiles: 1,
+  targetId: null,
+  damage: 0,
+  automatic: false,
+  deathId: null,
+  redCapture: 0,
+  blueCapture: 0,
+}
 
 describe('Crane Reach event transitions', () => {
   it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
@@ -37,10 +57,14 @@ describe('Crane Reach event transitions', () => {
         deathId: victim?.unitId ?? null,
       },
     }
-    expect(transitionFor(after.event, true, true, { transitionMs: 500 }).animate).toBe(true)
-    expect(transitionFor(after.event, true, true, { snap: true }).animate).toBe(false)
-    expect(transitionFor(after.event, false, true, { transitionMs: 500 }).animate).toBe(false)
-    expect(transitionFor(after.event, true, false, { transitionMs: 500 }).animate).toBe(false)
+    expect(shouldAnimateEvent(after.event, true, true, { transitionScale: 0.5 })).toBe(true)
+    expect(shouldAnimateEvent(after.event, true, true, undefined)).toBe(true)
+    expect(shouldAnimateEvent(after.event, true, true, { snap: true })).toBe(false)
+    // A zero scale means "complete immediately", so it stills the event exactly as a snap does.
+    expect(shouldAnimateEvent(after.event, true, true, { transitionScale: 0 })).toBe(false)
+    expect(shouldAnimateEvent(after.event, false, true, { transitionScale: 0.5 })).toBe(false)
+    expect(shouldAnimateEvent(after.event, true, false, { transitionScale: 0.5 })).toBe(false)
+    expect(shouldAnimateEvent(null, true, true, undefined)).toBe(false)
     const snapshot = deathSnapshotFor(before, after)
     expect(snapshot?.unitId).toBe(after.event.deathId)
     expect(eventTargetPositionFor(after.event, after, after, snapshot)).toEqual(victim?.position)
@@ -48,21 +72,41 @@ describe('Crane Reach event transitions', () => {
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, false)).toBe(false)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, false, true)).toBe(true)
     expect(shouldRebuildBattlefield(after.battlefieldKey, after, true, true)).toBe(false)
-    expect(transitionSceneFor(before, after, true, 0.999)).toBe(before)
-    expect(transitionSceneFor(before, after, true, 1)).toBe(after)
-    expect(transitionSceneFor(before, after, false, 0)).toBe(after)
+    expect(transitionSceneFor(before, after, true)).toBe(before)
+    expect(transitionSceneFor(before, after, false)).toBe(after)
+    expect(transitionSceneFor(null, after, true)).toBe(after)
   })
 
-  it('paints a completed event before beginning the next forward event', () => {
-    // A fresh state arriving over an unfinished or already-deferred event is deferred, so the
-    // completed event paints its final frame before the next event installs at progress zero.
-    expect(shouldDeferEventUpdate(true, true, false, false)).toBe(true)
-    expect(shouldDeferEventUpdate(false, true, false, true)).toBe(true)
+  it('reacts to a landed blow, a death, or a capture, but not to a bare miss', () => {
+    expect(eventHasReaction(QUIET)).toBe(false)
+    // A target that takes nothing and loses nothing gives the attack no reaction to overlap with.
+    expect(eventHasReaction({ ...QUIET, targetId: 'blue-1' })).toBe(false)
+    expect(eventHasReaction({ ...QUIET, targetId: 'blue-1', damage: 2 })).toBe(true)
+    expect(eventHasReaction({ ...QUIET, targetId: 'blue-1', deathId: 'blue-1' })).toBe(true)
+    expect(eventHasReaction({ ...QUIET, redCapture: 1 })).toBe(true)
+    expect(eventHasReaction({ ...QUIET, blueCapture: -1 })).toBe(true)
+  })
 
-    // Snap frames always replace the scene immediately, and so does a fresh state over a settled one.
-    expect(shouldDeferEventUpdate(true, true, true, false)).toBe(false)
-    expect(shouldDeferEventUpdate(false, false, false, true)).toBe(false)
-    expect(shouldDeferEventUpdate(false, true, false, false)).toBe(false)
+  it('reads the schedule shape off the event', () => {
+    expect(eventShapeFor(QUIET)).toEqual({
+      movementTiles: 1,
+      hasTarget: false,
+      hasReaction: false,
+    })
+    // Damage and a death that follows it share one reaction, so the shape is the same either way.
+    const wounded = { ...QUIET, movementTiles: 3, targetId: 'blue-1', damage: 2 }
+    expect(eventShapeFor(wounded)).toEqual({
+      movementTiles: 3,
+      hasTarget: true,
+      hasReaction: true,
+    })
+    expect(eventShapeFor({ ...wounded, deathId: 'blue-1' })).toEqual(eventShapeFor(wounded))
+    // A capture with nothing struck reacts without an attack to hang off.
+    expect(eventShapeFor({ ...QUIET, blueCapture: 2 })).toEqual({
+      movementTiles: 1,
+      hasTarget: false,
+      hasReaction: true,
+    })
   })
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {

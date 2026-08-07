@@ -29,6 +29,10 @@ The renderer owns the game frame and environment-specific controls. The host pag
 
 The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
 
+`render(state, options)` returns a promise that resolves once the transition it started has finished. A draw-only renderer, a snap, a scale of zero, and a change with nothing to animate all resolve immediately. A paced host (the replay transport, the live session socket) awaits that promise alongside its own cadence timer before it delivers the next frame, so a transition that genuinely runs longer than the cadence still finishes instead of being cut off. A render that supersedes an in-flight transition resolves the earlier promise too, and so does `destroy`, so a host is never left waiting on a frame that will not come.
+
+`RenderOptions` has two fields: `snap` jumps straight to the state with no transition, for a replay scrub, seek, or step; `transitionScale` is a multiplier on the renderer's natural phase durations, where omitted or `1` is natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so the renderer's transitions run at that pace. It is not a time budget: a renderer whose natural timing exceeds the cadence simply takes longer, and the host waits.
+
 The registry stores each `PixiRenderer` subclass with its static image thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
 
 `PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.
@@ -44,7 +48,7 @@ Keep drawing logic in two layers:
 
 The reconciler creates the nodes the current scene needs, sets every visible property from it, and removes the ones it no longer contains. Unit-test `computeScene` with checked-in states, then cover GPU reconciliation and visible canvas behavior in the browser suite.
 
-A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs, while `onFrame(dtMs)` advances an optional transition layer.
+A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs (`options.snap`), while `onFrame(dtMs)` advances an optional transition layer at `options.transitionScale`.
 
 ## Input and semantic data
 

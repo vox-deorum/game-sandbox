@@ -56,8 +56,10 @@ export function useRendererMount(options: UseRendererMountOptions) {
     instance.value = mounted
   }
 
-  function render(state: StepState, options?: RenderOptions): void {
-    instance.value?.render(state, options)
+  /** Draw a state, resolving once the renderer's transition for it has finished. A page with no
+   *  renderer resolves at once, so a paced host waiting on the frame is never left hanging. */
+  function render(state: StepState, options?: RenderOptions): Promise<void> {
+    return instance.value?.render(state, options) ?? Promise.resolve()
   }
 
   function destroy(): void {

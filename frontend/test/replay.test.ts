@@ -32,7 +32,10 @@ vi.mock('../src/renderers/registry.js', () => ({
       mountCtx = ctx
       return {
         aspectRatio: 288 / 512,
-        render: (s: StepState) => drawn.push(s),
+        render: (s: StepState) => {
+          drawn.push(s)
+          return Promise.resolve()
+        },
         destroy: () => {},
       }
     },

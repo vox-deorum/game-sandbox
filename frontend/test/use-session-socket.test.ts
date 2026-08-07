@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import type { SessionSocketHandlers } from '../src/api/socket.js'
+import type { RenderOptions } from '../src/renderers/types.js'
 
 const socketDouble = vi.hoisted(() => ({
   handlers: [] as SessionSocketHandlers[],
@@ -30,21 +31,44 @@ vi.mock('../src/api/socket.js', () => ({
 
 import { useSessionSocket } from '../src/composables/useSessionSocket.js'
 
-function mountSessionSocket() {
+/**
+ * Mount the composable over a fake renderer. When `deferred` is set, `onState` hands back a promise
+ * the test finishes by hand, which is how these tests tell the cadence floor apart from the
+ * renderer's actual transition completion.
+ */
+function mountSessionSocket(deferred = false) {
   let session!: ReturnType<typeof useSessionSocket>
-  const drawn: Array<{ state: StepState; options?: { transitionMs?: number } }> = []
+  const drawn: Array<{ state: StepState; options?: RenderOptions }> = []
+  const finish: Array<() => void> = []
   const wrapper = mount(
     defineComponent({
       setup() {
         session = useSessionSocket('s1', {
           onHeader: () => {},
-          onState: (state, options) => drawn.push({ state, options }),
+          onState: (state, options) => {
+            drawn.push({ state, options })
+            if (!deferred) return
+            return new Promise<void>((resolve) => finish.push(resolve))
+          },
         })
         return () => h('div')
       },
     }),
   )
-  return { drawn, session, wrapper }
+  return {
+    drawn,
+    session,
+    wrapper,
+    /** Complete every transition handed out so far. */
+    finishTransitions: () => {
+      for (const resolve of finish.splice(0)) resolve()
+    },
+  }
+}
+
+/** The scale a paced host passes for a cadence, relative to the renderer's natural one-second beat. */
+function scale(cadenceMs: number): RenderOptions {
+  return { transitionScale: cadenceMs / 1000 }
 }
 
 function header(human: boolean): RecordingHeader {
@@ -128,9 +152,7 @@ describe('useSessionSocket', () => {
     first?.onState(state(3))
     first?.onSessionStatus?.('ended', 'terminated')
     second?.onState(state(4))
-    await nextTick()
-    vi.advanceTimersByTime(200)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(200)
 
     expect(drawn.map((entry) => entry.state.tick)).toEqual([4])
     wrapper.unmount()
@@ -146,10 +168,11 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
 
-    expect(drawn).toEqual([])
-    vi.advanceTimersByTime(100)
-    await nextTick()
-    expect(drawn).toEqual([{ state: state(0), options: { transitionMs: 100 } }])
+    // The lead has filled, so playout begins with the frame at the head of the buffer.
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(drawn).toHaveLength(2)
     wrapper.unmount()
   })
 
@@ -163,12 +186,12 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
 
+    // The leading edge is the owner's own move, drawn on arrival at its natural duration.
     expect(drawn).toEqual([{ state: state(0), options: undefined }])
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(50)
     expect(drawn).toEqual([
       { state: state(0), options: undefined },
-      { state: state(1), options: { transitionMs: 50 } },
+      { state: state(1), options: scale(50) },
     ])
     wrapper.unmount()
   })
@@ -183,13 +206,12 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
 
-    vi.advanceTimersByTime(100)
-    await nextTick()
-    expect(drawn).toEqual([{ state: state(0), options: { transitionMs: 100 } }])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
     wrapper.unmount()
   })
 
-  it('holds a paced result through the cadence after its last frame draws', async () => {
+  it('holds a paced result until the last frame has met its cadence', async () => {
     vi.useFakeTimers()
     const { drawn, session, wrapper } = mountSessionSocket()
 
@@ -200,25 +222,56 @@ describe('useSessionSocket', () => {
     handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
     handlers?.onSessionStatus?.('ended', 'terminated')
 
-    vi.advanceTimersByTime(100)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(0)
     expect(drawn).toHaveLength(1)
     expect(session.status.value).toBe('starting')
 
-    vi.advanceTimersByTime(100)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(100)
     expect(drawn).toHaveLength(2)
+    // Both frames are drawn, but the last one still owes its cadence before game over may show.
     expect(session.status.value).toBe('starting')
     expect(session.finalResult.value).toBeNull()
 
-    vi.advanceTimersByTime(100)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(100)
     expect(session.status.value).toBe('ended')
     expect(session.finalResult.value?.scores).toEqual({ player_0: 7 })
     wrapper.unmount()
   })
 
-  it('holds an end that arrives after the last paced frame has begun', async () => {
+  it('holds a paced end until the final transition finishes, however long it runs', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper, finishTransitions } = mountSessionSocket(true)
+
+    session.connect({ pace: true, paceMs: 100 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+    handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
+    handlers?.onSessionStatus?.('ended', 'terminated')
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drawn).toHaveLength(1)
+
+    // The cadence passes repeatedly, but the first frame is still animating, so the second waits.
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(drawn).toHaveLength(1)
+    expect(session.status.value).toBe('starting')
+
+    finishTransitions()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drawn).toHaveLength(2)
+    // The last frame's own animation still holds the result back.
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(session.status.value).toBe('starting')
+
+    finishTransitions()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.status.value).toBe('ended')
+    expect(session.finalResult.value?.scores).toEqual({ player_0: 7 })
+    wrapper.unmount()
+  })
+
+  it('reveals an end that arrives once the last paced frame has already settled', async () => {
     vi.useFakeTimers()
     const { drawn, session, wrapper } = mountSessionSocket()
 
@@ -226,16 +279,26 @@ describe('useSessionSocket', () => {
     const handlers = socketDouble.handlers[0]
     handlers?.onState(state(0))
     handlers?.onState(state(1))
-    vi.advanceTimersByTime(200)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(200)
     expect(drawn).toHaveLength(2)
 
     handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
     handlers?.onSessionStatus?.('ended', 'terminated')
-    expect(session.status.value).toBe('starting')
-    vi.advanceTimersByTime(100)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(0)
     expect(session.status.value).toBe('ended')
+    wrapper.unmount()
+  })
+
+  it('keeps every queued frame, in order, however bursty the arrivals', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ pace: true, paceMs: 50 })
+    const handlers = socketDouble.handlers[0]
+    for (let tick = 0; tick < 6; tick++) handlers?.onState(state(tick))
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(drawn.map((entry) => entry.state.tick)).toEqual([0, 1, 2, 3, 4, 5])
     wrapper.unmount()
   })
 
@@ -263,28 +326,49 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
     handlers?.onState(state(2)) // fills the lead (150 ms / 50 ms cadence = 3 frames)
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(0)
     expect(drawn).toHaveLength(1)
 
     session.togglePause()
     expect(socketDouble.sent).toEqual([])
     expect(session.paused.value).toBe(true)
 
-    // A frame that arrives while paused still queues, but nothing new draws while paused: the cadence
-    // timer keeps running (drainOne no-ops), so the queue holds where it is.
+    // A frame that arrives while paused still queues, and the pump stops at its next step, so the
+    // queue holds exactly where it is.
     handlers?.onState(state(3))
-    vi.advanceTimersByTime(150)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(150)
     expect(drawn).toHaveLength(1)
 
     session.togglePause()
     expect(socketDouble.sent).toEqual([])
     expect(session.paused.value).toBe(false)
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(0)
     expect(drawn).toHaveLength(2)
+    // Nothing was dropped while paused: the whole backlog still plays out in order.
+    await vi.advanceTimersByTimeAsync(150)
+    expect(drawn.map((entry) => entry.state.tick)).toEqual([0, 1, 2, 3])
 
+    wrapper.unmount()
+  })
+
+  it('holds the last frame under a waiting indicator when the buffer underruns', async () => {
+    vi.useFakeTimers()
+    const { drawn, session, wrapper } = mountSessionSocket()
+
+    session.connect({ pace: true, paceMs: 50 })
+    const handlers = socketDouble.handlers[0]
+    handlers?.onState(state(0))
+    handlers?.onState(state(1))
+    handlers?.onState(state(2))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(drawn).toHaveLength(3)
+    expect(session.buffering.value).toBe(true)
+
+    // A late frame restarts the pump and clears the indicator rather than stuttering.
+    handlers?.onState(state(3))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drawn).toHaveLength(4)
+    expect(session.buffering.value).toBe(false)
     wrapper.unmount()
   })
 
@@ -301,27 +385,22 @@ describe('useSessionSocket', () => {
 
     handlers?.onResult?.({ scores: { player_0: 5 }, ticks: 3, reason: 'terminated' })
     handlers?.onSessionStatus?.('ended', 'terminated')
-    // A pause holds the end in every mode, so nothing is revealed even once several cadence ticks pass:
-    // drainOne returns immediately while paused, so the queue is never touched either.
-    vi.advanceTimersByTime(500)
-    await nextTick()
+    // A pause holds the end in every mode, so nothing is revealed even once several cadences pass:
+    // the pump stops while paused, so the queue is never touched either.
+    await vi.advanceTimersByTimeAsync(500)
     expect(session.status.value).toBe('starting')
     expect(session.finalResult.value).toBeNull()
 
     session.togglePause()
-    // Draining the three queued frames takes three ticks; the fourth reveals the held end (the last
-    // frame's own cadence tick only starts its transition, matching the paced watch behaviour above).
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    // Playing out the three queued frames takes a cadence each; only once the last has met its own
+    // cadence does the held end surface.
+    await vi.advanceTimersByTimeAsync(0)
     expect(session.status.value).toBe('starting')
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(50)
     expect(session.status.value).toBe('starting')
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(50)
     expect(session.status.value).toBe('starting')
-    vi.advanceTimersByTime(50)
-    await nextTick()
+    await vi.advanceTimersByTimeAsync(50)
     expect(session.status.value).toBe('ended')
     expect(session.finalResult.value?.scores).toEqual({ player_0: 5 })
 
@@ -350,7 +429,7 @@ describe('useSessionSocket', () => {
     wrapper.unmount()
   })
 
-  it('pauses locally, not over the wire, once a session-pause run has already ended', () => {
+  it('pauses locally, not over the wire, once a session-pause run has already ended', async () => {
     // Hearts: the game is over but the last burst is still animating, so the relay has closed the
     // socket along with its `ended` envelope. A Pause click here has to hold the animation locally
     // rather than send a command that nothing is left to receive.
@@ -367,14 +446,15 @@ describe('useSessionSocket', () => {
     session.togglePause()
     expect(session.paused.value).toBe(true)
     expect(socketDouble.sent).toEqual([])
-    vi.advanceTimersByTime(900)
+    await vi.advanceTimersByTimeAsync(900)
     expect(drawn).toHaveLength(1) // the queued move stays frozen behind the pause
 
     session.togglePause()
     expect(socketDouble.sent).toEqual([])
-    vi.advanceTimersByTime(900)
+    // The leading edge already served its cadence before the pause, so the queued move plays at once.
+    await vi.advanceTimersByTimeAsync(0)
     expect(drawn).toHaveLength(2)
-    vi.advanceTimersByTime(900)
+    await vi.advanceTimersByTimeAsync(900)
     expect(session.status.value).toBe('ended')
 
     wrapper.unmount()

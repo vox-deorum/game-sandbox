@@ -12,7 +12,7 @@ const environmentRendererModules = import.meta.glob<{ default: RendererDefinitio
 
 const demoRenderer: Renderer = {
   mount: () => ({
-    render: () => {},
+    render: () => Promise.resolve(),
     destroy: () => {},
     internalSize: { width: 288, height: 512 },
     aspectRatio: 288 / 512,

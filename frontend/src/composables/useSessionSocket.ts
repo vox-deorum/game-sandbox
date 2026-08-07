@@ -17,19 +17,26 @@
  * can and the carrier delivers frames unevenly, in bursts with stalls, so rendering them on arrival
  * makes the animation race ahead and snap to the result. Instead the client buffers frames, waits for
  * a small lead to accumulate (so a late or bursty frame does not starve playback), then plays them out
- * one per cadence tick; an underrun simply holds the last frame until more arrive rather than
- * stuttering. The end facts (the `ended` status and the `result`) ride at the tail of the buffer: they
- * are held until the last buffered frame has been shown, so the animation plays out fully and only then
- * reveals game over.
+ * one at a time; an underrun simply holds the last frame until more arrive rather than stuttering. The
+ * end facts (the `ended` status and the `result`) ride at the tail of the buffer: they are held until
+ * the last buffered frame has finished playing, so the animation plays out fully and only then reveals
+ * game over.
  *
  * A human session renders its owner's own move the instant it arrives — the owner needs immediate
  * feedback to their input. But when a turn-based env declares a `live_interval_ms`, the *other* players'
  * moves are throttled: the backend streams the AI replies in a burst (they compute in milliseconds),
  * which would otherwise race the renderer and snap all the cards down at once. A leading-edge throttle
  * renders the first frame after an idle gap (the human's own move, or the opening deal) immediately,
- * then plays the burst that follows out one frame per `live_interval_ms` — each carrying that cadence
- * as the renderer's transition budget so the fly-in/sweep fits the pace. As in the watch buffer, the
- * end facts ride at the tail so game over reveals only once the last move has animated.
+ * then plays the burst that follows out one at a time. As in the watch buffer, the end facts ride at
+ * the tail so game over reveals only once the last move has animated.
+ *
+ * Both paced modes run as one serialized pump rather than an interval. Every frame starts two clocks
+ * together, the cadence and the renderer's own transition, and the next frame waits for both. The
+ * cadence is therefore a minimum delivery interval: a draw-only frame still lands exactly on it, while
+ * a move whose animation is genuinely longer holds the queue until it has finished instead of being
+ * cut off by the frame behind it. Nothing is ever dropped or coalesced, so the decision log and the
+ * chat transcript keep every queued frame in order. A generation token retires the running pump, so a
+ * pause, a reconnect, or a teardown can never leave an obsolete one drawing over the live one.
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { Command } from '@game-sandbox/schema/protocol'
@@ -48,6 +55,14 @@ import { formatScoreMap } from '../replay/summary.js'
 /** The viewing cadence for a paced watch run whose environment declares no pace interval. */
 const DEFAULT_WATCH_CADENCE_MS = 1000
 
+/** The cadence a scale of 1 corresponds to: a one-second beat is a renderer's natural speed. */
+const NATURAL_CADENCE_MS = 1000
+
+/** The cadence floor for one paced frame. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /** How much playback to buffer before starting, to absorb network jitter. The added startup latency
  *  is irrelevant for a non-interactive watch run, and it keeps a late or bursty frame from starving
  *  the very first cadence ticks. */
@@ -57,8 +72,9 @@ const JITTER_BUFFER_LEAD_MS = 150
 export interface SessionFrameHandlers {
   onHeader(header: RecordingHeader): void
   /** Draw one state. `options` tells an animated renderer how to present it (a paced move passes a
-   *  transition budget); the leading-edge/unbuffered frames pass none, for the natural duration. */
-  onState(state: StepState, options?: RenderOptions): void
+   *  transition scale); the leading-edge/unbuffered frames pass none, for the natural duration. A
+   *  returned promise is the renderer's transition, which paced playout waits on. */
+  onState(state: StepState, options?: RenderOptions): void | Promise<void>
 }
 
 /** How to drive the live stream. Paced playback is opt-in per session (watch runs only). */
@@ -106,25 +122,28 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const socket = shallowRef<SessionSocket | null>(null)
   let connectionId = 0
 
-  // --- watch jitter buffer ---
-  // The buffer of frames awaiting their cadence tick, the timer that drains it, whether playout has
-  // begun (it waits for the lead to fill), and the end facts held back until the buffer empties so the
-  // result lands with the final frame, not ahead of it.
+  // --- paced playout ---
+  // The queue of frames awaiting their turn, whether the pump is running, whether playout has begun at
+  // all (the watch buffer waits for its lead to fill), and the end facts held back until the queue
+  // empties so the result lands with the final frame, not ahead of it.
   let pacing = false
   let cadence = DEFAULT_WATCH_CADENCE_MS
   let leadFrames = 1
   let playing = false
   const frameQueue: StepState[] = []
-  let paceTimer: ReturnType<typeof setInterval> | null = null
+  /** Bumped whenever playout is retired, so a pump from a superseded run stops at its next step. */
+  let playoutId = 0
+  let pumping = false
+  /** The cadence floor and transition of the frame on screen; the next frame waits for both. */
+  let framePending: Promise<unknown> = Promise.resolve()
   let endHeld = false
-  let finalFrameInFlight = false
   let heldEndReason: string | null = null
   let heldResult: Record<string, unknown> | null = null
   // The protocol promises one result at session end. Keep the first result from the active connection
   // if a malformed producer repeats it, matching the relay's retained result and termination reason.
   let resultSeen = false
-  // The live human throttle cadence (ms); 0 disables it (the on-arrival default). Reuses frameQueue,
-  // paceTimer, and the end-hold above — a session is at most one of the two paced modes.
+  // The live human throttle cadence (ms); 0 disables it (the on-arrival default). It shares the queue,
+  // the pump, and the end-hold above, since a session is at most one of the two paced modes.
   let liveMs = 0
   // Whether this environment's human sessions pause the container rather than only this playout.
   let sessionPause = false
@@ -141,7 +160,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     }
   }
 
-  /** Reveal the end of the run: surface the held result, mark ended, and stop draining. */
+  /** Reveal the end of the run: surface the held result, mark ended, and stop playing out. */
   function applyEnd(reason: string | null): void {
     if (heldResult !== null) {
       applyResult(heldResult)
@@ -152,38 +171,120 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       endReason.value = reason
     }
     buffering.value = false
-    stopPacer()
+    retirePlayout()
+  }
+
+  /** The cadence in effect for the active paced mode. */
+  function paceMs(): number {
+    return pacing ? cadence : liveMs
   }
 
   /** Begin playout once the lead buffer has filled, or immediately once the stream has ended so a run
    *  shorter than the lead still plays. After the first start the buffer is allowed to underrun (the
-   *  pacer simply holds the last frame), so this only ever flips playout on. */
+   *  pump simply holds the last frame), so this only ever flips playout on. */
   function maybeStart(streamEnded: boolean): void {
-    if (playing || !(streamEnded || frameQueue.length >= leadFrames)) {
+    if (!playing && !(streamEnded || frameQueue.length >= leadFrames)) {
       return
     }
     playing = true
-    paceTimer = setInterval(drainOne, cadence)
+    startPump()
   }
 
-  function stopPacer(): void {
-    if (paceTimer !== null) {
-      clearInterval(paceTimer)
-      paceTimer = null
+  /** Run the playout pump unless one is already running. */
+  function startPump(): void {
+    if (pumping) {
+      return
+    }
+    pumping = true
+    void pump(playoutId)
+  }
+
+  /** Retire the running pump. Its generation check stops it at its next step. */
+  function retirePlayout(): void {
+    playoutId += 1
+    pumping = false
+    framePending = Promise.resolve()
+  }
+
+  /**
+   * Play queued frames one at a time, each waiting for the cadence floor and the previous frame's
+   * transition together. Draining the queue ends the pump: a later arrival starts it again, so a watch
+   * underrun simply holds the last frame under the waiting indicator. Once the stream has ended the
+   * pump waits out the final frame before revealing game over, so the result never lands over its
+   * own animation.
+   */
+  async function pump(generation: number): Promise<void> {
+    while (true) {
+      await framePending
+      if (generation !== playoutId) return
+      if (paused.value) break
+      const state = frameQueue.shift()
+      if (state === undefined) {
+        if (!endHeld) {
+          // An empty queue with the stream still live is an underrun; the watch buffer says so.
+          if (pacing) buffering.value = true
+          break
+        }
+        // The queue is empty and the frame before it has already served both its cadence and its
+        // transition, which is exactly what the end was being held for.
+        applyEnd(heldEndReason)
+        return
+      }
+      buffering.value = false
+      framePending = deliver(state, { transitionScale: paceMs() / NATURAL_CADENCE_MS })
+    }
+    pumping = false
+  }
+
+  /** Draw one frame and return when both its cadence floor and its transition have finished. */
+  function deliver(state: StepState, options?: RenderOptions): Promise<unknown> {
+    const drawn = Promise.resolve(frames.onState(state, options))
+    return Promise.all([delay(paceMs()), drawn])
+  }
+
+  /** The live human throttle. When nothing is playing out (an idle gap), this frame is the leading edge —
+   *  the owner's own move or the opening deal — so it draws immediately at the renderer's natural
+   *  duration; the burst behind it then waits for that transition and the cadence before each move. */
+  function onLiveState(state: StepState): void {
+    if (!pumping && frameQueue.length === 0 && !paused.value) {
+      framePending = deliver(state)
+      startPump()
+      return
+    }
+    // Paused, or mid-burst: queue it so nothing overtakes what is already waiting.
+    frameQueue.push(state)
+    if (!paused.value) startPump()
+  }
+
+  /** Lift a pause and let whatever piled up behind it play out. Both paced modes restart their pump,
+   *  which resumes at the head of the queue. Unbuffered playout has no cadence, so it replays its
+   *  backlog at once and reveals an end that was waiting on the viewer. */
+  function resumePlayout(): void {
+    paused.value = false
+    if (pacing) {
+      maybeStart(endHeld)
+      return
+    }
+    if (liveMs > 0) {
+      startPump()
+      return
+    }
+    flushUnbuffered()
+    if (endHeld) {
+      applyEnd(heldEndReason)
     }
   }
 
   /** Retire the current transport before starting another explicit connection. */
   function retireConnection(): void {
     connectionId += 1
-    stopPacer()
+    retirePlayout()
     frameQueue.length = 0
     pacing = false
     cadence = DEFAULT_WATCH_CADENCE_MS
     leadFrames = 1
     playing = false
     endHeld = false
-    finalFrameInFlight = false
     heldEndReason = null
     heldResult = null
     resultSeen = false
@@ -193,85 +294,6 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     buffering.value = false
     socket.value?.close()
     socket.value = null
-  }
-
-  /** Play the next buffered frame; hold end facts for one final cadence after the last draw.
-   *  An empty buffer with the stream still live is an underrun: hold the last frame and flag waiting.
-   *  A pause keeps the cadence timer running and simply draws nothing, so the queue holds where it is
-   *  and the waiting indicator does not churn behind the pause banner. */
-  function drainOne(): void {
-    if (paused.value) {
-      return
-    }
-    const state = frameQueue.shift()
-    if (state !== undefined) {
-      buffering.value = false
-      frames.onState(state, { transitionMs: cadence })
-      finalFrameInFlight = frameQueue.length === 0
-    } else if (!endHeld) {
-      buffering.value = true
-    }
-    if (frameQueue.length === 0 && endHeld && !finalFrameInFlight) {
-      applyEnd(heldEndReason)
-    } else if (state === undefined && finalFrameInFlight) {
-      finalFrameInFlight = false
-      if (endHeld) applyEnd(heldEndReason)
-    }
-  }
-
-  /** The live human throttle. When the window is closed (an idle gap), this frame is the leading edge —
-   *  the owner's own move or the opening deal — so it draws immediately at the renderer's natural
-   *  duration and opens the window; while the window is open, a follow-up (an AI reply in the burst) is
-   *  queued for {@link drainLive} to play out at the cadence. */
-  function onLiveState(state: StepState): void {
-    if (paceTimer === null && !paused.value) {
-      frames.onState(state)
-      paceTimer = setInterval(drainLive, liveMs)
-      return
-    }
-    // Paused, or mid-burst: queue it. A pause that arrived while the window was closed still needs a
-    // timer, so the queue has something to drain it once the viewer resumes.
-    frameQueue.push(state)
-    paceTimer ??= setInterval(drainLive, liveMs)
-  }
-
-  /** Play the next throttled frame at the cadence, giving the renderer `liveMs` as its transition budget
-   *  so the move animates rather than snaps. An empty queue closes the window (the next idle→frame is a
-   *  leading edge again) and, once the stream has ended, reveals game over with the last move shown. */
-  function drainLive(): void {
-    if (paused.value) {
-      return
-    }
-    const state = frameQueue.shift()
-    if (state !== undefined) {
-      frames.onState(state, { transitionMs: liveMs })
-      return
-    }
-    stopPacer()
-    if (endHeld) {
-      applyEnd(heldEndReason)
-    }
-  }
-
-  /** Lift a pause and let whatever piled up behind it play out. Both paced modes keep their cadence
-   *  timer running while paused (their drain simply returns), so the flag is all they need, except
-   *  when the live throttle's window closed mid-pause and has to be reopened. Unbuffered playout has
-   *  no cadence, so it replays its backlog at once and reveals an end that was waiting on the viewer. */
-  function resumePlayout(): void {
-    paused.value = false
-    if (pacing) {
-      return
-    }
-    if (liveMs > 0) {
-      if (paceTimer === null && (frameQueue.length > 0 || endHeld)) {
-        paceTimer = setInterval(drainLive, liveMs)
-      }
-      return
-    }
-    flushUnbuffered()
-    if (endHeld) {
-      applyEnd(heldEndReason)
-    }
   }
 
   /** Replay everything that queued behind an unbuffered pause, in order and at once. There is no
@@ -351,19 +373,19 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           }
           return
         }
-        // ended: hold it while paced frames are still draining, so the result lands with the final
+        // ended: hold it while paced frames are still playing out, so the result lands with the final
         // frame rather than ahead of it; else reveal it now. A pause holds it in every mode too: the
         // viewer stopped the picture, so game over waits until they start it again.
-        if (pacing && (frameQueue.length > 0 || finalFrameInFlight || paused.value)) {
+        if (pacing) {
           endHeld = true
           heldEndReason = reason ?? null
-          maybeStart(true)
+          if (!paused.value) maybeStart(true)
           return
         }
-        // Live throttle: hold while the window is open — a burst is still queued, or the leading-edge
-        // frame (e.g. the human's own trick-completing card) is still animating — so drainLive reveals
-        // game over once the last move has played out rather than over its animation.
-        if (liveMs > 0 && (paceTimer !== null || paused.value)) {
+        // Live throttle: hold while something is still playing out — a burst is queued, or the
+        // leading-edge frame (the human's own trick-completing card) is still animating — so the pump
+        // reveals game over once the last move has landed rather than over its animation.
+        if (liveMs > 0 && (pumping || frameQueue.length > 0 || paused.value)) {
           endHeld = true
           heldEndReason = reason ?? null
           return
@@ -451,7 +473,6 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       resumePlayout()
       if (status.value !== 'ended') {
         frameQueue.length = 0
-        finalFrameInFlight = false
         applyEnd(heldEndReason)
       }
       return

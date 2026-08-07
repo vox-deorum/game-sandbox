@@ -158,7 +158,8 @@ const {
       mountRenderer(incoming)
     },
     onState: (state, options) => {
-      renderState(state, options)
+      // Returned so paced playout waits for this frame's transition before delivering the next.
+      const drawn = renderState(state, options)
       lastState.value = state
       // Accumulate messages before the decision-log gate: an actionless opening frame still carries
       // any human-queued messages. onState is called at render (drain) time, so a message appears
@@ -166,6 +167,7 @@ const {
       appendMessages(state)
       // Opening frames and reward-only deltas carry no actions, so the shared adapter omits them.
       appendDecisions(state)
+      return drawn
     },
 })
 const {

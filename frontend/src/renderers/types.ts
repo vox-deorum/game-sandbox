@@ -36,17 +36,32 @@ export interface RendererContext {
 
 /**
  * How a state should be presented when it is handed to the renderer. A renderer with no animation (the
- * Flappy Bird reference) ignores this entirely. An animated renderer (Hearts) uses it to play state-to-
- * state transitions at the right speed and to suppress them where a transition would be wrong: a replay
- * scrub or step jumps to an arbitrary state and must `snap`, while a replay playing on its cadence
- * passes that cadence as the `transitionMs` budget so the animation runs at replay-time scale. Live play
- * passes neither and the renderer uses its own natural transition duration.
+ * Flappy Bird reference) ignores this entirely. An animated renderer (Hearts, Crane Reach) uses it to
+ * play state-to-state transitions at the right speed and to suppress them where a transition would be
+ * wrong: a replay scrub or step jumps to an arbitrary state and must `snap`, while a replay playing on
+ * its cadence passes that cadence relative to one second as `transitionScale`, so the animation runs at
+ * replay-time speed. Live play passes neither and the renderer uses its natural durations.
  */
 export interface RenderOptions {
   /** Jump straight to the state with no transition animation (a replay scrub, seek, or step). */
   snap?: boolean
-  /** The time budget in ms to fit a transition into, e.g. the replay cadence; live omits it. */
-  transitionMs?: number
+  /**
+   * A multiplier on the renderer's natural phase durations. Omitted or `1` is natural timing, `0`
+   * completes immediately without animating, and a paced host passes `cadenceMs / 1_000` so a
+   * half-second cadence runs everything twice as fast. The result is not a budget: a renderer whose
+   * natural timing exceeds the cadence takes longer than the cadence, and the host waits for it.
+   */
+  transitionScale?: number
+}
+
+/**
+ * Normalize a caller's {@link RenderOptions.transitionScale} to a usable multiplier. Omitted, negative,
+ * `NaN`, and infinite values all mean natural timing; zero and any finite positive value pass through.
+ */
+export function transitionScaleOf(options?: RenderOptions): number {
+  const scale = options?.transitionScale
+  if (scale === undefined || !Number.isFinite(scale) || scale < 0) return 1
+  return scale
 }
 
 /** A mounted renderer: fed one state at a time, torn down once, and carrying its own shape. */
@@ -66,7 +81,14 @@ export interface RendererInstance {
    * something the host reverse-engineers from rendered pixels.
    */
   readonly aspectRatio: number
-  render(state: StepState, options?: RenderOptions): void
+  /**
+   * Draw the state, and resolve once the transition it started has finished. A draw-only renderer, a
+   * snap, a scale of zero, and an update that changes nothing visible all resolve immediately; an
+   * animated renderer resolves when its transition ends. A render that supersedes an in-flight
+   * transition resolves that transition's promise too, and so does {@link destroy}, so a host waiting
+   * on a frame is never left hanging.
+   */
+  render(state: StepState, options?: RenderOptions): Promise<void>
   destroy(): void
 }
 

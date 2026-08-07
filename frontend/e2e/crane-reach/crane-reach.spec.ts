@@ -192,27 +192,23 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     if (host === null) throw new Error('Crane Reach renderer host is missing')
     const probe = globalThis as typeof globalThis & {
       craneEventObserver?: MutationObserver
-      craneEventSamples?: Array<{ phase: string; handoff: string }>
+      craneEventSamples?: Array<{ phase: string; tracks: string }>
     }
+    const read = (): { phase: string; tracks: string } => ({
+      phase: host.dataset.craneEventPhase ?? 'idle',
+      tracks: host.dataset.craneEventTracks ?? '',
+    })
     probe.craneEventObserver?.disconnect()
-    probe.craneEventSamples = [
-      {
-        phase: host.dataset.craneEventPhase ?? 'idle',
-        handoff: host.dataset.craneEventHandoff ?? 'idle',
-      },
-    ]
+    probe.craneEventSamples = [read()]
     probe.craneEventObserver = new MutationObserver(() => {
-      const sample = {
-        phase: host.dataset.craneEventPhase ?? 'idle',
-        handoff: host.dataset.craneEventHandoff ?? 'idle',
-      }
+      const sample = read()
       const previous = probe.craneEventSamples?.at(-1)
-      if (previous?.phase === sample.phase && previous.handoff === sample.handoff) return
+      if (previous?.phase === sample.phase && previous.tracks === sample.tracks) return
       probe.craneEventSamples?.push(sample)
     })
     probe.craneEventObserver.observe(host, {
       attributes: true,
-      attributeFilter: ['data-crane-event-phase', 'data-crane-event-handoff'],
+      attributeFilter: ['data-crane-event-phase', 'data-crane-event-tracks'],
     })
   })
   await page.getByRole('button', { name: 'Play', exact: true }).click()
@@ -289,7 +285,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.waitForTimeout(150)
   await expect(rendererHost).toHaveAttribute(
     'data-crane-event-phase',
-    /^(activation|movement|settle|resolution)$/,
+    /^(activation|movement|attack|reaction)$/,
   )
   const resizeResult = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>('.renderer-host')
@@ -319,41 +315,48 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   expect(resizeResult.canvas.pixels).not.toBe(beforeResize.canvas.pixels)
   expect(resizeResult.samples).not.toHaveLength(0)
   expect(resizeResult.samples.some((sample) => sample.phase === 'idle')).toBe(false)
-  expect(resizeResult.samples.at(-1)?.phase).toMatch(/^(activation|movement|settle|resolution)$/)
+  expect(resizeResult.samples.at(-1)?.phase).toMatch(/^(activation|movement|attack|reaction)$/)
+  // The event schedule, observed live. Wait until enough events have played that the sample stream
+  // covers a reacting attack, then assert the schedule's three visible properties at once.
+  const readEventSamples = (): Promise<Array<{ phase: string; tracks: string }>> =>
+    page.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            craneEventSamples?: Array<{ phase: string; tracks: string }>
+          }
+        ).craneEventSamples ?? [],
+    )
   await expect
     .poll(
-      () =>
-        page.evaluate(() => {
-          const samples =
-            (
-              globalThis as typeof globalThis & {
-                craneEventSamples?: Array<{ phase: string; handoff: string }>
-              }
-            ).craneEventSamples ?? []
-          let awaitingSeen = false
-          let heldSeen = false
-          for (const sample of samples) {
-            if (sample.phase === 'idle' && sample.handoff === 'awaiting-final-frame') {
-              awaitingSeen = true
-            } else if (
-              awaitingSeen &&
-              sample.phase === 'idle' &&
-              sample.handoff === 'final-frame-held'
-            ) {
-              heldSeen = true
-            } else if (
-              heldSeen &&
-              sample.phase === 'activation' &&
-              sample.handoff === 'pending-installed'
-            ) {
-              return true
-            }
-          }
-          return false
-        }),
-      { timeout: 30_000 },
+      async () =>
+        (await readEventSamples()).filter(
+          (sample) => sample.tracks.includes('attack') && sample.tracks.includes('reaction'),
+        ).length,
+      { timeout: 60_000 },
     )
-    .toBe(true)
+    .toBeGreaterThan(0)
+  const eventSamples = await readEventSamples()
+
+  // Beats run in schedule order within an event, and an event always returns to idle before the next
+  // one installs, so a superseding state never leaves a held intermediary frame on screen.
+  const BEATS = ['activation', 'movement', 'attack', 'reaction']
+  let events = 0
+  let previousBeat = -1
+  for (const sample of eventSamples) {
+    if (sample.phase === 'idle') {
+      previousBeat = -1
+      continue
+    }
+    const beat = BEATS.indexOf(sample.phase)
+    expect(beat, `unexpected phase ${sample.phase}`).toBeGreaterThanOrEqual(0)
+    expect(beat, `beat ${sample.phase} ran after a later one`).toBeGreaterThanOrEqual(previousBeat)
+    if (previousBeat === -1) events += 1
+    previousBeat = beat
+  }
+  expect(events).toBeGreaterThan(1)
+  // Every event opens on its activation, including one that neither moves nor strikes.
+  expect(eventSamples.filter((sample) => sample.phase === 'activation').length).toBe(events)
   const eventRangeSamples = await page.evaluate(async () => {
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),

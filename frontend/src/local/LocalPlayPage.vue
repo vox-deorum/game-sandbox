@@ -62,7 +62,8 @@ const {
     mountRenderer(incoming)
   },
   onState: (state, options) => {
-    renderState(state, options)
+    // Returned so paced playout waits for this frame's transition before delivering the next.
+    const drawn = renderState(state, options)
     lastState.value = state
     appendMessages(state)
     const entries = appendDecisions(state)
@@ -71,6 +72,7 @@ const {
       // therefore resuming an existing session, not opening the initial start gate again.
       started.value = true
     }
+    return drawn
   },
 })
 const {

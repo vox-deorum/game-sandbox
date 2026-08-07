@@ -60,11 +60,16 @@ import {
 } from './scene.js'
 import thumbnail from './thumbnail.png'
 import {
-  type EventTimelineProgress,
-  eventBudget,
+  eventActiveTracks,
   eventPhaseAt,
   eventRangeVisibleAt,
+  eventScale,
+  type EventTimelineProgress,
   eventTimelineProgress,
+  eventWindows,
+  type EventWindows,
+  rangedArcAlpha,
+  reactionNumeralAlpha,
   routePositionFor,
   routeTrailFor,
 } from './timeline.js'
@@ -72,25 +77,14 @@ import {
   captureCueSceneFor,
   captureCuesFor,
   deathSnapshotFor,
-  eventHasReaction,
+  eventShapeFor,
   eventTargetPositionFor,
   isFreshForwardEvent,
-  shouldDeferEventUpdate,
+  shouldAnimateEvent,
   shouldRebuildBattlefield,
-  transitionFor,
   transitionSceneFor,
 } from './transitions.js'
 import { createUnitNode, drawUnit, type UnitNode } from './units.js'
-
-/** A state that arrived while an event was still playing, held until that event finishes. */
-interface PendingEventUpdate {
-  state: StepState
-  options: RenderOptions | undefined
-  holdFinalFrame: boolean
-}
-
-/** Where an update stands in the deferred-event handoff. The browser suite observes these names. */
-type EventHandoff = 'idle' | 'awaiting-final-frame' | 'final-frame-held' | 'pending-installed'
 
 export class CraneReachRenderer extends PixiRenderer {
   readonly internalSize = { width: SCENE_WIDTH, height: SCENE_HEIGHT } as const
@@ -113,15 +107,15 @@ export class CraneReachRenderer extends PixiRenderer {
   private battlefieldTextured = false
   private battlefieldBuilds = 0
   private event: SceneEvent | null = null
-  private eventProgress = 1
-  private eventDurationMs = eventBudget()
+  /** How far into the current event's schedule we are, in wall-clock milliseconds. */
+  private eventElapsedMs = 0
+  private eventSchedule: EventWindows | null = null
   private eventTick: number | null = null
   private previousScene: CraneReachScene | null = null
   private currentScene: CraneReachScene | null = null
   private presentedScene: CraneReachScene | null = null
   private deathSnapshot: SceneUnit | null = null
   private eventAnimating = false
-  private pendingEventUpdate: PendingEventUpdate | null = null
   private inspection: InspectionState = EMPTY_INSPECTION
   private camera: CameraView | null = null
   private cameraLimits: CameraLimits | null = null
@@ -190,35 +184,17 @@ export class CraneReachRenderer extends PixiRenderer {
       this.event,
       scene.event,
     )
-    // Only an explicit seek, mount, or repeat snap stills an event. The OS reduced-motion preference
-    // does not: motion is the replay's content, and remote desktop sessions force the preference on.
-    const snap = options?.snap === true
-    const eventIncomplete =
-      this.eventAnimating && this.eventProgress < 1 && this.currentScene !== null
-    if (
-      shouldDeferEventUpdate(
-        eventIncomplete,
-        freshForwardEvent,
-        snap,
-        this.pendingEventUpdate !== null,
-      )
-    ) {
-      if (eventIncomplete) this.completeEvent()
-      const holdFinalFrame = this.pendingEventUpdate?.holdFinalFrame ?? true
-      this.pendingEventUpdate = {
-        state,
-        options,
-        holdFinalFrame,
-      }
-      this.setEventHandoff(holdFinalFrame ? 'awaiting-final-frame' : 'final-frame-held')
-      return
-    }
-    this.pendingEventUpdate = null
-    this.setEventHandoff('idle')
+    // A host paces its delivery on this renderer's own completion, so a state normally arrives with
+    // nothing in flight. One that arrives anyway (an unpaced live burst) finishes the scene it lands
+    // on first, so the interrupted action is fully reconciled rather than left half-drawn beneath the
+    // next one. Only an explicit seek, mount, or repeat snap stills an event outright; the OS
+    // reduced-motion preference does not, because motion is the replay's content and remote desktop
+    // sessions force that preference on.
+    if (this.eventAnimating) this.completeEvent()
     this.installSceneUpdate(state, scene, options, freshForwardEvent)
   }
 
-  /** Redraw the retained frame without replacing an active or deferred event with the newest state. */
+  /** Redraw the retained frame without replacing an in-flight event with the newest state. */
   protected override refreshVisual(): void {
     const scene = this.presentedScene ?? this.currentScene
     if (scene === null) return
@@ -227,31 +203,15 @@ export class CraneReachRenderer extends PixiRenderer {
     this.reconcileEvent()
   }
 
+  protected override transitionActive(): boolean {
+    return this.eventAnimating
+  }
+
   protected override onFrame(dtMs: number): boolean {
-    if (this.pendingEventUpdate !== null) {
-      // The first ticker frame after a deferral holds the completed event so the browser composites
-      // it; only the following frame installs the pending event at progress zero.
-      if (this.pendingEventUpdate.holdFinalFrame) {
-        this.pendingEventUpdate.holdFinalFrame = false
-        this.setEventHandoff('final-frame-held')
-        return true
-      }
-      const pending = this.pendingEventUpdate
-      this.pendingEventUpdate = null
-      const scene = this.sceneFor(pending.state)
-      const freshForwardEvent = isFreshForwardEvent(
-        this.eventTick,
-        pending.state.tick,
-        this.event,
-        scene.event,
-      )
-      this.installSceneUpdate(pending.state, scene, pending.options, freshForwardEvent)
-      this.setEventHandoff('pending-installed')
-      return true
-    }
-    if (this.event === null || this.eventProgress >= 1) return false
-    this.eventProgress = Math.min(1, this.eventProgress + dtMs / this.eventDurationMs)
-    if (this.eventProgress < 1) {
+    const schedule = this.eventSchedule
+    if (!this.eventAnimating || schedule === null) return false
+    this.eventElapsedMs = Math.min(schedule.durationMs, this.eventElapsedMs + dtMs)
+    if (this.eventElapsedMs < schedule.durationMs) {
       this.updateEventPhaseProbe()
       if (this.presentedScene !== null) {
         this.reconcileEventActivation(this.presentedScene)
@@ -287,35 +247,31 @@ export class CraneReachRenderer extends PixiRenderer {
     const previousScene = this.currentScene
     this.ensureBattlefield(scene)
 
-    const transition = transitionFor(
-      scene.event,
-      freshForwardEvent,
-      previousScene !== null,
-      options,
-    )
-    const freshForward = transition.animate
+    const animate = shouldAnimateEvent(scene.event, freshForwardEvent, previousScene !== null, options)
     this.previousScene = previousScene
     this.currentScene = scene
     this.eventTick = state.tick
     this.event = scene.event
-    this.eventProgress = freshForward ? 0 : 1
-    this.eventDurationMs = transition.budgetMs
-    this.eventAnimating = freshForward
-    this.deathSnapshot = freshForward ? deathSnapshotFor(this.previousScene, scene) : null
+    this.eventSchedule =
+      scene.event === null
+        ? null
+        : eventWindows(eventShapeFor(scene.event), eventScale(options))
+    this.eventElapsedMs = animate ? 0 : (this.eventSchedule?.durationMs ?? 0)
+    this.eventAnimating = animate
+    this.deathSnapshot = animate ? deathSnapshotFor(this.previousScene, scene) : null
     this.updateEventPhaseProbe()
 
-    // A moving event owns the prior frame until its timeline ends. This prevents the next actor,
+    // A moving event owns the prior frame until its schedule ends. This prevents the next actor,
     // final HUD, and death removal from flashing before the action that produced them is visible.
-    const presented = transitionSceneFor(previousScene, scene, freshForward, this.eventProgress)
-    this.reconcilePresentedScene(presented, freshForward)
+    const presented = transitionSceneFor(previousScene, scene, animate)
+    this.reconcilePresentedScene(presented, animate)
     this.reconcileEvent()
   }
 
   private completeEvent(): void {
     if (this.currentScene === null) return
-    this.eventProgress = 1
+    this.eventElapsedMs = this.eventSchedule?.durationMs ?? 0
     this.eventAnimating = false
-    this.setEventHandoff('idle')
     this.updateEventPhaseProbe()
     this.reconcilePresentedScene(this.currentScene, false)
     this.reconcileEvent()
@@ -342,52 +298,35 @@ export class CraneReachRenderer extends PixiRenderer {
     this.reconcileInspection(scene)
   }
 
-  private setEventHandoff(value: EventHandoff): void {
-    this.ctx.container.dataset.craneEventHandoff = value
-  }
-
-  /** What the schedule needs to know about an event: whether it strikes, reacts, and how far it moves. */
-  private eventShape(event: SceneEvent): {
-    hasTarget: boolean
-    hasReaction: boolean
-    movementTiles: number
-  } {
-    return {
-      hasTarget: event.targetId !== null,
-      hasReaction: eventHasReaction(event),
-      movementTiles: event.movementTiles,
-    }
-  }
-
-  /** Where the event in flight sits on each of its three tracks. */
+  /** Where the event in flight sits on each of its animated tracks. */
   private eventTimeline(): EventTimelineProgress {
-    const event = this.event
-    if (event === null) return { movement: 0, attack: 0, reaction: 0 }
-    const shape = this.eventShape(event)
-    return eventTimelineProgress(
-      this.eventProgress,
-      shape.hasTarget,
-      shape.hasReaction,
-      shape.movementTiles,
-    )
+    return this.eventSchedule === null
+      ? { movement: 0, attack: 0, reaction: 0 }
+      : eventTimelineProgress(this.eventElapsedMs, this.eventSchedule)
   }
 
+  /**
+   * Publish the event's sequential phase and the set of beats currently running, so the browser suite
+   * can assert both the order of the beats and the overlap between the attack and its reaction.
+   */
   private updateEventPhaseProbe(): void {
     const event = this.event
-    if (event === null) {
+    const schedule = this.eventSchedule
+    if (event === null || schedule === null) {
       this.ctx.container.dataset.craneEventPhase = 'idle'
+      this.ctx.container.dataset.craneEventTracks = ''
       delete this.ctx.container.dataset.craneEventActor
       return
     }
     this.ctx.container.dataset.craneEventActor = event.actorId
-    const shape = this.eventShape(event)
     this.ctx.container.dataset.craneEventPhase = eventPhaseAt(
-      this.eventProgress,
-      shape.hasTarget,
-      shape.hasReaction,
+      this.eventElapsedMs,
+      schedule,
       this.eventAnimating,
-      shape.movementTiles,
     )
+    this.ctx.container.dataset.craneEventTracks = this.eventAnimating
+      ? eventActiveTracks(this.eventElapsedMs, schedule).join(' ')
+      : ''
   }
 
   private async loadTextures(): Promise<void> {
@@ -539,10 +478,12 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   private eventRangeVisible(): boolean {
-    return this.event !== null && eventRangeVisibleAt(this.eventProgress, this.event.movementTiles)
+    return (
+      this.eventSchedule !== null && eventRangeVisibleAt(this.eventElapsedMs, this.eventSchedule)
+    )
   }
 
-  /** The retained acting range stays visible until the event begins resolving. */
+  /** The retained acting range stays visible until the actor strikes or takes ground. */
   private reconcileEventRange(scene: CraneReachScene): void {
     if (rangeVisibleDuringEvent(this.inspectedUnit(scene) !== null, this.eventRangeVisible())) {
       this.reconcileRange(scene)
@@ -586,7 +527,8 @@ export class CraneReachRenderer extends PixiRenderer {
       }
     }
     if (target !== null && !melee && strike > 0) {
-      // A ranged shot arcs to the side of the straight line, then vanishes on arrival.
+      // A ranged shot arcs to the side of the straight line, fading as it flies. It is still three
+      // quarters visible when the target starts reacting and gone as the attack beat ends.
       const dx = target.x - this.event.to.x
       const dy = target.y - this.event.to.y
       const length = Math.max(1, Math.hypot(dx, dy))
@@ -599,15 +541,13 @@ export class CraneReachRenderer extends PixiRenderer {
           target.x,
           target.y,
         )
-        .stroke({ color: CRANE_STYLE.event, width: 1.5, alpha: 1 - strike })
+        .stroke({ color: CRANE_STYLE.event, width: 1.5, alpha: rangedArcAlpha(strike) })
     }
     if (target !== null && this.event.damage > 0 && reaction > 0) {
-      // The target flashes bone on impact, then holds a fading ember tint.
-      const flash = reaction < 0.25
-      event.circle(target.x, target.y, hexRadius * 0.44).fill({
-        color: flash ? CRANE_STYLE.text : CRANE_STYLE.danger,
-        alpha: flash ? 0.72 * (1 - reaction / 0.25) : 0.5 * (1 - (reaction - 0.25) / 0.75),
-      })
+      // The target holds an ember tint that fades over the whole reaction.
+      event
+        .circle(target.x, target.y, hexRadius * 0.44)
+        .fill({ color: CRANE_STYLE.danger, alpha: 0.5 * (1 - reaction) })
     }
     const captureScene = captureCueSceneFor(this.currentScene, this.presentedScene)
     const captureCues = captureScene === null ? [] : captureCuesFor(captureScene, this.event)
@@ -620,6 +560,10 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     this.eventLayer.addChild(event)
     const textMetrics = eventTextMetrics(this.effectiveScale())
+    // One curve drives both a numeral's opacity and its rise, so it sits still at full strength while
+    // it is being read and then lifts away as it fades.
+    const numeralFade = reactionNumeralAlpha(reaction)
+    const numeralRise = textMetrics.rise * (1 - numeralFade)
     if (this.event.damage > 0 && reaction > 0) {
       const damage = this.text(
         `-${this.event.damage}`,
@@ -633,9 +577,9 @@ export class CraneReachRenderer extends PixiRenderer {
       damage.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
       damage.position.set(
         target?.x ?? this.event.to.x,
-        (target?.y ?? this.event.to.y) - textMetrics.rise * reaction,
+        (target?.y ?? this.event.to.y) - numeralRise,
       )
-      damage.alpha = 1 - reaction
+      damage.alpha = numeralFade
       this.eventLayer.addChild(damage)
     }
     if (reaction > 0) {
@@ -644,8 +588,8 @@ export class CraneReachRenderer extends PixiRenderer {
         const sign = cue.delta > 0 ? '+' : ''
         const capture = this.text(`${sign}${cue.delta}`, textMetrics.size, color, 'center', MONO)
         capture.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
-        capture.position.set(cue.position.x, cue.position.y - textMetrics.rise * reaction)
-        capture.alpha = 1 - reaction
+        capture.position.set(cue.position.x, cue.position.y - numeralRise)
+        capture.alpha = numeralFade
         this.eventLayer.addChild(capture)
       }
     }
