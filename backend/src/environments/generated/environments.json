@@ -155,7 +155,7 @@
       "player_38",
       "player_39"
     ],
-    "human_timeout_ms": 30000,
+    "human_timeout_ms": 60000,
     "layout": {
       "kind": "seat_plans",
       "plans": [

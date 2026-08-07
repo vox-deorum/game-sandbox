@@ -35,7 +35,7 @@ META = EnvironmentMeta(
     builtin_agents=(BuiltinAgent(name="naive", label="Naive"),),
     layout=SeatPlans(SKIRMISH_SEAT_PLANS),
     human_players=tuple(f"player_{index}" for index in range(40)),
-    human_timeout_ms=30_000,
+    human_timeout_ms=60_000,
     recommended_episode_ticks=6000,
     pace_interval_ms=None,
     view_interval_ms=1000,
