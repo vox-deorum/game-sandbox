@@ -218,11 +218,11 @@ describe('computeScene scores, players, and the turn indicator', () => {
 
   it('shows the move clock only on the controlled human turn, never in replay', () => {
     const onTurn = overlay({ turn: 0, turn_player: 'player_0' })
-    // Live human, your turn: the budget chip shows the session value in whole seconds.
+    // Live human, your turn: the chip carries the session budget, which the renderer counts down.
     expect(
       computeScene(mkState(onTurn), { controlledPlayers: ['player_0'], humanTimeoutMs: 60_000 })
-        .moveClock?.seconds,
-    ).toBe(60)
+        .moveClock?.totalMs,
+    ).toBe(60_000)
     // Replay / spectator (no controlled player ids): hidden.
     expect(computeScene(mkState(onTurn), { humanTimeoutMs: 60_000 }).moveClock).toBeNull()
     // Live human, but not your turn: hidden.

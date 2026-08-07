@@ -5,18 +5,17 @@ import { describe, expect, it } from 'vitest'
 import {
   EMPTY_INSPECTION,
   inspectionPresentation,
+  type ProjectedUnit,
   pinsInspectionForPointer,
   probeExclusions,
-  type ProjectedUnit,
   rangePresentation,
   rangeVisibleDuringEvent,
   reduceInspection,
   resolveInspection,
   selectInspectionProbe,
 } from './inspection.js'
-import { reachableTileKeys } from './reachability.js'
+import { reachableTileKeys } from './legality.js'
 import { computeScene, type HexTile, type SceneUnit } from './scene.js'
-import { createUnitNode } from './units.js'
 import {
   armyFixture,
   armyLegalityRaw,
@@ -27,6 +26,7 @@ import {
   skirmishLegalityRaw,
   statesFrom,
 } from './test-helpers.js'
+import { createUnitNode } from './units.js'
 
 describe('Crane Reach HUD inspection and range', () => {
   it('ignores bubbling pointerout and clears hover only when the pointer leaves the unit', () => {

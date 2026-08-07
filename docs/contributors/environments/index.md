@@ -61,5 +61,5 @@ Every mode starts paused at the first frame. Use Start when ready, then the shar
 - `--preset name` fills the gameplay parameters from a named environment preset. A repeated `--parameter` for the same setting wins.
 - `--parameter name=value` overrides one gameplay parameter, repeated once per override.
 - `--seat` selects a seat from the resolved layout.
-- `--companion naive` or `--companion <manifest-path>` supplies the independently constructed agents for a human seat that covers more than one player.
+- `--companion naive` or `--companion <manifest-path>` supplies the independently constructed agents for a human seat that covers more than one player. `--companion self` plays every member of that seat yourself instead, which needs every one of them to be human-capable. The seat's first human-capable player is the chat sender either way.
 - `--agent-repo <path>` selects the agent repository (with a `manifest.json`) that agent mode runs.

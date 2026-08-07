@@ -15,11 +15,7 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 import { CardTableRenderer } from '@renderers/cards/CardTableRenderer.js'
-import {
-  type RendererDefinition,
-  type RenderOptions,
-  transitionScaleOf,
-} from '@renderers/types.js'
+import { type RendererDefinition, type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import { Container, Graphics, Rectangle } from 'pixi.js'
 import {
   asNumberList,

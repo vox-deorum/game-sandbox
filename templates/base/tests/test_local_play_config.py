@@ -309,6 +309,62 @@ def test_human_mode_vs_gives_the_partner_your_agent(monkeypatch, tmp_path: Path)
     assert config["player_bindings"]["player_3"]["path"] == str(rival)
 
 
+def test_self_companion_makes_every_teammate_yours_to_play(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+
+    config = play.local_config(
+        seed=1,
+        mode="human",
+        player=0,
+        recording_dir=tmp_path / "recordings",
+        step_limit=None,
+        companion="self",
+    )
+
+    assert config["player_bindings"]["player_0"] == {"kind": "external"}
+    assert config["player_bindings"]["player_2"] == {"kind": "external"}
+    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
+    # The opposing team is untouched; only your own is yours.
+    assert config["player_bindings"]["player_1"]["path"] == str(tmp_path / "repo")
+    assert config["player_bindings"]["player_3"]["path"] == str(tmp_path / "repo")
+    assert config["external_chat_player"] == "player_0"
+
+
+def test_self_companion_keeps_the_first_human_capable_teammate_as_the_chat_sender(
+    monkeypatch,
+    tmp_path: Path,
+):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_2",)))
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+
+    config = play.local_config(
+        seed=1,
+        mode="human",
+        player=0,
+        recording_dir=tmp_path / "recordings",
+        step_limit=None,
+        companion="self",
+    )
+
+    assert config["external_chat_player"] == "player_2"
+    assert config["player_bindings"]["player_2"] == {"kind": "external"}
+
+
+def test_local_config_emits_the_chat_sender_without_a_companion(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+
+    config = play.local_config(
+        seed=1, mode="human", player=2, recording_dir=tmp_path / "recordings", step_limit=None
+    )
+
+    # Without --companion self the one external player is both the player and the chat sender.
+    assert config["external_chat_player"] == "player_2"
+    assert config["player_bindings"]["player_0"]["path"] == str(tmp_path / "repo")
+
+
 def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatch, tmp_path: Path):
     _use_partnership_layout(monkeypatch)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
@@ -359,6 +415,37 @@ def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_pa
         evaluate.main(["--vs", str(tmp_path)])
     assert error.value.code == 2
     assert "every player is on your team" in capsys.readouterr().err
+
+
+def test_self_companion_is_rejected_where_it_cannot_apply(monkeypatch, capsys, tmp_path: Path):
+    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0",))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=1, max=1), presets=()))
+
+    # A team of one has nobody else to play.
+    with pytest.raises(SystemExit) as error:
+        play.main(["human", "--companion", "self"])
+    assert error.value.code == 2
+    assert "more than one player" in capsys.readouterr().err
+
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
+
+    # A teammate nobody may steer cannot be played by hand either.
+    with pytest.raises(SystemExit) as error:
+        play.main(["human", "--companion", "self"])
+    assert error.value.code == 2
+    assert "human-playable" in capsys.readouterr().err
+
+    # Watching your own agent is not playing it.
+    with pytest.raises(SystemExit) as error:
+        play.main(["agent", "--companion", "self"])
+    assert error.value.code == 2
+    assert "human mode" in capsys.readouterr().err
+
+    # Only `self` is a companion here; the template has no other companion agent to offer.
+    with pytest.raises(SystemExit) as error:
+        play.main(["human", "--companion", str(tmp_path)])
+    assert error.value.code == 2
 
 
 def test_run_headless_vs_loads_a_separate_agent_for_every_other_player(monkeypatch, tmp_path: Path):

@@ -1,6 +1,6 @@
 # Skirmish at Crane Reach: Implementation Plan
 
-Status: in progress. Steps 1 and 2 are complete.
+Status: in progress. Steps 1, 2, and 4 are complete, and step 5 is under way.
 
 ## Goal
 

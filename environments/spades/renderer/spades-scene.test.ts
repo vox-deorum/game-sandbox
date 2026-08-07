@@ -409,8 +409,8 @@ describe('controllability and the move clock (live vs replay)', () => {
     })
     expect(
       computeScene(mkState(onTurn), { controlledPlayers: ['player_0'], humanTimeoutMs: 60_000 })
-        .moveClock?.seconds,
-    ).toBe(60)
+        .moveClock?.totalMs,
+    ).toBe(60_000)
     expect(computeScene(mkState(onTurn), { humanTimeoutMs: 60_000 }).moveClock).toBeNull()
 
     const partnerTurn = { ...onTurn, turn: 2, turn_player: 'player_2' }
@@ -419,7 +419,7 @@ describe('controllability and the move clock (live vs replay)', () => {
         controlledPlayers: ['player_0', 'player_2'],
         humanTimeoutMs: 60_000,
       }).moveClock,
-    ).toEqual({ x: 480, y: 173, seconds: 60 })
+    ).toEqual({ x: 480, y: 173, totalMs: 60_000 })
   })
 })
 

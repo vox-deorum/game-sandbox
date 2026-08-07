@@ -138,12 +138,24 @@ def local_config(
     selected_players = layout.seats[seat].players
     human_player = player_for_seat(entry, seat, resolved_parameters) if mode == "human" else None
     if mode == "human" and len(selected_players) > 1 and companion is None:
-        raise RuntimeError("a wide human seat requires --companion naive or a local agent manifest path")
+        raise RuntimeError(
+            "a wide human seat requires --companion self, --companion naive, or a local agent manifest path"
+        )
     if companion is not None and (mode != "human" or len(selected_players) == 1):
         raise RuntimeError("--companion is only valid for a wide human seat")
+    # `self` plays the whole seat by hand, so every member is externally controlled and no companion
+    # agent is constructed at all. The seat keeps one chat sender, its first human-capable member.
+    self_played = companion == "self"
+    if self_played:
+        human_capable = frozenset(entry.meta.human_players)
+        if any(player not in human_capable for player in selected_players):
+            raise RuntimeError(f"--companion self needs every player in seat {seat} to be human-capable")
+    externally_controlled = frozenset(
+        selected_players if self_played else [] if human_player is None else [human_player]
+    )
     companion_path: str | None = None
     companion_builtin = False
-    if companion is not None:
+    if companion is not None and not self_played:
         if companion == "naive":
             companion_path = builtin_agent_path(entry.meta.env_id, "naive")
             companion_builtin = True
@@ -156,11 +168,11 @@ def local_config(
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
     for player_id in player_ids:
-        if player_id == human_player:
+        if player_id in externally_controlled:
             bindings[player_id] = {"kind": "external"}
             players[player_id] = {"kind": "human", "label": "You"}
             continue
-        is_companion = mode == "human" and player_id in selected_players and player_id != human_player
+        is_companion = mode == "human" and player_id in selected_players
         if is_companion:
             path = companion_path
             label = builtin_agent_label(entry, "naive") if companion_builtin else "Companion"
@@ -253,7 +265,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seat", type=int, default=0, help="human seat index")
     parser.add_argument(
         "--companion",
-        help="wide-seat companion: naive, a manifest.json path, or its repository directory",
+        help=(
+            "wide-seat companion: self to play every member yourself, naive, "
+            "a manifest.json path, or its repository directory"
+        ),
     )
     parser.add_argument(
         "--parameter",

@@ -19,6 +19,7 @@ from game_sandbox_harness.environment import (
     SeatDeclaration,
     SeatPlan,
     SeatPlans,
+    load_environment,
 )
 from game_sandbox_harness.live import parse_config
 
@@ -318,6 +319,95 @@ def test_wide_human_seat_requires_and_expands_an_explicit_companion(
         "builtin_name": "naive",
         "label": "Naive agent",
     }
+
+
+def test_self_companion_binds_every_seat_member_as_externally_controlled(
+    monkeypatch,
+    tmp_path: Path,
+):
+    entry = _wide_entry()
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
+    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
+
+    config = play.local_config(
+        entry,
+        mode="human",
+        seat=0,
+        seed=1,
+        max_steps=None,
+        companion="self",
+        recording_dir=tmp_path,
+    )
+    assert config["player_bindings"] == {
+        "player_0": {"kind": "external"},
+        "player_2": {"kind": "external"},
+        "player_1": {
+            "kind": "builtin-agent",
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
+        },
+        "player_3": {
+            "kind": "builtin-agent",
+            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
+            "name": "naive",
+        },
+    }
+    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}  # type: ignore[index]
+    # One connected person still sends chat, as the seat's first human-capable member.
+    assert config["external_chat_player"] == "player_0"
+
+
+def test_self_companion_is_offered_and_needs_a_human_capable_seat(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
+    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
+
+    with pytest.raises(RuntimeError, match="--companion self"):
+        play.local_config(
+            _wide_entry(),
+            mode="human",
+            seat=0,
+            seed=1,
+            max_steps=None,
+            recording_dir=tmp_path,
+        )
+
+    # A seat holding a player nobody may steer cannot be played whole.
+    with pytest.raises(RuntimeError, match="human-capable"):
+        play.local_config(
+            _wide_entry(human_players=("player_0", "player_1")),
+            mode="human",
+            seat=0,
+            seed=1,
+            max_steps=None,
+            companion="self",
+            recording_dir=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("env_id", ["spades", "skirmish_crane"])
+def test_self_companion_plays_a_real_wide_seat_whole(env_id: str, monkeypatch, tmp_path: Path):
+    """Cover the shipped wide-seat environments, not only the fixture layout."""
+    entry = load_environment(env_id)
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
+    (play.BUILTIN_AGENT_ROOT / env_id / "naive").mkdir(parents=True)
+
+    seat_players = play.default_layout(entry).seats[0].players
+    assert len(seat_players) > 1
+    config = play.local_config(
+        entry,
+        mode="human",
+        seat=0,
+        seed=1,
+        max_steps=None,
+        companion="self",
+        recording_dir=tmp_path,
+    )
+
+    bindings = config["player_bindings"]
+    assert all(bindings[player] == {"kind": "external"} for player in seat_players)  # type: ignore[index]
+    assert config["external_chat_player"] == seat_players[0]
+    others = [player for player in bindings if player not in seat_players]  # type: ignore[operator]
+    assert others and all(bindings[player]["kind"] == "builtin-agent" for player in others)  # type: ignore[index]
 
 
 def test_repeatable_typed_parameters_select_the_layout_and_validate_values():

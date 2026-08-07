@@ -227,8 +227,8 @@ export interface SceneHandCard {
 export interface SceneMoveClock {
   x: number
   y: number
-  /** The per-move budget in whole seconds, from the session's `human_timeout_ms`. */
-  seconds: number
+  /** The per-move budget in milliseconds, from the session's `human_timeout_ms`. */
+  totalMs: number
 }
 
 /** The game-agnostic core of one static frame; a game's scene extends it with its own status fields. */
@@ -681,8 +681,9 @@ const CLOCK_INSET = 56
 /**
  * The move-clock chip, shown only when it is the turn of a player this user controls and the hand is not
  * over. That condition is empty in a replay or a spectator view (no controlled player ids), so the clock is
- * naturally hidden there, satisfying "show the move clock live, hide it in replay". The value is the
- * session's per-move budget; a true ticking countdown is host chrome, not the deterministic renderer.
+ * naturally hidden there, satisfying "show the move clock live, hide it in replay". The scene carries the
+ * budget, which is a pure function of the state; the countdown itself comes from the renderer's
+ * {@link MoveClock}, since elapsed time is not part of any frame.
  */
 export function buildMoveClock(
   o: CardOverlay,
@@ -704,7 +705,7 @@ export function buildMoveClock(
   const sideways = position === 1 || position === 3
   const x = sideways ? anchor.x + (anchor.x < WIDTH / 2 ? CLOCK_INSET : -CLOCK_INSET) : anchor.x
   const y = sideways ? anchor.y : anchor.y + (anchor.y < HEIGHT / 2 ? CLOCK_INSET : -CLOCK_INSET)
-  return { x, y, seconds: Math.round(humanTimeoutMs / 1000) }
+  return { x, y, totalMs: humanTimeoutMs }
 }
 
 // --- Hit-testing ---

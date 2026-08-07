@@ -1,4 +1,11 @@
-import { configureMatches, declareSeason, release, setSeasonOverrides } from '../support/api.js'
+import {
+  configureMatches,
+  declareSeason,
+  release,
+  setSeasonOverrides,
+  startSession,
+  stopSessionAndAwaitFree,
+} from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 
@@ -479,4 +486,81 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
     'data-crane-inspection-details',
     /^iconTerrain:(grass|hill),iconFeature:(none|forest|marsh),iconSkill:shield_wall$/,
   )
+})
+
+/**
+ * The bounded human segment. Everything about composing an order is proved in the jsdom suite and the
+ * mask-agreement suite; what only a browser can show is that a real click on a painted hex reaches the
+ * environment. So this walks one step, sends it, and then sends the empty stay path, and stops there:
+ * canvas clicks are the most brittle thing in this suite and there is no reason to spend more of them.
+ */
+test('compose and send a Crane Reach order by clicking the board', async ({ page, admin }) => {
+  test.setTimeout(180_000)
+
+  // Skirmish gives each side one wide seat of three units, and every Crane Reach player is
+  // human-capable, so `self` puts the whole red side under one person. A generous move clock keeps
+  // the turn open while Playwright works, since the harness would otherwise stand the unit still.
+  const sessionId = await startSession(
+    admin,
+    ENV_ID,
+    {
+      seat_0: { kind: 'human', companion: { kind: 'self' } },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+    },
+    // No parameter override: the play-open season's complete map already resolves to the default
+    // skirmish plan, and a partial map is rejected outright.
+    { seed: 4, humanTimeoutMs: 120_000 },
+  )
+
+  try {
+    await authenticateBrowser(page.context(), admin)
+    await page.goto(`/sessions/${sessionId}`)
+
+    const canvas = page.locator('canvas.renderer-canvas')
+    await expect(canvas).toBeVisible({ timeout: 60_000 })
+    const rendererHost = page.locator('.renderer-host')
+    await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
+
+    const box = await canvas.boundingBox()
+    if (box === null) throw new Error('the Crane Reach canvas has no browser bounds')
+    // `position` is relative to the canvas, and the renderer's own space is 1200 by 860.
+    const at = (x: number, y: number) => ({ x: (x / 1_200) * box.width, y: (y / 860) * box.height })
+
+    // The controls open only on a controlled activation, so this is also the wait for our own turn.
+    await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', { timeout: 60_000 })
+    // Fog is on for a player, so the rosters are gone and the board is drawn through one unit's eyes.
+    await expect(rendererHost).toHaveAttribute('data-crane-rosters', 'hidden')
+    await expect(rendererHost).not.toHaveAttribute('data-crane-fog', 'none')
+    await expect(rendererHost).toHaveAttribute('data-crane-order', '')
+
+    // One step onto an offered hex. Its probe is already projected into the drawing space.
+    const offeredX = await rendererHost.getAttribute('data-crane-offered-x')
+    const offeredY = await rendererHost.getAttribute('data-crane-offered-y')
+    if (offeredX === null || offeredY === null)
+      throw new Error('no Crane Reach continuation offered')
+    await canvas.click({ position: at(Number(offeredX), Number(offeredY)) })
+    await expect(rendererHost).toHaveAttribute('data-crane-order', /^[1-6]$/)
+    await expect(rendererHost).toHaveAttribute('data-crane-order-path', /^[1-6]$/)
+
+    // Confirm through the one icon button, which sits at a fixed place in the bottom strip.
+    await canvas.click({ position: at(600, 802) })
+    await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
+
+    // The order reached the environment and came back as a resolved activation for our own unit.
+    await expect(rendererHost).toHaveAttribute('data-crane-event-actor', /^red_/, {
+      timeout: 60_000,
+    })
+
+    // Our next turn sends the empty path, which is the always-legal stand still and strike.
+    await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', { timeout: 90_000 })
+    await expect(rendererHost).toHaveAttribute('data-crane-order', '')
+    await expect(rendererHost).toHaveAttribute('data-crane-order-path', '0')
+    await canvas.click({ position: at(600, 802) })
+    await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
+    await expect(rendererHost).toHaveAttribute('data-crane-event-actor', /^red_/, {
+      timeout: 60_000,
+    })
+  } finally {
+    await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
+  }
 })

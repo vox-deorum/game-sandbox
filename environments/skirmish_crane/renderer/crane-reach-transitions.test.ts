@@ -1,9 +1,8 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
-
+import type { SceneEvent } from './scene.js'
 import { computeScene } from './scene.js'
 import { armyStates } from './test-helpers.js'
-import type { SceneEvent } from './scene.js'
 import {
   captureCueSceneFor,
   captureCuesFor,

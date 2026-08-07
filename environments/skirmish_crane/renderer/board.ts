@@ -378,7 +378,7 @@ function points(corners: ReadonlyArray<{ x: number; y: number }>): number[] {
 }
 
 /** A stable hash over a tile key, so every random-looking choice survives a rebuild unchanged. */
-function hash(value: string): number {
+export function hash(value: string): number {
   let total = 2166136261
   for (const char of value) total = Math.imul(total ^ char.charCodeAt(0), 16777619)
   return total >>> 0

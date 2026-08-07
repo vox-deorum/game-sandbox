@@ -85,6 +85,7 @@ The template also accepts these options and commands:
   > _Why save a rival?_ The default opponents never change, so two decent versions of your agent can score alike against them. Playing one version directly against the other shows which one is stronger.
 
 - `--player N` chooses your player by number when a game has more than one. The commands use player `0` unless you pick another.
+- `--companion self` lets you play every player on your own team yourself, instead of leaving your teammates to your agent. It works with `human` in a team game where every one of your teammates is one you are allowed to control.
 - A `season.json` file downloaded through **Set Up Locally** applies the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Put it beside `manifest.json`. Every affected command prints the season it loaded. Delete the file to return to the environment defaults.
 - `--preset NAME` selects a named gameplay preset for one `human` or `play` command. It replaces the gameplay parameters from `season.json` for that command, but keeps the season's decision and game limits. A repeated `--parameter` for the same setting wins.
 - `--parameter NAME=VALUE`, `--decision-limit-ms N`, and `--game-limit-ms N` override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change more than one gameplay setting.

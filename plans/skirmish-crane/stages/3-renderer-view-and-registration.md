@@ -1,6 +1,6 @@
 # Step 3: Crane Reach Renderer, View and Replay, and Registration
 
-Status: in progress.
+Status: Done.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 3: the first hex-grid renderer, draw-only and in a deliberate placeholder style, and the registration step that makes the environment public. The hands-on surface is the web app: the Crane Reach card on the home page, a watchable live match, a scrubbable replay, and `npm run play` in watch mode.
 

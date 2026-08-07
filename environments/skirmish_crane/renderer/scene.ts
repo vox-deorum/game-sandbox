@@ -7,6 +7,8 @@ import type { StepState } from '@game-sandbox/schema'
 
 import tileTypes from '../tile_types.json'
 
+import { decodePath } from './paths.js'
+
 export const SCENE_WIDTH = 1200
 export const SCENE_HEIGHT = 860
 
@@ -120,7 +122,10 @@ export function unitCardFor(
       {
         icon: 'iconHp',
         label: 'HP',
-        value: currentHitPoints === null ? String(stats.hitPoints) : `${currentHitPoints}/${stats.hitPoints}`,
+        value:
+          currentHitPoints === null
+            ? String(stats.hitPoints)
+            : `${currentHitPoints}/${stats.hitPoints}`,
       },
       { icon: 'iconMove', label: 'MOV', value: String(stats.movement) },
       { icon: 'iconAttack', label: 'ATK', value: String(stats.damage) },
@@ -128,14 +133,13 @@ export function unitCardFor(
       { icon: 'iconVision', label: 'VIS', value: String(stats.vision) },
     ],
     tile,
-    ability:
-      unitAbilities
-        ? type === 'footman'
-          ? 'shield_wall'
-          : type === 'cavalry'
-            ? 'charge'
-            : null
-        : null,
+    ability: unitAbilities
+      ? type === 'footman'
+        ? 'shield_wall'
+        : type === 'cavalry'
+          ? 'charge'
+          : null
+      : null,
   }
 }
 
@@ -169,6 +173,10 @@ export interface CraneReachScene {
   tiles: HexTile[]
   zones: SceneZone[]
   units: SceneUnit[]
+  /** Every roster slot in player order, alive or not. Both rosters are standing knowledge. */
+  roster: SceneRosterEntry[]
+  /** The unit ids each living player can see, keyed by player id. A dead player has no entry. */
+  visibility: Map<string, Set<string>>
   activation: SceneActivation | null
   event: SceneEvent | null
   hud: {
@@ -188,7 +196,11 @@ export interface SceneConfig {
   unitAbilities?: boolean
 }
 
-interface RosterEntry {
+/**
+ * One roster slot, alive or not. Both sides' rosters are standing knowledge in the ruleset, so this
+ * is the one part of the scene fog never removes.
+ */
+export interface SceneRosterEntry {
   playerId: string
   unitId: string
   side: 'red' | 'blue'
@@ -205,6 +217,8 @@ interface CompactOverlay {
   capture: [number, number, number]
   unitRecords: string[]
   activation: number | null
+  /** One entry per roster slot in player order: a base-64 bitmask for a living unit, null for a dead one. */
+  visibilityRecords: (string | null)[]
   event: unknown[] | null
   terminal: boolean
   outcome: [number, number] | null
@@ -219,6 +233,7 @@ interface BattlefieldScene {
 }
 
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz'
+const BASE64 = `${BASE36}ABCDEFGHIJKLMNOPQRSTUVWXYZ-_`
 
 /**
  * The wire codes come from the same tile-type file the rules engine reads, so the two sides
@@ -277,6 +292,27 @@ function asString(value: unknown, message: string): string {
   return value
 }
 
+/**
+ * Expand one visibility record into the roster slots it names. The environment writes the mask as a
+ * big-endian base-64 number, so each digit carries six bits and the leftmost digit is the highest.
+ * Reading it digit by digit keeps a 40-slot army mask out of floating-point arithmetic entirely.
+ */
+function decodeVisibilityBits(record: string, slots: number): Set<number> {
+  const bits = new Set<number>()
+  for (let index = 0; index < record.length; index += 1) {
+    const digit = BASE64.indexOf(record[index] as string)
+    if (digit < 0) throw new Error('Crane Reach overlay has an invalid visibility mask')
+    const base = 6 * (record.length - 1 - index)
+    for (let offset = 0; offset < 6; offset += 1) {
+      if (((digit >> offset) & 1) === 0) continue
+      if (base + offset >= slots)
+        throw new Error('Crane Reach overlay sees a unit outside the roster')
+      bits.add(base + offset)
+    }
+  }
+  return bits
+}
+
 function decodeBase36(value: string, message: string): number {
   if (value.length === 0 || [...value].some((digit) => !BASE36.includes(digit))) {
     throw new Error(message)
@@ -288,7 +324,8 @@ function decodeBase36(value: string, message: string): number {
 export function decodeOverlay(state: StepState): CompactOverlay {
   const overlay = asRecord(state.overlay, 'Crane Reach state has no compact overlay')
   const version = asInteger(overlay.k, 'Crane Reach overlay has an invalid version')
-  if (version !== 1 && version !== 2) throw new Error('Crane Reach overlay has an unsupported version')
+  if (version !== 1 && version !== 2)
+    throw new Error('Crane Reach overlay has an unsupported version')
   const plan = asString(overlay.p, 'Crane Reach overlay has an invalid seat plan')
   if (plan !== 'skirmish' && plan !== 'army') {
     throw new Error('Crane Reach overlay has an unknown seat plan')
@@ -322,6 +359,15 @@ export function decodeOverlay(state: StepState): CompactOverlay {
   ) {
     throw new Error('Crane Reach overlay has an invalid activation')
   }
+  const visibility = overlay.v
+  if (
+    !Array.isArray(visibility) ||
+    !visibility.every(
+      (record) => record === null || (typeof record === 'string' && record.length > 0),
+    )
+  ) {
+    throw new Error('Crane Reach overlay has malformed visibility')
+  }
   const event = overlay.e
   if (event !== null && (!Array.isArray(event) || event.length !== (version === 1 ? 11 : 12))) {
     throw new Error('Crane Reach overlay has an invalid event')
@@ -349,14 +395,15 @@ export function decodeOverlay(state: StepState): CompactOverlay {
     capture: capture as [number, number, number],
     unitRecords: units as string[],
     activation: activation as number | null,
+    visibilityRecords: visibility as (string | null)[],
     event: event as unknown[] | null,
     terminal,
     outcome: outcome as [number, number] | null,
   }
 }
 
-function rosterFor(plan: CompactOverlay['plan']): RosterEntry[] {
-  const roster: RosterEntry[] = []
+function rosterFor(plan: CompactOverlay['plan']): SceneRosterEntry[] {
+  const roster: SceneRosterEntry[] = []
   for (const side of ['red', 'blue'] as const) {
     for (const type of ['footman', 'archer', 'cavalry'] as const) {
       for (let index = 0; index < COMPOSITIONS[plan][type]; index += 1) {
@@ -476,7 +523,7 @@ function battlefieldFor(overlay: CompactOverlay): BattlefieldScene {
 
 function readUnits(
   overlay: CompactOverlay,
-  roster: RosterEntry[],
+  roster: SceneRosterEntry[],
   centerFor: (q: number, r: number) => Point,
 ): SceneUnit[] {
   return overlay.unitRecords.map((record) => {
@@ -495,6 +542,36 @@ function readUnits(
       tileKey: tileKey(q, r),
     }
   })
+}
+
+/**
+ * Who each living unit can see. The environment writes one mask per roster slot in player order,
+ * filled for the living and null for the dead. Every living unit must carry one, because fog has no
+ * other source; a leftover mask on a dead slot is simply never consulted.
+ */
+function readVisibility(
+  overlay: CompactOverlay,
+  roster: SceneRosterEntry[],
+  units: SceneUnit[],
+): Map<string, Set<string>> {
+  if (overlay.visibilityRecords.length !== roster.length) {
+    throw new Error('Crane Reach overlay visibility must follow full roster order')
+  }
+  const visibility = new Map<string, Set<string>>()
+  for (const [slot, record] of overlay.visibilityRecords.entries()) {
+    if (record === null) continue
+    const seen = new Set<string>()
+    for (const bit of decodeVisibilityBits(record, roster.length)) {
+      seen.add((roster[bit] as SceneRosterEntry).unitId)
+    }
+    visibility.set((roster[slot] as SceneRosterEntry).playerId, seen)
+  }
+  for (const unit of units) {
+    if (!visibility.has(unit.playerId)) {
+      throw new Error('Crane Reach overlay omits a living unit from visibility')
+    }
+  }
+  return visibility
 }
 
 interface Coordinate {
@@ -519,26 +596,9 @@ function coordinateFromRecord(q: unknown, r: unknown, overlay: CompactOverlay): 
   return { q: qValue, r: rValue }
 }
 
-/** Match the fixed Python codec: zero through four base-six direction digits in lexical order. */
 function decodePathId(pathId: unknown): number[] {
-  if (typeof pathId !== 'number' || !Number.isInteger(pathId) || pathId < 0 || pathId > 1554) {
-    throw new Error('Crane Reach event has an invalid path id')
-  }
-  if (pathId === 0) return []
-  let remaining = pathId - 1
-  let length = 1
-  while (remaining >= 6 ** length) {
-    remaining -= 6 ** length
-    length += 1
-  }
-  const directions: number[] = []
-  for (let power = length - 1; power >= 0; power -= 1) {
-    const place = 6 ** power
-    const digit = Math.floor(remaining / place)
-    remaining %= place
-    directions.push(digit + 1)
-  }
-  return directions
+  if (typeof pathId !== 'number') throw new Error('Crane Reach event has an invalid path id')
+  return decodePath(pathId)
 }
 
 function routeForPath(
@@ -567,16 +627,31 @@ function routeForPath(
     route.push(next)
   }
   const end = route[route.length - 1] as Coordinate
-  if (end.q !== to.q || end.r !== to.r) throw new Error('Crane Reach event path does not reach its endpoint')
+  if (end.q !== to.q || end.r !== to.r)
+    throw new Error('Crane Reach event path does not reach its endpoint')
   return route
 }
 
-function endpointDistance(from: Coordinate, to: Coordinate): number {
-  return Math.max(Math.abs(to.q - from.q), Math.abs(to.r - from.r), Math.abs(to.q + to.r - from.q - from.r))
+/** The ruleset's hex distance, which both range and vision use. */
+export function hexDistance(from: Coordinate, to: Coordinate): number {
+  return Math.max(
+    Math.abs(to.q - from.q),
+    Math.abs(to.r - from.r),
+    Math.abs(to.q + to.r - from.q - from.r),
+  )
 }
 
-function fallbackRoute(from: Coordinate, to: Coordinate): { route: Coordinate[]; movementTiles: number } {
-  const movementTiles = Math.min(4, endpointDistance(from, to))
+/** Split a `q,r` tile key back into its coordinate. */
+export function tileCoordinate(key: string): Coordinate {
+  const [q, r] = key.split(',').map(Number) as [number, number]
+  return { q, r }
+}
+
+function fallbackRoute(
+  from: Coordinate,
+  to: Coordinate,
+): { route: Coordinate[]; movementTiles: number } {
+  const movementTiles = Math.min(4, hexDistance(from, to))
   return { route: movementTiles === 0 ? [from] : [from, to], movementTiles }
 }
 
@@ -592,7 +667,7 @@ function legacyActionPath(state: StepState, actorId: string): unknown {
 
 function readEvent(
   overlay: CompactOverlay,
-  roster: RosterEntry[],
+  roster: SceneRosterEntry[],
   centerFor: (q: number, r: number) => Point,
   state: StepState,
 ): SceneEvent | null {
@@ -624,7 +699,12 @@ function readEvent(
     movementTiles = route.length - 1
   } else {
     try {
-      route = routeForPath(legacyActionPath(state, actorEntry.playerId), fromCoordinate, toCoordinate, overlay)
+      route = routeForPath(
+        legacyActionPath(state, actorEntry.playerId),
+        fromCoordinate,
+        toCoordinate,
+        overlay,
+      )
       movementTiles = route.length - 1
     } catch {
       const fallback = fallbackRoute(fromCoordinate, toCoordinate)
@@ -663,19 +743,21 @@ export function computeScene(state: StepState, config: SceneConfig = {}): CraneR
   }
   const activeUnit =
     active === undefined ? undefined : units.find((unit) => unit.unitId === active.unitId)
-  const rosters = { red: { footman: 0, archer: 0, cavalry: 0 }, blue: { footman: 0, archer: 0, cavalry: 0 } }
+  const rosters = {
+    red: { footman: 0, archer: 0, cavalry: 0 },
+    blue: { footman: 0, archer: 0, cavalry: 0 },
+  }
   for (const unit of units) rosters[unit.side][unit.type] += 1
+  const visibility = readVisibility(overlay, roster, units)
   const terminal =
     !overlay.terminal || overlay.outcome === null
       ? null
       : {
-          winner: (
-            overlay.outcome[0] === overlay.outcome[1]
-              ? 'draw'
-              : overlay.outcome[0] > overlay.outcome[1]
-                ? 'red'
-                : 'blue'
-          ) as 'red' | 'blue' | 'draw',
+          winner: (overlay.outcome[0] === overlay.outcome[1]
+            ? 'draw'
+            : overlay.outcome[0] > overlay.outcome[1]
+              ? 'red'
+              : 'blue') as 'red' | 'blue' | 'draw',
           result:
             overlay.outcome[0] === overlay.outcome[1]
               ? `draw ${scoreText(overlay.outcome[0])} - ${scoreText(overlay.outcome[1])}`
@@ -689,6 +771,8 @@ export function computeScene(state: StepState, config: SceneConfig = {}): CraneR
     tiles: battlefield.tiles,
     zones: battlefield.zones,
     units,
+    roster,
+    visibility,
     activation:
       activeUnit === undefined
         ? null

@@ -18,6 +18,7 @@ import {
   type CameraView,
   cameraLimits,
   cameraProbeValue,
+  centerCamera,
   fitCamera,
   panCamera,
   pinchCamera,
@@ -26,13 +27,30 @@ import {
   zoomCamera,
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
+import { MoveClock } from '@renderers/base/move-clock.js'
 import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
 import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
+import {
+  drawConfirmButton,
+  drawFogVeil,
+  drawOrderMarks,
+  drawOrderPulse,
+  FOG_CROSSFADE_MS,
+  fogCrossfade,
+  type OrderPlan,
+  prefersReducedMotion,
+  previewPhase,
+  REVERT_PULSE_MS,
+  revertPulse,
+  wireConfirmButton,
+  wireOrderHits,
+} from './composition.js'
 import { MONO } from './draw.js'
+import { eventVisible, type Perspective, perspectiveFor, visibleUnits } from './fog.js'
 import { drawHud, drawInspectionCard, type HudPaint } from './hud.js'
 import {
   EMPTY_INSPECTION,
@@ -47,8 +65,20 @@ import {
   reduceInspection,
   selectInspectionProbe,
 } from './inspection.js'
+import { reachableTileKeys, type WalkField, walkFieldFor } from './legality.js'
+import {
+  beginOrder,
+  clickTile,
+  endpointOf,
+  type OrderComposition,
+  offeredTiles,
+  orderAction,
+  orderTurnOpen,
+  type StrikePreview,
+  strikePreview,
+} from './orders.js'
+import { encodePath } from './paths.js'
 import { eventTextMetrics, presentationFor } from './presentation.js'
-import { reachableTileKeys } from './reachability.js'
 import {
   CRANE_STYLE,
   type CraneReachScene,
@@ -60,14 +90,14 @@ import {
 } from './scene.js'
 import thumbnail from './thumbnail.png'
 import {
+  type EventTimelineProgress,
+  type EventWindows,
   eventActiveTracks,
   eventPhaseAt,
   eventRangeVisibleAt,
   eventScale,
-  type EventTimelineProgress,
   eventTimelineProgress,
   eventWindows,
-  type EventWindows,
   rangedArcAlpha,
   reactionNumeralAlpha,
   routePositionFor,
@@ -86,15 +116,36 @@ import {
 } from './transitions.js'
 import { createUnitNode, drawUnit, type UnitNode } from './units.js'
 
+/**
+ * A beat held after an order you gave has finished playing, before the picture moves on to whoever
+ * acts next. Without it your own move resolves and the fog switches in the same instant, and the
+ * result of what you just did is gone before you have read it.
+ */
+const OWN_ORDER_SETTLE_MS = 300
+
 export class CraneReachRenderer extends PixiRenderer {
   readonly internalSize = { width: SCENE_WIDTH, height: SCENE_HEIGHT } as const
   protected override readonly animated = true
 
   private battlefieldLayer!: Container
   private zoneMarkerLayer!: Container
+  private fogLayer!: Container
+  /** The glaze being cross-dissolved away while a perspective switch settles. */
+  private fadingFogLayer!: Container
   private rangeLayer!: Container
+  private orderHitLayer!: Container
   private unitLayer!: Container
   private activationLayer!: Container
+  private orderMarkLayer!: Container
+  /** The strike preview and the revert pulse, which breathe and so are redrawn every frame. */
+  private orderPulseLayer!: Container
+  /** The confirmation button's artwork, screen-fixed above the world like the rest of the HUD. */
+  private orderControlLayer!: Container
+  /**
+   * The confirmation button's hit target, built once. A hit target rebuilt between a press and its
+   * release would never complete a tap, and the clock above it redraws on every frame.
+   */
+  private orderButtonLayer!: Container
   private eventLayer!: Container
   private transientLayer!: Container
   private worldLayer!: Container
@@ -116,7 +167,33 @@ export class CraneReachRenderer extends PixiRenderer {
   private presentedScene: CraneReachScene | null = null
   private deathSnapshot: SceneUnit | null = null
   private eventAnimating = false
+  /** Whether this event resolves an order from a player at this screen, so its result is held. */
+  private eventIsOurs = false
+  /** What is left of that hold, once the event's own schedule has finished. */
+  private settleRemainingMs = 0
   private inspection: InspectionState = EMPTY_INSPECTION
+  /** The perspective the presented frame is drawn through; null when nothing is hidden. */
+  private perspective: Perspective | null = null
+  /** How far into the glaze cross-dissolve a perspective switch is. */
+  private fogElapsedMs = FOG_CROSSFADE_MS
+  /** The order being composed on a controlled activation, with the field its legality came from. */
+  private order: OrderComposition | null = null
+  private orderField: WalkField | null = null
+  private orderTick: number | null = null
+  /** The player whose order the confirmation button sends. */
+  private orderPlayerId: string | null = null
+  /** The plan the settled marks were last drawn from, reused by the per-frame redraw. */
+  private orderPlan: OrderPlan | null = null
+  /** The tiles currently wired for clicks, so they are rebuilt only when the set actually changes. */
+  private clickableKey: string | null = null
+  /** True once this activation's order has been sent, so the controls go inert until the next state. */
+  private orderSent = false
+  /** Drives the automatic-strike preview's swell. */
+  private humanElapsedMs = 0
+  /** The tile a step was just taken back from, and how far into its single pulse we are. */
+  private revertedTile: string | null = null
+  private revertElapsedMs = REVERT_PULSE_MS
+  private readonly moveClock = new MoveClock()
   private camera: CameraView | null = null
   private cameraLimits: CameraLimits | null = null
   private cameraGestures: CameraGestures | null = null
@@ -125,24 +202,50 @@ export class CraneReachRenderer extends PixiRenderer {
   protected setup(root: Container): void {
     this.battlefieldLayer = new Container()
     this.zoneMarkerLayer = new Container()
+    this.fogLayer = new Container()
+    this.fadingFogLayer = new Container()
     this.rangeLayer = new Container()
+    this.orderHitLayer = new Container()
     this.unitLayer = new Container()
     this.activationLayer = new Container()
+    this.orderMarkLayer = new Container()
+    this.orderPulseLayer = new Container()
+    this.orderControlLayer = new Container()
+    this.orderButtonLayer = new Container()
     this.eventLayer = new Container()
     this.transientLayer = new Container()
     this.worldLayer = new Container()
     this.hudLayer = new Container()
     this.inspectionLayer = new Container()
+    // The order's hit areas sit under the units so a unit stays hoverable, and its marks sit over
+    // them so composition always reads above a hover wash. No unit can stand on an offered tile.
+    this.orderMarkLayer.eventMode = 'none'
+    this.orderPulseLayer.eventMode = 'none'
+    this.fogLayer.eventMode = 'none'
+    this.fadingFogLayer.eventMode = 'none'
     this.worldLayer.addChild(
       this.battlefieldLayer,
       this.zoneMarkerLayer,
+      this.fadingFogLayer,
+      this.fogLayer,
       this.rangeLayer,
+      this.orderHitLayer,
       this.unitLayer,
       this.activationLayer,
+      this.orderMarkLayer,
+      this.orderPulseLayer,
       this.eventLayer,
       this.transientLayer,
     )
-    root.addChild(this.worldLayer, this.hudLayer, this.inspectionLayer)
+    root.addChild(
+      this.worldLayer,
+      this.hudLayer,
+      this.orderControlLayer,
+      this.orderButtonLayer,
+      this.inspectionLayer,
+    )
+    this.orderButtonLayer.visible = false
+    wireConfirmButton(this.orderButtonLayer, () => this.sendOrder())
     root.eventMode = 'passive'
     root.interactiveChildren = true
     const stage = root.parent
@@ -208,8 +311,24 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   protected override onFrame(dtMs: number): boolean {
+    // Three things can want frames: the event in flight, a perspective switch cross-dissolving, and a
+    // live human turn, whose clock drains and whose strike preview breathes for as long as it lasts.
+    const event = this.advanceEvent(dtMs)
+    const fog = this.advanceFog(dtMs)
+    const human = this.advanceHumanTurn(dtMs)
+    return event || fog || human
+  }
+
+  private advanceEvent(dtMs: number): boolean {
     const schedule = this.eventSchedule
     if (!this.eventAnimating || schedule === null) return false
+    if (this.settleRemainingMs > 0) {
+      this.settleRemainingMs -= dtMs
+      if (this.settleRemainingMs > 0) return true
+      this.completeEvent()
+      this.followActivation()
+      return false
+    }
     this.eventElapsedMs = Math.min(schedule.durationMs, this.eventElapsedMs + dtMs)
     if (this.eventElapsedMs < schedule.durationMs) {
       this.updateEventPhaseProbe()
@@ -227,8 +346,60 @@ export class CraneReachRenderer extends PixiRenderer {
       this.reconcileEvent()
       return true
     }
+    if (this.eventIsOurs) {
+      // Hold the finished frame for a beat, so your own move lands before the fog follows the next
+      // unit. The host waits on the transition, so the session pauses with the picture.
+      this.eventIsOurs = false
+      this.settleRemainingMs = OWN_ORDER_SETTLE_MS
+      return true
+    }
     this.completeEvent()
     return false
+  }
+
+  /** Cross-dissolve the glaze when the perspective switches, so the picture never pops. */
+  private advanceFog(dtMs: number): boolean {
+    if (this.fogElapsedMs >= FOG_CROSSFADE_MS) return false
+    this.fogElapsedMs = Math.min(FOG_CROSSFADE_MS, this.fogElapsedMs + dtMs)
+    this.applyFogCrossfade()
+    return this.fogElapsedMs < FOG_CROSSFADE_MS
+  }
+
+  /** Keep drawing while a human is on the clock: the perimeter drains and the preview breathes. */
+  private advanceHumanTurn(dtMs: number): boolean {
+    if (this.order === null || this.presentedScene === null) return false
+    this.humanElapsedMs += dtMs
+    this.revertElapsedMs = Math.min(REVERT_PULSE_MS, this.revertElapsedMs + dtMs)
+    this.refreshOrderFrame(this.presentedScene)
+    return true
+  }
+
+  /**
+   * Redraw only what moves during a human turn: the draining perimeter, the strike preview, and a
+   * reverted tile's pulse. The settled marks stay as they are, because they bake text and rebuilding
+   * them every frame for a turn that may last a minute would be pure waste.
+   */
+  private refreshOrderFrame(scene: CraneReachScene): void {
+    const plan = this.orderPlan
+    if (plan === null) return
+    const reducedMotion = prefersReducedMotion()
+    const revert =
+      this.revertedTile === null
+        ? null
+        : { tileKey: this.revertedTile, strength: revertPulse(this.revertElapsedMs, reducedMotion) }
+    const frame: OrderPlan = { ...plan, revert, clock: this.moveClock.read() }
+    this.orderPlan = frame
+    clear(this.orderPulseLayer)
+    drawOrderPulse(
+      this.orderPulseLayer,
+      scene,
+      frame,
+      previewPhase(this.humanElapsedMs, reducedMotion),
+    )
+    clear(this.orderControlLayer)
+    drawConfirmButton(this.orderControlLayer, this.sprite, frame)
+    this.ctx.container.dataset.craneClock =
+      frame.clock === null ? 'none' : String(frame.clock.seconds)
   }
 
   private sceneFor(state: StepState): CraneReachScene {
@@ -247,17 +418,24 @@ export class CraneReachRenderer extends PixiRenderer {
     const previousScene = this.currentScene
     this.ensureBattlefield(scene)
 
-    const animate = shouldAnimateEvent(scene.event, freshForwardEvent, previousScene !== null, options)
+    // A person under fog watches only what their side perceives. An activation resolved out of
+    // sight installs its result without animating, so the picture never traces an unseen unit.
+    const animate =
+      shouldAnimateEvent(scene.event, freshForwardEvent, previousScene !== null, options) &&
+      this.eventVisibleDuring(previousScene, scene)
+    // Only a genuinely new state reopens the controls. Redrawing the same one (a resize, a camera
+    // move settling, artwork arriving) must not let an order already sent be sent a second time.
+    if (state.tick !== this.eventTick) this.orderSent = false
     this.previousScene = previousScene
     this.currentScene = scene
     this.eventTick = state.tick
     this.event = scene.event
     this.eventSchedule =
-      scene.event === null
-        ? null
-        : eventWindows(eventShapeFor(scene.event), eventScale(options))
+      scene.event === null ? null : eventWindows(eventShapeFor(scene.event), eventScale(options))
     this.eventElapsedMs = animate ? 0 : (this.eventSchedule?.durationMs ?? 0)
     this.eventAnimating = animate
+    this.eventIsOurs = animate && this.actorIsControlled(scene)
+    this.settleRemainingMs = 0
     this.deathSnapshot = animate ? deathSnapshotFor(this.previousScene, scene) : null
     this.updateEventPhaseProbe()
 
@@ -268,10 +446,40 @@ export class CraneReachRenderer extends PixiRenderer {
     this.reconcileEvent()
   }
 
+  /**
+   * Bring the unit acting next into the middle of the view, once your own move has landed and its
+   * beat has passed. A unit the perspective cannot see is never followed, since panning to it would
+   * say where it stands; and at the fitted zoom the whole board is already on screen, so nothing
+   * moves there either.
+   */
+  private followActivation(): void {
+    const activation = this.currentScene?.activation
+    if (activation === undefined || activation === null) return
+    if (this.camera === null || this.cameraLimits === null) return
+    if (this.perspective !== null && !this.perspective.units.has(activation.unitId)) return
+    this.camera = centerCamera(
+      this.camera,
+      this.cameraLimits,
+      this.internalSize,
+      activation.position,
+    )
+    this.applyCamera()
+  }
+
+  /** Whether the activation that just resolved was one a player at this screen ordered. */
+  private actorIsControlled(scene: CraneReachScene): boolean {
+    const actorId = scene.event?.actorId
+    if (actorId === undefined || this.ctx.sendAction === undefined) return false
+    const entry = scene.roster.find((slot) => slot.unitId === actorId)
+    return entry !== undefined && this.ctx.controlledPlayers.includes(entry.playerId)
+  }
+
   private completeEvent(): void {
     if (this.currentScene === null) return
     this.eventElapsedMs = this.eventSchedule?.durationMs ?? 0
     this.eventAnimating = false
+    this.eventIsOurs = false
+    this.settleRemainingMs = 0
     this.updateEventPhaseProbe()
     this.reconcilePresentedScene(this.currentScene, false)
     this.reconcileEvent()
@@ -279,6 +487,7 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private reconcilePresentedScene(scene: CraneReachScene, transitioning: boolean): void {
     this.presentedScene = scene
+    this.reconcileFog(scene)
     this.updateInspectionProbe(scene)
     this.reconcileUnits(scene)
     drawZoneMarkers(
@@ -295,7 +504,55 @@ export class CraneReachRenderer extends PixiRenderer {
       this.reconcileActivation(scene)
     }
     this.reconcileHud(scene)
+    this.reconcileOrder(scene)
     this.reconcileInspection(scene)
+  }
+
+  /** The perspective a frame is drawn through: the fog rule, applied to this viewer. */
+  private perspectiveOf(scene: CraneReachScene): Perspective | null {
+    return perspectiveFor(scene, this.ctx.controlledPlayers, this.ctx.header.seats)
+  }
+
+  /**
+   * Whether the resolved activation happened where this viewer could see it.
+   *
+   * The event plays over the frame that preceded it, so that frame's perspective is the one that
+   * decides. Asking the arriving frame instead judges the move through the eyes of whoever acts
+   * next, which skips a unit's own move whenever the next unit to act cannot see it.
+   */
+  private eventVisibleDuring(
+    previousScene: CraneReachScene | null,
+    scene: CraneReachScene,
+  ): boolean {
+    return eventVisible(this.perspectiveOf(previousScene ?? scene), scene.event?.actorId ?? null)
+  }
+
+  /**
+   * Rebuild the glaze, cross-dissolving from the previous one whenever the perspective changes. The
+   * observers are the identity of a perspective: the same eyes always see the same ground.
+   */
+  private reconcileFog(scene: CraneReachScene): void {
+    const perspective = this.perspectiveOf(scene)
+    const before = this.perspective?.observers.join(' ') ?? 'none'
+    const after = perspective?.observers.join(' ') ?? 'none'
+    if (before !== after) {
+      clear(this.fadingFogLayer)
+      for (const child of [...this.fogLayer.children]) this.fadingFogLayer.addChild(child)
+      this.fogElapsedMs = 0
+    }
+    this.perspective = perspective
+    clear(this.fogLayer)
+    if (perspective !== null) drawFogVeil(this.fogLayer, this.sprite, scene, perspective)
+    this.ctx.container.dataset.craneFog = after
+    if (before !== after && prefersReducedMotion()) this.fogElapsedMs = FOG_CROSSFADE_MS
+    this.applyFogCrossfade()
+  }
+
+  private applyFogCrossfade(): void {
+    const settled = fogCrossfade(this.fogElapsedMs, prefersReducedMotion())
+    this.fogLayer.alpha = settled
+    this.fadingFogLayer.alpha = 1 - settled
+    if (settled >= 1) clear(this.fadingFogLayer)
   }
 
   /** Where the event in flight sits on each of its animated tracks. */
@@ -383,7 +640,9 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   private reconcileUnits(scene: CraneReachScene): void {
-    const liveIds = new Set(scene.units.map((unit) => unit.unitId))
+    // Units outside the perspective are absent, not ghosted: the past lives in a unit's own code.
+    const drawn = visibleUnits(scene, this.perspective)
+    const liveIds = new Set(drawn.map((unit) => unit.unitId))
     for (const [unitId, node] of this.unitNodes) {
       if (!liveIds.has(unitId)) {
         this.unitNodes.delete(unitId)
@@ -393,7 +652,7 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     const level = presentationFor(scene.hexRadius, this.effectiveScale())
     this.ctx.container.dataset.cranePresentation = level
-    for (const unit of scene.units) {
+    for (const unit of drawn) {
       let node = this.unitNodes.get(unit.unitId)
       if (node === undefined) {
         node = createUnitNode(
@@ -411,6 +670,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private reconcileActivation(scene: CraneReachScene): void {
     clear(this.activationLayer)
     if (scene.activation === null) return
+    // The seal names the actor, so it appears only where the perspective can already see it.
+    if (this.perspective !== null && !this.perspective.units.has(scene.activation.unitId)) return
     drawActivationSeal(
       this.activationLayer,
       this.sprite,
@@ -447,7 +708,8 @@ export class CraneReachRenderer extends PixiRenderer {
     const target = inspectionPresentation(this.inspection).target
     return target?.kind !== 'unit'
       ? null
-      : (scene.units.find((unit) => unit.unitId === target.unitId) ?? null)
+      : (visibleUnits(scene, this.perspective).find((unit) => unit.unitId === target.unitId) ??
+          null)
   }
 
   /** The range wash follows the inspected unit when there is one, the acting unit otherwise. */
@@ -458,11 +720,20 @@ export class CraneReachRenderer extends PixiRenderer {
       return
     }
     const inspected = this.inspectedUnit(scene)
+    // An actor the perspective cannot see gets no range wash, which would otherwise trace it.
     const unit =
       inspected ??
       (scene.activation === null
         ? null
-        : (scene.units.find((candidate) => candidate.unitId === scene.activation?.unitId) ?? null))
+        : (visibleUnits(scene, this.perspective).find(
+            (candidate) => candidate.unitId === scene.activation?.unitId,
+          ) ?? null))
+    // While a person is composing this unit's order, the offered continuations are its range, and a
+    // second wash under them only flickers as the pointer crosses the unit. Its card still opens.
+    if (unit !== null && this.controlledActor(scene)?.unitId === unit.unitId) {
+      this.clearRange()
+      return
+    }
     if (unit === null) {
       this.ctx.container.dataset.craneRangeUnit = 'none'
       return
@@ -653,10 +924,186 @@ export class CraneReachRenderer extends PixiRenderer {
   private reconcileHud(scene: CraneReachScene): void {
     clear(this.hudLayer)
     this.ctx.container.dataset.craneHud = 'ready'
+    // A living-unit count is knowledge no unit has: an agent is told both starting rosters and sees
+    // only what is within vision, so it never learns that an ally or an enemy out of sight has died.
+    // Under fog the rosters go, and the strip they occupied carries the order controls instead.
+    const rosters = this.perspective === null
     drawHud(this.hudLayer, this.paint(), scene, {
       onInspect: (event) => this.setInspection(event),
       pins: pinsInspectionForPointer,
+      rosters,
     })
+    this.ctx.container.dataset.craneRosters = rosters ? 'shown' : 'hidden'
+  }
+
+  /**
+   * The order controls, on a controlled activation and nowhere else. A spectator, a replay viewer, a
+   * companion's turn, an opponent's turn, a finished match, and an activation whose order has already
+   * been sent all leave the board with nothing clickable on it.
+   */
+  private reconcileOrder(scene: CraneReachScene): void {
+    clear(this.orderMarkLayer)
+    clear(this.orderPulseLayer)
+    clear(this.orderControlLayer)
+    const unit = this.controlledActor(scene)
+    if (unit === null) {
+      clear(this.orderHitLayer)
+      this.clickableKey = null
+      this.orderButtonLayer.visible = false
+      this.order = null
+      this.orderField = null
+      this.orderTick = null
+      this.orderPlayerId = null
+      this.orderPlan = null
+      this.moveClock.close()
+      const data = this.ctx.container.dataset
+      data.craneOrder = 'none'
+      data.craneOrderPath = 'none'
+      data.craneConfirm = 'none'
+      data.craneClock = 'none'
+      data.craneStrikePreview = 'none'
+      delete data.craneOfferedTile
+      delete data.craneOfferedX
+      delete data.craneOfferedY
+      return
+    }
+    if (
+      this.order === null ||
+      this.order.unitId !== unit.unitId ||
+      this.orderTick !== this.eventTick
+    ) {
+      this.orderField = walkFieldFor(unit, scene.tiles, scene.units)
+      this.order = beginOrder(unit, this.orderField)
+      this.orderTick = this.eventTick
+      this.humanElapsedMs = 0
+      this.revertedTile = null
+    }
+    const field = this.orderField as WalkField
+    const order = this.order
+    this.orderPlayerId = unit.playerId
+    this.moveClock.open(String(this.eventTick), this.ctx.meta.human_timeout_ms)
+
+    const offered = new Set(offeredTiles(field, order).keys())
+    const endpoint = endpointOf(order)
+    const preview = strikePreview(unit, endpoint, visibleUnits(scene, this.perspective))
+    const previewPositions = (preview?.targets ?? [])
+      .map((unitId) => scene.units.find((candidate) => candidate.unitId === unitId)?.position)
+      .filter((position): position is { x: number; y: number } => position !== undefined)
+    const plan: OrderPlan = {
+      order,
+      unitPosition: unit.position,
+      offered,
+      preview,
+      previewPositions,
+      revert:
+        this.revertedTile === null
+          ? null
+          : {
+              tileKey: this.revertedTile,
+              strength: revertPulse(this.revertElapsedMs, prefersReducedMotion()),
+            },
+      clock: this.moveClock.read(),
+    }
+
+    this.orderPlan = plan
+    drawOrderMarks(this.orderMarkLayer, this.text.bind(this), scene, plan)
+    this.drawEndpointGhost(scene, unit, endpoint)
+    // Clicking the endpoint takes a step back and clicking the unit's own tile clears; everything
+    // else on the board stays inert, so a composed path can only ever be a legal one.
+    const clickable = new Set([...offered, endpoint, order.path.tiles[0] as string])
+    const clickableKey = [...clickable].sort().join(' ')
+    if (this.clickableKey !== clickableKey) {
+      clear(this.orderHitLayer)
+      wireOrderHits(this.orderHitLayer, scene, clickable, (tileKey) => this.pickTile(tileKey))
+      this.clickableKey = clickableKey
+    }
+    this.orderButtonLayer.visible = true
+    this.publishOrderProbes(scene, plan, offered)
+    this.refreshOrderFrame(scene)
+  }
+
+  /** The unit this viewer is being asked to order right now, if any. */
+  private controlledActor(scene: CraneReachScene): SceneUnit | null {
+    const activation = scene.activation
+    const open = orderTurnOpen({
+      actingPlayerId: activation?.playerId ?? null,
+      controlledPlayers: this.ctx.controlledPlayers,
+      canSend: this.ctx.sendAction !== undefined,
+      terminal: scene.hud.terminal !== null,
+      animating: this.eventAnimating,
+      sent: this.orderSent,
+    })
+    if (!open || activation === null) return null
+    return scene.units.find((unit) => unit.unitId === activation.unitId) ?? null
+  }
+
+  /** The unit shown where it would end up, so the projected final tile reads as a real position. */
+  private drawEndpointGhost(scene: CraneReachScene, unit: SceneUnit, endpoint: string): void {
+    if (endpoint === unit.tileKey) return
+    const tile = scene.tiles.find((candidate) => candidate.key === endpoint)
+    if (tile === undefined) return
+    const ghost = createUnitNode(unit.unitId, null, pinsInspectionForPointer)
+    drawUnit(
+      ghost,
+      { ...unit, position: tile.center },
+      scene.hexRadius,
+      presentationFor(scene.hexRadius, this.effectiveScale()),
+      this.textureFor,
+    )
+    ghost.root.alpha = 0.5
+    this.orderMarkLayer.addChild(ghost.root)
+  }
+
+  private pickTile(tileKey: string): void {
+    const field = this.orderField
+    const scene = this.presentedScene
+    if (this.order === null || field === null || scene === null) return
+    if (this.cameraGestures?.dragging() === true) return
+    const before = this.order
+    this.order = clickTile(field, before, tileKey)
+    // A step taken back pulses the tile it left, so a revision is visible without a reset control.
+    const reverted = this.order.path.directions.length < before.path.directions.length
+    this.revertedTile = reverted ? tileKey : null
+    this.revertElapsedMs = 0
+    this.humanElapsedMs = 0
+    this.reconcileOrder(scene)
+    this.redrawCurrentFrame()
+  }
+
+  private sendOrder(): void {
+    const order = this.order
+    const scene = this.presentedScene
+    const playerId = this.orderPlayerId
+    if (order === null || scene === null || playerId === null) return
+    this.ctx.sendAction?.(playerId, orderAction(order))
+    this.orderSent = true
+    this.reconcileOrder(scene)
+    this.redrawCurrentFrame()
+  }
+
+  /** What the browser suite reads instead of pixels: the order, what is offered, and the clock. */
+  private publishOrderProbes(
+    scene: CraneReachScene,
+    plan: OrderPlan,
+    offered: ReadonlySet<string>,
+  ): void {
+    const data = this.ctx.container.dataset
+    data.craneOrder = plan.order.path.directions.join('')
+    data.craneOrderPath = String(encodePath(plan.order.path.directions))
+    data.craneConfirm = 'ready'
+    data.craneClock = plan.clock === null ? 'none' : String(plan.clock.seconds)
+    data.craneStrikePreview = previewProbe(plan.preview)
+    const first = scene.tiles.find((tile) => offered.has(tile.key))
+    if (first === undefined) {
+      delete data.craneOfferedTile
+      delete data.craneOfferedX
+      delete data.craneOfferedY
+      return
+    }
+    const point = this.viewPoint(first.center)
+    data.craneOfferedTile = first.key
+    data.craneOfferedX = String(point.x)
+    data.craneOfferedY = String(point.y)
   }
 
   private reconcileInspection(scene: CraneReachScene): void {
@@ -682,7 +1129,10 @@ export class CraneReachRenderer extends PixiRenderer {
 
   /** Anchor for the browser test that hovers a visible unit after camera movement. */
   private updateInspectionProbe(scene: CraneReachScene): void {
-    const projected = scene.units.map((unit) => ({ unit, point: this.viewPoint(unit.position) }))
+    const projected = visibleUnits(scene, this.perspective).map((unit) => ({
+      unit,
+      point: this.viewPoint(unit.position),
+    }))
     const excluded = probeExclusions(this.event, this.eventAnimating)
     const probe = selectInspectionProbe(projected, this.internalSize, excluded)
     if (probe === undefined) {
@@ -717,6 +1167,8 @@ export class CraneReachRenderer extends PixiRenderer {
     if (this.presentedScene !== null) {
       this.updateInspectionProbe(this.presentedScene)
       this.reconcileInspection(this.presentedScene)
+      // The offered-tile probe is a view coordinate, so it moves with the camera.
+      if (this.order !== null) this.reconcileOrder(this.presentedScene)
     }
     this.redrawCurrentFrame()
     if (this.cameraRefreshTimer !== null) clearTimeout(this.cameraRefreshTimer)
@@ -765,6 +1217,12 @@ export class CraneReachRenderer extends PixiRenderer {
   private readonly textureFor = (name: CraneAssetName): Texture | null => {
     return this.textures.get(name) ?? null
   }
+}
+
+/** The preview, as one readable value for the browser suite. */
+function previewProbe(preview: StrikePreview | null): string {
+  if (preview === null) return 'none'
+  return `${preview.uncertain ? 'one-of' : 'unique'}:${preview.targets.join(' ')}`
 }
 
 const definition = {

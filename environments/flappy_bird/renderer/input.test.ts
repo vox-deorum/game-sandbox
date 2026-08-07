@@ -1,7 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { flappyHeader, flappyMeta } from '../../../frontend/test/helpers/fixtures.js'
 import type { RendererContext } from '@renderers/types.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flappyHeader, flappyMeta } from '../../../frontend/test/helpers/fixtures.js'
 
 import { FlappyBirdRenderer } from './index.js'
 
@@ -81,7 +80,9 @@ describe('flappy-bird input', () => {
 
   it('attaches no input when sendAction is absent (spectator / replay)', () => {
     // No throw, every input path inert: this is the draw-only path the replay viewer mounts.
-    const instance = FlappyBirdRenderer.mount(context({ container, controlledPlayers: ['player_0'] }))
+    const instance = FlappyBirdRenderer.mount(
+      context({ container, controlledPlayers: ['player_0'] }),
+    )
     expect(() =>
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' })),
     ).not.toThrow()

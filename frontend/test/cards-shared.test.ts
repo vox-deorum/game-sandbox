@@ -164,7 +164,11 @@ describe('the shared card-table renderer layer', () => {
         controllable: true,
       }),
     ])
-    expect(buildMoveClock(partnerTurn, view, 60_000)).toEqual({ x: WIDTH / 2, y: 157, seconds: 60 })
+    expect(buildMoveClock(partnerTurn, view, 60_000)).toEqual({
+      x: WIDTH / 2,
+      y: 157,
+      totalMs: 60_000,
+    })
 
     // A partner along a side edge shifts the clock inward instead, since those badges already sit at
     // the table's vertical centre.
@@ -173,7 +177,7 @@ describe('the shared card-table renderer layer', () => {
     expect(buildMoveClock(westTurn, westView, 60_000)).toEqual({
       x: DEFAULT_GEOMETRY.sideBadgeInset + 56,
       y: HEIGHT / 2,
-      seconds: 60,
+      totalMs: 60_000,
     })
   })
 

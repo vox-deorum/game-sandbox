@@ -14,7 +14,11 @@ export interface InspectionState {
   hoveredRoster: RosterInspectionTarget | null
 }
 
-export const EMPTY_INSPECTION: InspectionState = { target: null, hoveredUnitId: null, hoveredRoster: null }
+export const EMPTY_INSPECTION: InspectionState = {
+  target: null,
+  hoveredUnitId: null,
+  hoveredRoster: null,
+}
 
 export type InspectionEvent =
   | { type: 'hover-unit'; unitId: string | null }
@@ -45,9 +49,7 @@ export function resolveInspection(state: InspectionState): InspectionTarget {
 /** Stable renderer-host probe text for browser interaction coverage. */
 export function inspectionTargetLabel(target: InspectionTarget): string {
   if (target === null) return 'none'
-  return target.kind === 'unit'
-    ? `unit:${target.unitId}`
-    : `roster:${target.side}:${target.type}`
+  return target.kind === 'unit' ? `unit:${target.unitId}` : `roster:${target.side}:${target.type}`
 }
 
 export interface InspectionPresentation {
@@ -62,7 +64,10 @@ export function inspectionPresentation(state: InspectionState): InspectionPresen
 }
 
 /** Rendering details for the range layer, kept pure with the inspection priority. */
-export function rangePresentation(state: InspectionState, inspectedUnitAvailable = true): {
+export function rangePresentation(
+  state: InspectionState,
+  inspectedUnitAvailable = true,
+): {
   wash: 'bone' | 'gilt'
   alpha: number
   outline: 'dashed' | 'solid'

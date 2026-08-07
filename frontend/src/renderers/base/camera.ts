@@ -96,6 +96,19 @@ export function clampCamera(
 }
 
 /** Zoom by a factor while preserving the world point under a logical-view anchor. */
+/**
+ * Put a world point in the middle of the view, as far as the limits allow. At the fitted zoom the
+ * whole board is already on screen, so this settles back to the fit rather than shifting it.
+ */
+export function centerCamera(
+  camera: CameraView,
+  limits: CameraLimits,
+  view: CameraSize,
+  target: CameraPoint,
+): CameraView {
+  return clampCamera({ zoom: camera.zoom, x: target.x, y: target.y }, limits, view)
+}
+
 export function zoomCamera(
   camera: CameraView,
   limits: CameraLimits,

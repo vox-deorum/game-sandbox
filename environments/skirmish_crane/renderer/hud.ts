@@ -39,6 +39,11 @@ export interface HudPaint {
 export interface HudInspectionHooks {
   onInspect: (event: InspectionEvent) => void
   pins: (pointerType: string) => boolean
+  /**
+   * Whether to draw the roster strips. A living-unit count is knowledge no unit has, so a person
+   * playing under fog does not get one; a spectator and a replay viewer do.
+   */
+  rosters?: boolean
 }
 
 /** Projects a world unit into the screen-fixed inspection layer while preserving card size. */
@@ -82,6 +87,7 @@ export function drawHud(
   roundGroup.addChild(roundLabel, round)
   layer.addChild(roundGroup)
   if (scene.hud.capture !== null) drawCaptureStrip(layer, paint, scene.hud.capture)
+  if (hooks.rosters === false) return
   drawRoster(layer, paint, scene, 'red', hooks)
   drawRoster(layer, paint, scene, 'blue', hooks)
 }
@@ -330,10 +336,7 @@ function drawCard(layer: Container, paint: HudPaint, options: CardOptions): Insp
   const details = [
     ...(specification.tile === null
       ? []
-      : [
-          `iconTerrain:${specification.tile.terrain}`,
-          `iconFeature:${specification.tile.feature}`,
-        ]),
+      : [`iconTerrain:${specification.tile.terrain}`, `iconFeature:${specification.tile.feature}`]),
     ...(specification.ability === null ? [] : [`iconSkill:${specification.ability}`]),
   ]
   return {
@@ -369,17 +372,12 @@ function drawCardDetail(
 }
 
 /** Skill spark, terrain contour, and feature leaf in the same dilute ink as the stat icons. */
-function drawCardDetailIcon(
-  card: Container,
-  icon: CardDetailIcon,
-  x: number,
-  y: number,
-): void {
+function drawCardDetailIcon(card: Container, icon: CardDetailIcon, x: number, y: number): void {
   const mark = new Graphics()
   if (icon === 'skill') {
-    mark.poly([0, -8, 2.5, -2.5, 8, 0, 2.5, 2.5, 0, 8, -2.5, 2.5, -8, 0, -2.5, -2.5]).fill(
-      CRANE_STYLE.grid,
-    )
+    mark
+      .poly([0, -8, 2.5, -2.5, 8, 0, 2.5, 2.5, 0, 8, -2.5, 2.5, -8, 0, -2.5, -2.5])
+      .fill(CRANE_STYLE.grid)
   } else if (icon === 'terrain') {
     mark
       .moveTo(-8, 5)

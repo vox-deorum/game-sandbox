@@ -56,6 +56,32 @@ function expectAllowed(bytes: Uint8Array, action: number): void {
   expect(byte & (1 << (action % 8))).not.toBe(0)
 }
 
+/** The action values one published mask marks legal. */
+export function allowedValues(encoded: string, bitCount: number): Set<number> {
+  const bytes = verifyBitVector(encoded, bitCount)
+  const allowed = new Set<number>()
+  for (let value = 0; value < bitCount; value += 1) {
+    const byte = bytes[Math.floor(value / 8)] as number
+    if ((byte & (1 << (value % 8))) !== 0) allowed.add(value)
+  }
+  return allowed
+}
+
+/** The states each legality entry describes: the live-only opening, then every actionable frame. */
+export function legalityCases(
+  recording: string,
+  legalityRaw: string,
+): { entry: LegalityEntry; state: StepState }[] {
+  const legality = JSON.parse(legalityRaw) as LegalityFixture
+  const actionable = statesFrom(recording).filter(
+    (state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null,
+  )
+  return legality.entries.map((entry, index) => ({
+    entry,
+    state: (index === 0 ? entry.opening : actionable[index - 1]) as StepState,
+  }))
+}
+
 /** Expand a wire path id back into its direction sequence, independently of the renderer. */
 function pathForId(pathId: number): number[] {
   if (pathId === 0) return []

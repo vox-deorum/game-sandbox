@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cameraLimits,
   cameraProbeValue,
+  centerCamera,
   clampCamera,
   fitCamera,
   panCamera,
@@ -44,6 +45,26 @@ describe('camera reducers', () => {
     expect(atEdge.x).toBeCloseTo(limits.bounds.minX + view.width / (2 * limits.maxZoom))
     expect(atEdge.y).toBeCloseTo(limits.bounds.minY + view.height / (2 * limits.maxZoom))
     expect(clampCamera({ ...fit, zoom: 50 }, limits, view).zoom).toBe(limits.maxZoom)
+  })
+
+  it('centers a world point, clamping at the edges and settling to the fit when zoomed out', () => {
+    const fit = fitCamera(limits, view)
+    const zoomed = { ...fit, zoom: limits.maxZoom }
+
+    // Zoomed in, the target lands in the middle of the view.
+    const centered = centerCamera(zoomed, limits, view, { x: 600, y: 400 })
+    expect(centered).toEqual({ zoom: limits.maxZoom, x: 600, y: 400 })
+
+    // A target near the world edge clamps, so the view never leaves the board.
+    const corner = centerCamera(zoomed, limits, view, {
+      x: limits.bounds.minX,
+      y: limits.bounds.minY,
+    })
+    expect(corner.x).toBeCloseTo(limits.bounds.minX + view.width / (2 * limits.maxZoom))
+    expect(corner.y).toBeCloseTo(limits.bounds.minY + view.height / (2 * limits.maxZoom))
+
+    // At the fitted zoom the whole board is already on screen, so following a unit moves nothing.
+    expect(centerCamera(fit, limits, view, { x: 200, y: 700 })).toEqual(fit)
   })
 
   it('keeps the anchor fixed while zooming', () => {

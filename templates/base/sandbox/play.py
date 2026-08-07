@@ -67,10 +67,16 @@ def possible_players(parameters: Mapping[str, ParameterValue] | None = None) -> 
         env.close()
 
 
+def seat_player_ids(player_id: str, parameters: Mapping[str, ParameterValue]) -> tuple[str, ...]:
+    """Return every player on the selected player's own team, in the layout's declared order."""
+    layout = resolve_layout(META, parameters)
+    return next((seat.players for seat in layout.seats if player_id in seat.players), (player_id,))
+
+
 def rival_player_ids(player_id: str, parameters: Mapping[str, ParameterValue]) -> frozenset[str]:
     """Return the players a ``--vs`` rival fills: everyone seated outside the selected player's seat."""
     layout = resolve_layout(META, parameters)
-    own = next((seat.players for seat in layout.seats if player_id in seat.players), (player_id,))
+    own = seat_player_ids(player_id, parameters)
     return frozenset(player for seat in layout.seats for player in seat.players if player not in own)
 
 
@@ -215,6 +221,7 @@ def local_config(
     step_limit: int | None,
     human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
     vs: Path | None = None,
+    companion: str | None = None,
     parameters: Mapping[str, ParameterValue] | None = None,
     decision_limit_ms: int | None = None,
     game_limit_ms: int | None = None,
@@ -222,16 +229,26 @@ def local_config(
     """Build the complete runner config and header attribution for one local launch.
 
     With ``vs``, the players outside the selected player's seat bind to the rival saved in that
-    folder instead of this repository.
+    folder instead of this repository. With ``companion="self"``, every player on your own team is
+    yours to play, and none of them runs this repository's agent.
     """
     resolved_parameters = resolve_parameters(META) if parameters is None else parameters
     player_ids = possible_players(resolved_parameters)
     human_player = player_ids[player] if mode == "human" else None
     rivals = rival_player_ids(player_ids[player], resolved_parameters) if vs is not None else frozenset()
+    team = seat_player_ids(player_ids[player], resolved_parameters)
+    yours = frozenset(team) if companion == "self" and human_player is not None else frozenset()
+    # One connected person sends chat for the whole team, and it is always the team's first
+    # human-capable member, whichever of its players you happen to be steering.
+    chat_sender = (
+        next((member for member in team if member in META.human_players), human_player)
+        if yours
+        else human_player
+    )
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
     for player_id in player_ids:
-        if player_id == human_player:
+        if player_id == human_player or player_id in yours:
             bindings[player_id] = {"kind": "external"}
             players[player_id] = {"kind": "human", "label": "You"}
         elif vs is not None and player_id in rivals:
@@ -254,6 +271,7 @@ def local_config(
         "seed": seed,
         "player_bindings": bindings,
         "players": players,
+        "external_chat_player": chat_sender,
         "recording_dir": str(recording_dir),
         "recording_id": "local",
         "human_timeout_ms": None,
@@ -310,6 +328,11 @@ def main(argv: list[str] | None = None) -> int:
         "--vs",
         metavar="PATH",
         help="play against the agent saved in PATH, a folder holding that agent's manifest.json",
+    )
+    parser.add_argument(
+        "--companion",
+        choices=("self",),
+        help="play every player on your team yourself instead of leaving your teammates to your agent",
     )
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
     parser.add_argument("--no-browser", action="store_true", help="serve without opening a browser")
@@ -373,6 +396,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "human" and not args.headless and player_ids[args.player] not in META.human_players:
         parser.error(f"player {args.player} is not human-playable in {META.env_id!r}")
     rival = parse_rival(parser, args.vs, parameters)
+    if args.companion is not None:
+        if args.mode != "human" or args.headless:
+            parser.error("--companion self is only available in human mode")
+        team = seat_player_ids(player_ids[args.player], parameters)
+        if len(team) == 1:
+            parser.error("--companion self needs a game where your team has more than one player")
+        if any(member not in META.human_players for member in team):
+            parser.error("--companion self needs every player on your team to be human-playable")
     if args.headless:
         score = run_headless(
             seed=args.seed,
@@ -393,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
             recording_dir=Path(recording_dir),
             step_limit=args.steps,
             vs=rival,
+            companion=args.companion,
             parameters=parameters,
             decision_limit_ms=decision_limit_ms,
             game_limit_ms=game_limit_ms,

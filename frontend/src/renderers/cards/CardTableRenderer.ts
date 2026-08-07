@@ -19,6 +19,7 @@
 import type { StepState } from '@game-sandbox/schema'
 import { Container, FillGradient, Graphics, Rectangle } from 'pixi.js'
 
+import { MoveClock } from '../base/move-clock.js'
 import { clear, PixiRenderer } from '../base/PixiRenderer.js'
 import { type RendererContext, type RenderOptions, transitionScaleOf } from '../types.js'
 import {
@@ -125,6 +126,8 @@ export abstract class CardTableRenderer<
   private active: ActiveTransition | null = null
   /** Accumulated wall-clock time driving the ambient active-player pulse. */
   private pulseMs = 0
+  /** The countdown behind the chip. The scene carries the budget; elapsed time cannot live in a frame. */
+  private readonly moveClock = new MoveClock()
   /** Cached gradient for the felt backdrop (one GPU texture, freed in destroy). */
   private feltGradient: FillGradient | null = null
   /** The accessibility label this renderer owns when the table has wide seats. */
@@ -275,6 +278,10 @@ export abstract class CardTableRenderer<
     this.reconcilePlayers(scene)
     clear(this.statusLayer)
     this.reconcileStatus(scene)
+    // Every state is one completed transition, so the tick names the move now on the clock. Redrawing
+    // the same state (a resize, an asset arriving) reopens the same turn and leaves the countdown alone.
+    if (scene.moveClock === null) this.moveClock.close()
+    else this.moveClock.open(String(state.tick), scene.moveClock.totalMs)
     this.reconcileClock(scene)
     clear(this.gameLayer)
     this.reconcileGameLayers(scene)
@@ -390,6 +397,7 @@ export abstract class CardTableRenderer<
 
     // Ambient: breathe the active player's glow. Pulsing keeps the loop alive until the hand ends.
     this.pulseActivePlayer()
+    this.reconcileClock(this.scene)
     const extra = this.onFrameExtra(dtMs)
     return this.active !== null || extra || !this.scene.terminal
   }
@@ -666,17 +674,18 @@ export abstract class CardTableRenderer<
     return g
   }
 
-  // --- Move clock (the active human's per-move budget chip; hidden in replay/spectate) ---
+  // --- Move clock (the active human's countdown chip; hidden in replay/spectate) ---
 
   private reconcileClock(scene: TScene): void {
     clear(this.clockLayer)
     const clock = scene.moveClock
-    if (clock === null) {
+    const reading = this.moveClock.read()
+    if (clock === null || reading === null) {
       return
     }
     const c = new Container()
     c.position.set(clock.x, clock.y)
-    const label = this.text(`⏱ ${clock.seconds}s`, 20, COLORS.gold, 'center')
+    const label = this.text(`⏱ ${reading.seconds}s`, 20, COLORS.gold, 'center')
     const padX = 14
     const w = label.width + padX * 2
     const h = 32

@@ -58,4 +58,12 @@ Use `inputs()` for fixed mappings such as Flappy Bird's flap. Make scene objects
 
 The [overlay](package.md#overlay) contains meaningful game objects. Draw and hit-test those objects directly, then convert the selection to an encoded action only at the `sendAction` boundary.
 
-The harness supplies a legal default action when no input arrives.
+An overlay may carry the semantic state a renderer needs to derive the legal choices instead of listing them, which keeps long recordings small. A renderer that does derive them owes the environment an agreement test: Skirmish at Crane Reach recomputes walkable paths and nameable targets in `environments/skirmish_crane/renderer/legality.ts`, and its mask-agreement suite asserts that the result equals the masks the environment actually published, for every recorded activation of both fixture recordings. Read shared constants such as movement costs from the same data file the rules engine reads so the two sides cannot drift.
+
+### The move clock
+
+The harness supplies a legal default action when no input arrives. It owns that deadline and nothing on the wire carries it, so a renderer that shows a countdown is drawing the browser's picture of it rather than the deadline itself.
+
+`renderers/base/move-clock.ts` is that picture, shared by every renderer that wants one. A host renderer opens it with the acting turn and the session budget (`meta.human_timeout_ms`) when a state puts a controlled player on the clock, and reads `remainingMs`, `fraction`, `seconds`, and `ember` while drawing. Reopening the same turn leaves the countdown alone, so a resize or a late-arriving asset never gives a person their time back. It takes an injectable `now` for fake-clock tests, and it counts wall-clock time, so it keeps running under a playback pause while only the picture freezes. A page that reconnects mid-turn opens it again at the full budget: it reads high rather than low, and the harness stays the authority.
+
+Keep the number itself out of the pure scene. The scene carries the budget, which is a function of the state; elapsed time is not part of any frame and belongs to the reconciler.

@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  CRANE_TIMING as T,
+  type EventShape,
   eventActiveTracks,
   eventPhaseAt,
   eventRangeVisibleAt,
   eventScale,
-  type EventShape,
   eventTimelineProgress,
   eventWindows,
   hostEase,
@@ -14,6 +13,7 @@ import {
   reactionNumeralAlpha,
   routePositionFor,
   routeTrailFor,
+  CRANE_TIMING as T,
 } from './timeline.js'
 
 function shape(overrides: Partial<EventShape> = {}): EventShape {
@@ -40,7 +40,9 @@ describe('Crane Reach event windows', () => {
     // The reaction joins partway into the attack rather than waiting for it.
     expect(windows.reaction?.startMs).toBeGreaterThan(windows.attack?.startMs ?? 0)
     expect(windows.reaction?.startMs).toBeLessThan(windows.attack?.endMs ?? 0)
-    expect(windows.durationMs).toBe(Math.max(windows.attack?.endMs ?? 0, windows.reaction?.endMs ?? 0))
+    expect(windows.durationMs).toBe(
+      Math.max(windows.attack?.endMs ?? 0, windows.reaction?.endMs ?? 0),
+    )
   })
 
   it('makes a longer route take longer', () => {

@@ -281,8 +281,13 @@ type AgentAssignment =
   | { kind: 'builtin-agent'; name: string }
   | { kind: 'submission'; submission_id: string }
 
-/** One seat assignment, including the companion seam for later wide seats. */
-type SeatAssignment = AgentAssignment | { kind: 'human'; companion?: AgentAssignment }
+/**
+ * One seat assignment. A wide human seat either names a companion agent for its other members or
+ * takes `{ kind: 'self' }`, which puts every member of the seat under the one connected person.
+ */
+type SeatAssignment =
+  | AgentAssignment
+  | { kind: 'human'; companion?: AgentAssignment | { kind: 'self' } }
 
 /**
  * The session overrides the start contract carries alongside the seat assignment (Stage 7.4): an
