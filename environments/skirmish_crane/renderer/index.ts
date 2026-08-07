@@ -319,7 +319,7 @@ export class CraneReachRenderer extends PixiRenderer {
     const scene = this.presentedScene ?? this.currentScene
     if (scene === null) return
     this.ensureBattlefield(scene)
-    this.reconcilePresentedScene(scene, this.eventAnimating)
+    this.reconcilePresentedScene(scene, this.eventAnimating, this.settleRemainingMs > 0)
     this.reconcileEvent()
   }
 
@@ -366,6 +366,12 @@ export class CraneReachRenderer extends PixiRenderer {
       // Hold the settled picture long enough to read it before the next activation replaces it.
       this.settleRemainingMs = this.settleDurationMs
       this.settleDurationMs = 0
+      this.updateEventPhaseProbe()
+      if (this.currentScene !== null) {
+        // Install the result now, but keep the event's perspective and seal until the hold ends.
+        // The next activation, its fog, and its camera follow arrive together in completeEvent.
+        this.reconcilePresentedScene(this.currentScene, true, true)
+      }
       this.reconcileEvent()
       return true
     }
@@ -406,6 +412,7 @@ export class CraneReachRenderer extends PixiRenderer {
         : { tileKey: this.revertedTile, strength: revertPulse(this.revertElapsedMs, reducedMotion) }
     const frame: OrderPlan = { ...plan, revert, clock: this.moveClock.read() }
     session.plan = frame
+    setResetButtonActive(this.resetButtonHit, frame.order.path.directions.length > 0)
     clear(this.orderPulseLayer)
     drawOrderPulse(
       this.orderPulseLayer,
@@ -512,9 +519,13 @@ export class CraneReachRenderer extends PixiRenderer {
     this.followActivation()
   }
 
-  private reconcilePresentedScene(scene: CraneReachScene, transitioning: boolean): void {
+  private reconcilePresentedScene(
+    scene: CraneReachScene,
+    transitioning: boolean,
+    retainPerspective = false,
+  ): void {
     this.presentedScene = scene
-    this.reconcileFog(scene)
+    if (!retainPerspective) this.reconcileFog(scene)
     this.updateInspectionProbe(scene)
     this.reconcileUnits(scene)
     drawZoneMarkers(
@@ -596,6 +607,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private updateEventPhaseProbe(): void {
     const event = this.event
     const schedule = this.eventSchedule
+    this.ctx.container.dataset.craneEventSettling =
+      this.settleRemainingMs > 0 ? 'true' : 'false'
     if (event === null || schedule === null) {
       this.ctx.container.dataset.craneEventPhase = 'idle'
       this.ctx.container.dataset.craneEventTracks = ''
@@ -767,14 +780,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.ctx.container.dataset.craneRangeUnit = 'none'
       return
     }
-    drawRangeWash(
-      this.rangeLayer,
-      scene,
-      unit.position,
-      reachableTileKeys(unit, scene.tiles, scene.units),
-      rangePresentation(this.inspection, inspected !== null),
-    )
-    this.ctx.container.dataset.craneRangeUnit = unit.unitId
+    this.drawUnitRange(scene, unit, inspected !== null)
   }
 
   private eventRangeVisible(): boolean {
@@ -785,11 +791,30 @@ export class CraneReachRenderer extends PixiRenderer {
 
   /** The retained acting range stays visible until the actor strikes or takes ground. */
   private reconcileEventRange(scene: CraneReachScene): void {
-    if (rangeVisibleDuringEvent(this.inspectedUnit(scene) !== null, this.eventRangeVisible())) {
-      this.reconcileRange(scene)
-    } else {
-      this.clearRange()
+    const inspected = this.inspectedUnit(scene)
+    if (inspected !== null) {
+      this.drawUnitRange(scene, inspected, true)
+      return
     }
+    if (!this.eventRangeVisible()) {
+      this.clearRange()
+      return
+    }
+    const actorId = this.event?.actorId
+    const actor = visibleUnits(scene, this.perspective).find((unit) => unit.unitId === actorId)
+    if (actor === undefined) this.clearRange()
+    else this.drawUnitRange(scene, actor, false)
+  }
+
+  private drawUnitRange(scene: CraneReachScene, unit: SceneUnit, inspected: boolean): void {
+    drawRangeWash(
+      this.rangeLayer,
+      scene,
+      unit.position,
+      reachableTileKeys(unit, scene.tiles, scene.units),
+      rangePresentation(this.inspection, inspected),
+    )
+    this.ctx.container.dataset.craneRangeUnit = unit.unitId
   }
 
   private clearRange(): void {

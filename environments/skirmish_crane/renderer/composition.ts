@@ -280,7 +280,11 @@ export function wireOrderButtons(
   onReset: () => void,
   onConfirm: () => void,
 ): Graphics {
-  const reset = wireOrderButton(RESET_BUTTON, 'Reset movement', onReset)
+  let reset: Graphics
+  reset = wireOrderButton(RESET_BUTTON, 'Reset movement', () => {
+    if (reset.eventMode === 'static') onReset()
+  })
+  syncAccessibleButtonWhenCreated(reset)
   const confirm = wireOrderButton(CONFIRM_BUTTON, 'Confirm order', onConfirm)
   layer.addChild(reset, confirm)
   return reset
@@ -290,7 +294,27 @@ export function wireOrderButtons(
 export function setResetButtonActive(reset: Graphics, active: boolean): void {
   reset.eventMode = active ? 'static' : 'none'
   reset.cursor = active ? 'pointer' : 'default'
-  reset.accessible = active
+  syncAccessibleButton(reset, reset._accessibleDiv)
+}
+
+/** Pixi creates its native accessibility bridge lazily, usually on the first Tab press. */
+function syncAccessibleButtonWhenCreated(reset: Graphics): void {
+  let bridge = reset._accessibleDiv
+  Object.defineProperty(reset, '_accessibleDiv', {
+    configurable: true,
+    get: () => bridge,
+    set: (created) => {
+      bridge = created
+      syncAccessibleButton(reset, created)
+    },
+  })
+}
+
+function syncAccessibleButton(reset: Graphics, bridge: HTMLElement | null | undefined): void {
+  if (typeof HTMLButtonElement !== 'undefined' && bridge instanceof HTMLButtonElement) {
+    bridge.disabled = reset.eventMode !== 'static'
+    bridge.title = reset.accessibleTitle ?? ''
+  }
 }
 
 function wireOrderButton(

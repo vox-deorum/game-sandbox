@@ -271,7 +271,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     const probe = globalThis as typeof globalThis & {
       craneResizeAnimationFrame?: number
       craneResizeStartedAt?: number
-      craneResizeSamples?: Array<{ phase: string; at: number }>
+      craneResizeSamples?: Array<{ phase: string; settling: boolean; at: number }>
     }
     if (probe.craneResizeAnimationFrame !== undefined) {
       cancelAnimationFrame(probe.craneResizeAnimationFrame)
@@ -281,6 +281,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     const record = () => {
       probe.craneResizeSamples?.push({
         phase: host.dataset.craneEventPhase ?? 'idle',
+        settling: host.dataset.craneEventSettling === 'true',
         at: performance.now(),
       })
       probe.craneResizeAnimationFrame = requestAnimationFrame(record)
@@ -290,10 +291,15 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   // Changing height changes StageFrame's 70vh cap, forcing both the host and Pixi surface to resize.
   await page.setViewportSize({ width: 1_600, height: 700 })
   await page.waitForTimeout(150)
-  await expect(rendererHost).toHaveAttribute(
-    'data-crane-event-phase',
-    /^(activation|movement|attack|reaction)$/,
-  )
+  await expect
+    .poll(async () => {
+      const phase = await rendererHost.getAttribute('data-crane-event-phase')
+      const settling = await rendererHost.getAttribute('data-crane-event-settling')
+      return phase === 'idle'
+        ? settling === 'true'
+        : /^(activation|movement|attack|reaction)$/.test(phase ?? '')
+    })
+    .toBe(true)
   const resizeResult = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>('.renderer-host')
     const canvas = document.querySelector<HTMLCanvasElement>('canvas.renderer-canvas')
@@ -303,7 +309,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     const probe = globalThis as typeof globalThis & {
       craneResizeAnimationFrame?: number
       craneResizeStartedAt?: number
-      craneResizeSamples?: Array<{ phase: string; at: number }>
+      craneResizeSamples?: Array<{ phase: string; settling: boolean; at: number }>
     }
     if (probe.craneResizeAnimationFrame !== undefined) {
       cancelAnimationFrame(probe.craneResizeAnimationFrame)
@@ -321,8 +327,12 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   expect(resizeResult.canvas.height).toBeLessThan(beforeResize.canvas.height)
   expect(resizeResult.canvas.pixels).not.toBe(beforeResize.canvas.pixels)
   expect(resizeResult.samples).not.toHaveLength(0)
-  expect(resizeResult.samples.some((sample) => sample.phase === 'idle')).toBe(false)
-  expect(resizeResult.samples.at(-1)?.phase).toMatch(/^(activation|movement|attack|reaction)$/)
+  expect(resizeResult.samples.every((sample) => sample.phase !== 'idle' || sample.settling)).toBe(
+    true,
+  )
+  const finalResizeSample = resizeResult.samples.at(-1)
+  expect(finalResizeSample?.phase).toMatch(/^(idle|activation|movement|attack|reaction)$/)
+  if (finalResizeSample?.phase === 'idle') expect(finalResizeSample.settling).toBe(true)
   // The event schedule, observed live. Wait until enough events have played that the sample stream
   // covers a reacting attack, then assert the schedule's three visible properties at once.
   const readEventSamples = (): Promise<Array<{ phase: string; tracks: string }>> =>

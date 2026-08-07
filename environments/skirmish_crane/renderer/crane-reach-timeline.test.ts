@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { CraneReachRenderer } from './index.js'
+import type { CraneReachScene, SceneUnit } from './scene.js'
 import {
   type EventShape,
   eventActiveTracks,
@@ -30,6 +32,76 @@ describe('Crane Reach event windows', () => {
     expect(T.watchSettleMs).toBe(200)
     expect(eventSettleDuration(true)).toBe(T.humanSettleMs)
     expect(eventSettleDuration(false)).toBe(T.watchSettleMs)
+  })
+
+  it('installs the resolved frame before its hold without advancing perspective', () => {
+    const schedule = eventWindows(shape())
+    const resolved = { battlefieldKey: 'resolved' } as CraneReachScene
+    type EventHarness = {
+      eventSchedule: typeof schedule
+      eventAnimating: boolean
+      eventElapsedMs: number
+      settleDurationMs: number
+      settleRemainingMs: number
+      currentScene: CraneReachScene
+      advanceEvent(dtMs: number): boolean
+      updateEventPhaseProbe: ReturnType<typeof vi.fn>
+      reconcilePresentedScene: ReturnType<typeof vi.fn>
+      reconcileEvent: ReturnType<typeof vi.fn>
+      completeEvent: ReturnType<typeof vi.fn>
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as EventHarness
+    Object.assign(renderer, {
+      eventSchedule: schedule,
+      eventAnimating: true,
+      eventElapsedMs: schedule.durationMs - 1,
+      settleDurationMs: T.watchSettleMs,
+      settleRemainingMs: 0,
+      currentScene: resolved,
+      updateEventPhaseProbe: vi.fn(),
+      reconcilePresentedScene: vi.fn(),
+      reconcileEvent: vi.fn(),
+      completeEvent: vi.fn(),
+    })
+
+    expect(renderer.advanceEvent(1)).toBe(true)
+    expect(renderer.settleRemainingMs).toBe(T.watchSettleMs)
+    expect(renderer.updateEventPhaseProbe).toHaveBeenCalledOnce()
+    expect(renderer.reconcilePresentedScene).toHaveBeenCalledWith(resolved, true, true)
+    expect(renderer.reconcileEvent).toHaveBeenCalledOnce()
+    expect(renderer.completeEvent).not.toHaveBeenCalled()
+  })
+
+  it('keeps the completed actor range during a move-only settled frame', () => {
+    const actor = { unitId: 'red_actor' } as SceneUnit
+    const next = { unitId: 'blue_next' } as SceneUnit
+    const resolved = {
+      units: [actor, next],
+      activation: next,
+    } as unknown as CraneReachScene
+    type RangeHarness = {
+      event: { actorId: string }
+      perspective: null
+      inspectedUnit: ReturnType<typeof vi.fn>
+      eventRangeVisible: ReturnType<typeof vi.fn>
+      drawUnitRange: ReturnType<typeof vi.fn>
+      clearRange: ReturnType<typeof vi.fn>
+      reconcileEventRange(scene: CraneReachScene): void
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as RangeHarness
+    Object.assign(renderer, {
+      event: { actorId: actor.unitId },
+      perspective: null,
+      inspectedUnit: vi.fn(() => null),
+      eventRangeVisible: vi.fn(() => true),
+      drawUnitRange: vi.fn(),
+      clearRange: vi.fn(),
+    })
+
+    renderer.reconcileEventRange(resolved)
+
+    expect(renderer.drawUnitRange).toHaveBeenCalledWith(resolved, actor, false)
+    expect(renderer.clearRange).not.toHaveBeenCalled()
   })
 
   it('gives every event an activation, and a no-op turn nothing else', () => {

@@ -2,7 +2,7 @@
  * Composing an order on the board: what is offered, what a click does, what gets sent, and what the
  * automatic-strike preview says about it.
  */
-import { Container } from 'pixi.js'
+import { Container, type FederatedPointerEvent } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -12,6 +12,8 @@ import {
   previewPhase,
   REVERT_PULSE_MS,
   revertPulse,
+  setResetButtonActive,
+  wireOrderButtons,
 } from './composition.js'
 import { MONO, type TextFactory } from './draw.js'
 import { walkFieldFor } from './legality.js'
@@ -255,6 +257,32 @@ describe('Crane Reach order controls', () => {
         controlledPlayers: ['player_0', 'player_1', 'player_2'],
       }),
     ).toBe(true)
+  })
+
+  it('keeps inactive Reset named while making its retained hit target inert', () => {
+    const layer = new Container()
+    const onReset = vi.fn()
+    const reset = wireOrderButtons(layer, onReset, vi.fn())
+
+    setResetButtonActive(reset, false)
+    // Pixi creates this native bridge lazily when keyboard accessibility first activates.
+    const bridge = document.createElement('button')
+    reset._accessibleDiv = bridge
+    reset.emit('pointertap', {
+      stopPropagation: vi.fn(),
+    } as unknown as FederatedPointerEvent)
+
+    expect(reset.accessible).toBe(true)
+    expect(reset.accessibleType).toBe('button')
+    expect(reset.accessibleTitle).toBe('Reset movement')
+    expect(reset.eventMode).toBe('none')
+    expect(reset.cursor).toBe('default')
+    expect(bridge.disabled).toBe(true)
+    expect(bridge.title).toBe('Reset movement')
+    expect(onReset).not.toHaveBeenCalled()
+
+    setResetButtonActive(reset, true)
+    expect(bridge.disabled).toBe(false)
   })
 
   it('drains the full perimeter clockwise from the top', () => {
