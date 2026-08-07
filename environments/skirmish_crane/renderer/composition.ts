@@ -1,7 +1,6 @@
 /**
  * Everything human play paints: the mist veil where perception ends, the gilt marks of an order being
- * composed, the informational automatic-strike preview, and the confirmation button whose perimeter
- * is the move clock.
+ * composed, the informational automatic-strike preview, and the reset and confirmation controls.
  *
  * The pieces are split three ways, each for its own reason. The hit areas sit below the units so a
  * unit stays hoverable, and no unit can stand on an offered tile because occupancy is exactly what
@@ -15,7 +14,7 @@ import { type Container, Graphics, Polygon } from 'pixi.js'
 
 import type { CraneAssetName } from './assets.js'
 import { hash } from './board.js'
-import type { SpriteFactory, TextFactory } from './draw.js'
+import { MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { Perspective } from './fog.js'
 import type { OrderComposition, StrikePreview } from './orders.js'
 import {
@@ -29,8 +28,9 @@ import {
 /** How much night ink the unseen ground takes. Terrain stays legible under it, by design. */
 const FOG_VEIL_ALPHA = 0.45
 
-/** The one confirmation control, centered in the bottom strip's clear space. */
-const CONFIRM_BUTTON = { x: SCENE_WIDTH / 2, y: 802, radius: 30 } as const
+/** The two fixed controls, centered in the bottom strip's clear space. */
+export const RESET_BUTTON = { x: 564, y: 802, radius: 30 } as const
+export const CONFIRM_BUTTON = { x: 636, y: 802, radius: 30 } as const
 
 /** The preview pulse repeats on this period; reduced motion snaps to its final highlight instead. */
 const PREVIEW_PERIOD_MS = 1_600
@@ -44,8 +44,6 @@ const THREAD_GAP = 4
 
 export interface OrderPlan {
   order: OrderComposition
-  /** The unit's own tile centre, where the remaining-movement pips sit. */
-  unitPosition: Point
   /** Tile keys a click may extend the path onto. */
   offered: ReadonlySet<string>
   preview: StrikePreview | null
@@ -83,6 +81,12 @@ export function revertPulse(elapsedMs: number, reducedMotion: boolean): number {
 export function previewPhase(elapsedMs: number, reducedMotion: boolean): number {
   if (reducedMotion) return 1
   return (1 - Math.cos((elapsedMs / PREVIEW_PERIOD_MS) * Math.PI * 2)) / 2
+}
+
+/** The activated unit's quiet fade while a person is deciding on an order. */
+export function activationPulseAlpha(elapsedMs: number, reducedMotion: boolean): number {
+  if (reducedMotion) return 1
+  return 0.35 + 0.65 * ((1 + Math.cos((elapsedMs / PREVIEW_PERIOD_MS) * Math.PI * 2)) / 2)
 }
 
 /**
@@ -132,6 +136,7 @@ export function drawOrderMarks(
   text: TextFactory,
   scene: CraneReachScene,
   plan: OrderPlan,
+  textResolution: number,
 ): void {
   const radius = scene.hexRadius
   const byKey = new Map(scene.tiles.map((tile) => [tile.key, tile]))
@@ -152,16 +157,6 @@ export function drawOrderMarks(
     marks.stroke({ color: CRANE_STYLE.activation, width: Math.max(3, radius * 0.14), alpha: 0.92 })
   }
 
-  // Remaining movement, as pips beside the unit. A negative balance is an expensive final step.
-  for (let pip = 0; pip < Math.max(0, plan.order.path.remaining); pip += 1) {
-    marks
-      .circle(
-        plan.unitPosition.x + radius * 0.82,
-        plan.unitPosition.y - radius * 0.5 + pip * radius * 0.3,
-        radius * 0.09,
-      )
-      .fill({ color: CRANE_STYLE.activation })
-  }
   layer.addChild(marks)
 
   for (const [step, center] of walked.slice(1).entries()) {
@@ -170,9 +165,10 @@ export function drawOrderMarks(
       Math.max(10, radius * 0.5),
       CRANE_STYLE.text,
       'center',
-      undefined,
+      MONO,
       { color: CRANE_STYLE.shadow, width: 2 },
     )
+    numeral.resolution = textResolution
     numeral.position.set(center.x, center.y - radius * 0.62)
     layer.addChild(numeral)
   }
@@ -275,38 +271,76 @@ export function wireOrderHits(
 }
 
 /**
- * The confirmation button's hit target, built once and shown only while an order is being composed.
- * It is separate from the drawing below because the clock redraws every frame, and a hit target
+ * The order controls' hit targets, built once and shown only while an order is being composed.
+ * They are separate from the drawing below because the clock redraws every frame, and a hit target
  * replaced between a press and its release would never complete a tap.
  */
-export function wireConfirmButton(layer: Container, onConfirm: () => void): void {
-  const { x, y, radius } = CONFIRM_BUTTON
+export function wireOrderButtons(
+  layer: Container,
+  onReset: () => void,
+  onConfirm: () => void,
+): Graphics {
+  const reset = wireOrderButton(RESET_BUTTON, 'Reset movement', onReset)
+  const confirm = wireOrderButton(CONFIRM_BUTTON, 'Confirm order', onConfirm)
+  layer.addChild(reset, confirm)
+  return reset
+}
+
+/** Toggle Reset without replacing its retained hit target during a press. */
+export function setResetButtonActive(reset: Graphics, active: boolean): void {
+  reset.eventMode = active ? 'static' : 'none'
+  reset.cursor = active ? 'pointer' : 'default'
+  reset.accessible = active
+}
+
+function wireOrderButton(
+  control: { x: number; y: number; radius: number },
+  title: string,
+  callback: () => void,
+): Graphics {
   const hit = new Graphics()
-  hit.circle(x, y, radius).fill({ color: CRANE_STYLE.activation, alpha: 0 })
+  hit.circle(control.x, control.y, control.radius).fill({ color: CRANE_STYLE.activation, alpha: 0 })
   hit.eventMode = 'static'
   hit.cursor = 'pointer'
   hit.accessible = true
   hit.accessibleType = 'button'
-  hit.accessibleTitle = 'Confirm order'
+  hit.accessibleTitle = title
   hit.on('pointertap', (event) => {
     event.stopPropagation()
-    onConfirm()
+    callback()
   })
-  layer.addChild(hit)
+  return hit
 }
 
 /**
- * The single confirmation button. Its full gilt perimeter is the move clock, draining clockwise from
- * the top and turning ember in the closing seconds; there is no separate countdown anywhere.
+ * The fixed reset and confirmation controls. Confirm's gilt perimeter is the move clock, draining
+ * clockwise from the top and turning ember in the closing seconds; there is no separate countdown.
  */
-export function drawConfirmButton(layer: Container, sprite: SpriteFactory, plan: OrderPlan): void {
-  const { x, y, radius } = CONFIRM_BUTTON
+export function drawOrderControls(layer: Container, sprite: SpriteFactory, plan: OrderPlan): void {
+  drawOrderButton(layer, sprite, RESET_BUTTON, 'glyphReset', plan.order.path.directions.length > 0)
+  drawOrderButton(layer, sprite, CONFIRM_BUTTON, 'glyphMove', true, plan.clock)
+}
+
+function drawOrderButton(
+  layer: Container,
+  sprite: SpriteFactory,
+  control: { x: number; y: number; radius: number },
+  glyphName: CraneAssetName,
+  active: boolean,
+  clock: MoveClockReading | null = null,
+): void {
+  const { x, y, radius } = control
   const button = new Graphics()
   button.circle(x, y, radius).fill({ color: CRANE_STYLE.backdrop, alpha: 0.86 })
-  button.circle(x, y, radius).stroke({ color: CRANE_STYLE.grid, width: 2 })
+  button
+    .circle(x, y, radius)
+    .stroke({
+      color: active ? CRANE_STYLE.grid : CRANE_STYLE.mutedText,
+      width: 2,
+      alpha: active ? 1 : 0.45,
+    })
   layer.addChild(button)
 
-  const clock = plan.clock
   if (clock !== null && clock.fraction > 0) {
     const arc = clockArc(clock.fraction)
     // `arc` continues whatever path is open, so it needs its own object and an explicit start. Left
@@ -319,9 +353,10 @@ export function drawConfirmButton(layer: Container, sprite: SpriteFactory, plan:
     layer.addChild(remaining)
   }
 
-  const glyph = sprite('glyphMove', x, y, radius * 1.1, radius * 1.1)
+  const glyph = sprite(glyphName, x, y, radius * 1.1, radius * 1.1)
   if (glyph !== null) {
-    glyph.tint = CRANE_STYLE.text
+    glyph.tint = active ? CRANE_STYLE.text : CRANE_STYLE.mutedText
+    glyph.alpha = active ? 1 : 0.45
     layer.addChild(glyph)
   }
 }

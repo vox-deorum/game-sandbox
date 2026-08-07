@@ -24,6 +24,10 @@ export interface CraneTiming {
   reactionOffsetMs: number
   /** The damage numeral, the capture bloom, and the death wisp. */
   reactionMs: number
+  /** The readable pause after a controlled player's visible event. */
+  humanSettleMs: number
+  /** The readable pause after every other visible event. */
+  watchSettleMs: number
 }
 
 export const CRANE_TIMING: CraneTiming = {
@@ -32,6 +36,13 @@ export const CRANE_TIMING: CraneTiming = {
   attackMs: 400,
   reactionOffsetMs: 100,
   reactionMs: 700,
+  humanSettleMs: 300,
+  watchSettleMs: 200,
+}
+
+/** The unscaled pause that follows a visible event, selected when that event is installed. */
+export function eventSettleDuration(actorIsControlled: boolean): number {
+  return actorIsControlled ? CRANE_TIMING.humanSettleMs : CRANE_TIMING.watchSettleMs
 }
 
 /** What the schedule needs to know about an event: how far it moves, whether it strikes and provokes. */

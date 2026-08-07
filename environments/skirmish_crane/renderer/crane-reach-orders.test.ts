@@ -2,9 +2,18 @@
  * Composing an order on the board: what is offered, what a click does, what gets sent, and what the
  * automatic-strike preview says about it.
  */
-import { describe, expect, it } from 'vitest'
+import { Container } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 
-import { clockArc, previewPhase, REVERT_PULSE_MS, revertPulse } from './composition.js'
+import {
+  activationPulseAlpha,
+  clockArc,
+  drawOrderMarks,
+  previewPhase,
+  REVERT_PULSE_MS,
+  revertPulse,
+} from './composition.js'
+import { MONO, type TextFactory } from './draw.js'
 import { walkFieldFor } from './legality.js'
 import {
   beginOrder,
@@ -13,11 +22,12 @@ import {
   offeredTiles,
   orderAction,
   orderTurnOpen,
+  resetOrder,
   strikePreview,
   undoStep,
 } from './orders.js'
 import { encodePath } from './paths.js'
-import type { HexTile, SceneUnit } from './scene.js'
+import type { CraneReachScene, HexTile, SceneUnit } from './scene.js'
 
 function tile(
   q: number,
@@ -133,6 +143,20 @@ describe('Crane Reach order composition', () => {
     order = clickTile(field, order, '0,0')
     expect(order.path.directions).toEqual([])
     expect(orderAction(order)).toEqual({ path: 0, target: 0 })
+  })
+
+  it('resets a multi-step path to its origin and leaves an empty path alone', () => {
+    const unit = unitAt('red_cavalry_0', '0,0', 'cavalry')
+    const tiles = openField()
+    const field = walkFieldFor(unit, tiles, [unit])
+    let order = beginOrder(unit, field)
+    order = clickTile(field, order, '1,0')
+    order = clickTile(field, order, '2,0')
+
+    const reset = resetOrder(field, order)
+    expect(reset.path).toEqual({ directions: [], tiles: ['0,0'], remaining: field.movement })
+    expect(orderAction(reset)).toEqual({ path: 0, target: 0 })
+    expect(resetOrder(field, reset)).toBe(reset)
   })
 
   it('treats the origin tile as the reset even when the path could walk back onto it', () => {
@@ -264,5 +288,49 @@ describe('Crane Reach order controls', () => {
     expect(previewPhase(400, true)).toBe(1)
     expect(previewPhase(0, false)).toBeCloseTo(0)
     expect(previewPhase(800, false)).toBeCloseTo(1)
+  })
+
+  it('fades the activation seal only while motion is allowed', () => {
+    expect(activationPulseAlpha(0, false)).toBe(1)
+    expect(activationPulseAlpha(800, false)).toBeCloseTo(0.35)
+    expect(activationPulseAlpha(1_600, false)).toBeCloseTo(1)
+    expect(activationPulseAlpha(0, true)).toBe(1)
+    expect(activationPulseAlpha(800, true)).toBe(1)
+  })
+
+  it('bakes step numerals at the supplied resolution in the mono family', () => {
+    const layer = new Container()
+    const numeral = new Container() as ReturnType<TextFactory>
+    const text = vi.fn(() => numeral) as TextFactory
+    const scene = {
+      hexRadius: 30,
+      tiles: [tile(0, 0), tile(1, 0)],
+    } as CraneReachScene
+    drawOrderMarks(
+      layer,
+      text,
+      scene,
+      {
+        order: {
+          unitId: 'red_footman_0',
+          path: { directions: [2], tiles: ['0,0', '1,0'], remaining: 1 },
+        },
+        offered: new Set(),
+        preview: null,
+        previewPositions: [],
+        revert: null,
+        clock: null,
+      },
+      3.5,
+    )
+    expect(text).toHaveBeenCalledWith(
+      '1',
+      15,
+      expect.any(String),
+      'center',
+      MONO,
+      expect.any(Object),
+    )
+    expect(numeral.resolution).toBe(3.5)
   })
 })

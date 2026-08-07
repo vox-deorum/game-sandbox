@@ -267,23 +267,13 @@ def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
     assert captured["external_chat_player"] == "player_1"
 
 
-def test_wide_human_seat_requires_and_expands_an_explicit_companion(
+def test_wide_human_seat_defaults_to_naive_and_preserves_an_explicit_companion(
     monkeypatch,
     tmp_path: Path,
 ):
     entry = _wide_entry()
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
     (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
-
-    with pytest.raises(RuntimeError, match="requires --companion"):
-        play.local_config(
-            entry,
-            mode="human",
-            seat=0,
-            seed=1,
-            max_steps=None,
-            recording_dir=tmp_path,
-        )
 
     config = play.local_config(
         entry,
@@ -319,6 +309,17 @@ def test_wide_human_seat_requires_and_expands_an_explicit_companion(
         "builtin_name": "naive",
         "label": "Naive agent",
     }
+
+    defaulted = play.local_config(
+        entry,
+        mode="human",
+        seat=0,
+        seed=1,
+        max_steps=None,
+        recording_dir=tmp_path,
+    )
+    assert defaulted["player_bindings"] == config["player_bindings"]
+    assert defaulted["external_chat_player"] == "player_0"
 
 
 def test_self_companion_binds_every_seat_member_as_externally_controlled(
@@ -357,19 +358,9 @@ def test_self_companion_binds_every_seat_member_as_externally_controlled(
     assert config["external_chat_player"] == "player_0"
 
 
-def test_self_companion_is_offered_and_needs_a_human_capable_seat(monkeypatch, tmp_path: Path):
+def test_self_companion_needs_a_human_capable_seat(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
     (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
-
-    with pytest.raises(RuntimeError, match="--companion self"):
-        play.local_config(
-            _wide_entry(),
-            mode="human",
-            seat=0,
-            seed=1,
-            max_steps=None,
-            recording_dir=tmp_path,
-        )
 
     # A seat holding a player nobody may steer cannot be played whole.
     with pytest.raises(RuntimeError, match="human-capable"):
@@ -408,6 +399,31 @@ def test_self_companion_plays_a_real_wide_seat_whole(env_id: str, monkeypatch, t
     assert config["external_chat_player"] == seat_players[0]
     others = [player for player in bindings if player not in seat_players]  # type: ignore[operator]
     assert others and all(bindings[player]["kind"] == "builtin-agent" for player in others)  # type: ignore[index]
+
+
+def test_skirmish_crane_wide_preset_defaults_the_companion_to_naive(tmp_path: Path):
+    entry = load_environment("skirmish_crane")
+    parameters = play.resolve_cli_parameters(entry, [], preset="season_6")
+    seat_players = play.default_layout(entry, parameters).seats[0].players
+
+    config = play.local_config(
+        entry,
+        mode="human",
+        seat=0,
+        seed=1,
+        max_steps=None,
+        parameters=parameters,
+        recording_dir=tmp_path,
+    )
+
+    bindings = config["player_bindings"]
+    human_player = play.player_for_seat(entry, 0, parameters)
+    assert bindings[human_player] == {"kind": "external"}  # type: ignore[index]
+    assert all(
+        bindings[player]["name"] == "naive"  # type: ignore[index]
+        for player in seat_players
+        if player != human_player
+    )
 
 
 def test_repeatable_typed_parameters_select_the_layout_and_validate_values():
@@ -555,9 +571,21 @@ def test_cli_applies_preset_plan_before_validating_the_seat(monkeypatch):
     assert captured["player_bindings"]["player_3"] == {"kind": "external"}  # type: ignore[index]
 
 
-def test_cli_requires_companion_for_default_wide_plan(monkeypatch, capsys):
+def test_cli_defaults_a_wide_human_seat_to_naive(monkeypatch):
     monkeypatch.setattr(play, "load_environment", lambda _env_id: _wide_entry())
-    with pytest.raises(SystemExit) as error:
-        play.main(["fixture", "human", "--no-browser"])
-    assert error.value.code == 2
-    assert "requires --companion" in capsys.readouterr().err
+    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id, _name: "builtin")
+    captured: dict[str, object] = {}
+
+    def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:
+        captured.update(config)
+        return 0
+
+    monkeypatch.setattr(play, "launch_browser", launch)
+
+    assert play.main(["fixture", "human", "--no-browser"]) == 0
+    assert captured["player_bindings"] == {
+        "player_0": {"kind": "external"},
+        "player_2": {"kind": "builtin-agent", "path": "builtin", "name": "naive"},
+        "player_1": {"kind": "builtin-agent", "path": "builtin", "name": "naive"},
+        "player_3": {"kind": "builtin-agent", "path": "builtin", "name": "naive"},
+    }

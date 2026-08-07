@@ -13,7 +13,7 @@ ASSET_ENTRY = re.compile(
 
 def manifest_assets() -> dict[str, tuple[int, int]]:
     entries = list(ASSET_ENTRY.finditer((RENDERER / "assets.ts").read_text(encoding="utf-8")))
-    assert len(entries) == 30
+    assert len(entries) == 31
     assert len({entry.group("name") for entry in entries}) == len(entries)
     return {entry.group("file"): (int(entry.group("width")), int(entry.group("height"))) for entry in entries}
 
@@ -21,7 +21,7 @@ def manifest_assets() -> dict[str, tuple[int, int]]:
 def test_renderer_asset_manifest_files_have_the_declared_formats_and_sizes() -> None:
     declared = manifest_assets()
     assert {path.name for path in ASSETS.iterdir() if path.is_file()} == set(declared)
-    assert len(declared) == 30
+    assert len(declared) == 31
     assert all(name.endswith(".png") for name in declared)
 
     for name, expected_size in declared.items():

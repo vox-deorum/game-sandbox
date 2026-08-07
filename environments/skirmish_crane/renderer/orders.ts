@@ -48,6 +48,16 @@ export function beginOrder(
   return { unitId: unit.unitId, path: emptyWalk(unit, field) }
 }
 
+/** Restore an order to its origin without changing which unit is activated. */
+export function resetOrder(field: WalkField, order: OrderComposition): OrderComposition {
+  if (order.path.directions.length === 0) return order
+  const origin = order.path.tiles[0] as string
+  return {
+    unitId: order.unitId,
+    path: { directions: [], tiles: [origin], remaining: field.movement },
+  }
+}
+
 /** The tile the unit would end on, which is where the automatic strike resolves from. */
 export function endpointOf(order: OrderComposition): string {
   return order.path.tiles[order.path.tiles.length - 1] as string
@@ -76,12 +86,7 @@ export function clickTile(
 ): OrderComposition {
   const origin = order.path.tiles[0] as string
   if (tileKey === origin) {
-    return order.path.directions.length === 0
-      ? order
-      : {
-          unitId: order.unitId,
-          path: { directions: [], tiles: [origin], remaining: field.movement },
-        }
+    return resetOrder(field, order)
   }
   if (order.path.directions.length > 0 && tileKey === endpointOf(order))
     return undoStep(field, order)

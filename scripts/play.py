@@ -137,10 +137,10 @@ def local_config(
     player_ids = possible_players(entry, resolved_parameters)
     selected_players = layout.seats[seat].players
     human_player = player_for_seat(entry, seat, resolved_parameters) if mode == "human" else None
+    # Match template human play: an omitted companion still gives the rest of a wide seat a normal
+    # agent controller. The maintainer launcher uses the environment's built-in naive agent.
     if mode == "human" and len(selected_players) > 1 and companion is None:
-        raise RuntimeError(
-            "a wide human seat requires --companion self, --companion naive, or a local agent manifest path"
-        )
+        companion = "naive"
     if companion is not None and (mode != "human" or len(selected_players) == 1):
         raise RuntimeError("--companion is only valid for a wide human seat")
     # `self` plays the whole seat by hand, so every member is externally controlled and no companion

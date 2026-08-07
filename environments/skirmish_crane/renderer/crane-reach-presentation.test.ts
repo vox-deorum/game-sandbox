@@ -94,11 +94,11 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(compactMetrics.rise * (390 / 1_200)).toBeCloseTo(12)
   })
 
-  it('keeps one typed 30-source loading contract and makes it injectable without decoding', async () => {
-    expect(CRANE_ASSET_MANIFEST).toHaveLength(30)
+  it('keeps one typed 31-source loading contract and makes it injectable without decoding', async () => {
+    expect(CRANE_ASSET_MANIFEST).toHaveLength(31)
     expect(CRANE_ASSET_MANIFEST.every((asset) => asset.path.endsWith('.png'))).toBe(true)
     expect(CRANE_ASSET_MANIFEST.every((asset) => asset.width > 0 && asset.height > 0)).toBe(true)
-    expect(Object.keys(craneAssetSources())).toHaveLength(30)
+    expect(Object.keys(craneAssetSources())).toHaveLength(31)
     const loaded = await loadCraneAssets(async (asset) => `stub:${asset.name}`)
     expect(loaded.paperField).toBe('stub:paperField')
     expect(loaded.figCavalry).toBe('stub:figCavalry')

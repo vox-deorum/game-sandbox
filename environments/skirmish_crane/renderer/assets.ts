@@ -125,6 +125,13 @@ export const CRANE_ASSET_MANIFEST = [
     consumer: 'move marks and HUD',
   },
   {
+    name: 'glyphReset',
+    path: './assets/glyph-reset.png',
+    width: 64,
+    height: 64,
+    consumer: 'human movement reset control',
+  },
+  {
     name: 'figFootman',
     path: './assets/fig-footman.png',
     width: 128,

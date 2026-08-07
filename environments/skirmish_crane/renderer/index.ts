@@ -38,9 +38,10 @@ import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
 import {
-  drawConfirmButton,
+  activationPulseAlpha,
   drawFogVeil,
   drawOrderMarks,
+  drawOrderControls,
   drawOrderPulse,
   FOG_CROSSFADE_MS,
   fogCrossfade,
@@ -48,8 +49,10 @@ import {
   prefersReducedMotion,
   previewPhase,
   REVERT_PULSE_MS,
+  RESET_BUTTON,
   revertPulse,
-  wireConfirmButton,
+  setResetButtonActive,
+  wireOrderButtons,
   wireOrderHits,
 } from './composition.js'
 import { MONO } from './draw.js'
@@ -77,6 +80,7 @@ import {
   offeredTiles,
   orderAction,
   orderTurnOpen,
+  resetOrder as resetComposedOrder,
   type StrikePreview,
   strikePreview,
 } from './orders.js'
@@ -99,6 +103,7 @@ import {
   eventPhaseAt,
   eventRangeVisibleAt,
   eventScale,
+  eventSettleDuration,
   eventTimelineProgress,
   eventWindows,
   rangedArcAlpha,
@@ -119,13 +124,6 @@ import {
   transitionSceneFor,
 } from './transitions.js'
 import { createUnitNode, drawUnit, type UnitNode } from './units.js'
-
-/**
- * A beat held after an order you gave has finished playing, before the picture moves on to whoever
- * acts next. Without it your own move resolves and the fog switches in the same instant, and the
- * result of what you just did is gone before you have read it.
- */
-const OWN_ORDER_SETTLE_MS = 300
 
 /** Everything composing one controlled activation. It lives and dies as a single piece. */
 interface OrderSession {
@@ -161,10 +159,11 @@ export class CraneReachRenderer extends PixiRenderer {
   /** The confirmation button's artwork, screen-fixed above the world like the rest of the HUD. */
   private orderControlLayer!: Container
   /**
-   * The confirmation button's hit target, built once. A hit target rebuilt between a press and its
-   * release would never complete a tap, and the clock above it redraws on every frame.
+   * The order controls' hit targets, built once. A hit target rebuilt between a press and its release
+   * would never complete a tap, and the clock above it redraws on every frame.
    */
   private orderButtonLayer!: Container
+  private resetButtonHit!: Graphics
   private eventLayer!: Container
   private transientLayer!: Container
   private worldLayer!: Container
@@ -186,9 +185,9 @@ export class CraneReachRenderer extends PixiRenderer {
   private presentedScene: CraneReachScene | null = null
   private deathSnapshot: SceneUnit | null = null
   private eventAnimating = false
-  /** Whether this event resolves an order from a player at this screen, so its result is held. */
-  private eventIsOurs = false
-  /** What is left of that hold, once the event's own schedule has finished. */
+  /** The post-event hold chosen when the visible event begins. */
+  private settleDurationMs = 0
+  /** What remains of that hold once the event's own schedule has finished. */
   private settleRemainingMs = 0
   private inspection: InspectionState = EMPTY_INSPECTION
   /** The perspective the presented frame is drawn through; null when nothing is hidden. */
@@ -258,7 +257,12 @@ export class CraneReachRenderer extends PixiRenderer {
       this.inspectionLayer,
     )
     this.orderButtonLayer.visible = false
-    wireConfirmButton(this.orderButtonLayer, () => this.sendOrder())
+    this.resetButtonHit = wireOrderButtons(
+      this.orderButtonLayer,
+      () => this.resetOrder(),
+      () => this.sendOrder(),
+    )
+    setResetButtonActive(this.resetButtonHit, false)
     root.eventMode = 'passive'
     root.interactiveChildren = true
     const stage = root.parent
@@ -325,7 +329,7 @@ export class CraneReachRenderer extends PixiRenderer {
 
   protected override onFrame(dtMs: number): boolean {
     // Three things can want frames: the event in flight, a perspective switch cross-dissolving, and a
-    // live human turn, whose clock drains and whose strike preview breathes for as long as it lasts.
+    // live human turn, whose clock drains, preview breathes, and activation seal fades as it lasts.
     const event = this.advanceEvent(dtMs)
     const fog = this.advanceFog(dtMs)
     const human = this.advanceHumanTurn(dtMs)
@@ -358,11 +362,11 @@ export class CraneReachRenderer extends PixiRenderer {
       this.reconcileEvent()
       return true
     }
-    if (this.eventIsOurs) {
-      // Hold the finished frame for a beat, so your own move lands before the fog follows the next
-      // unit. The host waits on the transition, so the session pauses with the picture.
-      this.eventIsOurs = false
-      this.settleRemainingMs = OWN_ORDER_SETTLE_MS
+    if (this.settleDurationMs > 0) {
+      // Hold the settled picture long enough to read it before the next activation replaces it.
+      this.settleRemainingMs = this.settleDurationMs
+      this.settleDurationMs = 0
+      this.reconcileEvent()
       return true
     }
     this.completeEvent()
@@ -377,7 +381,7 @@ export class CraneReachRenderer extends PixiRenderer {
     return this.fogElapsedMs < FOG_CROSSFADE_MS
   }
 
-  /** Keep drawing while a human is on the clock: the perimeter drains and the preview breathes. */
+  /** Keep drawing while a human is on the clock: its controls, preview, and seal all move. */
   private advanceHumanTurn(dtMs: number): boolean {
     if (this.orderSession === null || this.presentedScene === null) return false
     this.humanElapsedMs += dtMs
@@ -387,9 +391,9 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   /**
-   * Redraw only what moves during a human turn: the draining perimeter, the strike preview, and a
-   * reverted tile's pulse. The settled marks stay as they are, because they bake text and rebuilding
-   * them every frame for a turn that may last a minute would be pure waste.
+   * Redraw only what moves during a human turn: the draining perimeter, the strike preview, the seal,
+   * and a reverted tile's pulse. The settled marks stay as they are, because they bake text and
+   * rebuilding them every frame for a turn that may last a minute would be pure waste.
    */
   private refreshOrderFrame(scene: CraneReachScene): void {
     const session = this.orderSession
@@ -410,7 +414,8 @@ export class CraneReachRenderer extends PixiRenderer {
       previewPhase(this.humanElapsedMs, reducedMotion),
     )
     clear(this.orderControlLayer)
-    drawConfirmButton(this.orderControlLayer, this.sprite, frame)
+    drawOrderControls(this.orderControlLayer, this.sprite, frame)
+    this.activationLayer.alpha = activationPulseAlpha(this.humanElapsedMs, reducedMotion)
     this.ctx.container.dataset.craneClock =
       frame.clock === null ? 'none' : String(frame.clock.seconds)
   }
@@ -447,7 +452,7 @@ export class CraneReachRenderer extends PixiRenderer {
       scene.event === null ? null : eventWindows(eventShapeFor(scene.event), eventScale(options))
     this.eventElapsedMs = animate ? 0 : (this.eventSchedule?.durationMs ?? 0)
     this.eventAnimating = animate
-    this.eventIsOurs = animate && this.actorIsControlled(scene)
+    this.settleDurationMs = animate ? eventSettleDuration(this.actorIsControlled(scene)) : 0
     this.settleRemainingMs = 0
     this.deathSnapshot = animate ? deathSnapshotFor(this.previousScene, scene) : null
     this.updateEventPhaseProbe()
@@ -499,7 +504,7 @@ export class CraneReachRenderer extends PixiRenderer {
     if (this.currentScene === null) return
     this.eventElapsedMs = this.eventSchedule?.durationMs ?? 0
     this.eventAnimating = false
-    this.eventIsOurs = false
+    this.settleDurationMs = 0
     this.settleRemainingMs = 0
     this.updateEventPhaseProbe()
     this.reconcilePresentedScene(this.currentScene, false)
@@ -690,6 +695,7 @@ export class CraneReachRenderer extends PixiRenderer {
   }
 
   private reconcileActivation(scene: CraneReachScene): void {
+    this.activationLayer.alpha = 1
     clear(this.activationLayer)
     if (scene.activation === null) return
     // The seal names the actor, so it appears only where the perspective can already see it.
@@ -704,6 +710,7 @@ export class CraneReachRenderer extends PixiRenderer {
 
   /** During an event the seal travels with the actor instead of sitting on the scene's activation. */
   private reconcileEventActivation(scene: CraneReachScene): void {
+    this.activationLayer.alpha = 1
     clear(this.activationLayer)
     if (this.event === null) return
     const position = routePositionFor(this.event.route, this.eventTimeline().movement)
@@ -972,16 +979,22 @@ export class CraneReachRenderer extends PixiRenderer {
       clear(this.orderHitLayer)
       this.orderSession = null
       this.orderButtonLayer.visible = false
+      setResetButtonActive(this.resetButtonHit, false)
+      this.activationLayer.alpha = 1
       this.moveClock.close()
       const data = this.ctx.container.dataset
       data.craneOrder = 'none'
       data.craneOrderPath = 'none'
       data.craneConfirm = 'none'
+      data.craneReset = 'none'
       data.craneClock = 'none'
       data.craneStrikePreview = 'none'
+      data.craneStepTextResolution = 'none'
       delete data.craneOfferedTile
       delete data.craneOfferedX
       delete data.craneOfferedY
+      delete data.craneResetX
+      delete data.craneResetY
       return
     }
     const session = this.orderSessionFor(unit, scene)
@@ -996,7 +1009,6 @@ export class CraneReachRenderer extends PixiRenderer {
       .filter((position): position is { x: number; y: number } => position !== undefined)
     const plan: OrderPlan = {
       order,
-      unitPosition: unit.position,
       offered,
       preview,
       previewPositions,
@@ -1011,9 +1023,15 @@ export class CraneReachRenderer extends PixiRenderer {
     }
 
     session.plan = plan
-    drawOrderMarks(this.orderMarkLayer, this.text.bind(this), scene, plan)
+    drawOrderMarks(
+      this.orderMarkLayer,
+      this.text.bind(this),
+      scene,
+      plan,
+      this.textResolution() * (this.camera?.zoom ?? 1),
+    )
     this.drawEndpointGhost(scene, unit, endpoint)
-    // Clicking the endpoint takes a step back and clicking the unit's own tile clears; everything
+    // Clicking the endpoint takes a step back and clicking the unit's own tile resets; everything
     // else on the board stays inert, so a composed path can only ever be a legal one.
     const clickable = new Set([...offered, endpoint, order.path.tiles[0] as string])
     const clickableKey = [...clickable].sort().join(' ')
@@ -1023,6 +1041,7 @@ export class CraneReachRenderer extends PixiRenderer {
       session.clickableKey = clickableKey
     }
     this.orderButtonLayer.visible = true
+    setResetButtonActive(this.resetButtonHit, order.path.directions.length > 0)
     this.publishOrderProbes(scene, plan, offered)
     this.refreshOrderFrame(scene)
   }
@@ -1091,10 +1110,23 @@ export class CraneReachRenderer extends PixiRenderer {
     if (this.cameraGestures?.dragging() === true) return
     const before = session.order
     session.order = clickTile(session.field, before, tileKey)
-    // A step taken back pulses the tile it left, so a revision is visible without a reset control.
+    // A step taken back pulses the tile it left, so the revision is visible alongside Reset.
     const reverted = session.order.path.directions.length < before.path.directions.length
     this.revertedTile = reverted ? tileKey : null
     this.revertElapsedMs = 0
+    this.humanElapsedMs = 0
+    this.reconcileOrder(scene)
+    this.redrawCurrentFrame()
+  }
+
+  /** Clear a composed path without sending an action or changing the active unit's move clock. */
+  private resetOrder(): void {
+    const session = this.orderSession
+    const scene = this.presentedScene
+    if (session === null || scene === null || session.order.path.directions.length === 0) return
+    session.order = resetComposedOrder(session.field, session.order)
+    this.revertedTile = null
+    this.revertElapsedMs = REVERT_PULSE_MS
     this.humanElapsedMs = 0
     this.reconcileOrder(scene)
     this.redrawCurrentFrame()
@@ -1123,6 +1155,13 @@ export class CraneReachRenderer extends PixiRenderer {
     data.craneOrder = plan.order.path.directions.join('')
     data.craneOrderPath = String(encodePath(plan.order.path.directions))
     data.craneConfirm = 'ready'
+    data.craneReset = plan.order.path.directions.length === 0 ? 'inactive' : 'ready'
+    data.craneResetX = String(RESET_BUTTON.x)
+    data.craneResetY = String(RESET_BUTTON.y)
+    data.craneStepTextResolution =
+      plan.order.path.directions.length === 0
+        ? 'none'
+        : String(this.textResolution() * (this.camera?.zoom ?? 1))
     data.craneStrikePreview = previewProbe(plan.preview)
     const first = scene.tiles.find((tile) => offered.has(tile.key))
     if (first === undefined) {

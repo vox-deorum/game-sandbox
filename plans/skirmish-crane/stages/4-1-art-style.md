@@ -78,7 +78,7 @@ The battlefield layer still builds once per episode; everything here is placed a
 
 ### Asset manifest
 
-One hand-drawn set, all original art, ships as individually bundled renderer-local PNG assets. All 30 runtime assets are grayscale-alpha PNG masks that tint at draw. The exact high-resolution generated originals, including superseded variants, are preserved under `renderer/source-art/`. A manifest names every runtime source file, its intended dimensions, and its consumer. It is the one loading contract, with no generated spritesheet or atlas metadata. The pennant, crane, move glyph, and stat icons also serve the step 4.2 HUD.
+One hand-drawn set, all original art, ships as individually bundled renderer-local PNG assets. All 31 runtime assets are grayscale-alpha PNG masks that tint at draw. The exact high-resolution generated originals, including superseded variants, are preserved under `renderer/source-art/`. A manifest names every runtime source file, its intended dimensions, and its consumer. It is the one loading contract, with no generated spritesheet or atlas metadata. The pennant, crane, move and reset glyphs, and stat icons also serve the step 4.2 HUD.
 
 | Asset | Size | For |
 | --- | --- | --- |
@@ -94,13 +94,13 @@ One hand-drawn set, all original art, ships as individually bundled renderer-loc
 | shadow-oval.png | 64 x 64 | unit shadows |
 | seal-ring.png | 96 x 96 | brushy circle: activation ring, target seal |
 | zone-dash.png | 96 x 24 | static zone border segments |
-| glyph-sword.png, glyph-bow.png, glyph-horse.png, glyph-move.png | 64 x 64 each | token, roster, and move marks |
+| glyph-sword.png, glyph-bow.png, glyph-horse.png, glyph-move.png, glyph-reset.png | 64 x 64 each | token, roster, move, and reset marks |
 | fig-footman.png, fig-archer.png, fig-cavalry.png | 128 x 128 each | figure-level silhouettes, roster marks |
 | pennant.png | 48 x 64 | capture zone standard |
 | crane.png | 192 x 96 | thumbnail motif |
 | icon-hp.png, icon-move.png, icon-attack.png, icon-range.png, icon-vision.png | 32 x 32 each | step 4.2 unit and order information |
 
-Thirty runtime source files are grayscale-alpha PNGs. Everything is tintable where the treatment calls for it, and nothing is borrowed.
+Thirty-one runtime source files are grayscale-alpha PNGs. `glyph-reset.png` has a high-resolution source original alongside the other source art. Everything is tintable where the treatment calls for it, and nothing is borrowed.
 
 ### Units and presentation level
 
@@ -122,16 +122,16 @@ Each level identifies unit type differently:
 ### Zones, activation, and events
 
 - Capture zones use a strong static mark. All seven tiles take a mulberry wash at alpha 0.20 with a pale-orchid center emphasis at alpha 0.50. The zone's outer boundary is a union outline, not per-tile rings, drawn in heavy `zone-dash` segments tinted pale orchid. The center tile carries a large `pennant` sprite at figure level and a mulberry seal-ring at token and compact levels.
-- Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. Step 4.2 extends it with the acting unit's movement-range wash.
-- Events run on absolute phase windows rather than a normalized budget. At scale 1: activation is 150 ms, movement is 150 ms per tile, an attack is 400 ms, and a reaction is 600 ms, starting 100 ms into the attack when there is a target or the instant movement ends for a capture-only reaction. `timeline.ts` holds these constants as `CRANE_TIMING` and lays out each event's windows in `eventWindows`; read that file for the current values rather than assuming they hold. A paced host's cadence, relative to one second, scales the whole schedule (`transitionScale`), and the event's total duration is whichever included window ends last, so a four-tile charge into a kill genuinely takes longer to play than a step-and-stab. Movement eases per tile with the host curve, cubic-bezier(0.2, 0, 0, 1); attack and reaction progress linearly, so the ranged arc and the reaction fades hold their brightness through the beat instead of vanishing at its start.
+- Activation: the acting unit wears the `seal-ring` tinted gilt at 0.9 hexRadius, plus a soft gilt under-glow on its tile at alpha 0.12. The highlight is the only actor signal; no HUD text names the actor. During open human composition only, the seal fades from full opacity to 0.35 and back over 1.6 seconds. Reduced motion keeps it steady, as do spectate, replay, and event seals. Step 4.2 extends it with the acting unit's movement-range wash.
+- Events run on absolute phase windows rather than a normalized budget. At scale 1: activation is 200 ms, movement is 200 ms per tile, an attack is 400 ms, and a reaction is 700 ms, starting 100 ms into the attack when there is a target or the instant movement ends for a capture-only reaction. `timeline.ts` holds these constants as `CRANE_TIMING` and lays out each event's windows in `eventWindows`; it also owns the wall-clock settled-frame holds: 300 ms for an event ordered by a player controlled at this screen and 200 ms for every other visible watched event. Snap and invisible updates do not hold. A paced host's cadence, relative to one second, scales the event schedule (`transitionScale`), and the event's total duration is whichever included window ends last, so a four-tile charge into a kill genuinely takes longer to play than a step-and-stab. Movement eases per tile with the host curve, cubic-bezier(0.2, 0, 0, 1); attack and reaction progress linearly, so the ranged arc and the reaction fades hold their brightness through the beat instead of vanishing at its start.
 
 | Event | Shape | Color | Timing (scale 1) |
 | --- | --- | --- | --- |
-| activation | the acting unit holds under its gilt seal before moving | gilt | 0 to 150 ms |
-| move | the unit follows every tile in its executed route, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | 150 ms, plus 150 ms per tile: ends at 300, 450, 600, or 750 ms for one through four tiles |
+| activation | the acting unit holds under its gilt seal before moving | gilt | 0 to 200 ms |
+| move | the unit follows every tile in its executed route, leaving a dilute-ink trail (width 3, alpha 0.5) that fades as it settles | dilute ink | 200 ms, plus 200 ms per tile: ends at 400, 600, 800, or 1000 ms for one through four tiles |
 | melee attack (distance 1) | actor lunges 20 percent toward the target and returns | side color | starts when movement ends, runs 400 ms |
 | ranged attack | a thin pale-bone streak arcs actor to target, vanishing on arrival | pale bone | starts when movement ends, runs 400 ms |
-| damage | a pale-ember tint over the target fades across the reaction, and mono `-3` with an opaque two-CSS-pixel black outline holds still at full strength while it is read, then rises 12 px and fades over the tail of the reaction, minimum 12 px text | pale ember | starts 100 ms into the attack (movement's end for a capture-only event), runs 600 ms |
+| damage | a pale-ember tint over the target fades across the reaction, and mono `-3` with an opaque two-CSS-pixel black outline holds still at full strength while it is read, then rises 12 px and fades over the tail of the reaction, minimum 12 px text | pale ember | starts 100 ms into the attack (movement's end for a capture-only event), runs 700 ms |
 | death | the ink-dissolve treatment, starting with the reaction | dilute ink | same window as damage |
 | capture score | the zone's center emphasis briefly blooms and a `+1` in the scoring side's color rises from the standard | side color, pale orchid | same window as damage; starts immediately at movement's end for a capture-only event |
 
@@ -168,12 +168,12 @@ Candidate styles render over the two step 3 fixtures and are reviewed in the bro
 
 - Scene tests updated where they assert on style-bearing output; geometry and content assertions from step 3 stay unchanged. They cover each unit's gauge state, including the half and quarter boundaries and the critical broken-rim cue.
 - Presentation-helper tests cover 28 CSS px, 12 CSS px, and values on both sides of each threshold. Browser resize coverage includes 390 px, 640 px, intermediate desktop widths, and the maximum viewport. It confirms that fitted views stay compact or token-sized and that camera zoom promotes tokens to figures without changing logical scene geometry.
-- A renderer-local asset manifest lists all 30 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest.
+- A renderer-local asset manifest lists all 31 bundled source assets and their intended sizes. Tests assert the files exist and match the manifest, including the 64 x 64 grayscale-alpha reset glyph and its high-resolution source original.
 - A directly tested injectable asset loader resolves manifest entries through a stub without image decoding. Browser and perf smoke coverage load the real assets; jsdom mount is not evidence of browser decoding because the Pixi base skips WebGL setup there.
-- Transition and inspection tests cover `transitionScale` timing, tile-route timing for one through four tiles, the attack-reaction overlap, a capture-only reaction with no target, inspected-range ownership throughout another unit's event, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
+- Transition and inspection tests cover `transitionScale` timing, the `CRANE_TIMING` activation, movement, attack, reaction, and settled-frame holds, tile-route timing for one through four tiles, the attack-reaction overlap, a capture-only reaction with no target, the 300 ms controlled-order and 200 ms watched-event holds, snap and invisible updates without holds, inspected-range ownership throughout another unit's event, prior-scene retention through a fresh forward death, and final-frame rendering for mount, seek, resize, and repeated ticks.
 - The step 3 perf smoke stays green with the real assets on the army fixture, and asserts the battlefield layer builds once per episode with textures in place.
 - The e2e spectate journey stays green (it asserts on behavior, not pixels).
 
 ## Done when
 
-Both fixtures replay in the Estuary Ink style at figure, token, or compact presentation levels appropriate to 390 px, 640 px, and the maximum host width. A live match and `npm run play` show the same identity. All 30 source assets are original art and load in the production build, the thumbnail is final, the art direction note sits beside the renderer, the perf smoke and scene tests are green, the forward-death and final-frame paths behave as specified, and the owner's sign-off is recorded in the Status line.
+Both fixtures replay in the Estuary Ink style at figure, token, or compact presentation levels appropriate to 390 px, 640 px, and the maximum host width. A live match and `npm run play` show the same identity. All 31 source assets are original art and load in the production build, including the reset glyph and its source original, the thumbnail is final, the art direction note sits beside the renderer, the perf smoke and scene tests are green, the forward-death and final-frame paths behave as specified, and the owner's sign-off is recorded in the Status line.

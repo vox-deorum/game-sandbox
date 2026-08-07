@@ -490,9 +490,9 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
 
 /**
  * The bounded human segment. Everything about composing an order is proved in the jsdom suite and the
- * mask-agreement suite; what only a browser can show is that a real click on a painted hex reaches the
- * environment. So this walks one step, sends it, and then sends the empty stay path, and stops there:
- * canvas clicks are the most brittle thing in this suite and there is no reason to spend more of them.
+ * mask-agreement suite; what only a browser can show is that real clicks on painted controls and hexes
+ * reach the environment. So this walks one step, resets it, sends another, and then sends the empty
+ * stay path. Canvas clicks are the most brittle thing in this suite, so it stays narrowly focused.
  */
 test('compose and send a Crane Reach order by clicking the board', async ({ page, admin }) => {
   test.setTimeout(180_000)
@@ -532,6 +532,8 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await expect(rendererHost).toHaveAttribute('data-crane-rosters', 'hidden')
     await expect(rendererHost).not.toHaveAttribute('data-crane-fog', 'none')
     await expect(rendererHost).toHaveAttribute('data-crane-order', '')
+    await expect(rendererHost).toHaveAttribute('data-crane-reset', 'inactive')
+    await expect(rendererHost).toHaveAttribute('data-crane-step-text-resolution', 'none')
 
     // One step onto an offered hex. Its probe is already projected into the drawing space.
     const offeredX = await rendererHost.getAttribute('data-crane-offered-x')
@@ -541,9 +543,46 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await canvas.click({ position: at(Number(offeredX), Number(offeredY)) })
     await expect(rendererHost).toHaveAttribute('data-crane-order', /^[1-6]$/)
     await expect(rendererHost).toHaveAttribute('data-crane-order-path', /^[1-6]$/)
+    await expect(rendererHost).toHaveAttribute('data-crane-reset', 'ready')
+    const stepResolution = Number(
+      await rendererHost.getAttribute('data-crane-step-text-resolution'),
+    )
+    expect(Number.isFinite(stepResolution)).toBe(true)
 
-    // Confirm through the one icon button, which sits at a fixed place in the bottom strip.
-    await canvas.click({ position: at(600, 802) })
+    // Zoom forces the numeral texture to rebake at the higher camera-aware resolution.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, -700)
+    await expect
+      .poll(async () => Number(await rendererHost.getAttribute('data-crane-step-text-resolution')))
+      .toBeGreaterThan(stepResolution)
+
+    // Return to the fitted view before choosing another board hex. At maximum zoom, a legal
+    // continuation can be outside the clipped canvas even though its projected probe is valid.
+    await page.mouse.wheel(0, 700)
+    await expect
+      .poll(async () => Number(await rendererHost.getAttribute('data-crane-step-text-resolution')))
+      .toBeLessThanOrEqual(stepResolution)
+
+    const resetX = await rendererHost.getAttribute('data-crane-reset-x')
+    const resetY = await rendererHost.getAttribute('data-crane-reset-y')
+    if (resetX === null || resetY === null) throw new Error('Crane Reach reset control is missing')
+    await canvas.click({ position: at(Number(resetX), Number(resetY)) })
+    await expect(rendererHost).toHaveAttribute('data-crane-order', '')
+    await expect(rendererHost).toHaveAttribute('data-crane-order-path', '0')
+    await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready')
+    await expect(rendererHost).toHaveAttribute('data-crane-reset', 'inactive')
+    await expect(rendererHost).toHaveAttribute('data-crane-step-text-resolution', 'none')
+
+    // Camera reconciliation moves the offered probe, so reread it before composing again.
+    const resetOfferedX = await rendererHost.getAttribute('data-crane-offered-x')
+    const resetOfferedY = await rendererHost.getAttribute('data-crane-offered-y')
+    if (resetOfferedX === null || resetOfferedY === null)
+      throw new Error('no Crane Reach continuation offered after reset')
+    await canvas.click({ position: at(Number(resetOfferedX), Number(resetOfferedY)) })
+    await expect(rendererHost).toHaveAttribute('data-crane-order', /^[1-6]$/)
+
+    // Confirm stays on the right side of the fixed bottom-strip control pair.
+    await canvas.click({ position: at(636, 802) })
     await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
 
     // The order reached the environment and came back as a resolved activation for our own unit.
@@ -555,7 +594,7 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', { timeout: 90_000 })
     await expect(rendererHost).toHaveAttribute('data-crane-order', '')
     await expect(rendererHost).toHaveAttribute('data-crane-order-path', '0')
-    await canvas.click({ position: at(600, 802) })
+    await canvas.click({ position: at(636, 802) })
     await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
     await expect(rendererHost).toHaveAttribute('data-crane-event-actor', /^red_/, {
       timeout: 60_000,

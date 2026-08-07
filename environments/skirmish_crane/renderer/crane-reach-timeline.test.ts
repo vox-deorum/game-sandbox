@@ -6,6 +6,7 @@ import {
   eventPhaseAt,
   eventRangeVisibleAt,
   eventScale,
+  eventSettleDuration,
   eventTimelineProgress,
   eventWindows,
   hostEase,
@@ -24,6 +25,13 @@ function shape(overrides: Partial<EventShape> = {}): EventShape {
 const CHARGE: EventShape = { movementTiles: 4, hasTarget: true, hasReaction: true }
 
 describe('Crane Reach event windows', () => {
+  it('keeps readable post-event holds in wall-clock time for people and watchers', () => {
+    expect(T.humanSettleMs).toBe(300)
+    expect(T.watchSettleMs).toBe(200)
+    expect(eventSettleDuration(true)).toBe(T.humanSettleMs)
+    expect(eventSettleDuration(false)).toBe(T.watchSettleMs)
+  })
+
   it('gives every event an activation, and a no-op turn nothing else', () => {
     const windows = eventWindows(shape())
     expect(windows.activation.startMs).toBe(0)
