@@ -27,7 +27,7 @@ Legal-by-construction, per the [step 4.2 interaction design](4-2-hud.md):
 
 The composed path's own tiles are the revision controls: the current endpoint takes that step back, and the unit's own tile clears the path. Clearing wins on the unit's tile even when the path could legally walk back onto it.
 
-The offered continuations are the unit's movement range while it is being ordered, so no range wash is drawn under them and hovering it opens its card alone. When an order you gave has finished playing, the finished frame is held so its result lands before the fog moves, and then the view brings the unit acting next to its centre. A unit the perspective cannot see is never followed, and the fitted zoom already shows the whole board, so it moves nothing.
+The offered continuations are the unit's movement range while it is being ordered, so no range wash is drawn under them and hovering it opens its card alone. When an order you gave has finished playing, the finished frame is held so its result lands before the fog moves. The view then centres every new activation the perspective can see, your own units and visible enemies alike, so the turn coming back to you is never off screen. A unit the perspective cannot see is never followed, a viewer who controls nobody is never moved, and the fitted zoom already shows the whole board, so it moves nothing.
 
 ### Fog of war
 

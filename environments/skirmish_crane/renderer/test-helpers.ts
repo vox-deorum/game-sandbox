@@ -9,6 +9,7 @@ import armyLegalityRaw from '../../../frontend/test/fixtures/crane-reach-army-le
 import armyFixture from '../../../frontend/test/fixtures/crane-reach-army-recording.jsonl?raw'
 import skirmishLegalityRaw from '../../../frontend/test/fixtures/crane-reach-skirmish-legality.json?raw'
 import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmish-recording.jsonl?raw'
+import { decodePath, MAX_PATH_ID } from './paths.js'
 import { computeScene, HEX_DIRECTIONS, type SceneUnit } from './scene.js'
 
 export { armyFixture, armyLegalityRaw, skirmishFixture, skirmishLegalityRaw }
@@ -67,39 +68,29 @@ export function allowedValues(encoded: string, bitCount: number): Set<number> {
   return allowed
 }
 
+/** The states whose overlay carries an activation, which are the frames an order can answer. */
+export function actionableStates(states: readonly StepState[]): StepState[] {
+  return states.filter((state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null)
+}
+
 /** The states each legality entry describes: the live-only opening, then every actionable frame. */
 export function legalityCases(
   recording: string,
   legalityRaw: string,
 ): { entry: LegalityEntry; state: StepState }[] {
   const legality = JSON.parse(legalityRaw) as LegalityFixture
-  const actionable = statesFrom(recording).filter(
-    (state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null,
-  )
+  const actionable = actionableStates(statesFrom(recording))
   return legality.entries.map((entry, index) => ({
     entry,
     state: (index === 0 ? entry.opening : actionable[index - 1]) as StepState,
   }))
 }
 
-/** Expand a wire path id back into its direction sequence, independently of the renderer. */
-function pathForId(pathId: number): number[] {
-  if (pathId === 0) return []
-  let remaining = pathId - 1
-  let length = 1
-  while (remaining >= 6 ** length) {
-    remaining -= 6 ** length
-    length += 1
-  }
-  const path: number[] = []
-  for (let power = length - 1; power >= 0; power -= 1) {
-    const digit = Math.floor(remaining / 6 ** power)
-    remaining %= 6 ** power
-    path.push(digit + 1)
-  }
-  return path
-}
-
+/**
+ * Walk the decoded directions from the start tile. The id-to-directions decoding now comes from the
+ * shared codec, so this applies HEX_DIRECTIONS directly to the decoded ids: it is the one part of the
+ * check that still walks independently of the renderer.
+ */
 function destinationForPath(start: string, path: number[]): string {
   let [q, r] = start.split(',').map(Number) as [number, number]
   for (const direction of path) {
@@ -111,12 +102,9 @@ function destinationForPath(start: string, path: number[]): string {
 }
 
 export function expectedDestinations(entry: LegalityEntry, unit: SceneUnit): Set<string> {
-  const paths = verifyBitVector(entry.path, 1555)
   const destinations = new Set<string>()
-  for (let pathId = 0; pathId <= 1554; pathId += 1) {
-    const byte = paths[Math.floor(pathId / 8)] as number
-    if ((byte & (1 << (pathId % 8))) !== 0)
-      destinations.add(destinationForPath(unit.tileKey, pathForId(pathId)))
+  for (const pathId of allowedValues(entry.path, MAX_PATH_ID + 1)) {
+    destinations.add(destinationForPath(unit.tileKey, decodePath(pathId)))
   }
   return destinations
 }
@@ -143,9 +131,7 @@ export function verifyLegalityFixture(
   expect(opening?.opening?.agents).toEqual({})
   expect(opening).not.toHaveProperty('tick')
 
-  const actionable = states.filter(
-    (state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null,
-  )
+  const actionable = actionableStates(states)
   expect(legality.entries).toHaveLength(actionable.length + 1)
   expect(opening?.current_activation).toBe(
     computeScene(opening?.opening as StepState).activation?.playerId,
@@ -169,7 +155,7 @@ export function verifyLegalityFixture(
       | { path: number; target: number }
       | undefined
     expect(action).toEqual({ path: expect.any(Number), target: expect.any(Number) })
-    expectAllowed(verifyBitVector(entry.path, 1555), action?.path as number)
+    expectAllowed(verifyBitVector(entry.path, MAX_PATH_ID + 1), action?.path as number)
     expectAllowed(verifyBitVector(entry.target, targetBits), action?.target as number)
   }
 }

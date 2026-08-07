@@ -8,6 +8,7 @@
  */
 import type { RenderOptions } from '@renderers/types.js'
 
+import type { Perspective } from './fog.js'
 import type { CraneReachScene, SceneEvent, SceneUnit } from './scene.js'
 import { type EventShape, eventScale } from './timeline.js'
 
@@ -61,6 +62,28 @@ export function isFreshForwardEvent(
 ): boolean {
   if (previousTick === null || nextEvent === null) return false
   return nextTick > previousTick || (nextTick === previousTick && previousEvent === null)
+}
+
+/**
+ * The activation the camera should centre for this frame, or null when it should stay put. The view
+ * follows every new activation the viewer can see, so the turn coming back to a person is never off
+ * screen and a visible enemy starting to act is watched where it stands. The key names one
+ * activation, so a redraw of the same state never re-centres a view the person has panned away. A
+ * viewer who controls nobody is never moved, and neither is the view toward a unit outside the
+ * perspective, since panning to it would say where it stands.
+ */
+export function activationFollowKey(
+  followed: string | null,
+  tick: number | null,
+  activation: { unitId: string } | null,
+  controlled: readonly string[],
+  perspective: Perspective | null,
+): string | null {
+  if (activation === null || controlled.length === 0) return null
+  const key = `${tick ?? 'none'}:${activation.unitId}`
+  if (key === followed) return null
+  if (perspective !== null && !perspective.units.has(activation.unitId)) return null
+  return key
 }
 
 /** Static terrain survives state changes and rebuilds only for a new battlefield identity. */

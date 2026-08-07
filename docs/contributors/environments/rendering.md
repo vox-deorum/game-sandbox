@@ -50,6 +50,8 @@ The reconciler creates the nodes the current scene needs, sets every visible pro
 
 A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs (`options.snap`), while `onFrame(dtMs)` advances an optional transition layer at `options.transitionScale`.
 
+Split what redraws every frame from what redraws on interaction. Resolve data that changes only on a click, such as tile lookups and baked text, when it changes, and rebuild per frame only the marks that actually move. Two known deviations exist today and are the first places to look if a profile shows frame cost: the cards move-clock chip re-bakes its label every frame, and the Crane Reach order pulse rebuilds its tile lookup every frame.
+
 ## Input and semantic data
 
 Input is enabled only for controlled players with a `sendAction` callback. Spectators and replay viewers mount draw-only renderers.

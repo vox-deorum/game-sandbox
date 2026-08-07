@@ -27,10 +27,10 @@ import {
 } from './scene.js'
 
 /** How much night ink the unseen ground takes. Terrain stays legible under it, by design. */
-export const FOG_VEIL_ALPHA = 0.45
+const FOG_VEIL_ALPHA = 0.45
 
 /** The one confirmation control, centered in the bottom strip's clear space. */
-export const CONFIRM_BUTTON = { x: SCENE_WIDTH / 2, y: 802, radius: 30 } as const
+const CONFIRM_BUTTON = { x: SCENE_WIDTH / 2, y: 802, radius: 30 } as const
 
 /** The preview pulse repeats on this period; reduced motion snaps to its final highlight instead. */
 const PREVIEW_PERIOD_MS = 1_600

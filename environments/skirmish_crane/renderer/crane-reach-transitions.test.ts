@@ -4,6 +4,7 @@ import type { SceneEvent } from './scene.js'
 import { computeScene } from './scene.js'
 import { armyStates } from './test-helpers.js'
 import {
+  activationFollowKey,
   captureCueSceneFor,
   captureCuesFor,
   deathSnapshotFor,
@@ -106,6 +107,26 @@ describe('Crane Reach event transitions', () => {
       hasTarget: false,
       hasReaction: true,
     })
+  })
+
+  it('follows each new visible activation once, and never for a replay or an unseen unit', () => {
+    const perspective = {
+      observers: ['player_0'],
+      units: new Set(['red_0']),
+      tiles: new Set<string>(),
+    }
+    const acting = { unitId: 'red_0' }
+    // A controlled viewer follows a visible activation, and the same activation only once.
+    expect(activationFollowKey(null, 3, acting, ['player_0'], perspective)).toBe('3:red_0')
+    expect(activationFollowKey('3:red_0', 3, acting, ['player_0'], perspective)).toBeNull()
+    // A new state is a new activation, even for the same unit.
+    expect(activationFollowKey('3:red_0', 4, acting, ['player_0'], perspective)).toBe('4:red_0')
+    // A unit the perspective cannot see is never followed; with nothing hidden everything is.
+    expect(activationFollowKey(null, 3, { unitId: 'blue_0' }, ['player_0'], perspective)).toBeNull()
+    expect(activationFollowKey(null, 3, { unitId: 'blue_0' }, ['player_0'], null)).toBe('3:blue_0')
+    // A replay and a spectator control nobody, and a frame without an activation moves nothing.
+    expect(activationFollowKey(null, 3, acting, [], perspective)).toBeNull()
+    expect(activationFollowKey(null, 3, null, ['player_0'], perspective)).toBeNull()
   })
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {

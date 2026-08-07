@@ -155,22 +155,6 @@ export function enemyRoster(
   return roster.filter((entry) => entry.side !== side)
 }
 
-/**
- * Every enemy the unit can see. Nameability is visibility alone: an enemy well outside strike range
- * is still nameable, because range is checked at resolution from the path's final tile.
- */
-export function nameableTargets(
-  visible: ReadonlySet<string>,
-  roster: readonly SceneRosterEntry[],
-  side: SceneUnit['side'],
-): Set<string> {
-  return new Set(
-    enemyRoster(roster, side)
-      .filter((entry) => visible.has(entry.unitId))
-      .map((entry) => entry.unitId),
-  )
-}
-
 /** The nameable targets as the values the action space uses, where 0 is always the legal none. */
 export function nameableTargetValues(
   visible: ReadonlySet<string>,

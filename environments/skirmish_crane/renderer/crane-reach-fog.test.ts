@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { eventVisible, perspectiveFor, visibleUnits, visionRadius } from './fog.js'
 import { computeScene, hexDistance, type SceneUnit, tileCoordinate } from './scene.js'
-import { skirmishFixture, skirmishStates } from './test-helpers.js'
+import { armyStates, skirmishFixture, skirmishStates } from './test-helpers.js'
 
 const SEATS: RecordingHeader['seats'] = {
   seat_0: ['player_0', 'player_1', 'player_2'],
@@ -109,6 +109,33 @@ describe('Crane Reach fog of war', () => {
       ),
     }
     expect(visionRadius(unit, hill)).toBe(visionRadius(unit, scene) + 1)
+  })
+
+  it('agrees with the environment about what every unit sees', () => {
+    // The vision stats and the vision formula are hand copies of the engine's, while the overlay
+    // masks are the engine's own output. Exact agreement on every recorded frame of both fixtures
+    // is what pins the copy: a unit is in a mask exactly when it stands inside the recomputed
+    // radius, so the tile veil drawn from that radius can never disagree with the units drawn from
+    // the masks.
+    for (const states of [skirmishStates, armyStates]) {
+      const mismatches: string[] = []
+      for (const [index, state] of states.entries()) {
+        const scene = computeScene(state)
+        for (const [playerId, seen] of scene.visibility) {
+          const observer = scene.units.find((unit) => unit.playerId === playerId) as SceneUnit
+          const from = tileCoordinate(observer.tileKey)
+          const radius = visionRadius(observer, scene)
+          for (const unit of scene.units) {
+            if (unit.unitId === observer.unitId) continue
+            const within = hexDistance(from, tileCoordinate(unit.tileKey)) <= radius
+            if (seen.has(unit.unitId) !== within) {
+              mismatches.push(`state ${index}: ${playerId} on ${unit.unitId}`)
+            }
+          }
+        }
+      }
+      expect(mismatches).toEqual([])
+    }
   })
 
   it('depends on the state alone, so a mount mid-episode and a direct render agree', () => {

@@ -17,6 +17,7 @@ import {
 import { reachableTileKeys } from './legality.js'
 import { computeScene, type HexTile, type SceneUnit } from './scene.js'
 import {
+  actionableStates,
   armyFixture,
   armyLegalityRaw,
   expectedDestinations,
@@ -199,9 +200,7 @@ describe('Crane Reach HUD inspection and range', () => {
       ).toEqual(
         expectedDestinations(legality.entries[0] as LegalityEntry, openingUnit as SceneUnit),
       )
-      const actionable = states.filter(
-        (state) => ((state.overlay ?? {}) as Record<string, unknown>).a !== null,
-      )
+      const actionable = actionableStates(states)
       for (const [index, state] of actionable.entries()) {
         const scene = computeScene(state)
         const unit = scene.units.find(
