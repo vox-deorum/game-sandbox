@@ -27,11 +27,11 @@ export interface CraneTiming {
 }
 
 export const CRANE_TIMING: CraneTiming = {
-  activationMs: 150,
-  movementMsPerTile: 150,
+  activationMs: 200,
+  movementMsPerTile: 200,
   attackMs: 400,
   reactionOffsetMs: 100,
-  reactionMs: 600,
+  reactionMs: 700,
 }
 
 /** What the schedule needs to know about an event: how far it moves, whether it strikes and provokes. */
