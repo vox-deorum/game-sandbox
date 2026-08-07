@@ -174,7 +174,27 @@ def test_write_base_helpers_copies_canonical_sources(tmp_path: Path, monkeypatch
     helper.write_text("VALUE = 1\n", encoding="utf-8")
     monkeypatch.setattr(template_gen, "ENVIRONMENT_PACKAGES_DIR", source)
     monkeypatch.setattr(template_gen, "TEMPLATE_BASE_MODULES", {"card_utils.py": "local_play/card_utils.py"})
+    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
 
-    template_gen.write_base_helpers(tmp_path / "sandbox")
+    template_gen.write_base_helpers(tmp_path / "sandbox", spec)
 
     assert (tmp_path / "sandbox" / "card_utils.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
+def test_write_base_helpers_also_copies_env_sandbox_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    source = tmp_path / "source"
+    env_module = source / "example" / "cards.py"
+    env_module.parent.mkdir(parents=True)
+    env_module.write_text("VALUE = 2\n", encoding="utf-8")
+    monkeypatch.setattr(template_gen, "ENVIRONMENT_PACKAGES_DIR", source)
+    monkeypatch.setattr(template_gen, "TEMPLATE_BASE_MODULES", {})
+    spec = TemplateEnvironmentSpec(
+        "Example",
+        "example",
+        ("example/env.py",),
+        env_sandbox_modules={"cards.py": "example/cards.py"},
+    )
+
+    template_gen.write_base_helpers(tmp_path / "sandbox", spec)
+
+    assert (tmp_path / "sandbox" / "cards.py").read_text(encoding="utf-8") == "VALUE = 2\n"

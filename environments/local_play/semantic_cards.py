@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .card_types import Card
+
 CLUBS = 0
 DIAMONDS = 1
 SPADES = 2
@@ -27,21 +29,21 @@ RANK_NAMES: tuple[str, ...] = (
 )
 
 
-def suit_of(card: dict[str, int]) -> int:
+def suit_of(card: Card) -> int:
     """Return the suit id (``0..3``) of a semantic card object."""
     return card["suit"]
 
 
-def rank_of(card: dict[str, int]) -> int:
+def rank_of(card: Card) -> int:
     """Return the face-value rank (``2..14``) of a semantic card object."""
     return card["rank"]
 
 
-def make_card(suit: int, rank: int) -> dict[str, int]:
+def make_card(suit: int, rank: int) -> Card:
     """Return the semantic card object for ``suit`` and face-value ``rank``."""
     return {"suit": suit, "rank": rank}
 
 
-def card_name(card: dict[str, int]) -> str:
+def card_name(card: Card) -> str:
     """Return a readable ASCII card name, for example ``"Q of spades"``."""
     return f"{RANK_NAMES[rank_of(card)]} of {SUIT_NAMES[suit_of(card)]}"

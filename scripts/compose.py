@@ -317,7 +317,7 @@ def compose_template(env: str, *, out_dir: Path | None = None) -> Path:
     discovered = discover_environments()[env]
     sandbox = out_dir / "sandbox"
     write_harness(sandbox / "harness")
-    write_base_helpers(sandbox)
+    write_base_helpers(sandbox, discovered.spec)
     write_env_package(env, discovered.spec, discovered.entry.meta, sandbox / "env")
     # 3. The hand-authored env layer overlays it, whole-file.
     _overlay_files(env_dir, out_dir)

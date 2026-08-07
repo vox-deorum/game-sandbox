@@ -328,6 +328,7 @@ describe('Crane Reach order controls', () => {
 
   it('bakes step numerals at the supplied resolution in the mono family', () => {
     const layer = new Container()
+    const numerals = new Container()
     const numeral = new Container() as ReturnType<TextFactory>
     const text = vi.fn(() => numeral) as TextFactory
     const scene = {
@@ -336,6 +337,7 @@ describe('Crane Reach order controls', () => {
     } as CraneReachScene
     drawOrderMarks(
       layer,
+      numerals,
       text,
       scene,
       {
@@ -360,5 +362,8 @@ describe('Crane Reach order controls', () => {
       expect.any(Object),
     )
     expect(numeral.resolution).toBe(3.5)
+    // The numeral lands in its own container, which the renderer keeps above every piece.
+    expect(numerals.children).toContain(numeral)
+    expect(layer.children).not.toContain(numeral)
   })
 })

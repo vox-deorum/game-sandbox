@@ -58,7 +58,7 @@ A card is a small object with a `suit` number from `0` through `3` and a `rank` 
 `is_bidding(observation)` tells `act` which phase the turn is in, so a single `if` can route to the right code. During bidding, the agent calls `bid(1)`, promising one trick every time. During play, it reads its options from `legal_cards(observation)`, picks the lowest-ranked one with Python's `min` and `rank_of(card)`, and hands it to `play(card)`. [The helper module](#the-helper-module) defines each of these precisely. The code comments below explain both choices. The result is legal and complete, but not competitive yet.
 
 ```python
-from sandbox.cards import bid, is_bidding, legal_cards, play, rank_of
+from sandbox.cards import SpadesObservation, bid, is_bidding, legal_cards, play, rank_of
 
 
 class Agent:
@@ -70,7 +70,7 @@ class Agent:
         # memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         # A hand has two phases, and is_bidding tells you which one this turn
         # belongs to: first everyone bids, then thirteen tricks are played.
         if is_bidding(observation):
@@ -133,7 +133,7 @@ The lowest possible team score is minus 260 (both partners bidding 13, a contrac
 
 The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, bid numbers, lists, and plain Python values, so your `act` method never has to read internal arrays or action numbers.
 
-`is_bidding(observation)` tells you the phase, `bid(n)` and `play(card)` build the two kinds of action, `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, and `partner_player(observation)` identifies your teammate. The optional [advanced reference](#under-the-hood) documents raw fields and encodings.
+`is_bidding(observation)` tells you the phase, `bid(n)` and `play(card)` build the two kinds of action, `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, and `partner_player(observation)` identifies your teammate. The optional [advanced reference](#under-the-hood) documents raw fields and encodings. `Card` and `SpadesObservation`, the shapes of a card object and the whole observation dictionary, are also importable from `sandbox.cards` for your editor and type checker.
 
 The module provides these helpers and constants:
 

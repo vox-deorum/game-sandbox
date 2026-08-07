@@ -18,7 +18,7 @@ so leave them commented unless you use them. Episode state belongs in ``reset``;
 takes no arguments.
 """
 
-from sandbox.features import FLAP, IDLE, player_y, screen_height
+from sandbox.features import FLAP, IDLE, FlappyObservation, player_y, screen_height
 
 
 class Agent:
@@ -30,7 +30,7 @@ class Agent:
         # reset its memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: FlappyObservation) -> int:
         # player_y is the bird's height in real screen pixels, where 0 is the
         # top and screen_height(observation) is the bottom, so a larger value
         # means lower on the screen.

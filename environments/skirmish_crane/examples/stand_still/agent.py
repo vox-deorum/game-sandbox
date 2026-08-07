@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from sandbox.observation_types import SkirmishAction, SkirmishObservation
 
 
 class Agent:
@@ -11,5 +11,5 @@ class Agent:
     def reset(self, seed: int) -> None:
         pass
 
-    def act(self, observation: Any) -> dict[str, int]:
+    def act(self, observation: SkirmishObservation) -> SkirmishAction:
         return {"path": 0, "target": 0}

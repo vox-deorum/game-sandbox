@@ -21,7 +21,7 @@ expects ``rank_of(c)`` shifts every rank by two and silently corrupts the engine
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from .card_types import Card
 
 #: Number of suits, ranks, and cards in a standard deck.
 NUM_SUITS = 4
@@ -55,7 +55,7 @@ def rank_of(card: int) -> int:
     return card % NUM_RANKS
 
 
-def card_to_obj(card: int) -> dict[str, int]:
+def card_to_obj(card: int) -> Card:
     """Return the semantic object ``{"suit": <0..3>, "rank": <2..14>}`` for engine ``card``.
 
     The rank is the face value (``rank_of(card) + 2``); this offset lives here alone, never in the engine.
@@ -63,7 +63,7 @@ def card_to_obj(card: int) -> dict[str, int]:
     return {"suit": suit_of(card), "rank": rank_of(card) + RANK_OFFSET}
 
 
-def card_from_obj(obj: Mapping[str, int]) -> int:
+def card_from_obj(obj: Card) -> int:
     """Return the engine card id ``0..51`` for a semantic ``{"suit", "rank"}`` object.
 
     The inverse of :func:`card_to_obj`, stripping the face-value offset back to the engine index.

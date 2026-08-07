@@ -21,12 +21,11 @@ of any suit.
 
 from __future__ import annotations
 
-from typing import Any
-
 from sandbox.cards import (
     HEARTS,
     QUEEN_OF_SPADES,
     SPADES,
+    HeartsObservation,
     current_trick,
     led_suit,
     legal_cards,
@@ -50,7 +49,7 @@ class Agent:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: HeartsObservation) -> int:
         legal = legal_cards(observation)
         led = led_suit(observation)
 

@@ -136,9 +136,10 @@ def test_observation_accessors_match_the_raw_observation():
 
 def test_importing_the_helpers_stays_light():
     # An agent imports sandbox.cards at module top, so it must not pull in the environment engine.
-    # Check in a fresh interpreter, since this test process has already loaded it.
+    # Check in a fresh interpreter, since this test process has already loaded it. The observation
+    # TypedDicts import alongside the helpers and must stay just as light.
     code = (
-        "import sys; from sandbox import cards; "
+        "import sys; from sandbox.cards import Card, SpadesObservation, SpadesObservationData, TrickEntry; "
         "assert 'pettingzoo' not in sys.modules; assert 'gymnasium' not in sys.modules"
     )
     subprocess.run([sys.executable, "-c", code], check=True)

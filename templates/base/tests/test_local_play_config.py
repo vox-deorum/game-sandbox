@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 from sandbox import evaluate, live_local, play
 from sandbox.harness.environment import (
+    EnvParameter,
     EnvPreset,
     PlayerBounds,
     SeatDeclaration,
@@ -137,10 +138,25 @@ def test_preset_replaces_season_parameters_even_when_its_values_are_empty(monkey
 
 
 def test_preset_parameters_yield_to_explicit_parameter_overrides(monkeypatch):
+    # Declare a test-only parameter on the metadata so the preset and the override validate in
+    # every environment, whatever its real parameters are.
+    knob = EnvParameter(
+        name="trial_knob",
+        title="Trial knob",
+        description="Test-only tuning parameter.",
+        type="int",
+        default=100,
+        min=1,
+        max=1000,
+    )
     monkeypatch.setattr(
         play,
         "META",
-        replace(play.META, presets=(EnvPreset("short", "Short", {"round_cap": 150}),)),
+        replace(
+            play.META,
+            parameters=(*play.META.parameters, knob),
+            presets=(EnvPreset("short", "Short", {"trial_knob": 150}),),
+        ),
     )
     captured: dict[str, object] = {}
 
@@ -150,8 +166,8 @@ def test_preset_parameters_yield_to_explicit_parameter_overrides(monkeypatch):
 
     monkeypatch.setattr(play, "run_headless", run_headless)
 
-    assert play.main(["agent", "--headless", "--preset", "short", "--parameter", "round_cap=200"]) == 0
-    assert captured["parameters"] == resolve_parameters(play.META, {"round_cap": 200})
+    assert play.main(["agent", "--headless", "--preset", "short", "--parameter", "trial_knob=200"]) == 0
+    assert captured["parameters"] == resolve_parameters(play.META, {"trial_knob": 200})
 
 
 def test_unknown_preset_reports_the_available_names(monkeypatch, capsys):

@@ -19,7 +19,7 @@ The starting agent reads `player_y` for the bird's height and `screen_height` fo
 The strategy is one comparison: flap when the bird sits below the middle of the screen, otherwise let gravity pull it down. The comments inside `act` walk through the reasoning:
 
 ```python
-from sandbox.features import FLAP, IDLE, player_y, screen_height
+from sandbox.features import FLAP, IDLE, FlappyObservation, player_y, screen_height
 
 
 class Agent:
@@ -31,7 +31,7 @@ class Agent:
         # reset its memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: FlappyObservation) -> int:
         # player_y is the bird's height in real screen pixels, where 0 is the
         # top and screen_height(observation) is the bottom, so a larger value
         # means lower on the screen.
@@ -75,6 +75,8 @@ The rewards add together during a run, and a higher total usually means the bird
 The starting agent uses the template's `sandbox.features` helper module. Its functions read observation fields and its constants name the actions, so your code does not need unexplained expressions such as `observation["player"]["y"]` or `return 1`. Import the ones you need at the top of `agent.py`, not inside a method.
 
 `player_y(observation)` returns the bird's vertical position in pixels. `next_gap_center(observation)` averages the top and bottom of the next pipe gap and returns the height to aim for on the same scale, falling back safely to the middle of the screen if an observation has no pipe ahead. `player_velocity(observation)` returns how far the bird moves vertically each step, so adding the position and the velocity estimates where it will be on the next step.
+
+The observation's shape is also available as the `FlappyObservation` type, importable from `sandbox.features`, for editors and type checkers.
 
 The module provides these helpers and constants:
 

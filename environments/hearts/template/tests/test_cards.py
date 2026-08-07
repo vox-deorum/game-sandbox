@@ -91,7 +91,7 @@ def test_importing_the_helpers_stays_light():
     # An agent imports sandbox.cards at module top, so it must not pull in the environment engine.
     # Check in a fresh interpreter, since this test process has already loaded it.
     code = (
-        "import sys; from sandbox import cards; "
+        "import sys; from sandbox.cards import Card, HeartsObservation; "
         "assert 'pettingzoo' not in sys.modules; assert 'gymnasium' not in sys.modules"
     )
     subprocess.run([sys.executable, "-c", code], check=True)

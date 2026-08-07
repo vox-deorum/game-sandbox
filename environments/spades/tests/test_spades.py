@@ -27,6 +27,7 @@ import pytest
 from game_sandbox_harness.environment import SeatPlans, resolve_layout, resolve_parameters
 from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_TERMINATED, AgentPlayer, run_episode
+from local_play.card_types import SpadesObservation, SpadesObservationData
 from spades import ENTRY, META, rules
 from spades.env import SEAT_PLAN_SPECS, IllegalMoveError, card_to_obj, default_action, make_env
 from spades.overlay import extract_overlay
@@ -304,6 +305,18 @@ def test_observation_partnership_bids_and_phase_fields():
     assert inner["phase"] == 1
     assert all(0 <= b <= 13 for b in inner["bids"])
     assert inner["bids"] == tuple(env.state.bids)
+
+
+def test_observation_matches_the_typed_dict_shape():
+    # Drift guard: the runtime observation dict's keys, at both levels, must match the static
+    # SpadesObservation / SpadesObservationData TypedDicts that env.py's return type and the student
+    # template's sandbox.cards helpers type-check against. A field added or renamed on one side
+    # without the other would otherwise only surface as a pyright failure downstream.
+    env = make_env({"seat_plan": "partnership"})
+    env.reset(seed=0)
+    observed = env.observe(env.agent_selection)
+    assert set(observed) == set(SpadesObservation.__annotations__)
+    assert set(observed["observation"]) == set(SpadesObservationData.__annotations__)
 
 
 def test_last_trick_is_empty_until_the_first_trick_completes():

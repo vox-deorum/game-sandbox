@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -86,19 +86,29 @@ class TemplateEnvironmentSpec:
     modules: tuple[str, ...]
     default_action: str = "default_action"
     player_id: str = "player_0"
+    # Per-environment sandbox modules copied into this template's sandbox/ at compose time,
+    # alongside the shared TEMPLATE_BASE_MODULES: destination filename under sandbox/ -> source
+    # path under environments/. Empty for environments that need no such module.
+    env_sandbox_modules: dict[str, str] = field(default_factory=dict)
+    # Composed-template-relative file paths to type-check with pyright after composing, for
+    # environments whose sandbox modules carry annotations worth checking in isolation. Empty
+    # for environments that register no such check.
+    pyright_files: tuple[str, ...] = ()
 
 
 # Shared, import-self-contained sandbox helpers generated from the env source into each composed
 # template's sandbox/: destination filename under sandbox/ -> source path under the package root.
 TEMPLATE_BASE_MODULES = {
-    # The dependency-free card codec, resolver, and Gymnasium spaces: the pure rules engines pull
-    # their encoding from card_utils through shared_modules, and card_spaces declares the shared
-    # CARD/HAND/TRICK observation shapes. Compose writes them beside each template's own
-    # game-specific sandbox/cards.py, which the distinct names keep apart.
+    # The dependency-free card codec, resolver, Gymnasium spaces, and static TypedDicts: the pure
+    # rules engines pull their encoding from card_utils through shared_modules, card_spaces
+    # declares the shared CARD/HAND/TRICK observation shapes, and card_types mirrors those shapes
+    # as TypedDicts for annotations. Compose writes them beside each template's own game-specific
+    # sandbox/cards.py, which the distinct names keep apart.
     "card_utils.py": "local_play/card_utils.py",
     "card_spaces.py": "local_play/card_spaces.py",
     "shared_modules.py": "local_play/shared_modules.py",
     "semantic_cards.py": "local_play/semantic_cards.py",
+    "card_types.py": "local_play/card_types.py",
 }
 
 # Environment-root guides are canonical. MkDocs exposes virtual website pages from them, while

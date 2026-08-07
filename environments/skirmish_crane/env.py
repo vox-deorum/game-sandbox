@@ -21,6 +21,22 @@ from .paths import MAX_PATH_ID, decode_path, encode_path
 if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
 
+    from .observation_types import (
+        ActionMask,
+        AxialPosition,
+        Battlefield,
+        Capture,
+        MatchParameters,
+        RosterEntry,
+        Rosters,
+        SelfUnit,
+        SkirmishAction,
+        SkirmishObservation,
+        Tile,
+        VisibleUnit,
+        Zone,
+    )
+
 
 _TEXT_CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _SIDES = ("red", "blue")
@@ -74,7 +90,7 @@ def make_env(parameters: Mapping[str, ParameterValue]) -> SkirmishCraneEnv:
     return SkirmishCraneEnv(config)
 
 
-def default_action(env: SkirmishCraneEnv, player_id: str) -> dict[str, int]:
+def default_action(env: SkirmishCraneEnv, player_id: str) -> SkirmishAction:
     """Return the always-legal stand-still order used by a timed-out participant."""
     if player_id not in env.possible_agents:
         raise ValueError(f"unknown player {player_id!r}")
@@ -108,7 +124,7 @@ class SkirmishCraneEnv(AECEnv):
         self.match: Match
         self.last_activation = None
         self.last_capture_changes = {"red": 0, "blue": 0}
-        self._last_observations: dict[str, dict[str, Any]] = {}
+        self._last_observations: dict[str, SkirmishObservation] = {}
         # Player order is part of the public contract. These maps keep the initial roster slots
         # stable even after units die and leave the engine's living-unit mapping.
         self.agent_by_unit = self._agent_mapping()
@@ -238,10 +254,10 @@ class SkirmishCraneEnv(AECEnv):
         # player's last living observation because the engine removes killed units immediately.
         self._last_observations = {agent: self._observe_living(agent) for agent in self.possible_agents}
 
-    def _position(self, value: tuple[int, int]) -> dict[str, int]:
+    def _position(self, value: tuple[int, int]) -> AxialPosition:
         return {"q": value[0], "r": value[1]}
 
-    def _parameters(self) -> dict[str, Any]:
+    def _parameters(self) -> MatchParameters:
         return {
             "seat_plan": self.config.seat_plan,
             "field_extent": self.config.field_extent,
@@ -253,38 +269,42 @@ class SkirmishCraneEnv(AECEnv):
             "round_cap": self.config.round_cap,
         }
 
-    def _rosters(self) -> dict[str, tuple[dict[str, str], ...]]:
+    def _roster_entries(self, side: str) -> tuple[RosterEntry, ...]:
+        return tuple(
+            {
+                "player": self.agent_by_unit[entry.unit_id],
+                "unit_id": entry.unit_id,
+                "side": entry.side,
+                "type": entry.kind,
+            }
+            for entry in self.match.initial_rosters[side]
+        )
+
+    def _rosters(self) -> Rosters:
+        return {"red": self._roster_entries("red"), "blue": self._roster_entries("blue")}
+
+    def _capture(self) -> Capture:
         return {
-            side: tuple(
-                {
-                    "player": self.agent_by_unit[entry.unit_id],
-                    "unit_id": entry.unit_id,
-                    "side": entry.side,
-                    "type": entry.kind,
-                }
-                for entry in self.match.initial_rosters[side]
-            )
-            for side in _SIDES
+            "red": self.match.capture_scores["red"],
+            "blue": self.match.capture_scores["blue"],
+            "target": self.config.capture_target if self.config.capture else 0,
         }
 
-    def _battlefield(self) -> dict[str, Any]:
+    def _battlefield(self) -> Battlefield:
         field = self.match.battlefield
-        return {
-            "side": field.side,
-            "tiles": tuple(
-                tuple({"terrain": tile.terrain, "feature": tile.feature} for tile in row)
-                for row in field.tiles
-            ),
-            "zones": tuple(
-                {
-                    "center": self._position(zone.center),
-                    "tiles": tuple(self._position(tile) for tile in zone.tiles),
-                }
-                for zone in field.zones
-            ),
-        }
+        tiles: tuple[tuple[Tile, ...], ...] = tuple(
+            tuple({"terrain": tile.terrain, "feature": tile.feature} for tile in row) for row in field.tiles
+        )
+        zones: tuple[Zone, ...] = tuple(
+            {
+                "center": self._position(zone.center),
+                "tiles": tuple(self._position(tile) for tile in zone.tiles),
+            }
+            for zone in field.zones
+        )
+        return {"side": field.side, "tiles": tiles, "zones": zones}
 
-    def observe(self, agent: str) -> dict[str, Any]:
+    def observe(self, agent: str) -> SkirmishObservation:
         # A killed unit has no engine perception to reshape, so its required dead-step observation
         # is the last one produced while that unit was alive.
         if self.unit_by_agent[agent] not in self.match.units and agent in self._last_observations:
@@ -293,7 +313,7 @@ class SkirmishCraneEnv(AECEnv):
         self._last_observations[agent] = observation
         return observation
 
-    def _observe_living(self, agent: str) -> dict[str, Any]:
+    def _observe_living(self, agent: str) -> SkirmishObservation:
         unit_id = self.unit_by_agent[agent]
         unit = self.match.units.get(unit_id)
         if unit is None:
@@ -313,35 +333,36 @@ class SkirmishCraneEnv(AECEnv):
             for target in nameable_targets:
                 target_mask[self._enemy_roster[agent].index(target) + 1] = 1
         visible_units = cast("tuple[dict[str, Any], ...]", perception["visible_units"])
+        round_number = cast("int", perception["round"])
+        self_unit: SelfUnit = {
+            "unit_id": unit.unit_id,
+            "type": unit.kind,
+            "position": self._position(unit.position),
+            "hit_points": unit.hit_points,
+            "movement_points": unit.stats.movement_points,
+        }
+        visible: tuple[VisibleUnit, ...] = tuple(
+            {
+                "unit_id": other["unit_id"],
+                "side": other["side"],
+                "type": other["type"],
+                "position": self._position(other["position"]),
+                "hit_points": other["hit_points"],
+            }
+            for other in visible_units
+        )
+        action_mask: ActionMask = {"path": path_mask, "target": target_mask}
         return {
             "observation": {
-                "self": {
-                    "unit_id": unit.unit_id,
-                    "type": unit.kind,
-                    "position": self._position(unit.position),
-                    "hit_points": unit.hit_points,
-                    "movement_points": unit.stats.movement_points,
-                },
-                "visible_units": tuple(
-                    {
-                        "unit_id": other["unit_id"],
-                        "side": other["side"],
-                        "type": other["type"],
-                        "position": self._position(other["position"]),
-                        "hit_points": other["hit_points"],
-                    }
-                    for other in visible_units
-                ),
-                "round": perception["round"],
-                "capture": {
-                    **self.match.capture_scores,
-                    "target": self.config.capture_target if self.config.capture else 0,
-                },
+                "self": self_unit,
+                "visible_units": visible,
+                "round": round_number,
+                "capture": self._capture(),
                 "battlefield": self._battlefield(),
                 "rosters": self._rosters(),
                 "parameters": self._parameters(),
             },
-            "action_mask": {"path": path_mask, "target": target_mask},
+            "action_mask": action_mask,
         }
 
     def _order(self, action: Any, agent: str) -> Order:

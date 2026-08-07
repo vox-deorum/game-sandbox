@@ -20,11 +20,11 @@ to its lowest.
 
 from __future__ import annotations
 
-from typing import Any
-
 from sandbox.cards import (
     HEARTS,
     QUEEN_OF_SPADES,
+    Card,
+    HeartsObservation,
     card_points,
     current_trick,
     led_suit,
@@ -37,7 +37,7 @@ from sandbox.cards import (
 NAME = "closer-hearts"
 
 
-def _dump(legal: list[dict[str, int]]) -> int:
+def _dump(legal: list[Card]) -> int:
     """Unload the most dangerous legal card when we cannot win the trick: queen, then high hearts."""
     if QUEEN_OF_SPADES in legal:
         return play(QUEEN_OF_SPADES)
@@ -54,7 +54,7 @@ class Agent:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: HeartsObservation) -> int:
         legal = legal_cards(observation)
         led = led_suit(observation)
         played = [card for _, card in current_trick(observation)]

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
     from local_play import card_spaces as _card_spaces
     from local_play import card_utils as _card_utils
+    from local_play.card_types import Card, SpadesObservation, SpadesObservationData, TrickEntry
     from local_play.shared_modules import resolve
 else:
     try:
@@ -177,19 +178,21 @@ class SpadesEnv(AECEnv):
         self.infos = {agent: {} for agent in self.agents}
         self.agent_selection = self._agent(self.state.turn)
 
-    def observe(self, agent: str) -> dict[str, Any]:
+    def observe(self, agent: str) -> SpadesObservation:
         player = self._player(agent)
         state = self.state
 
-        hand = tuple(card_to_obj(c) for c in state.hands[player])
-        current_trick = tuple({"player": int(p), "card": card_to_obj(c)} for p, c in state.current_trick)
-        last_trick: tuple[dict[str, Any], ...]
+        hand: tuple[Card, ...] = tuple(card_to_obj(c) for c in state.hands[player])
+        current_trick: tuple[TrickEntry, ...] = tuple(
+            {"player": int(p), "card": card_to_obj(c)} for p, c in state.current_trick
+        )
+        last_trick: tuple[TrickEntry, ...]
         if state.last_trick is None:
             last_trick = ()
         else:
             last_trick = tuple({"player": int(p), "card": card_to_obj(c)} for p, c in state.last_trick)
 
-        bids = tuple(UNBID if b == -1 else int(b) for b in state.bids)
+        bids: tuple[int, ...] = tuple(UNBID if b == -1 else int(b) for b in state.bids)
         phase = 0 if rules.in_bidding(state) else 1
         team_scores = np.array(rules.hand_team_scores(state), dtype=np.int64)
         tricks_won = np.array(state.tricks_won, dtype=np.int64)
@@ -208,24 +211,22 @@ class SpadesEnv(AECEnv):
             for action in rules.legal_actions(state, player):
                 action_mask[action] = 1
 
-        return {
-            "observation": {
-                "player": int(player),
-                "partner_player": (player + 2) % 4,
-                "phase": phase,
-                "hand": hand,
-                "bids": bids,
-                "team_scores": team_scores,
-                "current_trick": current_trick,
-                "last_trick": last_trick,
-                "last_trick_winner": last_trick_winner,
-                "trick_leader": int(state.trick_leader),
-                "led_suit": led_suit,
-                "spades_broken": int(bool(state.spades_broken)),
-                "tricks_won": tricks_won,
-            },
-            "action_mask": action_mask,
+        observation: SpadesObservationData = {
+            "player": int(player),
+            "partner_player": (player + 2) % 4,
+            "phase": phase,
+            "hand": hand,
+            "bids": bids,
+            "team_scores": team_scores,
+            "current_trick": current_trick,
+            "last_trick": last_trick,
+            "last_trick_winner": last_trick_winner,
+            "trick_leader": int(state.trick_leader),
+            "led_suit": led_suit,
+            "spades_broken": int(bool(state.spades_broken)),
+            "tricks_won": tricks_won,
         }
+        return {"observation": observation, "action_mask": action_mask}
 
     def step(self, action: Any) -> None:
         if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:

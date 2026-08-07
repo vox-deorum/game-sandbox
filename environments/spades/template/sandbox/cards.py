@@ -22,13 +22,14 @@ documented in ``environment.md``, shipped alongside the template.
 
 The observation accessors take the whole ``observation`` dict your ``act`` method receives (the one
 with the ``"action_mask"`` and ``"observation"`` keys) and return plain Python ints, card objects,
-and lists, so you never handle the raw NumPy arrays or their one-element wrappers yourself.
+and lists, so you never handle the raw NumPy arrays or their one-element wrappers yourself. The
+``Card``, ``TrickEntry``, ``SpadesObservation``, and ``SpadesObservationData`` TypedDicts, re-exported
+from this module, name those shapes for your editor and type checker.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
+from sandbox.card_types import Card, SpadesObservation, SpadesObservationData, TrickEntry
 from sandbox.card_utils import card_from_obj, card_to_obj
 from sandbox.semantic_cards import (
     CLUBS,
@@ -46,6 +47,7 @@ from sandbox.semantic_cards import (
 __all__ = [
     "BID_OFFSET",
     "CLUBS",
+    "Card",
     "DIAMONDS",
     "HEARTS",
     "NIL_BID",
@@ -54,6 +56,9 @@ __all__ = [
     "RANK_NAMES",
     "SPADES",
     "SUIT_NAMES",
+    "SpadesObservation",
+    "SpadesObservationData",
+    "TrickEntry",
     "action_is_bid",
     "action_to_bid",
     "beats_current_winner",
@@ -99,7 +104,7 @@ NIL_BID = 0
 # -- actions: cards and bids -------------------------------------------------------------------
 
 
-def play(card: dict[str, int]) -> int:
+def play(card: Card) -> int:
     """Return the integer action for ``card``, the value your ``act`` method should return."""
     return card_from_obj(card)
 
@@ -133,7 +138,7 @@ def action_is_bid(action: int) -> bool:
 # -- phase and legality (read from the action mask) -------------------------------------------
 
 
-def is_bidding(observation: Any) -> bool:
+def is_bidding(observation: SpadesObservation) -> bool:
     """Return whether it is the bidding round (you must return a bid), not the play phase.
 
     Read from the phase flag the observation carries, so it is defined for every player, on turn or
@@ -143,7 +148,7 @@ def is_bidding(observation: Any) -> bool:
     return int(observation["observation"]["phase"]) == 0
 
 
-def legal_bids(observation: Any) -> list[int]:
+def legal_bids(observation: SpadesObservation) -> list[int]:
     """Return the bids you may make this turn as plain numbers ``0..13`` (nil is ``0``).
 
     Read from the action mask: every bid is always legal during the bidding round, so this is
@@ -154,7 +159,7 @@ def legal_bids(observation: Any) -> list[int]:
     return [i - BID_OFFSET for i in range(BID_OFFSET, BID_OFFSET + NUM_BIDS) if mask[i]]
 
 
-def legal_cards(observation: Any) -> list[dict[str, int]]:
+def legal_cards(observation: SpadesObservation) -> list[Card]:
     """Return the cards you may legally play right now, read from the action mask.
 
     These are exactly the cards whose ``action_mask`` bit is set, so returning ``play(card)`` for
@@ -169,17 +174,17 @@ def legal_cards(observation: Any) -> list[dict[str, int]]:
 # -- your hand, player, and partnership -------------------------------------------------------
 
 
-def hand_cards(observation: Any) -> list[dict[str, int]]:
+def hand_cards(observation: SpadesObservation) -> list[Card]:
     """Return every card currently in your hand, legal to play this turn or not."""
     return list(observation["observation"]["hand"])
 
 
-def my_player(observation: Any) -> int:
+def my_player(observation: SpadesObservation) -> int:
     """Return your own player id (``0..3``)."""
     return int(observation["observation"]["player"])
 
 
-def partner_player(observation: Any) -> int:
+def partner_player(observation: SpadesObservation) -> int:
     """Return your partner's player id, read directly from the observation.
 
     Players 0 and 2 are one partnership, players 1 and 3 the other; the environment already computed
@@ -200,7 +205,7 @@ def partner_of(player: int) -> int:
 # -- bids and tricks --------------------------------------------------------------------------
 
 
-def bids(observation: Any) -> list[int]:
+def bids(observation: SpadesObservation) -> list[int]:
     """Return the four players' bids, indexed by player; ``-1`` for a player that has not bid yet.
 
     The observation encodes "not yet bid" as ``14``; this accessor remaps that to ``-1`` so
@@ -210,28 +215,28 @@ def bids(observation: Any) -> list[int]:
     return [-1 if int(b) == 14 else int(b) for b in observation["observation"]["bids"]]
 
 
-def tricks_won(observation: Any) -> list[int]:
+def tricks_won(observation: SpadesObservation) -> list[int]:
     """Return the tricks taken so far by each player, indexed by player id."""
     return [int(count) for count in observation["observation"]["tricks_won"]]
 
 
-def team_scores(observation: Any) -> list[int]:
+def team_scores(observation: SpadesObservation) -> list[int]:
     """Return the two teams' running hand scores: ``[team of player 0/2, team of player 1/3]``."""
     return [int(points) for points in observation["observation"]["team_scores"]]
 
 
-def led_suit(observation: Any) -> int | None:
+def led_suit(observation: SpadesObservation) -> int | None:
     """Return the suit led this trick (``0..3``), or ``None`` when you are the one leading."""
     led = int(observation["observation"]["led_suit"])
     return None if led == 4 else led
 
 
-def spades_broken(observation: Any) -> bool:
+def spades_broken(observation: SpadesObservation) -> bool:
     """Return whether spades have been broken (a spade has been played on an earlier trick)."""
     return bool(observation["observation"]["spades_broken"])
 
 
-def current_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
+def current_trick(observation: SpadesObservation) -> list[tuple[int, Card]]:
     """Return the cards played so far this trick as ``(player, card)`` pairs, in play order.
 
     The list starts with the trick leader and follows the table clockwise, holding only the players
@@ -241,7 +246,7 @@ def current_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
     return [(int(entry["player"]), entry["card"]) for entry in trick]
 
 
-def last_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
+def last_trick(observation: SpadesObservation) -> list[tuple[int, Card]]:
     """Return the most recently completed trick as ``(player, card)`` pairs, in play order.
 
     A trick is cleared from :func:`current_trick` the instant its fourth card lands, so this is how
@@ -253,13 +258,13 @@ def last_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
     return [(int(entry["player"]), entry["card"]) for entry in trick]
 
 
-def last_trick_winner(observation: Any) -> int | None:
+def last_trick_winner(observation: SpadesObservation) -> int | None:
     """Return the player that won the most recently completed trick, or ``None`` before any completes."""
     winner = int(observation["observation"]["last_trick_winner"])
     return None if winner == 4 else winner
 
 
-def trick_winner_so_far(observation: Any) -> tuple[int, dict[str, int]] | None:
+def trick_winner_so_far(observation: SpadesObservation) -> tuple[int, Card] | None:
     """Return the ``(player, card)`` currently winning this trick, or ``None`` if no card is down.
 
     Spades are trump: the winner is the highest spade played so far, or, if no spade has been played,
@@ -272,7 +277,7 @@ def trick_winner_so_far(observation: Any) -> tuple[int, dict[str, int]] | None:
     return _winner_of(played)
 
 
-def beats_current_winner(observation: Any, card: dict[str, int]) -> bool:
+def beats_current_winner(observation: SpadesObservation, card: Card) -> bool:
     """Return whether playing ``card`` now would take the trick (spades are trump).
 
     Useful for deciding whether to grab a trick or duck under it. When you are leading (no card is
@@ -290,8 +295,8 @@ def beats_current_winner(observation: Any, card: dict[str, int]) -> bool:
 
 
 def _winner_of(
-    played: list[tuple[int, dict[str, int]]],
-) -> tuple[int, dict[str, int]]:
+    played: list[tuple[int, Card]],
+) -> tuple[int, Card]:
     """Return the ``(player, card)`` winning a non-empty (partial or full) trick under spades-trump."""
     led = suit_of(played[0][1])
     spades = [pair for pair in played if suit_of(pair[1]) == SPADES]

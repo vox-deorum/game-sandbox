@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from sandbox.cards import (
     SUIT_NAMES,
+    Card,
+    HeartsObservation,
     card_name,
     current_trick,
     hearts_broken,
@@ -29,22 +30,22 @@ _RANKS = {str(rank): rank for rank in range(2, 11)} | {"J": 11, "Q": 12, "K": 13
 _SUITS = {name: suit for suit, name in enumerate(SUIT_NAMES)}
 
 
-def _lowest(cards: list[dict[str, int]]) -> dict[str, int]:
+def _lowest(cards: list[Card]) -> Card:
     """Return the deterministic low-rank fallback, breaking ties by suit."""
     return min(cards, key=lambda card: (rank_of(card), suit_of(card)))
 
 
-def _parse_choice(text: str, legal: list[dict[str, int]]) -> dict[str, int] | None:
+def _parse_choice(text: str, legal: list[Card]) -> Card | None:
     """Parse exactly one distinct legal card name from a completion."""
-    choices: list[dict[str, int]] = []
+    choices: list[Card] = []
     for rank_text, suit_text in _CARD_PATTERN.findall(text):
-        card = {"suit": _SUITS[suit_text.lower()], "rank": _RANKS[rank_text.upper()]}
+        card: Card = {"suit": _SUITS[suit_text.lower()], "rank": _RANKS[rank_text.upper()]}
         if card not in choices:
             choices.append(card)
     return choices[0] if len(choices) == 1 and choices[0] in legal else None
 
 
-def _prompt(observation: Any, legal: list[dict[str, int]]) -> str:
+def _prompt(observation: HeartsObservation, legal: list[Card]) -> str:
     """Build the compact legal-card and current-trick prompt."""
     trick = current_trick(observation)
     trick_text = ", ".join(f"player {player}: {card_name(card)}" for player, card in trick) or "empty"
@@ -65,7 +66,7 @@ class Agent:
     def reset(self, seed: int) -> None:
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: HeartsObservation) -> int:
         legal = legal_cards(observation)
         fallback = _lowest(legal)
         try:

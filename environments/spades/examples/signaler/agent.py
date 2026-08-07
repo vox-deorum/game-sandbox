@@ -14,11 +14,11 @@ so it never decodes the combined ``Discrete(66)`` action space or the observatio
 
 from __future__ import annotations
 
-from typing import Any
-
 from sandbox.cards import (
     SPADES,
     SUIT_NAMES,
+    Card,
+    SpadesObservation,
     bid,
     current_trick,
     hand_cards,
@@ -48,11 +48,11 @@ class Agent:
         # chat, which sees no observation, can read them); the partner's signalled suit and whether we
         # have already spoken persist across the hand.
         self._partner: int | None = None
-        self._hand: list[dict[str, int]] = []
+        self._hand: list[Card] = []
         self._partner_suit: int | None = None
         self._signalled = False
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         self._partner = partner_player(observation)
         self._hand = hand_cards(observation)
         if is_bidding(observation):
@@ -90,7 +90,7 @@ class Agent:
             return None
         return max(ace_suits, key=lambda s: (sum(1 for c in self._hand if suit_of(c) == s), -s))
 
-    def _play(self, observation: Any) -> int:
+    def _play(self, observation: SpadesObservation) -> int:
         """When leading and we know the partner's strong suit, lead it; otherwise lowest legal card."""
         legal = legal_cards(observation)
         leading = not current_trick(observation)

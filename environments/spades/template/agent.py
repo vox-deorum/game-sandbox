@@ -28,7 +28,7 @@ commented unless you use them. Episode state belongs in ``reset``; the construct
 arguments.
 """
 
-from sandbox.cards import bid, is_bidding, legal_cards, play, rank_of
+from sandbox.cards import SpadesObservation, bid, is_bidding, legal_cards, play, rank_of
 
 
 class Agent:
@@ -40,7 +40,7 @@ class Agent:
         # memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         # A hand has two phases, and is_bidding tells you which one this turn
         # belongs to: first everyone bids, then thirteen tricks are played.
         if is_bidding(observation):

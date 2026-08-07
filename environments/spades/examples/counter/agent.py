@@ -19,10 +19,9 @@ Spades agent needs nothing beyond the standard ``reset``/``act`` interface.
 
 from __future__ import annotations
 
-from typing import Any
-
 from sandbox.cards import (
     SPADES,
+    SpadesObservation,
     beats_current_winner,
     bid,
     bids,
@@ -53,19 +52,19 @@ class Agent:
         # tricks taken straight from each observation, so nothing is carried between turns or games.
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         if is_bidding(observation):
             return bid(self._honest_bid(observation))
         return self._play(observation)
 
-    def _honest_bid(self, observation: Any) -> int:
+    def _honest_bid(self, observation: SpadesObservation) -> int:
         """Count likely tricks: high spades plus side-suit aces. Never nil, so floored at one."""
         hand = hand_cards(observation)
         high_spades = sum(1 for card in hand if suit_of(card) == SPADES and rank_of(card) >= HIGH_SPADE_RANK)
         side_aces = sum(1 for card in hand if suit_of(card) != SPADES and rank_of(card) == ACE_RANK)
         return max(1, min(13, high_spades + side_aces))
 
-    def _play(self, observation: Any) -> int:
+    def _play(self, observation: SpadesObservation) -> int:
         """Win a trick while the team still needs one; otherwise duck with the lowest legal card."""
         legal = legal_cards(observation)
         if self._team_still_needs_tricks(observation):
@@ -75,7 +74,7 @@ class Agent:
                 return play(min(winners, key=lambda card: (rank_of(card), suit_of(card))))
         return play(min(legal, key=lambda card: (rank_of(card), suit_of(card))))
 
-    def _team_still_needs_tricks(self, observation: Any) -> bool:
+    def _team_still_needs_tricks(self, observation: SpadesObservation) -> bool:
         """True while the partnership has taken fewer tricks than its combined (non-nil) contract."""
         player = my_player(observation)
         partner = partner_player(observation)

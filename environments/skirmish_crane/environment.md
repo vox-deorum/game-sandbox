@@ -11,10 +11,13 @@ The default `skirmish` plan has two seats with three units each. The `army` plan
 On a unit's turn, `act` receives a dictionary with `observation` and `action_mask` keys. Return a dictionary with a path and a target choice:
 
 ```python
-{"path": 0, "target": 0}
+def act(self, observation: SkirmishObservation) -> SkirmishAction:
+    return {"path": 0, "target": 0}
 ```
 
 `path: 0` means stay in place. `target: 0` leaves no named target, so the game may automatically strike a nearby enemy. This order is always legal, so the template starts there.
+
+The observation and action shapes above are available as the `SkirmishObservation` and `SkirmishAction` types, importable from `sandbox.observation_types`, for editors and type checkers.
 
 The action mask has matching `path` and `target` arrays. An entry of `1` is legal and an entry of `0` is not. Choose each value only from the matching allowed entries. The two choices are independent, so any allowed path and any allowed target may be returned together.
 

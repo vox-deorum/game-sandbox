@@ -28,6 +28,7 @@ from skirmish_crane.combat import Strike, visible_units
 from skirmish_crane.engine import Activation, Unit
 from skirmish_crane.env import IllegalMoveError, default_action, make_env
 from skirmish_crane.naive import Agent, _decode_path, _distance, _end
+from skirmish_crane.observation_types import SkirmishObservation, SkirmishObservationData
 from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay
 from skirmish_crane.paths import MAX_PATH_ID, decode_path, encode_path
 from skirmish_crane.scoring import Result
@@ -175,7 +176,11 @@ def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip()
     env = make_env(_parameters(terrain=True, wasteland=True, capture_zones=3))
     env.reset(seed=0)
     observation, *_ = env.last()
+    # Verify the observation dict keys match the TypedDicts, catching drift between the runtime
+    # shape and the annotations in observation_types.py.
+    assert set(observation) == set(SkirmishObservation.__annotations__)
     state = observation["observation"]
+    assert set(state) == set(SkirmishObservationData.__annotations__)
     strings = [state["self"]["unit_id"], state["self"]["type"], state["parameters"]["seat_plan"]]
     strings.extend(unit[field] for unit in state["visible_units"] for field in ("unit_id", "side", "type"))
     strings.extend(

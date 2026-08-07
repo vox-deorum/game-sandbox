@@ -15,11 +15,11 @@ hand. Every message is recorded and shown in replays.
 
 from __future__ import annotations
 
-from typing import Any
-
 from sandbox.cards import (
     NIL_BID,
     SPADES,
+    Card,
+    SpadesObservation,
     beats_current_winner,
     bid,
     hand_cards,
@@ -57,7 +57,7 @@ class Agent:
         self._partner_nil = False
         self._warned = False
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         self._partner = partner_player(observation)
         if is_bidding(observation):
             return self._bid(observation)
@@ -77,7 +77,7 @@ class Agent:
             return [{"to": None, "text": NIL_WARNING}]
         return []
 
-    def _bid(self, observation: Any) -> int:
+    def _bid(self, observation: SpadesObservation) -> int:
         hand = hand_cards(observation)
         if self._qualifies_for_nil(hand):
             self._me_nil = True
@@ -87,7 +87,7 @@ class Agent:
         side_aces = sum(1 for c in hand if suit_of(c) != SPADES and rank_of(c) == ACE_RANK)
         return bid(max(1, min(13, high_spades + side_aces)))
 
-    def _qualifies_for_nil(self, hand: list[dict[str, int]]) -> bool:
+    def _qualifies_for_nil(self, hand: list[Card]) -> bool:
         """A hand safe to promise zero tricks: no card queen-high or above, and few, low spades."""
         if any(rank_of(c) >= DANGER_RANK for c in hand):
             return False
@@ -96,7 +96,7 @@ class Agent:
             return False
         return all(rank_of(c) < HIGH_SPADE_RANK for c in spades)
 
-    def _play(self, observation: Any) -> int:
+    def _play(self, observation: SpadesObservation) -> int:
         """Cover a nil-bidding partner by winning what we can; otherwise play the lowest legal card."""
         legal = legal_cards(observation)
         if self._partner_nil and not self._me_nil:

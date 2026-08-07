@@ -156,6 +156,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private orderMarkLayer!: Container
   /** The strike preview and the revert pulse, which breathe and so are redrawn every frame. */
   private orderPulseLayer!: Container
+  /** The step numerals, above every piece so a chosen tile's number is never read behind one. */
+  private orderNumeralLayer!: Container
   /** The confirmation button's artwork, screen-fixed above the world like the rest of the HUD. */
   private orderControlLayer!: Container
   /**
@@ -222,6 +224,7 @@ export class CraneReachRenderer extends PixiRenderer {
     this.activationLayer = new Container()
     this.orderMarkLayer = new Container()
     this.orderPulseLayer = new Container()
+    this.orderNumeralLayer = new Container()
     this.orderControlLayer = new Container()
     this.orderButtonLayer = new Container()
     this.eventLayer = new Container()
@@ -231,8 +234,10 @@ export class CraneReachRenderer extends PixiRenderer {
     this.inspectionLayer = new Container()
     // The order's hit areas sit under the units so a unit stays hoverable, and its marks sit over
     // them so composition always reads above a hover wash. No unit can stand on an offered tile.
+    // The step numerals go above every piece, including the ghost on the projected final tile.
     this.orderMarkLayer.eventMode = 'none'
     this.orderPulseLayer.eventMode = 'none'
+    this.orderNumeralLayer.eventMode = 'none'
     this.fogLayer.eventMode = 'none'
     this.fadingFogLayer.eventMode = 'none'
     this.worldLayer.addChild(
@@ -246,6 +251,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.activationLayer,
       this.orderMarkLayer,
       this.orderPulseLayer,
+      this.orderNumeralLayer,
       this.eventLayer,
       this.transientLayer,
     )
@@ -998,6 +1004,7 @@ export class CraneReachRenderer extends PixiRenderer {
   private reconcileOrder(scene: CraneReachScene): void {
     clear(this.orderMarkLayer)
     clear(this.orderPulseLayer)
+    clear(this.orderNumeralLayer)
     clear(this.orderControlLayer)
     const unit = this.controlledActor(scene)
     if (unit === null) {
@@ -1050,6 +1057,7 @@ export class CraneReachRenderer extends PixiRenderer {
     session.plan = plan
     drawOrderMarks(
       this.orderMarkLayer,
+      this.orderNumeralLayer,
       this.text.bind(this),
       scene,
       plan,

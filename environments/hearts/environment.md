@@ -45,7 +45,7 @@ A card is a small object with a `suit` number from `0` through `3` (clubs, diamo
 The strategy is to always play the lowest-ranked legal card. The comments in the code below explain why.
 
 ```python
-from sandbox.cards import legal_cards, play, rank_of
+from sandbox.cards import HeartsObservation, legal_cards, play, rank_of
 
 
 class Agent:
@@ -57,7 +57,7 @@ class Agent:
         # memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: HeartsObservation) -> int:
         # legal_cards reads the observation for you: every card object in this
         # list is a card you hold and may play right now, so the rules (follow
         # suit, hearts not broken yet, no points on the first trick) are already
@@ -109,7 +109,7 @@ While the game is still running, the `scores` observation shows the penalty poin
 
 ## The helper module
 
-The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values, so your `act` method never has to read internal arrays or action numbers.
+The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The observation and card types are available as Card and HeartsObservation from sandbox.cards for editors and type checkers. The helpers turn the observation into card objects, lists, and plain Python values, so your `act` method never has to read internal arrays or action numbers.
 
 `legal_cards(observation)` returns the card objects you may play, and on your turn that list is never empty. `min(legal, key=rank_of)` selects the lowest-ranked legal card, `rank_of(card)` reads a card's face value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
 

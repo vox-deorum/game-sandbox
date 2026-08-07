@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
     from local_play import card_spaces as _card_spaces
     from local_play import card_utils as _card_utils
+    from local_play.card_types import Card, HeartsObservation, TrickEntry
     from local_play.shared_modules import resolve
 else:
     try:
@@ -142,12 +143,12 @@ class HeartsEnv(AECEnv):
         self.infos = {agent: {} for agent in self.agents}
         self.agent_selection = self._agent(self.state.turn)
 
-    def observe(self, agent: str) -> dict[str, Any]:
+    def observe(self, agent: str) -> HeartsObservation:
         player = self._player(agent)
         state = self.state
 
-        hand = tuple(card_to_obj(card) for card in state.hands[player])
-        current_trick = tuple(
+        hand: tuple[Card, ...] = tuple(card_to_obj(card) for card in state.hands[player])
+        current_trick: tuple[TrickEntry, ...] = tuple(
             {"player": int(played_player), "card": card_to_obj(card)}
             for played_player, card in state.current_trick
         )

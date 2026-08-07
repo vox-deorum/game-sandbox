@@ -24,7 +24,7 @@ commented unless you use them. Episode state belongs in ``reset``; the construct
 arguments.
 """
 
-from sandbox.cards import legal_cards, play, rank_of
+from sandbox.cards import HeartsObservation, legal_cards, play, rank_of
 
 
 class Agent:
@@ -36,7 +36,7 @@ class Agent:
         # memory in this method.
         pass
 
-    def act(self, observation) -> int:
+    def act(self, observation: HeartsObservation) -> int:
         # legal_cards reads the observation for you: every card object in this
         # list is a card you hold and may play right now, so the rules (follow
         # suit, hearts not broken yet, no points on the first trick) are already

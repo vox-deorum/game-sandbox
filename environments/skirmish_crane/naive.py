@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import random
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .observation_types import SkirmishAction, SkirmishObservation
 
 
 def _decode_path(path_id: int) -> tuple[int, ...]:
@@ -45,7 +48,7 @@ class Agent:
         self._rng = random.Random(seed)
         self._start: tuple[int, int] | None = None
 
-    def act(self, observation: Any) -> dict[str, int]:
+    def act(self, observation: SkirmishObservation) -> SkirmishAction:
         state = observation["observation"]
         mask = observation["action_mask"]
         position = (state["self"]["position"]["q"], state["self"]["position"]["r"])

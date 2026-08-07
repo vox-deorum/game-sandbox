@@ -154,8 +154,11 @@ def write_harness(dest: Path) -> None:
     )
 
 
-def write_base_helpers(dest_sandbox: Path) -> None:
-    """Copy shared local-play helpers into the composed template's ``sandbox/`` package."""
+def write_base_helpers(dest_sandbox: Path, spec: TemplateEnvironmentSpec) -> None:
+    """Copy shared local-play helpers, plus ``spec``'s own sandbox modules, into the composed
+    template's ``sandbox/`` package."""
     dest_sandbox.mkdir(parents=True, exist_ok=True)
     for name, relative in TEMPLATE_BASE_MODULES.items():
+        shutil.copyfile(ENVIRONMENT_PACKAGES_DIR / relative, dest_sandbox / name)
+    for name, relative in spec.env_sandbox_modules.items():
         shutil.copyfile(ENVIRONMENT_PACKAGES_DIR / relative, dest_sandbox / name)

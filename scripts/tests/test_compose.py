@@ -31,6 +31,7 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "agent.py").exists()  # from the colocated Flappy Bird layer
     assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated during composition
     assert (out / "sandbox" / "card_utils.py").exists()  # generated shared helper
+    assert (out / "sandbox" / "card_types.py").exists()  # generated shared helper
     assert (out / "sandbox" / "shared_modules.py").exists()  # generated shared helper
 
 
@@ -161,7 +162,7 @@ def test_composition_ignores_bytecode_in_base_and_overlay(tmp_path: Path, monkey
     monkeypatch.setattr(compose_mod, "env_template_layer", lambda _: env)
     monkeypatch.setattr(compose_mod, "discover_environments", lambda: {"example": discovered})
     monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
-    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda *_: None)
     monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
     monkeypatch.setattr(compose_mod, "_copy_environment_page", lambda *_: None)
     monkeypatch.setattr(compose_mod, "_copy_llm_page", lambda _: None)
@@ -303,7 +304,7 @@ def test_compose_env_without_canonical_guide_raises(tmp_path: Path, monkeypatch:
         lambda: {"stray": SimpleNamespace(spec=object(), entry=SimpleNamespace(meta=object()))},
     )
     monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
-    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda *_: None)
     monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
 
     with pytest.raises(ComposeError, match="no canonical guide"):

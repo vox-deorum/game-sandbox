@@ -112,11 +112,33 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         and not path.name.endswith((".pyc", ".pyo"))
     )
     human_players = getattr(meta, "human_players", ())
+    pyright_files = (
+        ("agent.py", "sandbox/cards.py", "sandbox/card_types.py")
+        if package_dir.name in {"hearts", "spades"}
+        else ("agent.py", "sandbox/features.py", "sandbox/observation_types.py")
+        if package_dir.name == "flappy_bird"
+        else ("agent.py", "sandbox/observation_types.py")
+        if package_dir.name == "skirmish_crane"
+        else ()
+    )
+    # Flappy's and Skirmish's observation TypedDicts (observation_types.py) live beside env.py in
+    # the source package, so they are already swept into `modules` above for the env-side
+    # sandbox/env/ copy; this additionally places a copy at sandbox/observation_types.py, the
+    # direct import point for Skirmish agents (flappy re-exports it through sandbox.features).
+    env_sandbox_modules = (
+        {"observation_types.py": "flappy_bird/observation_types.py"}
+        if package_dir.name == "flappy_bird"
+        else {"observation_types.py": "skirmish_crane/observation_types.py"}
+        if package_dir.name == "skirmish_crane"
+        else {}
+    )
     return TemplateEnvironmentSpec(
         display_name=meta.display_name,
         inner_package=package_dir.name,
         modules=modules,
         player_id=human_players[0] if human_players else "player_0",
+        env_sandbox_modules=env_sandbox_modules,
+        pyright_files=pyright_files,
     )
 
 

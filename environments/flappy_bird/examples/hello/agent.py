@@ -12,9 +12,7 @@ in a trivial display helper, so the dependency-set extension path stays exercise
 
 from __future__ import annotations
 
-from typing import Any
-
-from sandbox.features import FLAP, IDLE, next_gap_center, player_velocity, player_y
+from sandbox.features import FLAP, IDLE, FlappyObservation, next_gap_center, player_velocity, player_y
 from wcwidth import wcswidth
 
 NAME = "hello-flappy"
@@ -27,7 +25,7 @@ class Agent:
         # Stateless heuristic: nothing to carry between or within episodes.
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: FlappyObservation) -> int:
         # Start from the gap-center target of the environment page's first improvement, then add one
         # idea: react to where the bird will be, not where it is. player_velocity is in screen heights
         # per step (the same scale as y), so y + velocity estimates the next position. y grows

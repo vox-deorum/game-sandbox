@@ -1,8 +1,12 @@
-"""A legal starting agent for Skirmish at Crane Reach."""
+"""A legal starting agent for Skirmish at Crane Reach.
+
+The observation and action shapes are available as the SkirmishObservation and SkirmishAction
+types, importable from ``sandbox.observation_types``, for editors and type checkers.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from sandbox.observation_types import SkirmishAction, SkirmishObservation
 
 
 class Agent:
@@ -11,7 +15,7 @@ class Agent:
     def reset(self, seed: int) -> None:
         pass
 
-    def act(self, observation: Any) -> dict[str, int]:
+    def act(self, observation: SkirmishObservation) -> SkirmishAction:
         return {"path": 0, "target": 0}
 
     # Optional: receive messages addressed to this player and return messages to send.

@@ -6,8 +6,9 @@
  * unit stays hoverable, and no unit can stand on an offered tile because occupancy is exactly what
  * makes a tile unofferable. The settled marks sit above the range washes so composition always reads
  * over hover inspection, and they are rebuilt only when the path changes, because their step numerals
- * bake text and a human turn can sit still for a minute. Only the parts that actually move, the
- * strike preview and the draining perimeter, are redrawn every frame.
+ * bake text and a human turn can sit still for a minute. The numerals sit above everything, so a
+ * chosen tile's number stays readable over the piece standing on it. Only the parts that actually
+ * move, the strike preview and the draining perimeter, are redrawn every frame.
  */
 import type { MoveClockReading } from '@renderers/base/move-clock.js'
 import { type Container, Graphics, Polygon } from 'pixi.js'
@@ -130,9 +131,13 @@ export function fogCrossfade(elapsedMs: number, reducedMotion: boolean): number 
  * The settled marks of an order being composed: what is offered, what has been walked, and where the
  * unit would end up. This is rebuilt only when the path changes, because the step numerals bake text
  * and a human turn can sit here for a minute.
+ *
+ * The step numerals go to their own container, which the renderer keeps above every piece. A numeral
+ * standing on the projected final tile would otherwise be read behind the ghost drawn there.
  */
 export function drawOrderMarks(
   layer: Container,
+  numerals: Container,
   text: TextFactory,
   scene: CraneReachScene,
   plan: OrderPlan,
@@ -170,7 +175,7 @@ export function drawOrderMarks(
     )
     numeral.resolution = textResolution
     numeral.position.set(center.x, center.y - radius * 0.62)
-    layer.addChild(numeral)
+    numerals.addChild(numeral)
   }
 }
 

@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
 
+    from .observation_types import FlappyObservation, FlappyPipe, FlappyPlayer
+
 import numpy as np
 from gymnasium import spaces
 
@@ -88,7 +90,7 @@ class FlappyBirdEnv(GymnasiumToAEC):
         # Discrete(2), which is correct as-is, so it is left untouched.
         self.observation_spaces = {self._agent_id: OBS_SPACE}
 
-    def observe(self, agent: str) -> Any:
+    def observe(self, agent: str) -> FlappyObservation:
         game = cast("FlappyBirdGame", self.gym_env)
         state = game.state
 
@@ -96,17 +98,30 @@ class FlappyBirdEnv(GymnasiumToAEC):
         # exact member type its shape=() Box publishes. gymnasium's Space.contains casts any
         # non-ndarray and warns while doing so, so a scalar leaf here makes PettingZoo's api_test
         # emit that cast warning on every leaf of every step. width/height stay plain ints for their
-        # Discrete spaces, which accept Python ints without casting.
+        # Discrete spaces, which accept Python ints without casting. The dict literals below spell
+        # out PLAYER_KEYS/PIPE_KEYS by hand (instead of looping over them, as the space above does)
+        # so each one type-checks against FlappyPlayer/FlappyPipe without a cast.
+        player: FlappyPlayer = {
+            "x": np.array(state.player.x, dtype=np.float32),
+            "y": np.array(state.player.y, dtype=np.float32),
+            "vel_y": np.array(state.player.vel_y, dtype=np.float32),
+            "rot": np.array(state.player.rot, dtype=np.float32),
+        }
+        # A pipe is still relevant until its right edge reaches the bird's left edge. Keep a
+        # partially overlapping pipe here because it can still collide with the bird. The
+        # renderer deliberately receives the unfiltered state through ``extract_overlay``.
+        pipes: tuple[FlappyPipe, ...] = tuple(
+            {
+                "x": np.array(pipe.x, dtype=np.float32),
+                "gap_top": np.array(pipe.gap_top, dtype=np.float32),
+                "gap_bottom": np.array(pipe.gap_bottom, dtype=np.float32),
+            }
+            for pipe in state.pipes
+            if pipe.x + PIPE_WIDTH > state.player.x
+        )
         return {
-            "player": {k: np.array(getattr(state.player, k), dtype=np.float32) for k in PLAYER_KEYS},
-            # A pipe is still relevant until its right edge reaches the bird's left edge. Keep a
-            # partially overlapping pipe here because it can still collide with the bird. The
-            # renderer deliberately receives the unfiltered state through ``extract_overlay``.
-            "pipes": tuple(
-                {key: np.array(getattr(pipe, key), dtype=np.float32) for key in PIPE_KEYS}
-                for pipe in state.pipes
-                if pipe.x + PIPE_WIDTH > state.player.x
-            ),
+            "player": player,
+            "pipes": pipes,
             "pipes_passed": np.array(state.score, dtype=np.int64),
             "width": state.width,
             "height": state.height,

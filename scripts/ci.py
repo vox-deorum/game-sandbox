@@ -55,6 +55,7 @@ cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration``, ``fro
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -343,6 +344,7 @@ def job_generated_code_fresh() -> None:
 
 
 def job_examples() -> None:
+    from _envs import discover_environments
     from compose import compose_example, list_envs, list_examples
 
     pairs = list_examples()
@@ -362,6 +364,8 @@ def job_examples() -> None:
             f"to prove it composes."
         )
 
+    specs = {env_id: discovered.spec for env_id, discovered in discover_environments().items()}
+
     for env, name in pairs:
         print(f"=== example: {env}/{name} ===", flush=True)
         out_dir = compose_example(env, name)
@@ -377,6 +381,21 @@ def job_examples() -> None:
             reqs += ["-r", str(out_dir / "requirements-dev.txt")]
         _run(["uv", "pip", "install", "--python", str(python), *reqs])
         _run([str(python), "-m", "pytest", "-q"], cwd=out_dir)
+
+        # Type-check the composed sandbox modules a spec has opted in, catching drift between the
+        # TypedDict observation shapes and the code that reads them before it ships to students.
+        pyright_files = specs[env].pyright_files
+        if pyright_files:
+            # Resolve imports against the example's own venv, since some examples depend on
+            # packages the repo venv does not carry (the LLM examples, for instance).
+            config = {
+                "typeCheckingMode": "basic",
+                "include": list(pyright_files),
+                "venvPath": ".",
+                "venv": ".venv",
+            }
+            (out_dir / "pyrightconfig.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            _run(["uv", "run", "pyright", "-p", str(out_dir)])
 
 
 def job_docs() -> None:

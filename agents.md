@@ -30,6 +30,7 @@ A few defaults that will save back-and-forth:
 - Keep specification documents under [docs/specs/](docs/specs/index.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
 - Python code is linted and formatted with Ruff, configured in the root [pyproject.toml](pyproject.toml) (target `py312`, line length 110, rule sets `E`, `F`, `I`, `UP`, `B`, `SIM`). After any Python change, auto-fix and reformat in place with `uv run ruff check --fix .` and `uv run ruff format .` before committing. CI runs the same rules in check-only mode (`uv run ruff check .` and `uv run ruff format --check .`, part of `uv run python scripts/ci.py python`, which also runs pyright and pytest), so a change that is not fixed and formatted locally will fail there.
 - Prioritize simplification and streamlining more than complicating things or adding unnecessary guardrails.
+- Whenever you find a pre-existing issue, try to fix it, instead of proving it is not your fault.
 
 ### UI consistency
 

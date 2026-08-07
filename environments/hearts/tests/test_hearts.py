@@ -28,6 +28,7 @@ from game_sandbox_harness.session import REASON_TERMINATED, AgentPlayer, run_epi
 from hearts import ENTRY, rules
 from hearts.env import IllegalMoveError, card_to_obj, default_action, make_env
 from hearts.overlay import extract_overlay
+from local_play.card_types import HeartsObservation, HeartsObservationData
 
 #: The frozen v1 built-in Hearts baseline the session image stages and the harness loads for every
 #: Naive player, from this repo's root.
@@ -284,7 +285,12 @@ def test_observation_shape_and_led_suit_none_encoding():
     env = make_env({"players": 4})
     env.reset(seed=0)
     player = env.state.turn
-    inner = env.observe(env.agent_selection)["observation"]
+    obs = env.observe(env.agent_selection)
+    inner = obs["observation"]
+
+    # Verify the observation dict keys match the TypedDicts.
+    assert set(obs) == set(HeartsObservation.__annotations__)
+    assert set(inner) == set(HeartsObservationData.__annotations__)
 
     assert inner["player"] == player
     assert inner["current_trick"] == ()

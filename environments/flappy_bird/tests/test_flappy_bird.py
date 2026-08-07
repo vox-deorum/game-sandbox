@@ -20,6 +20,7 @@ import pytest
 from flappy_bird import ENTRY
 from flappy_bird.env import FlappyBirdEnv, default_action, make_env
 from flappy_bird.game import PIPE_WIDTH, FlappyBirdGame
+from flappy_bird.observation_types import FlappyObservation, FlappyPipe, FlappyPlayer
 from flappy_bird.overlay import extract_overlay
 
 
@@ -168,6 +169,9 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
 
     assert set(observed) == {"player", "pipes", "pipes_passed", "width", "height"}
     assert set(observed["player"]) == {"x", "y", "vel_y", "rot"}
+    # Drift guard: the runtime dict keys must match the FlappyObservation TypedDicts exactly.
+    assert set(observed) == set(FlappyObservation.__annotations__)
+    assert set(observed["player"]) == set(FlappyPlayer.__annotations__)
     # Continuous leaves are the 0-d float32 arrays their shape=() Box spaces publish (not bare
     # np.float32 scalars), so Space.contains accepts them without a per-leaf cast warning.
     for value in observed["player"].values():
@@ -176,6 +180,7 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
     assert observed["pipes"], "expected at least one pipe"
     for pipe in observed["pipes"]:
         assert set(pipe) == {"x", "gap_top", "gap_bottom"}
+        assert set(pipe) == set(FlappyPipe.__annotations__)
         for value in pipe.values():
             assert _is_scalar_array(value, np.float32)
     xs = [float(pipe["x"]) for pipe in observed["pipes"]]

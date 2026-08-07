@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from sandbox import cards
+from sandbox.cards import SpadesObservation
 from sandbox.env import META, make_env
 from sandbox.harness.environment import resolve_parameters
 from sandbox.play import play_episode, rival_player_ids
@@ -20,7 +20,7 @@ class FirstLegalAgent:
     def reset(self, seed: int) -> None:
         pass
 
-    def act(self, observation: Any) -> int:
+    def act(self, observation: SpadesObservation) -> int:
         return next(action for action, legal in enumerate(observation["action_mask"]) if legal)
 
 

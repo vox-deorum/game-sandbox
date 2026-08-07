@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from hearts import rules as hearts_rules
-from local_play import card_spaces, card_utils, shared_modules
+from local_play import card_spaces, card_types, card_utils, shared_modules
 from spades import rules as spades_rules
 
 # -- the shared codec ------------------------------------------------------------------------
@@ -122,6 +122,21 @@ def test_trick_space_accepts_empty_and_populated_play_ordered_records():
         {"player": 3, "card": card_utils.card_to_obj(36)},
     )
     assert card_spaces.TRICK.contains(trick)
+
+
+# -- the static types stay in sync with the runtime spaces -----------------------------------
+
+
+def test_card_typeddict_matches_the_card_space_keys():
+    # A drift guard: Card is the static mirror of CARD, so a key added or removed on one side
+    # without the other must fail loudly here rather than surface as a silent annotation mismatch.
+    assert set(card_types.Card.__annotations__) == set(card_spaces.CARD.spaces.keys())
+
+
+def test_trick_entry_typeddict_matches_the_trick_space_entry_keys():
+    # Same guard for TrickEntry against one entry of the play-ordered TRICK sequence.
+    entry_space = card_spaces.TRICK.feature_space
+    assert set(card_types.TrickEntry.__annotations__) == set(entry_space.spaces.keys())
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience for a direct run
