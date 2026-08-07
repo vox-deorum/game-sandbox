@@ -63,16 +63,6 @@ export function isFreshForwardEvent(
   return nextTick > previousTick || (nextTick === previousTick && previousEvent === null)
 }
 
-/** A fresh nonsnap event waits for the in-flight or already-deferred event to paint its final frame. */
-export function shouldDeferEventUpdate(
-  eventIncomplete: boolean,
-  freshForwardEvent: boolean,
-  immediate: boolean,
-  hasPendingUpdate: boolean,
-): boolean {
-  return !immediate && freshForwardEvent && (eventIncomplete || hasPendingUpdate)
-}
-
 /** Static terrain survives state changes and rebuilds only for a new battlefield identity. */
 export function shouldRebuildBattlefield(
   previousKey: string | null,

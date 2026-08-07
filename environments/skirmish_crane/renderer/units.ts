@@ -252,7 +252,7 @@ function drawPolylineProgress(
   color: string,
   width: number,
 ): void {
-  if (points.length < 2 || progress <= 0) return
+  if (progress <= 0) return
   const lengths = points.slice(1).map((point, index) => {
     const previous = points[index] as { x: number; y: number }
     return Math.hypot(point.x - previous.x, point.y - previous.y)

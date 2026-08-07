@@ -64,17 +64,13 @@ export interface EventWindows {
  * the route is; an attack follows movement; a reaction joins a beat into the attack, or begins with
  * movement's end when a capture is all that happened. The event lasts until its last beat ends.
  */
-export function eventWindows(
-  shape: EventShape,
-  scale = 1,
-  timing: CraneTiming = CRANE_TIMING,
-): EventWindows {
-  const tiles = Math.max(0, Math.floor(shape.movementTiles))
-  const activationEnd = timing.activationMs
-  const movementEnd = activationEnd + tiles * timing.movementMsPerTile
-  const attackEnd = movementEnd + timing.attackMs
-  const reactionStart = shape.hasTarget ? movementEnd + timing.reactionOffsetMs : movementEnd
-  const reactionEnd = reactionStart + timing.reactionMs
+export function eventWindows(shape: EventShape, scale = 1): EventWindows {
+  const tiles = shape.movementTiles
+  const activationEnd = CRANE_TIMING.activationMs
+  const movementEnd = activationEnd + tiles * CRANE_TIMING.movementMsPerTile
+  const attackEnd = movementEnd + CRANE_TIMING.attackMs
+  const reactionStart = shape.hasTarget ? movementEnd + CRANE_TIMING.reactionOffsetMs : movementEnd
+  const reactionEnd = reactionStart + CRANE_TIMING.reactionMs
 
   const activation = { startMs: 0, endMs: activationEnd }
   const movement = tiles > 0 ? { startMs: activationEnd, endMs: movementEnd } : null

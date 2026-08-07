@@ -131,7 +131,7 @@ export interface GaugeState {
 
 /** The rim is a state gauge. The exact hit point numeral belongs to the step 4.2 hover chip. */
 export function gaugeFor(unit: Pick<SceneUnit, 'type' | 'hitPoints'>): GaugeState {
-  const fraction = Math.max(0, Math.min(1, unit.hitPoints / UNIT_STATS[unit.type].hitPoints))
+  const fraction = Math.min(1, unit.hitPoints / UNIT_STATS[unit.type].hitPoints)
   return {
     fraction,
     color:

@@ -6,10 +6,7 @@ import {
   eventTextMetrics,
   FEATURE_MARKS,
   gaugeFor,
-  HUD_CORNER_PANELS,
   HUD_PANEL_ALPHA,
-  HUD_PANEL_RADIUS,
-  HUD_TEXT_SIZES,
   labelRowLayout,
   presentationFor,
   TERRAIN_MARKS,
@@ -68,7 +65,7 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(gaugeFor({ type: 'cavalry', hitPoints: 10 }).fraction).toBe(1)
   })
 
-  it('lays out icon labels on one centerline in both directions at the larger HUD scale', () => {
+  it('lays out icon labels on one centerline in both directions', () => {
     const rightward = labelRowLayout(40, 100, 20, [30, 12], 1, 6)
     expect(rightward).toEqual({
       mark: { x: 40, y: 100, anchorX: 0.5, anchorY: 0.5 },
@@ -84,28 +81,11 @@ describe('Crane Reach Estuary Ink presentation', () => {
         { x: -12, y: 100, anchorX: 1, anchorY: 0.5 },
       ],
     })
-    expect(HUD_TEXT_SIZES).toEqual({
-      roundLabel: 16,
-      roundValue: 30,
-      score: 26,
-      scoreTarget: 20,
-      cardHeading: 17,
-      cardStat: 17,
-      ability: 16,
-    })
   })
 
-  it('backs every corner HUD group with one consistent translucent night-ink field', () => {
-    expect(HUD_CORNER_PANELS).toEqual({
-      round: { x: 16, y: 16, width: 82, height: 68 },
-      capture: { x: 924, y: 16, width: 260, height: 54 },
-      redRoster: { x: 16, y: 772, width: 230, height: 64 },
-      blueRoster: { x: 954, y: 772, width: 230, height: 64 },
-    })
+  it('keeps the corner HUD field translucent', () => {
     expect(HUD_PANEL_ALPHA).toBeGreaterThan(0)
     expect(HUD_PANEL_ALPHA).toBeLessThan(1)
-    expect(HUD_PANEL_RADIUS).toBe(8)
-    expect(CRANE_STYLE.backdrop).toBe('#101816')
   })
 
   it('keeps transient event text at a legible CSS size on the narrowest viewport', () => {

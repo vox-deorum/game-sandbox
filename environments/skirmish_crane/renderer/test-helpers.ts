@@ -39,7 +39,7 @@ export const skirmishStates = statesFrom(skirmishFixture)
 export const armyStates = statesFrom(armyFixture)
 
 /** Decode one legality bit vector, asserting its length, its stand-still bit, and its padding. */
-export function verifyBitVector(encoded: string, bitCount: number): Uint8Array {
+function verifyBitVector(encoded: string, bitCount: number): Uint8Array {
   const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0))
   expect(bytes).toHaveLength(Math.ceil(bitCount / 8))
   expect((bytes[0] as number) & 1).toBe(1)
@@ -51,13 +51,13 @@ export function verifyBitVector(encoded: string, bitCount: number): Uint8Array {
   return bytes
 }
 
-export function expectAllowed(bytes: Uint8Array, action: number): void {
+function expectAllowed(bytes: Uint8Array, action: number): void {
   const byte = bytes[Math.floor(action / 8)] as number
   expect(byte & (1 << (action % 8))).not.toBe(0)
 }
 
 /** Expand a wire path id back into its direction sequence, independently of the renderer. */
-export function pathForId(pathId: number): number[] {
+function pathForId(pathId: number): number[] {
   if (pathId === 0) return []
   let remaining = pathId - 1
   let length = 1
@@ -74,7 +74,7 @@ export function pathForId(pathId: number): number[] {
   return path
 }
 
-export function destinationForPath(start: string, path: number[]): string {
+function destinationForPath(start: string, path: number[]): string {
   let [q, r] = start.split(',').map(Number) as [number, number]
   for (const direction of path) {
     const [dq, dr] = HEX_DIRECTIONS[direction - 1] as readonly [number, number]

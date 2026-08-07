@@ -647,11 +647,11 @@ function readEvent(
   }
 }
 
-/** Convert one compact recorded state into the complete static Crane Reach frame. */
 function scoreText(score: number): string {
   return Number.isInteger(score) ? String(score) : String(Number(score.toFixed(2)))
 }
 
+/** Convert one compact recorded state into the complete static Crane Reach frame. */
 export function computeScene(state: StepState, config: SceneConfig = {}): CraneReachScene {
   const overlay = decodeOverlay(state)
   const battlefield = battlefieldFor(overlay)

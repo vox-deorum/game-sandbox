@@ -1,5 +1,5 @@
 /** Reachable Crane Reach destinations for the draw-only movement-range display. */
-import { HEX_DIRECTIONS, type HexTile, type SceneUnit } from './scene.js'
+import { HEX_DIRECTIONS, type HexTile, type SceneUnit, UNIT_STATS } from './scene.js'
 
 const TERRAIN_COST = { grass: 1, hill: 2 } as const
 const FEATURE_COST = { none: 0, forest: 1, marsh: 2, waste: 0 } as const
@@ -13,7 +13,7 @@ export function reachableTileKeys(
   const [startQ, startR] = unit.tileKey.split(',').map(Number)
   const byKey = new Map(tiles.map((tile) => [tile.key, tile]))
   const occupied = new Set(units.filter((other) => other.unitId !== unit.unitId).map((other) => other.tileKey))
-  const movement = unit.type === 'footman' ? 2 : unit.type === 'archer' ? 2 : 4
+  const movement = UNIT_STATS[unit.type].movement
   // Path id 0 is the stand-still order. Keeping the origin makes this destination set agree with
   // the fixture legality vector and lets the activation seal remain the visible marker for it.
   const reached = new Set<string>([unit.tileKey])
