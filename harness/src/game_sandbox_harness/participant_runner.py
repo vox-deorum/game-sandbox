@@ -25,9 +25,13 @@ class IllegalAgentActionError(RuntimeError):
 
 @runtime_checkable
 class ActionSource(Protocol):
-    """A source of actions for an external player."""
+    """A source of actions for an external player.
 
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any: ...
+    ``window_ms`` is the move budget, not a deadline instant: a source decides for itself when that
+    budget runs, which is what lets a live human's clock start with their controls.
+    """
+
+    def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any: ...
 
 
 @runtime_checkable
@@ -58,7 +62,7 @@ class AgentExecutionScope(Protocol):
 class NoopSource:
     """An :class:`ActionSource` that never supplies input."""
 
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any:
         return None
 
 
@@ -69,7 +73,7 @@ class ScriptedSource:
         self._actions = list(actions)
         self._index = 0
 
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any:
         if self._index >= len(self._actions):
             return None
         action = self._actions[self._index]
@@ -204,8 +208,8 @@ class ParticipantRunner:
                 raise IllegalAgentActionError(f"{context.player_id} returned an illegal action: {reason}")
             return
 
-        deadline_ms = external_deadline(self._entry, binding, self._clock)
-        context.action = binding.source.get_action(context.player_id, context.observation, deadline_ms)
+        window_ms = external_window(self._entry, binding)
+        context.action = binding.source.get_action(context.player_id, context.observation, window_ms)
         if context.action is None:
             print(
                 f"human player {context.player_id} defaulted due to no input in time",
@@ -488,12 +492,12 @@ def action_mask(info: Any, observation: Any) -> Any:
     return None
 
 
-def external_deadline(entry: EnvironmentEntry, binding: ExternalPlayer, clock: Clock) -> int | None:
-    """Compute an external player's deadline, or ``None`` when none applies."""
-    if entry.meta.pace_interval_ms is not None:
-        window = entry.meta.pace_interval_ms
-    elif binding.timeout_ms is not None:
-        window = binding.timeout_ms
-    else:
-        window = entry.meta.human_timeout_ms
-    return None if window is None else clock.now_ms() + window
+def external_window(entry: EnvironmentEntry, binding: ExternalPlayer) -> int | None:
+    """An external player's move budget in milliseconds, or ``None`` when they have none.
+
+    A duration rather than an instant: the source spends it only while the person holds the controls,
+    so when the budget starts running is the source's business, not this function's.
+    """
+    if binding.timeout_ms is not None:
+        return binding.timeout_ms
+    return entry.meta.human_timeout_ms

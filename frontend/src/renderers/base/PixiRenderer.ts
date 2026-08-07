@@ -152,6 +152,12 @@ export abstract class PixiRenderer implements RendererInstance {
     return this.transitionActive() ? this.transition.wait() : Promise.resolve()
   }
 
+  /**
+   * The host's playout paused or resumed. Only a renderer with something time-based on screen (a move
+   * clock) has anything to do here, so the base does nothing.
+   */
+  setPaused(_paused: boolean): void {}
+
   destroy(): void {
     this.destroyed = true
     this.transition.settle()

@@ -122,6 +122,29 @@ def test_pause_resume_stop_commands_drive_flags_and_clock():
     assert control.stopping
 
 
+def test_clock_commands_latch_per_player():
+    control = SessionControl()
+    assert not control.clock_running("player_0")  # nobody holds the controls until a client says so
+
+    control.handle_line('{"kind": "clock", "player": "player_0", "running": true}')
+    assert control.clock_running("player_0")
+    assert not control.clock_running("player_1")
+
+    control.handle_line('{"kind": "clock", "player": "player_0", "running": false}')
+    assert not control.clock_running("player_0")
+
+
+def test_malformed_clock_commands_are_dropped_with_a_diagnostic(capsys: Any):
+    control = SessionControl()
+    control.handle_line('{"kind": "clock", "running": true}')
+    control.handle_line('{"kind": "clock", "player": "player_0", "running": "yes"}')
+    control.handle_line('{"kind": "clock", "player": "player_0"}')
+    assert not control.clock_running("player_0")
+    err = capsys.readouterr().err
+    assert "without a string player" in err
+    assert err.count("without a boolean running") == 2
+
+
 def test_malformed_and_unknown_commands_are_ignored(capsys: Any):
     control = SessionControl()
     control.handle_line("not json at all")
@@ -258,11 +281,11 @@ def test_paced_source_returns_latched_or_none_immediately():
     source = TransportSource(control, clock=clock, paced=True)
 
     # No input yet → None immediately (the loop applies the default action).
-    assert source.get_action("player_0", observation=None, deadline_ms=None) is None
+    assert source.get_action("player_0", observation=None, window_ms=None) is None
     control.handle_line('{"kind": "input", "player": "player_0", "action": 1}')
-    assert source.get_action("player_0", observation=None, deadline_ms=123) == 1
+    assert source.get_action("player_0", observation=None, window_ms=123) == 1
     # Consumed: the next step with no fresh input defaults again.
-    assert source.get_action("player_0", observation=None, deadline_ms=123) is None
+    assert source.get_action("player_0", observation=None, window_ms=123) is None
 
 
 def test_turn_based_source_blocks_until_input_arrives():
@@ -282,7 +305,7 @@ def test_turn_based_source_blocks_until_input_arrives():
 
     sleeper = FeedingSleeper()
     source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
-    action = source.get_action("p", observation=None, deadline_ms=1000)
+    action = source.get_action("p", observation=None, window_ms=1000)
     assert action == 42
     assert sleeper.calls == 2
 
@@ -308,23 +331,89 @@ def test_turn_based_source_holds_latched_input_until_resume():
 
     sleeper = PausingSleeper()
     source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
-    action = source.get_action("p", observation=None, deadline_ms=1000)
+    action = source.get_action("p", observation=None, window_ms=1000)
     assert action == 42
     assert sleeper.calls == 4
 
 
-def test_turn_based_source_times_out_to_none_at_deadline():
+def test_turn_based_source_times_out_to_none_once_the_held_budget_is_spent():
     base = ManualClock(start_ms=0)
     clock = PausableClock(base)
     control = SessionControl()
+    control.handle_line('{"kind": "clock", "player": "p", "running": true}')
 
     class AdvancingSleeper:
         def sleep_ms(self, ms: int) -> None:
             base.advance(ms)
 
     source = TransportSource(control, clock=clock, paced=False, sleeper=AdvancingSleeper(), slice_ms=5)
-    # No input ever arrives; the deadline at 12ms is reached after a few slices → None.
-    assert source.get_action("p", observation=None, deadline_ms=12) is None
+    # No input ever arrives; the 12ms budget is spent after a few held slices → None.
+    assert source.get_action("p", observation=None, window_ms=12) is None
+
+
+def test_turn_based_source_waits_indefinitely_while_nobody_holds_the_controls():
+    """The browser animates agent turns before handing over, so the loop can reach a human long
+    before their controls open. None of that gap is theirs to lose."""
+    base = ManualClock(start_ms=0)
+    clock = PausableClock(base)
+    control = SessionControl()
+
+    class LateHandoverSleeper:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sleep_ms(self, ms: int) -> None:
+            self.calls += 1
+            base.advance(1000)  # far past the budget on every slice
+            if self.calls == 5:
+                control.handle_line('{"kind": "input", "player": "p", "action": 42}')
+
+    sleeper = LateHandoverSleeper()
+    source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
+    assert source.get_action("p", observation=None, window_ms=12) == 42
+
+
+def test_turn_based_budget_spends_only_the_time_the_controls_were_held():
+    base = ManualClock(start_ms=0)
+    clock = PausableClock(base)
+    control = SessionControl()
+
+    class TogglingSleeper:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sleep_ms(self, ms: int) -> None:
+            self.calls += 1
+            # Held for the first two slices, released for the next hundred, held again after.
+            if self.calls == 2:
+                control.handle_line('{"kind": "clock", "player": "p", "running": false}')
+            elif self.calls == 102:
+                control.handle_line('{"kind": "clock", "player": "p", "running": true}')
+            base.advance(10)
+
+    control.handle_line('{"kind": "clock", "player": "p", "running": true}')
+    sleeper = TogglingSleeper()
+    source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=10)
+    assert source.get_action("p", observation=None, window_ms=50) is None
+    # Five held slices spent the 50ms budget; the hundred released ones in between cost nothing,
+    # even though more than a second of wall time passed during them.
+    assert sleeper.calls == 105
+    assert base.now_ms() > 1000
+
+
+def test_turn_based_source_returns_input_that_arrives_while_the_controls_are_released():
+    """A dropped or late clock command must never swallow an action the person really sent."""
+    base = ManualClock(start_ms=0)
+    clock = PausableClock(base)
+    control = SessionControl()
+    control.handle_line('{"kind": "input", "player": "p", "action": 7}')
+
+    class ExplodingSleeper:
+        def sleep_ms(self, ms: int) -> None:
+            raise AssertionError("the latched input should return before any wait")
+
+    source = TransportSource(control, clock=clock, paced=False, sleeper=ExplodingSleeper())
+    assert source.get_action("p", observation=None, window_ms=12) == 7
 
 
 def test_turn_based_source_returns_none_on_stop():
@@ -337,7 +426,7 @@ def test_turn_based_source_returns_none_on_stop():
             raise AssertionError("must not sleep once stop is set")
 
     source = TransportSource(control, clock=clock, paced=False, sleeper=ExplodingSleeper())
-    assert source.get_action("p", observation=None, deadline_ms=None) is None
+    assert source.get_action("p", observation=None, window_ms=None) is None
 
 
 # --- The tee store: stream/stored byte parity -------------------------------------------

@@ -40,7 +40,7 @@ WEB_ROOT = Path(__file__).resolve().parent / "web"
 class _DefaultSource:
     """An action source that lets ``ExternalPlayer`` select the environment's legal default."""
 
-    def get_action(self, player_id: str, observation: object, deadline_ms: int | None) -> None:
+    def get_action(self, player_id: str, observation: object, window_ms: int | None) -> None:
         return None
 
 

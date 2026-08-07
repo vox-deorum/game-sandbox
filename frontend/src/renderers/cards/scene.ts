@@ -229,6 +229,8 @@ export interface SceneMoveClock {
   y: number
   /** The per-move budget in milliseconds, from the session's `human_timeout_ms`. */
   totalMs: number
+  /** The player on the clock, so the host can tell the container who holds the controls. */
+  player: string
 }
 
 /** The game-agnostic core of one static frame; a game's scene extends it with its own status fields. */
@@ -705,7 +707,7 @@ export function buildMoveClock(
   const sideways = position === 1 || position === 3
   const x = sideways ? anchor.x + (anchor.x < WIDTH / 2 ? CLOCK_INSET : -CLOCK_INSET) : anchor.x
   const y = sideways ? anchor.y : anchor.y + (anchor.y < HEIGHT / 2 ? CLOCK_INSET : -CLOCK_INSET)
-  return { x, y, totalMs: humanTimeoutMs }
+  return { x, y, totalMs: humanTimeoutMs, player: o.turnPlayerId }
 }
 
 // --- Hit-testing ---

@@ -333,6 +333,13 @@ export class CraneReachRenderer extends PixiRenderer {
     return this.eventAnimating
   }
 
+  /** Freeze the move clock with the picture: a pause releases the controls, so the budget holds too. */
+  override setPaused(paused: boolean): void {
+    if (paused) this.moveClock.hold()
+    else this.moveClock.resume()
+    this.refreshVisual()
+  }
+
   protected override onFrame(dtMs: number): boolean {
     // Three things can want frames: the event in flight, a perspective switch cross-dissolving, and a
     // live human turn, whose clock drains, preview breathes, and activation seal fades as it lasts.
@@ -1014,6 +1021,7 @@ export class CraneReachRenderer extends PixiRenderer {
       setResetButtonActive(this.resetButtonHit, false)
       this.activationLayer.alpha = 1
       this.moveClock.close()
+      this.ctx.setControlHeld?.(null)
       const data = this.ctx.container.dataset
       data.craneOrder = 'none'
       data.craneOrderPath = 'none'
@@ -1032,6 +1040,9 @@ export class CraneReachRenderer extends PixiRenderer {
     const session = this.orderSessionFor(unit, scene)
     const order = session.order
     this.moveClock.open(String(this.eventTick), this.ctx.meta.human_timeout_ms)
+    // The controls and the budget open together, so the container starts spending this player's move
+    // budget now rather than back when the loop reached them behind the animating turns above.
+    this.ctx.setControlHeld?.(session.playerId)
 
     const offered = new Set(offeredTiles(session.field, order).keys())
     const endpoint = endpointOf(order)

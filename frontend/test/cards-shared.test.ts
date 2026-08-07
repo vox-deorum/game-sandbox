@@ -164,10 +164,12 @@ describe('the shared card-table renderer layer', () => {
         controllable: true,
       }),
     ])
+    // The clock names the player on it, so the host can tell the container who holds the controls.
     expect(buildMoveClock(partnerTurn, view, 60_000)).toEqual({
       x: WIDTH / 2,
       y: 157,
       totalMs: 60_000,
+      player: 'player_0',
     })
 
     // A partner along a side edge shifts the clock inward instead, since those badges already sit at
@@ -178,6 +180,7 @@ describe('the shared card-table renderer layer', () => {
       x: DEFAULT_GEOMETRY.sideBadgeInset + 56,
       y: HEIGHT / 2,
       totalMs: 60_000,
+      player: 'player_3',
     })
   })
 

@@ -134,6 +134,7 @@ Inbound commands are:
 
 ```json
 {"kind":"input","player":"player_0","action":1}
+{"kind":"clock","player":"player_0","running":true}
 {"kind":"chat","player":"player_0","to":null,"text":"hello"}
 {"kind":"pause"}
 {"kind":"resume"}
@@ -141,6 +142,8 @@ Inbound commands are:
 ```
 
 Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored. A client sends `pause` and `resume` only for a human session of a `human_pause: "session"` environment. A watch session, and a human session of a `human_pause: "playback"` environment, pause locally in the browser and send neither.
+
+A `clock` event reports whether a human holds a player's controls, so the container spends that player's move budget only while they can act. The browser sends `running:true` where the renderer opens the move clock and `running:false` where it closes or playback pauses. It is gated like `input`: owner-only, human mode, a human-capable player. When the last owner socket detaches the backend sends `running:false` for every external player, so a browser that has gone away cannot keep a budget running.
 
 The final `result` event contains ticks, scores, termination reason, timeout counts, and recording ID.
 
@@ -203,9 +206,9 @@ Live pacing keeps separate scheduler branches:
 
 - Sequential paced environments retain their target cadence and use the latest latched human input.
 - Simultaneous environments emit an opening state, wait one full interval before tick 0, and schedule every later boundary one interval after the previous tick completes. They never issue catch-up ticks.
-- Sequential environments without a pace interval block for the acting human until the move clock expires.
+- Sequential environments without a pace interval block for the acting human, and the move clock accumulates only while the browser reports the controls held. A browser that never reports them waits indefinitely, backstopped by the session's idle timeout and duration limit.
 
-A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause never reaches the runner, which keeps stepping while the browser holds its own frames. Headless runs do not construct this live loop.
+A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause does not reach the stepping loop, which keeps stepping while the browser holds its own frames. It does reach a turn-based move clock through `clock`: pausing while you hold the controls stops your held time accumulating until you resume. Headless runs do not construct this live loop.
 
 The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical. The local bridge forwards those bytes unchanged and uses a caller-owned scratch recording directory.
 

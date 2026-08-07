@@ -508,8 +508,9 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
   test.setTimeout(180_000)
 
   // Skirmish gives each side one wide seat of three units, and every Crane Reach player is
-  // human-capable, so `self` puts the whole red side under one person. A generous move clock keeps
-  // the turn open while Playwright works, since the harness would otherwise stand the unit still.
+  // human-capable, so `self` puts the whole red side under one person. The move clock starts with the
+  // controls, so the generous budget is only margin for slow CI interaction, not for the agent turns
+  // that animate ahead of ours.
   const sessionId = await startSession(
     admin,
     ENV_ID,

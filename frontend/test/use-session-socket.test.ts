@@ -106,6 +106,127 @@ describe('useSessionSocket', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  // --- who holds the controls ---
+  //
+  // The container spends a human's move budget only while it believes someone holds the controls, so
+  // these transitions are what keep a person from being charged for animations they were only watching.
+
+  describe('reporting who holds the controls', () => {
+    /** Connect and open the socket, since nothing is sent over one that is not open yet. */
+    function openSession(
+      options: Parameters<ReturnType<typeof mountSessionSocket>['session']['connect']>[0] = {},
+    ) {
+      const mounted = mountSessionSocket()
+      mounted.session.connect(options)
+      socketDouble.handlers[0]?.onConnectionChange?.('open')
+      socketDouble.sent.length = 0
+      return mounted
+    }
+
+    it('reports a player taking and then releasing the controls', () => {
+      const { session, wrapper } = openSession()
+
+      session.setControlHeld('player_0')
+      expect(socketDouble.sent).toEqual([{ kind: 'clock', player: 'player_0', running: true }])
+
+      session.setControlHeld(null)
+      expect(socketDouble.sent).toEqual([
+        { kind: 'clock', player: 'player_0', running: true },
+        { kind: 'clock', player: 'player_0', running: false },
+      ])
+      wrapper.unmount()
+    })
+
+    it('closes the previous player before opening the next', () => {
+      const { session, wrapper } = openSession()
+
+      session.setControlHeld('player_0')
+      socketDouble.sent.length = 0
+      session.setControlHeld('player_3')
+      expect(socketDouble.sent).toEqual([
+        { kind: 'clock', player: 'player_0', running: false },
+        { kind: 'clock', player: 'player_3', running: true },
+      ])
+      wrapper.unmount()
+    })
+
+    it('says nothing when the renderer repeats itself or holds nobody', () => {
+      const { session, wrapper } = openSession()
+
+      session.setControlHeld(null)
+      expect(socketDouble.sent).toEqual([])
+
+      session.setControlHeld('player_0')
+      socketDouble.sent.length = 0
+      session.setControlHeld('player_0')
+      session.setControlHeld('player_0')
+      expect(socketDouble.sent).toEqual([])
+      wrapper.unmount()
+    })
+
+    it('releases the controls on a playback pause and takes them back on resume', () => {
+      const { session, wrapper } = openSession({ liveMs: 50 })
+
+      session.setControlHeld('player_0')
+      socketDouble.sent.length = 0
+
+      session.togglePause()
+      expect(socketDouble.sent).toEqual([{ kind: 'clock', player: 'player_0', running: false }])
+
+      session.togglePause()
+      expect(socketDouble.sent).toEqual([
+        { kind: 'clock', player: 'player_0', running: false },
+        { kind: 'clock', player: 'player_0', running: true },
+      ])
+      wrapper.unmount()
+    })
+
+    it('releases the controls on a session pause too, when its echo lands', () => {
+      // A session pause freezes the container's own clock as well, so this is redundant there. Sending
+      // it anyway keeps one rule for every environment.
+      const { session, wrapper } = openSession({ sessionPause: true })
+
+      session.setControlHeld('player_0')
+      socketDouble.sent.length = 0
+
+      socketDouble.handlers[0]?.onPause?.()
+      expect(socketDouble.sent).toEqual([{ kind: 'clock', player: 'player_0', running: false }])
+
+      socketDouble.handlers[0]?.onResume?.()
+      expect(socketDouble.sent).toEqual([
+        { kind: 'clock', player: 'player_0', running: false },
+        { kind: 'clock', player: 'player_0', running: true },
+      ])
+      wrapper.unmount()
+    })
+
+    it('re-asserts the open controls after a reconnect', () => {
+      // The backend releases the controls when the last owner socket goes away, so a page that comes
+      // back has to say again that its person is still holding them.
+      const { session, wrapper } = openSession()
+
+      session.setControlHeld('player_0')
+      socketDouble.sent.length = 0
+
+      socketDouble.handlers[0]?.onConnectionChange?.('reconnecting')
+      expect(socketDouble.sent).toEqual([])
+
+      socketDouble.handlers[0]?.onConnectionChange?.('open')
+      expect(socketDouble.sent).toEqual([{ kind: 'clock', player: 'player_0', running: true }])
+      wrapper.unmount()
+    })
+
+    it('sends nothing over a socket that is not open yet', () => {
+      const { session, wrapper } = mountSessionSocket()
+      session.connect()
+      socketDouble.sent.length = 0
+
+      session.setControlHeld('player_0')
+      expect(socketDouble.sent).toEqual([])
+      wrapper.unmount()
+    })
+  })
+
   it('accepts the first result from each explicit connection', () => {
     const { session, wrapper } = mountSessionSocket()
 

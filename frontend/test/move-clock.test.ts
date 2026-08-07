@@ -61,19 +61,52 @@ describe('the shared human move clock', () => {
     expect(clock.read()?.remainingMs).toBe(30_000)
   })
 
-  it('keeps draining while a viewer holds their own playback paused', () => {
-    // A playback pause freezes this viewer's picture, not the session: the harness keeps counting
-    // toward the default action, so a wall-clock countdown is the honest reading of it.
+  it('freezes while held and gives back every millisecond of it', () => {
+    // Pausing releases the controls, so the harness stops spending the budget. The picture has to say
+    // the same thing or the countdown would lie about how long the person really has.
     const { clock, advance } = fakeClock()
     clock.open('2', 30_000)
+    advance(5_000)
+
+    clock.hold()
     advance(25_000)
-    expect(clock.read()?.remainingMs).toBe(5_000)
-    expect(clock.read()?.ember).toBe(true)
+    expect(clock.read()?.remainingMs).toBe(25_000)
+    expect(clock.read()?.ember).toBe(false)
+
+    clock.resume()
+    expect(clock.read()?.remainingMs).toBe(25_000)
+    advance(1_000)
+    expect(clock.read()?.remainingMs).toBe(24_000)
+  })
+
+  it('ignores a repeated hold and a resume that follows no hold', () => {
+    const { clock, advance } = fakeClock()
+    clock.open('3', 30_000)
+    clock.hold()
+    advance(4_000)
+    clock.hold() // the frozen instant stands; the second hold is not a fresh one
+    advance(4_000)
+    clock.resume()
+    expect(clock.read()?.remainingMs).toBe(30_000)
+
+    clock.resume() // nothing is held, so nothing is given back
+    advance(2_000)
+    expect(clock.read()?.remainingMs).toBe(28_000)
+  })
+
+  it('opens a turn that arrives while held at its full budget', () => {
+    const { clock, advance } = fakeClock()
+    clock.hold()
+    advance(9_000)
+    clock.open('6', 30_000)
+    expect(clock.read()?.remainingMs).toBe(30_000)
+    clock.resume()
+    expect(clock.read()?.remainingMs).toBe(30_000)
   })
 
   it('restarts on the turn a reconnecting page lands on', () => {
-    // Nothing on the wire carries the deadline, so a page that reconnects mid-turn opens the clock
-    // again from the session budget. It reads high rather than low, and the harness stays the authority.
+    // The elapsed time lives in the harness, not on the wire, so a page that reconnects mid-turn opens
+    // the clock again from the full budget. It reads high rather than low, and the harness decides.
     const { clock, advance } = fakeClock()
     clock.open('9', 30_000)
     advance(20_000)

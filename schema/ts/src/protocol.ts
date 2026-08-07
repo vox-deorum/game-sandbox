@@ -10,8 +10,9 @@
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
  * (browser → backend → container) the command envelopes are `input` (with a player and action),
- * `pause`, `resume`, `stop`, and `chat` (a human message: a player, a recipient `to` or null for a
- * broadcast, and plain text). This module defines the
+ * `clock` (whether a human holds the controls for a player, so the container spends that player's
+ * move budget only while they can act), `pause`, `resume`, `stop`, and `chat` (a human message: a
+ * player, a recipient `to` or null for a broadcast, and plain text). This module defines the
  * `Command` shape and how the browser serializes one; parsing and shape-validating an untrusted
  * inbound line is `./command.js`'s job, since that needs zod and this module must not.
  *

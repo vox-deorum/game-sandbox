@@ -190,6 +190,13 @@ export abstract class CardTableRenderer<
     return this.active !== null
   }
 
+  /** Freeze the move clock with the picture: a pause releases the controls, so the budget holds too. */
+  override setPaused(paused: boolean): void {
+    if (paused) this.moveClock.hold()
+    else this.moveClock.resume()
+    if (this.scene !== null) this.reconcileClock(this.scene)
+  }
+
   /** The mount-time scene config, assembled from the renderer context; a game's `computeSceneFor` uses it. */
   protected sceneConfig(): SceneConfig {
     return {
@@ -282,6 +289,9 @@ export abstract class CardTableRenderer<
     // the same state (a resize, an asset arriving) reopens the same turn and leaves the countdown alone.
     if (scene.moveClock === null) this.moveClock.close()
     else this.moveClock.open(String(state.tick), scene.moveClock.totalMs)
+    // The controls and the budget open together, so the container starts spending this player's move
+    // budget when they can actually play a card, not while the trick before them is still animating.
+    this.ctx.setControlHeld?.(scene.moveClock?.player ?? null)
     this.reconcileClock(scene)
     clear(this.gameLayer)
     this.reconcileGameLayers(scene)

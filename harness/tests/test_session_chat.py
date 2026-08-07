@@ -215,7 +215,7 @@ class QueueSource:
     def queue(self, frame: ExternalChatFrame) -> None:
         self._frames.append(frame)
 
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any:
         return None
 
     def take_messages(self, player_id: str) -> list[ExternalChatFrame]:

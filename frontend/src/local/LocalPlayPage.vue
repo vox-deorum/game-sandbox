@@ -36,13 +36,8 @@ const controlledPlayers = computed(() =>
     .map(([playerId]) => playerId),
 )
 
-const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
-  host: hostEl,
-  meta,
-  controlledPlayers,
-  // Deferred so the renderer and the chat composable can be wired in either order.
-  sendAction: (playerId, action) => sendInput(playerId, action),
-})
+// The socket comes first because the renderer mount reads its `paused`; everything pointing the other
+// way is a stable function called later.
 const {
   connection,
   status,
@@ -54,6 +49,7 @@ const {
   latestState,
   connect,
   send,
+  setControlHeld,
   togglePause,
   stop,
 } = useSessionSocket('local', {
@@ -74,6 +70,15 @@ const {
     }
     return drawn
   },
+})
+const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
+  host: hostEl,
+  meta,
+  controlledPlayers,
+  // Deferred so the renderer and the chat composable can be wired in either order.
+  sendAction: (playerId, action) => sendInput(playerId, action),
+  onControlHeld: setControlHeld,
+  paused,
 })
 const {
   appendDecisions,

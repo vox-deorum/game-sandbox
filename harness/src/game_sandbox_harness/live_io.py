@@ -10,8 +10,9 @@ on a :class:`~game_sandbox_harness.clock.ManualClock`.
 The line shapes are defined in the Stage 3 transport plan. Outbound: recording lines
 (header + per-step states, never carrying a top-level ``kind``) and event envelopes (a
 top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes carry a
-``kind`` and, where applicable, a ``player`` and ``action`` or ``text``: ``input``, ``pause``,
-``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``to`` + ``text``). Unknown
+``kind`` and, where applicable, a ``player`` and ``action`` or ``text``: ``input``, ``clock``
+(``player`` + ``running``, whether a human holds that player's controls), ``pause``, ``resume``,
+``stop``, and ``chat`` (a human message, ``player`` + ``to`` + ``text``). Unknown
 kinds and malformed lines are logged and ignored, so the container never dies because a
 client sent garbage. Human ``chat`` frames enter one bounded designated-sender FIFO, not the input
 latch: inputs coalesce to the latest value, but messages must not swallow each other.
@@ -83,9 +84,9 @@ class SessionControl:
     """Thread-safe control state updated by inbound commands and read by the stepping thread.
 
     The command pump calls :meth:`handle_line` for each inbound line; the stepping thread reads
-    :attr:`paused`, :attr:`stopping`, and :meth:`take`. Pause and resume drive the injected
-    :class:`PausableClock` so the freeze takes effect the instant the command arrives, not on
-    the next step boundary.
+    :attr:`paused`, :attr:`stopping`, :meth:`take`, and :meth:`clock_running`. Pause and resume
+    drive the injected :class:`PausableClock` so the freeze takes effect the instant the command
+    arrives, not on the next step boundary.
     """
 
     def __init__(self, clock: PausableClock | None = None) -> None:
@@ -96,6 +97,8 @@ class SessionControl:
         self._paused = False
         self._stopping = False
         self._clock = clock
+        # Whether a human currently holds each player's controls, latched from ``clock`` commands.
+        self._clock_running: dict[str, bool] = {}
 
     def configure_chat(self, sender: str | None) -> None:
         """Configure the one external sender authorized to enqueue human ``chat`` frames.
@@ -133,6 +136,9 @@ class SessionControl:
                 self._latched[command["player"]] = command.get("action")
         elif kind == "chat":
             self._dispatch_chat(command, source)
+        elif kind == "clock":
+            with self._lock:
+                self._clock_running[command["player"]] = cast("bool", command["running"])
         elif kind == "pause":
             self.pause()
         elif kind == "resume":
@@ -190,6 +196,15 @@ class SessionControl:
                 return []
             queue, self._chat_queue = self._chat_queue, []
             return queue
+
+    def clock_running(self, player_id: str) -> bool:
+        """Whether a human currently holds ``player_id``'s controls.
+
+        False until a client says otherwise, so a move budget is never spent on a person who has not
+        been given the controls yet. See :meth:`TransportSource.get_action` for what that buys.
+        """
+        with self._lock:
+            return self._clock_running.get(player_id, False)
 
     def pause(self) -> None:
         with self._lock:
@@ -261,12 +276,19 @@ def parse_commands(raw: str) -> list[dict[str, Any]]:
             continue
         command = cast("dict[str, Any]", value)
         kind = command.get("kind")
-        if kind not in ("input", "chat", "pause", "resume", "stop"):
+        if kind not in ("input", "chat", "clock", "pause", "resume", "stop"):
             _diag(f"live: ignoring unknown command kind {kind!r}")
             continue
         if kind == "input" and not isinstance(command.get("player"), str):
             _diag(f"live: ignoring input command without a string player: {text!r}")
             continue
+        if kind == "clock":
+            if not isinstance(command.get("player"), str):
+                _diag(f"live: ignoring clock command without a string player: {text!r}")
+                continue
+            if not isinstance(command.get("running"), bool):
+                _diag(f"live: ignoring clock command without a boolean running: {text!r}")
+                continue
         if kind == "chat":
             reason = _chat_command_error(command)
             if reason is not None:
@@ -294,12 +316,17 @@ class RealSleeper:
 class TransportSource:
     """An :class:`~game_sandbox_harness.session.ActionSource` over latched transport inputs.
 
-    With a pace interval set, the cadence is the world clock and the deadline handed down is the
-    cadence instant, so the source returns the latched input (or ``None``) immediately and the
-    loop's pacing does the waiting. With no pace interval the player is turn-based: the source
-    blocks in short slices until an input arrives, the human-player deadline passes, or a stop is
-    requested. Either way, a ``None`` return routes through ``ExternalPlayer``'s existing default, a
-    noop for Flappy Bird, with no agent-timeout accounting.
+    With a pace interval set, the cadence is the world clock, so the source returns the latched
+    input (or ``None``) immediately and the loop's pacing does the waiting. With no pace interval
+    the player is turn-based: the source blocks in short slices until an input arrives, the move
+    budget is spent, or a stop is requested. Either way, a ``None`` return routes through
+    ``ExternalPlayer``'s existing default, a noop for Flappy Bird, with no agent-timeout accounting.
+
+    A turn-based budget is spent only while the person actually holds the controls, which the client
+    reports with ``clock`` commands. The browser plays agent turns through an animation queue, so the
+    loop can reach a human seconds before their controls open, and none of that gap is theirs to lose.
+    Waiting on a person who never takes the controls is bounded by the session's idle and duration
+    limits rather than by this source.
     """
 
     def __init__(
@@ -317,19 +344,30 @@ class TransportSource:
         self._sleeper = sleeper or RealSleeper()
         self._slice_ms = slice_ms
 
-    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any:
         if self._paced:
             return self._control.take(player_id)
+        # Held time accumulates per call, so every turn starts with the full budget while the latched
+        # running flag itself persists across turns.
+        held_ms = 0
+        last_ms = self._clock.now_ms()
         while True:
             if self._control.stopping:
                 return None
             if self._control.paused:
                 self._sleeper.sleep_ms(self._slice_ms)
+                last_ms = self._clock.now_ms()
                 continue
+            # An input counts whether or not the controls are reported as held, so a dropped or late
+            # clock command can never swallow a real action.
             value = self._control.take(player_id)
             if value is not None:
                 return value
-            if deadline_ms is not None and self._clock.now_ms() >= deadline_ms:
+            now_ms = self._clock.now_ms()
+            if self._control.clock_running(player_id):
+                held_ms += now_ms - last_ms
+            last_ms = now_ms
+            if window_ms is not None and held_ms >= window_ms:
                 return None
             self._sleeper.sleep_ms(self._slice_ms)
 

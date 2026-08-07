@@ -332,8 +332,8 @@ export class LiveSession {
 
   /**
    * Attach a socket. It immediately receives the buffered header, latest state, current status, and
-   * terminal result when one already arrived. Only the owner's commands are honored, and `input`
-   * only in human mode for a player the session exposes.
+   * terminal result when one already arrived. Only the owner's commands are honored, and `input` and
+   * `clock` only in human mode for a player the session exposes.
    */
   attach(socket: ClientSocket, isOwner: boolean): Attachment {
     this.sockets.set(socket, { isOwner })
@@ -365,6 +365,9 @@ export class LiveSession {
       handleMessage: (raw: string): void => this.handleClientMessage(raw, isOwner),
       detach: (): void => {
         this.sockets.delete(socket)
+        if (isOwner) {
+          this.releaseControlsOnLastOwnerDetach()
+        }
         this.refreshIdleOnDetach()
       },
     }
@@ -381,7 +384,7 @@ export class LiveSession {
       return
     }
     const command = parsed.command
-    if (command.kind === 'input') {
+    if (command.kind === 'input' || command.kind === 'clock') {
       if (this.mode !== 'human' || !this.externalPlayers.has(command.player)) {
         return
       }
@@ -410,6 +413,26 @@ export class LiveSession {
     }
     if (this.mode === 'human') {
       this.refreshIdleOnCommand()
+    }
+  }
+
+  /**
+   * Tell the container nobody holds the controls once the last owner socket leaves, so a move budget
+   * stops running the moment the person can no longer act. Without this a page refresh mid-turn would
+   * spend the rest of the budget on a browser that is not there. The reattaching page reports the
+   * controls open again, and the container keeps whatever it had already spent.
+   */
+  private releaseControlsOnLastOwnerDetach(): void {
+    if (this.mode !== 'human' || this.status !== 'running') {
+      return
+    }
+    for (const meta of this.sockets.values()) {
+      if (meta.isOwner) {
+        return
+      }
+    }
+    for (const player of this.externalPlayers) {
+      this.process.send(serializeCommand({ kind: 'clock', player, running: false }))
     }
   }
 

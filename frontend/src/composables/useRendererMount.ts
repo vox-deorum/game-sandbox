@@ -10,7 +10,15 @@
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { type MaybeRefOrGetter, onBeforeUnmount, type Ref, ref, shallowRef, toValue } from 'vue'
+import {
+  type MaybeRefOrGetter,
+  onBeforeUnmount,
+  type Ref,
+  ref,
+  shallowRef,
+  toValue,
+  watch,
+} from 'vue'
 
 import { getRenderer } from '../renderers/registry.js'
 import type { RendererInstance, RenderOptions } from '../renderers/types.js'
@@ -22,6 +30,10 @@ export interface UseRendererMountOptions {
   controlledPlayers?: MaybeRefOrGetter<readonly string[]>
   /** Live human input forwarder; absent for spectators and replays (draw-only). */
   sendAction?: (playerId: string, action: unknown) => void
+  /** Receives the renderer's report of who can act right now; absent outside live human play. */
+  onControlHeld?: (playerId: string | null) => void
+  /** Whether the host's playout is paused, so a renderer can freeze its move clock with it. */
+  paused?: MaybeRefOrGetter<boolean>
 }
 
 export function useRendererMount(options: UseRendererMountOptions) {
@@ -50,10 +62,15 @@ export function useRendererMount(options: UseRendererMountOptions) {
       controlledPlayers: players,
       // Input only for the owner of controlled players; a spectator or replay gets a draw-only renderer.
       sendAction: players.length > 0 ? options.sendAction : undefined,
+      // Same gate: only a session someone plays has a move clock to hold.
+      setControlHeld: players.length > 0 ? options.onControlHeld : undefined,
     })
     // The shape is carried by the instance now; surface it for the page's stage layout.
     aspectRatio.value = mounted.aspectRatio
     instance.value = mounted
+    if (options.paused !== undefined) {
+      mounted.setPaused?.(toValue(options.paused))
+    }
   }
 
   /** Draw a state, resolving once the renderer's transition for it has finished. A page with no
@@ -65,6 +82,14 @@ export function useRendererMount(options: UseRendererMountOptions) {
   function destroy(): void {
     instance.value?.destroy()
     instance.value = null
+  }
+
+  const pausedOption = options.paused
+  if (pausedOption !== undefined) {
+    watch(
+      () => toValue(pausedOption),
+      (value) => instance.value?.setPaused?.(value),
+    )
   }
 
   onBeforeUnmount(destroy)

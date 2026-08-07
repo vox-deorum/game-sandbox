@@ -419,7 +419,8 @@ describe('controllability and the move clock (live vs replay)', () => {
         controlledPlayers: ['player_0', 'player_2'],
         humanTimeoutMs: 60_000,
       }).moveClock,
-    ).toEqual({ x: 480, y: 173, totalMs: 60_000 })
+      // The clock names the player on it, so the host can say who holds the controls.
+    ).toEqual({ x: 480, y: 173, totalMs: 60_000, player: 'player_2' })
   })
 })
 

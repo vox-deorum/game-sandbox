@@ -220,7 +220,7 @@ def test_parallel_external_actions_are_consumed_before_agent_action_hooks():
     selected: list[str] = []
 
     class MarkingSource:
-        def get_action(self, player_id: str, observation: object, deadline_ms: int | None) -> int:
+        def get_action(self, player_id: str, observation: object, window_ms: int | None) -> int:
             selected.append(player_id)
             return 0
 

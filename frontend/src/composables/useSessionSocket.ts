@@ -7,11 +7,17 @@
  *
  * Pause comes in two kinds. A **session pause** travels to the container as a `pause`/`resume` command,
  * and the `paused` ref then follows the echoes the relay broadcasts, so the UI cannot disagree with the
- * container. A **playback pause** never leaves the browser: the session, its cadence, and its move
- * clocks keep running, and only this viewer's frame playout freezes. The environment's `human_pause`
- * metadata picks between them for a human session; a watch run always pauses playout, because its
- * container has usually finished (and its socket closed with it) long before the buffered frames have
- * played out. Either way the frames queued here hold until resume, so the picture really does stop.
+ * container. A **playback pause** stops this viewer's frame playout while the session and its cadence
+ * run on. The environment's `human_pause` metadata picks between them for a human session; a watch run
+ * always pauses playout, because its container has usually finished (and its socket closed with it)
+ * long before the buffered frames have played out. Either way the frames queued here hold until resume,
+ * so the picture really does stop.
+ *
+ * This composable also tells the container who holds the controls, with a `clock` command sent whenever
+ * the renderer opens or closes its move clock (see `setControlHeld`) and whenever a pause of either kind
+ * takes the controls away. That is what keeps a human's move budget from draining while the agent turns
+ * ahead of them are still animating out of the queue below, and it is what makes pausing on your own
+ * turn safe.
  *
  * A watch (scripted) run plays through a client-side jitter buffer. The container runs as fast as it
  * can and the carrier delivers frames unevenly, in bursts with stalls, so rendering them on arrival
@@ -148,6 +154,13 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   // Whether this environment's human sessions pause the container rather than only this playout.
   let sessionPause = false
 
+  // --- the move clock ---
+  // Which player the renderer currently has the controls open for, and which player the container was
+  // last told is holding them. The container spends a move budget only while it believes someone
+  // holds the controls, so `syncClock` keeps these two in step.
+  let heldPlayer: string | null = null
+  let believedRunning: string | null = null
+
   function applyResult(value: Record<string, unknown>): void {
     const scores = toPlayerScores(value.scores)
     finalResult.value = {
@@ -261,6 +274,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
    *  backlog at once and reveals an end that was waiting on the viewer. */
   function resumePlayout(): void {
     paused.value = false
+    syncClock()
     if (pacing) {
       maybeStart(endHeld)
       return
@@ -292,6 +306,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     sessionPause = false
     paused.value = false
     buffering.value = false
+    heldPlayer = null
+    believedRunning = null
     socket.value?.close()
     socket.value = null
   }
@@ -401,6 +417,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       onPause: () => {
         if (connectionId === activeConnectionId) {
           paused.value = true
+          syncClock()
         }
       },
       onResume: () => {
@@ -428,6 +445,10 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       onConnectionChange: (state) => {
         if (connectionId === activeConnectionId) {
           connection.value = state
+          // A reconnect meets a container that was told the controls were released when the last
+          // socket went away, so re-assert whatever the renderer still has open.
+          if (state === 'open') syncClock()
+          else believedRunning = null
         }
       },
     })
@@ -438,6 +459,32 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   /** Send a command (used by the renderer's live `sendAction` to forward human input). */
   function send(command: Command): void {
     socket.value?.send(command)
+  }
+
+  /**
+   * Tell the container who holds the controls whenever that changes. A pause counts as nobody holding
+   * them, so a person who stopped the picture is not charged for the time. Nothing is sent over a
+   * closed socket: the container is told again on the next open, since the backend releases the
+   * controls when the last owner socket goes away.
+   */
+  function syncClock(): void {
+    const next = paused.value ? null : heldPlayer
+    if (next === believedRunning || connection.value !== 'open') {
+      return
+    }
+    if (believedRunning !== null) {
+      socket.value?.send({ kind: 'clock', player: believedRunning, running: false })
+    }
+    if (next !== null) {
+      socket.value?.send({ kind: 'clock', player: next, running: true })
+    }
+    believedRunning = next
+  }
+
+  /** The renderer's report of which controlled player can act right now, or null when none can. */
+  function setControlHeld(playerId: string | null): void {
+    heldPlayer = playerId
+    syncClock()
   }
 
   /** Whether this session's pause reaches the container. A watch run always pauses playout locally, so
@@ -460,6 +507,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       resumePlayout()
     } else {
       paused.value = true
+      // A playback pause stops only this viewer's picture, so the container has to be told separately
+      // that its human let go of the controls; that is what makes pausing on your own turn safe.
+      syncClock()
     }
   }
 
@@ -503,6 +553,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     latestState,
     connect,
     send,
+    setControlHeld,
     togglePause,
     stop,
     close,

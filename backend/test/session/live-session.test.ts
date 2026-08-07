@@ -426,6 +426,79 @@ describe('relay (LiveSession)', () => {
       a.handleMessage('not even json')
       expect(process.sent).toEqual([])
     })
+
+    it("forwards the owner's clock command without echoing it", async () => {
+      const { session, process } = makeSession('human')
+      const owner = new FakeSocket()
+      const attachment = session.attach(owner, true)
+      attachment.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      expect(process.sent).toEqual(['{"kind":"clock","player":"player_0","running":true}'])
+      expect(owner.received).not.toContain('{"kind":"clock","player":"player_0","running":true}')
+    })
+
+    it('ignores a clock command from a spectator, a scripted run, and an unexposed player', async () => {
+      const { session, process } = makeSession('human')
+      const spectator = session.attach(new FakeSocket(), false)
+      spectator.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      expect(process.sent).toEqual([])
+
+      const scripted = makeSession('scripted')
+      const a = scripted.session.attach(new FakeSocket(), true)
+      a.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      expect(scripted.process.sent).toEqual([])
+
+      const human = makeSession('human', { externalPlayers: ['player_1'] })
+      const b = human.session.attach(new FakeSocket(), true)
+      b.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      expect(human.process.sent).toEqual([])
+    })
+  })
+
+  // --- releasing the controls when the owner goes away ---
+
+  describe('control release on detach', () => {
+    it('tells the container the controls are released when the last owner detaches', async () => {
+      const { session, process } = makeSession('human', {
+        externalPlayers: ['player_0', 'player_3'],
+      })
+      const attachment = session.attach(new FakeSocket(), true)
+      process.emit(HEADER) // the session is running before the owner walks away
+      await flush()
+
+      attachment.detach()
+      expect(process.sent).toEqual([
+        '{"kind":"clock","player":"player_0","running":false}',
+        '{"kind":"clock","player":"player_3","running":false}',
+      ])
+    })
+
+    it('keeps the clock running while another owner socket remains', async () => {
+      const { session, process } = makeSession('human')
+      const first = session.attach(new FakeSocket(), true)
+      session.attach(new FakeSocket(), true) // a second tab still holds the controls
+      process.emit(HEADER)
+      await flush()
+
+      first.detach()
+      expect(process.sent).toEqual([])
+    })
+
+    it('releases nothing for a spectator detaching or a scripted run', async () => {
+      const { session, process } = makeSession('human')
+      session.attach(new FakeSocket(), true)
+      const spectator = session.attach(new FakeSocket(), false)
+      process.emit(HEADER)
+      await flush()
+      spectator.detach()
+      expect(process.sent).toEqual([])
+
+      const scripted = makeSession('scripted')
+      const owner = scripted.session.attach(new FakeSocket(), true)
+      scripted.process.emit(HEADER)
+      await flush()
+      owner.detach()
+      expect(scripted.process.sent).toEqual([])
+    })
   })
 
   // --- outbound message visibility ---

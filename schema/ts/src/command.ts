@@ -28,6 +28,17 @@ const ChatCommandSchema = z
   })
   .strict()
 
+/**
+ * Whether a human currently holds the controls for one player. The container spends that player's
+ * move budget only while this is true, so the countdown starts when the person can actually act
+ * rather than when the loop reached them behind a queue of animating agent turns.
+ */
+const ClockCommandSchema = z.object({
+  kind: z.literal('clock'),
+  player: z.string(),
+  running: z.boolean(),
+})
+
 const PauseCommandSchema = z.object({ kind: z.literal('pause') })
 const ResumeCommandSchema = z.object({ kind: z.literal('resume') })
 const StopCommandSchema = z.object({ kind: z.literal('stop') })
@@ -41,6 +52,7 @@ const StopCommandSchema = z.object({ kind: z.literal('stop') })
 const CommandSchema = z.discriminatedUnion('kind', [
   InputCommandSchema,
   ChatCommandSchema,
+  ClockCommandSchema,
   PauseCommandSchema,
   ResumeCommandSchema,
   StopCommandSchema,
@@ -52,7 +64,7 @@ export type Command = z.infer<typeof CommandSchema>
 /** The outcome of parsing an inbound command line from a client. */
 export type CommandParse = { ok: true; command: Command } | { ok: false; reason: string }
 
-const COMMAND_KINDS = ['input', 'chat', 'pause', 'resume', 'stop'] as const
+const COMMAND_KINDS = ['input', 'chat', 'clock', 'pause', 'resume', 'stop'] as const
 
 // The fixed wording each field-shape failure gets, keyed by command kind then field name. Kept as an
 // explicit table because zod's error reports which field failed but not this codebase's own phrasing
@@ -68,6 +80,10 @@ const REASON_BY_FIELD: Record<string, Record<string, string>> = {
     player: 'chat command needs a string player',
     to: 'chat command needs a string or null to',
     text: 'chat command needs string text',
+  },
+  clock: {
+    player: 'clock command needs a string player',
+    running: 'clock command needs a boolean running',
   },
 }
 

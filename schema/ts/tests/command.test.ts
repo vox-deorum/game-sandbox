@@ -52,6 +52,27 @@ describe('inbound command parsing', () => {
     expect(parseCommand('{"kind":"chat","player":"player_0","text":"hi"}').ok).toBe(false)
   })
 
+  it('accepts a clock command in both directions', () => {
+    for (const running of [true, false]) {
+      expect(parseCommand(`{"kind":"clock","player":"player_0","running":${running}}`)).toEqual({
+        ok: true,
+        command: { kind: 'clock', player: 'player_0', running },
+      })
+    }
+  })
+
+  it('rejects a clock command with a bad player or running', () => {
+    expect(parseCommand('{"kind":"clock","running":true}')).toEqual({
+      ok: false,
+      reason: 'clock command needs a string player',
+    })
+    expect(parseCommand('{"kind":"clock","player":"player_0","running":"yes"}')).toEqual({
+      ok: false,
+      reason: 'clock command needs a boolean running',
+    })
+    expect(parseCommand('{"kind":"clock","player":"player_0"}').ok).toBe(false)
+  })
+
   it('ignores an unrecognized field on non-chat commands', () => {
     expect(parseCommand('{"kind":"input","player":"player_0","action":1,"extra":"field"}')).toEqual(
       { ok: true, command: { kind: 'input', player: 'player_0', action: 1 } },

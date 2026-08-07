@@ -32,6 +32,13 @@ export interface RendererContext {
   controlledPlayers: readonly string[]
   /** Send a human action for a controlled player; absent outside live human play. */
   sendAction?: (playerId: string, action: unknown) => void
+  /**
+   * Report which controlled player the person can act for right now, or `null` when none. The host
+   * tells the container, which spends that player's move budget only while it is held. A renderer
+   * calls this exactly where it opens and closes its move clock: the controls and the budget are the
+   * same moment. Absent outside live human play.
+   */
+  setControlHeld?: (playerId: string | null) => void
 }
 
 /**
@@ -89,6 +96,12 @@ export interface RendererInstance {
    * on a frame is never left hanging.
    */
   render(state: StepState, options?: RenderOptions): Promise<void>
+  /**
+   * Tell the renderer whether the host's playout is paused, so a renderer drawing a move clock can
+   * freeze it. Held time is not charged to the person while paused, and the clock they see must say
+   * the same thing. Optional: a renderer without a clock has nothing to freeze.
+   */
+  setPaused?(paused: boolean): void
   destroy(): void
 }
 

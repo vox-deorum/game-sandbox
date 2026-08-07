@@ -129,16 +129,10 @@ watch(attributionState, (state) => {
   )
 })
 
-// The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
-// and hands recording frames back here to draw and log. The two reference each other through stable
-// functions, so declaration order does not matter at call time.
-const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
-  host: hostEl,
-  meta,
-  controlledPlayers,
-  // Deferred so the renderer and the chat composable can be wired in either order.
-  sendAction: (playerId, action) => sendInput(playerId, action),
-})
+// The socket owns the chrome state and hands recording frames back here to draw and log; the renderer
+// (shared with replay) forwards the owner's live input. They reference each other through stable
+// functions called later, so only the values read during setup fix this order: the renderer mount
+// reads the socket's `paused`.
 const {
   connection,
   status,
@@ -149,6 +143,7 @@ const {
   accumulatedScores,
   latestState,
   connect,
+  setControlHeld,
   togglePause,
   stop,
   send,
@@ -169,6 +164,15 @@ const {
       appendDecisions(state)
       return drawn
     },
+})
+const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
+  host: hostEl,
+  meta,
+  controlledPlayers,
+  // Deferred so the renderer and the chat composable can be wired in either order.
+  sendAction: (playerId, action) => sendInput(playerId, action),
+  onControlHeld: setControlHeld,
+  paused,
 })
 const {
   appendDecisions,

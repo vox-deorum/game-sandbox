@@ -73,7 +73,7 @@ The environment's [metadata](environment.md) selects timing:
 
 | Mode | Pace interval | Advance rule | Late work |
 | --- | --- | --- | --- |
-| Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. | The next turn begins after the action finishes. |
+| Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. The clock runs only while the acting player holds the controls. | The next turn begins after the action finishes. |
 | Sequential real-time | Set | Advance on the existing target cadence, using the latest input or the default action. | The scheduler retains its target sequence. |
 | Simultaneous | Set (required) | Treat each cadence boundary as the earliest start of one joint tick, using the latest latched human input or its default action. | Schedule the next boundary one full interval after completion. Never skip a player or run catch-up ticks. |
 
@@ -86,13 +86,13 @@ Live sessions may pause in one of two ways. The environment's `human_pause` meta
 | Control | Rule |
 | --- | --- |
 | **Session pause** | Freezes stepping, cadence, and in-harness action and episode timing, including the human move clock. The backend session-duration and idle timers keep running regardless. The browser also holds the frames it has already buffered, so the picture stops with the session. |
-| **Playback pause** | Freezes only that viewer's frame playout. The session, its cadence, its move clocks, and the backend timers all keep running, so play continues underneath and a paused human may have default actions played for them. A session that ends while paused reveals its outcome only after that viewer resumes. |
+| **Playback pause** | Freezes only that viewer's frame playout. The session, its cadence, and the backend timers all keep running, so play continues underneath. Pausing during your own turn releases your controls, so your move clock holds along with the picture until you resume; every other player's timing is unaffected. A session that ends while paused reveals its outcome only after that viewer resumes. |
 | **Resume** | Unfreezes what pause froze. For a session pause the host page's control changes only after the relay confirms the accepted command. A playback pause is local to the browser and changes at once. |
 | **Stop** | Prevents the next transition without interrupting participant work already running. It has no confirmation message, so the interface waits for the ended status before showing the session as finished. Stop also lifts the viewer's own pause, so an outcome held behind it is revealed rather than stranded. |
 | **Reconnect** | A newly connected browser is told when the session is paused. A playback pause belongs to the browser that made it and is not restored elsewhere. |
 | **Headless runs** | Automated leaderboard runs neither pace nor pause. |
 
-Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a **move clock** and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate move-clock override. The interface shows the active value whenever it affects play.
+Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a **move clock**, and a session may override the environment default. It is a budget spent only while the person holds the controls, so time spent watching queued agent turns animate does not count against it. A simultaneous environment's positive cadence is the human input window and has no separate move-clock override. The interface shows the active value whenever it affects play.
 
 ## Human play
 

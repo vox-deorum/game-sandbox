@@ -1,15 +1,14 @@
 /**
  * The human move clock a renderer draws.
  *
- * The harness owns the real deadline: it starts counting when it asks a human for an action and
- * substitutes the environment's default action when the budget runs out. Nothing on the wire carries
- * that deadline, so this is the browser's picture of it, opened when the state that puts a controlled
- * player on the clock arrives and counting down the session's budget from there. It therefore runs a
- * network hop behind the harness and restarts full if the page reconnects mid-turn.
+ * The harness owns the real budget: it substitutes the environment's default action once a person has
+ * held the controls for longer than it. This is the browser's picture of that budget, opened when the
+ * renderer opens the controls. Both start on the same event, so the picture tracks the harness within
+ * a network hop, and {@link hold} freezes it for the same spans the harness does not charge. A page
+ * that reconnects mid-turn restarts this picture at full while the harness keeps the time it already
+ * spent, so the reading is generous there.
  *
- * The clock is wall-clock driven, so it keeps running under a playback pause: only the picture
- * freezes, which is what the interaction specification asks for. Pass a `now` function to drive it
- * from a fake clock in tests.
+ * Pass a `now` function to drive it from a fake clock in tests.
  */
 
 /** Inside this much remaining time the clock reads as urgent, and renderers draw it in ember. */
@@ -35,8 +34,15 @@ export class MoveClock {
   private totalMs: number | null = null
   private openedAt = 0
   private turn: string | null = null
+  /** When the clock was frozen, or null when it is running. */
+  private heldAt: number | null = null
 
   constructor(private readonly now: () => number = wallClock) {}
+
+  /** The instant the reading is taken from: frozen time while held, otherwise now. */
+  private at(): number {
+    return this.heldAt ?? this.now()
+  }
 
   /**
    * Put a turn on the clock. Opening the same turn again leaves the countdown alone, so a resize,
@@ -51,7 +57,7 @@ export class MoveClock {
     if (this.turn === turn) return
     this.turn = turn
     this.totalMs = totalMs
-    this.openedAt = this.now()
+    this.openedAt = this.at()
   }
 
   /** Take the clock off, for a turn nobody here controls, a finished match, or a session without one. */
@@ -60,11 +66,23 @@ export class MoveClock {
     this.totalMs = null
   }
 
+  /** Freeze the countdown. Holding an already-held clock leaves the frozen instant alone. */
+  hold(): void {
+    this.heldAt ??= this.now()
+  }
+
+  /** Start counting again, giving back every millisecond spent held. */
+  resume(): void {
+    if (this.heldAt === null) return
+    this.openedAt += this.now() - this.heldAt
+    this.heldAt = null
+  }
+
   /** The current reading, or null when no clock is running. */
   read(): MoveClockReading | null {
     const totalMs = this.totalMs
     if (totalMs === null) return null
-    const remainingMs = Math.min(totalMs, Math.max(0, totalMs - (this.now() - this.openedAt)))
+    const remainingMs = Math.min(totalMs, Math.max(0, totalMs - (this.at() - this.openedAt)))
     return {
       totalMs,
       remainingMs,
