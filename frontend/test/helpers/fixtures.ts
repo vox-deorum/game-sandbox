@@ -28,6 +28,7 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: false,
     view_interval_ms: null,
     live_interval_ms: null,
+    human_pause: 'session',
     parameters: [
       {
         name: 'players',
@@ -77,6 +78,7 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: true,
     view_interval_ms: 3000,
     live_interval_ms: 900,
+    human_pause: 'session',
     parameters: [
       {
         name: 'players',
@@ -135,6 +137,7 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: true,
     view_interval_ms: 3000,
     live_interval_ms: 900,
+    human_pause: 'session',
     parameters: [
       {
         name: 'seat_plan',

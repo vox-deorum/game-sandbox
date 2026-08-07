@@ -145,6 +145,61 @@ describe('LocalPlayPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument())
   })
 
+  it('pauses local playback with no wire command once started, for a human_pause: playback environment', async () => {
+    // Flappy Bird normally session-pauses; override it to playback so the ordinary Pause/Resume button
+    // (distinct from the Start gate below, which always sends a real resume) never reaches the wire.
+    vi.mocked(getEnvironments).mockResolvedValue([flappyMeta({ human_pause: 'playback' })])
+    await renderLocal()
+    startPaused()
+
+    const start = await screen.findByRole('button', { name: 'Start' })
+    await fireEvent.click(start)
+    expect(sent).toContainEqual({ kind: 'resume' })
+
+    handlers.onResume?.()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument())
+    sent.length = 0 // clear the Start gate's resume; the assertions below cover the ordinary toggle only
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    expect(sent).toEqual([])
+    expect(screen.getAllByText('Paused').length).toBeGreaterThan(0)
+
+    // Two frames arrive while paused; unbuffered playout queues each one rather than drawing it (or
+    // dropping it in favor of only the newest), so nothing new draws yet.
+    handlers.onState(flappyState(1, 2))
+    handlers.onState(flappyState(2, 3))
+    expect(drawn).toHaveLength(1) // only the opening frame startPaused() sent before Start
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    expect(sent).toEqual([])
+    await waitFor(() => expect(screen.queryByText('Paused')).toBeNull())
+    // Every paused-through frame is delivered in order, not just the newest.
+    expect(drawn).toHaveLength(3)
+    expect(drawn.slice(-2)).toEqual([flappyState(1, 2), flappyState(2, 3)])
+  })
+
+  it('paces an all-agent local Flappy Bird watch at its own pace interval, not the 1 s default', async () => {
+    // flappyMeta() declares pace_interval_ms: 50 (view_interval_ms is null), and LocalPlayPage now
+    // passes playbackIntervalMs(environment) to connect() instead of the raw view interval, so a local
+    // watch of an all-agent Flappy session should pace at 50 ms rather than the buffer's 1000 ms default.
+    await renderLocal()
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(flappyHeader()) // default players: player_0 is an agent, so this is a watch
+      const watched = flappyState(0, 1)
+      handlers.onState(watched)
+      handlers.onState(flappyState(1, 2))
+      handlers.onState(flappyState(2, 3)) // fills the lead (150 ms / 50 ms cadence = 3 frames)
+
+      expect(drawn).toEqual([])
+      vi.advanceTimersByTime(50)
+      await Promise.resolve()
+      expect(drawn).toEqual([watched])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows Resume, not the start gate, after a paused mid-game reconnect replay', async () => {
     await renderLocal()
     handlers.onHeader(

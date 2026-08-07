@@ -69,6 +69,7 @@ Game Sandbox metadata includes:
 - Pace interval, or no interval for turn-based play.
 - Viewing cadence for watch and replay playback, independent of the pace interval.
 - Live playout cadence for the other players' moves in a turn-based session with a human player.
+- Which pause a human session uses: `session`, which freezes stepping, cadence, and in-harness timing, or `playback`, which freezes only the viewer's frame playout while the session keeps running. Defaults to `session`. A watch session always pauses playback regardless.
 - Default step and episode compute limits.
 - Messaging availability and message cap.
 - LLM API availability.

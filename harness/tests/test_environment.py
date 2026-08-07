@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,7 @@ def test_meta_to_json_round_trips():
     assert parsed["seat_order_matters"] is False
     assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
     assert parsed["live_interval_ms"] is None  # defaulted, present in the serialized shape
+    assert parsed["human_pause"] == "session"  # defaulted, present in the serialized shape
     assert parsed["parameters"][0]["name"] == "players"
     assert parsed["presets"] == []
 
@@ -115,6 +117,11 @@ def test_meta_rejects_duplicate_preset_names():
     presets = (EnvPreset("duel", "Duel", {}), EnvPreset("duel", "Again", {}))
     with pytest.raises(ValueError, match="preset names must be unique"):
         EnvironmentMeta(**{**_meta().__dict__, "presets": presets})
+
+
+def test_meta_rejects_unknown_human_pause():
+    with pytest.raises(ValueError, match="human_pause"):
+        replace(_meta(), human_pause="unknown")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("values", [{"players": 2}, {"unknown": True}])

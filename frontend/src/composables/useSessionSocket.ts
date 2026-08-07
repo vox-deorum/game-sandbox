@@ -5,8 +5,13 @@
  * the pause/stop/input actions. The renderer frames (header and state) are handed back to the caller
  * through `frames`, because mounting the renderer is the page's concern, not the socket's.
  *
- * Pause state is never tracked locally: it reflects the pause/resume echoes the backend broadcasts, so
- * the UI cannot disagree with the container.
+ * Pause comes in two kinds. A **session pause** travels to the container as a `pause`/`resume` command,
+ * and the `paused` ref then follows the echoes the relay broadcasts, so the UI cannot disagree with the
+ * container. A **playback pause** never leaves the browser: the session, its cadence, and its move
+ * clocks keep running, and only this viewer's frame playout freezes. The environment's `human_pause`
+ * metadata picks between them for a human session; a watch run always pauses playout, because its
+ * container has usually finished (and its socket closed with it) long before the buffered frames have
+ * played out. Either way the frames queued here hold until resume, so the picture really does stop.
  *
  * A watch (scripted) run plays through a client-side jitter buffer. The container runs as fast as it
  * can and the carrier delivers frames unevenly, in bursts with stalls, so rendering them on arrival
@@ -74,6 +79,11 @@ export interface ConnectOptions {
    * Ignored when {@link pace} is set. A session is at most one of the two paced modes.
    */
   liveMs?: number | null
+  /**
+   * Whether this environment's human sessions pause the container itself (`human_pause: "session"`)
+   * rather than only this viewer's playout. Ignored for a watch run, which always pauses playout.
+   */
+  sessionPause?: boolean
 }
 
 export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers) {
@@ -116,6 +126,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   // The live human throttle cadence (ms); 0 disables it (the on-arrival default). Reuses frameQueue,
   // paceTimer, and the end-hold above — a session is at most one of the two paced modes.
   let liveMs = 0
+  // Whether this environment's human sessions pause the container rather than only this playout.
+  let sessionPause = false
 
   function applyResult(value: Record<string, unknown>): void {
     const scores = toPlayerScores(value.scores)
@@ -176,14 +188,21 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     heldResult = null
     resultSeen = false
     liveMs = 0
+    sessionPause = false
+    paused.value = false
     buffering.value = false
     socket.value?.close()
     socket.value = null
   }
 
   /** Play the next buffered frame; hold end facts for one final cadence after the last draw.
-   *  An empty buffer with the stream still live is an underrun: hold the last frame and flag waiting. */
+   *  An empty buffer with the stream still live is an underrun: hold the last frame and flag waiting.
+   *  A pause keeps the cadence timer running and simply draws nothing, so the queue holds where it is
+   *  and the waiting indicator does not churn behind the pause banner. */
   function drainOne(): void {
+    if (paused.value) {
+      return
+    }
     const state = frameQueue.shift()
     if (state !== undefined) {
       buffering.value = false
@@ -205,18 +224,24 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
    *  duration and opens the window; while the window is open, a follow-up (an AI reply in the burst) is
    *  queued for {@link drainLive} to play out at the cadence. */
   function onLiveState(state: StepState): void {
-    if (paceTimer === null) {
+    if (paceTimer === null && !paused.value) {
       frames.onState(state)
       paceTimer = setInterval(drainLive, liveMs)
-    } else {
-      frameQueue.push(state)
+      return
     }
+    // Paused, or mid-burst: queue it. A pause that arrived while the window was closed still needs a
+    // timer, so the queue has something to drain it once the viewer resumes.
+    frameQueue.push(state)
+    paceTimer ??= setInterval(drainLive, liveMs)
   }
 
   /** Play the next throttled frame at the cadence, giving the renderer `liveMs` as its transition budget
    *  so the move animates rather than snaps. An empty queue closes the window (the next idle→frame is a
    *  leading edge again) and, once the stream has ended, reveals game over with the last move shown. */
   function drainLive(): void {
+    if (paused.value) {
+      return
+    }
     const state = frameQueue.shift()
     if (state !== undefined) {
       frames.onState(state, { transitionMs: liveMs })
@@ -225,6 +250,36 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     stopPacer()
     if (endHeld) {
       applyEnd(heldEndReason)
+    }
+  }
+
+  /** Lift a pause and let whatever piled up behind it play out. Both paced modes keep their cadence
+   *  timer running while paused (their drain simply returns), so the flag is all they need, except
+   *  when the live throttle's window closed mid-pause and has to be reopened. Unbuffered playout has
+   *  no cadence, so it replays its backlog at once and reveals an end that was waiting on the viewer. */
+  function resumePlayout(): void {
+    paused.value = false
+    if (pacing) {
+      return
+    }
+    if (liveMs > 0) {
+      if (paceTimer === null && (frameQueue.length > 0 || endHeld)) {
+        paceTimer = setInterval(drainLive, liveMs)
+      }
+      return
+    }
+    flushUnbuffered()
+    if (endHeld) {
+      applyEnd(heldEndReason)
+    }
+  }
+
+  /** Replay everything that queued behind an unbuffered pause, in order and at once. There is no
+   *  cadence to play it out at, and the page builds its decision and chat logs from these frames, so
+   *  every one has to reach it; only the last is left on screen. */
+  function flushUnbuffered(): void {
+    for (const state of frameQueue.splice(0)) {
+      frames.onState(state)
     }
   }
 
@@ -238,6 +293,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     const requestedLiveMs =
       typeof options.liveMs === 'number' && options.liveMs > 0 ? options.liveMs : 0
     pacing = options.pace === true
+    sessionPause = options.sessionPause === true
     cadence =
       pacing && typeof options.paceMs === 'number' && options.paceMs > 0
         ? options.paceMs
@@ -275,6 +331,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           maybeStart(false)
         } else if (liveMs > 0) {
           onLiveState(state)
+        } else if (paused.value) {
+          frameQueue.push(state)
         } else {
           frames.onState(state)
         }
@@ -285,11 +343,18 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         }
         if (next === 'running') {
           status.value = 'running'
+          // Attach replays `running` first and a `pause` echo after it only while the container is
+          // still paused. A session pause whose resume echo was lost with a dropped socket therefore
+          // clears itself here, instead of freezing the picture over a game that kept playing.
+          if (paused.value && pausesContainer()) {
+            resumePlayout()
+          }
           return
         }
         // ended: hold it while paced frames are still draining, so the result lands with the final
-        // frame rather than ahead of it; else reveal it now.
-        if (pacing && (frameQueue.length > 0 || finalFrameInFlight)) {
+        // frame rather than ahead of it; else reveal it now. A pause holds it in every mode too: the
+        // viewer stopped the picture, so game over waits until they start it again.
+        if (pacing && (frameQueue.length > 0 || finalFrameInFlight || paused.value)) {
           endHeld = true
           heldEndReason = reason ?? null
           maybeStart(true)
@@ -298,7 +363,13 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         // Live throttle: hold while the window is open — a burst is still queued, or the leading-edge
         // frame (e.g. the human's own trick-completing card) is still animating — so drainLive reveals
         // game over once the last move has played out rather than over its animation.
-        if (liveMs > 0 && paceTimer !== null) {
+        if (liveMs > 0 && (paceTimer !== null || paused.value)) {
+          endHeld = true
+          heldEndReason = reason ?? null
+          return
+        }
+        // Unbuffered: nothing is draining, so only a pause can defer the reveal.
+        if (paused.value) {
           endHeld = true
           heldEndReason = reason ?? null
           return
@@ -312,7 +383,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       },
       onResume: () => {
         if (connectionId === activeConnectionId) {
-          paused.value = false
+          resumePlayout()
         }
       },
       onResult: (value) => {
@@ -324,8 +395,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         }
         resultSeen = true
         // In either paced mode (watch buffer or live throttle) the result is held and revealed with the
-        // last frame, so the score does not surface ahead of the final animation; otherwise apply now.
-        if (pacing || liveMs > 0) {
+        // last frame, so the score does not surface ahead of the final animation, and a pause holds it
+        // for the same reason; otherwise apply now.
+        if (pacing || liveMs > 0 || paused.value) {
           heldResult = value
           return
         }
@@ -346,11 +418,48 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     socket.value?.send(command)
   }
 
+  /** Whether this session's pause reaches the container. A watch run always pauses playout locally, so
+   *  does an environment whose `human_pause` asks for it, and so does any session whose stream has
+   *  already ended, since no command can reach a container that is already gone. */
+  function pausesContainer(): boolean {
+    return sessionPause && !pacing && !endHeld
+  }
+
   function togglePause(): void {
-    socket.value?.send({ kind: paused.value ? 'resume' : 'pause' })
+    if (socket.value === null) {
+      return // No transport yet, so there is nothing to pause and nothing to show as paused.
+    }
+    if (pausesContainer()) {
+      // The echo is the authority here: `paused` flips when the relay confirms, not on the click.
+      socket.value?.send({ kind: paused.value ? 'resume' : 'pause' })
+      return
+    }
+    if (paused.value) {
+      resumePlayout()
+    } else {
+      paused.value = true
+    }
   }
 
   function stop(): void {
+    if (endHeld) {
+      // The stream already ended and its socket closed with it, so no command can land. Let go of the
+      // pause and reveal the end that playout was holding instead of sending into the void. Unbuffered
+      // playout has no animation to skip, so `resumePlayout` finishes it; a paced backlog is dropped,
+      // which is what stopping a playback that has outlived its session means. That leaves the
+      // decision log short of the frames never shown, and the recording keeps the complete record.
+      resumePlayout()
+      if (status.value !== 'ended') {
+        frameQueue.length = 0
+        finalFrameInFlight = false
+        applyEnd(heldEndReason)
+      }
+      return
+    }
+    // A pause must not outlive the run it was holding, or the ended status would never be revealed.
+    if (paused.value) {
+      resumePlayout()
+    }
     // Graceful in-band stop; the container flushes its recording and exits.
     socket.value?.send({ kind: 'stop' })
   }

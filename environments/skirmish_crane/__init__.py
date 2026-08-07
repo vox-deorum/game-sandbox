@@ -40,6 +40,8 @@ META = EnvironmentMeta(
     pace_interval_ms=None,
     view_interval_ms=1000,
     live_interval_ms=1000,
+    # Crane Reach animates its moves, so pausing holds the animation rather than the session.
+    human_pause="playback",
     step_limit_ms=1_000,
     episode_limit_ms=600_000,
     messaging=True,

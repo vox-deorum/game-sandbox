@@ -41,9 +41,11 @@ import {
   inspectionPresentation,
   inspectionTargetLabel,
   pinsInspectionForPointer,
+  probeExclusions,
   rangePresentation,
   rangeVisibleDuringEvent,
   reduceInspection,
+  selectInspectionProbe,
 } from './inspection.js'
 import { eventTextMetrics, presentationFor } from './presentation.js'
 import { reachableTileKeys } from './reachability.js'
@@ -737,21 +739,8 @@ export class CraneReachRenderer extends PixiRenderer {
   /** Anchor for the browser test that hovers a visible unit after camera movement. */
   private updateInspectionProbe(scene: CraneReachScene): void {
     const projected = scene.units.map((unit) => ({ unit, point: this.viewPoint(unit.position) }))
-    const visible = projected.filter(
-      ({ point }) =>
-        point.x >= 0 && point.x <= SCENE_WIDTH && point.y >= 0 && point.y <= SCENE_HEIGHT,
-    )
-    const stationary = visible.filter(
-      ({ unit }) =>
-        unit.unitId !== this.event?.actorId && unit.unitId !== this.event?.targetId,
-    )
-    const probe =
-      stationary.find(({ unit }) => unit.type === 'footman') ??
-      stationary[0] ??
-      visible.find(({ unit }) => unit.type === 'footman') ??
-      visible[0] ??
-      projected.find(({ unit }) => unit.type === 'footman') ??
-      projected[0]
+    const excluded = probeExclusions(this.event, this.eventAnimating)
+    const probe = selectInspectionProbe(projected, this.internalSize, excluded)
     if (probe === undefined) {
       delete this.ctx.container.dataset.craneInspectUnit
       delete this.ctx.container.dataset.craneInspectUnitX

@@ -23,6 +23,8 @@ describe('EnvironmentRegistry', () => {
       expect(meta.view_interval_ms === null || typeof meta.view_interval_ms === 'number').toBe(true)
       // live_interval_ms is int-or-null too (optional live human throttle cadence).
       expect(meta.live_interval_ms === null || typeof meta.live_interval_ms === 'number').toBe(true)
+      // human_pause is one of session or playback (required human pacing mode).
+      expect(meta.human_pause === 'session' || meta.human_pause === 'playback').toBe(true)
     }
   })
 

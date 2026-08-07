@@ -547,6 +547,138 @@ describe('SessionPage', () => {
     await waitFor(() => expect(screen.queryByText('Paused')).toBeNull())
   })
 
+  it('freezes unbuffered playout with no wire command for a human_pause: playback environment, replaying every paused frame on resume', async () => {
+    // Flappy Bird normally session-pauses; override it to playback so this environment's human
+    // sessions only freeze this viewer's playout, never reaching the container.
+    vi.mocked(getEnvironments).mockResolvedValue([flappyMeta({ human_pause: 'playback' })])
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    const view = await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(HEADER)
+    handlers.onSessionStatus?.('running')
+    handlers.onState(flappyState(0, 1))
+    expect(drawn).toHaveLength(1)
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Pause' }))
+    expect(sent).toEqual([])
+    expect((await screen.findAllByText('Paused')).length).toBeGreaterThan(0)
+
+    // Three frames arrive while paused; unbuffered playout queues each one rather than drawing it (or
+    // dropping it in favor of only the newest), so nothing new draws yet.
+    handlers.onState(flappyState(1, 2))
+    handlers.onState(flappyState(2, 3))
+    handlers.onState(flappyState(3, 4))
+    expect(drawn).toHaveLength(1)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    expect(sent).toEqual([])
+    await waitFor(() => expect(screen.queryByText('Paused')).toBeNull())
+
+    // Every paused-through frame is delivered in order, not just the newest, so the decision log (built
+    // from the same frames.onState calls the renderer draws from) gets a row for each: losing rows here
+    // was exactly the defect the queue-and-replay fix corrected.
+    expect(drawn).toEqual([
+      flappyState(0, 1),
+      flappyState(1, 2),
+      flappyState(2, 3),
+      flappyState(3, 4),
+    ])
+    const rows = view.container.querySelectorAll('.decision-log tbody:last-of-type tr')
+    expect(rows).toHaveLength(4)
+  })
+
+  it('reveals game over and every paused-through frame together when an unbuffered session ends while paused', async () => {
+    // Flappy Bird session-pauses by default: the initial pause needs the relay's echo to take effect,
+    // but once the run ends while paused, pausesContainer() drops (no container is left to send to), so
+    // the Resume click that follows resumes locally without a further echo.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(HEADER)
+    handlers.onSessionStatus?.('running')
+    handlers.onState(flappyState(0, 1))
+    expect(drawn).toHaveLength(1)
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Pause' }))
+    expect(sent).toContainEqual({ kind: 'pause' })
+    handlers.onPause?.()
+    expect((await screen.findAllByText('Paused')).length).toBeGreaterThan(0)
+
+    // Frames and the terminal envelope arrive while paused; the end is held, not revealed.
+    handlers.onState(flappyState(1, 2))
+    handlers.onState(flappyState(2, 3))
+    handlers.onResult?.({ ticks: 2, reason: 'terminated', scores: { player_0: 3 } })
+    handlers.onSessionStatus?.('ended', 'terminated')
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
+    expect(drawn).toHaveLength(1)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+
+    // The paused-through frames are replayed in order, and the held end is revealed with them, not ahead.
+    expect(drawn).toEqual([flappyState(0, 1), flappyState(1, 2), flappyState(2, 3)])
+    const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
+    expect(within(gameOver).getByText('3')).toBeInTheDocument()
+  })
+
+  it("freezes a live-throttled burst on the relay's pause echo and resumes it on the resume echo", async () => {
+    // Hearts session-pauses and declares a 900 ms live cadence, so this exercises both: the click must
+    // send the wire command (paused flips only on the echo), and the queued burst must stop animating
+    // while paused, then continue once the resume echo arrives.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue({ ...ownerRow(), env_id: 'hearts' })
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(flappyHeader({ environment: 'hearts' }))
+      handlers.onSessionStatus?.('running')
+
+      // Leading edge draws at once and opens the throttle window.
+      handlers.onState(flappyState(0, 0))
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+
+      // A burst of two opponent replies queues behind the window.
+      handlers.onState(flappyState(1, 0))
+      handlers.onState(flappyState(2, 0))
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+      expect(sent).toContainEqual({ kind: 'pause' })
+      // The echo is the authority: nothing has flipped yet from the click alone.
+      expect(screen.queryByText('Paused')).toBeNull()
+
+      handlers.onPause?.()
+      await nextTick()
+      expect(screen.getAllByText('Paused').length).toBeGreaterThan(0)
+
+      // The cadence timer keeps running while paused, but drainLive no-ops: the burst does not animate.
+      vi.advanceTimersByTime(1800)
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+
+      handlers.onResume?.()
+      await nextTick()
+      expect(screen.queryByText('Paused')).toBeNull()
+
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(drawn).toHaveLength(2)
+      expect(drawnOptions.at(-1)).toEqual({ transitionMs: 900 })
+
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(drawn).toHaveLength(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows the end card with the result facts and a replay link', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())

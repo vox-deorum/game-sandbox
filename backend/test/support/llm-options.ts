@@ -35,6 +35,7 @@ export function llmMeta(overrides: Record<string, unknown> = {}): Record<string,
     seat_order_matters: false,
     view_interval_ms: null,
     live_interval_ms: null,
+    human_pause: 'session',
     parameters: [
       {
         name: 'players',

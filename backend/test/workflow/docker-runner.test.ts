@@ -89,6 +89,7 @@ function makeEnvironments(
         seat_order_matters: false,
         view_interval_ms: null,
         live_interval_ms: null,
+        human_pause: 'session',
         parameters: [
           {
             name: 'players',
@@ -152,6 +153,7 @@ function makeWideEnvironments(): EnvironmentRegistry {
         seat_order_matters: true,
         view_interval_ms: null,
         live_interval_ms: null,
+        human_pause: 'session',
         parameters: [
           {
             name: 'seat_plan',

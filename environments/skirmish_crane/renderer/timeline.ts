@@ -54,9 +54,7 @@ export interface EventTimelineBounds {
 }
 
 /**
- * The beat boundaries for a route of a given length, as fractions of the event budget. Movement
- * grows from 350 ms for one tile to 600 ms for four, so a one-tile move still reads as motion
- * rather than a hop followed by a long pause.
+ * The beat boundaries for a route of a given length, as fractions of the event budget.
  */
 export function eventTimelineBounds(movementTiles: number): EventTimelineBounds {
   const tiles = Math.max(0, Math.min(4, Math.floor(movementTiles)))

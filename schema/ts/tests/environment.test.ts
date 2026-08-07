@@ -88,6 +88,7 @@ const VALID: EnvironmentMeta = {
   seat_order_matters: false,
   view_interval_ms: null,
   live_interval_ms: null,
+  human_pause: 'session',
   parameters: PARAMETER_FIXTURES.declarations,
   presets: [
     {
@@ -118,6 +119,10 @@ describe('isEnvironmentMeta', () => {
         live_interval_ms: 900,
       }),
     ).toBe(true)
+  })
+
+  it('accepts the human_pause playback value', () => {
+    expect(isEnvironmentMeta({ ...VALID, human_pause: 'playback' })).toBe(true)
   })
 
   it('accepts simultaneous metadata with a positive input window and no human timeout', () => {
@@ -153,6 +158,10 @@ describe('isEnvironmentMeta', () => {
 
   it('rejects a non-numeric live_interval_ms', () => {
     expect(isEnvironmentMeta({ ...VALID, live_interval_ms: '900' })).toBe(false)
+  })
+
+  it('rejects an invalid human_pause value', () => {
+    expect(isEnvironmentMeta({ ...VALID, human_pause: 'always' })).toBe(false)
   })
 
   it('rejects a fractional pace interval in any stepping mode', () => {

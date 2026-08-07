@@ -81,14 +81,15 @@ Real-time input takes effect after a network round trip, so supported games use 
 
 A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay work (serialization and input/output) is outside that duration. Environment transition time is platform work and is not charged to a participant.
 
-Live sessions may pause. Each control obeys one rule:
+Live sessions may pause in one of two ways. The environment's `human_pause` metadata chooses which one a human session uses. A watch session always pauses playback, because its container usually finishes long before the buffered frames have played out.
 
 | Control | Rule |
 | --- | --- |
-| **Pause** | Freezes stepping, cadence, and in-harness action and episode timing. The backend session-duration and idle timers keep running regardless. |
-| **Resume** | Unfreezes what pause froze. For both commands, the host page's pause control changes only after the relay confirms the accepted command. |
-| **Stop** | Prevents the next transition without interrupting participant work already running. It has no confirmation message, so the interface waits for the ended status before showing the session as finished. |
-| **Reconnect** | A newly connected browser is told when the session is paused. |
+| **Session pause** | Freezes stepping, cadence, and in-harness action and episode timing, including the human move clock. The backend session-duration and idle timers keep running regardless. The browser also holds the frames it has already buffered, so the picture stops with the session. |
+| **Playback pause** | Freezes only that viewer's frame playout. The session, its cadence, its move clocks, and the backend timers all keep running, so play continues underneath and a paused human may have default actions played for them. A session that ends while paused reveals its outcome only after that viewer resumes. |
+| **Resume** | Unfreezes what pause froze. For a session pause the host page's control changes only after the relay confirms the accepted command. A playback pause is local to the browser and changes at once. |
+| **Stop** | Prevents the next transition without interrupting participant work already running. It has no confirmation message, so the interface waits for the ended status before showing the session as finished. Stop also lifts the viewer's own pause, so an outcome held behind it is revealed rather than stranded. |
+| **Reconnect** | A newly connected browser is told when the session is paused. A playback pause belongs to the browser that made it and is not restored elsewhere. |
 | **Headless runs** | Automated leaderboard runs neither pace nor pause. |
 
 Sequential human players have a timeout separate from agent compute limits. In sequential paced games, the cadence is the deadline. In turn-based games, the timeout is a **move clock** and a session may override the environment default. A simultaneous environment's positive cadence is the human input window and has no separate move-clock override. The interface shows the active value whenever it affects play.

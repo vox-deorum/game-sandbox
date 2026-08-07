@@ -457,6 +457,13 @@
       "minimum": -9007199254740991,
       "type": "integer"
     },
+    "human_pause": {
+      "enum": [
+        "session",
+        "playback"
+      ],
+      "type": "string"
+    },
     "human_players": {
       "items": {
         "type": "string"
@@ -581,6 +588,7 @@
     "seat_order_matters",
     "view_interval_ms",
     "live_interval_ms",
+    "human_pause",
     "parameters"
   ],
   "title": "EnvironmentMeta",

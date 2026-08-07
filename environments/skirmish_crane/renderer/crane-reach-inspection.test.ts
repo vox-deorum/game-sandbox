@@ -6,10 +6,13 @@ import {
   EMPTY_INSPECTION,
   inspectionPresentation,
   pinsInspectionForPointer,
+  probeExclusions,
+  type ProjectedUnit,
   rangePresentation,
   rangeVisibleDuringEvent,
   reduceInspection,
   resolveInspection,
+  selectInspectionProbe,
 } from './inspection.js'
 import { reachableTileKeys } from './reachability.js'
 import { computeScene, type HexTile, type SceneUnit } from './scene.js'
@@ -130,6 +133,54 @@ describe('Crane Reach HUD inspection and range', () => {
     expect(reachableTileKeys(cavalry, line, [cavalry]).has('5,0')).toBe(false)
   })
 
+  it('probes the visible unit nearest the view center, not whichever sorts first', () => {
+    // A camera zoomed and panned toward the far edge of the map, as the browser suite does, can leave
+    // an edge-hugging unit only a short pan away from the frame while a central one stays put. Picking
+    // whichever unit sorts first in scene order (rather than the one nearest the center) previously let
+    // the probe anchor on that edge unit, so a small camera move afterward carried it off screen and
+    // the test's follow-up hover landed on empty ground. See crane-reach.spec.ts's zoom-then-pan step.
+    const view = { width: 1200, height: 860 }
+    const edge = projectedUnit('blue_footman_0', 'blue', { x: 1027, y: 430 })
+    const central = projectedUnit('red_footman_0', 'red', { x: 620, y: 440 })
+    expect(selectInspectionProbe([edge, central], view, new Set())?.unit.unitId).toBe(
+      'red_footman_0',
+    )
+    // Order must not matter: the same pair reversed still resolves to the central unit.
+    expect(selectInspectionProbe([central, edge], view, new Set())?.unit.unitId).toBe(
+      'red_footman_0',
+    )
+  })
+
+  it('excludes the active event actor and target before falling back to the next tier', () => {
+    const view = { width: 1200, height: 860 }
+    const actor = projectedUnit('red_footman_0', 'red', { x: 600, y: 430 })
+    const cavalry = projectedUnit('red_cavalry_0', 'red', { x: 610, y: 430 }, 'cavalry')
+    const probe = selectInspectionProbe([actor, cavalry], view, new Set(['red_footman_0']))
+    expect(probe?.unit.unitId).toBe('red_cavalry_0')
+  })
+
+  it('falls back to the off-screen unit nearest the view center when nothing is visible', () => {
+    const view = { width: 1200, height: 860 }
+    const farLeft = projectedUnit('red_footman_0', 'red', { x: -900, y: 430 })
+    const farRight = projectedUnit('blue_footman_0', 'blue', { x: 1_500, y: 430 })
+    const probe = selectInspectionProbe([farLeft, farRight], view, new Set())
+    expect(probe?.unit.unitId).toBe('blue_footman_0')
+  })
+
+  it('excludes the event actor and target only while the event is still presenting', () => {
+    // A skirmish has exactly one footman per side, so once that unit has acted, permanently
+    // excluding it would leave the probe with only the other side's footman, however far from the
+    // view center that one happens to be deployed. Once the event settles it is no less stable or
+    // hoverable than any other unit, so the exclusion must lift with it.
+    const event = { actorId: 'red_footman_0', targetId: 'blue_archer_0' }
+    expect(probeExclusions(event, true)).toEqual(new Set(['red_footman_0', 'blue_archer_0']))
+    expect(probeExclusions(event, false)).toEqual(new Set())
+    expect(probeExclusions(null, true)).toEqual(new Set())
+    expect(probeExclusions({ actorId: 'red_footman_0', targetId: null }, true)).toEqual(
+      new Set(['red_footman_0']),
+    )
+  })
+
   it('matches fixture legality destination sets for each acting unit', () => {
     for (const [recording, legalityRaw] of [
       [skirmishFixture, skirmishLegalityRaw],
@@ -165,3 +216,23 @@ describe('Crane Reach HUD inspection and range', () => {
     }
   })
 })
+
+function projectedUnit(
+  unitId: string,
+  side: 'red' | 'blue',
+  point: { x: number; y: number },
+  type: SceneUnit['type'] = 'footman',
+): ProjectedUnit {
+  return {
+    unit: {
+      playerId: unitId,
+      unitId,
+      side,
+      type,
+      hitPoints: 10,
+      position: point,
+      tileKey: '0,0',
+    },
+    point,
+  }
+}

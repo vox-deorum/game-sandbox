@@ -140,7 +140,7 @@ Inbound commands are:
 {"kind":"stop"}
 ```
 
-Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored.
+Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored. A client sends `pause` and `resume` only for a human session of a `human_pause: "session"` environment. A watch session, and a human session of a `human_pause: "playback"` environment, pause locally in the browser and send neither.
 
 The final `result` event contains ticks, scores, termination reason, timeout counts, and recording ID.
 
@@ -205,7 +205,7 @@ Live pacing keeps separate scheduler branches:
 - Simultaneous environments emit an opening state, wait one full interval before tick 0, and schedule every later boundary one interval after the previous tick completes. They never issue catch-up ticks.
 - Sequential environments without a pace interval block for the acting human until the move clock expires.
 
-Pausing uses a `PausableClock`, so cadence and decision-time accounting stop together. Headless runs do not construct this live loop.
+A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause never reaches the runner, which keeps stepping while the browser holds its own frames. Headless runs do not construct this live loop.
 
 The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical. The local bridge forwards those bytes unchanged and uses a caller-owned scratch recording directory.
 

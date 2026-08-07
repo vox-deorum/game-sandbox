@@ -48,7 +48,10 @@ export function wireCameraGestures(
   handlers: CameraGestureHandlers,
 ): CameraGestures {
   const pointers = new Map<number, PointerPosition>()
-  const initialTouchAction = target.style.touchAction
+  // Empty string is the "not set" value detach must restore. Reading an unset property yields
+  // undefined outside a real browser, and assigning that back would leave the literal string
+  // "undefined" as the host's touch-action.
+  const initialTouchAction = target.style.touchAction ?? ''
   let primaryPointerId: number | null = null
   let dragStart: PointerPosition | null = null
   let dragPrevious: PointerPosition | null = null

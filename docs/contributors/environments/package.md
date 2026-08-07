@@ -57,6 +57,7 @@ The environment owns its display state. Test that every overlay field exists and
 | `recommended_episode_ticks` | Suggested episode length. |
 | `pace_interval_ms` | Sequential or simultaneous cadence. See [Stepping contract](../../specs/environment.md#stepping-contract). |
 | `view_interval_ms`, `live_interval_ms` | Optional viewing cadence, independent of scoring. |
+| `human_pause` | Which pause a human session uses: `"session"` (default) or `"playback"`. A watch session always uses playback pause. |
 | `step_limit_ms`, `episode_limit_ms` | Default agent compute limits. |
 | `messaging`, `message_cap`, `llm` | Optional agent capabilities. |
 | `seat_order_matters` | Whether seat order changes the game. See [Seat order](../../specs/environment.md#seat-order). |

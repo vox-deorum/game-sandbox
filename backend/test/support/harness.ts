@@ -304,6 +304,7 @@ export function meta(overrides: Record<string, unknown>): Record<string, unknown
     seat_order_matters: false,
     view_interval_ms: null,
     live_interval_ms: null,
+    human_pause: 'session',
     parameters: [
       {
         name: 'players',

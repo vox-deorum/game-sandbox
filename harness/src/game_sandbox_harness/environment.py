@@ -35,6 +35,9 @@ type ParameterValue = bool | int | float | str | list[str]
 type SteppingMode = Literal["sequential", "simultaneous"]
 """The PettingZoo stepping contract an environment declares."""
 
+type HumanPause = Literal["session", "playback"]
+"""What the browser's Pause button does for a human session of the environment."""
+
 
 class EnvParameterValueError(ValueError):
     """Raised when a parameter value does not satisfy its declaration."""
@@ -412,6 +415,12 @@ class EnvironmentMeta:
     #: env like Flappy Bird keeps) means "render every frame on arrival" — today's behaviour. Distinct
     #: from ``view_interval_ms`` (spectator/replay pace, typically slower) and never affects scoring.
     live_interval_ms: int | None = None
+    #: Which pause a *human* session of this environment uses when the browser's Pause button is
+    #: pressed. ``"session"`` (the default) pauses the actual harness session: stepping, cadence, and
+    #: every in-harness timer, including the human move clock, stop advancing. ``"playback"`` pauses
+    #: only the viewer's frame playout, while the session and the move clock keep running underneath.
+    #: A *watch* session always pauses playout regardless of this value.
+    human_pause: HumanPause = "session"
     #: Explicit gameplay parameters. The public layout parameter is synthesized from ``layout``.
     parameters: tuple[EnvParameter, ...] = ()
     #: Named partial parameter configurations an environment recommends.
@@ -420,6 +429,8 @@ class EnvironmentMeta:
     def __post_init__(self) -> None:
         if self.stepping not in {"sequential", "simultaneous"}:
             raise ValueError(f"environment {self.env_id!r} stepping must be 'sequential' or 'simultaneous'")
+        if self.human_pause not in {"session", "playback"}:
+            raise ValueError(f"environment {self.env_id!r} human_pause must be 'session' or 'playback'")
         if self.pace_interval_ms is not None and not is_json_safe_integer(self.pace_interval_ms):
             raise ValueError(
                 f"environment {self.env_id!r} pace_interval_ms must be a JSON-safe integer or None"
@@ -482,6 +493,7 @@ class EnvironmentMeta:
             "seat_order_matters": self.seat_order_matters,
             "view_interval_ms": self.view_interval_ms,
             "live_interval_ms": self.live_interval_ms,
+            "human_pause": self.human_pause,
             "parameters": [parameter.to_json() for parameter in effective_parameters(self)],
             "presets": [preset.to_json() for preset in self.presets],
         }

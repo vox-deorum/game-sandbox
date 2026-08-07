@@ -10,6 +10,7 @@
     "display_name": "Flappy Bird",
     "env_id": "flappy_bird",
     "episode_limit_ms": 120000,
+    "human_pause": "session",
     "human_players": [
       "player_0"
     ],
@@ -63,6 +64,7 @@
     "display_name": "Hearts",
     "env_id": "hearts",
     "episode_limit_ms": 120000,
+    "human_pause": "session",
     "human_players": [
       "player_0",
       "player_1",
@@ -110,6 +112,7 @@
     "display_name": "Skirmish at Crane Reach",
     "env_id": "skirmish_crane",
     "episode_limit_ms": 600000,
+    "human_pause": "playback",
     "human_players": [
       "player_0",
       "player_1",
@@ -393,6 +396,7 @@
     "display_name": "Spades",
     "env_id": "spades",
     "episode_limit_ms": 120000,
+    "human_pause": "session",
     "human_players": [
       "player_0",
       "player_1",

@@ -343,6 +343,7 @@ export const EnvironmentMetaSchema = z
     seat_order_matters: z.boolean(),
     view_interval_ms: z.number().nullable(),
     live_interval_ms: z.number().nullable(),
+    human_pause: z.enum(['session', 'playback']),
     parameters: z.array(EnvParameterSchema).min(1),
     presets: z.array(EnvPresetSchema).optional(),
   })

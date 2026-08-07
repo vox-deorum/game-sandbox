@@ -17,6 +17,7 @@ import { useStageLayout } from '../composables/useStageLayout.js'
 import { useLiveFramePresentation } from '../composables/useLiveFramePresentation.js'
 import { useLiveChat } from '../composables/useLiveChat.js'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
+import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 
 const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
@@ -24,7 +25,8 @@ const hostEl = ref<HTMLElement | null>(null)
 const header = ref<RecordingHeader | null>(null)
 const lastState = shallowRef<StepState | null>(null)
 const gameOverDismissed = ref(false)
-// The first resume is the start gate. Later pause echoes drive the ordinary session control.
+// The first resume is the start gate; the relay replays its pause echo until then. Afterwards the
+// Pause control is an ordinary session or playback pause, depending on the environment.
 const started = ref(false)
 const startRequested = ref(false)
 
@@ -88,7 +90,8 @@ const completePlayerScores = computed(
   () => finalResult.value?.scores ?? accumulatedScores.value,
 )
 
-// The relay echo is the authority for pause state. This only switches the first-control label.
+// Leaving the paused state is what retires the start gate, whichever pause cleared it. This only
+// switches the first-control label; the socket owns the pause state itself.
 watch(paused, (value) => {
   if (!value && status.value === 'running') {
     started.value = true
@@ -126,8 +129,12 @@ onMounted(async () => {
     meta.value = environment
     connect({
       paceWhenSpectating: true,
-      paceMs: environment.view_interval_ms,
-      liveMs: environment.live_interval_ms,
+      // A realtime env paces by its step interval and a turn-based one by its viewing cadence, the
+      // same resolution the session page uses; the raw view interval alone would leave a realtime
+      // watch draining slower than the runner produces.
+      paceMs: playbackIntervalMs(environment),
+      liveMs: liveIntervalMs(environment),
+      sessionPause: environment.human_pause === 'session',
     })
   } catch {
     loadError.value = true

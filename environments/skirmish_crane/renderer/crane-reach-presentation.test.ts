@@ -97,7 +97,7 @@ describe('Crane Reach Estuary Ink presentation', () => {
 
   it('backs every corner HUD group with one consistent translucent night-ink field', () => {
     expect(HUD_CORNER_PANELS).toEqual({
-      round: { x: 16, y: 16, width: 82, height: 66 },
+      round: { x: 16, y: 16, width: 82, height: 68 },
       capture: { x: 924, y: 16, width: 260, height: 54 },
       redRoster: { x: 16, y: 772, width: 230, height: 64 },
       blueRoster: { x: 954, y: 772, width: 230, height: 64 },

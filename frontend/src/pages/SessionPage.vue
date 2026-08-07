@@ -7,8 +7,9 @@
   The chrome is composed from small composables: useSessionSocket owns the socket and the state derived
   from its frames, useRendererMount owns the canvas, usePinning owns the pin toggle. Capabilities derive
   from identity and mode: the owner of a human session controls the human players and gets a live
-  sendAction; everyone else is a spectator (same renderer, no controls). Pause state reflects the
-  backend echoes, never a local guess.
+  sendAction; everyone else is a spectator (same renderer, no controls). Pause is either a session
+  pause the container confirms by echo or a playback pause local to this browser, chosen by the
+  environment's `human_pause`; a watch run always pauses playback.
 
   An already-ended session is a historical view, not a live transport. It hydrates the final facts and
   the decision log from the stored recording and never opens a socket.
@@ -278,6 +279,9 @@ onMounted(async () => {
     // Live human play throttles opponents' moves at the env's live cadence; null (realtime, or an env
     // that declares none) keeps the unbuffered on-arrival behaviour.
     liveMs: fetched.mode === 'human' ? liveIntervalMs(meta.value) : null,
+    // Whether this env's human sessions pause the container itself or only this viewer's playout. A
+    // watch run ignores it and always pauses playout, since its container is usually already gone.
+    sessionPause: meta.value?.human_pause === 'session',
   })
 })
 
