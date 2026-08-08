@@ -13,22 +13,8 @@ from .hexes import DIRECTIONS, Position, path_positions
 from .movement import legal_paths, walk
 from .paths import MAX_PATH_STEPS
 from .scoring import Result, capture_result, elimination_result, score_capture
+from .unit_stats import UNIT_STATS, UnitStats
 
-
-@dataclass(frozen=True)
-class UnitStats:
-    hit_points: int
-    movement_points: int
-    attack_range: int
-    damage: int
-    vision: int
-
-
-UNIT_STATS = {
-    "footman": UnitStats(12, 2, 1, 3, 4),
-    "archer": UnitStats(6, 2, 6, 2, 6),
-    "cavalry": UnitStats(10, 4, 1, 3, 6),
-}
 COMPOSITIONS = {
     "skirmish": {"footman": 1, "archer": 1, "cavalry": 1},
     "army": {"footman": 8, "archer": 6, "cavalry": 6},

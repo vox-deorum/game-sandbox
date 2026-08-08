@@ -76,7 +76,14 @@ def test_local_server_replays_paused_attach_state_and_rejects_traversal() -> Non
             ) as server:
                 assert server._server is not None  # noqa: SLF001 - loopback is a server boundary
                 assert server._server.sockets[0].getsockname()[0] == "127.0.0.1"  # noqa: SLF001
-                await asyncio.sleep(0.05)
+                # Attach only once the server has both lines from the child. A socket that connects
+                # first is served by the live broadcast instead, which sends the same frames in a
+                # different order, so waiting on a fixed delay makes this assertion a race.
+                for _ in range(500):
+                    if server._header is not None and server._latest_state is not None:  # noqa: SLF001
+                        break
+                    await asyncio.sleep(0.01)
+                assert server._latest_state is not None  # noqa: SLF001 - the state attach replays
                 async with websockets.connect(
                     f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
                 ) as socket:

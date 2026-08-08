@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,17 @@ const MANIFEST = `${JSON.stringify(
   null,
   2,
 )}\n`
+
+/**
+ * The modules compose copies from an environment's own package into the sandbox root, keyed by
+ * environment. Keep this list equal to `env_sandbox_modules` in scripts/_envs.py: a Crane Reach agent
+ * imports its observation types from there, and `sandbox/crane/units.py` imports the stat table, so a
+ * submission missing either fails its load check.
+ */
+const ENV_SANDBOX_MODULES: Record<string, readonly string[]> = {
+  flappy_bird: ['observation_types.py'],
+  skirmish_crane: ['observation_types.py', 'unit_stats.py'],
+}
 
 /** Prune Python bytecode caches while copying: their `.pyc` files never belong in a submission. */
 function withoutPycache(source: string): boolean {
@@ -31,12 +42,11 @@ export function stageExampleAgent(environmentId: string, name: string): string {
     new URL('../../../harness/src/game_sandbox_harness', import.meta.url),
   )
   const localPlay = fileURLToPath(new URL('../../../environments/local_play', import.meta.url))
-  const environmentSandbox = fileURLToPath(
-    new URL(`../../../environments/${environmentId}/template/sandbox`, import.meta.url),
+  const environmentPackage = fileURLToPath(
+    new URL(`../../../environments/${environmentId}`, import.meta.url),
   )
-  const source = fileURLToPath(
-    new URL(`../../../environments/${environmentId}/examples/${name}/agent.py`, import.meta.url),
-  )
+  const environmentSandbox = join(environmentPackage, 'template', 'sandbox')
+  const example = join(environmentPackage, 'examples', name)
 
   cpSync(baseSandbox, join(dir, 'sandbox'), { recursive: true, filter: withoutPycache })
   cpSync(harnessSource, join(dir, 'sandbox', 'harness'), {
@@ -61,7 +71,16 @@ export function stageExampleAgent(environmentId: string, name: string): string {
     force: true,
     filter: withoutGeneratedEnvironment,
   })
-  copyFileSync(source, join(dir, 'agent.py'))
+  for (const module of ENV_SANDBOX_MODULES[environmentId] ?? []) {
+    copyFileSync(join(environmentPackage, module), join(dir, 'sandbox', module))
+  }
+  // Everything the example owns at its own root: `agent.py`, plus any module it keeps beside it (Crane
+  // Reach's banner holds its tactical blocks in `blocks.py`). Its `tests/` stay behind.
+  for (const entry of readdirSync(example, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.py')) {
+      copyFileSync(join(example, entry.name), join(dir, entry.name))
+    }
+  }
   writeFileSync(join(dir, 'manifest.json'), MANIFEST)
   return dir
 }

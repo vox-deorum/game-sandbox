@@ -1,16 +1,30 @@
+import { rmSync } from 'node:fs'
+
 import {
+  activeWindows,
+  closePlay,
+  closeSubmissions,
   configureMatches,
   declareSeason,
+  openPlay,
+  openSubmissions,
   release,
-  setSeasonOverrides,
   startSession,
   stopSessionAndAwaitFree,
+  submitReadyAgent,
 } from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
+import { CRANE_OWNERS } from '../support/names.js'
+import { stageExampleAgent } from '../support/stage-example-agent.js'
 
 const ENV_ID = 'skirmish_crane'
 const SEASON_LABEL = 'Crane Reach Army'
+/**
+ * The example strategy the army season submits: the published one, and the one written for capture
+ * play, so it belongs on a board with three zones on it.
+ */
+const EXAMPLE_AGENT = 'banner'
 
 test('watch a Crane Reach skirmish to game over and seek its exact replay frames', async ({
   page,
@@ -420,82 +434,128 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
 test('run and release a full-variant Crane Reach army season', { tag: '@slow' }, async ({
   page,
   admin,
+  as,
 }) => {
-  test.setTimeout(400_000)
+  // One real overlay build plus two army-scale battles: the submitted side against Naive, and the
+  // all-Naive baseline the scheduler always appends.
+  test.setTimeout(900_000)
   await authenticateBrowser(page.context(), admin)
 
+  const staged = stageExampleAgent(ENV_ID, EXAMPLE_AGENT)
+
+  // Free the environment's open submission and play windows, held by the seeded season.
+  const original = await activeWindows(admin, ENV_ID)
+  if (original.submissionSeasonId !== null) {
+    await closeSubmissions(admin, original.submissionSeasonId)
+  }
+  if (original.playSeasonId !== null) {
+    await closePlay(admin, original.playSeasonId)
+  }
+
   const season = await declareSeason(admin, SEASON_LABEL, ENV_ID)
-  await configureMatches(admin, season.id, [
-    {
-      seats: ['builtin:naive', 'builtin:naive'],
-      seeds: [4],
-      games: 1,
-    },
-  ])
-  // Every full-variant flag stays on: this test exists to prove the army seat plan, terrain, unit
-  // abilities, and capture zones survive a real run and release. Only the two knobs that decide how
-  // long the battle lasts are turned down, since the length is what costs the wall clock and nothing
-  // about the pipeline depends on it. round_cap sits at 100 because that is the floor the environment
-  // declares (see ROUND_CAP_BOUNDS); a season override below it is refused. The renderer's own
-  // coverage of a long army battle is offline, over
-  // frontend/test/fixtures/crane-reach-army-recording.jsonl.
-  await setSeasonOverrides(admin, season.id, {
-    parameters: {
-      seat_plan: 'army',
-      field_extent: 10,
-      terrain: true,
-      unit_abilities: true,
-      capture_zones: 3,
-      capture_target: 60,
-      round_cap: 100,
-    },
-  })
+  try {
+    await openSubmissions(admin, season.id)
+    // The example submits under its own owner, so the scoreboard row links to a real agent identity.
+    // Building it runs the real validate-and-build pipeline over a multi-file agent (banner keeps its
+    // tactical blocks in a second module), which nothing else in the suite submits.
+    await submitReadyAgent(await as(CRANE_OWNERS.banner), staged, ENV_ID)
 
-  await page.goto(`/environments/${ENV_ID}/admin`)
-  await page.getByRole('button', { name: new RegExp(SEASON_LABEL) }).click()
-  await expect(page.getByRole('heading', { name: `Season ${SEASON_LABEL}` })).toBeVisible()
-  await expect(page.getByText('Projected total: 1 game', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Run workflow' }).click()
-  await expect(page).toHaveURL(
-    new RegExp(`/environments/${ENV_ID}/admin/seasons/${season.id}/runs/`),
-  )
-  await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
-  await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
-    timeout: 240_000,
-  })
+    await configureMatches(admin, season.id, [
+      {
+        seats: ['submission', 'builtin:naive'],
+        seeds: [4],
+        games: 1,
+      },
+    ])
 
-  await release(admin, season.id)
-  await page.goto(`/environments/${ENV_ID}/leaderboards/${season.id}`)
-  const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
-  await expect(scoreboard.getByText('naive')).toBeVisible()
+    await page.goto(`/environments/${ENV_ID}/admin`)
+    await page.getByRole('button', { name: new RegExp(SEASON_LABEL) }).click()
+    await expect(page.getByRole('heading', { name: `Season ${SEASON_LABEL}` })).toBeVisible()
 
-  const matchups = page.getByRole('region', { name: 'Matchups' })
-  const game = matchups.getByTestId('game-row').first()
-  await expect(game).toBeVisible()
-  await game.getByRole('link', { name: 'Replay' }).click()
-  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-  const rendererHost = page.locator('.renderer-host')
-  await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
-  await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
-  await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
+    // The season takes its gameplay from the published Season 5 preset, chosen by name in the
+    // operator's own editor: army seats, the wide field, terrain, unit abilities, and three capture
+    // zones. This test exists to prove that whole variant set survives a real run and release. Only
+    // the two knobs that decide how long the battle lasts are turned down by hand, since the length is
+    // what costs the wall clock and nothing about the pipeline depends on it. The round cap sits at
+    // 100 because that is the floor the environment declares (see ROUND_CAP_BOUNDS); a season override
+    // below it is refused. The renderer's own coverage of a long army battle is offline, over
+    // frontend/test/fixtures/crane-reach-army-recording.jsonl.
+    await page.getByRole('combobox', { name: 'Preset' }).selectOption('season_5')
+    for (const [title, value] of [
+      ['Capture target', '60'],
+      ['Round cap', '100'],
+    ] as const) {
+      await page.getByRole('combobox', { name: title, exact: true }).selectOption('override')
+      await page.getByRole('spinbutton', { name: `${title} override` }).fill(value)
+    }
+    await page.getByRole('button', { name: 'Save configuration' }).click()
+    await expect(page.getByText('Saved ✓')).toBeVisible()
 
-  const canvas = page.locator('canvas.renderer-canvas')
-  const canvasBox = await canvas.boundingBox()
-  expect(canvasBox).not.toBeNull()
-  if (canvasBox === null) throw new Error('Crane Reach army canvas has no browser bounds')
-  const unitId = await rendererHost.getAttribute('data-crane-inspect-unit')
-  const unitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
-  const unitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
-  expect(unitId).not.toBeNull()
-  await page.mouse.move(
-    canvasBox.x + (unitX / 1_200) * canvasBox.width,
-    canvasBox.y + (unitY / 860) * canvasBox.height,
-  )
-  await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
-  await expect(rendererHost).toHaveAttribute(
-    'data-crane-inspection-details',
-    /^iconTerrain:(grass|hill),iconFeature:(none|forest|marsh),iconSkill:shield_wall$/,
-  )
+    // The one submitted seating, plus the all-Naive baseline every match appends.
+    await expect(page.getByText('Projected total: 2 games', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Run workflow' }).click()
+    await expect(page).toHaveURL(
+      new RegExp(`/environments/${ENV_ID}/admin/seasons/${season.id}/runs/`),
+    )
+    await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
+    // Two army battles run serially, one of them through a freshly composed session image, so give the
+    // run a wide window before its header status badge settles on completed.
+    await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
+      timeout: 600_000,
+    })
+
+    await release(admin, season.id)
+    await page.goto(`/environments/${ENV_ID}/leaderboards/${season.id}`)
+    const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
+    await expect(scoreboard.getByText('naive')).toBeVisible()
+    await expect(scoreboard.getByRole('link', { name: CRANE_OWNERS.banner })).toBeVisible()
+
+    const matchups = page.getByRole('region', { name: 'Matchups' })
+    const game = matchups.getByTestId('game-row').first()
+    await expect(game).toBeVisible()
+    await game.getByRole('link', { name: 'Replay' }).click()
+    await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+    const rendererHost = page.locator('.renderer-host')
+    await expect(rendererHost).toHaveAttribute('data-crane-assets', 'ready')
+    await expect(rendererHost).toHaveAttribute('data-crane-battlefield-builds', '1')
+    await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
+
+    const canvas = page.locator('canvas.renderer-canvas')
+    const canvasBox = await canvas.boundingBox()
+    expect(canvasBox).not.toBeNull()
+    if (canvasBox === null) throw new Error('Crane Reach army canvas has no browser bounds')
+    const unitId = await rendererHost.getAttribute('data-crane-inspect-unit')
+    const unitX = Number(await rendererHost.getAttribute('data-crane-inspect-unit-x'))
+    const unitY = Number(await rendererHost.getAttribute('data-crane-inspect-unit-y'))
+    expect(unitId).not.toBeNull()
+    await page.mouse.move(
+      canvasBox.x + (unitX / 1_200) * canvasBox.width,
+      canvasBox.y + (unitY / 860) * canvasBox.height,
+    )
+    await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
+    // Terrain is on, so the card carries a terrain and a feature row. Abilities are on too, so a
+    // footman also carries its shield wall and a cavalry its charge; an archer has neither. Which unit
+    // the probe offers depends on the battle, so the expected card follows the unit id's kind.
+    const kind = (unitId ?? '').split('_')[1]
+    const skill =
+      kind === 'footman' ? ',iconSkill:shield_wall' : kind === 'cavalry' ? ',iconSkill:charge' : ''
+    await expect(rendererHost).toHaveAttribute(
+      'data-crane-inspection-details',
+      new RegExp(`^iconTerrain:(grass|hill),iconFeature:(none|forest|marsh)${skill}$`),
+    )
+  } finally {
+    // Restore the seeded season as the environment's open submission and play windows: the human-order
+    // test below starts its session from the play-open season.
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await closePlay(admin, season.id).catch(() => {})
+    if (original.submissionSeasonId !== null) {
+      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
+    }
+    if (original.playSeasonId !== null) {
+      await openPlay(admin, original.playSeasonId).catch(() => {})
+    }
+    rmSync(staged, { recursive: true, force: true })
+  }
 })
 
 /**

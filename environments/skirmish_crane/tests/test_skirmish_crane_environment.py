@@ -843,33 +843,55 @@ def test_naive_loads_as_a_standalone_builtin_module() -> None:
 def test_template_crane_helper_never_drifts_from_the_package_codec() -> None:
     # The student template's sandbox/crane/ deliberately duplicates the path codec so a student
     # never imports the engine. Loading it standalone here, the way a composed template does,
-    # pins that its copy never drifts from the real one.
-    crane_dir = Path(__file__).parents[1] / "template" / "sandbox" / "crane"
-    crane = _load_standalone_package("skirmish_crane_template_crane_builtin", crane_dir)
-    template_paths, template_tile = crane.paths, crane.tile
+    # pins that its copy never drifts from the real one. units.py reaches for sandbox.unit_stats,
+    # so a minimal sandbox package fabricates that module the same way a composed template ships it.
+    package_dir = Path(__file__).parents[1]
+    crane_dir = package_dir / "template" / "sandbox" / "crane"
+    saved_sandbox = sys.modules.get("sandbox")
+    saved_unit_stats = sys.modules.get("sandbox.unit_stats")
+    sandbox_pkg = types.ModuleType("sandbox")
+    sandbox_pkg.__path__ = []
+    sys.modules["sandbox"] = sandbox_pkg
+    sandbox_pkg.unit_stats = _load_standalone_module("sandbox.unit_stats", package_dir / "unit_stats.py")
+    try:
+        crane = _load_standalone_package("skirmish_crane_template_crane_builtin", crane_dir)
+        template_paths, template_tile = crane.paths, crane.tile
 
-    assert template_tile.DIRECTIONS == DIRECTIONS
-    assert template_paths.MAX_ID == MAX_PATH_ID
-    assert template_paths.MAX_STEPS == MAX_PATH_STEPS
-    for path_id in range(MAX_PATH_ID + 1):
-        digits = template_paths.decode(path_id)
-        assert digits == decode_path(path_id)
-        assert template_paths.encode(digits) == path_id
-        assert encode_path(digits) == path_id
+        assert template_tile.DIRECTIONS == DIRECTIONS
+        assert template_paths.MAX_ID == MAX_PATH_ID
+        assert template_paths.MAX_STEPS == MAX_PATH_STEPS
+        for path_id in range(MAX_PATH_ID + 1):
+            digits = template_paths.decode(path_id)
+            assert digits == decode_path(path_id)
+            assert template_paths.encode(digits) == path_id
+            assert encode_path(digits) == path_id
 
-    # The happy path above would still pass if the template copy dropped a guard clause, so pin
-    # the invalid-value rejections against both codecs too.
-    for invalid_directions in ([0], [7], [1, 1, 1, 1, 1], (True,)):
-        with pytest.raises(ValueError):
-            template_paths.encode(invalid_directions)
-        with pytest.raises(ValueError):
-            encode_path(invalid_directions)
+        # The happy path above would still pass if the template copy dropped a guard clause, so pin
+        # the invalid-value rejections against both codecs too.
+        for invalid_directions in ([0], [7], [1, 1, 1, 1, 1], (True,)):
+            with pytest.raises(ValueError):
+                template_paths.encode(invalid_directions)
+            with pytest.raises(ValueError):
+                encode_path(invalid_directions)
 
-    for invalid_path_id in (-1, 1555, True, "3"):
-        with pytest.raises(ValueError):
-            template_paths.decode(invalid_path_id)
-        with pytest.raises(ValueError):
-            decode_path(invalid_path_id)
+        for invalid_path_id in (-1, 1555, True, "3"):
+            with pytest.raises(ValueError):
+                template_paths.decode(invalid_path_id)
+            with pytest.raises(ValueError):
+                decode_path(invalid_path_id)
+    finally:
+        for name in [
+            name for name in sys.modules if name.startswith("skirmish_crane_template_crane_builtin")
+        ]:
+            del sys.modules[name]
+        if saved_unit_stats is None:
+            sys.modules.pop("sandbox.unit_stats", None)
+        else:
+            sys.modules["sandbox.unit_stats"] = saved_unit_stats
+        if saved_sandbox is None:
+            sys.modules.pop("sandbox", None)
+        else:
+            sys.modules["sandbox"] = saved_sandbox
 
 
 def _load_standalone_module(name: str, path: Path) -> Any:
@@ -916,7 +938,7 @@ def test_template_starter_agent_marches_and_names_targets_over_a_full_episode() 
     observation points with no enemy visible, and stepping at a nameable enemy once one is."""
     package_dir = Path(__file__).parents[1]
     template_dir = package_dir / "template"
-    fabricated_names = ("sandbox", "sandbox.observation_types", "sandbox.crane")
+    fabricated_names = ("sandbox", "sandbox.observation_types", "sandbox.unit_stats", "sandbox.crane")
     saved_modules = {name: sys.modules.get(name) for name in fabricated_names}
     try:
         sandbox_pkg = types.ModuleType("sandbox")
@@ -925,6 +947,7 @@ def test_template_starter_agent_marches_and_names_targets_over_a_full_episode() 
         sandbox_pkg.observation_types = _load_standalone_module(
             "sandbox.observation_types", package_dir / "observation_types.py"
         )
+        sandbox_pkg.unit_stats = _load_standalone_module("sandbox.unit_stats", package_dir / "unit_stats.py")
         sandbox_pkg.crane = _load_standalone_package("sandbox.crane", template_dir / "sandbox" / "crane")
         starter = _load_standalone_module("skirmish_crane_template_agent_builtin", template_dir / "agent.py")
 

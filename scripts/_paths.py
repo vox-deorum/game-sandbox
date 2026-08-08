@@ -92,8 +92,12 @@ class TemplateEnvironmentSpec:
     env_sandbox_modules: dict[str, str] = field(default_factory=dict)
     # Composed-template-relative file paths to type-check with pyright after composing, for
     # environments whose sandbox modules carry annotations worth checking in isolation. Empty
-    # for environments that register no such check.
+    # for environments that register no such check. Every path here must exist in each composed
+    # tree, so a rename that loses coverage fails the examples job instead of passing quietly.
     pyright_files: tuple[str, ...] = ()
+    # Further paths to type-check where an individual example ships them, for files that belong
+    # to one example rather than to the environment layer. Missing ones are skipped.
+    pyright_example_files: tuple[str, ...] = ()
 
 
 # Shared, import-self-contained sandbox helpers generated from the env source into each composed

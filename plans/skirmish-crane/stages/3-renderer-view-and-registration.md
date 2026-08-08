@@ -42,7 +42,7 @@ Registration makes Skirmish at Crane Reach the platform's first shipped Dict-act
 
 ### Browser journey
 
-`frontend/e2e/crane-reach/crane-reach.spec.ts` enters `e2e.yml` with the spectate half: watch a session to game over, scrub the replay to exact frames, and a season journey on the spades pattern (an admin creates a Crane Reach season with variant overrides and naive seats, a scheduled matchup runs, results release).
+`frontend/e2e/crane-reach/crane-reach.spec.ts` enters `e2e.yml` with the spectate half: watch a session to game over, scrub the replay to exact frames, and a season journey on the spades pattern (an admin creates a Crane Reach season, takes its gameplay from the named Season 5 preset in the config editor, and turns the capture target and round cap down by hand; the published example agent is submitted against naive, a scheduled matchup runs, results release).
 
 ## Tests
 

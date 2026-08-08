@@ -356,7 +356,7 @@ def test_flappy_bird_is_a_registered_env():
 
 
 def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_complete():
-    assert list_published_examples() == []
+    assert list_published_examples() == [("skirmish_crane", "banner")]
     assert list_examples() == [
         ("flappy_bird", "hello"),
         ("hearts", "assassin"),
@@ -364,6 +364,7 @@ def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_c
         ("hearts", "duck"),
         ("hearts", "moonshot"),
         ("hearts", "oracle"),
+        ("skirmish_crane", "banner"),
         ("skirmish_crane", "marcher"),
         ("skirmish_crane", "vanguard"),
         ("spades", "counter"),

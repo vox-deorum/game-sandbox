@@ -17,7 +17,7 @@ from .env import CAPTURE_TARGET_BOUNDS, ROUND_CAP_BOUNDS, SEAT_PLAN_SPECS, defau
 from .overlay import extract_overlay
 
 ENV_ID = "skirmish_crane"
-PUBLISHED_EXAMPLES = ()
+PUBLISHED_EXAMPLES = ("banner",)
 
 SKIRMISH_SEAT_PLANS = tuple(
     SeatPlan(key=key, title=title, seats=tuple(SeatDeclaration(players=players) for players in seats))

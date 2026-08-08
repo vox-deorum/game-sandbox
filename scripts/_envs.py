@@ -121,14 +121,22 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         if package_dir.name == "skirmish_crane"
         else ()
     )
+    # blocks.py belongs to the banner example alone, so it is checked where it ships instead of
+    # being required of every composed skirmish_crane tree.
+    pyright_example_files = ("blocks.py",) if package_dir.name == "skirmish_crane" else ()
     # Flappy's and Skirmish's observation TypedDicts (observation_types.py) live beside env.py in
     # the source package, so they are already swept into `modules` above for the env-side
     # sandbox/env/ copy; this additionally places a copy at sandbox/observation_types.py, the
     # direct import point for Skirmish agents (flappy re-exports it through sandbox.features).
+    # Skirmish's unit_stats.py gets the same treatment: it is the one table the engine plays by,
+    # and sandbox/crane/units.py imports the copy as sandbox.unit_stats.
     env_sandbox_modules = (
         {"observation_types.py": "flappy_bird/observation_types.py"}
         if package_dir.name == "flappy_bird"
-        else {"observation_types.py": "skirmish_crane/observation_types.py"}
+        else {
+            "observation_types.py": "skirmish_crane/observation_types.py",
+            "unit_stats.py": "skirmish_crane/unit_stats.py",
+        }
         if package_dir.name == "skirmish_crane"
         else {}
     )
@@ -139,6 +147,7 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         player_id=human_players[0] if human_players else "player_0",
         env_sandbox_modules=env_sandbox_modules,
         pyright_files=pyright_files,
+        pyright_example_files=pyright_example_files,
     )
 
 

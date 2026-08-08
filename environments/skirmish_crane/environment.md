@@ -66,7 +66,7 @@ if me.unit_type(observation) == "archer":
     return action.stay(nearest["unit_id"], observation)
 ```
 
-This change is deliberately narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `play`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster` gives you longer routes and full-roster coordination.
+This change is deliberately narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `play`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster, units, zone` gives you longer routes, full-roster coordination, fixed unit stats, and capture-zone geometry.
 
 Try one experiment at a time:
 
@@ -152,13 +152,15 @@ Import helpers at the top of `agent.py`:
 from sandbox.crane import action, me, tile, visible
 ```
 
-`roster` and `paths` are available when you need them, but the first improvement does not. The helpers do not choose strategy or include a pathfinder. Season 2 route planning remains your work.
+`roster`, `paths`, `units`, and `zone` are available when you need them, but the first improvement does not. The helpers do not choose strategy or include a pathfinder. Season 2 route planning remains your work.
 
 `act` receives one dictionary with `observation` and `action_mask` keys. The current match state is under `observation["observation"]`. Its `self` field describes your unit, `visible_units` lists other units in vision, `round` starts at 1, and `capture` holds both scores and the target. `battlefield`, both `rosters`, and `parameters` are shared match knowledge and stay constant for the match.
 
 Units outside vision are absent, with no count of what is missing. The observation has no history and does not say who attacked you. Store information you need on that unit's own `Agent` instance. Information from beyond vision must arrive through a message. In `sandbox.observation_types`, `SkirmishObservation` and `SkirmishAction` provide the exact TypedDict shapes for your editor and type checker.
 
 The rosters list every starting unit, including units no longer alive. Use a roster when a message needs the player name of an ally outside sight. Do not use a roster entry as proof that the unit is still alive or a legal target. `visible.enemies(observation)` and `action.possible_targets(observation)` give the current, legal view.
+
+`units.STATS` looks up a fixed table by type, such as `units.STATS["archer"].attack_range` for how far an archer can strike.
 
 | Group | Callable | Result |
 | --- | --- | --- |
@@ -172,6 +174,7 @@ The rosters list every starting unit, including units no longer alive. Use a ros
 | Self | `me.hit_points(observation)`, `me.movement_points(observation)` | Your current hit points and full points for this activation. |
 | Visible | `visible.enemies(observation)`, `visible.allies(observation)` | Other units in sight, divided by side. |
 | Roster | `roster.enemies(observation)`, `roster.allies(observation)` | Complete starting rosters, alive or not. |
+| Unit | `units.STATS[unit_type]` | Fixed `hit_points`, `movement_points`, `attack_range`, `damage`, and `vision` for that type. |
 | Tile | `tile.distance(first, second)` | Hex distance in steps. |
 | Tile | `tile.neighbors(position)` | Six neighbors keyed by direction digit. |
 | Tile | `tile.at_path_end(position, path_id)` | Where a path ends. |
@@ -179,6 +182,9 @@ The rosters list every starting unit, including units no longer alive. Use a ros
 | Tile | `tile.at_mirror(position, observation)` | The opposite position, in mirrored enemy ground for your starting position. |
 | Tile | `tile.terrain_at(observation, position)` | The `{"terrain", "feature"}` pair, or void off the field. |
 | Tile | `tile.DIRECTIONS` | Direction digit to axial offset. |
+| Zone | `zone.zones(observation)` | The battlefield's capture zones, empty when capture play is off. |
+| Zone | `zone.at(observation, position)` | The zone covering that position, or `None`. |
+| Zone | `zone.occupants(observation, area)` | The units you can see standing in that zone, your own unit first if it stands there. An enemy outside your vision is missing from the list, so an empty result does not prove the zone is free. |
 | Paths | `paths.encode(directions)`, `paths.decode(path_id)` | Convert direction sequences and path ids. |
 | Paths | `paths.MAX_ID`, `paths.MAX_STEPS` | `1554` and `4`. |
 

@@ -7,7 +7,7 @@ five workflows under ``.github/workflows/``:
 
 ci.yml (runs on every push and pull request):
 - ``python``: ruff check, ruff format --check, pyright, pytest.
-- ``typescript``: biome check, tsc --noEmit, vitest run — workspace-wide, so the backend joins
+- ``typescript``: biome check, tsc --noEmit, vitest run, workspace-wide, so the backend joins
   it; the backend's biome check enforces the import-isolation rule.
 - ``backend-integration``: the Docker-gated backend Vitest project (real containers: the
   WebSocket client, sandbox guarantees, idle/orphan reaping). Needs a Docker daemon, so it is a
@@ -384,7 +384,15 @@ def job_examples() -> None:
 
         # Type-check the composed sandbox modules a spec has opted in, catching drift between the
         # TypedDict observation shapes and the code that reads them before it ships to students.
-        pyright_files = specs[env].pyright_files
+        # An environment's own paths are required of every one of its examples, so a rename that
+        # would quietly drop coverage stops the job here. Example-owned files are checked in the
+        # trees that carry them.
+        spec = specs[env]
+        absent = [path for path in spec.pyright_files if not (out_dir / path.rstrip("/")).exists()]
+        if absent:
+            raise SystemExit(f"composed example {env}/{name} is missing type-checked path(s) {absent}")
+        shipped = [path for path in spec.pyright_example_files if (out_dir / path.rstrip("/")).exists()]
+        pyright_files = (*spec.pyright_files, *shipped)
         if pyright_files:
             # Resolve imports against the example's own venv, since some examples depend on
             # packages the repo venv does not carry (the LLM examples, for instance).

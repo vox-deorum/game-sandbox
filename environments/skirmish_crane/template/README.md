@@ -28,3 +28,13 @@ The starter returns Crane orders with `action.move()` and `action.stay()` from `
 Leave `sandbox/`, `requirements.in`, and `requirements.txt` unchanged. The pinned packages match the server. Ask your instructor before adding a package.
 
 When your agent is ready, follow the shared [submitting guide]({{DOCS_URL}}students/submitting/). For the optional `learn` and `chat` hooks, see the shared [agent interface]({{DOCS_URL}}students/agent-interface/). Crane messaging begins in Season 3.
+
+## Optional LLM API
+
+If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+
+Test the connection with:
+
+```console
+python -m sandbox llm
+```

@@ -1,4 +1,4 @@
-"""Provided helpers for Skirmish at Crane Reach agents, grouped into six small namespaces.
+"""Provided helpers for Skirmish at Crane Reach agents, grouped into eight small namespaces.
 
 Import the namespaces you need at the top of ``agent.py``, not inside a method::
 
@@ -12,7 +12,9 @@ in the environment engine.
 - ``me``: your own unit's fields, including ``direction``, the digit toward the enemy side.
 - ``visible``: the units your unit can see, split into enemies and allies.
 - ``roster``: both sides' starting rosters, standing knowledge for units you cannot see.
+- ``units``: each unit type's fixed hit points, movement, range, damage, and vision.
 - ``tile``: hex geometry and the ground, including where a path ends and what terrain is where.
+- ``zone``: the capture zones, their tiles, and who is standing in one.
 - ``paths``: the stable path encoding, for when you plan a route longer than one step.
 
 Everything here reads the observation and the authoritative action mask. Nothing here decides
@@ -25,6 +27,6 @@ observation and action reference lives in ``environment.md``, shipped alongside 
 
 from __future__ import annotations
 
-from . import action, me, paths, roster, tile, visible
+from . import action, me, paths, roster, tile, units, visible, zone
 
-__all__ = ["action", "me", "paths", "roster", "tile", "visible"]
+__all__ = ["action", "me", "paths", "roster", "tile", "units", "visible", "zone"]

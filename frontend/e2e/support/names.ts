@@ -76,6 +76,16 @@ export const SPADES_OWNERS = {
   signaler: 'samuel-morse',
 } as const
 
+/**
+ * The Skirmish at Crane Reach agent owners, one per example strategy submitted into the army season
+ * (crane-reach.spec.ts). The owner handle is the agent's public identity, so it reads like a real one
+ * and stays distinct from {@link OWNERS}, {@link HEARTS_OWNERS}, and {@link SPADES_OWNERS}.
+ */
+export const CRANE_OWNERS = {
+  /** environments/skirmish_crane/examples/banner: gives every unit one tactical block and one goal. */
+  banner: 'john-von-neumann',
+} as const
+
 /** Season labels — short, no year, themed on flight. One per spec/test that declares a season. */
 export const SEASONS = {
   /** The leaderboards arc: a full competition (submissions → run → ratings → release). */

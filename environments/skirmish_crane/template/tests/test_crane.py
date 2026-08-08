@@ -10,14 +10,15 @@ loading.
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from sandbox.crane import action, me, paths, roster, tile, visible
+from sandbox.crane import action, me, paths, roster, tile, units, visible, zone
 from sandbox.env import META, make_env
-from sandbox.env.skirmish_crane import hexes
+from sandbox.env.skirmish_crane import engine, hexes
 from sandbox.env.skirmish_crane import paths as engine_paths
 from sandbox.harness.environment import resolve_parameters
 
@@ -25,6 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SEED = 5
 STEP_BUDGET = 60
 FIELD_SIDE = 15
+# The smallest field extent the battlefield generator accepts (see FIELD_EXTENT_BOUNDS in
+# environments/skirmish_crane/battlefield.py), used to keep the dedicated zone pass fast. With a
+# single zone, capture_zones=1 always centers it at (extent, extent).
+ZONE_FIELD_EXTENT = 5
+ZONE_STEP_BUDGET = 40
 
 
 def _position(q: int, r: int) -> dict:
@@ -42,11 +48,28 @@ def _unit(unit_id: str, q: int, r: int) -> dict:
     }
 
 
+def _zone(center: dict, tiles: tuple[dict, ...]) -> dict:
+    return {"center": center, "tiles": tiles}
+
+
+def _engine_path_end(start: tuple[int, int], path_id: int) -> tuple[int, int]:
+    """Walk ``path_id`` from ``start`` with the engine's own decoder and hex step.
+
+    Used to steer the dedicated zone test below without going through the sandbox.crane helpers
+    it exists to exercise, keeping the steering independent of the code under test.
+    """
+    position = start
+    for digit in engine_paths.decode_path(path_id):
+        position = hexes.neighbor(position, digit)
+    return position
+
+
 def _observation(
     own_id: str = "red_footman_0",
     enemy_ids: tuple[str, ...] = ("blue_footman_0", "blue_archer_0"),
     seen: tuple[dict, ...] = (),
     tiles: tuple[tuple[dict, ...], ...] = (),
+    zones: tuple[dict, ...] = (),
 ) -> dict:
     own_side = own_id.split("_", 1)[0]
     enemy_side = "blue" if own_side == "red" else "red"
@@ -61,7 +84,7 @@ def _observation(
                 "direction": 2 if own_side == "red" else 5,
             },
             "visible_units": seen,
-            "battlefield": {"side": FIELD_SIDE, "tiles": tiles, "zones": ()},
+            "battlefield": {"side": FIELD_SIDE, "tiles": tiles, "zones": zones},
             "rosters": {
                 own_side: ({"unit_id": own_id, "side": own_side},),
                 enemy_side: tuple({"unit_id": enemy_id, "side": enemy_side} for enemy_id in enemy_ids),
@@ -118,7 +141,7 @@ def test_importing_the_helpers_stays_light():
     # An agent imports sandbox.crane at module top, so it must not pull in the environment engine.
     # Check in a fresh interpreter, since this test process has already loaded it.
     code = (
-        "import sys; from sandbox.crane import action, me, paths, roster, tile, visible; "
+        "import sys; from sandbox.crane import action, me, paths, roster, tile, units, visible, zone; "
         "assert 'pettingzoo' not in sys.modules; "
         "assert 'gymnasium' not in sys.modules; "
         "assert 'numpy' not in sys.modules"
@@ -213,6 +236,69 @@ def test_visible_splits_what_the_unit_sees_and_keeps_the_observation_order():
     assert [unit["unit_id"] for unit in visible.allies(observation)] == ["red_archer_0"]
 
 
+# -- unit stats and capture zones -------------------------------------------------------------------
+
+
+def test_units_stats_is_the_table_the_engine_plays_by():
+    # units.STATS and engine.UNIT_STATS come from separate composed copies of the same source
+    # file (sandbox/unit_stats.py and sandbox/env/skirmish_crane/unit_stats.py), so they are
+    # equal-valued UnitStats instances of two distinct classes, not the same object; compare
+    # field values rather than relying on dataclass ``==``, which only matches within one class.
+    assert set(units.STATS) == {"footman", "archer", "cavalry"}
+    for kind, live in engine.UNIT_STATS.items():
+        assert dataclasses.astuple(units.STATS[kind]) == dataclasses.astuple(live)
+
+
+def test_zones_returns_the_battlefields_zones_and_empty_when_capture_is_off():
+    center = _position(5, 5)
+    one_zone = _zone(center, (center, *tile.neighbors(center).values()))
+
+    assert zone.zones(_observation(zones=(one_zone,))) == (one_zone,)
+    assert zone.zones(_observation()) == ()
+
+
+def test_at_finds_the_zone_covering_a_tile_including_its_center():
+    center = _position(5, 5)
+    ring = tile.neighbors(center)
+    one_zone = _zone(center, (center, *ring.values()))
+    observation = _observation(zones=(one_zone,))
+
+    assert zone.at(observation, center) == one_zone
+    assert zone.at(observation, ring[1]) == one_zone
+    assert zone.at(observation, _position(0, 0)) is None
+
+
+def test_occupants_lists_your_own_unit_first_then_the_visible_units_standing_in_the_zone():
+    own_position = _position(3, 4)  # matches _observation's own unit position
+    ring = tile.neighbors(own_position)
+    inside = ring[1]
+    outside = _position(9, 9)
+    one_zone = _zone(own_position, (own_position, inside))
+    inside_enemy = _unit("blue_footman_0", inside["q"], inside["r"])
+    outside_enemy = _unit("blue_archer_0", outside["q"], outside["r"])
+    observation = _observation(seen=(inside_enemy, outside_enemy), zones=(one_zone,))
+
+    occupants = zone.occupants(observation, one_zone)
+
+    assert [unit["unit_id"] for unit in occupants] == ["red_footman_0", "blue_footman_0"]
+    assert occupants[0] == {
+        "unit_id": "red_footman_0",
+        "side": "red",
+        "type": "footman",
+        "position": own_position,
+        "hit_points": 9,
+    }
+
+
+def test_occupants_omits_your_own_unit_when_it_stands_outside_the_zone():
+    center = _position(8, 8)
+    one_zone = _zone(center, (center,))
+    inside_enemy = _unit("blue_footman_0", 8, 8)
+    observation = _observation(seen=(inside_enemy,), zones=(one_zone,))
+
+    assert [unit["unit_id"] for unit in zone.occupants(observation, one_zone)] == ["blue_footman_0"]
+
+
 # -- the mask and the order it builds ---------------------------------------------------------------
 
 
@@ -274,6 +360,13 @@ def test_helper_accessors_agree_with_live_environment_states():
             here = me.position(observation)
             assert tile.terrain_at(observation, here) == state["battlefield"]["tiles"][here["r"]][here["q"]]
 
+            # This pass always resolves capture_zones to 0 (see resolve_parameters above), so the
+            # live battlefield never publishes a zone here; both readers must agree it is empty.
+            # test_zone_helpers_agree_with_the_live_battlefield_when_capture_is_on, below, is the
+            # dedicated pass that turns capture on and drives real zone occupancy.
+            assert zone.zones(observation) == ()
+            assert zone.at(observation, here) is None
+
             sampled_path = max(expected_paths)
             space = env.action_space(agent)
             assert space.contains(action.stay())
@@ -290,6 +383,69 @@ def test_helper_accessors_agree_with_live_environment_states():
             env.step(action.move(sampled_path))
             acted += 1
         assert acted > 0
+    finally:
+        env.close()
+
+
+def test_zone_helpers_agree_with_the_live_battlefield_when_capture_is_on():
+    """A short, dedicated live pass that gives the zone helpers real coverage.
+
+    The mask-parity test above always plays with capture off, so its zone assertions can only ever
+    see the empty case, and a branch that reads a unit standing inside a zone would never run.
+    Resolving with capture_zones=1 and the smallest allowed field_extent turns exactly one zone on,
+    centered on the field (see the odd-count case in environments/skirmish_crane/battlefield.py's
+    ``_zones``), and keeps the episode short. Every activation, whichever side it belongs to, walks
+    the legal path that lands closest to the zone's center, so several units end up standing inside
+    it well before the match resolves.
+    """
+    parameters = resolve_parameters(META, {"capture_zones": 1, "field_extent": ZONE_FIELD_EXTENT})
+    extent = parameters["field_extent"]
+    env = make_env(parameters)
+    try:
+        env.reset(seed=SEED)
+        acted = 0
+        occupant_hits = 0
+        while env.agents and acted < ZONE_STEP_BUDGET:
+            observation, _reward, termination, truncation, _info = env.last()
+            if termination or truncation:
+                env.step(None)
+                continue
+            state = observation["observation"]
+            mask = observation["action_mask"]
+            unit_id = state["self"]["unit_id"]
+            here = state["self"]["position"]
+
+            # Independent oracle: derive the covering zone straight from the raw battlefield,
+            # rather than through the helper under test, the same approach the test above uses.
+            zones_state = state["battlefield"]["zones"]
+            assert zone.zones(observation) == zones_state
+            assert len(zones_state) == 1  # capture_zones=1 always publishes exactly one zone
+            one_zone = zones_state[0]
+            inside = any(t["q"] == here["q"] and t["r"] == here["r"] for t in one_zone["tiles"])
+            own_zone = one_zone if inside else None
+            assert zone.at(observation, here) == own_zone
+
+            # A tile far outside the single centered zone stays outside no matter which unit reads
+            # it, checked against the raw tile list rather than by calling the helper twice.
+            far_corner = {"q": 0, "r": extent}
+            assert far_corner not in one_zone["tiles"]
+            assert zone.at(observation, far_corner) is None
+
+            if own_zone is not None:
+                occupant_hits += 1
+                assert unit_id in {unit["unit_id"] for unit in zone.occupants(observation, own_zone)}
+
+            start = (here["q"], here["r"])
+            target = (one_zone["center"]["q"], one_zone["center"]["r"])
+            legal_paths = [path_id for path_id, bit in enumerate(mask["path"]) if bit]
+            sampled_path = min(
+                legal_paths, key=lambda path_id: hexes.distance(_engine_path_end(start, path_id), target)
+            )
+            env.step(action.move(sampled_path))
+            acted += 1
+        # The guard the rest of this test exists for: prove the occupants branch actually ran,
+        # so this test can never again read as live zone coverage while asserting nothing.
+        assert occupant_hits > 0
     finally:
         env.close()
 

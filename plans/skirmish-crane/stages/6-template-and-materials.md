@@ -31,7 +31,7 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 ### The worked examples
 
-Two, both kept internal, and `PUBLISHED_EXAMPLES` stays empty. Step 7 adds banner, a third example and a publication candidate, and extends the helper package above.
+Two, both kept internal, and `PUBLISHED_EXAMPLES` stays empty. Step 7 adds banner, the published third example, and extends the helper package above.
 
 - `marcher`, a study of the starter. Each unit remembers the tile it spawned on and marches on that tile's mirror image (`tile.at_mirror`), which the field's point symmetry places in enemy ground, then closes on the nearest visible enemy the way the template does. Its tests stay light: every order is mask-legal, and a match between marchers ends by elimination well short of the round cap. No beats-naive claim.
 - `vanguard`, the Season-3-shaped worked example: an FSM per unit type where the archer falls back and fires in the same activation, the cavalry flanks, and the footman holds the line. Quality bar: beats naive on every pinned seed, playing both seats of the skirmish plan and a pinned pair of Season 3 army battles.

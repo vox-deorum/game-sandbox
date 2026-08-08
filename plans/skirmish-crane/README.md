@@ -1,6 +1,6 @@
 # Skirmish at Crane Reach: Implementation Plan
 
-Status: in progress. Steps 1 through 6 are complete, and step 7 remains.
+Status: complete. All seven steps have shipped.
 
 ## Goal
 
@@ -13,7 +13,7 @@ Build everything the [environment specification](environment.md) calls the platf
 Non-goals, recorded so they stay deliberate:
 
 - The bronze, silver, and gold instructor anchors are later work. The first implementation ships `naive` alone, and the specification's builtin table describes the eventual state.
-- Marcher and vanguard stay internal. `PUBLISHED_EXAMPLES` stays empty until Season 4 opens, when banner becomes the first published example.
+- Marcher and vanguard stay internal. Banner is the environment's one published example.
 
 ## Spec references
 
@@ -42,5 +42,5 @@ A student can clone the composed template, run the helper pin tests, beat naive 
 ## Later work
 
 - The bronze, silver, and gold instructor anchors, planned when the course needs them.
-- When Season 4 opens: add banner to `PUBLISHED_EXAMPLES`, republish the template, and give students fetch instructions as course material.
+- Student-facing instructions for fetching the published banner branch, as course material rather than platform work.
 - Season 5 and 6 operations (demonstration collection, compute-cap advice) as course material, not platform work.
