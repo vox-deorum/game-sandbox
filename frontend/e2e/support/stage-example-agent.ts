@@ -43,11 +43,14 @@ export function stageExampleAgent(environmentId: string, name: string): string {
     recursive: true,
     filter: withoutPycache,
   })
+  // Keep this list equal to TEMPLATE_BASE_MODULES in scripts/_paths.py, which is what compose writes
+  // into a real template's sandbox. A helper missing here fails the submission at its load check.
   for (const helper of [
     'card_utils.py',
     'card_spaces.py',
     'shared_modules.py',
     'semantic_cards.py',
+    'card_types.py',
   ]) {
     copyFileSync(join(localPlay, helper), join(dir, 'sandbox', helper))
   }

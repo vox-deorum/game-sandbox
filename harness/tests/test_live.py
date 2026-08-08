@@ -944,8 +944,15 @@ def test_streamed_bytes_equal_stored_bytes_and_result_is_not_recorded(tmp_path: 
 def test_turn_based_opening_frame_streams_before_the_loop_but_is_not_recorded(tmp_path: Path):
     # A turn-based env streams a pre-action opening frame (the deal) so a human who must act first
     # sees the table; it is streamed only, never persisted, so the recording still begins at step 0.
+    # The clock command is how a browser says its person has the controls, and a turn-based move
+    # budget is only spent while it holds. Without it the loop would wait for them indefinitely.
     result, streamed, recording = _run_external(
-        tmp_path, n_steps=2, pace_interval_ms=None, human_timeout_ms=10, with_overlay=True
+        tmp_path,
+        n_steps=2,
+        pace_interval_ms=None,
+        human_timeout_ms=10,
+        with_overlay=True,
+        preload=['{"kind": "clock", "player": "player_0", "running": true}'],
     )
     assert result.ticks == 2
 
