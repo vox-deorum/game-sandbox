@@ -40,7 +40,7 @@ Self-contained per the design, kept small the way Skirmish at Crane Reach keeps 
 
 ### Metadata and the builtins
 
-`META` per the design's platform metadata table, including `recommended_episode_ticks=1200`, a 250 millisecond `pace_interval_ms`, `human_players` as the single entry `player_0`, and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from the session seed passed to `reset(seed)`. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
+`META` per the design's platform metadata table, including `recommended_episode_ticks=1200`, a 250 millisecond `pace_interval_ms`, `human_players` as the single entry `player_0`, and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from the session seed its `reset` receives. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
 
 ## Tests
 

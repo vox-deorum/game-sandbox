@@ -48,7 +48,7 @@ Each row ships as a declared `META.presets` entry, choosable in the web dialogs 
 
 ## Match flow
 
-`reset(seed)` uses the session seed for village generation. The environment draws no randomness after generation. Every agent receives the same session seed through `reset(seed)`. The scripted visitor uses it directly. A cast agent that wants an NPC-specific random stream passes the seed to the template's `me.rng(observation, session_seed)`, which reads the character id for it. Characters start in the ruleset's initial pose (each NPC inside its home facing the doorway with housemates spaced apart, the visitor at the road spawn facing into the village, everyone still with expression none), and every prop starts unheld in its start state. The same seed and action sequence replay identically, per the ruleset's determinism rule.
+`reset(seed)` uses the session seed for village generation. The environment draws no randomness after generation. Every agent receives that same seed, and its first observation with it, through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that wants an NPC-specific random stream builds it there with the template's `me.rng(observation, session_seed)`, which reads the character id for it, and an agent with layout work to do does that there too rather than inside a decision. Characters start in the ruleset's initial pose (each NPC inside its home facing the doorway with housemates spaced apart, the visitor at the road spawn facing into the village, everyone still with expression none), and every prop starts unheld in its start state. The same seed and action sequence replay identically, per the ruleset's determinism rule.
 
 The environment is simultaneous: one ruleset tick is one parallel `env.step()` with a complete PettingZoo-player-keyed action map. Every character selects from the same pre-tick state, and the engine resolves all actions together in ruleset resolution order. Within a tick the harness collects every action first and runs chat hooks after, so speech follows action selection, as the speech section describes.
 
@@ -147,7 +147,7 @@ On the visitor seat, pointer and keyboard input compose the locomotion, and an e
 
 naive is the platform baseline required on every board. Compute limits are environment defaults a season may override; time an agent spends waiting on verified LLM proxy calls is not charged against them, and the template's background-request helper carries Season 5 dialogue across ticks.
 
-The pace interval is a floor, not a promise. The harness collects every `act` call sequentially on one thread inside a simultaneous tick, per [execution.md](../../docs/specs/execution.md), so a tick costs the sum of its cast's decision times. A cast_10 day holds the 250 millisecond cadence, and finishes in about five real minutes, only while all eleven decisions together fit inside that window. A cast that spends its full per-decision budget stretches the day well past that, and the human playing the visitor feels every stall. The budget is deliberately generous, so the plan measures the shipped example's real cost per tick rather than assuming it.
+The pace interval is a floor, not a promise. The harness collects every `act` call sequentially on one thread inside a simultaneous tick, per [execution.md](../../docs/specs/execution.md), so a tick costs the sum of its cast's decision times. A cast_10 day holds the 250 millisecond cadence, and finishes in about five real minutes, only while all eleven decisions together fit inside that window. A cast that spends its full per-decision budget stretches the day well past that, and the human playing the visitor feels every stall. The budget is deliberately generous, so the plan measures the shipped example's real cost per tick rather than assuming it. Setup runs on the same one thread: agent resets are sequential too, so whatever the cast spends precomputing is dead time before the village starts moving, which is its own reason to keep the shipped example's graph build modest.
 
 ## Package and student materials
 
@@ -161,11 +161,13 @@ The template's helper package is `sandbox.village`, in the shape Skirmish at Cra
 | `me` | `character_id`, `position`, `heading`, `moved`, `expression`, `home`, and `rng(observation, session_seed)`. |
 | `people` | `seen`, `nearby`, `visitor`, `roster`. |
 | `props` | `all` (standing knowledge: every prop's id, type, and position), `seen` (the ones whose state is currently perceived), `in_reach`, `usable`, and `TYPES` from `props.json`. |
-| `layout` | `ground_at`, `walkable`, `blocked`, `buildings`, `building`, `doorway`, `spawn`, and `SPEED_LIMITS`. |
+| `layout` | `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `doorway`, `spawn`, and `SPEED_LIMITS`. |
 | `geometry` | `distance`, `heading_to`, `wrap`, `in_cone`, and the character profile's ranges and body radius. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
 
-No helper decides anything: none picks a destination, a companion, or a prop. There is deliberately no pathfinder, the rule `sandbox.crane` already states. Routing between the village's places belongs to the Season 4 starter example, which keeps the package a description of the engine's physics rather than a strategy library.
+`layout` keeps movement and perception apart, because the ruleset does. `line_of_sight` answers perception, where only walls cut a line. `can_step` answers movement, where water, the boundary, walls, solid scenery, and prop footprints all stop a body. `walkable` asks whether a body of the character radius stands clear at a point at all.
+
+No helper decides anything: none picks a destination, a companion, or a prop. There is deliberately no pathfinder, the rule `sandbox.crane` already states. What the package withholds is the search, not the map: `observation["village"]` is the whole layout as standing knowledge, and `walkable`, `can_step`, and `ground_at` are exactly the node test, the edge test, and the edge cost a route planner is built from. Routing between the village's places belongs to the Season 4 starter example, which keeps the package a description of the engine's physics rather than a strategy library.
 
 `me.rng` seeds a `random.Random` from the session seed and the character id, giving each villager a stable stream of its own without touching the platform seed contract. Its pins are behavioral: the same pair always yields the same stream, different ids yield different streams, and a stream is stable across runs.
 

@@ -42,9 +42,9 @@ The dispatch contract in `agent.py`: run the assigned routine, on `None` run `wa
 
 ### Routing
 
-`go_to` is where pathfinding lives. It builds a coarse walkable graph once from `observation["village"]` through `layout.walkable` and `layout.blocked`, caches it in the villager's own memory, and searches it for a route, re-planning when the villager stalls against geometry the graph coarsened away. It is documented as one workable approach rather than the right one, and as the first thing a student with a better idea should replace.
+`go_to` is where pathfinding lives. It builds a graph from `observation["village"]`, taking nodes from `layout.walkable`, edges from `layout.can_step`, and edge cost from the ground's speed limit under `layout.ground_at`. It caches the graph in the villager's own memory and searches it for a route, re-planning when the villager stalls against geometry the graph sampled past. It is documented as one workable approach rather than the right one, and as the first thing a student with a better idea should replace.
 
-The graph is built once per episode and never per tick, because the per-decision budget is real. The tests measure it.
+The graph is built once, in `reset`, where step 1's setup observation delivers the layout before the first tick. That build is charged to the villager's episode budget rather than to any single decision, so its resolution is a budget choice the example makes explicitly and a student can change. Every `act` afterward is a search over the cached graph. The tests measure reset cost and per-tick cost separately.
 
 ### The routine menu
 
@@ -93,7 +93,7 @@ The example inventory assertion in `scripts/tests/test_compose.py` gains `("thre
 
 - Per-routine behavior on constructed observations: `go_to` closes distance along a route, `tend` stops inside reach and commands speed 0, `rest` reaches a free bench and holds the sit, `gather_at` ends within talk range of a bystander, `greet` turns and waves, `follow` holds its distance band, `avoid` raises the minimum distance to the nearest character, `watch` and `sleep_at` stand still, and `wander` never returns `None`.
 - A fuzz run drives every routine through full Season 4 episodes and asserts every returned action is in space and every commanded use is actually taken by the engine.
-- Routing reaches every named place from every home across a pinned seed batch, and the graph is built once per episode: per-tick decision cost stays inside the per-decision budget with the graph cached, measured rather than assumed.
+- Routing reaches every named place from every home across a pinned seed batch, and the graph is built once, in `reset`. Reset cost and per-tick cost are measured separately, and the two together stay inside the episode budget across a full day.
 - A day-arc bar on a pinned Season 4 seed: every villager leaves home, reaches at least three districts, holds at least one prop use in each of the working phases, and is home by the end of night. The bar is absolute, because a bar relative to another example would flip whenever either side is tuned.
 - Dialogue controller against a fake proxy: request lifecycle across ticks, reply delivery as a talk, fallback on exhaustion and on errors, over-cap replies truncated, a newer visitor line replacing a waiting one, and a visitor leaving talk range while a request or a waiting line exists.
 - `neighbor` completes healthy days with the LLM enabled and disabled, on both plans, inside the decision and episode budgets.
