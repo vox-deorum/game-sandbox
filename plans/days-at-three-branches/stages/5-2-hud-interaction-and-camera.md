@@ -13,7 +13,7 @@ These are interface decisions rather than art, and step 6 must not invent intera
 Mockups are authored inside this stage and approved before build. The scope:
 
 - The information layer: tick and phase, the bell state, character identification, and speech bubbles over speakers per the public-message rule, with the chat panel carrying the transcript.
-- The interaction specification for step 6: the locomotion affordances, the expression palette with its nine emotes plus use, and the use-preview highlight, as text mockups.
+- The interaction specification for step 6: the locomotion affordances, the expression palette with its nine emotes plus use, and the use-preview highlight, computed by the same reach-plus-unblocked-line selection rule the environment applies to prop use, as text mockups.
 - The camera: the reset view fits the whole village with nothing hidden, pan and zoom within bounds below the fixed HUD, and zoom limits far enough to see the village and close enough to read expressions and speech bubbles, following the camera conventions Skirmish at Crane Reach established.
 
 ## Tests
@@ -24,4 +24,4 @@ Mockups are authored inside this stage and approved before build. The scope:
 
 ## Done when
 
-The fixture replays under the full HUD and can be explored close up in both render modes, step 6's input UI is specified and approved, the bare full browser e2e suite passes, and the owner's sign-off is recorded in this file's status line.
+The fixture replays under the full HUD and can be explored close up, step 6's input UI is specified and approved, the bare full browser e2e suite passes, and the owner's sign-off is recorded in this file's status line.

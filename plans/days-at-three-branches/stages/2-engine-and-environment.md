@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This is build-order step 2: the whole [ruleset](../ruleset.md) as pure Python, wrapped in the PettingZoo environment with its metadata and both builtins. It runs on a small hand-authored fixture village until step 4 brings the real generator. The hands-on surface is full cast_3 and cast_10 days through the harness, recorded to JSONL inside the size budget and replaying identically.
+Part of [the plan](../README.md). This is build-order step 2: the whole [ruleset](../ruleset.md) as pure Python, wrapped in the PettingZoo environment with its metadata and both builtins. It runs on a small hand-authored fixture village until step 4 brings the real generator. The hands-on surface is full cast_5 and cast_10 days through the harness, recorded to JSONL inside the size budget and replaying identically.
 
 ## Why this is its own seam
 
@@ -24,7 +24,7 @@ Character state (position, heading, speed, expression) and simultaneous resoluti
 
 ### Prop use and perception
 
-Prop selection per the ruleset: the nearest prop within reach inside the vision cone with an unblocked line, judged on the pre-tick pose, ties broken by canonical prop order, stillness required, same-tick contention to the first in resolution order, hold and release semantics, and the three transition kinds driven by `props.json`. Perception: the vision cone and range, walls blocking sight, presence, and speech while doorways carry them, hearing range, reed same-bank concealment, prop visibility under the same rules, and the bell perceived everywhere while ringing. The day phases when daynight is on, and command degradation: a heading of 360 wraps to 0, an unavailable expression resolves to none, and the default is stand still with heading unchanged.
+Prop selection per the ruleset: the nearest prop within reach with an unblocked line, judged on the pre-tick pose, ties broken by canonical prop order, stillness required, same-tick contention to the first in resolution order, hold and release semantics, and the three transition kinds driven by `props.json`. Perception: the vision cone and range, walls blocking sight, presence, and speech while doorways carry them, hearing range, reed same-bank concealment, prop visibility under the same rules, and the bell perceived everywhere while ringing. The day phases when daynight is on, and command degradation: a heading of 360 wraps to 0, an unavailable expression resolves to none, and the default is stand still with heading unchanged.
 
 ### Environment and spaces
 
@@ -40,7 +40,7 @@ Self-contained per the design, kept small the way Skirmish at Crane Reach keeps 
 
 ### Metadata and the builtins
 
-`META` per the design's platform metadata table, including `recommended_episode_ticks=1200`, `human_players` as the single entry `player_0`, and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from the session seed passed to `reset(seed)`. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
+`META` per the design's platform metadata table, including `recommended_episode_ticks=1200`, a 250 millisecond `pace_interval_ms`, `human_players` as the single entry `player_0`, and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from the session seed passed to `reset(seed)`. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
 
 ## Tests
 
@@ -52,8 +52,8 @@ Self-contained per the design, kept small the way Skirmish at Crane Reach keeps 
 - Use selection through `env.step`, including contention and the stillness rule.
 - The preset table pinned, and the recording size budget on a full cast_10 day.
 - One cast member's crash forfeits the whole cast seat at floor 0.
-- A full day fits the per-decision and per-game compute budgets.
+- A full day fits the per-decision and per-game compute budgets. Because the harness collects every `act` call sequentially on one thread inside a simultaneous tick, a measurement of real seconds per tick for a cast_10 day is recorded against the 250 millisecond cadence.
 
 ## Done when
 
-Full cast_3 and cast_10 days run through the harness on the fixture village, record inside budget, and replay identically, and the conformance suite is green for three_branches defaults.
+Full cast_5 and cast_10 days run through the harness on the fixture village, record inside budget, and replay identically, and the conformance suite is green for three_branches defaults.

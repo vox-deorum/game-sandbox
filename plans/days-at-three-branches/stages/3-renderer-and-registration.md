@@ -1,4 +1,4 @@
-# Step 3: Debug renderer, registration, watch and replay
+# Step 3: Renderer, collision overlay, registration, watch and replay
 
 Status: planned.
 
@@ -6,7 +6,7 @@ Part of [the plan](../README.md). This is build-order step 3: the first visible 
 
 ## Why this is its own seam
 
-The debug view is a permanent viewer feature, not scaffolding: it shows the game at collision truth, which is what students need when their villager gets stuck. Shipping it before any art proves the overlay complete and seek-safe, it registers the environment so every later step works against the real catalog, and it is the tool step 4 uses to iterate on village generation visually.
+The collision overlay is a permanent viewer feature, not scaffolding: toggled on, it shows the game at collision truth, which is what students need when their villager gets stuck. Shipping the renderer and the overlay before any art proves both complete and seek-safe, registers the environment so every later step works against the real catalog, and gives step 4 the tool it uses to iterate on village generation visually.
 
 ## What to build
 
@@ -14,9 +14,9 @@ The debug view is a permanent viewer feature, not scaffolding: it shows the game
 
 Tile-map rendering joins the shared renderer base under `frontend/src/renderers/base/`, built on [pixi-tiledmap](https://github.com/riebel/pixi-tiledmap), pinned and verified against the project's Pixi version. A renderer hands it a tile grid and a tileset and gets a drawn ground layer back. This part is common: any environment with tiled ground can reuse it.
 
-### The debug view
+### The renderer and its collision overlay
 
-The renderer package at `environments/three_branches/renderer/` with a `PixiRenderer` subclass and a thumbnail. The ground renders through the shared tiled-map base with a flat type-colored debug tileset, from packed ground-grid rows the overlay carries. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. Above the ground layer, everything is drawn at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a spectator sees NPC talks, the consumer test for step 1's `public_messages`.
+The renderer package at `environments/three_branches/renderer/` with a `PixiRenderer` subclass and a thumbnail. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset, from packed ground-grid rows the overlay carries. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a spectator sees NPC talks, the consumer test for step 1's `public_messages`.
 
 ### Session limits
 

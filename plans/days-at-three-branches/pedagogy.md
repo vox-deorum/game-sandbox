@@ -15,7 +15,7 @@ The world is one village throughout. Each season foregrounds one small capabilit
 
 ### Season 1: Signs of Life (Week 1)
 
-- What unlocks: the village map and its props. A human player avatar can walk the village (peer reviewers play it during peer play). The scene holds 3 NPCs. Perception is a vision cone and a hearing radius. Actions: move, idle emotes, prop interaction.
+- What unlocks: the village map and its props. A human player avatar can walk the village (peer reviewers play it during peer play). The scene holds 5 NPCs. Perception is a vision cone and a hearing radius. Actions: move, idle emotes, prop interaction.
 - Design issue: characters reading as alive and intentional.
 - Core techniques: an FSM for basic behaviors (wander, patrol, pursue, flee, idle); steering.
 - Optional: behavior-tree interruptible routines (a startle preempts a chore, then resumes). This becomes core in Season 2.
@@ -38,8 +38,9 @@ The world is one village throughout. Each season foregrounds one small capabilit
 ### Season 4: Village Life (Week 4)
 
 - What unlocks: day and night. The daynight variant turns on, and every character observes the day phase.
+- Starter material: a worked example, distributed by course operations when the season opens, provides a routine library (routing between the village's places, day-phase schedules, and the visitor reactions) as the working action space for the season's schedules. Students may copy it, edit or replace the routines, or reuse their own Season 3 behavior.
 - Design issue: a village that keeps living around the player. NPCs go about their day while staying reactive, and Season 3 peer feedback shows where intended and perceived behavior diverged.
-- Core techniques: simple village schedules using pathfinding (path_to between home, well, and market through the day); deepened player reactions revised from Season 3 feedback.
+- Core techniques: day schedules built over the starter routine library, with routing between home, well, and market handled by that example; deepened player reactions revised from Season 3 feedback.
 - Optional: per-NPC memory of repeat encounters; rumor about the player spread through messages.
 - Evaluation: health check; human rating, e.g. "Walk around for two minutes. Rate how much the village felt like it had a life of its own while still noticing you, 1-5."
 

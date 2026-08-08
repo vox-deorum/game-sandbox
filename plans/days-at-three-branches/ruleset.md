@@ -9,9 +9,9 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 ## Conventions
 
 - The village is a continuous 2D plane measured in meters, 100 by 100, with an impassable boundary.
-- A character's state is turtle-style: a position (x, y), a heading, and a speed, the meters it moved on the latest tick. Facing is the heading.
+- A character's state is turtle-style: a position (x, y), a heading, and the meters it moved on the latest tick. Facing is the heading.
 - Every range in this document is measured position to position.
-- Time advances in ticks. A tick is half a second of village time, and a day is 1200 ticks.
+- Time advances in ticks, and a day is 1200 ticks.
 - Characters and props have solid footprints, and a character is a circle of radius 0.4 m. A building's outer rectangle reserves its site from other buildings and exterior objects, but its interior is walkable. Interior props may occupy that reserved rectangle when they stay inside the walls, leave the doorway open, and do not overlap each other.
 - A building wall is the perimeter of its outer rectangle, with its 1.2 m doorway gap removed. Movement collision and line-of-sight checks use these same derived wall segments. A line that crosses a wall carries neither sight, nor presence, nor speech.
 - The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically. Each season pins one default seed, so its matches all play the same village.
@@ -31,7 +31,7 @@ Every match plays in Three Branches, generated from the match seed under fixed g
 
 - The stable features are each placed once: the central well with its magic pump, the market beside the raised road, the inn, the repair shed, and the old beacon bell.
 - A trunk river forks into three channels that cross the village, with homes and fields spread along them. Water is impassable, each channel carries one or two bridges, and the walkable ground, bridges and building interiors included, is one connected region.
-- Every NPC in the season's cast has its own home: the village always generates ten homes, and the cast occupies the first N in id order. The visitor spawns on the road at the west edge.
+- The village always generates five homes, `home_0` through `home_4`, whatever the cast size, so every season plays the same layout. `npc_i` lives in `home_(i mod 5)`, which puts two villagers in each house when the cast is ten. The visitor spawns on the road at the west edge.
 - The generator scatters the village dressing: market stalls, lantern posts, benches, roadside shrines, and garden plots. [village.md](village.md) fixes the counts.
 
 Each point of walkable ground has a class that sets its speed limit:
@@ -59,7 +59,7 @@ Every character, NPC or visitor, has the same profile:
 | Shout range | 15 m                                                          |
 | Prop reach  | 1.5 m                                                         |
 
-A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day at the center of its home, facing its doorway, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
+A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day inside its home facing the doorway, housemates spaced at least a body diameter apart, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
 
 ## Actions
 
@@ -82,7 +82,7 @@ Emotes are engine-defined and all available from Season 1:
 | sleep      | off duty                        |
 | sweep      | a chore                         |
 
-A prop use engages the nearest prop within reach that lies inside the character's vision cone with an unblocked line, and puts the character into that prop's activity, sitting on a bench or working the pump, visible to observers like an emote. Selection and reach are judged on the tick's starting pose, and a use needs stillness: commanded speed above 0 resolves the expression to none. A character holds a use by choosing it again each tick, and releases it by choosing anything else, by moving, or by turning the prop out of its vision cone.
+A prop use engages the nearest prop within reach with an unblocked line, and puts the character into that prop's activity, sitting on a bench or working the pump, visible to observers like an emote. Facing does not enter into it: a prop you are standing beside is always in reach of a use. Selection and reach are judged on the tick's starting pose, and a use needs stillness: commanded speed above 0 resolves the expression to none. A character holds a use by choosing it again each tick, and releases it by choosing anything else, by moving, or by leaving its reach.
 
 Every prop starts the day unheld in its start state, and its state follows its transition rule:
 
@@ -142,7 +142,7 @@ The episode score is a health check, identical for every player in the cast: 100
 
 | Season | Cast | daynight |
 | ------ | ---- | -------- |
-| 1      | 3    | off      |
+| 1      | 5    | off      |
 | 2      | 10   | off      |
 | 3      | 10   | off      |
 | 4      | 10   | on       |

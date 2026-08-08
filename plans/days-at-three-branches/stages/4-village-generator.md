@@ -2,17 +2,17 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This is build-order step 4: the seeded construction of Three Branches under [village.md](../village.md)'s guarantees, replacing the step 2 fixture village. The hands-on surface is any seed's village explored in the browser debug view through a local watch session, with the guarantee suite green across a pinned seed batch.
+Part of [the plan](../README.md). This is build-order step 4: the seeded construction of Three Branches under [village.md](../village.md)'s guarantees, replacing the step 2 fixture village. The hands-on surface is any seed's village explored in the browser view through a local watch session, with the guarantee suite green across a pinned seed batch.
 
 ## Why this is its own seam
 
-village.md is a complete generative specification with hard guarantees and no game rules. The generator is pure geometry over the layout types step 2 fixed, and building it after the debug renderer means every generation change is inspected visually in the real viewer instead of through a throwaway map tool.
+village.md is a complete generative specification with hard guarantees and no game rules. The generator is pure geometry over the layout types step 2 fixed, and building it after the renderer means every generation change is inspected visually in the real viewer instead of through a throwaway map tool.
 
 ## What to build
 
 ### The generation pipeline
 
-village.md's fixed order, drawing only from the generation stream: boundary and river, road and bridges, district anchors, buildings and homes, footpaths, ground classes, scenery, props. Prop counts, footprints, and placement districts come from `props.json`. Every guarantee is enforced for every seed: the stable features placed once, one connected walkable region including interiors and bridges, ten homes with doorways onto walkable ground, a valid standing position for every prop, the placement and overlap rules for buildings, interior props, and exterior objects, a clear spawn on the road centerline, and the per-channel bridge counts.
+village.md's fixed order, drawing only from the generation stream: boundary and river, road and bridges, district anchors, buildings and homes, footpaths, ground classes, scenery, props. Prop counts, footprints, and placement districts come from `props.json`. Every guarantee is enforced for every seed: the stable features placed once, one connected walkable region including interiors and bridges, five homes with doorways onto walkable ground, a valid standing position for every prop, the placement and overlap rules for buildings, interior props, and exterior objects, a clear spawn on the road centerline, and the per-channel bridge counts.
 
 ### The swap
 
@@ -29,4 +29,4 @@ village.md's fixed order, drawing only from the generation stream: boundary and 
 
 ## Done when
 
-Any seed renders as a valid, connected, fully guaranteed village in the browser debug view, and the suite is green across the batch.
+Any seed renders as a valid, connected, fully guaranteed village in the browser view, and the suite is green across the batch.

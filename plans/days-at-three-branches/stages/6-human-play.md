@@ -6,17 +6,17 @@ Part of [the plan](../README.md). This is build-order step 6: the visitor seat l
 
 ## Why this is its own seam
 
-This is the platform's first analog human input: pointer and keyboard compose a continuous `Dict` action (heading, speed, action) inside the 500 millisecond window, where every earlier environment sent discrete choices. It deserves its own build and test pass on top of an approved interaction design.
+This is the platform's first analog human input: pointer and keyboard compose a continuous `Dict` action (heading, speed, action) inside the 250 millisecond window, where every earlier environment sent discrete choices. It deserves its own build and test pass on top of an approved interaction design.
 
 ## What to build
 
 ### Locomotion
 
-Pointer and keyboard input composed into a heading and relative speed each input window, per the 5.2 specification. The 500 millisecond cadence is the input window; there is no separate move clock.
+Pointer and keyboard input composed into a heading and relative speed each input window, per the 5.2 specification. The 250 millisecond cadence is the input window; there is no separate move clock.
 
 ### Expression and speech
 
-The expression palette with the nine emotes plus use, and the use-preview highlight computed by the same pre-tick selection rule the environment applies, informational only. Chat through the host page's panel, with recipient choices following the talk policy: nearest first, the nearest as default, broadcast when nobody is near. Spectators and replay viewers receive no input.
+The expression palette with the nine emotes plus use, and the use-preview highlight computed by the same reach-plus-unblocked-line selection rule the environment applies, informational only. Chat through the host page's panel, with recipient choices following the talk policy: nearest first, the nearest as default, broadcast when nobody is near. Spectators and replay viewers receive no input.
 
 ### Session behavior
 
