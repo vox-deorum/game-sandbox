@@ -22,7 +22,7 @@ META = EnvironmentMeta(
     display_name="Hearts",
     description=(
         "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of "
-        "spades. Or, shoot the moon by taking them all to flip the score!"
+        "spades. Or, shoot the moon by taking them all!"
     ),
     stepping="sequential",
     builtin_agents=(BuiltinAgent(name="naive", label="Naive agent"),),

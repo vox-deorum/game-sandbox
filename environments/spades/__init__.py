@@ -42,7 +42,7 @@ META = EnvironmentMeta(
     display_name="Spades",
     description=(
         "Four-player partnership Spades: bid the tricks you will take, then follow suit and play "
-        "them out with spades trump. Your agent play in teams."
+        "them out with spades trump."
     ),
     stepping="sequential",
     builtin_agents=(

@@ -32,7 +32,7 @@ META = EnvironmentMeta(
     display_name="Flappy Bird",
     description=(
         "A Flappy Bird style single-agent game: tap to flap and steer the bird through the "
-        "gaps between pipes. Brought in through the single-agent compatibility wrapper."
+        "gaps between pipes."
     ),
     stepping="sequential",
     builtin_agents=(BuiltinAgent(name="naive", label="Naive agent"),),

@@ -6,7 +6,7 @@
         "name": "naive"
       }
     ],
-    "description": "A Flappy Bird style single-agent game: tap to flap and steer the bird through the gaps between pipes. Brought in through the single-agent compatibility wrapper.",
+    "description": "A Flappy Bird style single-agent game: tap to flap and steer the bird through the gaps between pipes.",
     "display_name": "Flappy Bird",
     "env_id": "flappy_bird",
     "episode_limit_ms": 120000,
@@ -60,7 +60,7 @@
         "name": "naive"
       }
     ],
-    "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades. Or, shoot the moon by taking them all to flip the score!",
+    "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades. Or, shoot the moon by taking them all!",
     "display_name": "Hearts",
     "env_id": "hearts",
     "episode_limit_ms": 120000,
@@ -392,7 +392,7 @@
         "name": "cautious"
       }
     ],
-    "description": "Four-player partnership Spades: bid the tricks you will take, then follow suit and play them out with spades trump. Your agent play in teams.",
+    "description": "Four-player partnership Spades: bid the tricks you will take, then follow suit and play them out with spades trump.",
     "display_name": "Spades",
     "env_id": "spades",
     "episode_limit_ms": 120000,
