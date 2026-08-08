@@ -27,7 +27,7 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 ### The worked example
 
-Exactly one, kept internal, Season-1-shaped: an FSM per unit type where the archer falls back and fires in the same activation, the cavalry flanks, and the footman holds the line. Quality bar: beats naive across a pinned seed set. `PUBLISHED_EXAMPLES` stays empty.
+Exactly one, kept internal, Season-3-shaped: an FSM per unit type where the archer falls back and fires in the same activation, the cavalry flanks, and the footman holds the line. Quality bar: beats naive across a pinned seed set. `PUBLISHED_EXAMPLES` stays empty.
 
 ## Tests
 
