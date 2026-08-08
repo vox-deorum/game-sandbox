@@ -18,7 +18,7 @@ Skirmish at Crane Reach is a team tactics game on a hex field: two sides fight o
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
 | `sandbox/` | Provided local game and commands. Do not edit it. |
-| `sandbox/crane.py` | Provided helpers you may import from `agent.py`: encode and decode paths, measure hex distance, and build legal move and stay orders |
+| `sandbox/crane/` | Provided helpers you may import from `agent.py`, in six namespaces: `action` builds orders and reads what is legal, `me` reads your own unit, `visible` and `roster` read the other units, `tile` does hex geometry and terrain, and `paths` owns the path encoding |
 | `sandbox/observation_types.py` | Provided TypedDicts for the observation and action shapes, for editors and type checkers |
 
 Do not edit `sandbox/`, `requirements.in`, or `requirements.txt`. The template uses the same pinned packages locally and on the server. Ask your instructor if you need another package.
@@ -59,9 +59,9 @@ The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manu
 Open `agent.py` and implement:
 
 - `reset(seed)`, called once before each match.
-- `act(observation)`, called on your unit's turn. `observation` is a dict with `observation` and `action_mask` keys. Return a dict with a `path` and a `target` choice, built with the `move()` and `stay()` helpers in `sandbox.crane`.
+- `act(observation)`, called on your unit's turn. `observation` is a dict with `observation` and `action_mask` keys. Return a dict with a `path` and a `target` choice, built with `action.move()` or `action.stay()` from `sandbox.crane`.
 
-Read [`environment.md`](environment.md) before you start. It explains the starter agent, the observation, the action mask, the `sandbox.crane` helpers, and messaging.
+Read [`environment.md`](environment.md) before you start. It explains the starter agent line by line, then the observation, the action mask, the `sandbox.crane` helpers, and messaging.
 
 Two optional methods are available. The [agent interface reference]({{DOCS_URL}}students/agent-interface/) covers both in full:
 
@@ -70,7 +70,7 @@ Two optional methods are available. The [agent interface reference]({{DOCS_URL}}
 
 Leave an optional method out when you do not use it.
 
-The template marches toward the mirror of its spawn tile until an enemy comes into view, then walks one step at a time toward the nearest one and names it. `TODO(you)` in `act` marks where to improve it. Every unit on your side runs its own separately constructed `Agent` instance, so nothing you store on `self` carries over between your units.
+The template walks one step toward the enemy side until an enemy comes into view, then walks one step at a time toward the nearest one and names it. `TODO(you)` in `act` marks where to improve it. Every unit on your side runs its own separately constructed `Agent` instance, so nothing you store on `self` carries over between your units.
 
 ## Submit
 

@@ -96,7 +96,7 @@ Four directions per path suffice: the highest movement stat is 4 and every step 
 
 Every observation carries an authoritative action mask with one binary vector per action component. The stay bit and the none bit are always 1, and the remaining path and target bits mark exactly the walkable paths and the nameable targets. A target masked 1 is nameable, not a guaranteed strike. `env.step()` rejects an action outside the `Dict` space and rejects one any of whose components is masked 0. Such an action is an illegal participant action. The environment entry's `default_action(env, player_id)` returns `{"path": 0, "target": 0}`, stand still, which is legal in every reachable state and is what the harness uses for a late or missing action. Per the ruleset, that order still strikes when enemies are in range, so a late or crashed agent fights back automatically.
 
-Target values index the acting player's enemy roster in player order, value i naming slot i - 1, so the same value names a different unit for Red and Blue. The agent template ships `encode_path(directions)` and `decode_path(path_id)` for the complete 0 through 1554 codec. An empty path uses 0, and invalid directions or ids raise `ValueError`. Its `move(path_id, target_id=None, observation=None)` and `stay(target_id=None, observation=None)` helpers return action Dicts and resolve a target id to its roster slot through the observation. It also provides `legal_paths(observation)` and `nameable_targets(observation)`, both driven by the authoritative mask rather than by a second implementation of the rules.
+Target values index the acting player's enemy roster in player order, value i naming slot i - 1, so the same value names a different unit for Red and Blue. The agent template ships a small `sandbox.crane` helper package, and its `paths` namespace owns the complete 0 through 1554 codec, `paths.encode(directions)` and `paths.decode(path_id)`. An empty path uses 0, and invalid directions or ids raise `ValueError`. The package's `action` namespace builds orders through `action.move(path_id, target_id=None, observation=None)` and `action.stay(target_id=None, observation=None)`, which return action Dicts and resolve a target id to its roster slot through the observation, and reads what is legal through `action.legal_paths(observation)` and `action.possible_targets(observation)`, both driven by the authoritative mask rather than by a second implementation of the rules.
 
 ## Observations
 
@@ -116,7 +116,7 @@ Its schema is fixed by the resolved parameters at construction and stays constan
 
 | Field | Space | Content |
 | --- | --- | --- |
-| self | Dict | unit_id, type, position, hit_points, movement_points |
+| self | Dict | unit_id, type, position, hit_points, movement_points, direction |
 | visible_units | Sequence of Dicts | every other unit within vision, in player order: unit_id, side, type, position, hit_points |
 | round | Discrete | the current round number, from 1 through round_cap |
 | capture | Dict | scores for red and blue and the target; all 0 when the capture variant is off |
@@ -132,6 +132,7 @@ Its schema is fixed by the resolved parameters at construction and stays constan
 - `parameters` contains `seat_plan` as `Text(max_length=8)`; `field_extent` as `Discrete(18, start=5)`; `terrain`, `wasteland`, and `unit_abilities` as `Discrete(2)` flags; `capture_zones` as `Discrete(6)`; `capture_target` as `Discrete(9991, start=10)`; and `round_cap` as `Discrete(9901, start=100)`.
 - visible_units excludes the observing unit itself and is emitted as a tuple.
 - movement_points always equals the type's movement stat, since a unit starts every activation with full points and an activation is a single step.
+- `direction` is the digit that heads toward the enemy side, `2` (east) for red and `5` (west) for blue, constant for the whole match.
 - `action_mask` carries one binary vector per action component, in that component's value order. The stay bit and the none bit are always 1. A player receives no later observation after it terminates.
 - The inbox is not part of the observation; messages travel through the platform chat hook.
 
@@ -194,7 +195,7 @@ All players are human-capable so a student can control a side's primary unit, wi
 
 ## Package and student materials
 
-The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's crane helper module owns the stable path encoding and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
+The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's crane helper package owns the stable path encoding through its `paths` namespace and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
 
 ## Conformance notes
 

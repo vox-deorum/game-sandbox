@@ -9,7 +9,7 @@ set of seeds it is expected to win every time.
 from __future__ import annotations
 
 import agent
-from sandbox.crane import decode_path, distance, encode_path, neighbors
+from sandbox.crane import paths, tile
 from sandbox.env import META, make_env
 from sandbox.env.skirmish_crane import naive
 from sandbox.harness.environment import resolve_parameters
@@ -72,7 +72,7 @@ def _visible(unit_id: str, coordinates: tuple[int, int], hit_points: int) -> dic
 def _observation(
     unit_id: str,
     coordinates: tuple[int, int],
-    paths: tuple[tuple[int, ...], ...],
+    walkable: tuple[tuple[int, ...], ...],
     seen: tuple[dict[str, object], ...] = (),
     *,
     red: tuple[str, ...] = SKIRMISH_ROSTER,
@@ -80,15 +80,15 @@ def _observation(
 ):
     """Assemble one activation: who we are, what we see, and exactly what the mask allows.
 
-    ``paths`` lists the direction tuples the mask marks walkable; standing still is always
+    ``walkable`` lists the direction tuples the mask marks walkable; standing still is always
     legal and is added for you. Every visible enemy is nameable, as it is in a real match.
     """
     side, unit_type, _ = unit_id.split("_")
     rosters = {"red": _roster("red", red), "blue": _roster("blue", blue)}
     enemies = rosters["blue" if side == "red" else "red"]
     path_mask = [0] * PATH_VALUES
-    for directions in ((), *paths):
-        path_mask[encode_path(directions)] = 1
+    for directions in ((), *walkable):
+        path_mask[paths.encode(directions)] = 1
     watched = {unit["unit_id"] for unit in seen}
     target_mask = [1] + [int(entry["unit_id"] in watched) for entry in enemies]
     hit_points, movement = STATS[unit_type]
@@ -100,6 +100,7 @@ def _observation(
                 "position": _position(coordinates),
                 "hit_points": hit_points,
                 "movement_points": movement,
+                "direction": 2 if side == "red" else 5,
             },
             "visible_units": tuple(seen),
             "round": 3,
@@ -123,10 +124,7 @@ def _observation(
 
 def _endpoint(coordinates: tuple[int, int], path_id: int) -> dict[str, int]:
     """Walk a chosen path from a starting tile to the tile the order ends on."""
-    tile = _position(coordinates)
-    for digit in decode_path(path_id):
-        tile = neighbors(tile)[digit]
-    return tile
+    return tile.at_path_end(_position(coordinates), path_id)
 
 
 # -- the three state machines on constructed activations -----------------------------------------
@@ -167,8 +165,8 @@ def test_the_archer_gives_ground_and_still_covers_its_victim():
     assert memory.state == agent.FALL_BACK
     # It walks the full two tiles away from the cavalry that is on it, and the enemy archer it
     # names is still inside bow range from where it lands, so the retreat is also a shot.
-    assert distance(end, _position((8, 7))) == 3
-    assert distance(end, _position((11, 7))) <= agent.ARCHER_RANGE
+    assert tile.distance(end, _position((8, 7))) == 3
+    assert tile.distance(end, _position((11, 7))) <= agent.ARCHER_RANGE
     assert action["target"] == 2  # blue_archer_0, the second slot of the enemy roster
 
 
@@ -197,16 +195,16 @@ def test_the_cavalry_charges_the_archer_from_the_tile_no_escort_covers():
     seen = (_visible("blue_archer_0", (10, 7), 6), _visible("blue_footman_0", (9, 8), 12))
     # Two tiles beside the enemy archer are on offer: a short step into its escort's reach, and
     # a three-tile ride that lands where only the archer stands next to it.
-    paths = ((2, 2), (2, 2, 1))
+    walkable = ((2, 2), (2, 2, 1))
     memory = agent.Memory(seed=7)
 
-    action = agent.cavalry_order(_observation("red_cavalry_0", position, paths, seen), memory)
+    action = agent.cavalry_order(_observation("red_cavalry_0", position, walkable, seen), memory)
 
     end = _endpoint(position, action["path"])
     assert memory.state == agent.CHARGE
-    assert distance(_position(position), end) >= agent.CHARGE_DISTANCE
-    assert distance(end, _position((10, 7))) == 1  # beside the victim
-    assert distance(end, _position((9, 8))) > 1  # and out of the escort's reach
+    assert tile.distance(_position(position), end) >= agent.CHARGE_DISTANCE
+    assert tile.distance(end, _position((10, 7))) == 1  # beside the victim
+    assert tile.distance(end, _position((9, 8))) > 1  # and out of the escort's reach
     assert action["target"] == 2  # blue_archer_0
 
 
@@ -218,41 +216,43 @@ def test_the_footman_steps_back_into_the_shield_wall_to_screen():
         _visible("red_archer_0", (5, 7), 6),
         _visible("blue_footman_0", (11, 7), 12),
     )
-    paths = ((5,), (6,), (1,))
+    walkable = ((5,), (6,), (1,))
     memory = agent.Memory(seed=7)
     observation = _observation(
-        "red_footman_0", position, paths, seen, red=("footman", "footman", "archer", "cavalry")
+        "red_footman_0", position, walkable, seen, red=("footman", "footman", "archer", "cavalry")
     )
 
     action = agent.footman_order(observation, memory)
 
     end = _endpoint(position, action["path"])
     assert memory.state == agent.SCREEN
-    assert action["path"] == encode_path((5,))  # the one offered step that closes the wall
-    assert distance(end, _position((6, 7))) == 1  # shoulder to shoulder with the other footman
-    assert distance(end, _position((5, 7))) <= 2  # still covering the archer
+    assert action["path"] == paths.encode((5,))  # the one offered step that closes the wall
+    assert tile.distance(end, _position((6, 7))) == 1  # shoulder to shoulder with the other footman
+    assert tile.distance(end, _position((5, 7))) <= 2  # still covering the archer
 
 
 def test_the_footman_fights_with_support_and_waits_without_it():
     position = (7, 7)
     enemy = _visible("blue_footman_0", (9, 7), 12)
     ally = _visible("red_footman_1", (6, 7), 12)
-    paths = ((2,), (6,))
+    walkable = ((2,), (6,))
     roster = ("footman", "footman", "archer", "cavalry")
 
     supported = agent.Memory(seed=7)
     action = agent.footman_order(
-        _observation("red_footman_0", position, paths, (enemy, ally), red=roster), supported
+        _observation("red_footman_0", position, walkable, (enemy, ally), red=roster), supported
     )
     assert supported.state == agent.ENGAGE
-    assert distance(_endpoint(position, action["path"]), _position((9, 7))) == 1
+    assert tile.distance(_endpoint(position, action["path"]), _position((9, 7))) == 1
     assert action["target"] == 1  # blue_footman_0, the first slot of the enemy roster
 
     alone = agent.Memory(seed=7)
-    action = agent.footman_order(_observation("red_footman_0", position, paths, (enemy,), red=roster), alone)
+    action = agent.footman_order(
+        _observation("red_footman_0", position, walkable, (enemy,), red=roster), alone
+    )
     assert alone.state == agent.SCREEN
     # A healthy enemy footman with no friend of ours near it is not a fight to start alone.
-    assert distance(_endpoint(position, action["path"]), _position((9, 7))) > 1
+    assert tile.distance(_endpoint(position, action["path"]), _position((9, 7))) > 1
 
 
 def test_a_kill_out_of_reach_does_not_license_a_melee_with_somebody_else():
@@ -260,16 +260,18 @@ def test_a_kill_out_of_reach_does_not_license_a_melee_with_somebody_else():
     # activation. That is no reason to walk into the healthy footman standing two tiles east.
     position = (7, 7)
     seen = (_visible("blue_archer_0", (3, 7), 1), _visible("blue_footman_0", (9, 7), 12))
-    paths = ((2,), (6,), (5,))
+    walkable = ((2,), (6,), (5,))
     memory = agent.Memory(seed=7)
 
     action = agent.footman_order(
-        _observation("red_footman_0", position, paths, seen, red=("footman", "footman", "archer", "cavalry")),
+        _observation(
+            "red_footman_0", position, walkable, seen, red=("footman", "footman", "archer", "cavalry")
+        ),
         memory,
     )
 
     assert memory.state == agent.SCREEN
-    assert distance(_endpoint(position, action["path"]), _position((9, 7))) > 1
+    assert tile.distance(_endpoint(position, action["path"]), _position((9, 7))) > 1
 
 
 # -- whole matches against the built-in naive side -------------------------------------------------

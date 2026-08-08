@@ -8,12 +8,12 @@ Ship Skirmish at Crane Reach as a complete Game Sandbox environment: a student c
 
 ## Scope
 
-Build everything the [environment specification](environment.md) calls the platform implementation: the rules engine for the [ruleset](ruleset.md) with all five variants, the PettingZoo environment with its two-component Dict action space and masks, the `crane-reach-field` hex renderer with human play, the template layer with the skirmish helper module, the canonical student guide, one worked example, and the Season 4 starter tactical block library from [pedagogy.md](pedagogy.md).
+Build everything the [environment specification](environment.md) calls the platform implementation: the rules engine for the [ruleset](ruleset.md) with all five variants, the PettingZoo environment with its two-component Dict action space and masks, the `crane-reach-field` hex renderer with human play, the template layer with the skirmish helper package, the canonical student guide, two internal worked examples, and the Season 4 starter tactical block library from [pedagogy.md](pedagogy.md).
 
 Non-goals, recorded so they stay deliberate:
 
 - The bronze, silver, and gold instructor anchors are later work. The first implementation ships `naive` alone, and the specification's builtin table describes the eventual state.
-- Exactly one worked example, kept internal. `PUBLISHED_EXAMPLES` stays empty.
+- Two worked examples, marcher and vanguard, both kept internal. `PUBLISHED_EXAMPLES` stays empty.
 
 ## Spec references
 
@@ -32,7 +32,7 @@ Each step is its own subplan under [stages/](stages/) and ends with something yo
 3. **[Crane Reach Field renderer, view and replay, and registration](stages/3-renderer-view-and-registration.md).** The hex renderer in a deliberate placeholder style, and registration: the package joins the catalog with seed versions of the participant artifacts. Hands-on: watch a live naive match and scrub its replay in the web app, and `npm run play` runs a rendered local match in watch mode.
 4. **Art style, HUD, and camera.** The visual identity in three parts, each signed off by the owner: [4.1 art style](stages/4-1-art-style.md), the Estuary Ink board and pieces replacing the placeholder; [4.2 HUD](stages/4-2-hud.md), the information layer and the step 5 interaction UI, specified with text mockups; then [4.3 camera](stages/4-3-camera.md), the fitted, pannable, and zoomable battlefield below the fixed HUD. Hands-on: both fixture recordings replay in the final style and the battlefield can be explored without hiding any edge at reset.
 5. **[Human play](stages/5-human-play.md).** Fog of war, legal-by-construction order composition, and the move clock, with renderer legality provably agreeing with the environment's masks. It also brings both local launchers up to the browser's wide-seat control. Hands-on: control a seat's primary unit with a companion, or control the whole side, in the browser and in local play.
-6. **[Template, helper, guide, and the worked example](stages/6-template-and-materials.md).** The completed student surface: the skirmish helper module owning the stable path encoding, the finished guide, and the internal example. Hands-on: the full student flow from clone to a local win over naive.
+6. **[Template, helper, guide, and the worked examples](stages/6-template-and-materials.md).** The completed student surface: the skirmish helper package owning the stable path encoding, the finished guide, and the two internal examples, marcher and vanguard. Hands-on: the full student flow from clone to a local win over naive with vanguard.
 7. **[Season 4 starter tactical blocks](stages/7-starter-tactical-blocks.md).** The predefined tactical block library in the template layer, with tests. Hands-on: a block-driven side maneuvers coherently in the browser.
 
 ## Done when

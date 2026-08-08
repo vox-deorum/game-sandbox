@@ -10,13 +10,13 @@ Season 4's design issue is decentralized strategy as assignment: each unit insta
 
 ## What to build
 
-`template/sandbox/blocks.py` on top of `sandbox/crane.py`, plus a README section showing how to wire blocks into an agent.
+`template/sandbox/blocks.py` on top of the `sandbox/crane/` helpers, plus a README section showing how to wire blocks into an agent.
 
 ### The block interface
 
 A block is a pure decision function: `decide(observation, memory, goal)` returns a mask-legal action Dict built through the helpers, or None meaning the block has nothing useful, which falls through to stay. `memory` is the unit's own instance dict and `goal` is a position or None. No classes with hidden state: the unit's code owns its memory, matching the ruleset's no-shared-controller rule.
 
-Blocks are mask-driven, not planners: they enumerate the legal path bits, call `decode_path` from the crane helper, and score endpoints by distance to goal, range bands, and cover. They do not duplicate the path codec. No A\* and no route memory; long-range routing stays student work, which is what keeps the library from trivializing Seasons 2 through 4.
+Blocks are mask-driven, not planners: they enumerate the legal path bits through `action.legal_paths`, read where each one lands with `tile.at_path_end`, and score endpoints by distance to goal, range bands, and cover. They do not duplicate the path codec. No A\* and no route memory; long-range routing stays student work, which is what keeps the library from trivializing Seasons 2 through 4.
 
 ### The starter set
 

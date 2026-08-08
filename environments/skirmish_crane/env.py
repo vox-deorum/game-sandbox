@@ -16,6 +16,7 @@ from pettingzoo.utils.env import AECEnv
 
 from .battlefield import CAPTURE_ZONES_BOUNDS, FIELD_EXTENT_BOUNDS
 from .engine import COMPOSITIONS, Match, MatchConfig, Order
+from .hexes import DIRECTIONS
 from .paths import MAX_PATH_ID, decode_path, encode_path
 
 if TYPE_CHECKING:
@@ -41,6 +42,10 @@ if TYPE_CHECKING:
 _TEXT_CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _SIDES = ("red", "blue")
 _KINDS = ("footman", "archer", "cavalry")
+# The direction digit a side walks to head toward the enemy, published in every unit's
+# observation. Red spawns on the low-q half of the field and blue on its point reflection, so
+# red walks east and blue west, and neither has to work out which way it is facing.
+FORWARD_DIRECTION = {"red": 2, "blue": 5}
 # The battlefield generator owns the field bounds; these two have no engine-side check, so the
 # factory enforces them. The metadata declarations and parameter spaces reuse all four pairs.
 CAPTURE_TARGET_BOUNDS = (10, 10_000)
@@ -154,6 +159,7 @@ class SkirmishCraneEnv(AECEnv):
                 "position": position,
                 "hit_points": spaces.Discrete(13),
                 "movement_points": spaces.Discrete(5),
+                "direction": spaces.Discrete(len(DIRECTIONS) + 1),
             }
         )
         tile = spaces.Dict({"terrain": _text(5), "feature": _text(6)})
@@ -340,6 +346,7 @@ class SkirmishCraneEnv(AECEnv):
             "position": self._position(unit.position),
             "hit_points": unit.hit_points,
             "movement_points": unit.stats.movement_points,
+            "direction": FORWARD_DIRECTION[unit.side],
         }
         visible: tuple[VisibleUnit, ...] = tuple(
             {

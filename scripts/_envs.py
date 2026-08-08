@@ -117,7 +117,7 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         if package_dir.name in {"hearts", "spades"}
         else ("agent.py", "sandbox/features.py", "sandbox/observation_types.py")
         if package_dir.name == "flappy_bird"
-        else ("agent.py", "sandbox/crane.py", "sandbox/observation_types.py")
+        else ("agent.py", "sandbox/crane/", "sandbox/observation_types.py")
         if package_dir.name == "skirmish_crane"
         else ()
     )

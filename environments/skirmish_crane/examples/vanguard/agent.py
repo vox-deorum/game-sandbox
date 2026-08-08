@@ -28,8 +28,10 @@ Advance is the resting state: take up station, whether because nothing is in sig
 because the fight in front of us is not one to join alone. A footman with someone to guard
 screens instead, since standing beside the archer is already its station.
 
-Everything is built from the ``sandbox.crane`` helpers: paths come from ``legal_paths`` and
-targets from ``nameable_targets``, so every order this file returns is legal by construction.
+Everything is built from the ``sandbox.crane`` helpers: the two sides in sight come from
+``visible``, paths from ``action.legal_paths`` and targets from ``action.possible_targets``, so
+every order this file returns is legal by construction. A candidate tile is called a spot
+throughout, since ``tile`` names the geometry helpers.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from __future__ import annotations
 import random
 from collections.abc import Callable
 
-from sandbox.crane import DIRECTIONS, decode_path, distance, legal_paths, move, nameable_targets, stay
+from sandbox.crane import action, me, tile, visible
 from sandbox.observation_types import (
     AxialPosition,
     SkirmishAction,
@@ -91,16 +93,14 @@ class _View:
     def __init__(self, observation: SkirmishObservation, memory: Memory) -> None:
         state = observation["observation"]
         self.observation = observation
-        self.unit = state["self"]
-        self.side = self.unit["unit_id"].split("_", 1)[0]
-        self.position = self.unit["position"]
-        self.enemies = tuple(unit for unit in state["visible_units"] if unit["side"] != self.side)
-        self.allies = tuple(unit for unit in state["visible_units"] if unit["side"] == self.side)
-        self.nameable = frozenset(nameable_targets(observation))
+        self.unit_type = me.unit_type(observation)
+        self.position = me.position(observation)
+        self.enemies = tuple(visible.enemies(observation))
+        self.allies = tuple(visible.allies(observation))
+        self.nameable = frozenset(action.possible_targets(observation))
         self.endpoints = _endpoints(observation, self.position)
         self.field_side = state["battlefield"]["side"]
-        middle = (self.field_side - 1) // 2
-        self.center: AxialPosition = {"q": middle, "r": middle}
+        self.center = tile.at_center(observation)
         # The ground worth fighting over, and the two rings the detachment forms up on. The
         # smallest field the game allows has extent 5, so the battle area is never degenerate.
         self.battle_radius = state["parameters"]["field_extent"] - BATTLE_MARGIN
@@ -111,33 +111,24 @@ class _View:
         memory.idle = 0 if self.enemies else memory.idle + 1
 
 
-# -- reading the reachable tiles ---------------------------------------------------------------
-
-
-def _walk(position: AxialPosition, path_id: int) -> AxialPosition:
-    """Return the tile a path ends on, stepping one direction digit at a time."""
-    q, r = position["q"], position["r"]
-    for digit in decode_path(path_id):
-        dq, dr = DIRECTIONS[digit]
-        q, r = q + dq, r + dr
-    return {"q": q, "r": r}
+# -- reading the reachable spots -----------------------------------------------------------------
 
 
 def _endpoints(observation: SkirmishObservation, position: AxialPosition) -> dict[tuple[int, int], int]:
-    """Map every tile this activation can end on to the shortest legal path that ends there.
+    """Map every spot this activation can end on to the shortest legal path that ends there.
 
-    Several paths reach the same tile. Path ids are numbered shortest first, and ``legal_paths``
-    hands them over in ascending order, so the first id that reaches a tile is the shortest way
+    Several paths reach the same spot. Path ids are numbered shortest first, and ``legal_paths``
+    hands them over in ascending order, so the first id that reaches a spot is the shortest way
     there: the fewest tiles entered, and the least of whatever those tiles cost.
     """
     chosen: dict[tuple[int, int], int] = {}
-    for path_id in legal_paths(observation):
-        end = _walk(position, path_id)
+    for path_id in action.legal_paths(observation):
+        end = tile.at_path_end(position, path_id)
         chosen.setdefault((end["q"], end["r"]), path_id)
     return chosen
 
 
-def _tile(coordinates: tuple[int, int]) -> AxialPosition:
+def _spot(coordinates: tuple[int, int]) -> AxialPosition:
     """Turn an endpoint key back into the position shape the helpers read."""
     return {"q": coordinates[0], "r": coordinates[1]}
 
@@ -145,53 +136,53 @@ def _tile(coordinates: tuple[int, int]) -> AxialPosition:
 Score = Callable[[AxialPosition], tuple[int, ...]]
 
 
-def _best(view: _View, memory: Memory, tiles: list[tuple[int, int]], score: Score) -> int:
-    """Return the path id of the best scoring tile among ``tiles``, breaking ties at random."""
-    ranked = {tile: score(_tile(tile)) for tile in tiles}
+def _best(view: _View, memory: Memory, spots: list[tuple[int, int]], score: Score) -> int:
+    """Return the path id of the best scoring spot among ``spots``, breaking ties at random."""
+    ranked = {spot: score(_spot(spot)) for spot in spots}
     best = max(ranked.values())
-    return view.endpoints[memory.rng.choice(sorted(tile for tile in ranked if ranked[tile] == best))]
+    return view.endpoints[memory.rng.choice(sorted(spot for spot in ranked if ranked[spot] == best))]
 
 
 def _pick(view: _View, memory: Memory, score: Score) -> int:
-    """Return the path id of the best scoring tile this activation can reach."""
+    """Return the path id of the best scoring spot this activation can reach."""
     return _best(view, memory, list(view.endpoints), score)
 
 
 # -- reading the ground ------------------------------------------------------------------------
 
 
-def _area(view: _View, tile: AxialPosition) -> int:
-    """1 while a tile is inside the battle area, 0 once it is out in the wilds.
+def _area(view: _View, spot: AxialPosition) -> int:
+    """1 while a spot is inside the battle area, 0 once it is out in the wilds.
 
     Ranked ahead of every other consideration for the units that fight in the line, this is
     what stops a unit from following a fleeing enemy across the map and away from its side.
     """
-    return int(distance(tile, view.center) <= view.battle_radius)
+    return int(tile.distance(spot, view.center) <= view.battle_radius)
 
 
-def _station(view: _View, tile: AxialPosition, ring: int) -> int:
-    """Score a tile by how well it holds a station: ``ring`` tiles out from the field's middle.
+def _station(view: _View, spot: AxialPosition, ring: int) -> int:
+    """Score a spot by how well it holds a station: ``ring`` tiles out from the field's middle.
 
     Ring 0 is the middle itself, where the melee gathers. The archer's ring is larger, which
     keeps it behind the fighting, on our own approach to it, and still inside its range.
     """
-    return -abs(distance(tile, view.center) - ring)
+    return -abs(tile.distance(spot, view.center) - ring)
 
 
-def _travel(view: _View, tile: AxialPosition) -> int:
-    """How far a tile is from where the unit stands: the tie-breaker that keeps units settled."""
-    return distance(view.position, tile)
+def _travel(view: _View, spot: AxialPosition) -> int:
+    """How far a spot is from where the unit stands: the tie-breaker that keeps units settled."""
+    return tile.distance(view.position, spot)
 
 
-def _cohesion(view: _View, tile: AxialPosition) -> int:
-    """Reward tiles within arm's reach of a friend, so units that meet stay met.
+def _cohesion(view: _View, spot: AxialPosition) -> int:
+    """Reward spots within arm's reach of a friend, so units that meet stay met.
 
     Nobody knows where the rest of the detachment spawned, so the group assembles by sight:
     the first two units to see each other close up, and the third joins the pair it can see.
     """
     if not view.allies:
         return 0
-    return -min(COHESION_RANGE, min(distance(tile, ally["position"]) for ally in view.allies))
+    return -min(COHESION_RANGE, min(tile.distance(spot, ally["position"]) for ally in view.allies))
 
 
 # -- reading the enemy ---------------------------------------------------------------------------
@@ -212,13 +203,13 @@ def _victim(view: _View) -> VisibleUnit | None:
 
 
 def _reachable_victim(view: _View) -> tuple[VisibleUnit, list[tuple[int, int]]] | None:
-    """The best enemy this activation should end up next to, with the tiles that do it.
+    """The best enemy this activation should end up next to, with the spots that do it.
 
     Reachable is not the same as worth reaching, and the two are decided about the same enemy:
     a one-hit kill we cannot get to never licenses walking into somebody else's melee.
     """
     for enemy in sorted(view.enemies, key=_kill_order):
-        beside = [tile for tile in view.endpoints if distance(_tile(tile), enemy["position"]) == 1]
+        beside = [spot for spot in view.endpoints if tile.distance(_spot(spot), enemy["position"]) == 1]
         if beside and _worth_joining(view, enemy):
             return enemy, beside
     return None
@@ -239,38 +230,38 @@ def _worth_joining(view: _View, victim: VisibleUnit) -> bool:
     Otherwise the unit holds its station and lets the enemy come to the whole detachment
     instead of meeting it one unit at a time.
     """
-    if victim["hit_points"] <= DAMAGE[view.unit["type"]] or victim["type"] == "archer":
+    if victim["hit_points"] <= DAMAGE[view.unit_type] or victim["type"] == "archer":
         return True
     if _pressure(view, view.position) <= 1:
         return True
-    return any(distance(ally["position"], victim["position"]) <= SUPPORT_RANGE for ally in view.allies)
+    return any(tile.distance(ally["position"], victim["position"]) <= SUPPORT_RANGE for ally in view.allies)
 
 
-def _escorts(view: _View, tile: AxialPosition, victim: VisibleUnit) -> int:
-    """Count the enemies other than the victim that stand next to a tile."""
+def _escorts(view: _View, spot: AxialPosition, victim: VisibleUnit) -> int:
+    """Count the enemies other than the victim that stand next to a spot."""
     return sum(
         1
         for enemy in view.enemies
-        if enemy["unit_id"] != victim["unit_id"] and distance(tile, enemy["position"]) == 1
+        if enemy["unit_id"] != victim["unit_id"] and tile.distance(spot, enemy["position"]) == 1
     )
 
 
-def _pressure(view: _View, tile: AxialPosition) -> int:
-    """The distance from a tile to the nearest enemy, or the whole field when none is in sight."""
+def _pressure(view: _View, spot: AxialPosition) -> int:
+    """The distance from a spot to the nearest enemy, or the whole field when none is in sight."""
     if not view.enemies:
         return view.field_side
-    return min(distance(tile, enemy["position"]) for enemy in view.enemies)
+    return min(tile.distance(spot, enemy["position"]) for enemy in view.enemies)
 
 
-def _shelter(view: _View, tile: AxialPosition) -> int:
-    """Prefer tiles near the friends who can cover us, or our station while we are alone.
+def _shelter(view: _View, spot: AxialPosition) -> int:
+    """Prefer spots near the friends who can cover us, or our station while we are alone.
 
     This is what turns a retreat into a useful move: the archer gives ground toward its own
     line, so whatever chases it arrives in front of the footman and the cavalry.
     """
     if view.allies:
-        return -min(distance(tile, ally["position"]) for ally in view.allies)
-    return _station(view, tile, view.archer_station)
+        return -min(tile.distance(spot, ally["position"]) for ally in view.allies)
+    return _station(view, spot, view.archer_station)
 
 
 # -- building the order --------------------------------------------------------------------------
@@ -280,30 +271,30 @@ def _order(view: _View, path_id: int, victim: VisibleUnit | None = None) -> Skir
     """Turn a chosen path and an intended victim into one legal order."""
     named = victim["unit_id"] if victim is not None and victim["unit_id"] in view.nameable else None
     if path_id == 0:
-        return stay(named, view.observation)
-    return move(path_id, named, view.observation)
+        return action.stay(named, view.observation)
+    return action.move(path_id, named, view.observation)
 
 
-def _mirror(position: AxialPosition, field_side: int) -> AxialPosition:
-    """Return the tile opposite a tile: the enemy half's answer to our own spawn."""
-    return {"q": field_side - 1 - position["q"], "r": field_side - 1 - position["r"]}
+def _march_on(goal: AxialPosition) -> Score:
+    """Score spots purely by how much closer to ``goal`` they land."""
+    return lambda spot: (-tile.distance(spot, goal),)
 
 
 def _hold(view: _View, memory: Memory, ring: int) -> SkirmishAction:
-    """Take up station and settle there, striking whatever is in range from the tile chosen."""
+    """Take up station and settle there, striking whatever is in range from the spot chosen."""
 
-    def score(tile: AxialPosition) -> tuple[int, ...]:
-        return (_cohesion(view, tile), _station(view, tile, ring), -_travel(view, tile))
+    def score(spot: AxialPosition) -> tuple[int, ...]:
+        return (_cohesion(view, spot), _station(view, spot, ring), -_travel(view, spot))
 
     return _order(view, _pick(view, memory, score), _victim(view))
 
 
 def _regroup(view: _View, memory: Memory, ring: int) -> SkirmishAction:
     """Nothing in sight: take up station, and push into the enemy half if nobody ever comes."""
-    at_station = abs(distance(view.position, view.center) - ring) <= RALLY_RADIUS
+    at_station = abs(tile.distance(view.position, view.center) - ring) <= RALLY_RADIUS
     if at_station and memory.idle > PATIENCE and memory.home is not None:
-        goal = _mirror(memory.home, view.field_side)
-        return _order(view, _pick(view, memory, lambda tile: (-distance(tile, goal),)))
+        goal = tile.at_mirror(memory.home, view.observation)
+        return _order(view, _pick(view, memory, _march_on(goal)))
     return _hold(view, memory, ring)
 
 
@@ -331,9 +322,9 @@ def archer_order(observation: SkirmishObservation, memory: Memory) -> SkirmishAc
     # away from a fight it is winning.
     room = ARCHER_RANGE if memory.state == FALL_BACK else ARCHER_COMFORT
 
-    def score(tile: AxialPosition) -> tuple[int, ...]:
-        covers = victim is not None and distance(tile, victim["position"]) <= ARCHER_RANGE
-        return (int(covers), min(_pressure(view, tile), room), _shelter(view, tile))
+    def score(spot: AxialPosition) -> tuple[int, ...]:
+        covers = victim is not None and tile.distance(spot, victim["position"]) <= ARCHER_RANGE
+        return (int(covers), min(_pressure(view, spot), room), _shelter(view, spot))
 
     return _order(view, _pick(view, memory, score), victim)
 
@@ -341,10 +332,10 @@ def archer_order(observation: SkirmishObservation, memory: Memory) -> SkirmishAc
 def cavalry_order(observation: SkirmishObservation, memory: Memory) -> SkirmishAction:
     """Ride around the enemy line and hit its softest unit from a tile nobody else covers.
 
-    States: charge when a tile beside an enemy worth fighting is reachable, flank while riding
+    States: charge when a spot beside an enemy worth fighting is reachable, flank while riding
     toward one, advance when nothing is in sight or nothing in sight is worth riding at alone.
     A charge prefers a long approach, which is the shape the cavalry's charge bonus rewards, and
-    a tile with no second enemy beside it, so the ride ends on the victim rather than in the
+    a spot with no second enemy beside it, so the ride ends on the victim rather than in the
     middle of its escort.
     """
     view = _View(observation, memory)
@@ -353,9 +344,9 @@ def cavalry_order(observation: SkirmishObservation, memory: Memory) -> SkirmishA
         memory.state = CHARGE
         victim, beside = reachable
 
-        def strike(tile: AxialPosition) -> tuple[int, ...]:
-            run = _travel(view, tile)
-            return (_area(view, tile), -_escorts(view, tile, victim), int(run >= CHARGE_DISTANCE), run)
+        def strike(spot: AxialPosition) -> tuple[int, ...]:
+            run = _travel(view, spot)
+            return (_area(view, spot), -_escorts(view, spot, victim), int(run >= CHARGE_DISTANCE), run)
 
         return _order(view, _best(view, memory, beside, strike), victim)
 
@@ -367,13 +358,13 @@ def cavalry_order(observation: SkirmishObservation, memory: Memory) -> SkirmishA
     memory.state = FLANK
     riding_at = focus
 
-    def approach(tile: AxialPosition) -> tuple[int, ...]:
-        # Close on the victim, and among the tiles that close the same amount take the one the
+    def approach(spot: AxialPosition) -> tuple[int, ...]:
+        # Close on the victim, and among the spots that close the same amount take the one the
         # rest of the enemy is not standing on: that is the way around their line, not into it.
         return (
-            _area(view, tile),
-            -distance(tile, riding_at["position"]),
-            -_escorts(view, tile, riding_at),
+            _area(view, spot),
+            -tile.distance(spot, riding_at["position"]),
+            -_escorts(view, spot, riding_at),
         )
 
     return _order(view, _pick(view, memory, approach), focus)
@@ -385,7 +376,7 @@ def footman_order(observation: SkirmishObservation, memory: Memory) -> SkirmishA
     States: engage when there is a reachable enemy worth fighting, screen whenever it has anyone
     in sight to guard or to watch, advance only when it is alone on an empty field. Screening
     keeps the footman one tile from the friendly archer and on the side the enemy is coming from,
-    and prefers a tile beside another footman, which is the shield wall the abilities variant
+    and prefers a spot beside another footman, which is the shield wall the abilities variant
     rewards. A footman that chases leaves the archer to die.
 
     A footman guarding an archer screens even with nothing in sight, so it is the one type that
@@ -402,8 +393,8 @@ def footman_order(observation: SkirmishObservation, memory: Memory) -> SkirmishA
         memory.state = ENGAGE
         victim, beside = reachable
 
-        def stand(tile: AxialPosition) -> tuple[int, ...]:
-            return (_area(view, tile), _shield_wall(view, tile), -distance(tile, _anchor(view)))
+        def stand(spot: AxialPosition) -> tuple[int, ...]:
+            return (_area(view, spot), _shield_wall(view, spot), -tile.distance(spot, _anchor(view)))
 
         return _order(view, _best(view, memory, beside, stand), victim)
 
@@ -412,17 +403,17 @@ def footman_order(observation: SkirmishObservation, memory: Memory) -> SkirmishA
 
 
 def _anchor(view: _View) -> AxialPosition:
-    """The tile the footman guards: the friendly archer it can see, or the middle of the field."""
+    """The spot the footman guards: the friendly archer it can see, or the middle of the field."""
     archers = [ally for ally in view.allies if ally["type"] == "archer"]
     if not archers:
         return view.center
-    return min(archers, key=lambda ally: distance(view.position, ally["position"]))["position"]
+    return min(archers, key=lambda ally: tile.distance(view.position, ally["position"]))["position"]
 
 
-def _shield_wall(view: _View, tile: AxialPosition) -> int:
-    """Count the friendly footmen a tile would stand shoulder to shoulder with."""
+def _shield_wall(view: _View, spot: AxialPosition) -> int:
+    """Count the friendly footmen a spot would stand shoulder to shoulder with."""
     return sum(
-        1 for ally in view.allies if ally["type"] == "footman" and distance(tile, ally["position"]) == 1
+        1 for ally in view.allies if ally["type"] == "footman" and tile.distance(spot, ally["position"]) == 1
     )
 
 
@@ -434,13 +425,13 @@ def _screen(view: _View, memory: Memory) -> SkirmishAction:
     """
     anchor = _anchor(view)
 
-    def score(tile: AxialPosition) -> tuple[int, ...]:
+    def score(spot: AxialPosition) -> tuple[int, ...]:
         return (
-            _area(view, tile),
-            int(_pressure(view, tile) > 1),
-            _shield_wall(view, tile),
-            -abs(distance(tile, anchor) - SCREEN_DISTANCE),
-            -_pressure(view, tile),
+            _area(view, spot),
+            int(_pressure(view, spot) > 1),
+            _shield_wall(view, spot),
+            -abs(tile.distance(spot, anchor) - SCREEN_DISTANCE),
+            -_pressure(view, spot),
         )
 
     return _order(view, _pick(view, memory, score), _victim(view))
@@ -459,5 +450,5 @@ class Agent:
         self.memory = Memory(seed)
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:
-        policy = _POLICIES[observation["observation"]["self"]["type"]]
+        policy = _POLICIES[me.unit_type(observation)]
         return policy(observation, self.memory)

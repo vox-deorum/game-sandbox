@@ -25,13 +25,14 @@ class AxialPosition(TypedDict):
 
 
 class SelfUnit(TypedDict):
-    """Your own unit: the fields only you can see (its kind and remaining movement)."""
+    """Your own unit: the fields only you can see (its kind, movement, and forward direction)."""
 
     unit_id: str
     type: str  # "footman", "archer", or "cavalry"
     position: AxialPosition
     hit_points: int
     movement_points: int
+    direction: int  # the digit heading toward the enemy side: 2 east for red, 5 west for blue
 
 
 class VisibleUnit(TypedDict):

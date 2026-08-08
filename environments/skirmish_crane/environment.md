@@ -92,10 +92,12 @@ def act(self, observation: SkirmishObservation) -> SkirmishAction:
 
 The mask has one array per choice, `observation["action_mask"]["path"]` and `observation["action_mask"]["target"]`. A `1` means that value is allowed on this activation, and a `0` means the environment rejects it. The two choices are independent, so any allowed path combines with any allowed target. The stay bit and the no-target bit are always `1`.
 
-You do not have to read those arrays. `legal_paths(observation)` and `nameable_targets(observation)` read them for you, and `move` and `stay` build the order dictionary. Here is a first agent that actually does something: walk one step toward the nearest enemy it can see, and name that enemy. It is the fighting half of your template's `agent.py`, which adds one more habit covered in [Your first agent](#your-first-agent): marching toward enemy ground while nothing is visible yet.
+You do not have to read those arrays. `action.legal_paths(observation)` and `action.possible_targets(observation)` read them for you, and `action.move` and `action.stay` build the order dictionary.
+
+Here is a first agent that actually does something: walk one step toward the nearest enemy it can see, and name that enemy. This is the fighting half of your template's `agent.py`. The template adds one more habit on top, covered in [Your first agent](#your-first-agent): marching toward the enemy side while nothing is visible yet.
 
 ```python
-from sandbox.crane import distance, encode_path, legal_paths, move, nameable_targets, neighbors, stay
+from sandbox.crane import action, me, tile, visible
 from sandbox.observation_types import SkirmishAction, SkirmishObservation
 
 
@@ -103,42 +105,51 @@ class Agent:
     """Steps toward the nearest enemy this unit can see, and names it as the target."""
 
     def reset(self, seed: int) -> None:
+        # Called once before each match. This agent remembers nothing between
+        # turns, so there is nothing to prepare for now.
         pass
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:
-        state = observation["observation"]
-        here = state["self"]["position"]
+        # Every unit this one can see, minus its own side.
+        enemies = visible.enemies(observation)
 
-        # nameable_targets lists the enemies this unit can see, so it also tells
-        # you which entries of visible_units are enemies rather than allies.
-        nameable = set(nameable_targets(observation))
-        enemies = [unit for unit in state["visible_units"] if unit["unit_id"] in nameable]
+        # Nothing to chase, so hold position. Standing still is always legal,
+        # and it still attacks whatever walks into range.
         if not enemies:
-            return stay()
+            return action.stay()
 
-        target = min(enemies, key=lambda unit: distance(here, unit["position"]))
-        gap = distance(here, target["position"])
+        # Where this unit is standing, as a {"q": ..., "r": ...} position.
+        here = me.position(observation)
 
-        # One step in whichever direction closes the gap, but only if the mask
-        # says that path is walkable from where this unit is standing.
-        walkable = set(legal_paths(observation))
-        for digit, step in neighbors(here).items():
-            path = encode_path((digit,))
-            if path in walkable and distance(step, target["position"]) < gap:
-                return move(path, target["unit_id"], observation)
+        # The closest enemy in sight. min hands back the unit, not the distance.
+        target = min(enemies, key=lambda unit: tile.distance(here, unit["position"]))
 
-        # TODO(you): nothing gets closer, so hold and keep the target named. A
-        # unit that only ever walks at the nearest enemy arrives alone.
-        return stay(target["unit_id"], observation)
+        # The number to beat: a step landing closer than this is progress.
+        gap = tile.distance(here, target["position"])
+
+        # legal_steps lists the single steps the mask allows right now, so every
+        # step in this loop is one the environment accepts.
+        for step in action.legal_steps(observation):
+            # Where that step would land us.
+            landing = tile.at_path_end(here, step)
+
+            # Take the first step that closes the gap, naming the target on the
+            # way so our strike prefers it. Anything we can see we can name.
+            if tile.distance(landing, target["position"]) < gap:
+                return action.move(step, target["unit_id"], observation)
+
+        # TODO(you): nothing gets closer, so hold and keep the target named.
+        # A unit that only ever walks at the nearest enemy arrives alone.
+        return action.stay(target["unit_id"], observation)
 ```
 
-This agent cannot make an illegal move, because every path it returns came out of `legal_paths` and every target came out of `nameable_targets`. It is also nowhere near good: [Your first improvement](#your-first-improvement) starts from what goes wrong when you watch it play.
+This agent cannot make an illegal move, because every path it returns came out of `action.legal_steps` and every target is an enemy it can see. It is also nowhere near good: [Your first improvement](#your-first-improvement) starts from what goes wrong when you watch it play.
 
 ## What a unit can see
 
 Everything meaningful sits under `observation["observation"]`. Four fields change from one activation to the next:
 
-- `self`: your own `unit_id`, `type`, `position`, `hit_points`, and remaining `movement_points`.
+- `self`: your own `unit_id`, `type`, `position`, `hit_points`, remaining `movement_points`, and `direction`, the digit that heads toward the enemy side.
 - `visible_units`: every other unit inside your vision radius, friend and enemy alike, with its `unit_id`, `side`, `type`, `position`, and `hit_points`. Units outside your vision are simply absent, and nothing tells you how many are missing.
 - `round`: the current round number, counting from 1.
 - `capture`: both sides' capture scores and the score that ends the match. All zero when capture play is off.
@@ -151,7 +162,9 @@ The observation and action shapes are available as `SkirmishObservation` and `Sk
 
 ## Your first agent
 
-Your template contains a complete working agent, the strategy from [Your turn](#your-turn) plus one habit: every unit walks one step toward the nearest enemy it can see and names it as the target, and while nothing is visible it marches on the mirror image of its spawn tile, which the field's symmetry places in enemy ground. Spawns sit farther apart than any unit can see, so an agent that only waits never fights at all. The template cannot make an illegal move and never crashes, and the `TODO(you)` comments in `agent.py` mark exactly where it is deliberately weak.
+Your template contains a complete working agent: the strategy from [Your turn](#your-turn), plus one habit for when there is nothing to chase yet. Every unit walks one step toward the nearest enemy it can see and names it as the target. While nothing is visible, it walks one step in `me.direction(observation)`, the digit that heads toward the enemy side.
+
+That second habit matters more than it looks. Spawns sit farther apart than any unit can see, so an agent that waits for a target waits forever. Both sides march the same way, so the two lines walk into each other and the fight starts. The template cannot make an illegal move and never crashes, and the `TODO(you)` comments in `agent.py` mark exactly where it is deliberately weak.
 
 Run it from the template folder:
 
@@ -179,26 +192,66 @@ Rewards work differently from the official score, and the difference matters if 
 
 A seat that forfeits, by crashing, returning an illegal action, or using up the game limit, scores 0, at or below every honest outcome.
 
-## The helper module
+## The helpers
 
-The starting agent uses the template's `sandbox.crane` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers read the authoritative action mask rather than reimplementing the rules, so a path or target they hand you is one the environment accepts.
+The starting agent uses the template's `sandbox.crane` helpers, six small namespaces. Import the ones you need at the top of `agent.py`, not inside a method:
 
-| Helper or constant | Result |
+```python
+from sandbox.crane import action, me, tile, visible
+```
+
+Every helper reads the observation or the authoritative action mask, so a path or target one of them hands you is one the environment accepts. None of them decides anything for you.
+
+`action` reads what is legal and builds the order your `act` returns.
+
+| Helper | Result |
 | --- | --- |
-| `encode_path(directions)` | Turns a sequence of direction digits, up to four, into the path id `act` returns; `encode_path(())` is `0` |
-| `decode_path(path_id)` | Turns a path id back into its direction digits; `decode_path(0)` is `()` |
-| `legal_paths(observation)` | Every path id legal right now, straight from the action mask, `0` (stay) included |
-| `nameable_targets(observation)` | The enemy unit ids you may name right now, in roster order |
-| `move(path_id, target_id=None, observation=None)` | Builds the `{"path", "target"}` order; naming a target needs the observation to resolve its roster slot |
-| `stay(target_id=None, observation=None)` | The stand-still order, optionally naming a target |
-| `distance(first, second)` | Hex distance between two `{"q", "r"}` positions |
-| `neighbors(position)` | The six adjacent positions keyed by direction digit; the mask stays the authority on which are legal |
-| `DIRECTIONS` | Digit to `(dq, dr)`: `1` northeast, `2` east, `3` southeast, `4` southwest, `5` west, `6` northwest |
-| `MAX_PATH_ID`, `MAX_PATH_STEPS` | `1554` and `4` |
+| `action.legal_paths(observation)` | Every path id legal right now, straight from the action mask, `0` (stay) included |
+| `action.legal_steps(observation)` | Which of the six tiles around you that you can walk onto. Their path ids are just their direction digits, `1` through `6` |
+| `action.possible_targets(observation)` | The enemy unit ids you may name right now, in roster order |
+| `action.move(path_id, target_id=None, observation=None)` | Builds the `{"path", "target"}` order; naming a target needs the observation to resolve its roster slot |
+| `action.stay(target_id=None, observation=None)` | The stand-still order, optionally naming a target |
+
+`me` reads your own unit, saving you a trip through `observation["observation"]["self"]`.
+
+| Helper | Result |
+| --- | --- |
+| `me.position(observation)` | The position your unit stands on |
+| `me.direction(observation)` | The digit that heads toward the enemy side, `2` for red and `5` for blue, the same all match |
+| `me.unit_id(observation)`, `me.side(observation)`, `me.unit_type(observation)` | Who this unit is: its id, `"red"` or `"blue"`, and `"footman"`, `"archer"`, or `"cavalry"` |
+| `me.hit_points(observation)`, `me.movement_points(observation)` | What it has left, and what it can spend this activation |
+
+`visible` and `roster` cover the other units, the ones in sight and the ones on the books.
+
+| Helper | Result |
+| --- | --- |
+| `visible.enemies(observation)` | The units of the other side your unit can see; every one of them is nameable this turn |
+| `visible.allies(observation)` | The units of your own side your unit can see; your own unit is never among them |
+| `roster.enemies(observation)`, `roster.allies(observation)` | Each side's complete starting roster, alive or not, for addressing a unit you cannot see |
+
+`tile` is hex geometry and the ground itself. Positions are `{"q", "r"}` dictionaries throughout.
+
+| Helper | Result |
+| --- | --- |
+| `tile.distance(first, second)` | Hex distance between two positions, counted in steps |
+| `tile.neighbors(position)` | The six adjacent positions keyed by direction digit; the mask stays the authority on which are legal |
+| `tile.at_path_end(position, path_id)` | Where a path would put you, without walking the digits yourself |
+| `tile.at_center(observation)` | The middle of the field, the landmark both sides share |
+| `tile.at_mirror(position, observation)` | The position opposite a given one. The field is symmetric, so the mirror of your own starting ground is always enemy ground |
+| `tile.terrain_at(observation, position)` | The `{"terrain", "feature"}` pair standing on a position; anything off the field reads as void |
+| `tile.DIRECTIONS` | Digit to `(dq, dr)`: `1` northeast, `2` east, `3` southeast, `4` southwest, `5` west, `6` northwest |
+
+`paths` is the encoding itself, for when you plan a route longer than one step.
+
+| Helper | Result |
+| --- | --- |
+| `paths.encode(directions)` | Turns a sequence of direction digits, up to four, into the path id `act` returns; `paths.encode(())` is `0` |
+| `paths.decode(path_id)` | Turns a path id back into its direction digits; `paths.decode(0)` is `()` |
+| `paths.MAX_ID`, `paths.MAX_STEPS` | `1554` and `4` |
 
 An invalid direction digit or path id raises `ValueError`.
 
-The module deliberately ships no pathfinder. Turning a route across the field into a legal four-step order, and replanning it as the battlefield changes under you, is the work this course is about.
+The helpers deliberately ship no pathfinder. Turning a route across the field into a legal four-step order, and replanning it as the battlefield changes under you, is the work this course is about.
 
 ## Under the hood
 
@@ -208,7 +261,7 @@ This is optional advanced reference material. The helpers cover everything the s
 
 Path `0` means stay. Paths `1` through `1554` name every sequence of one to four direction digits, because 6 + 36 + 216 + 1296 is 1554. Four steps is the ceiling: the fastest unit has 4 movement points and every step costs at least 1, so no order can hold a fifth.
 
-The ids are ordered first by path length and then lexicographically, with the last digit varying fastest. Path `1` is `[1]` and path `6` is `[6]`. Path `7` is `[1, 1]`, path `8` is `[1, 2]`, and path `42` is `[6, 6]`. Path `43` is `[1, 1, 1]`, path `259` is `[1, 1, 1, 1]`, and path `1554` is `[6, 6, 6, 6]`. `encode_path` and `decode_path` do this conversion in both directions.
+The ids are ordered first by path length and then lexicographically, with the last digit varying fastest. Path `1` is `[1]` and path `6` is `[6]`. Path `7` is `[1, 1]`, path `8` is `[1, 2]`, and path `42` is `[6, 6]`. Path `43` is `[1, 1, 1]`, path `259` is `[1, 1, 1, 1]`, and path `1554` is `[6, 6, 6, 6]`. `paths.encode` and `paths.decode` do this conversion in both directions. So a one-step path id is just its direction digit. That is why `action.move(me.direction(observation))` takes one step toward the enemy side.
 
 | Digit | Direction | `dq, dr` |
 | ----- | --------- | -------- |
@@ -223,7 +276,7 @@ The digits run clockwise from northeast, so a direction's opposite is its digit 
 
 ### Target values
 
-Target `0` names nobody. Target `i` names slot `i - 1` of the enemy roster, in the player order that `rosters` already lists them in. Because each side names the other side's roster, the same number means a different unit for Red and for Blue. Pass a unit id to `move` or `stay` together with the observation and they resolve the slot for you.
+Target `0` names nobody. Target `i` names slot `i - 1` of the enemy roster, in the player order that `rosters` already lists them in. Because each side names the other side's roster, the same number means a different unit for Red and for Blue. Pass a unit id to `action.move` or `action.stay` together with the observation and they resolve the slot for you.
 
 ### Observation fields
 
@@ -279,33 +332,42 @@ A direct message goes to one living allied unit, named by its player string such
 This complete agent reports its position to its allies on every activation:
 
 ```python
-from sandbox.crane import stay
+from sandbox.crane import action, me, roster
 from sandbox.observation_types import SkirmishAction, SkirmishObservation
 
 
 class Agent:
     def reset(self, seed: int) -> None:
+        # Three pieces of memory, cleared before every match: who to write to,
+        # what to send them, and what they told us last time.
         self.allies: list[str] = []
         self.report = ""
         self.heard: list[str] = []
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:
-        state = observation["observation"]
-        me = state["self"]
-        # chat never sees the observation, so read the roster here and keep the
-        # player names and the text that this activation is about to send. The
-        # roster keeps dead allies; the runner drops their messages with a note.
-        side = me["unit_id"].split("_")[0]
+        # chat never sees the observation, so read here what it will need.
+        my_id = me.unit_id(observation)
+
+        # roster.allies is your whole side, so you can write to a unit far out
+        # of sight. Address each one by its player string, which is what "to"
+        # expects, and leave yourself off the list.
         self.allies = [
-            entry["player"] for entry in state["rosters"][side] if entry["unit_id"] != me["unit_id"]
+            entry["player"] for entry in roster.allies(observation) if entry["unit_id"] != my_id
         ]
-        self.report = f"{me['unit_id']} at {me['position']['q']},{me['position']['r']}"
-        return stay()
+
+        # The text this unit will send once its order is in: who and where.
+        here = me.position(observation)
+        self.report = f"{my_id} at {here['q']},{here['r']}"
+
+        # Hold position. The order is chosen before chat runs, every activation.
+        return action.stay()
 
     def chat(self, inbox: list[dict]) -> list[dict]:
         # Everything that arrived since this unit's previous activation. Saving
         # it here is the only way the next act call can use it.
         self.heard = [message["text"] for message in inbox]
+
+        # One direct message per ally. Returning [] instead would stay silent.
         return [{"to": ally, "text": self.report} for ally in self.allies]
 ```
 
@@ -313,7 +375,7 @@ See the [agent interface](../../docs/students/agent-interface.md#chatinbox) for 
 
 ## Your first improvement
 
-Run `python -m sandbox play` and watch one full match. Every unit marches for enemy ground until something comes into view, then walks straight at the nearest enemy it can see, so the sides meet in the middle and trade blows wherever they collide. Now find your archer. Does it survive, and if it dies, what killed it?
+Run `python -m sandbox play` and watch one full match. Every unit walks straight toward the enemy side until something comes into view, then walks straight at the nearest enemy it can see, so the sides collide in the middle and trade blows wherever they meet. Now find your archer. Does it survive, and if it dies, what killed it?
 
 > An archer sees 6 tiles and shoots 6 tiles, which is further than anything else on the field. It also has 6 hit points and a range of 1 is enough to reach it. Something of yours has to be standing between it and whatever is coming.
 
@@ -321,7 +383,9 @@ Now speed your cavalry up. It has 4 movement points and the template only ever t
 
 > Reread the strike rules in [How a match works](#how-a-match-works). Every enemy that ends its own activation with your cavalry as its nearest target in range will strike it, and your cavalry cannot do anything about it between its own turns.
 
-That is the real problem in this game, and it is not a pathfinding problem. Your units cannot see each other's intentions. Two units that each walk at the nearest visible enemy are not a formation, they are two units that happen to be moving. What would the footman have to tell the archer, and when, for the archer to know it is about to be covered? Check the timing in [Messaging](#messaging) before you answer, because a message you send now lands in your ally's next activation, after that activation's order is already chosen.
+Watch the march itself too. A straight line is a poor plan: two units on rows farther apart than they can see walk right past each other and end up at the far edge of the field. Give them somewhere to aim instead. `tile.at_center(observation)` gathers your side in the middle. `tile.at_mirror(here, observation)` points at the tile opposite your own, which the field's symmetry places in enemy ground, so a side that marches on it sweeps the field rather than crossing it.
+
+That is not the real problem in this game, though, and neither is pathfinding. Your units cannot see each other's intentions. Two units that each walk at the nearest visible enemy are not a formation, they are two units that happen to be moving. What would the footman have to tell the archer, and when, for the archer to know it is about to be covered? Check the timing in [Messaging](#messaging) before you answer, because a message you send now lands in your ally's next activation, after that activation's order is already chosen.
 
 Record the mean score from `python -m sandbox eval` before a change and again afterward, over several seeds. Coordination shows up over whole matches rather than single activations. For a head-to-head comparison, [Getting started, step 4](../../docs/students/getting-started.md#4-play-and-evaluate) explains how to save a rival version and play against it with `--vs`. In Skirmish at Crane Reach your own side keeps running your current agent and the entire enemy side runs the saved one.
 

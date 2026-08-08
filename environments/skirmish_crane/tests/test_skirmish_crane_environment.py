@@ -28,10 +28,10 @@ from skirmish_crane import ENTRY, META
 from skirmish_crane.ascii_runner import replay_jsonl
 from skirmish_crane.combat import Strike, visible_units
 from skirmish_crane.engine import Activation, Unit
-from skirmish_crane.env import IllegalMoveError, default_action, make_env
+from skirmish_crane.env import FORWARD_DIRECTION, IllegalMoveError, default_action, make_env
 from skirmish_crane.hexes import DIRECTIONS
 from skirmish_crane.naive import Agent, _decode_path, _distance, _end
-from skirmish_crane.observation_types import SkirmishObservation, SkirmishObservationData
+from skirmish_crane.observation_types import SelfUnit, SkirmishObservation, SkirmishObservationData
 from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay
 from skirmish_crane.paths import MAX_PATH_ID, MAX_PATH_STEPS, decode_path, encode_path
 from skirmish_crane.scoring import Result
@@ -184,6 +184,7 @@ def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip()
     assert set(observation) == set(SkirmishObservation.__annotations__)
     state = observation["observation"]
     assert set(state) == set(SkirmishObservationData.__annotations__)
+    assert set(state["self"]) == set(SelfUnit.__annotations__)
     strings = [state["self"]["unit_id"], state["self"]["type"], state["parameters"]["seat_plan"]]
     strings.extend(unit[field] for unit in state["visible_units"] for field in ("unit_id", "side", "type"))
     strings.extend(
@@ -200,6 +201,24 @@ def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip()
     for player in env.possible_agents:
         emitted = env.observe(player)
         _assert_text_leaves(env.observation_space(player), emitted)
+    env.close()
+
+
+def test_every_unit_is_told_the_direction_that_heads_toward_the_enemy() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=0)
+    spawns = env.unwrapped.match.battlefield.spawns
+    for player in env.possible_agents:
+        unit = env.observe(player)["observation"]["self"]
+        side = unit["unit_id"].split("_", 1)[0]
+        assert unit["direction"] == FORWARD_DIRECTION[side]
+        # The digit is more than a per-side constant: one step along it closes the gap to the
+        # ground the other side started on, which is the whole promise the field makes.
+        here = (unit["position"]["q"], unit["position"]["r"])
+        enemy_ground = spawns["blue" if side == "red" else "red"]
+        gap_now = min(_distance(here, spawn) for spawn in enemy_ground)
+        gap_after = min(_distance(_end(here, unit["direction"]), spawn) for spawn in enemy_ground)
+        assert gap_after < gap_now
     env.close()
 
 
@@ -822,41 +841,51 @@ def test_naive_loads_as_a_standalone_builtin_module() -> None:
 
 
 def test_template_crane_helper_never_drifts_from_the_package_codec() -> None:
-    # The student template's sandbox/crane.py deliberately duplicates the path codec so a student
+    # The student template's sandbox/crane/ deliberately duplicates the path codec so a student
     # never imports the engine. Loading it standalone here, the way a composed template does,
     # pins that its copy never drifts from the real one.
-    path = Path(__file__).parents[1] / "template" / "sandbox" / "crane.py"
-    spec = importlib.util.spec_from_file_location("skirmish_crane_template_crane_builtin", path)
-    assert spec is not None and spec.loader is not None
-    crane = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(crane)
+    crane_dir = Path(__file__).parents[1] / "template" / "sandbox" / "crane"
+    crane = _load_standalone_package("skirmish_crane_template_crane_builtin", crane_dir)
+    template_paths, template_tile = crane.paths, crane.tile
 
-    assert crane.DIRECTIONS == DIRECTIONS
-    assert crane.MAX_PATH_ID == MAX_PATH_ID
-    assert crane.MAX_PATH_STEPS == MAX_PATH_STEPS
+    assert template_tile.DIRECTIONS == DIRECTIONS
+    assert template_paths.MAX_ID == MAX_PATH_ID
+    assert template_paths.MAX_STEPS == MAX_PATH_STEPS
     for path_id in range(MAX_PATH_ID + 1):
-        digits = crane.decode_path(path_id)
+        digits = template_paths.decode(path_id)
         assert digits == decode_path(path_id)
-        assert crane.encode_path(digits) == path_id
+        assert template_paths.encode(digits) == path_id
         assert encode_path(digits) == path_id
 
     # The happy path above would still pass if the template copy dropped a guard clause, so pin
     # the invalid-value rejections against both codecs too.
     for invalid_directions in ([0], [7], [1, 1, 1, 1, 1], (True,)):
         with pytest.raises(ValueError):
-            crane.encode_path(invalid_directions)
+            template_paths.encode(invalid_directions)
         with pytest.raises(ValueError):
             encode_path(invalid_directions)
 
     for invalid_path_id in (-1, 1555, True, "3"):
         with pytest.raises(ValueError):
-            crane.decode_path(invalid_path_id)
+            template_paths.decode(invalid_path_id)
         with pytest.raises(ValueError):
             decode_path(invalid_path_id)
 
 
 def _load_standalone_module(name: str, path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_standalone_package(name: str, directory: Path) -> Any:
+    """Load a package from its directory, so its submodules import each other as they normally do."""
+    spec = importlib.util.spec_from_file_location(
+        name, directory / "__init__.py", submodule_search_locations=[str(directory)]
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -883,8 +912,8 @@ class _RecordingAgent:
 def test_template_starter_agent_marches_and_names_targets_over_a_full_episode() -> None:
     """Load the student starter standalone, under fabricated sandbox modules, the way a composed
     template sees it, then run six separately constructed copies through a full match. This is the
-    only test that actually exercises both of its branches: marching blind toward the mirrored
-    spawn tile with no enemy visible, and stepping at a nameable enemy once one is."""
+    only test that actually exercises both of its branches: marching in the direction the
+    observation points with no enemy visible, and stepping at a nameable enemy once one is."""
     package_dir = Path(__file__).parents[1]
     template_dir = package_dir / "template"
     fabricated_names = ("sandbox", "sandbox.observation_types", "sandbox.crane")
@@ -896,7 +925,7 @@ def test_template_starter_agent_marches_and_names_targets_over_a_full_episode() 
         sandbox_pkg.observation_types = _load_standalone_module(
             "sandbox.observation_types", package_dir / "observation_types.py"
         )
-        sandbox_pkg.crane = _load_standalone_module("sandbox.crane", template_dir / "sandbox" / "crane.py")
+        sandbox_pkg.crane = _load_standalone_package("sandbox.crane", template_dir / "sandbox" / "crane")
         starter = _load_standalone_module("skirmish_crane_template_agent_builtin", template_dir / "agent.py")
 
         actions: list[dict[str, int]] = []
@@ -906,13 +935,15 @@ def test_template_starter_agent_marches_and_names_targets_over_a_full_episode() 
         result = run_episode(ENTRY, players, parameters=resolve_parameters(ENTRY.meta), seed=0)
     finally:
         sys.modules.pop("skirmish_crane_template_agent_builtin", None)
+        for name in [name for name in sys.modules if name.startswith("sandbox.crane.")]:
+            del sys.modules[name]
         for name, module in saved_modules.items():
             if module is None:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
 
-    # Elimination, not the round cap: measured at 40-46 ticks across several seeds, so 500 is a
+    # Elimination, not the round cap: measured at 40-47 ticks across several seeds, so 500 is a
     # generous ceiling that still fails loudly if the starter regresses into stalling.
     assert result.reason == REASON_TERMINATED
     assert result.ticks < 500
