@@ -175,7 +175,7 @@ A human controls either the primary player in the selected seat or the whole sid
 | Layout | seat plans skirmish and army |
 | Builtin agents, in order | naive (Naive), bronze (Bronze), silver (Silver), gold (Gold) |
 | Gameplay parameters | the declarations in Gameplay parameters, with friendly titles and descriptions; seat_plan is synthesized from the layout |
-| Human-capable players | all players; default move clock 30 seconds |
+| Human-capable players | all players; default move clock 60 seconds |
 | Stepping | sequential |
 | Pace interval | none; the game is turn-based |
 | Viewing cadence | 1000 milliseconds per recorded transition |

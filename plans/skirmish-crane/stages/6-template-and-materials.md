@@ -1,6 +1,6 @@
 # Step 6: Template, Helper, Guide, and the Worked Example
 
-Status: planned.
+Status: complete.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 6: the completed student surface. It can begin after step 3 (registration) and proceed alongside steps 4 and 5, but cannot finish until step 5 provides human input and local play. The hands-on surface is the full student flow: compose the template, run the pin tests, watch and play locally, and beat naive with the worked example.
 
@@ -27,14 +27,14 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 ### The worked example
 
-Exactly one, kept internal, Season-3-shaped: an FSM per unit type where the archer falls back and fires in the same activation, the cavalry flanks, and the footman holds the line. Quality bar: beats naive across a pinned seed set. `PUBLISHED_EXAMPLES` stays empty.
+Exactly one, kept internal, Season-3-shaped: an FSM per unit type where the archer falls back and fires in the same activation, the cavalry flanks, and the footman holds the line. Quality bar: beats naive on every pinned seed, playing both seats of the skirmish plan and a pinned pair of Season 3 army battles. `PUBLISHED_EXAMPLES` stays empty.
 
 ## Tests
 
 - Pin tests under `template/tests/` freeze the encoding forever: literal vectors ([] = 0, [northeast] = 1, [northwest] = 6, [northeast, northeast] = 7, [northwest x4] = 1554) and a full 0 through 1554 round-trip against the step 1 decoder, plus invalid-value checks and the standard import probe keeping the helper free of heavy imports.
 - Helper accessors agree with raw observations and masks while driving real environment states: `legal_paths` and `nameable_targets` equal the mask bits, `move` and `stay` produce in-space, mask-legal Dicts, and target-id resolution matches the roster.
 - A `template/tests/test_episode.py` end-to-end episode test on the spades pattern, inherited by composed examples.
-- Example tests: the FSMs behave on constructed observations, and the example beats naive across the pinned seed set.
+- Example tests: the FSMs behave on constructed observations, the example beats naive on every pinned skirmish seed from both seats and in the pinned Season 3 army battles, and every order it submits is mask-legal.
 - Compose smoke: the composed template and example build and their inherited tests pass.
 - The docs CI lane green with the finished guide at its virtual path.
 
