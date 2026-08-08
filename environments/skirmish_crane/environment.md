@@ -1,6 +1,6 @@
 # Skirmish at Crane Reach
 
-Skirmish at Crane Reach is a turn-based tactics game on a hex field where Red and Blue fight for ground. Your side wins by defeating the other side, reaching the capture target when capture zones are enabled, or leading at the round limit. The shared [agent interface](../../docs/students/agent-interface.md) explains the methods every environment uses. 
+Skirmish at Crane Reach is a turn-based tactics game on a hex field where Red and Blue fight for ground. Your side wins by defeating the other side, reaching the capture target when capture zones are enabled, or leading at the round limit. The shared [agent interface](../../docs/students/agent-interface.md) explains the methods every environment uses.
 
 Most importantly: every unit runs a separate `Agent` instance with its own state. Your code does not command an army, and your agents do not share observations or memory.
 
@@ -96,10 +96,10 @@ An attack always hits. Staying still can still strike, so avoiding a fight requi
 
 A **player** is one unit on the field. A **seat** is the group of players controlled by one submission, which is always a whole side here. Red has the first half of players and Blue the second. Within a side, player and roster order is footmen, then archers, then cavalry, each in index order. Every round shuffles the living units for activation. Stable ids use `side_type_index`, such as `red_archer_0`; the rosters in every observation already provide the mapping.
 
-| Plan | What one submission controls |
-| --- | --- |
-| `skirmish` (default) | One side of 3 units: 1 footman, 1 archer, 1 cavalry |
-| `army` | One side of 20 units: 8 footmen, 6 archers, 6 cavalry |
+| Plan                 | What one submission controls                          |
+| -------------------- | ----------------------------------------------------- |
+| `skirmish` (default) | One side of 3 units: 1 footman, 1 archer, 1 cavalry   |
+| `army`               | One side of 20 units: 8 footmen, 6 archers, 6 cavalry |
 
 In `skirmish`, `player_0`, `player_1`, and `player_2` are Red's footman, archer, and cavalry. `player_3` through `player_5` repeat that order for Blue. A fixed seed still gives the sides different spawn halves and activation draws, so switching sides changes the match.
 
@@ -107,13 +107,13 @@ In `skirmish`, `player_0`, `player_1`, and `player_2` are Red's footman, archer,
 
 ## Battlefield and unit stats
 
-| Stat | Footman | Archer | Cavalry |
-| --- | --- | --- | --- |
-| Hit points | 12 | 6 | 10 |
-| Movement points | 2 | 2 | 4 |
-| Attack range | 1 | 6 | 1 |
-| Damage | 3 | 2 | 3 |
-| Vision | 4 | 6 | 6 |
+| Stat            | Footman | Archer | Cavalry |
+| --------------- | ------- | ------ | ------- |
+| Hit points      | 12      | 6      | 10      |
+| Movement points | 2       | 2      | 4       |
+| Attack range    | 1       | 6      | 1       |
+| Damage          | 3       | 2      | 3       |
+| Vision          | 4       | 6      | 6       |
 
 Damage is the attacker's damage after the adjustments below and never drops below 1. The point-symmetric hex field is 15 tiles across in early seasons and 21 later. Mirrored spawn positions give neither side better ground, every passable tile is reachable from every other, and each tile holds at most one unit.
 
@@ -232,13 +232,13 @@ The helpers are enough for the starter. This section gives the exact raw shapes 
 Path `0` stays. Paths `1` through `1554` encode all direction sequences of one to four digits, ordered by length and then lexicographically with the last digit changing fastest. Use `paths.encode` and `paths.decode`; `paths.encode(())` is `0`, `paths.decode(0)` is `()`, and a single-step id is its direction digit. No order can contain a fifth step because every step costs at least 1 and the fastest unit has 4 movement points.
 
 | Digit | Direction | `dq, dr` |
-| --- | --- | --- |
-| `1` | northeast | `+1, -1` |
-| `2` | east | `+1, 0` |
-| `3` | southeast | `0, +1` |
-| `4` | southwest | `-1, +1` |
-| `5` | west | `-1, 0` |
-| `6` | northwest | `0, -1` |
+| ----- | --------- | -------- |
+| `1`   | northeast | `+1, -1` |
+| `2`   | east      | `+1, 0`  |
+| `3`   | southeast | `0, +1`  |
+| `4`   | southwest | `-1, +1` |
+| `5`   | west      | `-1, 0`  |
+| `6`   | northwest | `0, -1`  |
 
 Target `0` names nobody. Target `i` is slot `i - 1` in the enemy roster, in player order. The same numeric target can therefore name a different unit for Red and Blue. `action.move` and `action.stay` resolve a unit id for you when given the observation.
 

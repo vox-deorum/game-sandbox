@@ -42,7 +42,7 @@ The arc across the six seasons: Season 1 builds the first tactical blocks (small
 ### Season 4: The Commander (Week 4)
 
 - What unlocks: the strategic view and a single capture point that scores over time. In the strategic view, each unit instance selects a tactical block and a tactical goal, such as hold this choke or attack this point, from its own observation and local memory.
-- Starter template: a small set of predefined tactical blocks provides a working action space for the strategic layer. Students may edit those blocks, replace them, or reuse their own Season 3 blocks.
+- Starter material: a worked example, distributed by course operations when the season opens, provides a small set of predefined tactical blocks as the strategic layer's working action space. Students may copy it, edit or replace the blocks, or reuse their own Season 3 blocks.
 - Design issue: decentralized strategy as assignment: which units should do what and where, and when should those assignments change as the battle turns, without a shared controller?
 - Core techniques: search-based lookahead in each unit's local policy over its own tactical block and goal for the next few rounds. The instances coordinate through their observations, IDs, and delayed messages, while the selected blocks handle moment-to-moment movement and battle.
 - Evaluation: capture-point ladder plus baselines.
