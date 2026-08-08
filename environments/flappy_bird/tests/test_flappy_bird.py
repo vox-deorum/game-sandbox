@@ -231,6 +231,30 @@ def test_default_action_is_noop():
     assert default_action(env, "player_0") == 0
 
 
+@pytest.mark.parametrize(("action", "expected_velocity"), [(0, -8.0), (1, -9.0)])
+def test_step_accepts_each_discrete_action(action, expected_velocity):
+    env = make_env({"players": 1, "pipe_gap": 100})
+    env.reset(seed=0)
+
+    env.step(action)
+
+    assert env.gym_env.state.player.vel_y == expected_velocity
+    env.close()
+
+
+@pytest.mark.parametrize("action", [-1, 2, "flap"])
+def test_step_rejects_actions_outside_its_discrete_space(action):
+    env = make_env({"players": 1, "pipe_gap": 100})
+    env.reset(seed=0)
+    before = _snapshot(env.observe("player_0"))
+
+    with pytest.raises(ValueError, match="outside its action space"):
+        env.step(action)
+
+    assert _snapshot(env.observe("player_0")) == before
+    env.close()
+
+
 def test_factory_uses_the_resolved_pipe_gap():
     env = make_env({"players": 1, "pipe_gap": 90})
     try:

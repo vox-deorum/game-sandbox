@@ -104,7 +104,7 @@ A unit may send short text messages to living allied units, and broadcasts, whic
 
 ### capture (Season 4 onward)
 
-A capture zone is seven tiles: a passable center tile plus its six neighbors, all passable. After each round, each zone is checked: if exactly one side has a living unit standing in it, that side earns 1 point. A contested or empty zone earns nobody anything. The first side to reach the capture target wins.
+A capture zone is seven tiles: a passable center tile plus its six neighbors, all passable. At round end, all zones score: if exactly one side has a living unit standing in a zone, that side earns 1 point. A contested or empty zone earns nobody anything. If one or both sides reach the capture target, the higher resulting capture score wins. Equal capture scores use total remaining hit points, then draw if those totals are equal.
 
 ### wasteland (Season 6)
 
@@ -122,11 +122,11 @@ Elimination matches (capture variant off) end when a side has no living units, o
 - With h the winner's remaining hit points divided by its starting total: the winner scores 70 + 30h, and the eliminated side scores 0.
 - At the round cap, the side with the higher total remaining hit points wins. With m = the hit point difference divided by the winner's starting total: the winner scores 70 + 30m, the loser scores 30(1 - m), and equal totals draw.
 
-Capture matches end when a side is eliminated, when a side reaches the capture target, or at the round cap.
+Capture matches end when a side is eliminated, when one or both sides reach the capture target, or at the round cap.
 
 - A side that eliminates the other scores 100, and the eliminated side 0.
 - Otherwise the higher capture score wins. Equal capture scores fall to total remaining hit points, and still-equal totals draw.
-- With margin m = the capture score difference divided by the target, clamped between 0 and 1: the winner scores 70 + 30m, the loser scores 30(1 - m), and a draw scores 50 for both.
+- With margin m = the capture-score difference divided by the target, capped at 1: the winner scores 70 + 30m, the loser scores 30(1 - m), and a draw scores 50 for both.
 
 ## Seasons
 
@@ -140,3 +140,5 @@ Capture matches end when a side is eliminated, when a side reaches the capture t
 | 6 | radius 10 (21 across) | 8-6-6 | on | on | on | 3 zones, target 200 | on |
 
 Per side is footmen-archers-cavalry.
+
+All six shipped presets use capture_target 200 and round_cap 1000. Official season configurations and local overrides may change either.

@@ -54,13 +54,16 @@ interface FakeSourceOptions {
 
 /** A programmable {@link SubmissionSource}: canned resolve/fetch outcomes, recorded disposal. */
 class FakeSource implements SubmissionSource {
+  readonly resolveInputs: SourceInput[] = []
+
   constructor(private readonly opts: FakeSourceOptions) {}
 
   verifyReachable(): Promise<{ reachable: boolean }> {
     return Promise.resolve({ reachable: true })
   }
 
-  resolve(_input: SourceInput): Promise<ResolvedSource> {
+  resolve(input: SourceInput): Promise<ResolvedSource> {
+    this.resolveInputs.push(input)
     if (this.opts.resolveError !== undefined) {
       return Promise.reject(this.opts.resolveError)
     }
@@ -133,7 +136,10 @@ describe('ValidationWorker', () => {
   }
 
   /** Seed an open season and a pending git submission, returning the stored row. */
-  async function seedSubmission(source: 'git' | 'local' = 'git'): Promise<Submission> {
+  async function seedSubmission(
+    source: 'git' | 'local' = 'git',
+    ref: string | null = null,
+  ): Promise<Submission> {
     const season = await storage.ensureOpenSeason(ENV_ID, 1)
     return storage.createSubmission({
       season_id: season.id,
@@ -143,7 +149,7 @@ describe('ValidationWorker', () => {
       repo_url: source === 'git' ? 'https://example.test/repo' : null,
       commit_sha: null,
       local_path: source === 'local' ? '/srv/agent' : null,
-      ref: null,
+      ref: source === 'git' ? ref : null,
       created_at: new Date().toISOString(),
     })
   }
@@ -344,21 +350,53 @@ describe('ValidationWorker', () => {
     expect(row?.reason).toContain('over the')
   })
 
-  it('still reaches ready when the snapshot write fails (best-effort)', async () => {
+  it('fails static when the durable snapshot cannot be written', async () => {
     const treePath = writeTree()
     const submission = await seedSubmission()
     const snapshots = makeSnapshots()
-    // Force the write to fail; the submission must still publish ready and merely lose its snapshot.
+    // A failed replacement must also remove an archive left by an earlier attempt.
+    await snapshots.write(submission.id, treePath)
     snapshots.write = () => Promise.reject(new Error('disk full'))
-    const worker = makeWorker(driverEmitting({ ok: true }, 0), new FakeSource({ treePath }), {
+    const driver = driverEmitting({ ok: true }, 0)
+    const worker = makeWorker(driver, new FakeSource({ treePath }), {
       snapshots,
     })
 
     worker.enqueue(submission.id)
     await worker.whenIdle()
 
-    expect((await storage.getSubmission(submission.id))?.status).toBe('ready')
+    const row = await storage.getSubmission(submission.id)
+    expect(row?.status).toBe('static_failed')
+    expect(row?.reason).toContain('snapshot')
+    expect(row?.reason).toContain('disk full')
+    const checks = await storage.listSubmissionChecks(submission.id)
+    expect(checks.map((check) => [check.stage, check.status])).toEqual([
+      ['resolve', 'passed'],
+      ['static', 'failed'],
+    ])
     expect(await snapshots.exists(submission.id)).toBe(false)
+    expect(driver.imageRequests).toHaveLength(0)
+    expect(driver.launches).toHaveLength(0)
+  })
+
+  it('still fails static when storage also prevents stale snapshot cleanup', async () => {
+    const treePath = writeTree()
+    const submission = await seedSubmission()
+    const snapshots = makeSnapshots()
+    await snapshots.write(submission.id, treePath)
+    snapshots.write = () => Promise.reject(new Error('disk full'))
+    snapshots.delete = () => Promise.reject(new Error('storage is read-only'))
+    const driver = driverEmitting({ ok: true }, 0)
+    const worker = makeWorker(driver, new FakeSource({ treePath }), { snapshots })
+
+    worker.enqueue(submission.id)
+    await worker.whenIdle()
+
+    expect((await storage.getSubmission(submission.id))?.status).toBe('static_failed')
+    // The stale file can remain physically present, so status-aware readers must reject it.
+    expect(await snapshots.exists(submission.id)).toBe(true)
+    expect(driver.imageRequests).toHaveLength(0)
+    expect(driver.launches).toHaveLength(0)
   })
 
   it('maps a load-check failure to load_failed with the code and detail', async () => {
@@ -419,6 +457,23 @@ describe('ValidationWorker', () => {
     const checks = await storage.listSubmissionChecks(submission.id)
     expect(checks).toHaveLength(4)
     expect(checks.map((c) => c.stage)).toEqual(['resolve', 'static', 'build', 'load'])
+  })
+
+  it('re-enqueues a Git submission from its stored commit pin instead of its original branch', async () => {
+    const treePath = writeTree()
+    const submission = await seedSubmission('git', 'main')
+    const source = new FakeSource({ treePath })
+    const worker = makeWorker(driverEmitting({ ok: true }, 0), source)
+
+    worker.enqueue(submission.id)
+    await worker.whenIdle()
+    worker.enqueue(submission.id)
+    await worker.whenIdle()
+
+    expect(source.resolveInputs).toEqual([
+      { kind: 'git', repoUrl: 'https://example.test/repo', ref: 'main' },
+      { kind: 'git', repoUrl: 'https://example.test/repo', ref: 'c0ffee1234' },
+    ])
   })
 
   it('re-enqueues active pending submissions on start()', async () => {

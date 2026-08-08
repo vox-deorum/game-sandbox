@@ -381,6 +381,64 @@ describe('admin API', () => {
       expect(res.headers['content-disposition']).toContain(`season-${seasonId.slice(0, 8)}.tar.gz`)
       expect(res.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
     })
+
+    it('hides stale snapshots after static failure but preserves later-stage failure snapshots', async () => {
+      const seasonId = await declare()
+      const staticFailed = await seedSubmission(seasonId, 'static-owner', { withSnapshot: true })
+      const buildFailed = await seedSubmission(seasonId, 'build-owner', { withSnapshot: true })
+      const loadFailed = await seedSubmission(seasonId, 'load-owner', { withSnapshot: true })
+      await storage.updateSubmissionStatus(
+        staticFailed.id,
+        'static_failed',
+        'snapshot storage failed',
+      )
+      await storage.updateSubmissionStatus(buildFailed.id, 'build_failed', 'image build failed')
+      await storage.updateSubmissionStatus(loadFailed.id, 'load_failed', 'agent load failed')
+
+      const listing = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/submissions`,
+        headers: OPERATOR,
+      })
+      expect(listing.statusCode).toBe(200)
+      const rows = listing.json() as Array<{ id: string; has_snapshot: boolean }>
+      expect(rows.find((row) => row.id === staticFailed.id)?.has_snapshot).toBe(false)
+      expect(rows.find((row) => row.id === buildFailed.id)?.has_snapshot).toBe(true)
+      expect(rows.find((row) => row.id === loadFailed.id)?.has_snapshot).toBe(true)
+
+      const staleDownload = await app.inject({
+        method: 'GET',
+        url: `/api/admin/submissions/${staticFailed.id}/download`,
+        headers: OPERATOR,
+      })
+      expect(staleDownload.statusCode).toBe(404)
+      expect(staleDownload.json()).toMatchObject({ code: 'no_snapshot' })
+
+      for (const submission of [buildFailed, loadFailed]) {
+        const validDownload = await app.inject({
+          method: 'GET',
+          url: `/api/admin/submissions/${submission.id}/download`,
+          headers: OPERATOR,
+        })
+        expect(validDownload.statusCode).toBe(200)
+      }
+
+      const materialized: string[] = []
+      const materializeInto = snapshots.materializeInto.bind(snapshots)
+      snapshots.materializeInto = (id, destDir) => {
+        materialized.push(id)
+        return materializeInto(id, destDir)
+      }
+      const seasonArchive = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/submissions/download`,
+        headers: OPERATOR,
+      })
+      expect(seasonArchive.statusCode).toBe(200)
+      expect(materialized).toHaveLength(2)
+      expect(materialized).toEqual(expect.arrayContaining([buildFailed.id, loadFailed.id]))
+      expect(materialized).not.toContain(staticFailed.id)
+    })
   })
 
   describe('declare', () => {

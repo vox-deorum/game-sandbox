@@ -147,6 +147,11 @@ function submissionArchiveName(submission: Submission): string {
   return `${submissionFolderName(submission)}.tar.gz`
 }
 
+/** A static failure invalidates any archive left on disk by an earlier validation attempt. */
+function snapshotCanBeExposed(submission: Submission): boolean {
+  return submission.status !== 'static_failed'
+}
+
 /** The operator-facing metadata copied into a download (never any credential; the row holds none). */
 function submissionMetadata(submission: Submission): {
   id: string
@@ -172,10 +177,10 @@ function submissionMetadata(submission: Submission): {
 
 /**
  * Assemble a whole season's active submissions into one staging directory: each submission that has a
- * snapshot under its own `<user>-<id8>/` folder with a `submission.json`, plus a top-level `season.json`
- * index. A submission whose snapshot is missing is listed in `skipped` rather than failing the archive.
- * Returns the staging path for the caller to pack and then remove. On any other error the staging dir is
- * cleaned up before rethrowing.
+ * valid snapshot under its own `<user>-<id8>/` folder with a `submission.json`, plus a top-level
+ * `season.json` index. A submission whose snapshot is missing or invalidated by a static failure is
+ * listed in `skipped` rather than failing the archive. Returns the staging path for the caller to pack
+ * and then remove. On any other error the staging dir is cleaned up before rethrowing.
  */
 async function buildSeasonSubmissionArchive(
   deps: AdminDeps,
@@ -187,6 +192,10 @@ async function buildSeasonSubmissionArchive(
     const included: Array<{ folder: string; id: string; user_id: string; status: string }> = []
     const skipped: string[] = []
     for (const submission of active) {
+      if (!snapshotCanBeExposed(submission)) {
+        skipped.push(submission.id)
+        continue
+      }
       const folder = submissionFolderName(submission)
       const dest = join(staging, folder)
       try {
@@ -244,7 +253,8 @@ function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDep
       active.map(async (submission) => ({
         ...submissionMetadata(submission),
         ...optionalField('user_name', names.get(submission.user_id)),
-        has_snapshot: await deps.snapshots.exists(submission.id),
+        has_snapshot:
+          snapshotCanBeExposed(submission) && (await deps.snapshots.exists(submission.id)),
       })),
     )
     return reply.code(200).send(rows)
@@ -258,7 +268,7 @@ function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDep
       if (submission === undefined) {
         return reply.code(404).send({ error: 'no such submission' })
       }
-      if (!(await deps.snapshots.exists(submission.id))) {
+      if (!snapshotCanBeExposed(submission) || !(await deps.snapshots.exists(submission.id))) {
         return reply
           .code(404)
           .send({ error: 'no snapshot for this submission', code: 'no_snapshot' })

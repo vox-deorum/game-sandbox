@@ -13,8 +13,8 @@
  * rebuild no longer depends on the participant's repo still serving the pinned commit (a force-push or
  * deleted ref used to break re-runs here). Because the snapshot was packed with the same filter and sort
  * the overlay build context uses, a rebuild is byte-for-byte the image the worker built. For a
- * pre-snapshot submission (or one whose snapshot write failed) the helper falls back to re-cloning the
- * pinned source through the source seam.
+ * pre-snapshot submission, the helper falls back to re-cloning the pinned source through the source
+ * seam.
  */
 import type { ImagePolicy } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
@@ -88,8 +88,7 @@ export async function ensureSubmissionImage(
     }
   }
   // A rebuild is required: materialize the submission's tree, build the overlay, dispose the checkout.
-  // Prefer the durable snapshot; fall back to re-cloning the pinned source only for a submission that
-  // has none (a pre-snapshot row, or one whose snapshot write failed).
+  // Prefer the durable snapshot; fall back to re-cloning the pinned source only for a pre-snapshot row.
   const tree = await materializeTree(deps, submission)
   try {
     return await deps.driver.ensureImage({

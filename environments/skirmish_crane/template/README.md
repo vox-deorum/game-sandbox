@@ -1,81 +1,30 @@
-# Game Sandbox Agent Template: Skirmish at Crane Reach
+# Skirmish at Crane Reach agent
 
-This repository is a complete starter project for a Skirmish at Crane Reach agent. Edit `agent.py`. Everything in `sandbox/` is provided.
+Edit `agent.py` to build one unit's behavior for Skirmish at Crane Reach. Every unit on a side runs a separate instance of the same `Agent` class, so they do not share state or variables. `sandbox/` is provided code: do not edit it.
 
-An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
+Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder as you work:
 
-Skirmish at Crane Reach is a team tactics game on a hex field: two sides fight over the ground, and every unit on a side runs its own separately constructed copy of the same `Agent` class, with no memory shared between them. Unless you pick a saved rival with `--vs`, local play runs a separate copy of this repository's agent for every unit. See the course documentation for the environments and examples available to your class.
+```console
+python -m sandbox play
+python -m sandbox test
+python -m sandbox eval
+```
 
-## Project files
+`play` watches separate copies of your agent play both sides, `test` runs the provided checks, and `eval` runs seeded episodes and reports the mean team score. One episode is one full match. The guide also explains rivals, presets, local setup, and command flags.
+
+## Files you will use
 
 | Path | Purpose |
 | --- | --- |
-| `agent.py` | Your agent implementation |
-| `environment.md` | The Skirmish at Crane Reach reference: rules, observations, the action mask, and local play |
-| `manifest.json` | Tells Game Sandbox where the agent class lives |
-| `season.json` | Optional local season settings downloaded from My Submissions |
-| `requirements.txt` | Exact Python package versions used by the server |
-| `requirements-dev.txt` | Test dependencies |
-| `tests/` | Checks your submission should pass |
-| `sandbox/` | Provided local game and commands. Do not edit it. |
-| `sandbox/crane/` | Provided helpers you may import from `agent.py`, in six namespaces: `action` builds orders and reads what is legal, `me` reads your own unit, `visible` and `roster` read the other units, `tile` does hex geometry and terrain, and `paths` owns the path encoding |
-| `sandbox/observation_types.py` | Provided TypedDicts for the observation and action shapes, for editors and type checkers |
+| `agent.py` | Your `Agent` implementation and the first TODO locations. |
+| `environment.md` | Crane rules, starter walkthrough, helpers, observations, and settings. |
+| `manifest.json` | Names the agent class for a submission. |
+| `season.json` | Optional local season settings downloaded from My Submissions. |
+| `tests/` | Checks your submission should pass. |
+| `sandbox/` | Local game, commands, helper package, and observation types. Do not edit it. |
 
-Do not edit `sandbox/`, `requirements.in`, or `requirements.txt`. The template uses the same pinned packages locally and on the server. Ask your instructor if you need another package.
+The starter returns Crane orders with `action.move()` and `action.stay()` from `sandbox.crane`. Its `act(observation)` receives the current observation and action mask. Before changing the strategy, read [`environment.md`](environment.md). It starts with a small archer improvement you can copy, then explains when an order is legal.
 
-## Set up and play in one command
+Leave `sandbox/`, `requirements.in`, and `requirements.txt` unchanged. The pinned packages match the server. Ask your instructor before adding a package.
 
-From the project folder:
-
-```console
-python -m sandbox
-```
-
-The first run creates `.venv`, installs the pinned packages, and opens a game where you control one unit: click a highlighted tile to extend its path, click the unit to clear the path, and confirm to send the order. Use these commands as you work:
-
-```console
-python -m sandbox play       # watch separate copies of your agent play both sides in the browser
-python -m sandbox human      # play a unit yourself in the browser; --player N picks it, --companion self takes your whole team
-python -m sandbox eval       # run seeded episodes headlessly and report the mean score
-python -m sandbox eval --vs rivals/v1  # evaluate against a saved copy of an agent
-python -m sandbox test       # run the checks
-python -m sandbox setup      # just (re)install dependencies into .venv
-```
-
-When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
-
-A few notes on these commands:
-
-- `play --seed 7` repeats the same game.
-- `human --player 2` lets you play a different unit; `--companion self` lets you play every unit on your team instead of just one.
-- `--vs rivals/v1` plays against a saved rival, a folder holding that version's `agent.py` and `manifest.json`. It also works with `human` and `eval`.
-- `eval` reports a higher-is-better team score, useful for comparing changes against the same seeds, not for predicting leaderboard results.
-- `play --preset season_3` runs with one season's full settings directly. `season.json`, which arrives with your assignment, applies those settings automatically instead once you have it.
-
-The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
-
-## Write the agent
-
-Open `agent.py` and implement:
-
-- `reset(seed)`, called once before each match.
-- `act(observation)`, called on your unit's turn. `observation` is a dict with `observation` and `action_mask` keys. Return a dict with a `path` and a `target` choice, built with `action.move()` or `action.stay()` from `sandbox.crane`.
-
-Read [`environment.md`](environment.md) before you start. It explains the starter agent line by line, then the observation, the action mask, the `sandbox.crane` helpers, and messaging.
-
-Two optional methods are available. The [agent interface reference]({{DOCS_URL}}students/agent-interface/) covers both in full:
-
-- `learn(observation, action, reward, terminated)` updates a learning agent after a step.
-- `chat(inbox)` sends and receives messages. Crane Reach turns messaging on from Season 3 onward, and `agent.py` includes a commented-out `chat` hook to start from.
-
-Leave an optional method out when you do not use it.
-
-The template walks one step toward the enemy side until an enemy comes into view, then walks one step at a time toward the nearest one and names it. `TODO(you)` in `act` marks where to improve it. Every unit on your side runs its own separately constructed `Agent` instance, so nothing you store on `self` carries over between your units.
-
-## Submit
-
-Submit the repository URL through the course website. Game Sandbox pins one commit, and a later submission replaces it while the season is open. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
-
-## LLM availability
-
-Skirmish at Crane Reach does not enable model calls. The composed starter still includes `python -m sandbox llm` and the shared [Using the LLM API](llm.md) reference, which report the availability configured for an environment.
+When your agent is ready, follow the shared [submitting guide]({{DOCS_URL}}students/submitting/). For the optional `learn` and `chat` hooks, see the shared [agent interface]({{DOCS_URL}}students/agent-interface/). Crane messaging begins in Season 3.

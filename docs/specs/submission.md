@@ -11,7 +11,7 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
-`act` receives the environment's object-shaped observation and returns an action in the environment's action space. Every current environment uses a flat `Discrete` space, so that action is an integer. See the [environment contract](environment.md#observations-and-actions).
+`act` receives the environment's object-shaped observation and returns an action in the environment's action space. The action type depends on the environment and may be a `Discrete` integer or a structured value such as a `Dict`. See the [environment contract](environment.md#observations-and-actions).
 
 The interface is independent of algorithm style. Agents run inside the server-side session container and may call the optional [LLM API](llm.md).
 
@@ -71,7 +71,8 @@ Validation never runs a game:
 
 | Layer | Executes participant code? | Checks |
 | --- | --- | --- |
-| Static | No | Reachable commit, source size within the cap, exact manifest shape, existing entry point module, supported template version that matches the season |
+| Resolve | No | Reachable repository and ref that resolves to an exact commit |
+| Static | No | Source size within the cap, exact manifest shape, existing entry point module, supported template version that matches the season |
 | Load | Yes, in a sandbox | Module imports, class exists, constructor succeeds, `reset` and `act` are callable |
 
 Every failure has a specific owner-visible reason. A successful submission becomes a runnable overlay image. See [Execution](execution.md#from-submission-to-image).

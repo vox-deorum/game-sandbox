@@ -16,9 +16,11 @@ Install:
 
 ## 1. Copy the template to your computer
 
-Your assignment or the environment's **My Submissions** page will have a link to a GitHub repository with the agent template. On My Submissions, choose **Set Up Locally** for the exact clone command. **Cloning** a repository means copying it to your computer.
+Find the agent template's GitHub repository link in your assignment or on the environment's **My Submissions** page. On My Submissions, choose **Set Up Locally** for the exact clone command. **Cloning** a repository means copying it to your computer.
 
-Open Visual Studio Code's Start page and select **Clone Git Repository** for an interactive experience, or use the command line:
+In Visual Studio Code, select **Clone Git Repository** on the Start page. After the cloned repository folder opens, select **Terminal > New Terminal**. Use that terminal for the rest of this guide. It should start in the folder containing `agent.py` and `manifest.json`.
+
+To clone with Git in a terminal instead, run:
 
 ```console
 git clone <your-repository-url>
@@ -35,13 +37,13 @@ From the repository folder, run:
 python -m sandbox
 ```
 
-The first run automatically creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls.
+The first run normally creates a **virtual environment** to keep this project's Python packages separate from other projects, then installs the exact versions required by the template. If your current Python interpreter already passes the template's dependency checks, the launcher can use it as-is. It then opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls.
 
-After the first run, everything works locally, with no website or internet connection required.
+After the first run, local play and tests work with no website or internet connection required. Optional LLM calls need access to the course website.
 
 ### Manual installation
 
-If automatic setup fails, follow Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) to create and activate `.venv`. With that environment active, install the template's packages:
+If automatic setup fails, follow Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) to create and activate `.venv`. After activating that environment, install the template's packages:
 
 ```console
 python -m pip install -r requirements.txt -r requirements-dev.txt
@@ -56,42 +58,23 @@ Open `agent.py`, which already contains a small working agent for you to improve
 - `reset(seed)` prepares the agent for a new game.
 - `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
-See [Agent interface](agent-interface.md) for the full reference on both methods.
+See [Agent interface](agent-interface.md) for more about these methods and the optional methods you can add.
 
-Each game gives its action numbers and observation fields different meanings. In Flappy Bird, for example, the observation describes the bird and nearby pipes in screen pixels. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value.
+Action numbers and observation fields mean different things in each game. In Flappy Bird, for example, the observation describes the bird and nearby pipes in screen pixels. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value.
 
 ## 4. Play and evaluate
 
-You can run the game in several ways:
+Use these commands most often:
 
 ```console
 python -m sandbox                     # play it yourself in a browser
-python -m sandbox human               # the same as the command above
 python -m sandbox play                # watch your agent in a browser
-python -m sandbox play --headless     # run one game without a browser
 python -m sandbox eval --episodes 10  # run ten repeatable headless games
 ```
 
-`python -m sandbox play` runs the game with every player as an instance of your agent, while `python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser.
+`python -m sandbox play` runs the game with every player as an instance of your agent. `python -m sandbox` lets you control the selected player in a browser.
 
-`python -m sandbox play --headless` runs one game without a browser, using your agent for the selected player and a legal default choice for every other player. `eval` repeats that same headless setup over several **episodes**, which are complete games, each starting from a repeatable condition called a **seed**. It plays five episodes by default and reports the average score. These results are not the same as the official leaderboard result, where your agent may play against different opponents or settings.
-
-### More run options
-
-The template also accepts these options and commands:
-
-- `--vs` fills the other players with a different agent when a game has more than one player, so you can play, watch, or score your current agent against it. To save an older version, copy `agent.py`, `manifest.json`, and other source files into a folder such as `rivals/v1`, then pass `--vs rivals/v1` to `play`, `human`, or `eval`. An absolute path to another copy of the project also works. In a team game, your own teammates keep your current agent.
-
-  > _Why save a rival?_ The default opponents never change, so two decent versions of your agent can score alike against them. Playing one version directly against the other shows which one is stronger.
-
-- `--player N` chooses your player by number when a game has more than one. The commands use player `0` unless you pick another.
-- `--companion self` lets you play every player on your own team yourself, instead of leaving your teammates to your agent. It works with `human` in a team game where every one of your teammates is one you are allowed to control.
-- A `season.json` file downloaded through **Set Up Locally** applies the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Put it beside `manifest.json`. Every affected command prints the season it loaded. Delete the file to return to the environment defaults.
-- `--preset NAME` selects a named gameplay preset for one `human` or `play` command. It replaces the gameplay parameters from `season.json` for that command, but keeps the season's decision and game limits. A repeated `--parameter` for the same setting wins.
-- `--parameter NAME=VALUE`, `--decision-limit-ms N`, and `--game-limit-ms N` override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change more than one gameplay setting.
-- `python -m sandbox setup` prepares the virtual environment without starting a game.
-- `play --seed N` repeats the same starting condition and random generator every time, so you can study one specific game.
-- Adding `--help` to any command lists all of its options.
+`eval` runs several headless games. Each complete game is an **episode** and begins from a repeatable condition called a **seed**. It plays five episodes by default and reports the average score. Local results cannot predict the official board, where your agent may face different opponents or settings.
 
 ## 5. Run the checks
 
@@ -103,7 +86,7 @@ python -m sandbox test
 
 ## 6. Save your work on GitHub
 
-A **commit** is a named snapshot of your repository. Create one, then **push** it to send it to GitHub:
+Create a **commit**, a named snapshot of your repository, then **push** it to GitHub:
 
 ```console
 git status
@@ -117,6 +100,20 @@ git push
 ## 7. Submit
 
 Submit your repository URL through the course website. The server records one exact commit, so later edits do not change an existing submission. See [Submitting](submitting.md) for the validation process and common errors.
+
+## More local-run options
+
+| Option or command | Use it when you need to |
+| --- | --- |
+| `--vs PATH` | Fill the other seat or seats with the agent at `PATH`. Players in the selected seat keep your current agent. To compare an older version, copy the project files to a folder such as `rivals/v1`, then use `--vs rivals/v1` with `play`, `human`, or `eval`. An absolute project path also works. |
+| `--player N` | Choose player `N` when a game has more than one player. The default is player `0`. |
+| `--companion self` | Control every player in the selected seat yourself when the environment supports it. |
+| `season.json` | Apply the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
+| `--preset NAME` | Use one named gameplay preset for `human` or `play`. It replaces `season.json` gameplay parameters for that command but keeps its time limits. A repeated `--parameter` wins. |
+| `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change several settings. |
+| `python -m sandbox setup` | Prepare the virtual environment without starting a game. |
+| `python -m sandbox play --seed N` | Repeat one starting condition and random generator. |
+| `--help` | List the options for any command. |
 
 ## Optional: use the LLM API
 

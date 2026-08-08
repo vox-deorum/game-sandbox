@@ -6,8 +6,8 @@ Start with your environment page. It explains the working agent in your template
 
 ## Available environments
 
-The Game Sandbox documentation site generates the list below from the current environment guides. If you are reading this page on GitHub, open your assignment's template repository instead.
+The Game Sandbox documentation site generates the current environment list below. GitHub does not show it, so if you are reading there, open your assignment's template repository instead.
 
 [environment-guide-catalog]: # "Populated dynamically from canonical environment guides."
 
-Use the template repository from your assignment. If you are not sure which one to use, ask your instructor before starting.
+Use the template repository named in your assignment. If you are not sure which one that is, ask your instructor before starting.

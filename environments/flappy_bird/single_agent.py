@@ -88,6 +88,9 @@ class GymnasiumToAEC(AECEnv):
             self._was_dead_step(action)
             return
 
+        if not self.action_space(agent).contains(action):
+            raise ValueError(f"{agent} supplied an action outside its action space")
+
         obs, reward, terminated, truncated, info = self.gym_env.step(action)
         self._last_obs = obs
 

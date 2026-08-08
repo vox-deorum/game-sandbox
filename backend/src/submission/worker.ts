@@ -105,12 +105,16 @@ function sizeFailureReason(measuredBytes: number, limitBytes: number): string {
   )
 }
 
-/** Reconstruct the source seam's input from a stored submission row. */
+/** Reconstruct the source input, preferring the stored commit pin on every Git retry. */
 function sourceInput(submission: Submission): SourceInput {
   if (submission.source_kind === 'local') {
     return { kind: 'local', localPath: submission.local_path ?? '' }
   }
-  return { kind: 'git', repoUrl: submission.repo_url ?? '', ref: submission.ref }
+  return {
+    kind: 'git',
+    repoUrl: submission.repo_url ?? '',
+    ref: submission.commit_sha ?? submission.ref,
+  }
 }
 
 export class ValidationWorker implements SubmissionEnqueuer {
@@ -236,17 +240,29 @@ export class ValidationWorker implements SubmissionEnqueuer {
         await this.fail(submissionId, 'static', staticResult.reason.message)
         return
       }
+      // The tree passed the size cap and the manifest checks: write the durable snapshot now, before
+      // the build reads the same tree and before static passes. A failed write rejects the submission
+      // and attempts to remove any stale archive. Admin routes never expose an archive from a
+      // `static_failed` row, including when storage also prevents that cleanup.
+      try {
+        await this.deps.snapshots.write(submissionId, tree.path)
+      } catch (error) {
+        await this.deps.snapshots
+          .delete(submissionId)
+          .catch((deleteError) =>
+            this.log(
+              `validation worker: removing failed snapshot for ${submissionId} failed: ${errorText(deleteError)}`,
+            ),
+          )
+        await this.fail(
+          submissionId,
+          'static',
+          `could not store the durable submission snapshot: ${errorText(error)}`,
+        )
+        return
+      }
       await this.deps.storage.finishSubmissionCheck(submissionId, 'static', 'passed')
       runningStage = null
-
-      // The tree passed the size cap and the manifest checks: write the durable snapshot now, before
-      // the build reads the same tree. Best-effort — a write failure logs and the submission proceeds;
-      // the only consequence is that a later overlay rebuild falls back to re-cloning the pinned source.
-      await this.deps.snapshots
-        .write(submissionId, tree.path)
-        .catch((error) =>
-          this.log(`validation worker: snapshotting ${submissionId} failed: ${errorText(error)}`),
-        )
 
       // Stage 3 — build: the code-only overlay image on the season's base image.
       runningStage = 'build'

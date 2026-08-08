@@ -18,7 +18,7 @@ The environment declares seat plans. seat_0 is Red and seat_1 is Blue in every p
 | army     | seat_0, Red  | player_0 through player_19  |
 | army     | seat_1, Blue | player_20 through player_39 |
 
-skirmish is declared first and is the default. Red covers the first half of the players and Blue the second. Within a side, players run footmen first, then archers, then cavalry, in index order, so unit ids follow from player positions alone. In the army plan, player_0 through player_7 are red_footman_0 through red_footman_7, player_8 through player_13 are the red archers, player_14 through player_19 the red cavalry, and player_20 through player_39 repeat the order for Blue. Every observation carries the full rosters, so agents never recompute this mapping.
+skirmish is declared first and is the default. Red covers the first half of the players and Blue the second. Within a side, player and roster order is footmen, then archers, then cavalry, each in index order, so unit ids follow from player positions alone. The activation order is shuffled among living units each round. In the army plan, player_0 through player_7 are red_footman_0 through red_footman_7, player_8 through player_13 are the red archers, player_14 through player_19 the red cavalry, and player_20 through player_39 repeat the order for Blue. Every observation carries the full rosters, so agents never recompute this mapping.
 
 Seat order matters: the field is symmetric, but a fixed seed gives the two seats different spawn halves and activation draws, so swapping agents changes the match.
 
@@ -54,7 +54,7 @@ Defaults reproduce Season 1. The season schedule resolves to:
 
 Each row ships as a declared `META.presets` entry, choosable in the web dialogs and with `--preset season_1` through `--preset season_6`. Tests pin the table.
 
-capture_target stays 200 and round_cap stays 1000 in every season.
+All six shipped presets use capture_target 200 and round_cap 1000. Official season configurations and local overrides may change either.
 
 ## Match flow
 
@@ -94,7 +94,7 @@ Digits run clockwise from northeast, so a direction's opposite is found by addin
 
 Four directions per path suffice: the highest movement stat is 4 and every step costs at least 1, so no unit can execute a fifth step. A path value is legal exactly when the unit can walk the complete path from the current state under the movement rules, and stay is always legal. A target value is legal exactly when its roster slot is alive and visible at activation, and none is always legal. The components are independent by construction: range is checked only at resolution, from the path's final tile, and an out-of-range name falls to the ruleset's automatic strike, so every combination of individually legal component values is legal, which is what the platform requires of a `Dict` action space.
 
-Every observation carries an authoritative action mask with one binary vector per action component. The stay bit and the none bit are always 1, and the remaining path and target bits mark exactly the walkable paths and the nameable targets. A target masked 1 is nameable, not a guaranteed strike. `env.step()` rejects an action outside the `Dict` space and rejects one any of whose components is masked 0. Such an action is an illegal participant action. The environment entry's `default_action(env, player_id)` returns `{"path": 0, "target": 0}`, stand still, which is legal in every reachable state and is what the harness uses for a late or missing action. Per the ruleset, that order still strikes when enemies are in range, so a late or crashed agent fights back automatically.
+Every observation carries an authoritative action mask with one binary vector per action component. The stay bit and the none bit are always 1, and the remaining path and target bits mark exactly the walkable paths and the nameable targets. A 1 in the target mask is nameable, not a guaranteed strike. `env.step()` rejects an action outside the `Dict` space and rejects one any of whose components is masked 0. Such an action is an illegal participant action. The environment entry's `default_action(env, player_id)` returns `{"path": 0, "target": 0}`, stand still, which is legal in every reachable state and is what the harness uses for a late or missing action. Per the ruleset, that order still strikes when enemies are in range, so a late or crashed agent fights back automatically.
 
 Target values index the acting player's enemy roster in player order, value i naming slot i - 1, so the same value names a different unit for Red and Blue. The agent template ships a small `sandbox.crane` helper package, and its `paths` namespace owns the complete 0 through 1554 codec, `paths.encode(directions)` and `paths.decode(path_id)`. An empty path uses 0, and invalid directions or ids raise `ValueError`. The package's `action` namespace builds orders through `action.move(path_id, target_id=None, observation=None)` and `action.stay(target_id=None, observation=None)`, which return action Dicts and resolve a target id to its roster slot through the observation, and reads what is legal through `action.legal_paths(observation)` and `action.possible_targets(observation)`, both driven by the authoritative mask rather than by a second implementation of the rules.
 
