@@ -1,6 +1,6 @@
 # Three Branches: Village Specification
 
-This document specifies Three Branches, the village of Days at Three Branches: its landscape, buildings, props, and the rules that generate them. The [ruleset](ruleset.md) stays the source of game rules; this document is the source of place. The setting behind it lives in the [worldview](../worldview.md).
+This document specifies Three Branches, the village of Days at Three Branches: its landscape, buildings, props, and the rules that generate them. The [ruleset](ruleset.md) stays the source of game rules; this document is the source of place. The setting behind it lives in the [worldview](worldview.md).
 
 There is no canonical map. The village is whatever these rules generate from the match seed. Every season pins the same default seed, so the course plays one familiar village throughout, while any seed still yields a valid village.
 
@@ -51,8 +51,8 @@ Districts are anchors along the road and channels, not fixed positions:
 
 ## Buildings and interiors
 
-- Three building types, all enterable: the home (ten instances, 6 by 5 m), the inn (one, 10 by 8 m), and the repair shed (one, 6 by 6 m).
-- Every building is one room with a single permanent doorway opening, 1.2 m wide, facing the nearest path. The opening is a gap in the wall, so sight, hearing, and speech carry through it normally.
+- Three building types, all enterable: the home (ten instances, 6 by 5 m), the inn (one, 10 by 8 m), and the repair shed (one, 6 by 6 m). The outer rectangle of each building is its placement footprint.
+- Every building is one room with a single permanent doorway opening, 1.2 m wide, facing the nearest path. The solid wall perimeter is the outer rectangle with that doorway gap removed, and the interior is walkable. Movement collision and line-of-sight checks use the same wall segments derived from this geometry. The opening carries sight, hearing, and speech normally.
 - Doorways open onto walkable ground, never onto water, another footprint, or the boundary.
 - The inn hearth stands inside the inn and the repair bench inside the shed, each against the wall opposite the doorway. Homes hold no interior props; a garden plot, where a home has one, sits outside, flush against one exterior wall.
 - Homes are numbered home_0 through home_9 in the order the generator places them, and npc_i lives in home_i. The village always generates ten homes, whatever the cast size.
@@ -74,7 +74,7 @@ Activities, states, and the use rules are the ruleset's; this table places the i
 | Well pump | the well plaza | 0.6 x 0.6 m | 1 |
 | Beacon bell | beside the road's west stretch | 0.6 x 0.6 m | 1 |
 
-- Every prop keeps at least one walkable point within the ruleset's 1.5 m reach, outside every footprint.
+- Every prop has a standing position in the connected walkable region within the ruleset's 1.5 m reach. A character can stand there with its full body clear of solid geometry, face the prop, and draw an unblocked line to it.
 
 ## Scenery
 
@@ -89,8 +89,8 @@ The generator runs from the match seed's generation stream, in order: boundary a
 - The stable features are each placed once: the well pump, the market, the inn, the repair shed, and the beacon bell.
 - The walkable ground, bridges and building interiors included, is one connected region.
 - Ten homes exist, and every doorway opens onto walkable ground.
-- Every prop has a walkable point within reach.
-- No two footprints overlap, and none overlaps water, the road, or the boundary.
+- Every prop has a connected walkable standing position within reach, with room for the full body, facing the prop along an unblocked line.
+- Building placement rectangles do not overlap one another, water, the road, the boundary, or exterior objects. Other exterior footprints do not overlap. An interior prop stays inside its building, leaves the doorway open, and does not overlap another prop.
 - The visitor spawn sits on the road's centerline 1 m inside the west edge, clear of every footprint.
 - Each channel carries the road's bridge and at most one footpath bridge; the trunk carries none.
 

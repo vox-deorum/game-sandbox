@@ -12,7 +12,17 @@ The template and guide are what students actually touch, and the helpers are a p
 
 ### The template and helpers
 
-The template layer on `templates/base`, with the helper module: `ground_at(position)`, `blocked(a, b)`, `walkable(position)`, `path_to(a, b)` returning valid paths over the layout without promising optimality, `usable_prop(observation)` for the prop a use would select, and the emote-name, action-id, and locomotion builders, the locomotion builder wrapping the heading into range and clamping the speed. Emote names and action ids come from the shared `rules.json`.
+The game-specific template layer lives at `environments/three_branches/template`, composed with `templates/base`. Each Agent instance owns one `VillageMap` for the current episode. `reset(seed)` clears it, and the first `act(observation)` call rebuilds it from `observation["village"]`. It provides `ground_at(position)`, `blocked(a, b)`, `walkable(position)`, and `path_to(a, b)`, returning valid paths without promising optimality. No layout lives in module-global state.
+
+Standalone helpers include `usable_prop(observation)`, `character_seed(session_seed, character_id)`, emote-name and action-id lookups, and locomotion builders. `character_seed` joins the session seed's canonical base-10 integer text, a colon, and the exact character id. It hashes those UTF-8 bytes with SHA-256 and returns the first eight digest bytes as an unsigned big-endian integer from 0 through 2^64 - 1. This gives each NPC a stable random stream after it learns its id, without changing the platform seed contract. Pin these test vectors:
+
+| Session seed | Character id | Derived seed |
+| --- | --- | --- |
+| 0 | npc_0 | 14089798750116722779 |
+| 0 | npc_1 | 8874553580198532509 |
+| 42 | npc_0 | 2142610074790184181 |
+
+The locomotion builder wraps the heading into range and clamps the speed. Emote names and action ids come from the shared `rules.json`.
 
 ### Performance
 
@@ -24,9 +34,9 @@ The canonical student guide at `environments/three_branches/environment.md`, fol
 
 ## Tests
 
-- Helper pin tests against the engine on pinned seeds.
-- Helper performance bounds and the example's healthy days on both plans.
-- Guide publication through the docs pipeline.
+- Helper pin tests against the engine on pinned seeds, including `VillageMap` initialization, reset, different seeds, multiple Agent instances, and the fixed `character_seed` vectors above.
+- Helper performance bounds and healthy days on both plans for the composed template and the composed internal example, within the decision and episode budgets.
+- The copied canonical guide publishes through the docs pipeline. Examples CI runs on the composed output, and a separate pin keeps `PUBLISHED_EXAMPLES` empty.
 
 ## Done when
 

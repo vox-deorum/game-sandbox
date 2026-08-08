@@ -6,7 +6,7 @@ Part of [the plan](../README.md). This is build-order step 2: the whole [ruleset
 
 ## Why this is its own seam
 
-The engine is the physics everything else trusts, and the environment is the platform face that the harness, recorder, backend, and web app consume. Building them together against a fixture village gets the full vertical slice running early, and step 8's template helpers are pin-tested against this engine rather than a second implementation of the rules.
+The engine is the physics everything else trusts, and the environment is the platform face that the harness, recorder, backend, and web app consume. Building them together against a fixture village gets the full vertical slice running early, and step 7's template helpers are pin-tested against this engine rather than a second implementation of the rules.
 
 ## What to build
 
@@ -16,11 +16,11 @@ The engine is the physics everything else trusts, and the environment is the pla
 
 ### Layout types and the fixture village
 
-The static layout structure, shaped like the observation's `village` Dict: channels, road, and footpaths as centerline-and-width polylines, bridges, field and reed polygons, buildings with doorways, props with footprints and rotations, scenery, and the spawn point. Step 4 fills it procedurally; this step ships one hand-authored fixture village, small but complete enough to exercise every rule: water with a bridge, each ground class, buildings with doorways, reeds, and props of every transition kind.
+The static layout structure, shaped like the observation's `village` Dict: channels, road, and footpaths as centerline-and-width polylines, bridges, field and reed polygons, buildings with solid wall geometry and doorway gaps, props with footprints and rotations, scenery, and the spawn point. Step 4 fills it procedurally; this step ships one hand-authored fixture village, small but complete enough to exercise every rule: water with a bridge, each ground class, buildings with doorways, reeds, and props of every transition kind.
 
 ### The tick cycle
 
-Character state (position, heading, speed, expression) and simultaneous resolution in the ruleset's id order, npc_0 upward and the visitor last. That order is not player order, because the visitor is `player_0`; the engine works in character ids and the environment owns the mapping. Movement advances up to the commanded speed along the heading and stops at first contact with anything solid as already updated this tick, water and the boundary are impassable, and the speed limit comes from the ground class under the pre-tick position.
+Character state (position, heading, speed, expression) and simultaneous resolution in character-id order, npc_0 upward and the visitor last. That order is not player order: the visitor is `player_0`, and the NPCs occupy `player_1` upward in NPC-id order. The engine works in character ids and the environment owns the mapping. Movement advances up to the commanded speed along the heading and stops at first contact with anything solid as already updated this tick, water and the boundary are impassable, and the speed limit comes from the ground class under the pre-tick position.
 
 ### Prop use and perception
 
@@ -40,7 +40,7 @@ Self-contained per the design, kept small the way Skirmish at Crane Reach keeps 
 
 ### Metadata and the builtins
 
-`META` per the design's platform metadata table, with `human_players` the single entry `player_0` and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from its derived agent seed. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
+`META` per the design's platform metadata table, including `recommended_episode_ticks=1200`, `human_players` as the single entry `player_0`, and the renderer key `three-branches-village`. The `naive` builtin plays the default action, the platform baseline. The `scripted_visitor` builtin wanders by road and path, approaches NPCs it sees, and offers a few canned lines, drawing randomness only from the session seed passed to `reset(seed)`. Registration surfaces: the package directory picked up by `npm run sync:envs`, the Docker image smoke-test line, the two builtin agent directories, and the forfeit floor entry in the backend's score module.
 
 ## Tests
 

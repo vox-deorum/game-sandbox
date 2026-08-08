@@ -20,7 +20,8 @@ Mockups are authored inside this stage and approved before build. The scope:
 
 - Renderer unit tests for the HUD elements and for camera fit, bounds, and zoom limits from the fixture.
 - The e2e journey covers pan and zoom on the watch page, and locator updates land in the same change where markup moves.
+- While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
 
 ## Done when
 
-The fixture replays under the full HUD and can be explored close up in both render modes, step 6's input UI is specified and approved, and the owner's sign-off is recorded in this file's status line.
+The fixture replays under the full HUD and can be explored close up in both render modes, step 6's input UI is specified and approved, the bare full browser e2e suite passes, and the owner's sign-off is recorded in this file's status line.

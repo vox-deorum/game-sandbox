@@ -12,7 +12,7 @@ village.md is a complete generative specification with hard guarantees and no ga
 
 ### The generation pipeline
 
-village.md's fixed order, drawing only from the generation stream: boundary and river, road and bridges, district anchors, buildings and homes, footpaths, ground classes, scenery, props. Prop counts, footprints, and placement districts come from `props.json`. Every guarantee is enforced for every seed: the stable features placed once, one connected walkable region including interiors and bridges, ten homes with doorways onto walkable ground, a reachable walkable point within reach of every prop, no footprint overlaps or intrusions into water, road, or boundary, the spawn clear on the road centerline, and the per-channel bridge counts.
+village.md's fixed order, drawing only from the generation stream: boundary and river, road and bridges, district anchors, buildings and homes, footpaths, ground classes, scenery, props. Prop counts, footprints, and placement districts come from `props.json`. Every guarantee is enforced for every seed: the stable features placed once, one connected walkable region including interiors and bridges, ten homes with doorways onto walkable ground, a valid standing position for every prop, the placement and overlap rules for buildings, interior props, and exterior objects, a clear spawn on the road centerline, and the per-channel bridge counts.
 
 ### The swap
 
@@ -20,7 +20,7 @@ village.md's fixed order, drawing only from the generation stream: boundary and 
 
 ## Tests
 
-- The guarantee property suite across a pinned seed batch.
+- The guarantee property suite across a pinned seed batch, including a witness for every prop use: a connected walkable point where a character's body fits, lies within use reach, and has an unblocked line to the prop.
 - Same-seed determinism, byte for byte.
 - Meander, radius, width, and count bounds from village.md.
 - Connectivity by flood fill across walkable ground, bridges, and interiors.

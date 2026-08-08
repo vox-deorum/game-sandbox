@@ -66,5 +66,5 @@ The world is one village throughout. Each season foregrounds one small capabilit
 
 ## Evaluation stance
 
-- The automated leaderboard ranks by episode score like every environment, but here the score only reflects run health: the agent loads, runs a full episode, NPCs move, no crashes or timeouts. That rank does not matter for grading and never measures believability.
+- The automated leaderboard ranks by episode score like every environment, but here the score only reflects run health: the agent loads, completes the full episode, and has no crashes or timeouts. That rank does not matter for grading and never measures believability.
 - The human-rating leaderboard is this game's real leaderboard. Students author a short observable-behavior rating prompt each season, and classmates rate against the declared design goal.

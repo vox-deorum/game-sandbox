@@ -20,7 +20,7 @@ The expression palette with the nine emotes plus use, and the use-preview highli
 
 ### Session behavior
 
-The idle-timeout rule stops reclaiming a connected visitor who is watching quietly. Today 60 seconds without a command ends a human session, and standing still is normal play in this game.
+Step 1's human-session idle rule stops reclaiming a connected visitor who is watching quietly. The timeout arms only after the last owner socket disconnects. Spectators do not keep the visitor session alive, and scripted watch sessions remain viewer-based. Standing still is normal play in this game.
 
 ### Local parity
 
@@ -31,7 +31,9 @@ The visitor seat playable through `scripts/play.py` and the template launcher, w
 - jsdom unit tests for input composition, palette state, and preview correctness against fixture observations. Renderer tests cover every human control, per the design.
 - A Playwright human-play journey: join as the visitor, walk, emote, observe the use preview, send a talk.
 - Local launcher coverage for the visitor seat.
+- Integration coverage keeps a quiet connected visitor live, starts the idle timeout after the final owner disconnects, and confirms that a spectator alone does not extend the session.
+- While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
 
 ## Done when
 
-A human plays the visitor live in the browser and locally, with locomotion, the palette, the preview, and chat behaving per the design, and a quiet visitor is never reclaimed while connected.
+A human plays the visitor live in the browser and locally, with locomotion, the palette, the preview, and chat behaving per the design, a quiet visitor is never reclaimed while connected, and the bare full browser e2e suite passes.

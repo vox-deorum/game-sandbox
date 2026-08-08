@@ -17,13 +17,16 @@ The full palette, tileset direction, and mockups are authored inside this stage 
 - Sustained prop-state animations derived from state alone: a lit lantern glows, the lit hearth burns, a tended shrine trails incense smoke, the flowing pump pours, and the ringing bell swings. Prop states come from the shared `props.json`.
 - Day-phase lighting when daynight is on, and ambient white cranes as pure renderer dressing.
 - The debug-or-realistic viewer toggle on watch, replay, and play. Both modes read the same overlay, and a replay seek produces the same state in either mode.
+- A readable still presentation when `prefers-reduced-motion` is enabled: sustained Pixi animation stops while the current prop state, phase lighting, and all other game state remain readable.
 
 ## Tests
 
 - Renderer unit tests for state-derived animation and phase lighting from the fixture.
 - Both modes replay the pinned fixture to the same state.
+- The realistic mode has a readable still presentation when `prefers-reduced-motion` is enabled, covered by a renderer test.
 - Asset and thumbnail checks in the pattern of the existing renderer asset tests.
+- While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
 
 ## Done when
 
-The fixture replays in the final style behind the toggle, and the owner's sign-off is recorded in this file's status line.
+The fixture replays in the final style behind the toggle, the bare full browser e2e suite passes, and the owner's sign-off is recorded in this file's status line.

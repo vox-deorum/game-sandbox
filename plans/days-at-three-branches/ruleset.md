@@ -12,16 +12,16 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 - A character's state is turtle-style: a position (x, y), a heading, and a speed, the meters it moved on the latest tick. Facing is the heading.
 - Every range in this document is measured position to position.
 - Time advances in ticks. A tick is half a second of village time, and a day is 1200 ticks.
-- Everything is solid. Characters, buildings, and props have footprints, and two footprints never overlap. A character is a circle of radius 0.4 m.
-- Buildings block perception: a line that crosses a wall carries neither sight, nor presence, nor speech.
+- Characters and props have solid footprints, and a character is a circle of radius 0.4 m. A building's outer rectangle reserves its site from other buildings and exterior objects, but its interior is walkable. Interior props may occupy that reserved rectangle when they stay inside the walls, leave the doorway open, and do not overlap each other.
+- A building wall is the perimeter of its outer rectangle, with its 1.2 m doorway gap removed. Movement collision and line-of-sight checks use these same derived wall segments. A line that crosses a wall carries neither sight, nor presence, nor speech.
 - The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically. Each season pins one default seed, so its matches all play the same village.
 
 ## Ticks
 
-A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together, in canonical id order, npc_0 upward and the visitor last:
+A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together in ruleset resolution order, npc_0 upward and the visitor last. This is distinct from the PettingZoo player order, which is player_0 for the visitor and player_1 upward for the NPCs:
 
 - Movement: the character advances up to its speed for the tick along its heading and stops at first contact with anything solid, as already updated this tick.
-- Prop use: a prop holds one user at a time. When several characters reach for it in the same tick, the first in canonical order gets it and the rest resolve to expression none.
+- Prop use: a prop holds one user at a time. When several characters reach for it in the same tick, the first in ruleset resolution order gets it and the rest resolve to expression none.
 
 A late or missing action, the default, is speed 0, heading unchanged, expression none: the character stands still. Commanded values degrade rather than fail: a heading of 360 wraps to 0, and an expression that is not available, no usable prop or a prop already held, resolves to none.
 

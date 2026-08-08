@@ -20,7 +20,7 @@ The renderer package at `environments/three_branches/renderer/` with a `PixiRend
 
 ### Session limits
 
-The session duration cap becomes environment-aware, derived from the recommended episode length and pace interval with margin. The current 600 second default equals a paced 1200-tick day exactly and would end a live day at the finish line.
+Step 1's environment-aware duration rule applies to this live day. Its derived default covers the paced day, every agent-controlled player's compute budget, and the 60-second platform-overhead allowance, unless a deployment explicitly overrides it. The current 600-second default covers only the pacing windows and would end a live day at the finish line.
 
 ### Fixture and e2e
 
@@ -30,7 +30,9 @@ A pinned fixture recording on the step 2 fixture village, with its generator scr
 
 - Renderer unit tests from the fixture: seek anywhere, idempotent update, overlay-only state.
 - Playwright watch and replay journeys, and the spectator chat visibility check.
+- An integration test proves the live day reaches its natural end under the derived duration default.
+- While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
 
 ## Done when
 
-A live match renders in the browser, its replay scrubs to exact frames, `npm run play` shows a local watch-mode day, and the catalog lists the environment.
+A live match renders in the browser, its replay scrubs to exact frames, `npm run play` shows a local watch-mode day, the bare full browser e2e suite passes, and the catalog lists the environment.
