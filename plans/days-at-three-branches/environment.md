@@ -11,12 +11,12 @@ The environment declares seat plans. seat_0 is the cast and seat_1 is the visito
 | cast_3  | Three villagers | 4       |
 | cast_10 | Ten villagers   | 11      |
 
-| Plan | Seat | Ordered players |
-| --- | --- | --- |
-| cast_3 | seat_0, the cast | player_1 through player_3 |
-| cast_3 | seat_1, the visitor | player_0 |
-| cast_10 | seat_0, the cast | player_1 through player_10 |
-| cast_10 | seat_1, the visitor | player_0 |
+| Plan    | Seat                | Ordered players            |
+| ------- | ------------------- | -------------------------- |
+| cast_3  | seat_0, the cast    | player_1 through player_3  |
+| cast_3  | seat_1, the visitor | player_0                   |
+| cast_10 | seat_0, the cast    | player_1 through player_10 |
+| cast_10 | seat_1, the visitor | player_0                   |
 
 cast_3 is declared first and is the default. PettingZoo player order is player_0, then player_1 upward, with the visitor first. It controls the order of `possible_agents`, active-player mappings, and platform conformance. The ruleset resolution order is different: npc_0 upward, then the visitor. It controls same-tick action resolution and the cast roster. Every roster entry carries both its PettingZoo player id and ruleset character id, so agents never recompute the mapping.
 

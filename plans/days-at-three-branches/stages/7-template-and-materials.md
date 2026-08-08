@@ -16,11 +16,11 @@ The game-specific template layer lives at `environments/three_branches/template`
 
 Standalone helpers include `usable_prop(observation)`, `character_seed(session_seed, character_id)`, emote-name and action-id lookups, and locomotion builders. `character_seed` joins the session seed's canonical base-10 integer text, a colon, and the exact character id. It hashes those UTF-8 bytes with SHA-256 and returns the first eight digest bytes as an unsigned big-endian integer from 0 through 2^64 - 1. This gives each NPC a stable random stream after it learns its id, without changing the platform seed contract. Pin these test vectors:
 
-| Session seed | Character id | Derived seed |
-| --- | --- | --- |
-| 0 | npc_0 | 14089798750116722779 |
-| 0 | npc_1 | 8874553580198532509 |
-| 42 | npc_0 | 2142610074790184181 |
+| Session seed | Character id | Derived seed         |
+| ------------ | ------------ | -------------------- |
+| 0            | npc_0        | 14089798750116722779 |
+| 0            | npc_1        | 8874553580198532509  |
+| 42           | npc_0        | 2142610074790184181  |
 
 The locomotion builder wraps the heading into range and clamps the speed. Emote names and action ids come from the shared `rules.json`.
 
