@@ -1,6 +1,6 @@
 # Step 5: Human Play
 
-Status: in progress.
+Status: complete.
 
 Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order step 5: a human plays Skirmish at Crane Reach in the browser and in local play, with fog of war, legal-by-construction order composition, and the move clock. The hands-on surface is controlling a seat's primary unit or the whole side, in the web app and through both local launchers with naive companions.
 
