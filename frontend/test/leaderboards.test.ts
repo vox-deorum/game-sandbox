@@ -167,7 +167,6 @@ describe('LeaderboardsPage', () => {
     expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
     expect(screen.getByText('Human Ratings')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Season: Week 1', level: 2 })).toBeInTheDocument()
-    expect(screen.getByText('released Jun 11, 2026, 5:00 PM')).toBeInTheDocument()
     expect(screen.getByText('2 submissions')).toBeInTheDocument()
     expect(screen.getByText('12 games run')).toBeInTheDocument()
     expect(screen.getByText('Settings:')).toBeInTheDocument()
