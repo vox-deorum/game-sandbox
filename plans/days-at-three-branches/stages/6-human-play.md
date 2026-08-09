@@ -18,6 +18,8 @@ Pointer and keyboard input composed into a heading and relative speed each input
 
 The expression palette with the nine emotes plus use, and the use-preview highlight computed by the same reach-plus-unblocked-line selection rule the environment applies, informational only. Chat through the host page's panel, with recipient choices following the talk policy: nearest first, the nearest as default, broadcast when nobody is near. Spectators and replay viewers receive no input.
 
+One visibility question is settled here deliberately: the platform's live rule sends a human controller only broadcasts and lines involving its own players, while the ruleset promises viewers every line, so this step decides what the playing visitor's client shows about NPC-to-NPC talk and pins the answer in tests.
+
 ### Session behavior
 
 Step 1's human-session idle rule stops reclaiming a connected visitor who is watching quietly. The timeout arms only after the last owner socket disconnects. Spectators do not keep the visitor session alive, and scripted watch sessions remain viewer-based. Standing still is normal play in this game.

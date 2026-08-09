@@ -18,7 +18,7 @@ The environment declares seat plans. seat_0 is the cast and seat_1 is the visito
 | cast_10 | seat_0, the cast    | player_1 through player_10 |
 | cast_10 | seat_1, the visitor | player_0                   |
 
-cast_5 is declared first and is the default. PettingZoo player order is player_0, then player_1 upward, with the visitor first. It controls the order of `possible_agents`, active-player mappings, and platform conformance. The ruleset resolution order is different: npc_0 upward, then the visitor. It controls same-tick action resolution and the roster.
+cast_5 is declared first and is the default. PettingZoo player order is player_0, then player_1 upward, with the visitor first. It controls the order of `possible_agents`, active-player mappings, and platform conformance. The ruleset's character order is different: npc_0 upward, then the visitor. It controls same-tick prop contention and the roster.
 
 Player ids stay inside the environment. No observation field, helper, or student document names one, so an agent works in character ids alone: npc_0 through npc_9 and visitor, one vocabulary to learn. A character is the visitor exactly when its id is `visitor`, which is why no observation carries a visitor flag.
 
@@ -50,7 +50,7 @@ Each row ships as a declared `META.presets` entry, choosable in the web dialogs 
 
 `reset(seed)` uses the session seed for village generation. The environment draws no randomness after generation. Every agent receives that same seed, and its first observation with it, through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that wants an NPC-specific random stream builds it there with the template's `me.rng(observation, session_seed)`, which reads the character id for it, and an agent with layout work to do does that there too rather than inside a decision. Characters start in the ruleset's initial pose (each NPC inside its home facing the doorway with housemates spaced apart, the visitor at the road spawn facing into the village, everyone still with expression none), and every prop starts unheld in its start state. The same seed and action sequence replay identically, per the ruleset's determinism rule.
 
-The environment is simultaneous: one ruleset tick is one parallel `env.step()` with a complete PettingZoo-player-keyed action map. Every character selects from the same pre-tick state, and the engine resolves all actions together in ruleset resolution order. Within a tick the harness collects every action first and runs chat hooks after, so speech follows action selection, as the speech section describes.
+The environment is simultaneous: one ruleset tick is one parallel `env.step()` with a complete PettingZoo-player-keyed action map. Every character selects from the same pre-tick state, and the engine resolves all actions together: movement through the physics engine, prop contention in character order. Within a tick the harness collects every action first and runs chat hooks after, so speech follows action selection, as the speech section describes.
 
 Nobody leaves the village early: the active set is the full roster for the whole day. On tick 1200 the environment marks every player terminated (the day's end is natural completion, not truncation) and the episode ends. Accumulated rewards are the final scores, so no `result_scores()` hook is needed.
 
@@ -68,7 +68,7 @@ Dict{
 
 One action is one complete ruleset tick order: the new heading applies, the character moves at the relative speed, and the expression resolves. Ids 2 through 10 are the ruleset's emotes in table order: wave 2, nod 3, shake_head 4, point 5, laugh 6, shrug 7, startle 8, sleep 9, sweep 10. none and use keep the low ids so later emotes extend the tail of the space without renumbering.
 
-A use acts on the nearest prop, position to position, among the props within the ruleset's reach with an unblocked line; ties break by canonical prop order. Facing is not part of the test. Selection is judged on the pre-tick pose, the same state the observation shows, and a use needs commanded speed 0, per the ruleset, so the template's `props.usable` helper and the renderer preview are exact. The agent never names a prop, so the space carries no prop dimension. After selection the ruleset's availability rules apply: no qualifying prop resolves to none, a held prop resolves to none, and same-tick contention goes to the first character in ruleset resolution order.
+A use acts on the nearest prop, position to position, among the props within the ruleset's reach with an unblocked line; ties break by canonical prop order. Facing is not part of the test. Selection is judged on the pre-tick pose, the same state the observation shows, and a use needs commanded speed 0, per the ruleset, so the template's `props.usable` helper and the renderer preview are exact. The agent never names a prop, so the space carries no prop dimension. After selection the ruleset's availability rules apply: no qualifying prop resolves to none, a held prop resolves to none, and same-tick contention goes to the first character in character order.
 
 Every value inside the space is legal in every state, because commanded values degrade rather than fail, per the ruleset; the environment therefore publishes no action mask. A value outside the space (a missing key, a wrong dtype, an out-of-bounds number) is rejected by `env.step()` as an illegal participant action, so degradation applies only inside the declared bounds. The environment entry's `default_action(env, player_id)` returns the player's current heading, speed 0, action 0: stand still, which is legal in every reachable state, is what the harness plays for a late or missing action, and is exactly the ruleset's default.
 
@@ -110,7 +110,7 @@ The ruleset's speech maps onto the platform messaging layer, with loudness carri
 
 - A talk is a direct message. The environment's recipient policy lists, for each sender, the characters within talk range with an unblocked line, nearest first; the default recipient is the first listed, or broadcast when nobody is near. A sender may talk to each permitted recipient once per tick.
 - A shout is a broadcast, and the environment limits its delivery: an NPC broadcast reaches every character within shout range with an unblocked line, and the visitor's broadcast reaches talk range, because visitor speech is talk.
-- The environment declares its messages public: every delivered line appears in every client's state, renders as a speech bubble over the speaker, and shows in the chat panel, so viewers see every line, per the ruleset.
+- Every delivered line reaches watchers under the platform's visibility rule: it appears in the client state, renders as a speech bubble over the speaker, and shows in the chat panel, so viewers see every line, per the ruleset.
 - A line recorded on tick T reaches its hearers' inboxes during tick T+1, after that tick's actions are chosen, so the first action that can react to a line is tick T+2's. A character keeps its inbox in its own memory between ticks.
 - The text limit is 200 code points.
 
@@ -165,7 +165,7 @@ The template's helper package is `sandbox.village`, in the shape Skirmish at Cra
 | `geometry` | `distance`, `heading_to`, `wrap`, `in_cone`, and the character profile's ranges and body radius. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
 
-`layout` keeps movement and perception apart, because the ruleset does. `line_of_sight` answers perception, where only walls cut a line. `can_step` answers movement, where water, the boundary, walls, solid scenery, and prop footprints all stop a body. `walkable` asks whether a body of the character radius stands clear at a point at all.
+`layout` keeps movement and perception apart, because the ruleset does. `line_of_sight` answers perception, where only walls cut a line. `can_step` answers the static map: whether a straight step crosses a water bank, the boundary, a wall, solid scenery, or a prop footprint, ignoring characters, whose pushing and sliding belong to the engine. `walkable` asks whether a body of the character radius stands clear at a point at all.
 
 No helper decides anything: none picks a destination, a companion, or a prop. There is deliberately no pathfinder, the rule `sandbox.crane` already states. What the package withholds is the search, not the map: `observation["village"]` is the whole layout as standing knowledge, and `walkable`, `can_step`, and `ground_at` are exactly the node test, the edge test, and the edge cost a route planner is built from. Routing between the village's places belongs to the Season 4 starter example, which keeps the package a description of the engine's physics rather than a strategy library.
 
@@ -179,4 +179,4 @@ All helpers are pin-tested against their authoritative engine or data contract, 
 - `observation_space.contains()` holds for every observation across a full episode. Sequence fields are emitted as tuples, every Dict carries exactly its declared keys, and Text fields stay within the declared charset.
 - Spaces are built once from the resolved parameters and never change within an episode. The default action is contained in the action space and legal in every reachable state; no action mask is published because none is needed.
 - Overlay values are finite and JSON-safe, and recorded actions and messages normalize to plain JSON values.
-- The design assumes mask-free `Dict` actions in simultaneous environments, environment-limited broadcasts, public messages, and the live-session lifetime rules. Their rationale and implementation boundary are in [Platform contract expansions](stages/1-platform-expansions.md).
+- The design assumes mask-free `Dict` actions in simultaneous environments, environment-limited broadcasts, the live watcher visibility rule, and the live-session lifetime rules. Their rationale and implementation boundary are in [Platform contract expansions](stages/1-platform-expansions.md).

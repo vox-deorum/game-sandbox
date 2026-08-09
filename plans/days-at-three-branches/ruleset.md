@@ -14,14 +14,14 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 - Time advances in ticks, and a day is 1200 ticks.
 - Characters and props have solid footprints, and a character is a circle of radius 0.4 m. A building's outer rectangle reserves its site from other buildings and exterior objects, but its interior is walkable. Interior props may occupy that reserved rectangle when they stay inside the walls, leave the doorway open, and do not overlap each other.
 - A building wall is the perimeter of its outer rectangle, with its 1.2 m doorway gap removed. Movement collision and line-of-sight checks use these same derived wall segments. A line that crosses a wall carries neither sight, nor presence, nor speech.
-- The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically. Each season pins one default seed, so its matches all play the same village.
+- The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically on the same platform build. Each season pins one default seed, so its matches all play the same village.
 
 ## Ticks
 
-A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together in ruleset resolution order, npc_0 upward and the visitor last. This is distinct from the PettingZoo player order, which is player_0 for the visitor and player_1 upward for the NPCs:
+A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together:
 
-- Movement: the character advances up to its speed for the tick along its heading and stops at first contact with anything solid, as already updated this tick.
-- Prop use: a prop holds one user at a time. When several characters reach for it in the same tick, the first in ruleset resolution order gets it and the rest resolve to expression none.
+- Movement: every character moves at once, resolved by the physics engine. A character advances at its commanded speed along its heading; solid contact stops it or deflects it along the surface, and nothing passes through a solid or another character. A character commanding speed 0 is immovable for the tick: it turns in place, stays exactly put, and cannot be pushed.
+- Prop use: a prop holds one user at a time. When several characters reach for it in the same tick, the first in character order, npc_0 upward and the visitor last, gets it and the rest resolve to expression none. Character order is distinct from the PettingZoo player order, which is player_0 for the visitor and player_1 upward for the NPCs.
 
 A late or missing action, the default, is speed 0, heading unchanged, expression none: the character stands still. Commanded values degrade rather than fail: a heading of 360 wraps to 0, and an expression that is not available, no usable prop or a prop already held, resolves to none.
 
