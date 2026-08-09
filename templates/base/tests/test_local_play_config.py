@@ -158,6 +158,7 @@ def test_preset_parameters_yield_to_explicit_parameter_overrides(monkeypatch):
             presets=(EnvPreset("short", "Short", {"trial_knob": 150}),),
         ),
     )
+    monkeypatch.setattr(play, "possible_players", lambda parameters: ("player_0",))
     captured: dict[str, object] = {}
 
     def run_headless(**kwargs: object) -> float:
