@@ -14,7 +14,7 @@ The hands-on check compares anonymous, submission-owner, participant, and operat
 
 `ReplayPage.vue` fetches recording telemetry alongside the recording and passes it into the existing `DecisionLog`. A successful empty payload means the recording has no successful model calls, so recordings from before this stage and runs with no model use still load normally.
 
-The existing decision rail remains beside or below the renderer, with no separate model-calls panel. Replays without chat use `DecisionLog`; chat-bearing replays use the existing interleaved `GameThread`. Both show an `LLM cost` column immediately beside `Decision`, use the same cost details and inspector, and sum successful calls whose tick and slot match that decision. A row with no matching calls uses the standard `None` value used by the existing data tables.
+The existing decision rail remains beside or below the renderer, with no separate model-calls panel. Replays without chat use `DecisionLog`; chat-bearing replays use the existing interleaved `GameThread`. When environment metadata declares LLM capability, `DecisionLog` shows an `LLM cost` column immediately beside `Decision`, uses the same cost details and inspector, and sums successful calls whose tick and slot match that decision. A row with no matching calls uses the standard `None` value used by the existing data tables. Environments without LLM capability omit the `DecisionLog` column. `GameThread` remains unchanged.
 
 Null-tick calls arrive through a separate setup-cost input, not as synthetic `DecisionEntry` values. `DecisionLog` renders them in a leading setup row group ordered by slot, with stable row IDs in the form `setup:<slot>`. The original decision entries, their keys, and the replay state's index-to-decision mapping remain unchanged. Active-row highlighting, `aria-current`, and automatic scrolling target decision rows only, so one or many setup rows never shift the row selected by the replay scrubber.
 
@@ -46,7 +46,7 @@ When bodies are absent, the cost cell provides metadata details only and has no 
 
 Unsuccessful logical requests have no telemetry row, so the decision log renders no failure status for them.
 
-A `500 telemetry_unavailable` response means associated retained telemetry is broken or unreadable, not empty. The recording and game still load. `ReplayPage` shows a visible danger `UiEmptyState` with the exact message `LLM cost data unavailable.` `RunMetadata` omits its LLM cost total, and every decision-row cell in the `LLM cost` column says `Unavailable` instead of `None`. No setup-cost rows are invented when their source data is unavailable. The frontend never normalizes this response to empty telemetry.
+A `500 telemetry_unavailable` response means associated retained telemetry is broken or unreadable, not empty. The recording and game still load. `ReplayPage` shows a visible danger `UiEmptyState` with the exact message `LLM cost data unavailable.` `RunMetadata` omits its LLM cost total. In an LLM-capable environment, every decision-row cell in the `LLM cost` column says `Unavailable` instead of `None`. No setup-cost rows are invented when their source data is unavailable. The frontend never normalizes this response to empty telemetry.
 
 ## Replay metadata
 
@@ -113,10 +113,10 @@ All styling uses semantic tokens and existing primitives. Add a read-only `UiMet
 
 Frontend unit tests cover:
 
-- Replay telemetry grouping by exact tick and slot, multiple calls in one cost cell, a separate setup-cost input, multiple setup slots with stable `setup:<slot>` row IDs, the standard `None` value, and successful empty telemetry payloads.
+- Replay telemetry grouping by exact tick and slot, multiple calls in one cost cell, a separate setup-cost input, multiple setup slots with stable `setup:<slot>` row IDs, the standard `None` value for successful empty telemetry in capable environments, and omission of the cost column in incapable environments.
 - Setup rows leaving `DecisionEntry[]`, decision keys, replay current-index mapping, active-row highlighting, and active-row scrolling unchanged, including the correct scrubbed decision row with several setup rows present.
 - Chat-bearing replays retaining interleaved messages while showing setup costs, exact tick-and-slot costs, unavailable states, and authorized inspection.
-- A `500 telemetry_unavailable` response leaving the recording and game usable, showing the danger `LLM cost data unavailable.` state and `Unavailable` cost cells, omitting the `RunMetadata` total, and never appearing as empty telemetry.
+- A `500 telemetry_unavailable` response leaving the recording and game usable, showing the danger `LLM cost data unavailable.` state, omitting the `RunMetadata` total, and never appearing as empty telemetry. In a capable environment, `DecisionLog` cost cells show `Unavailable`.
 - Cost formatting in explicit budget units and tooltip details for calls, tiers, stored weights, input-plus-output token bases, reasoning tokens, and authoritative costs. No Stage 9 surface displays estimate wording.
 - Every cost tooltip implementation programmatically associating trigger and content, persisting across trigger-to-content hover, opening from keyboard focus, closing on Escape without moving focus, and exposing the same details on touch.
 - Replay inspector opening by click, Enter, and Space when authorized bodies exist; the exact `Inspect request and response` action and `Request` and `Response` headings; metadata-only behavior for masked responses; focus restoration; and operator body access when the attributed submission no longer exists.
@@ -134,8 +134,8 @@ Playwright coverage in Step 7 exercises anonymous, owner, former-owner, particip
 
 ## Done when
 
-- Replay decisions are the canonical recording-call view, with stored cost in budget units beside each decision, a separate setup-cost row group that does not alter replay indexing, accessible cost details, and no separate model-calls panel or agent-profile debug inspector.
-- Empty telemetry displays `None`, while `telemetry_unavailable` leaves the replay usable, displays a danger state and `Unavailable` cells, and omits the recording total.
+- Replay decisions are the canonical recording-call view. LLM-capable environments show stored cost in budget units beside each decision, a separate setup-cost row group that does not alter replay indexing, accessible cost details, and no separate model-calls panel or agent-profile debug inspector. Incapable environments omit the cost column.
+- Empty telemetry in an LLM-capable environment displays `None`. `telemetry_unavailable` leaves the replay usable, displays a danger state, and omits the recording total. In an LLM-capable environment, `DecisionLog` cells display `Unavailable`.
 - Anonymous viewers see metadata only. Authorized current owners can inspect bodies for their slots, former owners cannot inspect bodies after submission deletion, and operators retain replay inspector access.
 - `RunMetadata` shows one quiet whole-recording LLM cost with optional call and token details.
 - Automated-board rows show one-line model-use summaries with per-tier details, explicit budget units, and no effect on rank. The human-feedback board remains unchanged.

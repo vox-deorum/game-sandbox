@@ -569,7 +569,7 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   await stopSessionAndAwaitFree(admin, sessionId)
 })
 
-test('a multi-agent Hearts recording replays with per-player attribution and trick-by-trick playback', async ({
+test('a multi-agent Hearts recording replays with per-seat attribution and trick-by-trick playback', async ({
   page,
   admin,
   as,
@@ -623,14 +623,24 @@ test('a multi-agent Hearts recording replays with per-player attribution and tri
       await expect(decisionRows.getByText(player).first()).toBeVisible()
     }
 
-    // Per-player attribution: the PlayerAttribution line names every player and who drove it. A
-    // four-player Hearts recording shows all four players; the submitted player reads the owner's-agent
-    // label and the rest read the Naive agent. The final game-over leaderboard reduces those players
-    // through the header's seat map.
-    const attribution = page.locator('.players')
-    await expect(attribution.locator('.player')).toHaveCount(4)
-    await expect(attribution.getByText(`${HEARTS_OWNERS.replay}'s agent`)).toBeVisible()
-    await expect(attribution.getByText('Naive agent').first()).toBeVisible()
+    // Per-seat attribution: each scored Hearts assignment appears once. The seat's controller remains
+    // visible, while its member player stays in the seat-label tooltip.
+    const attribution = page.locator('.seats')
+    await expect(attribution.locator('.seat')).toHaveCount(4)
+    for (const seat of ['S0', 'S1', 'S2', 'S3']) {
+      await expect(
+        attribution.getByRole('button', { name: `Show players assigned to ${seat}` }),
+      ).toHaveText(seat)
+    }
+    await expect(attribution.locator('.seat-controller').first()).toHaveText(
+      `${HEARTS_OWNERS.replay}'s agent`,
+    )
+    await expect(
+      attribution.locator('.seat-controller').filter({ hasText: 'Naive agent' }),
+    ).toHaveCount(3)
+    const firstSeat = attribution.getByRole('button', { name: 'Show players assigned to S0' })
+    await firstSeat.focus()
+    await expect(page.getByRole('tooltip')).toHaveText('Players: P0')
 
     // Trick-by-trick playback works: the transport's controls are present and stepping forward advances
     // the playhead. The position readout ("tick T · I/N") starts at 1/N and steps to 2/N — the

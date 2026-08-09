@@ -207,7 +207,82 @@ describe('ReplayPage', () => {
     expect(tooltip).not.toHaveTextContent('Players')
   })
 
-  it('keeps successful empty telemetry distinct and shows None for decision costs', async () => {
+  it('attributes a replay by numerically ordered seat and keeps its players in a tooltip', async () => {
+    const players = {
+      player_0: {
+        kind: 'agent' as const,
+        label: "pair's agent",
+        builtin_name: 'pair',
+      },
+      player_1: {
+        kind: 'agent' as const,
+        label: 'Other agent',
+        builtin_name: 'other',
+      },
+      player_2: {
+        kind: 'agent' as const,
+        label: "pair's agent",
+        builtin_name: 'pair',
+      },
+      player_3: {
+        kind: 'agent' as const,
+        label: 'Third agent',
+        builtin_name: 'third',
+      },
+    }
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText([flappyState(0, 10)], {
+        players,
+        // Deliberately lexicographic input: numeric seat order must still put S2 before S10.
+        seats: {
+          seat_10: ['player_3'],
+          seat_2: ['player_2', 'player_0'],
+          seat_7: ['player_1'],
+        },
+      }),
+    )
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+
+    const seats = view.container.querySelector('.seats')
+    expect(seats).not.toBeNull()
+    if (seats === null) throw new Error('replay seat attribution was missing')
+    expect(seats.querySelectorAll('.seat')).toHaveLength(3)
+    expect([...seats.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'S2',
+      'S7',
+      'S10',
+    ])
+    // The two members of S2 share one controller label, while player ids stay out of the attribution
+    // line until the focused seat label opens its tooltip.
+    expect(seats).not.toHaveTextContent(/P\d/)
+    const s2Button = screen.getByRole('button', { name: 'Show players assigned to S2' })
+    const s2 = s2Button.closest('.seat')
+    expect(s2).not.toBeNull()
+    if (s2 === null) throw new Error('S2 attribution row was missing')
+    const controller = s2.querySelector('.seat-controller')
+    expect(controller).toHaveTextContent("pair's agent")
+    expect(controller).not.toHaveAttribute('title')
+
+    await fireEvent.focus(s2Button)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Players: P2, P0')
+  })
+
+  it('hides decision LLM costs for an environment without LLM support', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    await renderReplay()
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'LLM cost' })).toBeNull()
+    expect(screen.queryByText('None')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Show whole-recording LLM cost details' }),
+    ).toHaveTextContent('0 units')
+    expect(screen.queryByText('LLM cost data unavailable.')).toBeNull()
+  })
+
+  it('keeps successful empty telemetry distinct and shows None for LLM-capable environments', async () => {
+    vi.mocked(getEnvironments).mockResolvedValueOnce([flappyMeta({ llm: true })])
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay()
 
@@ -217,10 +292,10 @@ describe('ReplayPage', () => {
     expect(
       screen.getByRole('button', { name: 'Show whole-recording LLM cost details' }),
     ).toHaveTextContent('0 units')
-    expect(screen.queryByText('LLM cost data unavailable.')).toBeNull()
   })
 
   it('leaves the replay usable when retained telemetry is unavailable', async () => {
+    vi.mocked(getEnvironments).mockResolvedValueOnce([flappyMeta({ llm: true })])
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     vi.mocked(getRecordingLlm).mockResolvedValue({
       ok: false,
@@ -235,6 +310,34 @@ describe('ReplayPage', () => {
     expect(
       screen.queryByRole('button', { name: 'Show whole-recording LLM cost details' }),
     ).toBeNull()
+    expect(screen.queryByText('None')).toBeNull()
+  })
+
+  it('keeps unavailable telemetry out of a non-LLM decision table', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(getRecordingLlm).mockResolvedValue({
+      ok: false,
+      reason: 'telemetry_unavailable',
+    })
+    await renderReplay()
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(drawn.at(-1)?.tick).toBe(0)
+    expect(screen.getByText('LLM cost data unavailable.')).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'LLM cost' })).toBeNull()
+    expect(screen.queryByText('Unavailable')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Show whole-recording LLM cost details' }),
+    ).toBeNull()
+  })
+
+  it('hides decision LLM costs while environment metadata is unresolved', async () => {
+    vi.mocked(getEnvironments).mockResolvedValueOnce([])
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    await renderReplay()
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'LLM cost' })).toBeNull()
     expect(screen.queryByText('None')).toBeNull()
   })
 
@@ -651,8 +754,8 @@ describe('ReplayPage', () => {
     ])
     await renderReplay()
 
-    const attribution = (await screen.findAllByText("maya-fledgling's agent")).find(
-      (element) => element.getAttribute('title') === 'maya-fledgling',
+    const attribution = (await screen.findAllByText("maya-fledgling's agent")).find((element) =>
+      element.matches('.seat-controller'),
     )
     expect(attribution).toBeDefined()
     expect(attribution).toHaveAttribute('title', 'maya-fledgling')
@@ -698,6 +801,7 @@ describe('ReplayPage', () => {
 
     // "Your agent" still names the viewer's own seat; the plan requires its id stay reachable.
     const attribution = await screen.findByText('Your agent')
+    expect(attribution).toHaveClass('seat-controller')
     expect(attribution).toHaveAttribute('title', 'maya-fledgling')
   })
 
@@ -740,6 +844,7 @@ describe('ReplayPage', () => {
     await renderReplay()
 
     const attribution = await screen.findByText('Agent 1')
+    expect(attribution).toHaveClass('seat-controller')
     expect(attribution).not.toHaveAttribute('title')
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
   })

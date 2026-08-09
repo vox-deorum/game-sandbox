@@ -29,7 +29,7 @@ import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import GameThread from '../components/GameThread.vue'
-import PlayerAttribution from '../components/PlayerAttribution.vue'
+import SeatAttribution from '../components/SeatAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -79,6 +79,7 @@ const decisions = ref<DecisionEntry[]>([])
 const llmTelemetry = ref<RecordingLlmTelemetry | null>(null)
 const llmTelemetryUnavailable = ref(false)
 const llmPending = computed(() => llmTelemetry.value === null && !llmTelemetryUnavailable.value)
+const showDecisionLlmCost = computed(() => meta.value?.llm === true)
 const tickLlmCalls = computed(
   () => llmTelemetry.value?.calls.filter((call) => call.tick !== null) ?? [],
 )
@@ -330,8 +331,9 @@ onMounted(async () => {
       </div>
     </header>
 
-    <PlayerAttribution
+    <SeatAttribution
       :players="header?.players"
+      :seats="header?.seats"
       :blind="blindAttribution"
       :viewer-id="viewerId"
       :anonymous-numbers="anonymousNumbers"
@@ -441,10 +443,10 @@ onMounted(async () => {
           v-else
           :entries="decisions"
           :current-tick="replayState.tick"
-          :llm-calls="tickLlmCalls"
-          :setup-llm-calls="setupLlmCalls"
-          :llm-unavailable="llmTelemetryUnavailable"
-          :llm-pending="llmPending"
+          :llm-calls="showDecisionLlmCost ? tickLlmCalls : undefined"
+          :setup-llm-calls="showDecisionLlmCost ? setupLlmCalls : undefined"
+          :llm-unavailable="showDecisionLlmCost && llmTelemetryUnavailable"
+          :llm-pending="showDecisionLlmCost && llmPending"
         />
       </template>
       <template #below-log>
@@ -472,10 +474,10 @@ onMounted(async () => {
           <DecisionLog
             :entries="decisions"
             :current-tick="replayState.tick"
-            :llm-calls="tickLlmCalls"
-            :setup-llm-calls="setupLlmCalls"
-            :llm-unavailable="llmTelemetryUnavailable"
-            :llm-pending="llmPending"
+            :llm-calls="showDecisionLlmCost ? tickLlmCalls : undefined"
+            :setup-llm-calls="showDecisionLlmCost ? setupLlmCalls : undefined"
+            :llm-unavailable="showDecisionLlmCost && llmTelemetryUnavailable"
+            :llm-pending="showDecisionLlmCost && llmPending"
           />
         </details>
       </template>

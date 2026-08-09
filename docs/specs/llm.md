@@ -59,7 +59,7 @@ The backend uses the successful response's usage counts when they are valid. Oth
 
 Telemetry is keyed by execution scope. A live session has its own scope, while all matches in one automated run share a run scope. Recordings retain the links needed to find their successful calls.
 
-Public replay views show summaries of models, tokens, and budget cost. Stored accepted prompts and canonical completions are visible only to an operator or the current owner of the controlling submission. If that submission is deleted, its former owner keeps access to the metadata but not to the request and completion bodies. A recording without an LLM association has an empty telemetry result. If an associated telemetry scope cannot be read, its result is unavailable rather than empty. See [Recording](recording.md) and [Frontend](frontend.md).
+Public replay views show summaries of models, tokens, and budget cost. The replay decision table shows an LLM cost column only when the environment metadata declares LLM capability. In a capable environment, empty telemetry displays `None` and unreadable associated telemetry displays the unavailable state. Stored accepted prompts and canonical completions are visible only to an operator or the current owner of the controlling submission. If that submission is deleted, its former owner keeps access to the metadata but not to the request and completion bodies. A recording without an LLM association has an empty telemetry result. If an associated telemetry scope cannot be read, its result is unavailable rather than empty. See [Recording](recording.md) and [Frontend](frontend.md).
 
 ## Budgets and limits
 

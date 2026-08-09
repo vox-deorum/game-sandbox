@@ -29,7 +29,7 @@ An [**operator**](overview.md) is an authenticated user with `admin` status who 
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
 | My Agents | Signed-in user's current season submission state and recent submitted-season results across environments |
 | Replays | Sortable environment recording list |
-| Replay viewer | Renderer, transport, player attribution, chat, episode settings, public LLM summaries |
+| Replay viewer | Renderer, transport, seat attribution, chat, episode settings, public LLM summaries |
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings |
 | Leaderboards | Automated and human-feedback boards for one environment and season |
 | Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
@@ -69,7 +69,9 @@ A player uses the short label `PN`, and a seat uses `SN`. See [Environments](env
 
 Replays are public and read-only. Each replay belongs to an environment and names its season when it has one. Owners may pin their own recordings. A naturally completed multiplayer replay says `SN won` when a single seat is top-ranked and **Tied** when several seats share the top rank. A replay without eligible ranking data keeps its termination label.
 
-Result labels, replay summaries, and final standings rank seats rather than players. Each row leads with the seat's controller attribution and names its players as secondary detail. A repeated agent is named once. A mixed human seat lists both the human and the companion.
+Replay attribution has one assignment for each recorded seat. Each assignment visibly leads with its compact `SN` label and controller attribution. An accessible tooltip on the seat label lists the seat's player members as compact `PN` labels in recorded order. A repeated controller is named once. A mixed human seat lists both the human and companion controllers.
+
+Result labels, replay summaries, and final standings rank seats rather than players. Each row leads with the seat's controller attribution and keeps player membership as secondary detail.
 
 ### Rating visibility
 

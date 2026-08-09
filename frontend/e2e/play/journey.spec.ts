@@ -89,7 +89,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   // Open the replay from the ended session and scrub it.
   await page.getByRole('link', { name: 'Open replay' }).click()
   await expect(page).toHaveURL(/\/replays\//)
-  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   // The run's settings summarize in the status strip and open on hover: the pipe gap chosen above, and
   // the seed the run was played with.
   const settings = page.getByRole('button', { name: 'Show settings details' })
@@ -100,8 +100,8 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(settingsTooltip).toContainText('110')
   await expect(settingsTooltip).toContainText('Seed')
   const decisionLog = page.locator('.decision-log')
-  await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
-  await expect(decisionLog.getByText('None').first()).toBeVisible()
+  await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toHaveCount(0)
+  await expect(decisionLog.getByText('None')).toHaveCount(0)
   const slider = page.getByRole('slider')
   await expect(slider).toBeVisible()
   // The scrubber is the Reka UiSlider (a span with role=slider, not an <input>), so drive it by

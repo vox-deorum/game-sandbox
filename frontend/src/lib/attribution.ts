@@ -103,26 +103,50 @@ export function attributionLabel(
   return player.label
 }
 
-/**
- * How one seat's controllers read as a single label, wherever a seat is named: the standings card and
- * the replay list's summary. Members are ordered human first, so a mixed seat leads with the person,
- * and identical labels collapse, so an ordinary wide seat driven by one repeated agent reads as that
- * one agent rather than listing it once per player.
- *
- * Shared so the two surfaces cannot describe the same recording differently, which is exactly what a
- * wide seat would expose: one would say "Alice's agent" while the other said it twice.
- */
-export function seatControllerLabel(
-  players: readonly string[],
+/** The member order shared by a seat's label and stable-id tooltip: humans first, then recorded order. */
+function orderedSeatMembers(
+  members: readonly string[],
   attributions: RecordingHeader['players'] | undefined,
-  ctx: AttributionContext = {},
-): string {
-  const ordered = [...players].sort((a, b) => {
+): string[] {
+  return [...members].sort((a, b) => {
     const aHuman = attributions?.[a]?.kind === 'human'
     const bHuman = attributions?.[b]?.kind === 'human'
     return Number(bHuman) - Number(aHuman)
   })
+}
+
+/**
+ * How one seat's controllers read wherever a seat is named. Humans lead mixed seats, and repeated
+ * labels collapse so a wide seat controlled by one agent reads once rather than once per player.
+ */
+export function seatControllerLabel(
+  members: readonly string[],
+  attributions: RecordingHeader['players'] | undefined,
+  ctx: AttributionContext = {},
+): string {
   return [
-    ...new Set(ordered.map((player) => attributionLabel(player, attributions?.[player], ctx))),
+    ...new Set(
+      orderedSeatMembers(members, attributions).map((member) =>
+        attributionLabel(member, attributions?.[member], ctx),
+      ),
+    ),
   ].join(', ')
+}
+
+/**
+ * The stable user ids behind a seat's visible controller label. Blind-masked entries contribute no id,
+ * and repeated ids collapse in the same order as the label's controller entries.
+ */
+export function seatControllerTitle(
+  members: readonly string[],
+  attributions: RecordingHeader['players'] | undefined,
+  ctx: AttributionContext = {},
+): string | undefined {
+  const ids = orderedSeatMembers(members, attributions)
+    .map((member) => attributions?.[member])
+    .filter((player): player is Player => player !== undefined && !isBlindMasked(player, ctx))
+    .map((player) => ('user' in player ? player.user : undefined))
+    .filter((id): id is string => id !== undefined)
+  const title = [...new Set(ids)].join(', ')
+  return title === '' ? undefined : title
 }
