@@ -82,10 +82,9 @@ A **season** is one competition round for one environment. It fixes opponents or
 
 Here is what to know about the season's boards and official games:
 
-- The **automated board** ranks the average official game score. Higher is always better on this board, even when the game's own score runs the other way. See [Leaderboards](../specs/leaderboard.md) for how runs are scored and how tied scores are broken.
-- The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games. You cannot rate your own agent, and an agent needs at least three ratings to be ranked. See [Leaderboards](../specs/leaderboard.md) for the full rating rules.
+- The **automated board** ranks the average official game score. Higher is always better on this board. See [Leaderboards](../specs/leaderboard.md) for how runs are scored and how tied scores are broken.
+- The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games. See [Leaderboards](../specs/leaderboard.md) for the full rating rules.
 - Official matches run on the server's schedule, and you can watch their replays on the website.
-- While the season's play window is open, watch, play, and rating surfaces show agents under neutral numbered labels. This does not hide identities on boards or profiles whose results were already released. See [Seasons](../specs/seasons.md) for the release rules.
-- A leaderboard run uses the submissions that were active when it was created, so resubmitting does not change a run that has already started. See [Leaderboards](../specs/leaderboard.md) for how a run is built.
+- While the season's play window is open, watch, play, and rating surfaces show anonymized agents under neutral numbered labels. See [Seasons](../specs/seasons.md) for the release rules.
 
 `python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board. A downloaded `season.json` applies only to local episode commands. The server always uses its stored season. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.
