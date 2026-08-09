@@ -91,14 +91,19 @@ def _landings(observation: SkirmishObservation) -> list[tuple[int, AxialPosition
     return list(found.values())
 
 
-def _victim(view: _View, spot: AxialPosition) -> VisibleUnit | None:
-    """Return the enemy worth naming from ``spot``: the weakest one in range, then the nearest."""
+def _victims(view: _View, spot: AxialPosition) -> list[VisibleUnit]:
+    """Return the nameable enemies in range from ``spot``."""
     reach = view.stats.attack_range
-    options = [
+    return [
         enemy
         for enemy in view.enemies
         if enemy["unit_id"] in view.nameable and tile.distance(spot, enemy["position"]) <= reach
     ]
+
+
+def _victim(view: _View, spot: AxialPosition) -> VisibleUnit | None:
+    """Return the enemy worth naming from ``spot``: the weakest one in range, then the nearest."""
+    options = _victims(view, spot)
     if not options:
         return None
     return min(options, key=lambda enemy: (enemy["hit_points"], tile.distance(spot, enemy["position"])))
@@ -107,13 +112,12 @@ def _victim(view: _View, spot: AxialPosition) -> VisibleUnit | None:
 def _threats(view: _View, spot: AxialPosition) -> list[VisibleUnit]:
     """Return the visible enemies that could strike ``spot`` on their next activation.
 
-    Three things this cannot know, and all of them make it optimistic. It adds movement points to
-    attack range while ignoring the ground between, so an enemy that a hill or a marsh would slow
-    down still counts as arriving on time. It sees only what your unit sees, and every enemy's
-    reach is longer than your vision, so a tile it calls quiet can be covered from outside your
-    sight. And the activation order is shuffled every round, so an enemy that acts last in one
-    round and first in the next gets two moves before you choose again. Read a quiet tile as
-    safer than the alternatives, not as safe.
+    This estimate errs in both directions. It adds movement points to attack range while ignoring
+    the ground between, so an enemy that a hill or a marsh would slow down can count as arriving
+    when it cannot. It also sees only what your unit sees, so an archer outside that sight can
+    still cover a tile it calls quiet. Finally, the activation order is shuffled every round, so
+    an enemy that acts last in one round and first in the next gets two moves before you choose
+    again. Read a quiet tile as safer than the alternatives, not as safe.
     """
     found = []
     for enemy in view.enemies:
@@ -249,11 +253,9 @@ def charge(
     for path_id, spot in view.landings:
         if tile.distance(view.position, spot) < CHARGE_DISTANCE:
             continue
-        victim = _victim(view, spot)
-        if victim is None:
-            continue
-        score = (1 if _denies_charge(view, victim) else 0, victim["hit_points"], path_id)
-        runs.append((score, path_id, victim))
+        for victim in _victims(view, spot):
+            score = (1 if _denies_charge(view, victim) else 0, victim["hit_points"], path_id)
+            runs.append((score, path_id, victim))
     if not runs:
         return None
     _score, path_id, victim = min(runs, key=lambda run: run[0])

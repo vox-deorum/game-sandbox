@@ -2,11 +2,9 @@ import { rmSync } from 'node:fs'
 
 import {
   activeWindows,
-  closePlay,
   closeSubmissions,
   configureMatches,
   declareSeason,
-  openPlay,
   openSubmissions,
   release,
   startSession,
@@ -443,17 +441,18 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
 
   const staged = stageExampleAgent(ENV_ID, EXAMPLE_AGENT)
 
-  // Free the environment's open submission and play windows, held by the seeded season.
-  const original = await activeWindows(admin, ENV_ID)
-  if (original.submissionSeasonId !== null) {
-    await closeSubmissions(admin, original.submissionSeasonId)
-  }
-  if (original.playSeasonId !== null) {
-    await closePlay(admin, original.playSeasonId)
-  }
-
-  const season = await declareSeason(admin, SEASON_LABEL, ENV_ID)
+  let submissionSeasonId: string | null = null
+  let temporarySeasonId: string | null = null
   try {
+    // Free only the submission window. The seeded play window remains open for the human-order test
+    // below, and this temporary season never needs to replace it.
+    const originalWindows = await activeWindows(admin, ENV_ID)
+    submissionSeasonId = originalWindows.submissionSeasonId
+    if (submissionSeasonId !== null) {
+      await closeSubmissions(admin, submissionSeasonId)
+    }
+    const season = await declareSeason(admin, SEASON_LABEL, ENV_ID)
+    temporarySeasonId = season.id
     await openSubmissions(admin, season.id)
     // The example submits under its own owner, so the scoreboard row links to a real agent identity.
     // Building it runs the real validate-and-build pipeline over a multi-file agent (banner keeps its
@@ -544,17 +543,21 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
       new RegExp(`^iconTerrain:(grass|hill),iconFeature:(none|forest|marsh)${skill}$`),
     )
   } finally {
-    // Restore the seeded season as the environment's open submission and play windows: the human-order
-    // test below starts its session from the play-open season.
-    await closeSubmissions(admin, season.id).catch(() => {})
-    await closePlay(admin, season.id).catch(() => {})
-    if (original.submissionSeasonId !== null) {
-      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
+    // Keep every state change inside this lifecycle. Nested finally blocks still attempt the original
+    // restoration and local cleanup if closing the temporary window fails, and no API error is hidden.
+    try {
+      if (temporarySeasonId !== null) {
+        await closeSubmissions(admin, temporarySeasonId)
+      }
+    } finally {
+      try {
+        if (submissionSeasonId !== null) {
+          await openSubmissions(admin, submissionSeasonId)
+        }
+      } finally {
+        rmSync(staged, { recursive: true, force: true })
+      }
     }
-    if (original.playSeasonId !== null) {
-      await openPlay(admin, original.playSeasonId).catch(() => {})
-    }
-    rmSync(staged, { recursive: true, force: true })
   }
 })
 

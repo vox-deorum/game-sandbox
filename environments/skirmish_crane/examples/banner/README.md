@@ -1,17 +1,47 @@
-# Example: skirmish_crane/banner
+# Skirmish at Crane Reach: Banner agent
 
-The Season 4 starting point: a library of tactical blocks, and a side that plays them. A block is one job a unit can be given, written as a plain function of the observation, the unit's own memory, and a goal position. This directory stores only these differences from the composed template:
+Banner is the Season 4 starting point: a library of tactical blocks and a side that assigns every unit one block and one goal. This branch is already a runnable agent repository. Edit `blocks.py` and `agent.py` directly.
 
-- `blocks.py` holds ten blocks (advance, capture, charge, fall_back, flank, harass, hold_ground, kite (back away from the nearest enemy while still striking it), screen, shield_wall) and `assign`, which hands each unit one block and one goal. Every block reads the action mask and scores the tiles it could finish on, so its order is legal by construction, and none of them plans a route.
-- `agent.py` runs the assigned block and falls back to advancing when the block has nothing to say.
-- `tests/test_banner.py` checks each block on constructed activations, confirms every block keeps to the mask across whole matches, and beats the built-in naive agent on pinned Season 4 seeds.
-
-`assign` is the placeholder Season 4 asks you to replace: it commits every unit to one job in round one and never reconsiders. Deciding who should do what and where, and when that should change as the battle turns, is the assignment. The blocks are yours to edit, extend, or replace with your own.
-
-Compose the runnable repository:
+Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder:
 
 ```console
-uv run python scripts/compose.py skirmish_crane banner
+python -m sandbox play
+python -m sandbox test
+python -m sandbox eval
 ```
 
-The result is written to `build/examples/skirmish_crane/banner/`.
+`play` watches separate copies of Banner play both sides, `test` runs the provided checks, and `eval` runs seeded episodes and reports the mean team score.
+
+## How Banner works
+
+- `blocks.py` holds ten tactical blocks and `assign`, which hands each unit one block and one goal. Every block reads the action mask and scores the tiles the unit could finish on, so its order is legal by construction.
+- `agent.py` runs the assigned block and advances toward its goal when that block has nothing to say.
+- `tests/test_banner.py` checks each block on constructed activations, exercises mask legality across whole matches, and compares Banner with the Naive agent on pinned Season 4 seeds.
+
+`assign` is the placeholder Season 4 asks you to replace. It commits every unit to one job in round one and never reconsiders. Your assignment is to decide who should do what and where, and when those choices should change as the battle turns. You may also edit, extend, or replace the tactical blocks.
+
+## Files you will use
+
+| Path | Purpose |
+| --- | --- |
+| `agent.py` | Runs the tactical block assigned to one unit. |
+| `blocks.py` | Defines Banner's tactical blocks and assignment policy. |
+| `environment.md` | Explains the Crane rules, helpers, observations, and settings. |
+| `manifest.json` | Names the agent class for a submission. |
+| `season.json` | Holds optional local season settings downloaded from My Submissions. |
+| `tests/` | Contains the checks your submission should pass. |
+| `sandbox/` | Provides the local game, commands, helpers, and observation types. Do not edit it. |
+
+Leave `sandbox/`, `requirements.in`, and `requirements.txt` unchanged. The pinned packages match the server. Ask your instructor before adding a package.
+
+When your agent is ready, follow the shared [submitting guide]({{DOCS_URL}}students/submitting/). For the optional `learn` and `chat` hooks, see the shared [agent interface]({{DOCS_URL}}students/agent-interface/). Crane messaging begins in Season 3.
+
+## Optional LLM API
+
+If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+
+Test the connection with:
+
+```console
+python -m sandbox llm
+```

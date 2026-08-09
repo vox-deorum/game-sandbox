@@ -253,18 +253,17 @@ def test_charge_returns_none_when_the_abilities_variant_is_off():
 
 
 def test_charge_prefers_the_defender_the_bonus_actually_lands_on():
-    # Two displacement-3 rides are on offer. One ends beside a nearly-dead footman braced by an
-    # allied footman (the bonus is denied there); the other ends beside a full-health archer
-    # standing alone (the bonus lands there). Charge should take the second even though the first
-    # victim's hit points look far more tempting.
+    # One displacement-3 ride ends beside both a nearly-dead footman braced by an allied footman
+    # and a full-health archer standing alone. Charge should name the archer, since the bonus lands
+    # there, even though the footman's hit points look far more tempting.
     start = (7, 7)
     sheltered_defender = _visible("blue_footman_1", (11, 7), 1)
     sheltering_ally = _visible("blue_footman_2", (12, 7), 12)
-    exposed_defender = _visible("blue_archer_0", (3, 7), 10)
+    exposed_defender = _visible("blue_archer_0", (10, 8), 6)
     observation = _observation(
         "red_cavalry_0",
         start,
-        ((2, 2, 2), (5, 5, 5)),
+        ((2, 2, 2),),
         (sheltered_defender, sheltering_ally, exposed_defender),
         blue=("footman", "footman", "footman", "archer", "cavalry"),
     )
