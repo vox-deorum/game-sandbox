@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import secrets
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ DEV_AUTH_SECRET = "dev-secret-do-not-deploy-32-chars"
 DEV_ADMIN_EMAIL = "admin@example.com"
 DEV_ADMIN_PASSWORD = "admin-dev-password"
 DEFAULT_PORT = "8080"
+DEFAULT_LOCAL_HTTPS_PORT = "8443"
 NODE_MAJOR = 22
 
 
@@ -99,6 +101,41 @@ def validate_origin(value: str, _mode: str = "") -> str | None:
     return _url_error(value, requirement, allow_path=False)
 
 
+_DNS_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def validate_docker_origin(value: str) -> str | None:
+    """Require the exact public HTTPS hostname the Docker proxy can certify and serve.
+
+    Shared cases in ``scripts/tests/test_setup.py`` keep this aligned with the proxy validator.
+    """
+    requirement = "Enter an HTTPS origin such as https://sandbox.example.edu, with no port or path."
+    if not value.startswith("https://") or "?" in value or "#" in value:
+        return requirement
+    if validate_origin(value) is not None:
+        return requirement
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        if parsed.port is not None:
+            return requirement
+    except ValueError:
+        return requirement
+    if parsed.scheme != "https" or parsed.path or hostname is None:
+        return requirement
+    try:
+        hostname.encode("ascii")
+    except UnicodeEncodeError:
+        return requirement
+    if hostname.endswith(".") or "." not in hostname or len(hostname) > 253:
+        return requirement
+    if re.fullmatch(r"[0-9.]+", hostname):
+        return requirement
+    if any(_DNS_LABEL.fullmatch(label) is None for label in hostname.split(".")):
+        return requirement
+    return None
+
+
 def validate_http_url(value: str, _mode: str = "") -> str | None:
     requirement = "Enter an absolute http(s) URL without credentials, a query, or a fragment."
     return _url_error(value, requirement, allow_path=True)
@@ -146,6 +183,14 @@ def validate_port(value: str, _mode: str = "") -> str | None:
     return None
 
 
+def validate_local_https_port(value: str, _mode: str = "") -> str | None:
+    if error := validate_port(value):
+        return error
+    if int(value) == 443:
+        return "Port 443 is reserved for public Cloudflare HTTPS. Choose another local HTTPS port."
+    return None
+
+
 def docker_mode_error(platform: str) -> str | None:
     if platform in {"win32", "darwin"}:
         return (
@@ -186,6 +231,7 @@ class EnvField:
     allow_blank: bool = False
     default: PromptDefault = _empty_default
     validator: PromptValidator | None = None
+    modes: frozenset[str] = frozenset({"host", "docker"})
 
 
 ENV_FIELDS = {
@@ -202,6 +248,15 @@ ENV_FIELDS = {
         prompt_group="site",
         default=_fixed_default(DEFAULT_PORT),
         validator=validate_port,
+    ),
+    "LOCAL_HTTPS_PORT": EnvField(
+        "Local HTTPS port",
+        "The loopback-only port used for local administration and health checks.",
+        required=True,
+        prompt_group="site",
+        default=_fixed_default(DEFAULT_LOCAL_HTTPS_PORT),
+        validator=validate_local_https_port,
+        modes=frozenset({"docker"}),
     ),
     "AUTH_SECRET": EnvField("Authentication secret", required=True),
     "ADMIN_EMAIL": EnvField(
@@ -253,7 +308,14 @@ ENV_FIELDS = {
 }
 MANAGED_KEYS = tuple(ENV_FIELDS)
 MANAGED_KEY_SET = frozenset(MANAGED_KEYS)
-REQUIRED_ENV_KEYS = frozenset(key for key, field in ENV_FIELDS.items() if field.required)
+
+
+def _managed_keys(mode: str) -> tuple[str, ...]:
+    return tuple(key for key, field in ENV_FIELDS.items() if mode in field.modes)
+
+
+def _required_keys(mode: str) -> frozenset[str]:
+    return frozenset(key for key in _managed_keys(mode) if ENV_FIELDS[key].required)
 
 
 @dataclass(frozen=True)
@@ -292,19 +354,25 @@ def plan_env(mode: str, answers: Mapping[str, str], existing: Mapping[str, str])
     if mode not in {"host", "docker"}:
         raise ValueError("Only host and docker modes write a deployment environment.")
 
-    values = {key: answers.get(key, "").strip() for key in MANAGED_KEYS}
+    active_keys = _managed_keys(mode)
+    values = {key: answers.get(key, "").strip() for key in active_keys}
     values["AUTH_SECRET"] = existing.get("AUTH_SECRET", "")
     if validate_auth_secret(values["AUTH_SECRET"]):
         values["AUTH_SECRET"] = secrets.token_hex(32)
     values["AUTH_ALLOW_INSECURE_DEFAULTS"] = "false"
 
     errors = (
-        validate_origin(values["PUBLIC_ORIGIN"]),
+        (
+            validate_docker_origin(values["PUBLIC_ORIGIN"])
+            if mode == "docker"
+            else validate_origin(values["PUBLIC_ORIGIN"])
+        ),
         validate_admin_email(values["ADMIN_EMAIL"]),
         validate_admin_password(values["ADMIN_PASSWORD"]),
         None if values["ADMIN_NAME"] else "The administrator name is required.",
         validate_data_dir(values["DATA_DIR"], mode),
         validate_port(values["PORT"]),
+        validate_local_https_port(values["LOCAL_HTTPS_PORT"]) if mode == "docker" else None,
         validate_oauth(values["GITHUB_OAUTH_CLIENT_ID"], values["GITHUB_OAUTH_CLIENT_SECRET"]),
     )
     if error := next((message for message in errors if message), None):
@@ -318,7 +386,8 @@ def plan_env(mode: str, answers: Mapping[str, str], existing: Mapping[str, str])
             raise ValueError("Enable the LLM proxy with at least one model name.")
     elif any(llm_values) or values["LLM_UPSTREAM_KEY"]:
         raise ValueError("The LLM provider URL is required when configuring the LLM proxy.")
-    return {key: value for key, value in values.items() if key in REQUIRED_ENV_KEYS or value}
+    required_keys = _required_keys(mode)
+    return {key: value for key, value in values.items() if key in required_keys or value}
 
 
 def write_env_file(path: Path, pairs: Mapping[str, str], previous_text: str) -> None:
@@ -383,7 +452,7 @@ def _collect_group(group: str, mode: str, existing: Mapping[str, str]) -> dict[s
     return {
         key: _prompt_field(key, mode, existing)
         for key, field in ENV_FIELDS.items()
-        if field.prompt_group == group
+        if field.prompt_group == group and mode in field.modes
     }
 
 
@@ -485,6 +554,9 @@ def _print_deploy_summary(mode: str, values: Mapping[str, str]) -> None:
     print("\nSetup complete")
     print("Game Sandbox is running." if mode == "docker" else "Game Sandbox is ready to start.")
     print(f"Open it at: {values['PUBLIC_ORIGIN']}")
+    if mode == "docker":
+        print(f"Local server access: https://127.0.0.1:{values['LOCAL_HTTPS_PORT']}")
+        print("Your browser will warn about the self-signed certificate on local access.")
 
     print("\nAdministrator sign-in")
     print(f"  Email: {values['ADMIN_EMAIL']}")
@@ -498,7 +570,7 @@ def _print_deploy_summary(mode: str, values: Mapping[str, str]) -> None:
 
     print("\nHelpful commands")
     if mode == "docker":
-        print("  View logs: docker compose logs -f app")
+        print("  View logs: docker compose logs -f proxy app")
         print("  Stop Game Sandbox: docker compose down")
     else:
         print("  Start Game Sandbox: npm start")
@@ -570,22 +642,25 @@ def run_host() -> int:
 def run_docker() -> int:
     """Configure and launch a Linux containerized deployment."""
     values = _configure_deployment("docker")
+    tls_dir = _prepare_tls_dir()
     print("\nPreparing the Docker deployment")
     print("The initial build may take several minutes.")
-    _run_step(
-        "Building and starting Game Sandbox",
-        ["docker", "compose", "up", "-d", "--build"],
-    )
+    _run_step("Building Game Sandbox with current base images", ["docker", "compose", "build", "--pull"])
+    _run_step("Starting Game Sandbox", ["docker", "compose", "up", "-d"])
     print("Waiting for Game Sandbox to become ready...", end=" ", flush=True)
     try:
-        _wait_for_http(f"http://127.0.0.1:{values['PORT']}/api/environments", 300)
+        _wait_for_http(
+            f"https://127.0.0.1:{values['LOCAL_HTTPS_PORT']}/api/environments",
+            300,
+            ca_file=tls_dir / "current" / "origin.crt",
+        )
         print("done.")
     except (SystemExit, Exception) as error:
         print("failed.")
         print("Game Sandbox started, but it did not become ready in time.")
         try:
             logs = subprocess.run(
-                ["docker", "compose", "logs", "--tail", "100", "app"],
+                ["docker", "compose", "logs", "--tail", "100", "proxy", "app"],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
@@ -624,6 +699,21 @@ def _node_major() -> int | None:
     result = subprocess.run(["node", "--version"], capture_output=True, text=True, check=False)
     major = result.stdout.strip().lstrip("v").split(".", 1)[0]
     return int(major) if result.returncode == 0 and major.isdigit() else None
+
+
+def _prepare_tls_dir() -> Path:
+    """Create the host-owned directory used for generated origin TLS material."""
+    tls_dir = REPO_ROOT / ".tls"
+    try:
+        tls_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if tls_dir.is_symlink() or not tls_dir.is_dir():
+            raise NotADirectoryError(tls_dir)
+        tls_dir.chmod(0o700)
+    except OSError as error:
+        print("\nWe could not prepare the TLS certificate directory.")
+        _print_technical_details(str(error))
+        raise SystemExit(1) from None
+    return tls_dir
 
 
 def check_prerequisites(mode: str) -> None:

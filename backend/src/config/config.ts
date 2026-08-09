@@ -23,6 +23,11 @@ export type ExecutionDriverKind = 'docker'
 /** Whether the driver reuses an existing image tag or always rebuilds. */
 export type ImagePolicy = 'reuse' | 'rebuild'
 
+/** The Docker network topology that carries one sandbox's fixed-destination LLM relay. */
+export type DockerLlmRelay =
+  | { mode: 'host-gateway' }
+  | { mode: 'compose-network'; network: string; host: string }
+
 /** The driver-neutral sandbox quotas applied to every session container. */
 export interface SandboxDefaults {
   cpus: number
@@ -37,6 +42,8 @@ export interface DockerDriverOptions {
   imagePolicy: ImagePolicy
   /** Wall-clock ceiling on one overlay build, so a hung build cannot stall the validation worker. */
   overlayBuildTimeoutMs: number
+  /** The validated LLM relay topology used only by LLM-enabled sandboxes. */
+  llmRelay: DockerLlmRelay
 }
 
 /**
@@ -417,11 +424,52 @@ export function loadDockerOptions(env?: NodeJS.ProcessEnv): DockerDriverOptions 
       `DOCKER_IMAGE_POLICY must be 'reuse' or 'rebuild', got ${env.DOCKER_IMAGE_POLICY}`,
     )
   }
+  const llmRelay = loadDockerLlmRelay(env)
   return {
     imageTagPrefix: requiredStringVar(env, 'DOCKER_IMAGE_TAG_PREFIX'),
     imagePolicy: imagePolicyResult.data,
     overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS'),
+    llmRelay,
   }
+}
+
+const DOCKER_NETWORK_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/
+const DNS_HOSTNAME =
+  /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/
+
+/** Parse one complete LLM relay topology so dependent Docker settings cannot drift apart. */
+function loadDockerLlmRelay(env: NodeJS.ProcessEnv): DockerLlmRelay {
+  const mode = requiredStringVar(env, 'DOCKER_LLM_RELAY_MODE')
+  const network = optionalStringVar(env, 'DOCKER_LLM_RELAY_NETWORK')
+  const host = optionalStringVar(env, 'DOCKER_LLM_RELAY_HOST')
+
+  if (mode === 'host-gateway') {
+    if (network !== undefined || host !== undefined) {
+      throw new ConfigError(
+        'DOCKER_LLM_RELAY_NETWORK and DOCKER_LLM_RELAY_HOST must be unset when DOCKER_LLM_RELAY_MODE=host-gateway',
+      )
+    }
+    return { mode }
+  }
+
+  if (mode !== 'compose-network') {
+    throw new ConfigError(
+      `DOCKER_LLM_RELAY_MODE must be 'host-gateway' or 'compose-network', got ${mode}`,
+    )
+  }
+
+  if (network === undefined || host === undefined) {
+    throw new ConfigError(
+      'DOCKER_LLM_RELAY_NETWORK and DOCKER_LLM_RELAY_HOST are required when DOCKER_LLM_RELAY_MODE=compose-network',
+    )
+  }
+  if (!DOCKER_NETWORK_NAME.test(network)) {
+    throw new ConfigError(`DOCKER_LLM_RELAY_NETWORK must be a Docker network name, got ${network}`)
+  }
+  if (!DNS_HOSTNAME.test(host)) {
+    throw new ConfigError(`DOCKER_LLM_RELAY_HOST must be a DNS hostname, got ${host}`)
+  }
+  return { mode, network, host }
 }
 
 /**

@@ -6,7 +6,7 @@
  */
 
 import { createServer } from 'node:net'
-import Docker from 'dockerode'
+import Docker, { type Container } from 'dockerode'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
@@ -56,6 +56,7 @@ describe('driver-level sandbox guarantees', () => {
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
     const script =
       'import mmap, os, signal\n' +
@@ -87,6 +88,7 @@ describe('driver-level sandbox guarantees', () => {
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
     // Exit 0 only if an outbound TCP connect succeeds; exit 7 when the network is unreachable.
     const script =
@@ -130,6 +132,7 @@ describe('driver-level sandbox guarantees', () => {
         imageTagPrefix: TAG_PREFIX,
         imagePolicy: 'reuse',
         overlayBuildTimeoutMs: 120_000,
+        llmRelay: { mode: 'host-gateway' },
       },
       allowedAddress.port,
     )
@@ -156,6 +159,80 @@ describe('driver-level sandbox guarantees', () => {
     drain(proc)
 
     await expect(proc.exited).resolves.toMatchObject({ code: 0, oomKilled: false })
+  })
+
+  it('uses a compose network relay without exposing its shared upstream to the sandbox', async () => {
+    const docker = new Docker()
+    const sharedNetworkName = `game-sandbox-it-compose-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    await expect(
+      createDockerDriver({
+        imageTagPrefix: TAG_PREFIX,
+        imagePolicy: 'reuse',
+        overlayBuildTimeoutMs: 120_000,
+        llmRelay: {
+          mode: 'compose-network',
+          network: `${sharedNetworkName}-missing`,
+          host: 'upstream',
+        },
+      }),
+    ).rejects.toThrow(/DOCKER_LLM_RELAY_NETWORK .* does not exist/)
+    const sharedNetwork = await docker.createNetwork({ Name: sharedNetworkName, Internal: true })
+    let upstream: Container | undefined
+    cleanups.push(async () => {
+      await upstream?.remove({ force: true }).catch(() => undefined)
+      await sharedNetwork.remove().catch(() => undefined)
+    })
+    const upstreamPort = 9_001
+    upstream = await docker.createContainer({
+      Image: BASE_IMAGE_REF.ref,
+      Entrypoint: ['python', '-m', 'http.server', String(upstreamPort)],
+      NetworkingConfig: {
+        EndpointsConfig: { [sharedNetworkName]: { Aliases: ['upstream'] } },
+      },
+      HostConfig: { NetworkMode: sharedNetworkName },
+    })
+    await upstream.start()
+
+    const driver = await createDockerDriver(
+      {
+        imageTagPrefix: TAG_PREFIX,
+        imagePolicy: 'reuse',
+        overlayBuildTimeoutMs: 120_000,
+        llmRelay: { mode: 'compose-network', network: sharedNetworkName, host: 'upstream' },
+      },
+      upstreamPort,
+    )
+    const script =
+      'import socket,sys\n' +
+      'def resolves(host):\n' +
+      '  try:\n' +
+      '    socket.gethostbyname(host); return True\n' +
+      '  except OSError:\n' +
+      '    return False\n' +
+      'def reaches(host,port):\n' +
+      '  try:\n' +
+      '    s=socket.create_connection((host,port),2); s.close(); return True\n' +
+      '  except OSError:\n' +
+      '    return False\n' +
+      `allowed=reaches("llm-proxy",${upstreamPort})\n` +
+      `upstream=resolves("upstream") or reaches("upstream",${upstreamPort})\n` +
+      `shared=resolves("${sharedNetworkName}")\n` +
+      'host_gateway=resolves("host.docker.internal")\n' +
+      'public=reaches("1.1.1.1",53)\n' +
+      'sys.exit(0 if allowed and not upstream and not shared and not host_gateway and not public else 9)\n'
+    const proc = await driver.launch({
+      image: BASE_IMAGE_REF,
+      entrypoint: ['python', '-c', script],
+      argv: [],
+      sandbox: profile({ network: 'llm' }),
+      sessionId: 'it-compose-llm-net',
+    })
+    cleanups.push(() => proc.kill(0))
+    drain(proc)
+
+    await expect(proc.exited).resolves.toMatchObject({ code: 0, oomKilled: false })
+    await proc.kill(0)
+    await expect(sharedNetwork.inspect()).resolves.toBeDefined()
   })
 
   it('reaps a labeled orphan container when a new driver constructs', async () => {
@@ -200,6 +277,7 @@ describe('driver-level sandbox guarantees', () => {
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
 
     await expect(orphan.inspect()).rejects.toThrow()
@@ -230,6 +308,7 @@ describe('driver-level sandbox guarantees', () => {
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
 
     await expect(selfPidOrphan.inspect()).rejects.toThrow()
@@ -255,6 +334,7 @@ describe('driver-level sandbox guarantees', () => {
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
 
     await expect(peerContainer.inspect()).resolves.toBeDefined()

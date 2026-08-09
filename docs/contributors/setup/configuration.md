@@ -37,6 +37,8 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |
 | `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
 
+`LOCAL_HTTPS_PORT` is a Docker setup and Compose value, not a backend listener. It defaults to `8443`, cannot use the public HTTPS port `443`, and publishes the proxy's local HTTPS listener on `127.0.0.1` only. [Run the app in Docker](docker.md) describes the two proxy listeners.
+
 ## Authentication
 
 | Variable | Default | Meaning |
@@ -57,6 +59,9 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `EXECUTION_DRIVER` | `docker` | Active driver |
 | `DOCKER_IMAGE_TAG_PREFIX` | `game-sandbox` | Image prefix |
 | `DOCKER_IMAGE_POLICY` | `reuse` | `reuse` an existing tag or `rebuild` before launch |
+| `DOCKER_LLM_RELAY_MODE` | `host-gateway` | `host-gateway` reaches a host-process backend through `host.docker.internal`; `compose-network` joins an existing named network and reaches a service hostname |
+| `DOCKER_LLM_RELAY_NETWORK` | unset | Existing Docker network used by the relay in `compose-network` mode; required in that mode and forbidden in `host-gateway` mode |
+| `DOCKER_LLM_RELAY_HOST` | unset | Backend DNS hostname used by the relay in `compose-network` mode; required in that mode and forbidden in `host-gateway` mode |
 | `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
 | `DOCS_DIR` | `docs` | Documentation root for shared in-app student guides; only its `students/` subtree is served |
 | `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
@@ -72,11 +77,13 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 
 ## LLM proxy
 
-The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay can reach it through the host gateway. When the app itself runs in a container, the port must also be published on the host; see [Run the app in Docker](docker.md#llm-sessions). Every listener route requires a scoped bearer key.
+The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. Every listener route requires a scoped bearer key.
+
+The listener binds on all app-container interfaces so the fixed-destination relay can reach it. Host-process deployments use `host-gateway` mode. The Compose deployment selects `compose-network`, attaches the relay to `game-sandbox-internal`, and reaches the `app` service without publishing `LLM_INTERNAL_PORT` on the host. The sandbox agent cannot join or resolve that shared network.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LLM_INTERNAL_PORT` | `8081` | Internal proxy port reached by the session relay; must be from 1 through 65535 |
+| `LLM_INTERNAL_PORT` | `8081` | Internal proxy port reached only by the fixed-destination session relay; must be from 1 through 65535 |
 | `LLM_UPSTREAM_URL` | unset | Absolute `http` or `https` base URL of the one configured OpenAI-compatible upstream, without credentials, query, or fragment; the proxy remains off when unset |
 | `LLM_UPSTREAM_KEY` | unset | Optional upstream bearer credential; requests omit authorization when it is unset |
 | `LLM_MODEL_LARGE` | unset | Upstream model exposed to agents as `large` |
@@ -133,6 +140,7 @@ A deployment must:
 
 - Set `PUBLIC_ORIGIN`, `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` explicitly. Startup refuses the published development values for `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
 - Change `PUBLIC_ORIGIN` from its development default: startup only validates it as a well-formed origin and does not check it against the development value.
+- For Docker deployment, use an exact HTTPS ASCII FQDN with no port, path, trailing slash, or trailing dot. The setup wizard and proxy reject other forms because the hostname defines the TLS certificate and nginx virtual host.
 - Register `<PUBLIC_ORIGIN>/api/auth/callback/github` as the GitHub OAuth callback URL, when GitHub OAuth is configured.
 - Keep `GITHUB_TOKEN` separate from the GitHub OAuth client credentials; it is used only for submissions.
 - Never enable `AUTH_ALLOW_INSECURE_DEFAULTS`. A deployment from a repository checkout must set it to `false` explicitly to override the local `.env.default`; in local mode it accepts the published values and restricts the HTTP listener to loopback.

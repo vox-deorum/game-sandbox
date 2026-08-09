@@ -1,0 +1,8 @@
+Cloudflare Global Authenticated Origin Pull CA
+
+Source: https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
+Retrieved: 2026-08-08
+SHA-256 certificate fingerprint (DER): 9a1ac2b4be15f9f27eee20a734cba4e9898f61001b3bd7c84b69b56a3e25a2b9
+
+Cloudflare documents this certificate as the trust certificate for Global Authenticated Origin
+Pulls. It is distinct from a Cloudflare Origin CA certificate.

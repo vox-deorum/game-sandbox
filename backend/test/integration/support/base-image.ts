@@ -28,6 +28,7 @@ export async function ensureBaseImage(policy: 'reuse' | 'rebuild' = 'reuse'): Pr
     imageTagPrefix: TAG_PREFIX,
     imagePolicy: policy,
     overlayBuildTimeoutMs: 120_000,
+    llmRelay: { mode: 'host-gateway' },
   })
   return driver.ensureImage(currentSessionBaseImageSpec())
 }

@@ -131,7 +131,7 @@ export class DockerDriver implements ExecutionDriver {
     }
   }
 
-  /** Create an agent-only bridge plus a separately routed relay egress for one LLM session. */
+  /** Create one agent-only bridge and connect its relay through the configured fixed topology. */
   private async createLlmNetwork(sessionId: string): Promise<LlmNetworkResources> {
     if (this.llmInternalPort === undefined) {
       throw new Error('LLM_INTERNAL_PORT is required to launch an LLM-enabled sandbox')
@@ -163,13 +163,20 @@ export class DockerDriver implements ExecutionDriver {
     }
 
     try {
-      // Only the trusted relay joins this routed bridge. The submitted-agent container stays on the
-      // internal bridge, where there is no gateway route and no host-gateway alias.
-      egressNetwork = await this.docker.createNetwork({
-        Name: egressNetworkName,
-        Internal: false,
-        Labels: { ...labels, [LLM_NETWORK_LABEL]: 'egress' },
-      })
+      const relayTopology = this.options.llmRelay
+      if (relayTopology.mode === 'host-gateway') {
+        // Only the trusted relay joins this routed bridge. The submitted-agent container stays on
+        // the internal bridge, where there is no gateway route and no host-gateway alias.
+        egressNetwork = await this.docker.createNetwork({
+          Name: egressNetworkName,
+          Internal: false,
+          Labels: { ...labels, [LLM_NETWORK_LABEL]: 'egress' },
+        })
+      }
+      const relayNetwork =
+        relayTopology.mode === 'host-gateway' ? egressNetworkName : relayTopology.network
+      const relayTarget =
+        relayTopology.mode === 'host-gateway' ? 'host.docker.internal' : relayTopology.host
       relay = await this.docker.createContainer({
         Image: LLM_RELAY_IMAGE,
         Entrypoint: ['socat'],
@@ -177,18 +184,20 @@ export class DockerDriver implements ExecutionDriver {
           '-d',
           '-d',
           `TCP-LISTEN:${this.llmInternalPort},fork,reuseaddr`,
-          `TCP:host.docker.internal:${this.llmInternalPort}`,
+          `TCP:${relayTarget}:${this.llmInternalPort}`,
         ],
         Labels: { ...labels, [LLM_RELAY_LABEL]: 'true' },
         HostConfig: {
-          NetworkMode: egressNetworkName,
-          ExtraHosts: ['host.docker.internal:host-gateway'],
+          NetworkMode: relayNetwork,
+          ...(relayTopology.mode === 'host-gateway'
+            ? { ExtraHosts: ['host.docker.internal:host-gateway'] }
+            : {}),
           ReadonlyRootfs: true,
           CapDrop: ['ALL'],
           SecurityOpt: ['no-new-privileges:true'],
         },
         NetworkingConfig: {
-          EndpointsConfig: { [egressNetworkName]: {} },
+          EndpointsConfig: { [relayNetwork]: {} },
         },
       })
       // The relay exposes exactly one fixed-destination socat listener to agents. It has no shell or
@@ -331,7 +340,17 @@ export async function createDockerDriver(
   options: DockerDriverOptions,
   llmInternalPort?: number,
 ): Promise<DockerDriver> {
-  const driver = new DockerDriver(new Docker(), options, llmInternalPort)
+  const docker = new Docker()
+  if (options.llmRelay.mode === 'compose-network') {
+    try {
+      await docker.getNetwork(options.llmRelay.network).inspect()
+    } catch {
+      throw new Error(
+        `DOCKER_LLM_RELAY_NETWORK ${options.llmRelay.network} does not exist or is not accessible to the Docker daemon`,
+      )
+    }
+  }
+  const driver = new DockerDriver(docker, options, llmInternalPort)
   await driver.reapOrphans()
   return driver
 }

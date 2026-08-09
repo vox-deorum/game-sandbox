@@ -33,10 +33,10 @@ e2e.yml (manually dispatched from the Actions tab, too Docker-heavy and slow for
 
 compose-smoke.yml (manually dispatched from the Actions tab):
 - ``compose-smoke``: the containerized-deployment rehearsal from
-  docs/contributors/setup/docker.md. It builds the app image, boots ``compose.yaml`` with a
-  throwaway ``.env``, and proves the published API port, the same-path ``DATA_DIR`` bind, and
-  startup reaping through the mounted daemon socket. Needs a Linux daemon, so it is *not* part
-  of ``all``.
+  docs/contributors/setup/docker.md. It builds current base images, boots ``compose.yaml`` with a
+  throwaway ``.env``, and proves local TLS, private app ports, proxy survival across app recreation,
+  the same-path ``DATA_DIR`` bind, and startup reaping through the mounted daemon socket. Needs a
+  Linux daemon, so it is *not* part of ``all``.
 
 docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
@@ -204,8 +204,9 @@ def job_frontend_e2e(
     )
 
 
-def _wait_for_http(url: str, timeout_s: float) -> None:
+def _wait_for_http(url: str, timeout_s: float, *, ca_file: Path | None = None) -> None:
     """Poll ``url`` until it answers 200, failing the job when ``timeout_s`` runs out."""
+    import ssl
     import time
     import urllib.request
 
@@ -213,23 +214,84 @@ def _wait_for_http(url: str, timeout_s: float) -> None:
     last_error = "no response yet"
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=5) as response:
+            context = ssl.create_default_context(cafile=str(ca_file)) if ca_file else None
+            with urllib.request.urlopen(url, timeout=5, context=context) as response:
                 if response.status == 200:
                     return
                 last_error = f"HTTP {response.status}"
-        except OSError as error:
+        except (OSError, ValueError) as error:
             last_error = str(error)
         time.sleep(2)
     raise SystemExit(f"{url} did not answer 200 within {int(timeout_s)}s (last error: {last_error})")
 
 
+def _require_https_rejection(*, port: int, host: str, ca_file: Path, reason: str) -> None:
+    """Fail when a proxy boundary that should reject the request returns a successful response."""
+    import http.client
+    import ssl
+
+    connection = http.client.HTTPSConnection(
+        "127.0.0.1",
+        port,
+        timeout=5,
+        context=ssl.create_default_context(cafile=str(ca_file)),
+    )
+    try:
+        connection.request("GET", "/api/environments", headers={"Host": host})
+        response = connection.getresponse()
+        response.read()
+        if 200 <= response.status < 400:
+            raise SystemExit(f"{reason}: the proxy returned HTTP {response.status}")
+    except (OSError, http.client.HTTPException):
+        return
+    finally:
+        connection.close()
+
+
+def _require_aop_client_certificate(compose: list[str]) -> None:
+    """Prove the rendered public TLS listener rejects a handshake without an AOP certificate."""
+    try:
+        result = subprocess.run(
+            [
+                *compose,
+                "exec",
+                "-T",
+                "proxy",
+                "openssl",
+                "s_client",
+                "-connect",
+                "127.0.0.1:443",
+                "-servername",
+                "compose-smoke.example.com",
+                "-CAfile",
+                "/tls/current/origin.crt",
+                "-verify_return_error",
+                "-tls1_3",
+            ],
+            cwd=REPO_ROOT,
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit("the public TLS AOP handshake probe hung for 30s instead of failing fast") from None
+    diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+    expected_alerts = ("certificate required", "alert number 116")
+    if not any(alert in diagnostic for alert in expected_alerts):
+        raise SystemExit(
+            "public TLS did not require the Cloudflare AOP client certificate\n"
+            f"{result.stdout}{result.stderr}"
+        )
+
+
 def job_compose_smoke() -> None:
     # Rehearses the containerized deployment from docs/contributors/setup/docker.md: build the app
-    # image, boot compose.yaml with a throwaway .env, and prove the three things the topology
-    # depends on. The published API port answers, the same-path DATA_DIR bind is writable from
-    # inside the container, and a restart reaps a planted leftover container through the mounted
-    # daemon socket. Needs a Linux daemon (the same-path convention does not hold under Docker
-    # Desktop's VM), so it is not part of ``all``; run it from the Actions tab or under WSL.
+    # and proxy images, boot compose.yaml with throwaway state, and check the TLS and container
+    # boundaries that the topology depends on. Needs a Linux daemon (the same-path convention does
+    # not hold under Docker Desktop's VM), so it is not part of ``all``; run it from the Actions tab
+    # or under WSL.
     import secrets
     import shutil
     import tempfile
@@ -241,13 +303,24 @@ def job_compose_smoke() -> None:
     env_path = REPO_ROOT / ".env"
     if env_path.exists():
         raise SystemExit(".env already exists; compose-smoke writes a throwaway one. Move yours aside first.")
+    tls_dir = REPO_ROOT / ".tls"
+    if tls_dir.exists():
+        raise SystemExit(".tls already exists; compose-smoke needs an empty certificate directory.")
 
     data_dir = Path(tempfile.mkdtemp(prefix="game-sandbox-compose-smoke-"))
+    tls_dir.mkdir(mode=0o700)
+    project_name = f"game-sandbox-smoke-{secrets.token_hex(4)}"
+    internal_network = f"{project_name}-internal"
+    outbound_network = f"{project_name}-outbound"
+    compose = ["docker", "compose", "--project-name", project_name]
     env_path.write_text(
         "\n".join(
             [
-                "PUBLIC_ORIGIN=http://127.0.0.1:8080",
+                "PUBLIC_ORIGIN=https://compose-smoke.example.com",
                 "PORT=8080",
+                "LOCAL_HTTPS_PORT=18443",
+                f"INTERNAL_NETWORK_NAME={internal_network}",
+                f"OUTBOUND_NETWORK_NAME={outbound_network}",
                 f"AUTH_SECRET={secrets.token_hex(32)}",
                 "ADMIN_EMAIL=compose-smoke@example.com",
                 f"ADMIN_PASSWORD={secrets.token_hex(16)}",
@@ -259,16 +332,52 @@ def job_compose_smoke() -> None:
         + "\n",
         encoding="utf-8",
     )
-    url = "http://127.0.0.1:8080/api/environments"
+    url = "https://127.0.0.1:18443/api/environments"
+    certificate = tls_dir / "current" / "origin.crt"
     planted_id: str | None = None
     try:
-        _run(["docker", "compose", "up", "-d", "--build"])
-        _wait_for_http(url, 300)
+        _run([*compose, "build", "--pull"])
+        _run([*compose, "up", "-d"])
+        _wait_for_http(url, 300, ca_file=certificate)
+        _require_aop_client_certificate(compose)
+        _require_https_rejection(
+            port=443,
+            host="compose-smoke.example.com",
+            ca_file=certificate,
+            reason="public HTTPS accepted a direct request without Cloudflare AOP",
+        )
+        _require_https_rejection(
+            port=18443,
+            host="unexpected.example.com",
+            ca_file=certificate,
+            reason="loopback HTTPS accepted an unexpected Host header",
+        )
         if not (data_dir / "sandbox.db").exists():
             raise SystemExit(
                 f"the app answered but wrote no sandbox.db under {data_dir}; "
                 "the same-path DATA_DIR bind is broken"
             )
+        app_id = subprocess.run(
+            [*compose, "ps", "-q", "app"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        bindings_result = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .HostConfig.PortBindings}}", app_id],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if json.loads(bindings_result.stdout) not in ({}, None):
+            raise SystemExit("the app container unexpectedly publishes a host port")
+
+        # Recreate the app without touching nginx. Docker DNS re-resolution must carry the next
+        # request to the replacement container rather than the old address.
+        _run([*compose, "up", "-d", "--force-recreate", "--no-deps", "app"])
+        _wait_for_http(url, 120, ca_file=certificate)
         # Plant the leftover a previous containerized incarnation would leave behind: a container
         # carrying the session label and owner pid 1. The restarted app (pid 1 again) must reap it.
         planted = subprocess.run(
@@ -292,20 +401,45 @@ def job_compose_smoke() -> None:
         if planted.returncode != 0:
             raise SystemExit(f"could not plant the leftover container: {planted.stderr.strip()}")
         planted_id = planted.stdout.strip()
-        _run(["docker", "compose", "restart", "app"])
-        _wait_for_http(url, 120)
+        _run([*compose, "restart", "app"])
+        _wait_for_http(url, 120, ca_file=certificate)
         gone = subprocess.run(["docker", "inspect", planted_id], cwd=REPO_ROOT, capture_output=True)
         if gone.returncode == 0:
             raise SystemExit("the restarted app did not reap the planted leftover container")
-        print("compose smoke passed: API up, same-path DATA_DIR bind works, restart reaped the leftover")
+        print(
+            "compose smoke passed: local TLS is up, app ports are private, proxy followed app "
+            "recreation, same-path DATA_DIR works, and restart reaped the leftover"
+        )
     except (SystemExit, Exception):
-        subprocess.run(["docker", "compose", "logs", "app"], cwd=REPO_ROOT)
+        subprocess.run([*compose, "logs", "proxy", "app"], cwd=REPO_ROOT)
         raise
     finally:
         if planted_id:
             subprocess.run(["docker", "rm", "-f", planted_id], cwd=REPO_ROOT, capture_output=True)
-        subprocess.run(["docker", "compose", "down", "--remove-orphans"], cwd=REPO_ROOT)
+        subprocess.run([*compose, "down", "--remove-orphans"], cwd=REPO_ROOT)
         env_path.unlink(missing_ok=True)
+        # The proxy writes root-owned pair directories into .tls, which a non-root runner cannot
+        # delete directly, so empty the directory through the daemon first.
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{tls_dir}:/tls",
+                "nginx:alpine",
+                "sh",
+                "-c",
+                "rm -rf /tls/* /tls/.[!.]*",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+        )
+        shutil.rmtree(tls_dir, ignore_errors=True)
+        if tls_dir.exists():
+            print(
+                f"warning: could not fully remove {tls_dir}; remove it before the next run", file=sys.stderr
+            )
         shutil.rmtree(data_dir, ignore_errors=True)
 
 

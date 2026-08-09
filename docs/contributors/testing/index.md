@@ -57,7 +57,7 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | `publish-dry-run` | Build the local frontend once, stage runnable student-repository snapshots, and do not push |
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium (narrow it with `--group` or `--fast`) |
-| `compose-smoke` | Build the app image and boot `compose.yaml` against a real Linux daemon |
+| `compose-smoke` | Build the app and proxy images and boot `compose.yaml` against a real Linux daemon |
 
 The full local pull-request bar runs every non-Docker job plus the docs build and publish dry run, then the two Docker-heavy suites:
 
@@ -114,9 +114,11 @@ Any UI change that renames text, changes markup, moves a control, or alters a fl
 uv run python scripts/ci.py compose-smoke
 ```
 
-This job rehearses the containerized deployment from [Run the app in Docker](../setup/docker.md) on its own manually dispatched workflow. It builds the app image, boots `compose.yaml` with a throwaway `.env` and a temporary data directory, and asserts three things: the published API port answers, `sandbox.db` appears under the host data directory through the same-path bind, and a restart reaps a planted leftover session container through the mounted socket.
+This job rehearses the containerized deployment from [Run the app in Docker](../setup/docker.md) on its own manually dispatched workflow. It pulls and builds the app and proxy bases, boots `compose.yaml` under a unique Compose project with a throwaway `.env`, network names, certificate directory, and data directory, then checks the deployment boundary: the loopback HTTPS API validates against the generated certificate, the public listener rejects TLS handshakes that lack the Cloudflare AOP client certificate, loopback HTTPS rejects an unexpected host, the app publishes no host ports, nginx follows an app-container recreation through Docker DNS, `sandbox.db` appears through the same-path bind, and an app restart reaps a planted leftover session container through the mounted socket. The Cloudflare source-IP allowlist has no test coverage, since the runner never connects from a Cloudflare address; the host firewall and the AOP certificate are the tested layers.
 
-It needs a Linux Docker daemon, so on Windows run it under WSL. It refuses to run while a real `.env` exists at the repository root.
+The backend Docker integration suite separately exercises the LLM path. It proves a relay on the shared Compose-style network reaches the configured backend host while the sandbox agent cannot resolve or reach the app, shared network, host gateway, or Internet. It also proves session cleanup leaves the shared network intact.
+
+It needs a Linux Docker daemon, so on Windows run it under WSL. It refuses to run while a real `.env` or `.tls` exists at the repository root.
 
 ## Examples and template checks
 

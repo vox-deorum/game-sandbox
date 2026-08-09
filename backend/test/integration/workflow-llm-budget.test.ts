@@ -122,6 +122,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
         imageTagPrefix: 'game-sandbox',
         imagePolicy: 'reuse',
         overlayBuildTimeoutMs: 120_000,
+        llmRelay: { mode: 'host-gateway' },
       },
       internalPort,
     )

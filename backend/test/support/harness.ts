@@ -212,6 +212,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
       imageTagPrefix: 'game-sandbox',
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     },
     submission: {
       allowLocalSubmissions: false,

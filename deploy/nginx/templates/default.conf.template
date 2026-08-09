@@ -1,0 +1,39 @@
+server {
+    listen 443 ssl default_server;
+    server_name ${PUBLIC_HOSTNAME};
+
+    ssl_certificate /tls/current/origin.crt;
+    ssl_certificate_key /tls/current/origin.key;
+    ssl_client_certificate /etc/nginx/cloudflare-origin-pull-ca.pem;
+    ssl_verify_client on;
+
+    if ($host != "${PUBLIC_HOSTNAME}") {
+        return 444;
+    }
+
+    include /etc/nginx/cloudflare-allow.conf;
+
+    location / {
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $app_upstream "app:${APP_PORT}";
+        include /etc/nginx/proxy-app.conf;
+    }
+}
+
+server {
+    listen 8443 ssl default_server;
+    server_name localhost 127.0.0.1;
+
+    ssl_certificate /tls/current/origin.crt;
+    ssl_certificate_key /tls/current/origin.key;
+
+    if ($host !~ ^(localhost|127\.0\.0\.1)$) {
+        return 444;
+    }
+
+    location / {
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $app_upstream "app:${APP_PORT}";
+        include /etc/nginx/proxy-app.conf;
+    }
+}

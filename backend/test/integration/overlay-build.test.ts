@@ -64,6 +64,7 @@ async function driver(policy: 'reuse' | 'rebuild' = 'reuse'): Promise<DockerDriv
     imageTagPrefix: TAG_PREFIX,
     imagePolicy: policy,
     overlayBuildTimeoutMs: 120_000,
+    llmRelay: { mode: 'host-gateway' },
   })
 }
 

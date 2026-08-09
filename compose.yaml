@@ -7,7 +7,8 @@
 # bind-mount the recordings directory from the daemon's view of the filesystem, and the same
 # .env value feeds both the mount below and the container environment. Set it to an absolute
 # path; the repository-relative default in .env.default suits only a host process.
-# The published LLM_INTERNAL_PORT is what the per-session relay reaches via host.docker.internal.
+# The app reaches the session relay through the compose network. The proxy is the only published
+# service: Cloudflare reaches port 443 and operators use the loopback-only HTTPS port.
 
 services:
   app:
@@ -17,10 +18,61 @@ services:
     env_file: .env
     environment:
       DATA_DIR: ${DATA_DIR:-/srv/game-sandbox/data}
-    # Defaults 8080 and 8081 mirror .env.default, which compose interpolation does not read.
-    ports:
-      - "${PORT:-8080}:${PORT:-8080}"
-      - "${LLM_INTERNAL_PORT:-8081}:${LLM_INTERNAL_PORT:-8081}"
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to https://your.domain.example}
+      PORT: ${PORT:-8080}
+      DOCKER_LLM_RELAY_MODE: compose-network
+      DOCKER_LLM_RELAY_NETWORK: ${INTERNAL_NETWORK_NAME:-game-sandbox-internal}
+      DOCKER_LLM_RELAY_HOST: app
+      AUTH_TRUSTED_ORIGINS: >-
+        ${AUTH_TRUSTED_ORIGINS:-},https://localhost:${LOCAL_HTTPS_PORT:-8443},https://127.0.0.1:${LOCAL_HTTPS_PORT:-8443}
+    hostname: app
+    stop_grace_period: 2m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DATA_DIR:-/srv/game-sandbox/data}:${DATA_DIR:-/srv/game-sandbox/data}
+    # The internal network is gateway-free, so app-outbound is the app's only default-route
+    # candidate and carries all outbound traffic without an explicit gateway priority.
+    networks:
+      game-sandbox-internal:
+        aliases:
+          - app
+      app-outbound: {}
+
+  proxy:
+    build:
+      context: deploy/nginx
+      pull: true
+    image: game-sandbox/proxy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to https://your.domain.example}
+      APP_PORT: ${PORT:-8080}
+    ports:
+      - "443:443"
+      - "127.0.0.1:${LOCAL_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./.tls:/tls
+    networks:
+      - game-sandbox-internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          printf 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' |
+          openssl s_client -quiet -verify_return_error -connect 127.0.0.1:8443 -servername localhost -CAfile /tls/current/origin.crt 2>/dev/null |
+          grep -q '^HTTP/[0-9.]* [23][0-9][0-9]'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  game-sandbox-internal:
+    name: ${INTERNAL_NETWORK_NAME:-game-sandbox-internal}
+    driver: bridge
+    internal: true
+  app-outbound:
+    name: ${OUTBOUND_NETWORK_NAME:-game-sandbox-app-outbound}
+    driver: bridge

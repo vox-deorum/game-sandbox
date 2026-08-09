@@ -76,3 +76,18 @@ def test_selection_flags_are_refused_on_other_jobs(flag: str) -> None:
     argv = ["python", flag, "hearts"] if flag == "--group" else ["python", flag]
     with pytest.raises(SystemExit):
         ci.main(argv)
+
+
+def test_aop_check_requires_a_client_certificate_alert(monkeypatch: pytest.MonkeyPatch) -> None:
+    rejected = ci.subprocess.CompletedProcess([], 1, stdout="", stderr="alert certificate required")
+    monkeypatch.setattr(ci.subprocess, "run", lambda *args, **kwargs: rejected)
+
+    ci._require_aop_client_certificate(["docker", "compose", "--project-name", "smoke"])
+
+
+def test_aop_check_rejects_a_successful_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    accepted = ci.subprocess.CompletedProcess([], 0, stdout="Verification: OK", stderr="")
+    monkeypatch.setattr(ci.subprocess, "run", lambda *args, **kwargs: accepted)
+
+    with pytest.raises(SystemExit, match="did not require"):
+        ci._require_aop_client_certificate(["docker", "compose", "--project-name", "smoke"])

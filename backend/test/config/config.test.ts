@@ -30,6 +30,7 @@ describe('loadConfig', () => {
     expect(config.executionDriver).toBe('docker')
     expect(config.docker.imagePolicy).toBe('reuse')
     expect(config.docker.imageTagPrefix).toBe('game-sandbox')
+    expect(config.docker.llmRelay).toEqual({ mode: 'host-gateway' })
     expect(config.sandbox).toEqual({
       cpus: 1,
       memoryMb: 512,
@@ -133,6 +134,54 @@ describe('loadConfig', () => {
 
   it('rejects an invalid image policy', () => {
     expect(() => load({ DOCKER_IMAGE_POLICY: 'cache' })).toThrow(/DOCKER_IMAGE_POLICY/)
+  })
+
+  it('parses the compose-network LLM relay topology', () => {
+    expect(
+      load({
+        DOCKER_LLM_RELAY_MODE: 'compose-network',
+        DOCKER_LLM_RELAY_NETWORK: 'game-sandbox-llm',
+        DOCKER_LLM_RELAY_HOST: 'app.internal',
+      }).docker.llmRelay,
+    ).toEqual({
+      mode: 'compose-network',
+      network: 'game-sandbox-llm',
+      host: 'app.internal',
+    })
+  })
+
+  it.each([
+    { DOCKER_LLM_RELAY_MODE: 'compose-network' },
+    { DOCKER_LLM_RELAY_MODE: 'compose-network', DOCKER_LLM_RELAY_NETWORK: 'shared' },
+    { DOCKER_LLM_RELAY_MODE: 'compose-network', DOCKER_LLM_RELAY_HOST: 'app' },
+    { DOCKER_LLM_RELAY_MODE: 'host-gateway', DOCKER_LLM_RELAY_NETWORK: 'shared' },
+    { DOCKER_LLM_RELAY_MODE: 'host-gateway', DOCKER_LLM_RELAY_HOST: 'app' },
+  ])('rejects incomplete or cross-mode LLM relay settings: %o', (env) => {
+    expect(() => load(env)).toThrow(/DOCKER_LLM_RELAY/)
+  })
+
+  it('treats empty relay variables as unset, matching the other optional variables', () => {
+    expect(
+      load({
+        DOCKER_LLM_RELAY_MODE: 'host-gateway',
+        DOCKER_LLM_RELAY_NETWORK: '',
+        DOCKER_LLM_RELAY_HOST: '',
+      }).docker.llmRelay,
+    ).toEqual({ mode: 'host-gateway' })
+  })
+
+  it.each([
+    ['DOCKER_LLM_RELAY_NETWORK', 'not/a-network'],
+    ['DOCKER_LLM_RELAY_HOST', 'app_.internal'],
+  ])('rejects an invalid compose-network %s value', (name, value) => {
+    expect(() =>
+      load({
+        DOCKER_LLM_RELAY_MODE: 'compose-network',
+        DOCKER_LLM_RELAY_NETWORK: 'shared',
+        DOCKER_LLM_RELAY_HOST: 'app',
+        [name]: value,
+      }),
+    ).toThrow(new RegExp(name))
   })
 
   it('defaults the submission settings to the dev gate off and no token', () => {

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,11 +14,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import setup  # noqa: E402
 
+DOCKER_ORIGIN_CASES = (
+    ("https://sandbox.example.com", True),
+    ("https://SANDBOX.EXAMPLE.COM", True),
+    ("https://xn--sandbx-f1a.example.com", True),
+    ("http://sandbox.example.com", False),
+    ("HTTPS://sandbox.example.com", False),
+    ("https://sandbox.example.com/", False),
+    ("https://sandbox.example.com/path", False),
+    ("https://sandbox.example.com?", False),
+    ("https://sandbox.example.com#", False),
+    ("https://sandbox.example.com:443", False),
+    ("https://user@sandbox.example.com", False),
+    ("https://localhost", False),
+    ("https://127.0.0.1", False),
+    ("https://01.2.3.4", False),
+    ("https://1.2.3.999", False),
+    ("https://sandbox.example.com.", False),
+    ("https://sandbox..example.com", False),
+    ("https://-sandbox.example.com", False),
+    ("https://sandböx.example.com", False),
+)
+
 
 def deployment_answers(**overrides: str) -> dict[str, str]:
     answers = {
         "PUBLIC_ORIGIN": "https://sandbox.example.com",
         "PORT": "8080",
+        "LOCAL_HTTPS_PORT": "8443",
         "ADMIN_EMAIL": "operator@example.com",
         "ADMIN_PASSWORD": "not-the-development-password",
         "ADMIN_NAME": "Site Admin",
@@ -59,6 +85,8 @@ def test_collect_answers_uses_friendly_labels_and_mode_defaults(monkeypatch, cap
 
     assert host["DATA_DIR"] == "backend/data"
     assert docker["DATA_DIR"] == "/srv/game-sandbox/data"
+    assert "LOCAL_HTTPS_PORT" not in host
+    assert docker["LOCAL_HTTPS_PORT"] == "8443"
     assert host["ADMIN_PASSWORD"] == "generated-password"
     assert "Public site URL" in labels
     assert "GitHub repository access token" in labels
@@ -133,11 +161,12 @@ def test_successful_step_hides_command_output(monkeypatch, capsys):
     assert "raw command output" not in output
 
 
-def test_docker_build_failure_does_not_add_unrelated_app_logs(monkeypatch):
+def test_docker_build_failure_does_not_add_unrelated_app_logs(tmp_path, monkeypatch):
     def fail_build(*args, **kwargs):
         raise SystemExit(1)
 
     monkeypatch.setattr(setup, "_configure_deployment", lambda _mode: deployment_answers())
+    monkeypatch.setattr(setup, "_prepare_tls_dir", lambda: tmp_path)
     monkeypatch.setattr(setup, "_run_step", fail_build)
     monkeypatch.setattr(
         setup.subprocess,
@@ -149,11 +178,12 @@ def test_docker_build_failure_does_not_add_unrelated_app_logs(monkeypatch):
         setup.run_docker()
 
 
-def test_docker_readiness_failure_labels_diagnostics_once(monkeypatch, capsys):
+def test_docker_readiness_failure_labels_diagnostics_once(tmp_path, monkeypatch, capsys):
     def fail_health_check(*args, **kwargs):
         raise SystemExit("raw timeout detail")
 
     monkeypatch.setattr(setup, "_configure_deployment", lambda _mode: deployment_answers())
+    monkeypatch.setattr(setup, "_prepare_tls_dir", lambda: tmp_path)
     monkeypatch.setattr(setup, "_run_step", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup, "_wait_for_http", fail_health_check)
     logs = setup.subprocess.CompletedProcess([], 0, stdout="recent app log", stderr="")
@@ -168,6 +198,28 @@ def test_docker_readiness_failure_labels_diagnostics_once(monkeypatch, capsys):
     assert output.count("Technical details:") == 1
     assert "raw timeout detail" in output
     assert "recent app log" in output
+
+
+def test_docker_build_pulls_current_bases_and_waits_with_generated_ca(tmp_path, monkeypatch):
+    commands: list[list[str]] = []
+    waits: list[tuple[str, Path]] = []
+    monkeypatch.setattr(setup, "_configure_deployment", lambda _mode: deployment_answers())
+    monkeypatch.setattr(setup, "_prepare_tls_dir", lambda: tmp_path)
+    monkeypatch.setattr(setup, "_run_step", lambda _label, command: commands.append(command))
+    monkeypatch.setattr(
+        setup,
+        "_wait_for_http",
+        lambda url, _timeout, *, ca_file: waits.append((url, ca_file)),
+    )
+    monkeypatch.setattr(setup, "_print_deploy_summary", lambda *_args: None)
+
+    assert setup.run_docker() == 0
+
+    assert commands == [
+        ["docker", "compose", "build", "--pull"],
+        ["docker", "compose", "up", "-d"],
+    ]
+    assert waits == [("https://127.0.0.1:8443/api/environments", tmp_path / "current" / "origin.crt")]
 
 
 def test_unreadable_existing_settings_get_friendly_error(tmp_path, monkeypatch, capsys):
@@ -203,7 +255,7 @@ def test_plan_env_writes_required_docker_values_and_reuses_valid_secret():
     secret = "a" * 32
     planned = setup.plan_env("docker", deployment_answers(), {"AUTH_SECRET": secret})
 
-    assert planned.keys() >= setup.REQUIRED_ENV_KEYS
+    assert planned.keys() >= setup._required_keys("docker")
     assert planned["AUTH_ALLOW_INSECURE_DEFAULTS"] == "false"
     assert planned["AUTH_SECRET"] == secret
     assert "GITHUB_TOKEN" not in planned
@@ -233,6 +285,51 @@ def test_url_validators_distinguish_origins_from_base_urls():
     assert setup.validate_http_url("https://models.example.com/v1") is None
     assert setup.validate_http_url("https://user:secret@models.example.com/v1") is not None
     assert setup.validate_http_url("http://[invalid") is not None
+
+
+@pytest.mark.parametrize(("origin", "accepted"), DOCKER_ORIGIN_CASES)
+def test_docker_origin_contract(origin: str, accepted: bool):
+    assert (setup.validate_docker_origin(origin) is None) is accepted
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="the deployment proxy runs under Linux sh")
+@pytest.mark.parametrize(("origin", "accepted"), DOCKER_ORIGIN_CASES)
+def test_proxy_origin_contract_matches_setup(origin: str, accepted: bool):
+    result = subprocess.run(
+        ["sh", "deploy/nginx/proxy-entrypoint.sh", "--validate-public-origin"],
+        cwd=setup.REPO_ROOT,
+        env=os.environ | {"PUBLIC_ORIGIN": origin},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode == 0) is accepted, result.stderr
+
+
+def test_host_plan_does_not_write_the_docker_local_https_port():
+    planned = setup.plan_env("host", deployment_answers(), {"AUTH_SECRET": "a" * 32})
+
+    assert "LOCAL_HTTPS_PORT" not in planned
+
+
+@pytest.mark.parametrize("port", ["443", "0443"])
+def test_docker_plan_rejects_public_port_for_local_https(port: str):
+    with pytest.raises(ValueError, match="Port 443 is reserved"):
+        setup.plan_env(
+            "docker",
+            deployment_answers(LOCAL_HTTPS_PORT=port),
+            {"AUTH_SECRET": "a" * 32},
+        )
+
+
+def test_prepare_tls_dir_creates_a_private_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup, "REPO_ROOT", tmp_path)
+
+    tls_dir = setup._prepare_tls_dir()
+
+    assert tls_dir == tmp_path / ".tls"
+    assert tls_dir.is_dir()
 
 
 @pytest.mark.parametrize("port", ["0", "65536", "not-a-port", "+8080", "8_080"])

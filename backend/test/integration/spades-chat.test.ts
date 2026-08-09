@@ -320,6 +320,7 @@ describe('Spades chat (Docker)', () => {
       imageTagPrefix: 'game-sandbox',
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
     // The runner must write recordings into the SAME directory `stack.recordings` reads from, or the
     // `stack.recordings.stream(recording_id)` below can't find the file (the runner's own recordingsDir

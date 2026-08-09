@@ -49,7 +49,14 @@ The Docker driver maps these to Docker settings, drops capabilities, and labels 
 
 `driver/sandbox.ts` builds profiles for live sessions, matches, and submission load checks. It always uses a read-only root filesystem and bounded `/tmp`. Callers choose `none` or `llm` networking, resource limits, scratch size, and approved mounts. Add new callers through this helper and extend its invariant tests.
 
-An LLM-enabled session uses two isolated Docker networks. The agent container can reach only `llm-proxy`. A relay joins that network and a separate egress network, forwarding only to the backend's internal LLM listener. The agent never gets general internet access.
+An LLM-enabled session uses two Docker network boundaries. The agent container joins only its per-session internal network and can reach only the `llm-proxy` alias. A fixed-destination relay joins that network and one backend-facing network, forwarding only to the backend's internal LLM listener. The agent never gets general internet access.
+
+The backend-facing relay topology depends on where the backend runs:
+
+- A host-process backend uses `host-gateway` mode. The relay joins a dedicated routed egress network and targets `host.docker.internal`.
+- A Compose backend uses `compose-network` mode. The relay joins the existing named `game-sandbox-internal` network and targets the `app` service. It gets no separate egress network or host-gateway alias, and teardown never removes the shared Compose network.
+
+Both modes leave the agent container on the per-session network alone. Startup rejects incomplete relay configuration, and Compose-mode launch fails clearly when the named network does not exist.
 
 ## Session base images
 

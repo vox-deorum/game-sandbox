@@ -1,11 +1,12 @@
 name: Compose smoke
 
 # Rehearses the containerized deployment (the repo-root Dockerfile and compose.yaml) on a real
-# Linux daemon: builds the app image, boots the stack with a throwaway .env, and proves the
-# published API port, the same-path DATA_DIR bind, and startup reaping through the mounted
-# daemon socket. Building the app image takes minutes, so the workflow is triggered by hand from
-# the Actions tab (Run workflow) after changes to the Dockerfile, compose.yaml, or the driver's
-# orphan reaping. Everything else stays in ci.yml, which runs on every push and pull request.
+# Linux daemon: builds the app and proxy images, boots the stack with throwaway state, and proves
+# local TLS, private app ports, app recreation through the proxy, the same-path DATA_DIR bind,
+# and startup reaping through the mounted daemon socket. Building the images takes minutes, so
+# the workflow is triggered by hand from the Actions tab (Run workflow) after changes to the
+# Dockerfile, compose.yaml, proxy, or driver. Everything else stays in ci.yml, which runs on every
+# push and pull request.
 on:
   workflow_dispatch:
 

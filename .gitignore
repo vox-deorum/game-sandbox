@@ -41,6 +41,9 @@ Thumbs.db
 !.env.default
 !.env.example
 
+# Host-managed origin TLS material for the reverse proxy
+/.tls/
+
 # Local junction so Claude Code discovers skills under .agents/skills/.
 # Source of truth is .agents/skills/; this link is machine-local (recreate with
 # `mklink /J .claude\skills .agents\skills`).

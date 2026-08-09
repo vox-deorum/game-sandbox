@@ -77,6 +77,7 @@ describe('workflow run end to end (Docker)', () => {
       imageTagPrefix: 'game-sandbox',
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     })
     runner = createWorkflowRunner({
       driver,

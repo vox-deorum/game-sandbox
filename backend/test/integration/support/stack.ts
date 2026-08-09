@@ -63,6 +63,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
       imageTagPrefix: 'game-sandbox',
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
+      llmRelay: { mode: 'host-gateway' },
     },
     submission: {
       allowLocalSubmissions: false,
