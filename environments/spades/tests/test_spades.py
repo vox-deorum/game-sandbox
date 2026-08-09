@@ -563,7 +563,7 @@ class FirstLegalAgent:
     card. Deterministic, so a hand-driven replay of the same policy recovers identical scores.
     """
 
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
 
     def act(self, observation):

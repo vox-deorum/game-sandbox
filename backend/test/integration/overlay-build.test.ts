@@ -29,7 +29,7 @@ const LOAD_CHECK_SANDBOX: SandboxProfile = {
 
 const GOOD_AGENT = [
   'class Agent:',
-  '    def reset(self, seed):',
+  '    def reset(self, seed, observation):',
   '        self.seed = seed',
   '    def act(self, observation):',
   '        return 0',

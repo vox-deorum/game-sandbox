@@ -27,6 +27,7 @@ from game_sandbox_harness.environment import (  # noqa: E402
     validate_parallel_step,
 )
 from game_sandbox_harness.participant_runner import action_mask  # noqa: E402
+from game_sandbox_harness.session import AgentPlayer, Episode  # noqa: E402
 from game_sandbox_harness.state import json_default  # noqa: E402
 
 
@@ -142,6 +143,44 @@ def _rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
 
 
 ENVIRONMENTS = discover_environments()
+
+
+@pytest.mark.parametrize(
+    "env_id",
+    [env_id for env_id, found in ENVIRONMENTS.items() if found.entry.meta.stepping == "sequential"],
+)
+def test_sequential_agent_setup_matches_a_twin_environments_initial_observations(env_id: str):
+    """Each agent setup hook receives the same initial observation ``observe`` publishes."""
+    entry = ENVIRONMENTS[env_id].entry
+    parameters = resolve_parameters(entry.meta)
+    expected_env = entry.make(parameters)
+    try:
+        expected_env.reset(seed=17)
+        expected = {
+            player: _json_bytes(expected_env.observe(player)) for player in expected_env.possible_agents
+        }
+    finally:
+        expected_env.close()
+
+    seen: dict[str, object] = {}
+
+    class Probe:
+        def __init__(self, player: str) -> None:
+            self.player = player
+
+        def reset(self, seed: int, observation: object) -> None:
+            seen[self.player] = observation
+
+        def act(self, observation: object) -> object:
+            return None
+
+    players = {player: AgentPlayer(Probe(player)) for player in expected}
+    episode = Episode(entry, players, parameters=parameters, seed=17)
+    try:
+        episode.start()
+        assert {player: _json_bytes(observation) for player, observation in seen.items()} == expected
+    finally:
+        episode.close()
 
 
 @pytest.mark.parametrize("env_id", ENVIRONMENTS)

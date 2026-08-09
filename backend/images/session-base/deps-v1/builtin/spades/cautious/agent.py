@@ -16,7 +16,7 @@ _SPADES = 2
 class Agent:
     """Make a low, never-nil bid and play the lowest legal card."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

@@ -44,7 +44,7 @@ const HUNGRY_AGENT = [
   'from openai import OpenAI, OpenAIError',
   '',
   'class Agent:',
-  '    def reset(self, seed):',
+  '    def reset(self, seed, observation):',
   '        self.call_id = 0',
   '',
   '    def act(self, observation):',

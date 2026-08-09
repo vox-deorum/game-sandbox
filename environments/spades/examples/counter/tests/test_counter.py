@@ -55,7 +55,7 @@ def test_bids_high_spades_plus_side_aces():
         make_card(1, 5),
     ]
     counter = agent.Agent()
-    counter.reset(0)
+    counter.reset(0, None)
     assert counter.act(_bidding_observation(hand)) == 57
 
 
@@ -78,5 +78,5 @@ def test_never_bids_nil_on_a_thin_hand():
         make_card(1, 5),
     ]
     counter = agent.Agent()
-    counter.reset(0)
+    counter.reset(0, None)
     assert counter.act(_bidding_observation(hand)) == 53

@@ -41,7 +41,7 @@ function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
 /** A deterministic agent: flap on a fixed period so the episode is a pure function of the seed. */
 const DETERMINISTIC_AGENT = [
   'class Agent:',
-  '    def reset(self, seed):',
+  '    def reset(self, seed, observation):',
   '        self.tick = 0',
   '    def act(self, observation):',
   '        self.tick += 1',

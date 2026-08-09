@@ -2,7 +2,7 @@
 # the never-flap baseline, so the three submitted agents span a range of survival times on the board.
 # It ignores the observation, so it stays trivially valid regardless of the env's observation shape.
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         self.tick = 0
 
     def act(self, observation):

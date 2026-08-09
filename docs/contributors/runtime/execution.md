@@ -224,10 +224,10 @@ The runner claims stdout for protocol traffic before importing games or agents. 
 This timing machinery exists so an agent's LLM-call latency does not count against its own compute budget.
 
 - For an official LLM-enabled session, the launch contract (the launch configuration and stdio protocol the backend shares with the session container) wires `inflight_url` alongside the model endpoint and tick-marker URL.
-- Before every `act`, `chat`, and `learn` hook, the harness restores the current player's base URL and key, and posts that player's tick marker when it changes.
+- Before every `reset`, `act`, `chat`, and `learn` hook, the harness restores the current player's base URL and key. It posts that player's tick marker when it changes. Reset keeps the setup marker.
 - Around each hook, the harness subtracts that player's total verified proxy-time change, reusing a valid post-hook reading as the next baseline.
 - Hook-thread CPU remains chargeable, and a failed reading charges the full hook time.
-- Module loading, construction, and `reset` are setup work outside turn timing.
+- Module loading and construction are setup work outside hook timing. Reset is timed and charged to the episode budget.
 - The template's `BackgroundLLM` helper may keep running across hooks and ticks. Watchdogs (the runner's stall detectors: the live-session idle and time-limit detectors, and the automated-run wall-clock watchdog) exclude only verified blocking proxy time, so a background-marked request never extends them.
 
 See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).

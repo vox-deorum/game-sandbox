@@ -17,7 +17,7 @@ def test_extra_dependency_is_usable():
 class Baseline:
     """The built-in opponent's policy: the lowest legal card (by rank, then suit)."""
 
-    def reset(self, seed: int) -> None: ...
+    def reset(self, seed, observation) -> None: ...
 
     def act(self, observation) -> int:
         mask = observation["action_mask"]

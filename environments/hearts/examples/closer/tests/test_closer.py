@@ -39,7 +39,7 @@ def test_dumps_high_when_forced_to_win_a_points_free_trick_last():
     # hold only the 9 and king of clubs, both of which would win. Winning is free here, so the
     # closer dumps the king, where the duck would cling to the 9.
     closer = agent.Agent()
-    closer.reset(0)
+    closer.reset(0, None)
     trick = [{"suit": CLUBS, "rank": 5}, {"suit": CLUBS, "rank": 6}, {"suit": CLUBS, "rank": 7}]
     legal = [{"suit": CLUBS, "rank": 9}, {"suit": CLUBS, "rank": 13}]
     observation = _observation(legal=legal, trick=trick, led=CLUBS)

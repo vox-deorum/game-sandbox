@@ -45,10 +45,9 @@ from sandbox.cards import HeartsObservation, legal_cards, play, rank_of
 class Agent:
     """Plays the lowest-ranked card that is legal right now."""
 
-    def reset(self, seed: int) -> None:
-        # Called once before each game. This agent keeps no state between turns,
-        # so there is nothing to prepare here; a learning agent would reset its
-        # memory in this method.
+    def reset(self, seed, observation) -> None:
+        # Called once before each game. The opening observation is available here for
+        # precomputation outside the decision clock. This agent keeps no state between turns.
         pass
 
     def act(self, observation: HeartsObservation) -> int:

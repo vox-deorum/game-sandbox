@@ -58,7 +58,7 @@ The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manu
 
 Open `agent.py` and implement:
 
-- `reset(seed)`, called once before each game.
+- `reset(seed, observation)`, called once before each game with the first-turn observation.
 - `act(observation)`, called on your turn. Choose a bid with `bid(k)` during bidding or a card with `play(card)` during card play. Each helper returns the integer `act` must return.
 
 Read [`environment.md`](environment.md) before you start. It explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.

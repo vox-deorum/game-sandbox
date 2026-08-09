@@ -49,7 +49,7 @@ MAX_NIL_SPADES = 3
 class Agent:
     """Bid nil when the hand is safe, broadcast the dare, and cover a partner who broadcast one."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # The player is restamped every turn from the observation so chat, which sees none, can name our
         # partner; the nil flags and whether we have warned persist across the hand.
         self._partner: int | None = None

@@ -162,10 +162,10 @@ export interface Config {
   recordingsDir: string
   /** Submission-snapshot root: one `<id>.tar.gz` per accepted submission, under {@link Config.dataDir}. */
   submissionsDir: string
-  /** Idle window before a session with no attached socket (or no human input) is killed. */
+  /** Idle window before an unwatched scripted session or ownerless human session is killed. */
   sessionIdleTimeoutMs: number
-  /** Wall-clock backstop catching a hung container that in-container budgets cannot. */
-  sessionMaxDurationMs: number
+  /** Optional deployment-wide wall-clock backstop, otherwise derived from the environment. */
+  sessionMaxDurationMs: number | null
   /** Retention window in days: an unpinned recording older than this is swept. */
   recordingRetentionDays: number
   /** Per-user recording quota; oldest-unpinned-first eviction brings a user back within it. */
@@ -210,7 +210,7 @@ export interface Config {
   llm: LlmOptions
 }
 
-class ConfigError extends Error {}
+export class ConfigError extends Error {}
 
 /**
  * Environment variables arrive as strings; these helpers wrap small zod schemas so every typed
@@ -252,6 +252,19 @@ function intVar(env: NodeJS.ProcessEnv, name: string): number {
 
 function positiveIntVar(env: NodeJS.ProcessEnv, name: string): number {
   const raw = requiredStringVar(env, name)
+  const result = POSITIVE_INT.safeParse(raw)
+  if (!result.success) {
+    throw new ConfigError(`${name} must be a positive integer, got ${raw}`)
+  }
+  return result.data
+}
+
+/** Optional positive integer: unset and empty values opt out, while present values must be usable. */
+function optionalPositiveIntVar(env: NodeJS.ProcessEnv, name: string): number | null {
+  const raw = env[name]
+  if (raw === undefined || raw === '') {
+    return null
+  }
   const result = POSITIVE_INT.safeParse(raw)
   if (!result.success) {
     throw new ConfigError(`${name} must be a positive integer, got ${raw}`)
@@ -658,7 +671,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     recordingsDir: join(dataDir, 'recordings'),
     submissionsDir: join(dataDir, 'submissions'),
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS'),
-    sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS'),
+    sessionMaxDurationMs: optionalPositiveIntVar(env, 'SESSION_MAX_DURATION_MS'),
     recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS'),
     recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA'),
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS'),

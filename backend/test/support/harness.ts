@@ -200,7 +200,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     submissionsDir: './data/submissions',
     docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
-    sessionMaxDurationMs: 600_000,
+    sessionMaxDurationMs: null,
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,

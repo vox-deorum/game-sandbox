@@ -285,8 +285,8 @@ class _Checked:
         self.decisions = 0
         self.illegal: list[dict[str, int]] = []
 
-    def reset(self, seed: int) -> None:
-        self.inner.reset(seed)
+    def reset(self, seed, observation) -> None:
+        self.inner.reset(seed, observation)
 
     def act(self, observation):
         action = self.inner.act(observation)

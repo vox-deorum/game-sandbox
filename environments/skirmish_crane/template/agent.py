@@ -14,9 +14,9 @@ from sandbox.observation_types import AxialPosition, SkirmishAction, SkirmishObs
 class Agent:
     """Marches toward the enemy side, then steps toward the nearest visible enemy."""
 
-    def reset(self, seed: int) -> None:
-        # Called once before each match. This starter stores no state, so there is nothing to
-        # prepare.
+    def reset(self, seed, observation) -> None:
+        # Called once before each match. The opening observation is available here for
+        # precomputation outside the decision clock. This starter stores no state.
         pass
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:

@@ -40,7 +40,7 @@ def _step_toward(observation: SkirmishObservation, goal: AxialPosition) -> int:
 class Agent:
     """Marches on the mirror of its spawn tile, then steps at the nearest enemy it can see."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # The one thing this unit remembers all match: the tile it started on. reset runs before
         # every match, so last match's tile is never carried into this one.
         self._home: AxialPosition | None = None

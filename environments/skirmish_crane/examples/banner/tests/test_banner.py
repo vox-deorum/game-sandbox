@@ -529,7 +529,7 @@ def test_agent_falls_back_to_advance_when_the_assigned_block_is_silent():
     expected = blocks.advance(observation, {}, goal)
 
     unit = agent.Agent()
-    unit.reset(0)
+    unit.reset(0, None)
     order = unit.act(observation)
 
     assert order == expected
@@ -561,8 +561,8 @@ class _LibraryChecked:
         self.illegal: list[dict[str, object]] = []
         self.decisions = 0
 
-    def reset(self, seed: int) -> None:
-        self.inner.reset(seed)
+    def reset(self, seed, observation) -> None:
+        self.inner.reset(seed, observation)
         self.memories_with_goal = {block: {} for block in blocks.BLOCKS}
         self.memories_without_goal = {block: {} for block in blocks.BLOCKS}
 

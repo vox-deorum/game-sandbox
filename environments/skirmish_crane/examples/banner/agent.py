@@ -31,7 +31,7 @@ class Agent:
         self.block: blocks.Block | None = None
         self.goal: AxialPosition | None = None
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         """Forget the last match. This side draws no random numbers, so the seed goes unused."""
         self.memory = {}
         self.block = None

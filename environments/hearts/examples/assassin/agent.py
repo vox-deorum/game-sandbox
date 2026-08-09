@@ -45,7 +45,7 @@ ACE_OF_SPADES = make_card(SPADES, 14)
 class Agent:
     """Flush out and dump the queen of spades and the high spades that can capture it."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 

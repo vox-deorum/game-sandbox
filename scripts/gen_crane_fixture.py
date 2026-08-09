@@ -53,8 +53,8 @@ class MaskingAgent:
         self._tick = tick
         self._masks = masks
 
-    def reset(self, seed: int) -> None:
-        self._policy.reset(seed)
+    def reset(self, seed, observation) -> None:
+        self._policy.reset(seed, observation)
 
     def act(self, observation: dict[str, Any]) -> dict[str, int]:
         mask = observation["action_mask"]
@@ -68,7 +68,7 @@ class MaskingAgent:
 class RetreatAgent:
     """Choose the legal path that maximizes distance from the nearest visible enemy."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: dict[str, Any]) -> dict[str, int]:

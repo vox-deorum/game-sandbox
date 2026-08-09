@@ -28,8 +28,8 @@ class _Checked:
         self.illegal: list[dict[str, int]] = []
         self.last_round = 0
 
-    def reset(self, seed: int) -> None:
-        self.inner.reset(seed)
+    def reset(self, seed, observation) -> None:
+        self.inner.reset(seed, observation)
 
     def act(self, observation):
         order = self.inner.act(observation)

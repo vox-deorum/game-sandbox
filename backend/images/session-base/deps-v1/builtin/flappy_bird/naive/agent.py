@@ -20,7 +20,7 @@ IDLE = 0
 class Agent:
     """Flap when the bird is below the next gap's center, otherwise fall."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

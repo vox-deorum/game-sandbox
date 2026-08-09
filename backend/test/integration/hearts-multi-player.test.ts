@@ -31,6 +31,7 @@ import {
   startStack,
   waitForEnded,
 } from './support/stack.js'
+import { WsClient } from './support/ws-client.js'
 
 const SEED = 7
 /** Four players take thirteen cards each, so a full game is exactly fifty-two recorded plays. */
@@ -42,7 +43,7 @@ const NUM_CARDS = 52
 /** A Hearts agent that always plays its lowest legal card (lowest index in the legal-action mask). */
 const LOWEST_AGENT = [
   'class Agent:',
-  '    def reset(self, seed):',
+  '    def reset(self, seed, observation):',
   '        pass',
   '    def act(self, observation):',
   '        mask = observation["action_mask"]',
@@ -60,7 +61,7 @@ const SLOW_AGENT = [
   'import time',
   '',
   'class Agent:',
-  '    def reset(self, seed):',
+  '    def reset(self, seed, observation):',
   '        pass',
   '    def act(self, observation):',
   '        time.sleep(0.05)',
@@ -133,16 +134,34 @@ describe('multi-agent Hearts session (Docker)', () => {
     states: StepState[]
     header: ReturnType<typeof readRecording>['header']
   }> {
-    const { id } = await startSession(
+    const { id, wsPath } = await startSession(
       stack,
       { env_id: 'hearts', seats, seed: SEED, ...extra },
       'dev-user',
     )
-    const row = await waitForEnded(stack, id, 90_000)
-    const response = await fetch(`${stack.httpBase}/api/recordings/hearts-${id}`)
-    expect(response.status).toBe(200)
-    const { header, states } = readRecording(await response.text())
-    return { id, row, states, header }
+    const hasHuman = Object.values(seats).some((seat) => seat.kind === 'human')
+    const owner = hasHuman
+      ? await WsClient.connect(
+          `${stack.wsBase}${wsPath}`,
+          (await stack.users.headersFor('dev-user')).cookie,
+        )
+      : null
+    try {
+      if (owner !== null) {
+        await owner.waitFor(
+          () => owner.envelopes('session').some((frame) => frame.status === 'running'),
+          15_000,
+        )
+        owner.send({ kind: 'clock', player: 'player_0', running: true })
+      }
+      const row = await waitForEnded(stack, id, 90_000)
+      const response = await fetch(`${stack.httpBase}/api/recordings/hearts-${id}`)
+      expect(response.status).toBe(200)
+      const { header, states } = readRecording(await response.text())
+      return { id, row, states, header }
+    } finally {
+      owner?.close()
+    }
   }
 
   it('steps every Hearts player in turn with a per-player action and timing', async () => {

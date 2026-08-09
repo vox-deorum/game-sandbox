@@ -33,7 +33,7 @@ class GapChaserAgent:
     a spread of pipe positions in the recording.
     """
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

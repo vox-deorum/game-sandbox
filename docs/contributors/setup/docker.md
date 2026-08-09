@@ -52,7 +52,7 @@ The repository setup script automates the local server steps, including the cert
 5. Create a proxied Cloudflare DNS record for `PUBLIC_ORIGIN`, pointing at the origin's public IPv4 address only, then configure the zone. Do not add an IPv6 address: the stack's Docker networks are IPv4-only, so an IPv6 connection reaches nginx through Docker's userland proxy with a rewritten source address that the Cloudflare allowlist rejects.
 
    - Set [SSL/TLS encryption mode to **Full**](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full/). The generated origin certificate is self-signed, so **Full (strict)** rejects it.
-   - Enable [Global Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/set-up/global/) for the zone. Per-hostname Authenticated Origin Pulls use a custom certificate and are not compatible with the proxy's bundled Global Authenticated Origin Pulls certificate.
+   - Enable [Global Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/set-up/global/) for the zone. Per-hostname Authenticated Origin Pulls use a custom client certificate and require separately managed origin trust, which this deployment does not configure.
    - Enable [Always Use HTTPS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/always-use-https/) at the edge. The origin does not publish plaintext port 80.
    - Restrict inbound TCP port 443 in the host firewall or provider security group to [Cloudflare's published IPv4 and IPv6 networks](https://www.cloudflare.com/ips/). Keep the nginx allowlist as a second check.
 

@@ -656,7 +656,7 @@ def test_build_players_builtin_agent_loads_through_manifest(tmp_path: Path):
         encoding="utf-8",
     )
     (tmp_path / "agent.py").write_text(
-        "class A:\n    def reset(self, seed): pass\n    def act(self, observation): return 0\n",
+        "class A:\n    def reset(self, seed, observation): pass\n    def act(self, observation): return 0\n",
         encoding="utf-8",
     )
     control = SessionControl()
@@ -1290,7 +1290,7 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path: 
     )
     (agent_dir / "agent.py").write_text(
         "class A:\n"
-        "    def reset(self, seed): pass\n"
+        "    def reset(self, seed, observation): pass\n"
         "    def act(self, observation):\n"
         "        raise RuntimeError('boom')\n",
         encoding="utf-8",
@@ -1340,7 +1340,7 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Pat
     )
     (agent_dir / "agent.py").write_text(
         "class A:\n"
-        "    def reset(self, seed):\n"
+        "    def reset(self, seed, observation):\n"
         "        raise RuntimeError('reset boom')\n"
         "    def act(self, observation):\n"
         "        return 0\n",

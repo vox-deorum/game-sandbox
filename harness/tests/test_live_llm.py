@@ -68,6 +68,9 @@ class _AlternatingEnv:
         player_id = self.agent_selection
         return self._index, self.rewards[player_id], False, False, {}
 
+    def observe(self, player_id: str) -> int:
+        return self._index
+
     def step(self, action: Any) -> None:
         self._index += 1
         if self._index == self._turns:
@@ -281,7 +284,7 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
                 )
             )
 
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             self._hook("reset")
 
         def act(self, observation: Any) -> int:
@@ -468,7 +471,7 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
         def __init__(self, player_id: str) -> None:
             self._player_id = player_id
 
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             pass
 
         def act(self, observation: Any) -> int:
@@ -543,8 +546,8 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     assert result.reason == "terminated"
     assert result.failed_player is None
     assert result.ticks == 10
-    # Each player needs an initial baseline, then reuses every valid post-hook reading.
-    assert inflight_reads == 12
+    # Setup now records each agent's initial baseline, then every action reuses its post-hook read.
+    assert inflight_reads == 14
 
 
 def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, capsys):
@@ -553,7 +556,7 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
     calls: list[str] = []
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             calls.append("reset")
 
         def act(self, observation: Any) -> int:
@@ -612,7 +615,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Pa
     clock = ManualClock()
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             pass
 
         def act(self, observation: Any) -> int:
@@ -626,7 +629,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Pa
         def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
             clock.advance(20)
 
-    snapshots = iter([100, 150, 180, 500])
+    snapshots = iter([0, 100, 150, 180, 500])
     snapshot_calls = 0
 
     def urlopen(request: Any, *, timeout: float) -> _Response:
@@ -679,7 +682,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Pa
 
     timing = next(store.open("separate-hooks").steps())["agents"]["player_0"]["timing"]
     assert timing == {"decision_ms": 20, "chat_ms": 20, "learn_ms": 0}
-    assert snapshot_calls == 4
+    assert snapshot_calls == 5
 
 
 def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, capsys):
@@ -688,7 +691,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
     clock = ManualClock()
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             pass
 
         def act(self, observation: Any) -> int:
@@ -702,7 +705,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
         def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
             clock.advance(20)
 
-    snapshots = iter([100, 150, -1, 200, 210])
+    snapshots = iter([0, 100, 150, -1, 200, 210])
 
     def urlopen(request: Any, *, timeout: float) -> _Response:
         if request.full_url.endswith("/inflight"):
@@ -757,7 +760,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
 
 @pytest.mark.parametrize(
     ("snapshots", "expected_decision_ms", "expected_timeouts"),
-    [((0, -1), 600, 1), ((0, 1_000), 0, 0)],
+    [((0, 0, -1), 600, 1), ((0, 0, 1_000), 0, 0)],
 )
 def test_proxy_discount_fails_closed_and_is_nonnegative(
     monkeypatch,
@@ -771,7 +774,7 @@ def test_proxy_discount_fails_closed_and_is_nonnegative(
     clock = ManualClock()
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             pass
 
         def act(self, observation: Any) -> int:
@@ -835,11 +838,11 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
     import game_sandbox_harness.live as live
 
     clock = ManualClock()
-    cpu_snapshots = iter([0.0, 60.0])
-    proxy_snapshots = iter([0, 100])
+    cpu_snapshots = iter([0.0, 0.0, 0.0, 60.0])
+    proxy_snapshots = iter([0, 0, 100])
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             pass
 
         def act(self, observation: Any) -> int:
@@ -909,7 +912,7 @@ def test_non_llm_players_do_not_touch_credentials_or_marker_transport(monkeypatc
     seen: list[tuple[str | None, str | None]] = []
 
     class Agent:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             seen.append((os.environ.get("OPENAI_BASE_URL"), os.environ.get("OPENAI_API_KEY")))
 
         def act(self, observation: Any) -> int:

@@ -37,7 +37,7 @@ class SuggestedBidAgent:
     decoding and the lowest-card fallback are unchanged.
     """
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

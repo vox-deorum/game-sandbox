@@ -8,8 +8,8 @@ Your `Agent` is a Python class that holds its decision-making code and remembere
 
 ```python
 class Agent:
-    def reset(self, seed: int) -> None:
-        self.last_observation = None
+    def reset(self, seed: int, observation) -> None:
+        self.last_observation = observation
 
     def act(self, observation):
         self.last_observation = observation
@@ -24,16 +24,18 @@ While the example shows the shape of an agent class, it always chooses action `0
 
 | Method | Required? | Purpose |
 | --- | --- | --- |
-| `reset(seed)` | Yes | Prepare for a new game and set up any random choices. |
+| `reset(seed, observation)` | Yes | Prepare for a new game from the first-turn observation and set up any random choices. |
 | `act(observation)` | Yes | Return one legal action for the current observation. |
 | `learn(observation, action, reward, terminated)` | No | Update an agent that learns after each step. |
 | [`chat(inbox)`](#chatinbox) | No | Receive and send messages when the environment enables messaging. |
 
 The runner calls an optional method only if you define it, so leave it out until you need it. Most first agents use only `reset` and `act`.
 
-### `reset(seed)`
+### `reset(seed, observation)`
 
-A **seed** is a number that makes random choices repeatable. The runner calls `reset` once before the first action of each game, passing the same seed to your agent and to the environment. If your agent uses randomness, set up its random-number generator with this seed so you can repeat a run.
+A **seed** is a number that makes random choices repeatable. The runner calls `reset` once before the first action of each game, passing the same seed to your agent and to the environment. It also passes the observation that your player will receive for its first turn. If your agent uses randomness, set up its random-number generator with this seed so you can repeat a run.
+
+Time in `reset` counts toward the game limit but not the decision limit. You can use this setup time to precompute data from the opening observation, such as a route map or an analysis of an opening hand, without spending the first turn's decision time.
 
 ### `act(observation)`
 
@@ -54,11 +56,11 @@ An agent that learns from rewards, often called a **reinforcement-learning agent
 The diagram shows the order in a sequential environment:
 
 ```text
-reset(seed)
+reset(seed, first observation)
     ↓
-act(observation) → chat(inbox) → game step → learn(...)
-    ↑                                          |
-    └────────────── next observation ─────────┘
+act(first observation) → chat(inbox) → game step → learn(...)
+    ↑                                                |
+    └──────────────── next observation ──────────────┘
 ```
 
 In a simultaneous environment, the runner collects actions from every active player, runs their chat hooks in the canonical player order, moves the game time in one joint step, then calls `learn` for each player.
@@ -67,7 +69,7 @@ In a simultaneous environment, the runner collects actions from every active pla
 
 ## Agent instances and state
 
-The runner creates your agent by calling `Agent()` with no arguments. Put setup that should last the whole life of the instance in `__init__`, and clear anything specific to a single game in `reset`.
+The runner creates your agent by calling `Agent()` with no arguments. Put setup that should last the whole life of the instance in `__init__`, and clear or build anything specific to a single game in `reset`.
 
 > _What's `__init__`?_ Python runs this method once, automatically, when an object of your class is created, before `reset` is ever called.
 
@@ -89,7 +91,7 @@ Develop and test on your own computer, then put everything your agent needs in t
 Your environment guide lists the default decision limit and game limit. The environment overview shows changes for the play-open season. **My Submissions** shows changes for the **submission-open season**, the season accepting submissions.
 
 - A **decision limit** applies to one turn. If `act` takes longer than this limit, the runner ignores its result and uses a legal default action for that turn. The game continues, but the time spent in `act` still counts toward the game limit.
-- A **game limit** applies to your agent's total computation during one game (one full episode). Time in `act`, `learn`, and `chat` counts toward it.
+- A **game limit** applies to your agent's total computation during one game (one full episode). Time in `reset`, `act`, `learn`, and `chat` counts toward it. Reset has no separate per-call limit. Exhausting the game limit during reset stops the game before its first turn.
 
 In an official scored game, a crash, an illegal action, or exhausting the game limit causes the assigned seat to forfeit. An `act` call that exceeds only the decision limit does not forfeit the seat because the runner uses the legal default action instead. If your submission controls several players in one seat, a failure by any of them forfeits that seat. See the [leaderboard specification](../specs/leaderboard.md) for the complete forfeit rules.
 
@@ -120,7 +122,7 @@ See the [communication specification](../specs/communication.md) for the complet
 
 ### LLM calls
 
-When the environment and its submission-open season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. The environment overview shows availability for the play-open season, and **My Submissions** shows it for the submission-open season.
+When the environment and its submission-open season enable the optional LLM API, `reset`, `act`, `chat`, and `learn` may use the standard OpenAI Python client. The environment overview shows availability for the play-open season, and **My Submissions** shows it for the submission-open season.
 
 Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service or response fails, or a background reply is not ready. In official sessions, verified time inside the Game Sandbox LLM service does not count toward the decision or game limit, but your local computation still does. See [Using the LLM API](llm.md) for setup, examples, budgets, errors, and prompt visibility.
 

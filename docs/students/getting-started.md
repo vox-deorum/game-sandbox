@@ -55,7 +55,7 @@ When a virtual environment is active, your terminal usually shows `(.venv)` at t
 
 Open `agent.py`, which already contains a small working agent for you to improve. It has two required methods:
 
-- `reset(seed)` prepares the agent for a new game.
+- `reset(seed, observation)` prepares the agent for a new game from its first-turn observation.
 - `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
 See [Agent interface](agent-interface.md) for more about these methods and the optional methods you can add.

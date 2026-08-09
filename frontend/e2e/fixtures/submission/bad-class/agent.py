@@ -2,7 +2,7 @@
 # load check: the manifest names class `Ghost`, which this module does not define, so the load stage
 # rejects with class_not_found while every earlier stage passes.
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         self.seed = seed
 
     def act(self, observation):

@@ -63,7 +63,7 @@ class Agent:
     def __init__(self) -> None:
         load_dotenv()
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: HeartsObservation) -> int:

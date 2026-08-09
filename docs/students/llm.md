@@ -55,7 +55,7 @@ class Agent:
             max_retries=0,
         )
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation) -> None:
         pass
 
     def act(self, observation) -> int:

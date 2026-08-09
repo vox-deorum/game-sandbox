@@ -43,7 +43,7 @@ SIGNAL_PREFIX = "strong:"
 class Agent:
     """Signal your strong side suit to your partner, and lead their strong suit once you know it."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Per-hand state: the partner player and hand are restamped every turn from the observation (so
         # chat, which sees no observation, can read them); the partner's signalled suit and whether we
         # have already spoken persist across the hand.

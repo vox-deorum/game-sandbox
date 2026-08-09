@@ -50,7 +50,7 @@ The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manu
 
 Open `agent.py` and implement:
 
-- `reset(seed)`, called once before each game.
+- `reset(seed, observation)`, called once before each game with the first-turn observation.
 - `act(observation)`, called whenever the agent must choose.
 
 Read [`environment.md`](environment.md) before you start. It explains the starter agent, the observation, the actions, the `sandbox.features` helpers, scoring, and time limits.

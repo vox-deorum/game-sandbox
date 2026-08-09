@@ -18,7 +18,7 @@ RUNTIME_LIMIT_S = 20.0
 class FirstLegalAgent:
     """A deterministic policy that trusts the environment-owned action mask."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:

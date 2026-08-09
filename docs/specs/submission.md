@@ -6,7 +6,7 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 
 | Hook | Required? | Purpose |
 | --- | --- | --- |
-| `reset(seed)` | Yes | Prepare for a new episode and seed agent randomness. |
+| `reset(seed, observation)` | Yes | Prepare for a new episode from the player's first-turn observation and seed agent randomness. |
 | `act(observation)` | Yes | Return an action in the environment's action space. |
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
@@ -15,7 +15,7 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 
 The interface is independent of algorithm style. Agents run inside the server-side session container and may call the optional [LLM API](llm.md).
 
-Learned state may persist between episodes in one session, never across sessions, submissions, or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
+Learned state may persist between episodes in one session, never across sessions, submissions, or seasons. Reset time counts toward the episode budget but has no per-call limit. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
 A submission is assigned by seat. [Environments](environment.md#players-and-seats) defines how a seat may cover several separately constructed agent instances.
 

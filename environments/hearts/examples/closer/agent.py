@@ -50,7 +50,7 @@ def _dump(legal: list[Card]) -> int:
 class Agent:
     """Play safe early; in the last player position, use full information to shed optimally."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 

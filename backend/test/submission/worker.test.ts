@@ -116,7 +116,7 @@ describe('ValidationWorker', () => {
     if (opts.withAgent !== false) {
       writeFileSync(
         join(dir, 'agent.py'),
-        'class Agent:\n    def reset(self, seed):\n        pass\n    def act(self, obs):\n        return 0\n',
+        'class Agent:\n    def reset(self, seed, observation):\n        pass\n    def act(self, obs):\n        return 0\n',
       )
     }
     if (opts.padBytes !== undefined) {

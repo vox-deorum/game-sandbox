@@ -27,7 +27,7 @@ def _mean_score(policy) -> float:
 
 def test_heuristic_clearly_outperforms_noop():
     class Noop:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed, observation) -> None: ...
 
         def act(self, observation) -> int:
             return 0

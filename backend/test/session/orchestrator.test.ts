@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UserDirectory } from '../../src/auth/users.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
@@ -225,8 +225,9 @@ describe('orchestrator', () => {
     idleMs = 60_000,
     source?: SubmissionSource,
     userDirectory?: UserDirectory,
+    configOverrides: Parameters<typeof makeConfig>[0] = {},
   ): Orchestrator {
-    const config = makeConfig({ recordingsDir, sessionIdleTimeoutMs: idleMs })
+    const config = makeConfig({ recordingsDir, sessionIdleTimeoutMs: idleMs, ...configOverrides })
     // Pair an (empty) snapshot store with the source whenever one is supplied: the rebuild path tries
     // the snapshot first, finds none here, and falls back to the source seam exactly as before.
     const snapshots =
@@ -322,11 +323,43 @@ describe('orchestrator', () => {
   }
 
   afterEach(async () => {
+    vi.useRealTimers()
     await storage.close()
     rmSync(recordingsDir, { recursive: true, force: true })
   })
 
   describe('start', () => {
+    it.each([
+      {
+        name: 'uses the deployment override',
+        request: {},
+        config: { sessionMaxDurationMs: 10 },
+        expectedMs: 10,
+      },
+      {
+        name: 'derives a paced environment duration with each agent episode budget',
+        request: {},
+        config: { sessionMaxDurationMs: null },
+        expectedMs: 1_000 * 50 + 120_000 + 60_000,
+      },
+      {
+        name: 'uses the unpaced fallback without an override',
+        request: { envId: 'turn_based' },
+        config: { sessionMaxDurationMs: null },
+        expectedMs: 600_000,
+      },
+    ])('$name', async ({ request, config, expectedMs }) => {
+      vi.useFakeTimers()
+      const orch = makeOrchestrator(1_000_000, undefined, undefined, config)
+      const { process } = await start(orch, request)
+
+      await vi.advanceTimersByTimeAsync(expectedMs - 1)
+      expect(process.killGraceMs).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(process.killGraceMs).toEqual([5_000])
+    })
+
     it('issues keys only for agent players and emits the exact live LLM launch block', async () => {
       const config = makeConfig({ recordingsDir })
       let issued: IssueOfficialGrantsInput | undefined

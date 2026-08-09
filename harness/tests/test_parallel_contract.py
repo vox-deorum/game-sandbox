@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from dataclasses import replace
+from typing import Any
 
 import pytest
 from pettingzoo.test import parallel_api_test
@@ -72,7 +73,7 @@ class TraceAgent:
         self.outgoing = outgoing or []
         self.log = log if log is not None else []
 
-    def reset(self, seed: int) -> None: ...
+    def reset(self, seed: int, observation: Any) -> None: ...
 
     def act(self, observation: object) -> int:
         self.log.append(("act", self.player_id, observation))
@@ -225,7 +226,7 @@ def test_parallel_external_actions_are_consumed_before_agent_action_hooks():
             return 0
 
     class CheckingAgent:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: object) -> int:
             assert selected == ["player_1", "player_2"]
@@ -578,7 +579,7 @@ def test_parallel_contract_failure_closes_before_recording_or_participant_reset(
     class ResetMarker:
         reset_called = False
 
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             self.reset_called = True
 
         def act(self, observation):

@@ -44,7 +44,7 @@ def _end(position: tuple[int, int], path_id: int) -> tuple[int, int]:
 class Agent:
     """Walk toward visible enemies, otherwise toward the point-reflected starting tile."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         self._rng = random.Random(seed)
         self._start: tuple[int, int] | None = None
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { type Config, loadConfig } from '../../src/config/config.js'
+import { type Config, ConfigError, loadConfig } from '../../src/config/config.js'
 import { withDefaultEnvironment } from '../support/config-env.js'
 
 // Exercise the tracked defaults under normal-mode auth. The auth validation matrix (required
@@ -122,6 +122,21 @@ describe('loadConfig', () => {
     expect(config.sessionIdleTimeoutMs).toBe(15000)
     expect(config.sandbox.memoryMb).toBe(256)
     expect(config.docker.imagePolicy).toBe('rebuild')
+  })
+
+  it('leaves the session-duration override unset by default and accepts a positive value', () => {
+    expect(load({ SESSION_MAX_DURATION_MS: undefined }).sessionMaxDurationMs).toBeNull()
+    expect(load({ SESSION_MAX_DURATION_MS: '' }).sessionMaxDurationMs).toBeNull()
+    expect(load({ SESSION_MAX_DURATION_MS: '12345' }).sessionMaxDurationMs).toBe(12345)
+  })
+
+  it.each([
+    '0',
+    '-1',
+    '1.5',
+    'not-a-number',
+  ])('rejects invalid session-duration overrides: %s', (value) => {
+    expect(() => load({ SESSION_MAX_DURATION_MS: value })).toThrow(ConfigError)
   })
 
   it('rejects an unknown execution driver', () => {

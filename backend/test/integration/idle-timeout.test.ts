@@ -7,6 +7,7 @@ import Docker from 'dockerode'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { type Stack, startSession, startStack, waitForEnded } from './support/stack.js'
+import { WsClient } from './support/ws-client.js'
 
 const SESSION_LABEL = 'game-sandbox.session'
 
@@ -44,5 +45,44 @@ describe('idle timeout', () => {
 
     // The container is gone from the host (the driver removes it after the kill).
     expect(await labeledContainerCount(id)).toBe(0)
+  })
+
+  it('does not let a spectator keep a human session alive', async () => {
+    const { id, wsPath } = await startSession(stack, {
+      env_id: 'flappy_bird',
+      seats: { seat_0: { kind: 'human' } },
+    })
+    const spectator = await WsClient.connect(`${stack.wsBase}${wsPath}`)
+
+    const row = await waitForEnded(stack, id, 30_000)
+    expect(row.termination_reason).toBe('idle_timeout')
+    spectator.close()
+  })
+
+  it('keeps a human session alive while the owner is connected, then idles after disconnect', async () => {
+    const { id, wsPath } = await startSession(stack, {
+      env_id: 'flappy_bird',
+      seats: { seat_0: { kind: 'human' } },
+    })
+    const owner = await WsClient.connect(
+      `${stack.wsBase}${wsPath}`,
+      (await stack.users.headersFor('dev-user')).cookie,
+    )
+    await owner.waitFor(
+      () => owner.envelopes('session').some((event) => event.status === 'running'),
+      30_000,
+    )
+
+    const flapTimer = setInterval(
+      () => owner.send({ kind: 'input', player: 'player_0', action: 1 }),
+      20,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    expect((await stack.storage.getSession(id))?.status).toBe('running')
+
+    clearInterval(flapTimer)
+    owner.close()
+    const row = await waitForEnded(stack, id, 30_000)
+    expect(row.termination_reason).toBe('idle_timeout')
   })
 })

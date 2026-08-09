@@ -106,7 +106,7 @@ export class LiveSession {
   private readonly llmEnabled: boolean
   private readonly deps: LiveSessionDeps
 
-  /** Each attached socket with its audience marker, so a targeted message is filtered per attachment. */
+  /** Each attached socket with its ownership marker, used for controls and controller-only filtering. */
   private readonly sockets = new Map<ClientSocket, { isOwner: boolean }>()
   private readonly outputDone: Promise<void>
   private status: 'starting' | 'running' | 'ended' = 'starting'
@@ -229,16 +229,15 @@ export class LiveSession {
       try {
         socket.send(data)
       } catch {
-        this.sockets.delete(socket)
+        this.removeSocket(socket, { close: true })
       }
     }
   }
 
   /**
-   * Broadcast a recording state line, re-serialized per audience when it carries targeted messages.
-   * A line with no `messages` (the common case) is sent verbatim to everyone, so the hot path costs
-   * nothing; only a line with messages is filtered, and even then a socket whose visible set equals
-   * the original still receives the byte-identical `raw`.
+   * Broadcast a recording state line. A line with no `messages` (the common case) is sent verbatim
+   * to everyone. Message-bearing lines are only re-serialized for controllers when targeted lines
+   * must be hidden, and every unchanged audience receives the byte-identical `raw`.
    */
   private broadcastState(raw: string, value: Record<string, unknown>): void {
     if (!Array.isArray(value.messages)) {
@@ -252,7 +251,7 @@ export class LiveSession {
       try {
         socket.send(this.filterStateForAudience(raw, value, meta.isOwner))
       } catch {
-        this.sockets.delete(socket)
+        this.removeSocket(socket, { close: true })
       }
     }
   }
@@ -260,21 +259,21 @@ export class LiveSession {
   /** Drop a socket whose backlog crossed the backpressure limit; returns whether it was dropped. */
   private dropIfSlow(socket: ClientSocket): boolean {
     if (socket.bufferedAmount > BACKPRESSURE_LIMIT_BYTES) {
-      this.sockets.delete(socket)
-      this.safeClose(socket)
-      this.deps.log(`session ${this.id}: dropped a slow socket (backpressure)`)
+      this.removeSocket(socket, {
+        close: true,
+        log: `session ${this.id}: dropped a slow socket (backpressure)`,
+      })
       return true
     }
     return false
   }
 
   /**
-   * Return the state line one audience may see. The **controller** (the owner of a human-mode
-   * session) sees broadcasts plus targeted messages where `to` or `from` is a human-bound player. The
-   * `from` case is the deliberate sender reflection, letting the panel render the owner's own sends
-   * from the recorded line with no local echo. Every other attachment (a spectator, including the
-   * owner of a scripted run) sees broadcasts only. A line whose visible set equals the original is
-   * returned as the byte-identical `raw`.
+   * Return the state line one audience may see. The **controller** is an owner socket on a human-mode
+   * session. It sees broadcasts and targeted messages where `to` or `from` is a human-bound player.
+   * The `from` case reflects the controller's own sends from the recorded line with no local echo.
+   * Every non-controller receives every well-formed delivered message, including targeted messages.
+   * A line whose visible set equals the original is returned as the byte-identical `raw`.
    */
   private filterStateForAudience(
     raw: string,
@@ -299,7 +298,7 @@ export class LiveSession {
     return JSON.stringify(clone)
   }
 
-  /** Whether one recorded message is visible live to a controller (`true`) or spectator audience. */
+  /** Whether one recorded message is visible live to a controller or non-controller audience. */
   private messageVisible(message: unknown, isController: boolean): boolean {
     if (typeof message !== 'object' || message === null) {
       return true // an unexpected shape is left in place; the harness never emits one
@@ -309,7 +308,7 @@ export class LiveSession {
       return true // a broadcast is visible to everyone
     }
     if (!isController) {
-      return false // spectators never see a targeted message live
+      return true
     }
     return (
       (typeof to === 'string' && this.externalPlayers.has(to)) ||
@@ -341,8 +340,7 @@ export class LiveSession {
       this.trySend(socket, this.headerLine)
     }
     if (this.latestState !== null) {
-      // Derive the audience variant of the stashed line at catch-up time, so a late-attaching
-      // spectator can never receive a targeted message through the replay path.
+      // Apply the same audience chokepoint to the stashed line as live delivery.
       this.trySend(socket, this.stateForAttach(this.latestState, isOwner))
     }
     if (this.status === 'running') {
@@ -359,16 +357,14 @@ export class LiveSession {
       }
       this.trySend(socket, sessionEnvelope('ended', this.finalReason ?? undefined))
     }
-    this.refreshIdleOnAttach()
+    if (this.sockets.has(socket)) {
+      this.refreshIdleOnAttach(isOwner)
+    }
 
     return {
       handleMessage: (raw: string): void => this.handleClientMessage(raw, isOwner),
       detach: (): void => {
-        this.sockets.delete(socket)
-        if (isOwner) {
-          this.releaseControlsOnLastOwnerDetach()
-        }
-        this.refreshIdleOnDetach()
+        this.removeSocket(socket)
       },
     }
   }
@@ -411,9 +407,6 @@ export class LiveSession {
       this.paused = command.kind === 'pause'
       this.broadcast(serializeCommand(command))
     }
-    if (this.mode === 'human') {
-      this.refreshIdleOnCommand()
-    }
   }
 
   /**
@@ -426,10 +419,8 @@ export class LiveSession {
     if (this.mode !== 'human' || this.status !== 'running') {
       return
     }
-    for (const meta of this.sockets.values()) {
-      if (meta.isOwner) {
-        return
-      }
+    if (this.hasOwnerSocket()) {
+      return
     }
     for (const player of this.externalPlayers) {
       this.process.send(serializeCommand({ kind: 'clock', player, running: false }))
@@ -452,23 +443,28 @@ export class LiveSession {
     }
   }
 
-  private refreshIdleOnAttach(): void {
-    // A watched scripted run is never idle; a human session's window resets on every new attach.
+  private hasOwnerSocket(): boolean {
+    return [...this.sockets.values()].some((meta) => meta.isOwner)
+  }
+
+  private refreshIdleOnAttach(isOwner: boolean): void {
+    // A watched scripted run is never idle. Human sessions stay alive only while an owner is attached.
     if (this.mode === 'scripted') {
       this.clearIdle()
-    } else {
-      this.armIdle()
+    } else if (isOwner) {
+      this.clearIdle()
     }
   }
 
-  private refreshIdleOnDetach(): void {
-    if (this.sockets.size === 0) {
+  private refreshIdleOnDetach(isOwner: boolean): void {
+    if (this.finalizePromise !== null) {
+      return
+    }
+    if (this.mode === 'scripted' && this.sockets.size === 0) {
+      this.armIdle()
+    } else if (this.mode === 'human' && isOwner && !this.hasOwnerSocket()) {
       this.armIdle()
     }
-  }
-
-  private refreshIdleOnCommand(): void {
-    this.armIdle()
   }
 
   private clearMaxDuration(): void {
@@ -562,10 +558,9 @@ export class LiveSession {
     }
 
     this.broadcast(sessionEnvelope('ended', reason))
-    for (const socket of this.sockets.keys()) {
-      this.safeClose(socket)
+    for (const socket of [...this.sockets.keys()]) {
+      this.removeSocket(socket, { close: true })
     }
-    this.sockets.clear()
     this.deps.onEnd(this.id)
     // Retention sweeps the just-grown data (the only moment a recording row is added).
     this.deps.onFinalized?.(this.id)
@@ -583,10 +578,35 @@ export class LiveSession {
   }
 
   private trySend(socket: ClientSocket, data: string): void {
+    if (!this.sockets.has(socket)) {
+      return
+    }
     try {
       socket.send(data)
     } catch {
-      this.sockets.delete(socket)
+      this.removeSocket(socket, { close: true })
+    }
+  }
+
+  /** Remove one socket once and apply the same ownership and idleness transition on every path. */
+  private removeSocket(
+    socket: ClientSocket,
+    options: { close?: boolean; log?: string } = {},
+  ): void {
+    const meta = this.sockets.get(socket)
+    if (meta === undefined) {
+      return
+    }
+    this.sockets.delete(socket)
+    if (meta.isOwner) {
+      this.releaseControlsOnLastOwnerDetach()
+    }
+    this.refreshIdleOnDetach(meta.isOwner)
+    if (options.close) {
+      this.safeClose(socket)
+    }
+    if (options.log !== undefined) {
+      this.deps.log(options.log)
     }
   }
 

@@ -105,14 +105,14 @@ def _following_observation(
 
 def test_bids_nil_and_broadcasts_the_warning_on_a_qualifying_hand():
     a = agent.Agent()
-    a.reset(0)
+    a.reset(0, None)
     assert a.act(_bidding_observation(QUALIFYING_HAND)) == NIL_ACTION
     assert a.chat([]) == [{"to": None, "text": "nil! cover me"}]
 
 
 def test_never_bids_nil_on_a_strong_hand():
     a = agent.Agent()
-    a.reset(0)
+    a.reset(0, None)
     action = a.act(_bidding_observation(STRONG_HAND))
     assert action != NIL_ACTION  # an honest count, never the nil action
     # A non-nil bidder does not warn the table.
@@ -126,14 +126,14 @@ def test_cover_play_depends_on_the_partner_warning():
 
     # Warned by the partner's broadcast, it covers by winning the trick with the ace.
     covering = agent.Agent()
-    covering.reset(0)
+    covering.reset(0, None)
     covering.act(_bidding_observation(STRONG_HAND, player=2))  # a non-nil hand, so it can cover
     covering.chat([{"from": "player_0", "to": None, "text": "nil! cover me", "tick": 1}])
     assert covering.act(follow) == encode_play(ACE_OF_HEARTS)
 
     # With no warning, the same agent ducks with its lowest legal card.
     ducking = agent.Agent()
-    ducking.reset(0)
+    ducking.reset(0, None)
     ducking.act(_bidding_observation(STRONG_HAND, player=2))
     ducking.chat([])
     assert ducking.act(follow) == encode_play(THREE_OF_HEARTS)
@@ -146,7 +146,7 @@ def test_ignores_a_nil_warning_from_an_opponent():
     follow = _following_observation(legal, legal, player=2)
 
     a = agent.Agent()
-    a.reset(0)
+    a.reset(0, None)
     a.act(_bidding_observation(STRONG_HAND, player=2))
     a.chat([{"from": "player_1", "to": None, "text": "nil! cover me", "tick": 1}])
     assert a.act(follow) == encode_play(THREE_OF_HEARTS)

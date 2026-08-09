@@ -34,7 +34,7 @@ class DuckAgent:
     rank comparisons use the FACE values on the hand/trick card objects (queen face rank is 12).
     """
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

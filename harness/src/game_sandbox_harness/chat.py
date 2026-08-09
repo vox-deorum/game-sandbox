@@ -22,7 +22,12 @@ import sys
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, cast
 
-from .environment import ChatPolicy, ChatPolicySource, canonical_player_order
+from .environment import (
+    BroadcastRecipientsSource,
+    ChatPolicy,
+    ChatPolicySource,
+    canonical_player_order,
+)
 from .state import Message
 
 
@@ -82,6 +87,12 @@ class ChatRouter:
             default_recipient=None,
         )
 
+    def default_broadcast_audience(self, sender: str) -> tuple[str, ...]:
+        """Return every other active player in canonical order for one ordinary broadcast."""
+        return tuple(
+            player_id for player_id in self._player_order if player_id != sender and player_id in self._active
+        )
+
     def policy_from(self, env: Any, sender: str) -> ChatPolicy:
         """Resolve one sender's policy from the live environment, validated and never raising.
 
@@ -114,6 +125,31 @@ class ChatRouter:
             return self.default_policy(sender)
         return checked
 
+    def validate_broadcast_recipients(self, sender: str, declared: object) -> tuple[str, ...]:
+        """Validate one broadcast hook result, falling back to the default audience on defects."""
+        try:
+            checked = self._checked_recipients(sender, declared, "broadcast_recipients")
+        except Exception as error:  # noqa: BLE001 - a hook may return an unreadable object
+            checked = f"could not be read ({error!r})"
+        if isinstance(checked, str):
+            diag(f"chat: {sender} environment broadcast recipients {checked}; using the default audience")
+            return self.default_broadcast_audience(sender)
+        return tuple(player_id for player_id in checked if player_id in self._active)
+
+    def broadcast_audience_from(self, env: Any, sender: str) -> tuple[str, ...]:
+        """Resolve a live broadcast audience without letting an environment hook stop delivery."""
+        if not isinstance(env, BroadcastRecipientsSource):
+            return self.default_broadcast_audience(sender)
+        try:
+            declared = env.broadcast_recipients(sender)
+        except Exception as error:  # noqa: BLE001 - a policy bug must not end the game
+            diag(
+                f"chat: {sender} environment broadcast recipients failed ({error!r}); "
+                "using the default audience"
+            )
+            return self.default_broadcast_audience(sender)
+        return self.validate_broadcast_recipients(sender, declared)
+
     def _checked_policy(
         self,
         sender: str,
@@ -121,8 +157,23 @@ class ChatRouter:
         default_recipient: object,
     ) -> ChatPolicy | str:
         """Return the validated policy, or a phrase naming the first defect that makes it unusable."""
+        named = self._checked_recipients(sender, recipients, "target_recipients")
+        if isinstance(named, str):
+            return named
+        if default_recipient is not None and (
+            not isinstance(default_recipient, str) or default_recipient not in named
+        ):
+            return f"defaults to {default_recipient!r}, which it does not offer"
+        # A recipient who left mid-episode is dropped from the declared list rather than voiding it:
+        # treating that as a defect would widen a narrow policy to the default at the very moment a
+        # player goes inactive. A default that leaves with them falls back to broadcast, always legal.
+        offered = tuple(recipient for recipient in named if recipient in self._active)
+        return ChatPolicy(offered, default_recipient if default_recipient in offered else None)
+
+    def _checked_recipients(self, sender: str, recipients: object, label: str) -> tuple[str, ...] | str:
+        """Validate one hook's recipient sequence before inactive players are filtered."""
         if isinstance(recipients, (str, bytes)) or not isinstance(recipients, Sequence):
-            return "declares target_recipients that is not a sequence"
+            return f"declares {label} that is not a sequence"
         listed = tuple(cast("Sequence[object]", recipients))
         if not all(isinstance(recipient, str) for recipient in listed):
             return "declares a non-string recipient"
@@ -134,15 +185,7 @@ class ChatRouter:
                 return "declares the sender as one of its own recipients"
             if recipient not in self._players:
                 return f"declares unknown recipient {recipient!r}"
-        if default_recipient is not None and (
-            not isinstance(default_recipient, str) or default_recipient not in named
-        ):
-            return f"defaults to {default_recipient!r}, which it does not offer"
-        # A recipient who left mid-episode is dropped from the declared list rather than voiding it:
-        # treating that as a defect would widen a narrow policy to the default at the very moment a
-        # player goes inactive. A default that leaves with them falls back to broadcast, always legal.
-        offered = tuple(recipient for recipient in named if recipient in self._active)
-        return ChatPolicy(offered, default_recipient if default_recipient in offered else None)
+        return named
 
     def validate_outgoing(
         self,
@@ -213,7 +256,7 @@ class ChatRouter:
             accepted.append({"from": sender, "to": to, "text": text})
         return accepted
 
-    def deliver(self, messages: list[Message], tick: int) -> None:
+    def deliver(self, messages: list[Message], tick: int, env: Any = None) -> None:
         """Deliver a tick's accepted messages to pending inboxes, stamping each with ``tick``.
 
         A targeted message reaches its recipient's inbox; a broadcast reaches every other active
@@ -221,13 +264,17 @@ class ChatRouter:
         later acting opportunity to read on. Called at the end of the sending tick, after the acting
         agent's inbox was drained, so a message sent on tick T is first seen strictly after T.
         """
+        audiences: dict[str, tuple[str, ...]] = {}
         for message in messages:
             sender = message["from"]
             recipient = message["to"]
             item = {**message, "tick": tick}
             if recipient is None:
-                for player_id in self._active:
-                    if player_id != sender:
+                if sender not in audiences:
+                    audiences[sender] = self.broadcast_audience_from(env, sender)
+                audience = audiences[sender]
+                for player_id in audience:
+                    if player_id in self._active:
                         self._inboxes[player_id].append(dict(item))
             elif recipient in self._active:
                 self._inboxes[recipient].append(item)

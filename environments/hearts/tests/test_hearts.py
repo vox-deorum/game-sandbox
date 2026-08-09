@@ -459,7 +459,7 @@ def test_different_seeds_diverge():
 class LowestLegalAgent:
     """A trivial agent that always plays the lowest-id legal card (first set mask bit)."""
 
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
 
     def act(self, observation):

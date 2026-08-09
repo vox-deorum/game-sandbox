@@ -38,6 +38,7 @@ describe('relay (LiveSession)', () => {
       revokeLlm?: () => Promise<void>
       llmBlockingInFlightMs?: () => number
       maxDurationMs?: number
+      idleTimeoutMs?: number
       deleteLlmScope?: (scopeId: string) => void
       onEnd?: (id: string) => void
       onFinalized?: (id: string) => void
@@ -68,7 +69,7 @@ describe('relay (LiveSession)', () => {
         onEnd: options.onEnd ?? (() => {}),
         onFinalized: options.onFinalized,
         log: () => {},
-        idleTimeoutMs: 1_000_000,
+        idleTimeoutMs: options.idleTimeoutMs ?? 1_000_000,
         maxDurationMs: options.maxDurationMs ?? 1_000_000,
         killGraceMs: 10,
         revokeLlm: options.revokeLlm,
@@ -501,6 +502,98 @@ describe('relay (LiveSession)', () => {
     })
   })
 
+  describe('idle ownership', () => {
+    it('keeps a human session alive while an owner socket remains connected', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('human', { idleTimeoutMs: 10 })
+      const owner = session.attach(new FakeSocket(), true)
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([])
+
+      owner.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+
+    it('does not let a spectator clear or re-arm a human session idle timeout', async () => {
+      vi.useFakeTimers()
+      const first = makeSession('human', { idleTimeoutMs: 10 })
+      first.session.attach(new FakeSocket(), false)
+      await vi.advanceTimersByTimeAsync(10)
+      expect(first.process.killGraceMs).toEqual([10])
+
+      const second = makeSession('human', { idleTimeoutMs: 10 })
+      const owner = second.session.attach(new FakeSocket(), true)
+      const spectator = second.session.attach(new FakeSocket(), false)
+      spectator.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(second.process.killGraceMs).toEqual([])
+
+      owner.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(second.process.killGraceMs).toEqual([10])
+    })
+
+    it('keeps scripted sessions alive for any viewer and arms only after the last viewer leaves', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('scripted', { idleTimeoutMs: 10 })
+      const first = session.attach(new FakeSocket(), true)
+      const second = session.attach(new FakeSocket(), false)
+      first.detach()
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([])
+
+      second.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+
+    it('arms idle when the last owner socket throws during broadcast', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('human', { idleTimeoutMs: 10 })
+      const owner = new FakeSocket()
+      const attachment = session.attach(owner, true)
+      owner.breakSends()
+
+      attachment.handleMessage('{"kind":"pause"}')
+      expect(owner.closed).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+
+    it('arms idle when backpressure drops the last owner socket', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('human', { idleTimeoutMs: 10 })
+      const owner = new FakeSocket()
+      const attachment = session.attach(owner, true)
+      owner.bufferedAmount = 2 * 1024 * 1024
+
+      attachment.handleMessage('{"kind":"pause"}')
+      expect(owner.closed).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+
+    it('does not clear idle when an owner fails during catch-up', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('human', { idleTimeoutMs: 10 })
+      process.emit(HEADER)
+      await vi.advanceTimersByTimeAsync(0)
+
+      const owner = new FakeSocket()
+      owner.breakSends()
+      session.attach(owner, true)
+      expect(owner.closed).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+  })
+
   // --- outbound message visibility ---
 
   describe('outbound message visibility', () => {
@@ -554,25 +647,29 @@ describe('relay (LiveSession)', () => {
       ])
     })
 
-    it('shows a targeted message to a human-bound player only to the controller', async () => {
+    it('shows targeted messages to a human spectator, while the controller sees its permitted line', async () => {
       const { owner, spectator } = await attachOwnerAndSpectator(
         stateWith([{ from: 'player_1', to: 'player_0', text: 'psst' }]),
       )
       expect(messagesIn(owner.received)).toEqual([
         { from: 'player_1', to: 'player_0', text: 'psst' },
       ])
-      expect(messagesIn(spectator.received)).toEqual([]) // withheld from the spectator live
+      expect(messagesIn(spectator.received)).toEqual([
+        { from: 'player_1', to: 'player_0', text: 'psst' },
+      ])
     })
 
-    it('withholds an agent-to-agent targeted message from everyone live', async () => {
+    it('filters an agent-to-agent targeted message only for the controller', async () => {
       const { owner, spectator } = await attachOwnerAndSpectator(
         stateWith([{ from: 'player_1', to: 'player_2', text: 'secret' }]),
       )
       expect(messagesIn(owner.received)).toEqual([])
-      expect(messagesIn(spectator.received)).toEqual([])
+      expect(messagesIn(spectator.received)).toEqual([
+        { from: 'player_1', to: 'player_2', text: 'secret' },
+      ])
     })
 
-    it("reflects the controller's own send back to the controller only", async () => {
+    it("reflects the controller's own send and keeps it visible to spectators", async () => {
       const { owner, spectator } = await attachOwnerAndSpectator(
         stateWith([{ from: 'player_0', to: 'player_1', text: 'mine' }]),
       )
@@ -580,28 +677,50 @@ describe('relay (LiveSession)', () => {
       expect(messagesIn(owner.received)).toEqual([
         { from: 'player_0', to: 'player_1', text: 'mine' },
       ])
-      expect(messagesIn(spectator.received)).toEqual([])
+      expect(messagesIn(spectator.received)).toEqual([
+        { from: 'player_0', to: 'player_1', text: 'mine' },
+      ])
     })
 
-    it('treats the owner of a scripted run as a spectator', async () => {
+    it('shows every delivered message to every scripted attachment', async () => {
       const { session, process } = makeSession('scripted', { externalPlayers: [] })
       const owner = new FakeSocket()
-      session.attach(owner, true) // owner, but a scripted run has no controller
+      const spectator = new FakeSocket()
+      session.attach(owner, true)
+      session.attach(spectator, false)
       process.emit(HEADER)
       process.emit(stateWith([{ from: 'player_1', to: 'player_0', text: 'psst' }]))
       await flush()
-      expect(messagesIn(owner.received)).toEqual([])
+      expect(messagesIn(owner.received)).toEqual([
+        { from: 'player_1', to: 'player_0', text: 'psst' },
+      ])
+      expect(messagesIn(spectator.received)).toEqual([
+        { from: 'player_1', to: 'player_0', text: 'psst' },
+      ])
     })
 
-    it('gives a late-attaching spectator the audience-filtered stashed line', async () => {
+    it('gives a late-attaching human spectator the same unfiltered stashed line', async () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       process.emit(HEADER)
       process.emit(stateWith([{ from: 'player_1', to: 'player_0', text: 'psst' }]))
       await flush()
 
       const late = new FakeSocket()
-      session.attach(late, false) // a spectator attaching after the targeted message was stashed
-      expect(messagesIn(late.received)).toEqual([]) // never leaked through the catch-up path
+      session.attach(late, false)
+      expect(messagesIn(late.received)).toEqual([
+        { from: 'player_1', to: 'player_0', text: 'psst' },
+      ])
+    })
+
+    it('filters an unrelated targeted message from a late-attaching controller', async () => {
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
+      process.emit(HEADER)
+      process.emit(stateWith([{ from: 'player_1', to: 'player_2', text: 'secret' }]))
+      await flush()
+
+      const lateController = new FakeSocket()
+      session.attach(lateController, true)
+      expect(messagesIn(lateController.received)).toEqual([])
     })
 
     it('passes a state line with no messages through byte-identical', async () => {

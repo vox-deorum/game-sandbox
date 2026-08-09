@@ -32,7 +32,7 @@ The parallel environment on the engine, with the action and observation spaces f
 
 ### Speech
 
-The chat policy lists each sender's talk recipients nearest first with the nearest as default, once per recipient per tick. NPC broadcasts bound to shout range and the visitor's to talk range through the step 1 hook. `public_messages` is on and the cap is 200 code points. Delivery timing needs no work: the harness already collects actions before chat hooks, so a line recorded on tick T reaches inboxes during T+1 after actions are chosen, and the earliest reaction is tick T+2, as the ruleset states.
+The chat policy lists each sender's talk recipients nearest first with the nearest as default, once per recipient per tick. NPC broadcasts bind to shout range and the visitor's broadcasts to talk range through the step 1 hook. Watchers receive every delivered message under the platform visibility rule, and the cap is 200 code points. Delivery timing needs no work: the harness already collects actions before chat hooks, so a line recorded on tick T reaches inboxes during T+1 after actions are chosen, and the earliest reaction is tick T+2, as the ruleset states.
 
 ### The compact overlay
 

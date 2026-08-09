@@ -23,10 +23,9 @@ from sandbox.features import FLAP, IDLE, FlappyObservation, player_y, screen_hei
 class Agent:
     """Flaps whenever the bird is below the middle of the screen."""
 
-    def reset(self, seed: int) -> None:
-        # Called once before each episode. This agent keeps no state between
-        # steps, so there is nothing to prepare here; a learning agent would
-        # reset its memory in this method.
+    def reset(self, seed, observation) -> None:
+        # Called once before each episode. The opening observation is available here for
+        # precomputation outside the decision clock. This agent keeps no state between steps.
         pass
 
     def act(self, observation: FlappyObservation) -> int:

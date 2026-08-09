@@ -446,7 +446,7 @@ class Agent:
     def __init__(self) -> None:
         self.memory = Memory()
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         self.memory = Memory(seed)
 
     def act(self, observation: SkirmishObservation) -> SkirmishAction:

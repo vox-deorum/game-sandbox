@@ -51,7 +51,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     submissionsDir: join(recordingsDir, 'submissions'),
     docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
-    sessionMaxDurationMs: 600_000,
+    sessionMaxDurationMs: null,
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,

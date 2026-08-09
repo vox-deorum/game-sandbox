@@ -63,7 +63,7 @@ def _legal_action(observation: dict[str, Any]) -> dict[str, int]:
 class StandStillAgent:
     """Keep full recording fixtures deterministic and free of incidental combat."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: dict[str, Any]) -> dict[str, int]:
@@ -73,7 +73,7 @@ class StandStillAgent:
 class RetreatAgent:
     """Take the legal path whose endpoint is farthest from the nearest visible enemy."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: dict[str, Any]) -> dict[str, int]:
@@ -253,8 +253,8 @@ def test_full_naive_episodes_keep_observations_masks_and_json_safe(
     env = make_env(_parameters(seat_plan=seat_plan, **overrides))
     env.reset(seed=19)
     agents = {player: Agent() for player in env.possible_agents}
-    for agent in agents.values():
-        agent.reset(19)
+    for player, agent in agents.items():
+        agent.reset(19, env.observe(player))
 
     while env.agents:
         observation, _reward, terminated, truncated, _info = env.last()
@@ -342,8 +342,8 @@ def test_overlay_is_deterministic_for_a_seeded_scripted_rollout() -> None:
 def test_naive_actions_follow_the_published_masks_and_never_name_targets() -> None:
     env = make_env(_parameters(round_cap=100))
     agent = Agent()
-    agent.reset(7)
     env.reset(seed=7)
+    agent.reset(7, env.observe("player_0"))
 
     for observation in _turns(env, 24):
         action = agent.act(observation)
@@ -798,7 +798,7 @@ def _synthetic_observation(
 
 def test_naive_pursues_unseen_goals_and_visible_enemies_without_naming_targets() -> None:
     agent = Agent()
-    agent.reset(1)
+    agent.reset(1, None)
     unseen = _synthetic_observation((3, 3), (0, encode_path((2,))), [])
     unseen_action = agent.act(unseen)
     assert len(decode_path(unseen_action["path"])) == 1
@@ -819,7 +819,7 @@ def test_naive_is_seeded_and_different_seeds_diverge_when_choices_tie() -> None:
 
     def choices(seed: int) -> list[dict[str, int]]:
         agent = Agent()
-        agent.reset(seed)
+        agent.reset(seed, observation)
         return [agent.act(observation) for _ in range(16)]
 
     assert choices(8) == choices(8)
@@ -837,7 +837,7 @@ def test_naive_loads_as_a_standalone_builtin_module() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     agent = module.Agent()
-    agent.reset(1)
+    agent.reset(1, None)
 
 
 def test_template_crane_helper_never_drifts_from_the_package_codec() -> None:
@@ -922,8 +922,8 @@ class _RecordingAgent:
         self._agent = agent
         self._actions = actions
 
-    def reset(self, seed: int) -> None:
-        self._agent.reset(seed)
+    def reset(self, seed, observation) -> None:
+        self._agent.reset(seed, observation)
 
     def act(self, observation: Any) -> dict[str, int]:
         action = self._agent.act(observation)

@@ -30,8 +30,8 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
 | `DATA_DIR` | `backend/data` | Repository-relative root containing `sandbox.db` and recording directories. When the app runs in a container, set an absolute path that is identical on the host and in the container; see [Run the app in Docker](docker.md) |
-| `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
-| `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
+| `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no viewer in scripted mode, or no owner socket in human mode |
+| `SESSION_MAX_DURATION_MS` | unset | Optional positive chargeable-duration override. When unset, each session derives its limit from its pace and episode rules. |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
 | `SANDBOX_MEMORY_MB` | `512` | Base session memory quota |
 | `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |

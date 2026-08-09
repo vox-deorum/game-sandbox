@@ -168,15 +168,21 @@ class ParticipantRunner:
         """The policy advertised in the last live state."""
         return self._human_chat_policy
 
-    def reset_agents(self, seed: int) -> None:
-        """Reset every agent under its own credential boundary."""
+    def reset_agents(self, seed: int, observations: Mapping[str, object]) -> None:
+        """Reset every agent with its initial observation under its credential boundary."""
         for player_id, binding in self._players.items():
             if not isinstance(binding, AgentPlayer):
                 continue
             try:
                 if binding.execution_scope is not None:
                     binding.execution_scope.setup(player_id)
-                binding.agent.reset(seed)
+                observation = observations[player_id]
+                _, elapsed_ms = self._timed_llm_hook(
+                    binding.execution_scope,
+                    player_id,
+                    lambda binding=binding, observation=observation: binding.agent.reset(seed, observation),
+                )
+                self._state[player_id].budget_used_ms += elapsed_ms
             except Exception:  # noqa: BLE001 - preserve the participant exception and attribution
                 self._failed(player_id)
                 raise
@@ -287,10 +293,10 @@ class ParticipantRunner:
             "default_recipient": policy.default_recipient,
         }
 
-    def deliver_messages(self, messages: list[Message]) -> None:
+    def deliver_messages(self, env: Any, messages: list[Message]) -> None:
         """Deliver a recorded batch at the end of its sending tick."""
         if self._chat is not None and messages:
-            self._chat.deliver(messages, tick=self._tick())
+            self._chat.deliver(messages, tick=self._tick(), env=env)
 
     def apply_environment_step(self, context: StepContext) -> ChatOptions | None:
         """Apply one AEC action, credit all rewards, and refresh chat policy."""

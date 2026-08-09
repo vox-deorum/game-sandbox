@@ -16,7 +16,7 @@ from typing import Any
 class Agent:
     """Play the lowest legal card every turn (the env's own timeout default)."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

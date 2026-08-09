@@ -85,7 +85,7 @@ Live sessions may pause in one of two ways. The environment's `human_pause` meta
 
 | Control | Rule |
 | --- | --- |
-| **Session pause** | Freezes stepping, cadence, and in-harness action and episode timing, including the human move clock. The backend session-duration and idle timers keep running regardless. The browser also holds the frames it has already buffered, so the picture stops with the session. |
+| **Session pause** | Freezes stepping, cadence, and in-harness action and episode timing, including the human move clock. The backend session-duration timer keeps running. A paused human session does not idle out while an owner socket remains connected. The browser also holds the frames it has already buffered, so the picture stops with the session. |
 | **Playback pause** | Freezes only that viewer's frame playout. The session, its cadence, and the backend timers all keep running, so play continues underneath. Pausing during your own turn releases your controls, so your move clock holds along with the picture until you resume; every other player's timing is unaffected. A session that ends while paused reveals its outcome only after that viewer resumes. |
 | **Resume** | Unfreezes what pause froze. For a session pause the host page's control changes only after the relay confirms the accepted command. A playback pause is local to the browser and changes at once. |
 | **Stop** | Prevents the next transition without interrupting participant work already running. It has no confirmation message, so the interface waits for the ended status before showing the session as finished. Stop also lifts the viewer's own pause, so an outcome held behind it is revealed rather than stranded. |
@@ -127,7 +127,7 @@ Object-shaped overlay data works the same way for rendering. The renderer direct
 
 ## Chat
 
-When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and targeted messages sent to or from the connected user's designated human player.
+When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. A watcher sees every delivered message in the panel. A human controller sees broadcasts plus targeted messages sent to or from one of its players.
 
 Every live state is self-contained for human chat while the designated human player remains active. It carries that player as the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as the broadcast choice even when the environment offers no direct recipient.
 

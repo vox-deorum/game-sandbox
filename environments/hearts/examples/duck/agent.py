@@ -39,7 +39,7 @@ NAME = "duck-hearts"
 class Agent:
     """Avoid taking points: duck under tricks, and when void dump the most dangerous card."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 

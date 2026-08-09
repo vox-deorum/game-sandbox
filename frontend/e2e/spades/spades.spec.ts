@@ -228,7 +228,7 @@ async function completeSelfControlledSpadesHand(
   return { bids, plays }
 }
 
-test('Spades chat is filtered live and complete in replay', async ({
+test('Spades watchers see complete chat live and in replay', async ({
   page,
   browser,
   admin,
@@ -263,9 +263,8 @@ test('Spades chat is filtered live and complete in replay', async ({
     await expect(controllerChat).toBeVisible()
 
     // Two different browser identities attach before the first step. Both get the read-only panel, and
-    // the relay will later deliver the broadcast to each while withholding the targeted message from
-    // either — the plan's journey explicitly calls for a *second* spectator page, since one relay
-    // fan-out bug could plausibly single out one particular viewer rather than the whole spectator set.
+    // the relay will later deliver the broadcast and targeted message to each. The second watcher page
+    // proves the rule applies to the whole watcher set rather than one particular connection.
     spectatorContext = await browser.newContext()
     await authenticateBrowser(spectatorContext, await as(SPECTATOR))
     const spectator = await spectatorContext.newPage()
@@ -290,7 +289,7 @@ test('Spades chat is filtered live and complete in replay', async ({
     const recipient = controllerChat.getByLabel('Recipient')
     await expect(recipient).toHaveValue('player_2')
 
-    // Queue one broadcast and one private line for player_2 through the same composer. There is no local
+    // Queue one broadcast and one targeted line for player_2 through the same composer. There is no local
     // echo, so neither appears until bid 1 advances the turn and the harness records both on tick 0.
     const message = controllerChat.getByLabel('Message')
     await recipient.selectOption('')
@@ -319,9 +318,9 @@ test('Spades chat is filtered live and complete in replay', async ({
     await expect(message).toHaveValue('draft across opponent turns')
 
     await expect(spectatorChat.getByText(BROADCAST)).toBeVisible()
-    await expect(spectatorChat.getByText(TARGETED)).toHaveCount(0)
+    await expect(spectatorChat.getByText(TARGETED)).toBeVisible()
     await expect(spectatorTwoChat.getByText(BROADCAST)).toBeVisible()
-    await expect(spectatorTwoChat.getByText(TARGETED)).toHaveCount(0)
+    await expect(spectatorTwoChat.getByText(TARGETED)).toBeVisible()
     await spectatorContext.close()
     spectatorContext = null
     await spectatorTwoContext.close()
@@ -346,8 +345,8 @@ test('Spades chat is filtered live and complete in replay', async ({
       'a reconnect must not duplicate chat entries',
     ).toBeLessThanOrEqual(2)
 
-    // The stopped partial hand preserves tick 0. Unlike the live spectator stream, replay exposes both
-    // recorded messages immediately and stays read-only.
+    // The stopped partial hand preserves tick 0. Replay also exposes both recorded messages immediately
+    // and stays read-only.
     await page.getByRole('button', { name: 'Stop' }).click()
     const openReplay = page.getByRole('link', { name: 'Open replay' })
     await expect(openReplay).toBeVisible({ timeout: 60_000 })

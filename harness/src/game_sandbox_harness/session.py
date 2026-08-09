@@ -261,7 +261,18 @@ class Episode:
                 self._writer_cm = self._store.create(self._recording_id, header)
                 self._writer = self._writer_cm.__enter__()
 
-            self._participant_runner.reset_agents(self._seed)
+            if self._entry.meta.stepping == "simultaneous":
+                if self._parallel_observations is None:
+                    raise RuntimeError("parallel reset supplied no observations")
+                reset_observations = self._parallel_observations
+            else:
+                reset_observations = {
+                    player_id: env.observe(player_id)
+                    for player_id, binding in self._players.items()
+                    if isinstance(binding, AgentPlayer)
+                }
+            self._participant_runner.reset_agents(self._seed, reset_observations)
+            self._stop_if_over_budget(self._players)
         except Exception:  # noqa: BLE001 - release the half-opened recording/env, then re-raise as-is
             # Suppress any close fault so it never masks the original startup error (which the headless
             # caller still receives and which carries the player attribution set just above).
@@ -411,7 +422,7 @@ class Episode:
         self._participant_runner.run_learning(context)
 
         self._record_step((context,), context.started_at, context.messages, context.chat_options)
-        self._participant_runner.deliver_messages(context.messages)
+        self._participant_runner.deliver_messages(env, context.messages)
         self._finish_step((context.player_id,))
 
     def step_tick(self) -> None:
@@ -468,7 +479,7 @@ class Episode:
             self._participant_runner.run_learning(context, terminated=terminated)
 
         self._record_step(tuple(contexts), started_at, messages, chat_options)
-        self._participant_runner.deliver_messages(messages)
+        self._participant_runner.deliver_messages(env, messages)
         self._finish_step(active_players)
 
     def _logical_active_players(self) -> tuple[str, ...]:
@@ -532,15 +543,7 @@ class Episode:
     def _finish_step(self, acted_players: tuple[str, ...]) -> None:
         """Advance once, then apply budget, natural-ending, and tick-cap precedence."""
         self._tick += 1
-        over_budget = tuple(
-            player_id
-            for player_id in canonical_player_order(acted_players)
-            if self._state[player_id].budget_used_ms > self._episode_limit
-        )
-        if over_budget:
-            self._reason = REASON_EPISODE_LIMIT
-            self._failed_player = over_budget[0]
-            self._stopped = True
+        if self._stop_if_over_budget(acted_players):
             return
         if not self._logical_active_players():
             self._mark_natural_end()
@@ -551,6 +554,20 @@ class Episode:
         if self._max_steps is not None and self._tick >= self._max_steps:
             self._reason = REASON_TRUNCATED
             self._stopped = True
+
+    def _stop_if_over_budget(self, players: Mapping[str, Player] | tuple[str, ...]) -> bool:
+        """Stop for the first canonical supplied player beyond the episode compute budget."""
+        over_budget = tuple(
+            player_id
+            for player_id in canonical_player_order(players)
+            if self._state[player_id].budget_used_ms > self._episode_limit
+        )
+        if not over_budget:
+            return False
+        self._reason = REASON_EPISODE_LIMIT
+        self._failed_player = over_budget[0]
+        self._stopped = True
+        return True
 
     def _mark_natural_end(self) -> None:
         """Record the natural ending reason and its complete scores in one place."""
@@ -639,7 +656,7 @@ def run_episode(
     """Play one seeded episode of ``entry`` with the given player bindings.
 
     A thin headless loop over :class:`Episode`: reset seeds everything (the environment via
-    ``reset(seed=seed)`` and every agent via its own ``reset(seed)``), then call
+    ``reset(seed=seed)`` and every agent via its own ``reset(seed, observation)``), then call
     :meth:`Episode.advance` until the declared AEC or parallel environment ends, recording through
     the store when one is given.
     Recording is optional so the evaluation pattern (run many seeds, keep scores, store

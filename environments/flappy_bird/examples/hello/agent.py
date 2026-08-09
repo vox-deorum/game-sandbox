@@ -21,7 +21,7 @@ NAME = "hello-flappy"
 class Agent:
     """Flap when the bird will be below the next gap's center next step, otherwise fall."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless heuristic: nothing to carry between or within episodes.
         pass
 

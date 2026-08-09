@@ -26,8 +26,10 @@ class AgentBase(ABC):
 
     Required methods:
 
-    - ``reset(seed)`` prepares the agent for a new episode. The same seed the environment
-      receives is passed here, so a stochastic agent can be made reproducible.
+    - ``reset(seed, observation)`` prepares the agent for a new episode. The same seed the
+      environment receives is passed here, together with that player's initial observation, so a
+      stochastic agent can be made reproducible and can initialize from the first game state. Its
+      time is charged only to the episode budget, with no per-call limit, so it can precompute.
     - ``act(observation)`` returns an action in the environment's action space.
 
     Optional methods, detected by presence (do not declare them unless you implement them):
@@ -41,8 +43,8 @@ class AgentBase(ABC):
     """
 
     @abstractmethod
-    def reset(self, seed: int) -> None:
-        """Prepare the agent for a new episode seeded with ``seed``."""
+    def reset(self, seed: int, observation: Any) -> None:
+        """Prepare for ``seed`` and the initial ``observation``, charged only to episode budget."""
 
     @abstractmethod
     def act(self, observation: Any) -> Any:

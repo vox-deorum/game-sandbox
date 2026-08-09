@@ -39,7 +39,7 @@ def test_takes_a_winnable_trick_by_following_high():
     # points, so it plays the king to take the trick, where the duck would shed the 3 and stay out
     # of it.
     moonshot = agent.Agent()
-    moonshot.reset(0)
+    moonshot.reset(0, None)
     trick = [{"suit": CLUBS, "rank": 5}]
     legal = [{"suit": CLUBS, "rank": 3}, {"suit": CLUBS, "rank": 13}]
     observation = _observation(legal=legal, trick=trick, led=CLUBS)

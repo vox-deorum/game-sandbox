@@ -82,7 +82,7 @@ def test_signals_its_strong_side_suit_to_its_partner():
         TWO_OF_DIAMONDS,
     ]
     a = agent.Agent()
-    a.reset(0)
+    a.reset(0, None)
     a.act(_bidding_observation(hand, player=0))  # stamps partner player and hand
     assert a.chat([]) == [{"to": "player_2", "text": "strong:hearts"}]
 
@@ -94,14 +94,14 @@ def test_lead_changes_when_the_partner_signal_arrives():
 
     # With a partner signal naming diamonds, the agent leads the 2 of diamonds.
     informed = agent.Agent()
-    informed.reset(0)
+    informed.reset(0, None)
     informed.act(_bidding_observation(hand, player=0))  # stamp player 0 first
     informed.chat([{"from": "player_2", "to": "player_0", "text": "strong:diamonds", "tick": 1}])
     assert informed.act(lead_obs) == encode_play(TWO_OF_DIAMONDS)
 
     # The same agent with no signal falls back to the lowest legal card (2 of clubs).
     uninformed = agent.Agent()
-    uninformed.reset(0)
+    uninformed.reset(0, None)
     uninformed.act(_bidding_observation(hand, player=0))
     uninformed.chat([])
     assert uninformed.act(lead_obs) == encode_play(TWO_OF_CLUBS)
@@ -125,6 +125,6 @@ def test_stays_silent_without_a_side_ace():
         make_card(1, 3),
     ]
     a = agent.Agent()
-    a.reset(0)
+    a.reset(0, None)
     a.act(_bidding_observation(hand, player=0))
     assert a.chat([]) == []

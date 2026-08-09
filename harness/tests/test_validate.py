@@ -49,7 +49,7 @@ def _run(root: Path) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
 
 _GOOD_AGENT = """
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         self.seed = seed
     def act(self, observation):
         return 1
@@ -110,7 +110,7 @@ def test_constructor_error_reports_constructor_error(tmp_path: Path):
             "class Agent:\n"
             "    def __init__(self):\n"
             "        raise ValueError('no good')\n"
-            "    def reset(self, seed):\n"
+            "    def reset(self, seed, observation):\n"
             "        pass\n"
             "    def act(self, observation):\n"
             "        return 0\n"
@@ -131,7 +131,7 @@ def test_missing_act_hook_reports_missing_hook(tmp_path: Path):
         tmp_path,
         module,
         class_name="Agent",
-        source="class Agent:\n    def reset(self, seed):\n        pass\n",
+        source="class Agent:\n    def reset(self, seed, observation):\n        pass\n",
     )
     try:
         proc, envelope = _run(tmp_path)
@@ -149,7 +149,10 @@ def test_participant_stdout_cannot_spoof_the_result(tmp_path: Path):
         module,
         class_name="Agent",
         source=(
-            f"print({fake_success!r}, flush=True)\nclass Agent:\n    def reset(self, seed):\n        pass\n"
+            f"print({fake_success!r}, flush=True)\n"
+            "class Agent:\n"
+            "    def reset(self, seed, observation):\n"
+            "        pass\n"
         ),
     )
     try:

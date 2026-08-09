@@ -26,7 +26,7 @@ from game_sandbox_harness.manifest import (
 
 _AGENT_SOURCE = """
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         self.seed = seed
     def act(self, observation):
         return 1
@@ -61,7 +61,7 @@ def test_good_repo_loads_and_exposes_hooks(tmp_path: Path):
         manifest = load_manifest(tmp_path)
         assert manifest == Manifest(entry_point=module, class_name="Agent", template_version=1)
         agent = load_agent(tmp_path)
-        agent.reset(7)
+        agent.reset(7, None)
         assert agent.act(None) == 1
         assert describe_agent_hooks(agent) == {"learn": True, "chat": False}
     finally:
@@ -108,7 +108,7 @@ def test_same_entry_point_in_two_repo_roots_loads_each_repo(tmp_path: Path):
         manifest=manifest,
         source="""
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         return "a"
@@ -120,7 +120,7 @@ class Agent:
         manifest=manifest,
         source="""
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         return "b"
@@ -146,7 +146,7 @@ def test_same_helper_module_name_in_two_repo_roots_loads_each_repo_helper(tmp_pa
 import helper
 
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         return helper.VALUE
@@ -181,7 +181,7 @@ def test_two_instances_held_at_once_keep_isolated_module_state(tmp_path: Path):
 calls = 0
 
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         global calls
@@ -217,7 +217,7 @@ def test_helper_from_a_failed_load_does_not_leak_into_the_next_repo(tmp_path: Pa
 import helper
 
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         return helper.VALUE
@@ -262,7 +262,7 @@ def test_act_time_lazy_import_is_not_isolated_across_players(tmp_path: Path):
     # `import helper` sits inside act(), not at module top, so the loader's eviction never sees it.
     agent_source = """
 class Agent:
-    def reset(self, seed):
+    def reset(self, seed, observation):
         pass
     def act(self, observation):
         import helper
@@ -373,7 +373,7 @@ def test_class_missing_act_raises(tmp_path: Path):
         tmp_path,
         module,
         manifest={"entry_point": module, "class_name": "Agent", "template_version": 1},
-        source="class Agent:\n    def reset(self, seed):\n        pass\n",
+        source="class Agent:\n    def reset(self, seed, observation):\n        pass\n",
     )
     try:
         with pytest.raises(ManifestError, match="no callable 'act'"):

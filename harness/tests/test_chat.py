@@ -7,6 +7,8 @@ fixture so an emoji costs one.
 
 from __future__ import annotations
 
+import pytest
+
 from game_sandbox_harness.chat import ChatRouter
 
 PLAYERS = ("player_0", "player_1", "player_2", "player_3")
@@ -176,6 +178,80 @@ def test_delivery_skips_a_recipient_that_left_on_this_transition():
     assert router.drain("player_1") == [{"from": "player_0", "to": None, "text": "table!", "tick": 2}]
     for gone in ("player_2", "player_3"):
         assert router.drain(gone) == []
+
+
+def test_broadcast_without_an_environment_hook_reaches_every_other_active_player():
+    router = _router()
+    messages = router.validate_outgoing("player_0", [{"to": None, "text": "hello"}])
+    router.deliver(messages, tick=1, env=object())
+    assert router.drain("player_1")
+    assert router.drain("player_2")
+    assert router.drain("player_3")
+
+
+def test_broadcast_hook_limits_delivery_and_is_resolved_once_per_sender():
+    calls: list[str] = []
+
+    class Ring:
+        def broadcast_recipients(self, sender: str) -> tuple[str, ...]:
+            calls.append(sender)
+            return ("player_2",)
+
+    router = _router()
+    messages = router.validate_outgoing(
+        "player_0", [{"to": None, "text": "one"}, {"to": "player_1", "text": "direct"}]
+    )
+    router.deliver(messages, tick=1, env=Ring())
+    assert calls == ["player_0"]
+    assert router.drain("player_2") == [{"from": "player_0", "to": None, "text": "one", "tick": 1}]
+    assert router.drain("player_1") == [{"from": "player_0", "to": "player_1", "text": "direct", "tick": 1}]
+    assert router.drain("player_3") == []
+
+
+@pytest.mark.parametrize(
+    ("declared", "diagnostic"),
+    [
+        ("player_1", "not a sequence"),
+        (("player_1", "player_1"), "same recipient twice"),
+        (("player_0",), "sender as one of its own"),
+        (("player_9",), "unknown recipient"),
+        ((1,), "non-string recipient"),
+    ],
+)
+def test_invalid_broadcast_hook_falls_back_to_the_default_audience(declared, diagnostic, capsys):
+    class Broken:
+        def broadcast_recipients(self, sender: str):
+            return declared
+
+    router = _router()
+    messages = router.validate_outgoing("player_0", [{"to": None, "text": "fallback"}])
+    router.deliver(messages, tick=1, env=Broken())
+    assert diagnostic in capsys.readouterr().err
+    assert all(router.drain(player) for player in ("player_1", "player_2", "player_3"))
+
+
+def test_raising_broadcast_hook_falls_back_and_inactive_audience_members_are_silently_filtered(capsys):
+    class Raising:
+        def broadcast_recipients(self, sender: str):
+            raise RuntimeError("broken")
+
+    router = _router()
+    router.set_active(("player_0", "player_1"))
+    messages = router.validate_outgoing("player_0", [{"to": None, "text": "fallback"}])
+    router.deliver(messages, tick=1, env=Raising())
+    assert "broadcast recipients failed" in capsys.readouterr().err
+    assert router.drain("player_1")
+
+
+def test_an_empty_valid_broadcast_audience_delivers_nothing():
+    class Empty:
+        def broadcast_recipients(self, sender: str) -> tuple[str, ...]:
+            return ()
+
+    router = _router()
+    messages = router.validate_outgoing("player_0", [{"to": None, "text": "quiet"}])
+    router.deliver(messages, tick=1, env=Empty())
+    assert all(router.drain(player) == [] for player in ("player_1", "player_2", "player_3"))
 
 
 def test_a_policy_naming_an_inactive_recipient_is_filtered_rather_than_voided(capsys):

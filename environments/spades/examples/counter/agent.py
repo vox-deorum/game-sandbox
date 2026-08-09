@@ -47,7 +47,7 @@ ACE_RANK = 14
 class Agent:
     """Bid the tricks the hand is worth (high spades + side aces), then play to make that bid."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless: the bid is a pure function of the hand, and play reads the contract and the
         # tricks taken straight from each observation, so nothing is carried between turns or games.
         pass

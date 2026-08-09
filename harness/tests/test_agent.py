@@ -30,7 +30,7 @@ def test_agentbase_is_abstract():
 
 def test_concrete_subclass_satisfies_detection():
     class Concrete(AgentBase):
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: object) -> None: ...
 
         def act(self, observation):
             return 0
@@ -43,7 +43,7 @@ def test_concrete_subclass_satisfies_detection():
 
 def test_duck_typed_agent_is_detected_without_inheritance():
     class Plain:
-        def reset(self, seed): ...
+        def reset(self, seed, observation): ...
 
         def act(self, observation):
             return 0
@@ -58,7 +58,7 @@ def test_duck_typed_agent_is_detected_without_inheritance():
 
 def test_missing_required_method_fails_detection():
     class NoAct:
-        def reset(self, seed): ...
+        def reset(self, seed, observation): ...
 
     assert not is_agent(NoAct())
 
@@ -100,7 +100,13 @@ def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
     for name in ("reset", "act"):
         base_sig = inspect.signature(getattr(AgentBase, name))
         stub_sig = inspect.signature(getattr(template_cls, name))
-        assert list(base_sig.parameters) == list(stub_sig.parameters), name
+        base_parameters = [
+            (parameter.name, parameter.kind, parameter.default) for parameter in base_sig.parameters.values()
+        ]
+        stub_parameters = [
+            (parameter.name, parameter.kind, parameter.default) for parameter in stub_sig.parameters.values()
+        ]
+        assert base_parameters == stub_parameters, name
     # The template stub structurally satisfies the agent interface.
     assert is_agent(template_cls())
 

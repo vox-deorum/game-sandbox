@@ -149,7 +149,7 @@ class ScriptedAgent:
         self._clock = clock
         self._cost = cost_ms
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation: Any) -> None:
         self._i = 0
 
     def act(self, observation: Any) -> int:
@@ -282,7 +282,7 @@ def test_learn_hook_time_counts_toward_per_step_overage():
     entry = make_entry(n_steps=3, step_limit_ms=300, episode_limit_ms=120_000)
 
     class LearningAgent:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: Any) -> int:
             clock.advance(100)
@@ -637,6 +637,9 @@ class EarlyDepartureEnv:
         player = self.agent_selection
         return 0, self.rewards[player], self.terminations[player], self.truncations[player], {}
 
+    def observe(self, player: str) -> int:
+        return 0
+
     def step(self, action: object) -> None:
         player = self.agent_selection
         if self.terminations[player] or self.truncations[player]:
@@ -687,7 +690,7 @@ def test_aec_individual_departure_records_reward_only_and_skips_every_later_hook
         def __init__(self, player: str) -> None:
             self.player = player
 
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: int) -> int:
             calls.append((self.player, "act"))
@@ -722,7 +725,7 @@ def test_agent_crash_charges_the_failure_to_its_own_player():
     # so the orchestrator never marks player_0 or player_2 failed for a competitor's bug. The exception
     # still propagates (the container exits non-zero); the loop only records which player was at fault.
     class Crashing:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: Any) -> int:
             raise RuntimeError("boom")
@@ -941,7 +944,7 @@ def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp
     # infrastructure fault. The header is opened before the participants reset, so the crash still
     # leaves a readable recording for the orchestrator to attribute over (instead of no result row).
     class ResetCrashing:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             raise RuntimeError("reset boom")
 
         def act(self, observation: Any) -> int:
@@ -991,13 +994,75 @@ def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp
     assert header["environment"] == "team"
 
 
+def test_reset_time_is_charged_and_stops_before_the_first_step_in_canonical_order():
+    clock = ManualClock()
+
+    class SlowSetup:
+        def reset(self, seed: int, observation: Any) -> None:
+            clock.advance(10)
+
+        def act(self, observation: Any) -> int:
+            return 0
+
+    entry = _team_entry({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0})
+    episode = Episode(
+        entry,
+        {player: AgentPlayer(SlowSetup()) for player in ("player_2", "player_1", "player_0")},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+        episode_limit_ms=5,
+    )
+    episode.start()
+    assert episode.done
+    assert episode.tick == 0
+    assert episode.result().reason == REASON_EPISODE_LIMIT
+    assert episode.failed_player == "player_0"
+    assert all(state.budget_used_ms == 10 for state in episode._state.values())
+    episode.close()
+
+
+def test_sequential_setup_receives_each_agents_observe_value_and_skips_humans():
+    class DistinctObservations(FakeTeamEnv):
+        def observe(self, player: str) -> dict[str, int]:
+            return {"player": int(player.removeprefix("player_"))}
+
+    seen: dict[str, object] = {}
+
+    class Probe:
+        def __init__(self, player: str) -> None:
+            self.player = player
+
+        def reset(self, seed: int, observation: object) -> None:
+            seen[self.player] = observation
+
+        def act(self, observation: object) -> int:
+            return 0
+
+    entry = _team_entry(
+        {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0},
+        make=lambda _parameters: DistinctObservations({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}),
+    )
+    with Episode(
+        entry,
+        {
+            "player_0": AgentPlayer(Probe("player_0")),
+            "player_1": AgentPlayer(Probe("player_1")),
+            "player_2": ExternalPlayer(ScriptedSource([])),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+    ):
+        assert seen == {"player_0": {"player": 0}, "player_1": {"player": 1}}
+
+
 def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path: Path):
     # run_episode drives Episode as a context manager. When start() raises (here an agent reset crash)
     # __enter__ propagates before the `with` body, so __exit__ never runs — start() itself must close
     # the half-opened recording writer and the constructed env, or both leak. Proof: the env's close()
     # is called and the recording stays readable (its header was flushed on open).
     class ResetCrashing:
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             raise RuntimeError("reset boom")
 
         def act(self, observation: Any) -> int:
@@ -1066,7 +1131,7 @@ def test_learn_hook_time_counts_against_budget():
     entry = make_entry(n_steps=10, episode_limit_ms=1000)
 
     class LearningAgent:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: Any) -> int:
             clock.advance(100)

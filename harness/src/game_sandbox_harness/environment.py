@@ -347,6 +347,13 @@ class ChatPolicySource(Protocol):
     def chat_policy(self, sender: str) -> object: ...
 
 
+@runtime_checkable
+class BroadcastRecipientsSource(Protocol):
+    """A running environment that supplies the live audience for one broadcast."""
+
+    def broadcast_recipients(self, sender: str) -> object: ...
+
+
 def _player_count_parameter(bounds: PlayerBounds) -> EnvParameter:
     """Build the reserved declaration derived from player bounds."""
     return EnvParameter(

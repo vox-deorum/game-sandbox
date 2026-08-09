@@ -126,7 +126,7 @@ Each matchup row keeps one selector per seat it holds. A selector offers `submis
 
 ## On-demand live play
 
-Signed-in users with `normal` or `admin` status may run one session at a time. Environment limits, a human timeout, an idle timeout, and a maximum chargeable duration bound each session. Idle timeout always follows wall-clock time. See [Execution](execution.md) and [LLM API](llm.md#determinism-and-timing).
+Signed-in users with `normal` or `admin` status may run one session at a time. Environment limits, a human timeout, an idle timeout, and a maximum chargeable duration bound each session. A connected owner socket keeps a human-play session active even without commands, and its idle window begins when the last owner socket disconnects. Spectator sockets do not keep a human-play session active. Scripted watch sessions stay active while any viewer socket is connected. Idle timeout always follows wall-clock time. See [Execution](execution.md) and [LLM API](llm.md#determinism-and-timing).
 
 ## Feedback
 

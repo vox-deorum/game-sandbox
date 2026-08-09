@@ -38,7 +38,7 @@ def test_leads_a_spade_to_flush_the_queen():
     # Leading with the 2 of clubs and the 5 of spades both legal, the assassin leads the spade to
     # drag spades out, where the duck would lead its lowest card overall (2 of clubs).
     assassin = agent.Agent()
-    assassin.reset(0)
+    assassin.reset(0, None)
     two_of_clubs = {"suit": CLUBS, "rank": 2}
     five_of_spades = {"suit": SPADES, "rank": 5}
     observation = _observation(legal=[two_of_clubs, five_of_spades], trick=[], led=4)

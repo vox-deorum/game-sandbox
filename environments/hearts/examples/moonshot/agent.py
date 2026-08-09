@@ -38,7 +38,7 @@ NAME = "moonshot-hearts"
 class Agent:
     """Try to win every trick and collect all the points, shooting for the moon."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         # Stateless heuristic: nothing to carry between or within games.
         pass
 

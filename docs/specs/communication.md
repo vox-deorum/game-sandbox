@@ -31,6 +31,8 @@ A logically active player is present in `env.agents` and is not marked terminate
 
 An environment may provide a live-state policy for a sender. It returns ordered, unique direct recipients (excluding the sender) and a default recipient. A direct default must be in that set; broadcast is also a valid default. The policy may change as the game advances. Without it, every other logically active player is permitted in canonical order and broadcast is the default. An invalid result falls back to those defaults and writes a standard-error diagnostic.
 
+An environment may also provide `broadcast_recipients(sender)` to limit delivery of that sender's broadcasts. The hook returns an ordered sequence of unique, known players excluding the sender. Players who are no longer logically active are removed silently. An empty valid sequence delivers to nobody. Without the hook, or when the hook raises an exception or returns an invalid result, the broadcast reaches every other logically active player in canonical order. Invalid results and hook failures write a standard-error diagnostic.
+
 A named recipient who is no longer logically active is removed from the policy, and a default that leaves with it becomes broadcast.
 
 Broadcast is always available and is represented by a null recipient. An environment can restrict or reorder direct recipients but cannot remove broadcast. The same policy validates messages returned by an agent's `chat` hook and messages submitted by a human. A message that breaks the policy, the text limit, or the per-boundary limits is dropped with a standard-error diagnostic.
@@ -55,7 +57,7 @@ One completed boundary uses this messaging order:
 4. Validate the human batch, drain each participating player's inbox, and run optional `chat` hooks.
 5. Apply the environment transition and run applicable `learn` hooks.
 6. Record the accepted human and agent messages on the completed state.
-7. Deliver that batch to recipient inboxes.
+7. Resolve each sender's broadcast recipients and deliver that batch to recipient inboxes.
 
 A sequential boundary has one acting player. A simultaneous boundary obtains every active player's action first, then runs chat hooks in canonical player order against the unchanged pre-step environment. The recorded message batch lists the human FIFO first, followed by agent batches in canonical player order, each keeping its sender's returned order.
 
@@ -71,7 +73,7 @@ A completed transition discards the inbox of every player that left on it, and d
 
 ### Visibility
 
-Broadcasts are visible to every player and spectator. During live play, a targeted message is shown only to the clients controlling its recipient or sender. The sender also receives the message so its chat panel can render recorded state instead of a local copy. This reveals nothing the sender did not write. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
+Every live watcher receives every delivered message, including targeted messages. A watcher is any socket that does not control a human player, including every socket in a scripted watch session. A human controller receives broadcasts plus targeted messages sent to or from one of its players. Every message is recorded and visible in replay. See [Recording](recording.md).
 
 Live chat history is best-effort when a client connects. A reconnecting client receives new messages and uses the recording for messages sent before it connected or while it was away. The decision log follows the same rule.
 

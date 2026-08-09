@@ -34,10 +34,9 @@ from sandbox.cards import SpadesObservation, bid, is_bidding, legal_cards, play,
 class Agent:
     """Bids one trick, then always plays its lowest-ranked legal card."""
 
-    def reset(self, seed: int) -> None:
-        # Called once before each hand. This agent keeps no state between turns,
-        # so there is nothing to prepare here; a learning agent would reset its
-        # memory in this method.
+    def reset(self, seed, observation) -> None:
+        # Called once before each hand. The opening observation is available here for
+        # precomputation outside the decision clock. This agent keeps no state between turns.
         pass
 
     def act(self, observation: SpadesObservation) -> int:

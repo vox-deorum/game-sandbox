@@ -96,6 +96,24 @@ class PolicyRoundRobinEnv(RoundRobinEnv):
         return self._policy(self, sender)
 
 
+class BroadcastRoundRobinEnv(PolicyRoundRobinEnv):
+    """The round-robin fixture with a live broadcast audience hook."""
+
+    def __init__(
+        self,
+        players: list[str],
+        n_ticks: int,
+        policy: Callable[[RoundRobinEnv, str], object],
+        audience: Callable[[RoundRobinEnv, str], object],
+        step_log: list[Any] | None = None,
+    ) -> None:
+        super().__init__(players, n_ticks, policy, step_log)
+        self._audience = audience
+
+    def broadcast_recipients(self, sender: str) -> object:
+        return self._audience(self, sender)
+
+
 def make_chat_entry(
     players: tuple[str, ...] = ("player_0", "player_1"),
     n_ticks: int = 4,
@@ -104,6 +122,7 @@ def make_chat_entry(
     message_cap: int | None = None,
     step_log: list[Any] | None = None,
     chat_policy: Callable[[RoundRobinEnv, str], object] | None = None,
+    broadcast_recipients: Callable[[RoundRobinEnv, str], object] | None = None,
 ) -> EnvironmentEntry:
     meta = EnvironmentMeta(
         env_id="chat-fake",
@@ -126,6 +145,14 @@ def make_chat_entry(
     )
 
     def make(_parameters):
+        if broadcast_recipients is not None:
+            return BroadcastRoundRobinEnv(
+                list(players),
+                n_ticks,
+                chat_policy or (lambda _env, _sender: {"target_recipients": (), "default_recipient": None}),
+                broadcast_recipients,
+                step_log,
+            )
         if chat_policy is not None:
             return PolicyRoundRobinEnv(list(players), n_ticks, chat_policy, step_log)
         return RoundRobinEnv(list(players), n_ticks, step_log)
@@ -144,7 +171,7 @@ class HookOrderAgent:
     def __init__(self, log: list[Any]) -> None:
         self._log = log
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation: Any) -> None:
         self._log.append(("reset", seed))
 
     def act(self, observation: Any) -> int:
@@ -177,7 +204,7 @@ class ChattyAgent:
         self._cost = cost_ms
         self.inboxes: list[list[dict]] = []
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation: Any) -> None:
         self._turn = 0
 
     def act(self, observation: Any) -> int:
@@ -195,7 +222,7 @@ class ChattyAgent:
 class SilentAgent:
     """A chat-less, learn-less agent: only the required interface."""
 
-    def reset(self, seed: int) -> None: ...
+    def reset(self, seed: int, observation: Any) -> None: ...
 
     def act(self, observation: Any) -> int:
         return 0
@@ -290,6 +317,27 @@ def test_broadcast_reaches_every_other_player_but_not_the_sender():
 # --- chat-less agent ----------------------------------------------------------------------------
 
 
+def test_sequential_broadcast_hook_limits_delivery_to_its_live_audience():
+    agents = {
+        "player_0": ChattyAgent([[{"to": None, "text": "ring"}]]),
+        "player_1": ChattyAgent(),
+        "player_2": ChattyAgent(),
+    }
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=3,
+        broadcast_recipients=lambda _env, sender: ("player_1",) if sender == "player_0" else (),
+    )
+    run_episode(
+        entry,
+        {player: AgentPlayer(agent) for player, agent in agents.items()},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+    )
+    assert agents["player_1"].inboxes == [[{"from": "player_0", "to": None, "text": "ring", "tick": 0}]]
+    assert agents["player_2"].inboxes == [[]]
+
+
 def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
     # player_1 is chat-less; player_0 sends it a message every one of its turns. The chat-less player's
     # recorded steps carry no chat_ms, and its inbox is drained (never accumulated) on every turn,
@@ -378,7 +426,7 @@ def test_chat_that_busts_the_episode_limit_charges_the_player():
 
 def test_chat_crash_sets_failed_player():
     class CrashingChat:
-        def reset(self, seed: int) -> None: ...
+        def reset(self, seed: int, observation: Any) -> None: ...
 
         def act(self, observation: Any) -> int:
             return 0
@@ -1160,7 +1208,7 @@ def test_documented_chat_contract_runs_against_the_real_harness(tmp_path: Path):
     class DocumentedAgent:
         """Sends one targeted message on its first turn, then records the keys of each inbox item."""
 
-        def reset(self, seed: int) -> None:
+        def reset(self, seed: int, observation: Any) -> None:
             self._sent = False
 
         def act(self, observation):

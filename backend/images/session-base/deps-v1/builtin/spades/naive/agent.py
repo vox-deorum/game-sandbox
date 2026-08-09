@@ -25,7 +25,7 @@ def _rank(card: int) -> int:
 class Agent:
     """Bid a never-nil suggested count, then play the lowest legal card."""
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed, observation) -> None:
         pass
 
     def act(self, observation: Any) -> int:

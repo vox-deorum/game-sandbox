@@ -43,6 +43,7 @@ import {
 } from './live-session.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from './official-grants.js'
 import { SessionRegistry } from './registry.js'
+import { resolveSessionMaxDurationMs } from './session-duration.js'
 
 /** Where the recordings volume is mounted inside every session container. */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
@@ -300,6 +301,13 @@ export class Orchestrator {
     const externalPlayers = resolvedSeats.flatMap((seat) =>
       seat.kind === 'human' ? seat.playerIds : [],
     )
+    const maxDurationMs = resolveSessionMaxDurationMs({
+      overrideMs: this.config.sessionMaxDurationMs,
+      paceIntervalMs: meta.pace_interval_ms,
+      recommendedEpisodeTicks: meta.recommended_episode_ticks,
+      agentPlayerCount: layout.playerCount - externalPlayers.length,
+      episodeTimeoutMs: seasonRules.episode_timeout_ms,
+    })
     // One human seat may control multiple players. Its first declared player remains the chat sender.
     const designatedExternalSeat = resolvedSeats.find((seat) => seat.kind === 'human')
     const externalChatPlayer =
@@ -450,7 +458,7 @@ export class Orchestrator {
         onFinalized: (endedId) => this.onSessionFinalized(endedId),
         log: this.log,
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
-        maxDurationMs: this.config.sessionMaxDurationMs,
+        maxDurationMs,
         killGraceMs: KILL_GRACE_MS,
         revokeLlm: () => llmLease?.revoke() ?? Promise.resolve(),
         llmBlockingInFlightMs: () => llmLease?.blockingInFlightMs?.() ?? 0,

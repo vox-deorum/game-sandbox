@@ -53,7 +53,7 @@ class ScriptedAgent:
     def __init__(self, actions: list[Any]) -> None:
         self._actions = actions
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation: Any) -> None:
         self._i = 0
 
     def act(self, observation: Any) -> Any:
@@ -68,7 +68,7 @@ class MaskedSamplingAgent:
     def __init__(self, space: Any) -> None:
         self._space = space
 
-    def reset(self, seed: int) -> None:
+    def reset(self, seed: int, observation: Any) -> None:
         self._space.seed(seed)
 
     def act(self, observation: Any) -> Any:

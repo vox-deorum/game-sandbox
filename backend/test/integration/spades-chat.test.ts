@@ -5,8 +5,8 @@
  * lane rather than the harness's own (mocked) unit tests:
  *
  * - A real-driver Spades session seating the `daredevil` (broadcast) and `signaler` (targeted)
- *   example agents produces messages that appear both in a spectator's streamed lines (the broadcast)
- *   and in the full recording (broadcast and targeted alike).
+ *   example agents produces messages that appear both in a watcher's streamed lines and in the full
+ *   recording.
  * - A `chat` command frame written into the container's stdin by the owner of a human-mode session
  *   is routed by the harness and lands in the recording, attributed to the human player.
  * - The built-in `/opt/agents/builtin/spades/naive` scripted baseline loads and plays a complete game when
@@ -84,6 +84,7 @@ function composeExampleTree(exampleName: string): string {
   cpSync(BASE_SANDBOX, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
   cpSync(HARNESS_SOURCE, join(dir, 'sandbox', 'harness'), { recursive: true, filter: skipPycache })
   for (const helper of [
+    'card_types.py',
     'card_utils.py',
     'card_spaces.py',
     'shared_modules.py',
@@ -200,9 +201,8 @@ describe('Spades chat (Docker)', () => {
       'dev-user',
     )
 
-    // A spectator connects before the game finishes, so its streamed lines carry the broadcast
-    // (spectators see broadcasts; a targeted message is withheld from a spectator's stream but is
-    // still in the recording, per the relay's visibility rule).
+    // A watcher connects before the game finishes, so its streamed lines carry every delivered
+    // message, including targeted lines, under the same visibility rule as replay.
     const spectator = await WsClient.connect(
       `${stack.wsBase}${wsPath}`,
       (await stack.users.headersFor('alice')).cookie,
@@ -217,6 +217,7 @@ describe('Spades chat (Docker)', () => {
       )
       const streamedMessages = spectator.states().flatMap((state) => state.messages ?? [])
       expect(streamedMessages).toContainEqual({ from: 'player_0', to: null, text: NIL_WARNING })
+      expect(streamedMessages.some((m) => m.to !== null && m.text.startsWith('strong:'))).toBe(true)
 
       const { states } = await fetchRecording(id)
       const messages = allMessages(states)
@@ -252,6 +253,7 @@ describe('Spades chat (Docker)', () => {
           seat_1: { kind: 'submission', submission_id: opponent },
         },
         seed: 3,
+        human_timeout_ms: 200,
       },
       'dev-user',
     )
@@ -261,6 +263,11 @@ describe('Spades chat (Docker)', () => {
       (await stack.users.headersFor('dev-user')).cookie,
     )
     try {
+      await owner.waitFor(
+        () => owner.envelopes('session').some((frame) => frame.status === 'running'),
+        15_000,
+      )
+      owner.send({ kind: 'clock', player: 'player_0', running: true })
       // The active human policy identifies the designated sender. The harness admits the frame at
       // its next boundary, independent of the state that caused the browser to render this policy.
       await owner.waitFor(
