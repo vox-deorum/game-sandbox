@@ -39,6 +39,10 @@ describe('StyleguidePage', () => {
     ]) {
       expect(screen.getByRole('heading', { name: section })).toBeInTheDocument()
     }
+    expect(screen.getByText('An info card for short guidance or summaries.')).toHaveClass(
+      'ui-card',
+      'info',
+    )
 
     await fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }))
     expect((await screen.findByRole('dialog')).querySelector('.ui-dialog-actions')).not.toBeNull()

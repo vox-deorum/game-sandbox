@@ -67,7 +67,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiAvatar` | A compact or profile-sized user image with an accessible initial-letter fallback. |
 | `UiBadge` | Small text-bearing tags. Always text, never a bare glyph or color-only dot. |
 | `UiStatusBadge` | Live status: a colored dot **paired with a text label** that carries the meaning. |
-| `UiCard` | A bordered surface (optional padding, optional interactive hover). Layout inside is the caller's. |
+| `UiCard` | A bordered surface (optional padding, optional interactive hover). The `info` variant gives short guidance and summaries a stronger border and background. Layout inside is the caller's. |
 | `UiField` + `UiInput` + `UiTextarea` | Labelled single-line and multiline fields with automatic `id`/`aria-describedby` wiring for hint and error text. |
 | `UiSelect` | A native `<select>` styled to match `UiInput`, paired with `UiField` for label wiring. Options render through the default slot. |
 | `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |

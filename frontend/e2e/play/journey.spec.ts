@@ -26,6 +26,8 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
     has: page.getByRole('heading', { name: 'Open for Play: Playground' }),
   })
   const changes = playSection.getByRole('group', { name: 'Settings for play season Playground' })
+  await expect(changes).toHaveClass(/info/)
+  await expect(changes.getByText('Settings:', { exact: true })).toHaveCount(0)
   await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()
   await expect(changes.getByText('100 → 90', { exact: true })).toBeVisible()
   await expect(changes.getByText('Decision limit', { exact: true })).toBeVisible()
@@ -135,6 +137,8 @@ test('shows submission-season changes and downloads its local setup file', async
   const changes = submissionSection.locator('form').getByRole('group', {
     name: 'Settings for submission season Playground',
   })
+  await expect(changes).toHaveClass(/info/)
+  await expect(changes.getByText('Settings:', { exact: true })).toHaveCount(0)
   await expect(changes.getByText('Pipe gap', { exact: true })).toBeVisible()
   await expect(changes.getByText('100 → 90', { exact: true })).toBeVisible()
   await expect(changes.getByText('Decision limit', { exact: true })).toBeVisible()

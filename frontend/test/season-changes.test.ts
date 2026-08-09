@@ -19,7 +19,7 @@ const changed: SeasonSettings = {
 }
 
 describe('SeasonChanges', () => {
-  it('shows each changed setting as a default-to-season pair', () => {
+  it('shows each changed setting as a default-to-season pair in an info box', () => {
     render(SeasonChanges, {
       props: {
         meta: flappyMeta(),
@@ -29,8 +29,9 @@ describe('SeasonChanges', () => {
       },
     })
 
-    expect(screen.getByText('Settings:')).toBeInTheDocument()
     const changes = screen.getByRole('group', { name: 'Settings for season Week 4' })
+    expect(changes).toHaveClass('ui-card', 'info')
+    expect(within(changes).queryByText('Settings:')).toBeNull()
     expect(within(changes).getByText('Pipe gap')).toBeInTheDocument()
     expect(within(changes).getByText('100 → 90')).toBeInTheDocument()
     expect(within(changes).getByText('Decision limit')).toBeInTheDocument()
@@ -52,8 +53,9 @@ describe('SeasonChanges', () => {
       },
     })
 
-    expect(screen.getByText('This season uses the default settings.')).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Settings for season Week 4' })).toBeInTheDocument()
+    const changes = screen.getByRole('group', { name: 'Settings for season Week 4' })
+    expect(changes).toHaveClass('ui-card', 'info')
+    expect(within(changes).getByText('This season uses the default settings.')).toBeInTheDocument()
   })
 
   it('names an unlabelled season by its short id in the group label', () => {

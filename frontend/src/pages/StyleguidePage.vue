@@ -178,6 +178,7 @@ const tooltipSettings = [
           <div class="card-demo-thumb" />
           <p class="card-demo-body">Unpadded card with edge-to-edge content.</p>
         </UiCard>
+        <UiCard variant="info">An info card for short guidance or summaries.</UiCard>
         <UiCard interactive>Interactive card (hover me).</UiCard>
       </div>
     </section>

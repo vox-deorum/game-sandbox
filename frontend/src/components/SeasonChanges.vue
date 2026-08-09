@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import type { ResolvedSeasonSettings } from '../api/client.js'
 import { formatSeasonName } from '../lib/format.js'
 import { describeSeasonChanges } from '../lib/season-settings.js'
+import UiCard from './ui/UiCard.vue'
 
 const props = defineProps<{
   meta: EnvironmentMeta
@@ -22,8 +23,7 @@ const groupLabel = computed(() => `Settings for ${props.context} ${formatSeasonN
 </script>
 
 <template>
-  <div class="season-settings" role="group" :aria-label="groupLabel">
-    <span class="season-settings-label">Settings:</span>
+  <UiCard variant="info" class="season-settings" role="group" :aria-label="groupLabel">
     <ul v-if="changes.length > 0" class="season-changes">
       <li v-for="change in changes" :key="change.label">
         <span class="season-change-visual" aria-hidden="true">
@@ -34,7 +34,7 @@ const groupLabel = computed(() => `Settings for ${props.context} ${formatSeasonN
       </li>
     </ul>
     <p v-else class="season-changes-empty">This season uses the default settings.</p>
-  </div>
+  </UiCard>
 </template>
 
 <style scoped>
@@ -47,14 +47,11 @@ const groupLabel = computed(() => `Settings for ${props.context} ${formatSeasonN
   font-size: var(--text-sm);
 }
 
-.season-settings-label {
-  font-weight: 600;
-}
-
 .season-changes {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;

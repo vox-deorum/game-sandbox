@@ -163,7 +163,7 @@ describe('EnvironmentPage', () => {
     await vi.waitFor(() => expect(getSeasonSettings).toHaveBeenCalledOnce())
     rejectSettings(new Error('settings unavailable'))
     await flushPromises()
-    expect(screen.queryByText('Settings:')).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Settings for play season Playground' })).toBeNull()
     expect(screen.queryByText('This season uses the default settings.')).toBeNull()
   })
 
@@ -189,7 +189,7 @@ describe('EnvironmentPage', () => {
 
     await screen.findByRole('button', { name: 'Play' })
     await flushPromises()
-    expect(screen.queryByText('Settings:')).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Settings for play season Playground' })).toBeNull()
     expect(screen.queryByText('This season uses the default settings.')).toBeNull()
   })
 
