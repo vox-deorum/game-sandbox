@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ac8df" />
+      <stop offset="1" stop-color="#d5e6c4" />
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#sky)" />
+  <path d="M0 110 C62 90 99 126 160 111 S255 88 320 108 V180 H0Z" fill="#6e9d56" />
+  <path d="M158 180 V78 M158 110 L105 49 M158 110 L211 49" fill="none" stroke="#5d98ae" stroke-width="17" />
+  <path d="M0 131 H320" stroke="#ba9b6e" stroke-width="15" />
+  <g fill="#f0d6a5" stroke="#725b40" stroke-width="3">
+    <path d="M33 108 H69 V132 H33Z M29 108 L51 87 L73 108Z" />
+    <path d="M244 101 H284 V129 H244Z M240 101 L264 78 L288 101Z" />
+  </g>
+  <g fill="#426f36">
+    <circle cx="92" cy="76" r="20" />
+    <circle cx="216" cy="73" r="22" />
+    <circle cx="298" cy="61" r="18" />
+  </g>
+  <text x="160" y="163" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="700" fill="#fff7dc">DAYS AT THREE BRANCHES</text>
+</svg>

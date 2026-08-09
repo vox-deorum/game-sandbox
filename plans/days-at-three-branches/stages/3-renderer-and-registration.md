@@ -1,12 +1,12 @@
-# Step 3: Renderer, collision overlay, registration, watch and replay
+# Step 3: Renderer, collision overlay, watch and replay
 
 Status: planned.
 
-Part of [the plan](../README.md). This is build-order step 3: the first visible artifact, and the first production exercise of the platform's simultaneous frontend paths. The hands-on surface is a live match watched in the browser, its replay scrubbed to exact frames, and `npm run play` showing a local watch-mode day.
+Part of [the plan](../README.md). This is build-order step 3: it replaces step 2's minimal registered renderer stub with the real browser renderer and watch surface, and it is the first production exercise of the platform's simultaneous frontend paths. The hands-on surface is a live match watched in the browser, its replay scrubbed to exact frames, and `npm run play` showing a local watch-mode day.
 
 ## Why this is its own seam
 
-The collision overlay is a permanent viewer feature, not scaffolding: toggled on, it shows the game at collision truth, which is what students need when their villager gets stuck. Shipping the renderer and the overlay before any art proves both complete and seek-safe, registers the environment so every later step works against the real catalog, and gives step 4 the tool it uses to iterate on village generation visually.
+The collision overlay is a permanent viewer feature, not scaffolding: toggled on, it shows the game at collision truth, which is what students need when their villager gets stuck. Shipping the renderer and the overlay before any art proves both complete and seek-safe, turns the registered stub into the real watch surface, and gives step 4 the tool it uses to iterate on village generation visually.
 
 ## What to build
 
@@ -16,7 +16,7 @@ Tile-map rendering joins the shared renderer base under `frontend/src/renderers/
 
 ### The renderer and its collision overlay
 
-The renderer package at `environments/three_branches/renderer/` with a `PixiRenderer` subclass and a thumbnail. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset, from packed ground-grid rows the overlay carries. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a watcher sees every delivered NPC message live, the consumer test for step 1's visibility rule.
+The renderer package at `environments/three_branches/renderer/` replaces the stage 2 stub with a `PixiRenderer` subclass and its thumbnail. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset, from packed ground-grid rows the overlay carries. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a watcher sees every delivered NPC message live, the consumer test for step 1's visibility rule.
 
 ### Session limits
 
@@ -35,4 +35,4 @@ A pinned fixture recording on the step 2 fixture village, with its generator scr
 
 ## Done when
 
-A live match renders in the browser, its replay scrubs to exact frames, `npm run play` shows a local watch-mode day, the bare full browser e2e suite passes, and the catalog lists the environment.
+A live match renders in the browser, its replay scrubs to exact frames, `npm run play` shows a local watch-mode day, and the bare full browser e2e suite passes.

@@ -139,8 +139,12 @@ def test_skirmish_crane_is_installable_and_discovered_as_an_environment():
     assert not _envs._is_ignored("skirmish_crane", patterns)
     assert "skirmish_crane" in recognized_names
     assert "skirmish_crane" in discovered_names
-    assert 'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades"]' in pyproject
+    assert (
+        'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades", '
+        '"three_branches"]' in pyproject
+    )
     assert 'skirmish_crane = "skirmish_crane:ENTRY"' in pyproject
+    assert 'three_branches = "three_branches:ENTRY"' in pyproject
 
 
 def test_source_import_replaces_a_cached_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

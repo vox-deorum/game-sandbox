@@ -484,5 +484,165 @@
     "step_limit_ms": 1000,
     "stepping": "sequential",
     "view_interval_ms": 3000
+  },
+  {
+    "builtin_agents": [
+      {
+        "label": "Naive",
+        "name": "naive"
+      },
+      {
+        "label": "Scripted visitor",
+        "name": "scripted_visitor"
+      }
+    ],
+    "description": "A seeded village day in which separately running NPCs make one village feel alive around a human-played visitor.",
+    "display_name": "Days at Three Branches",
+    "env_id": "three_branches",
+    "episode_limit_ms": 120000,
+    "human_pause": "session",
+    "human_players": [
+      "player_0"
+    ],
+    "human_timeout_ms": null,
+    "layout": {
+      "kind": "seat_plans",
+      "plans": [
+        {
+          "key": "cast_5",
+          "seats": [
+            {
+              "players": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            },
+            {
+              "players": [
+                0
+              ],
+              "restricted_builtin": "scripted_visitor"
+            }
+          ],
+          "title": "Five villagers"
+        },
+        {
+          "key": "cast_10",
+          "seats": [
+            {
+              "players": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10
+              ]
+            },
+            {
+              "players": [
+                0
+              ],
+              "restricted_builtin": "scripted_visitor"
+            }
+          ],
+          "title": "Ten villagers"
+        }
+      ]
+    },
+    "live_interval_ms": null,
+    "llm": true,
+    "message_cap": 200,
+    "messaging": true,
+    "pace_interval_ms": 250,
+    "parameters": [
+      {
+        "choices": [
+          {
+            "label": "Five villagers",
+            "value": "cast_5"
+          },
+          {
+            "label": "Ten villagers",
+            "value": "cast_10"
+          }
+        ],
+        "default": "cast_5",
+        "description": "Seat-to-player layout for each game.",
+        "name": "seat_plan",
+        "title": "Seat plan",
+        "type": "choice"
+      },
+      {
+        "default": false,
+        "description": "Enables the ruleset's day phases.",
+        "name": "daynight",
+        "title": "Day and night",
+        "type": "bool"
+      }
+    ],
+    "presets": [
+      {
+        "name": "season_1",
+        "title": "Season 1",
+        "values": {
+          "daynight": false,
+          "seat_plan": "cast_5"
+        }
+      },
+      {
+        "name": "season_2",
+        "title": "Season 2",
+        "values": {
+          "daynight": false,
+          "seat_plan": "cast_10"
+        }
+      },
+      {
+        "name": "season_3",
+        "title": "Season 3",
+        "values": {
+          "daynight": false,
+          "seat_plan": "cast_10"
+        }
+      },
+      {
+        "name": "season_4",
+        "title": "Season 4",
+        "values": {
+          "daynight": true,
+          "seat_plan": "cast_10"
+        }
+      },
+      {
+        "name": "season_5",
+        "title": "Season 5",
+        "values": {
+          "daynight": true,
+          "seat_plan": "cast_10"
+        }
+      },
+      {
+        "name": "season_6",
+        "title": "Season 6",
+        "values": {
+          "daynight": true,
+          "seat_plan": "cast_10"
+        }
+      }
+    ],
+    "recommended_episode_ticks": 1200,
+    "renderer": "three-branches-village",
+    "seat_order_matters": false,
+    "step_limit_ms": 250,
+    "stepping": "simultaneous",
+    "view_interval_ms": 250
   }
 ]

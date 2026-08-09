@@ -370,6 +370,7 @@ def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_c
         ("spades", "counter"),
         ("spades", "daredevil"),
         ("spades", "signaler"),
+        ("three_branches", "sweeper"),
     ]
 
 

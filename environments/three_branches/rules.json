@@ -1,0 +1,39 @@
+{
+  "emotes": [
+    "wave",
+    "nod",
+    "shake_head",
+    "point",
+    "laugh",
+    "shrug",
+    "startle",
+    "sleep",
+    "sweep"
+  ],
+  "ground": [
+    { "token": "road", "code": "r", "speed": 1.0 },
+    { "token": "open", "code": "o", "speed": 0.75 },
+    { "token": "field", "code": "f", "speed": 0.5 },
+    { "token": "reeds", "code": "e", "speed": 0.5 },
+    { "token": "water", "code": "w", "speed": 0.0, "impassable": true }
+  ],
+  "profile": {
+    "body_radius": 0.4,
+    "vision_degrees": 120.0,
+    "vision_range": 12.0,
+    "hearing_range": 6.0,
+    "talk_range": 3.0,
+    "shout_range": 15.0,
+    "prop_reach": 1.5,
+    "running_threshold": 0.5
+  },
+  "phases": [
+    { "name": "dawn", "start": 1, "end": 120 },
+    { "name": "morning", "start": 121, "end": 480 },
+    { "name": "midday", "start": 481, "end": 720 },
+    { "name": "evening", "start": 721, "end": 960 },
+    { "name": "night", "start": 961, "end": 1200 }
+  ],
+  "off_phase": "day",
+  "day_ticks": 1200
+}
