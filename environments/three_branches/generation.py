@@ -1,17 +1,36 @@
-"""Seeded village generation: the terrain layer over fixture placements until later layers land."""
+"""Seeded village generation: the terrain and site layers over fixture placements."""
 
 from __future__ import annotations
 
 import itertools
 import math
+from dataclasses import dataclass
 from random import Random
 
 from .fixture import FIXTURE_VILLAGE
-from .geometry import Point, add, distance, polyline_distance, segments_intersect, subtract
-from .layout import WORLD_SIZE, Layout, Polyline
+from .geometry import (
+    Point,
+    add,
+    distance,
+    distance_to_rectangle,
+    distance_to_segment,
+    polyline_distance,
+    rectangle_corners,
+    segments_intersect,
+    subtract,
+)
+from .layout import WORLD_SIZE, Building, Doorway, Layout, Polyline
+
+type _Polygons = tuple[tuple[Point, ...], ...]
+type _Segment = tuple[Point, Point]
 
 MAX_REDRAWS = 64
 MAX_POLYLINE_POINTS = 35
+BUILDING_GAP = 2.0
+WATER_CLEARANCE = 2.0
+BOUNDARY_MARGIN = 2.0
+HOME_CLUSTER_RADIUS = 7.0
+HOME_CLUSTER_SEPARATION = 32.0
 
 _OCTAVE_SPACINGS = (25.0, 12.5, 6.25)
 _WALK_STEP = 2.0
@@ -23,6 +42,18 @@ _MOUTH_GAP_HIGH = 32.0
 _SIBLING_CLEARANCE = 1.0
 _REPEL_RADIUS = 12.0
 _REPEL_WEIGHT = 1.5
+_PLACEMENT_BUDGET = 300
+_ANCHOR_BUDGET = 150
+_HOME_SIZE = (6.0, 5.0)
+_INN_SIZE = (10.0, 8.0)
+_SHED_SIZE = (6.0, 6.0)
+_SPAWN_CLEARANCE = 2.0
+_PLAZA_CLEARANCE = 5.0
+_WEDGE_HALF_OPENING = 4.0
+_CLUSTER_RADIUS_LOW = 6.5
+_CLUSTER_RING_DEPTH = 2.0
+_CLUSTER_WATER_MIN = 12.0
+_WEDGE_SLIDE_LIMIT = 36.0
 
 
 def _fade(t: float) -> float:
@@ -262,7 +293,7 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
     trunk_course = _walk(terrain, entry, fork, weights, trunk_heading)
     if trunk_course is None:
         return None
-    trunk = Polyline(_resample(trunk_course), rng.uniform(4.0, 6.0))
+    trunk = Polyline(_resample(trunk_course), rng.uniform(5.0, 7.0))
     if _self_intersects(trunk.points):
         return None
     channels: list[Polyline] = [trunk]
@@ -372,37 +403,403 @@ def _terraces(
     return tuple(terraces)
 
 
-def _terrain_layer(
-    rng: Random,
-) -> tuple[tuple[Polyline, ...], tuple[tuple[Point, ...], ...], tuple[tuple[Point, ...], ...]] | None:
-    """The terrain layer: fields, waterways, reed flats, and terraces, or None to redraw."""
+def _terrain_layer(rng: Random) -> tuple[_Terrain, tuple[Polyline, ...], _Polygons, _Polygons] | None:
+    """The terrain layer: the land, its waterways, its field terraces, and its reed flats.
+
+    The terrain comes back with the parts because every later layer scores against the same land.
+    Returns None to redraw the village.
+    """
     terrain = _Terrain(rng)
     channels = _waterways(terrain, rng)
     if channels is None:
         return None
-    return channels, _terraces(terrain, rng, channels), _reed_banks(terrain, rng, channels)
+    return terrain, channels, _terraces(terrain, rng, channels), _reed_banks(terrain, rng, channels)
+
+
+@dataclass(frozen=True)
+class _Sites:
+    """The settlement's anchors and its buildings.
+
+    Only the buildings are emitted now. The plaza, the corridor line, the bell, market, stall, and
+    board spots, and the cluster centers are what the road network and accessories layers build on.
+    """
+
+    plaza: Point
+    corridor_y: float
+    bell: Point
+    market: Point
+    stalls: tuple[Point, ...]
+    board: Point
+    clusters: tuple[Point, ...]
+    buildings: tuple[Building, ...]
+
+
+@dataclass(frozen=True)
+class _Clearances:
+    """The fixed things every building candidate has to stand clear of."""
+
+    channels: tuple[Polyline, ...]
+    fork: Point
+    cap_radius: float
+    plaza: Point
+
+
+def _drawn_side(rng: Random) -> float:
+    """One side of the corridor, north or south."""
+    return 1.0 if rng.random() < 0.5 else -1.0
+
+
+def _polar(rng: Random, low: float, high: float) -> Point:
+    """A drawn offset vector, radius first and then angle."""
+    radius = rng.uniform(low, high)
+    angle = math.radians(rng.uniform(0.0, 360.0))
+    return (radius * math.cos(angle), radius * math.sin(angle))
+
+
+def _midpoint(first: Point, second: Point) -> Point:
+    return ((first[0] + second[0]) / 2.0, (first[1] + second[1]) / 2.0)
+
+
+def _edges(corners: tuple[Point, ...]) -> tuple[_Segment, ...]:
+    return tuple(zip(corners, (*corners[1:], corners[0]), strict=True))
+
+
+def _water_gap(point: Point, channel: Polyline) -> float:
+    """The distance from a point to a channel's water edge."""
+    return polyline_distance(point, channel.points) - channel.width / 2.0
+
+
+def _inside_frame(point: Point, margin: float) -> bool:
+    return all(margin <= value <= WORLD_SIZE - margin for value in point)
+
+
+def _well_plaza(rng: Random, channels: tuple[Polyline, ...]) -> Point | None:
+    """Slide out from the fork along a crook bisector until the wedge between its channels opens.
+
+    A crook is the wedge between an adjacent channel pair, west with center or center with east,
+    and which one is tried first is drawn. Returns None when neither crook ever opens.
+    """
+    fork = channels[0].points[-1]
+    cap_radius = max(channel.width for channel in channels) / 2.0
+    crooks = ((channels[1], channels[2]), (channels[2], channels[3]))
+    for first, second in crooks if rng.random() < 0.5 else crooks[::-1]:
+        left = _unit(subtract(first.points[2], fork))
+        right = _unit(subtract(second.points[2], fork))
+        bisector = _unit((left[0] + right[0], left[1] + right[1]))
+        if bisector == (0.0, 0.0):
+            continue
+        reach = cap_radius + 3.0
+        while reach <= _WEDGE_SLIDE_LIMIT:
+            candidate = add(fork, bisector, reach)
+            opening = min(_water_gap(candidate, first), _water_gap(candidate, second))
+            if opening >= _WEDGE_HALF_OPENING and _inside_frame(candidate, BOUNDARY_MARGIN):
+                return candidate
+            reach += 1.0
+    return None
+
+
+def _padded_gap(point: Point) -> float:
+    """The room a point has around the fixture objects still padding the layout.
+
+    This measure leaves with the padding, like the placement rule that keeps buildings off those
+    objects. The corridor runs straight through the fixture's market and road dressing, so an
+    anchor that ignored them would spend its whole placement budget inside a prop field.
+    """
+    return min(
+        itertools.chain(
+            (
+                distance(point, prop.position) - math.hypot(*prop.footprint) / 2.0
+                for prop in FIXTURE_VILLAGE.props
+            ),
+            (distance(point, item.position) - item.radius for item in FIXTURE_VILLAGE.scenery),
+            (distance(point, FIXTURE_VILLAGE.spawn),),
+        )
+    )
+
+
+def _corridor_anchor(
+    rng: Random,
+    channels: tuple[Polyline, ...],
+    corridor_y: float,
+    band: tuple[float, float],
+    size: tuple[float, float],
+) -> Point | None:
+    """Draw a spot off one side of the corridor that already has room for its building.
+
+    The pre-clearance keeps the placement budget off anchors that could never work: the building's
+    longer side plus the bank margin away from the water, its half diagonal away from the frame and
+    from the padded fixture objects. Returns None when the anchor budget runs out.
+    """
+    half_diagonal = math.hypot(size[0], size[1]) / 2.0
+    room = max(size) / 2.0 + WATER_CLEARANCE
+    for _ in range(_ANCHOR_BUDGET):
+        x = rng.uniform(*band)
+        side = _drawn_side(rng)
+        candidate = (x, corridor_y + side * rng.uniform(6.0, 10.0))
+        if (
+            all(_water_gap(candidate, channel) >= room for channel in channels)
+            and _inside_frame(candidate, BOUNDARY_MARGIN + half_diagonal)
+            and _padded_gap(candidate) >= half_diagonal
+        ):
+            return candidate
+    return None
+
+
+def _home_clusters(
+    rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...], plaza: Point
+) -> tuple[tuple[Point, ...], tuple[float, ...]] | None:
+    """Seed two or three home clusters on the best-scoring bank regions.
+
+    A fixed 6 m grid is scored on bank proximity, flatness, and dryness, and the coarse channel
+    polylines keep the water term cheap. A grid point only enters the running when its homes have a
+    ring to stand on, clear of the water, the plaza clearing, and the padded fixture objects, so a
+    cluster does not seed where its homes cannot follow. Scoring takes nothing from the stream, so
+    only the cluster count and the per-cluster radii move it. Returns None when too few separated
+    seeds are found.
+    """
+    coarse = tuple(((*channel.points[::3], channel.points[-1]), channel.width / 2.0) for channel in channels)
+    ring = HOME_CLUSTER_RADIUS + BUILDING_GAP
+    scored: list[tuple[float, Point]] = []
+    for x in range(12, 89, 6):
+        for y in range(12, 89, 6):
+            point = (float(x), float(y))
+            water = min(polyline_distance(point, points) - half for points, half in coarse)
+            if water < _CLUSTER_WATER_MIN:
+                continue
+            if distance(point, plaza) < HOME_CLUSTER_RADIUS + _PLAZA_CLEARANCE or _padded_gap(point) < ring:
+                continue
+            bank = 1.0 - min(abs(water - 10.0) / 12.0, 1.0)
+            flat = 1.0 - min(math.hypot(*terrain.downhill(point)) * 25.0, 1.0)
+            dry = 1.0 - terrain.moisture(point)
+            scored.append((1.2 * bank + 0.8 * flat + 0.6 * dry, point))
+    scored.sort(key=lambda entry: (-entry[0], entry[1]))
+    count = rng.choice((2, 3))
+    centers: list[Point] = []
+    for _score, point in scored:
+        if len(centers) == count:
+            break
+        if all(distance(point, taken) >= HOME_CLUSTER_SEPARATION for taken in centers):
+            centers.append(point)
+    if len(centers) < count:
+        return None
+    return tuple(centers), tuple(rng.uniform(_CLUSTER_RADIUS_LOW, HOME_CLUSTER_RADIUS) for _ in centers)
+
+
+def _clear_of_water(
+    center: Point,
+    size: tuple[float, float],
+    rotation: float,
+    corners: tuple[Point, ...],
+    edges: tuple[_Segment, ...],
+    channels: tuple[Polyline, ...],
+) -> bool:
+    """Whether a rectangle keeps the bank margin from every channel.
+
+    A channel whose centerline is a rectangle diagonal away needs no further work, so the exact
+    crossing and distance tests only run on the water that is actually nearby.
+    """
+    half_diagonal = math.hypot(size[0], size[1]) / 2.0
+    for channel in channels:
+        margin = channel.width / 2.0 + WATER_CLEARANCE
+        if _water_gap(center, channel) >= half_diagonal + WATER_CLEARANCE:
+            continue
+        water = tuple(itertools.pairwise(channel.points))
+        if any(segments_intersect(segment, edge) for segment in water for edge in edges):
+            return False
+        if any(
+            distance_to_segment(corner, start, end) < margin for corner in corners for start, end in water
+        ):
+            return False
+        if any(distance_to_rectangle(point, center, *size, rotation) < margin for point in channel.points):
+            return False
+    return True
+
+
+def _clear_of_padding(center: Point, size: tuple[float, float], rotation: float) -> bool:
+    """Whether a rectangle keeps clear of the fixture objects still padding the layout.
+
+    This rule leaves with the padding: the accessories layer replaces these objects, and until then
+    the padded suites derive their standing points from them.
+    """
+    if any(
+        distance_to_rectangle(prop.position, center, *size, rotation)
+        < math.hypot(*prop.footprint) / 2.0 + BUILDING_GAP
+        for prop in FIXTURE_VILLAGE.props
+    ):
+        return False
+    if any(
+        distance_to_rectangle(item.position, center, *size, rotation) < item.radius + BUILDING_GAP
+        for item in FIXTURE_VILLAGE.scenery
+    ):
+        return False
+    return distance_to_rectangle(FIXTURE_VILLAGE.spawn, center, *size, rotation) >= _SPAWN_CLEARANCE
+
+
+def _clears(
+    center: Point,
+    size: tuple[float, float],
+    rotation: float,
+    clearances: _Clearances,
+    placed: list[Building],
+) -> bool:
+    """Whether a candidate rectangle clears the frame, the water, the clearings, and every solid."""
+    width, depth = size
+    corners = rectangle_corners(center, width, depth, rotation)
+    if not all(_inside_frame(corner, BOUNDARY_MARGIN) for corner in corners):
+        return False
+    cap = distance_to_rectangle(clearances.fork, center, width, depth, rotation)
+    if cap < clearances.cap_radius + WATER_CLEARANCE:
+        return False
+    if distance_to_rectangle(clearances.plaza, center, width, depth, rotation) < _PLAZA_CLEARANCE:
+        return False
+    edges = _edges(corners)
+    if not _clear_of_water(center, size, rotation, corners, edges, clearances.channels):
+        return False
+    for other in placed:
+        neighbor = (other.center, other.width, other.depth, other.rotation)
+        other_corners = rectangle_corners(*neighbor)
+        other_edges = _edges(other_corners)
+        if any(segments_intersect(edge, other_edge) for edge in edges for other_edge in other_edges):
+            return False
+        if any(distance_to_rectangle(corner, *neighbor) < BUILDING_GAP for corner in corners):
+            return False
+        if any(
+            distance_to_rectangle(corner, center, width, depth, rotation) < BUILDING_GAP
+            for corner in other_corners
+        ):
+            return False
+    return _clear_of_padding(center, size, rotation)
+
+
+def _draw_placement(
+    rng: Random,
+    size: tuple[float, float],
+    anchor: Point,
+    reach: tuple[float, float],
+    spin: tuple[float, float],
+    clearances: _Clearances,
+    placed: list[Building],
+) -> tuple[Point, float] | None:
+    """Draw centers and rotations around an anchor until one clears, or None when the budget runs out."""
+    for _ in range(_PLACEMENT_BUDGET):
+        center = add(anchor, _polar(rng, *reach))
+        rotation = rng.uniform(*spin) % 360.0
+        if _clears(center, size, rotation, clearances, placed):
+            return center, rotation
+    return None
+
+
+def _doorway(center: Point, size: tuple[float, float], rotation: float, aim: Point) -> Doorway:
+    """Open the wall whose middle faces the aim point, provisionally until the road network lands."""
+    edges = _edges(rectangle_corners(center, size[0], size[1], rotation))
+    start, end = min(edges, key=lambda edge: distance(_midpoint(*edge), aim))
+    return Doorway(_midpoint(start, end))
+
+
+def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...]) -> _Sites | None:
+    """Anchor the settlement on the terrain and stand its buildings, or None to redraw.
+
+    The stream is consumed in a fixed order: the well plaza, the corridor, the west stretch's shed
+    anchor and bell spot, the market center with its five stall spots and the board spot, the inn
+    anchor, the home clusters (the count, then one radius each), and then the buildings, inn and
+    shed first so the corridor keeps its landmarks, then home_0 through home_4 around their
+    clusters. Homes take their clusters round robin.
+    """
+    plaza = _well_plaza(rng, channels)
+    if plaza is None:
+        return None
+    fork = channels[0].points[-1]
+    corridor_y = fork[1] - rng.uniform(14.0, 24.0)
+
+    shed_anchor = _corridor_anchor(rng, channels, corridor_y, (10.0, 30.0), _SHED_SIZE)
+    if shed_anchor is None:
+        return None
+    bell_x = rng.uniform(8.0, 26.0)
+    bell_side = _drawn_side(rng)
+    bell = (bell_x, corridor_y + bell_side * rng.uniform(2.0, 4.0))
+
+    market = (rng.uniform(42.0, 58.0), corridor_y)
+    stall_side = _drawn_side(rng)
+    stalls: list[Point] = []
+    for _ in range(5):
+        stall_x = market[0] + rng.uniform(-10.0, 10.0)
+        stalls.append((stall_x, corridor_y + stall_side * rng.uniform(2.5, 5.5)))
+        stall_side = -stall_side
+    host = stalls[rng.randrange(5)]
+    board = (host[0] + rng.uniform(-2.0, 2.0), host[1] + rng.uniform(-2.0, 2.0))
+
+    inn_anchor = _corridor_anchor(rng, channels, corridor_y, (70.0, 90.0), _INN_SIZE)
+    if inn_anchor is None:
+        return None
+    seeded = _home_clusters(rng, terrain, channels, plaza)
+    if seeded is None:
+        return None
+    clusters, radii = seeded
+
+    clearances = _Clearances(channels, fork, max(channel.width for channel in channels) / 2.0, plaza)
+    placed: list[Building] = []
+    corridor_buildings: list[Building] = []
+    for identifier, size, anchor in (("inn", _INN_SIZE, inn_anchor), ("shed", _SHED_SIZE, shed_anchor)):
+        placement = _draw_placement(rng, size, anchor, (0.0, 4.0), (-15.0, 15.0), clearances, placed)
+        if placement is None:
+            return None
+        center, rotation = placement
+        aim = (center[0], corridor_y)
+        building = Building(
+            identifier, identifier, center, *size, rotation, _doorway(center, size, rotation, aim)
+        )
+        placed.append(building)
+        corridor_buildings.append(building)
+
+    homes: list[Building] = []
+    for index in range(5):
+        cluster = clusters[index % len(clusters)]
+        radius = radii[index % len(clusters)]
+        spread = (radius - _CLUSTER_RING_DEPTH, radius)
+        placement = _draw_placement(rng, _HOME_SIZE, cluster, spread, (0.0, 360.0), clearances, placed)
+        if placement is None:
+            return None
+        center, rotation = placement
+        doorway = _doorway(center, _HOME_SIZE, rotation, cluster)
+        home = Building(f"home_{index}", "home", center, *_HOME_SIZE, rotation, doorway)
+        placed.append(home)
+        homes.append(home)
+
+    return _Sites(
+        plaza=plaza,
+        corridor_y=corridor_y,
+        bell=bell,
+        market=market,
+        stalls=tuple(stalls),
+        board=board,
+        clusters=clusters,
+        buildings=(*homes, *corridor_buildings),
+    )
 
 
 def build_village(seed: int) -> Layout:
-    """Build the seeded village: generated terrain padded with fixture placements.
+    """Build the seeded village: generated terrain and sites padded with fixture placements.
 
-    The sites, road network, and accessories layers still come from the fixture. Bridges stay
-    empty because the layout splits water banks around every deck, so a fixture deck overlapping
-    generated water would punch a phantom gap in a bank.
+    The road network and accessories layers still come from the fixture. Bridges stay empty because
+    the layout splits water banks around every deck, so a fixture deck overlapping generated water
+    would punch a phantom gap in a bank.
     """
     rng = Random(f"{seed}:village")
     for _ in range(MAX_REDRAWS):
-        parts = _terrain_layer(rng)
-        if parts is None:
+        land = _terrain_layer(rng)
+        if land is None:
             continue
-        channels, fields, reed_banks = parts
+        terrain, channels, fields, reed_banks = land
+        sites = _sites_layer(rng, terrain, channels)
+        if sites is None:
+            continue
         try:
             return Layout(
                 channels=channels,
                 road=FIXTURE_VILLAGE.road,
                 footpaths=FIXTURE_VILLAGE.footpaths,
                 bridges=(),
-                buildings=FIXTURE_VILLAGE.buildings,
+                buildings=sites.buildings,
                 fields=fields,
                 reed_banks=reed_banks,
                 props=FIXTURE_VILLAGE.props,

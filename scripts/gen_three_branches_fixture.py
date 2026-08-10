@@ -32,10 +32,10 @@ from three_branches.scripted_visitor import Agent as ScriptedVisitor
 RECORDING_NAME = "three-branches-recording.jsonl"
 SIDECAR_NAME = "three-branches-decoded.json"
 RECORDING_ID = "three-branches-fixture"
-SEED = 22
+SEED = 23
 EXPECTED_STATE_COUNT = 1_200
-GREETING_TICK = 105
-GREETING = {"from": "player_0", "to": "player_2", "text": "A fine day for walking. How are you?"}
+GREETING_TICK = 411
+GREETING = {"from": "player_0", "to": "player_1", "text": "A fine day for walking. How are you?"}
 
 
 def _attribution() -> dict[str, PlayerAttribution]:

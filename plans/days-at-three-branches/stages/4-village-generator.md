@@ -1,6 +1,6 @@
 # Step 4: The village generator
 
-Status: in progress. Milestone 0 and the layer 1 build are landed; layer 1 review rounds are open.
+Status: in progress. Milestone 0 and layer 1 are landed and signed off; the layer 2 build is under way.
 
 Part of [the plan](../README.md). This is build-order step 4: the seeded construction of Three Branches under [village.md](../village.md)'s guarantees, replacing the step 2 fixture village behind the unchanged `build_village(seed)` seam. The village is grown in four layers, terrain, then sites, then the road network, then accessories. Each layer is tuned through rounds of owner review in the real browser viewer until the owner signs it off, and the stage closes with the guarantee suite green across a pinned seed batch and the owner blessing one batch seed as the course default.
 
@@ -28,7 +28,7 @@ One walker traces every watercourse and path. It steps a few meters at a time, i
 
 | Feature      | Width                                                       |
 | ------------ | ----------------------------------------------------------- |
-| Trunk        | 4 to 6 m                                                    |
+| Trunk        | 5 to 7 m                                                    |
 | Channels     | 2.5 to 4 m each                                             |
 | Road         | 4 to 5 m                                                    |
 | Footpaths    | 1.5 to 2.5 m                                                |
@@ -44,7 +44,7 @@ Padding: the fixture road, footpaths, buildings, props, scenery, and spawn, with
 
 Tests landing: the entry third, the fork band, the widths, mouth separation and the edge margin, channels never intersecting themselves or one another, terrace and reed polygons simple, the 35-point cap, generator-level same-seed determinism and cross-seed divergence, the static overlay payload under 12 KiB, reset under the 250 ms cadence, and the observation `village` Dict equal to the built layout through float32.
 
-Gate: the owner signs off the water and ground look.
+Gate: the owner signs off the water and ground look. Signed off 2026-08-10.
 
 ### Layer 2: sites
 

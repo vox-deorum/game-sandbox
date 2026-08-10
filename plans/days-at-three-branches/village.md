@@ -12,7 +12,7 @@ There is no canonical map. The village is whatever these rules generate from the
 
 ## Waterways
 
-- The trunk river enters the north edge within its middle third, 4 to 6 m wide, and meanders south, its course shaped by the seed's terrain so the water reads grown rather than drafted.
+- The trunk river enters the north edge within its middle third, 5 to 7 m wide, and meanders south, its course shaped by the seed's terrain so the water reads grown rather than drafted.
 - Between two fifths and three fifths of the way down the village, the trunk forks into three channels, 2.5 to 4 m wide, that fan out and reach the south edge. Adjacent mouths land at least 20 m apart. The fork is the village's namesake and its visual center.
 - The channels meander the same way. Water is impassable everywhere.
 - Reed flats gather on low wet banks and at the channel mouths.
