@@ -37,6 +37,7 @@ describe('readRecording', () => {
     expect(header.players.player_0?.label).toBe('Naive agent')
     expect(header.seats).toEqual({ seat_0: ['player_0'] })
     expect(header.seat_plan).toBe('solo')
+    expect(header.overlay_static?.sprites).toEqual({ bird: 'blue' })
   })
 
   it('rejects a recording whose schema_version was bumped', () => {

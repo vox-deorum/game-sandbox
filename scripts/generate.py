@@ -129,6 +129,7 @@ def generate_fixtures() -> None:
         header_with_seats(
             environment="flappy",
             parameters={"players": 1, "pipe_gap": 100},
+            overlay_static={"sprites": {"bird": "blue"}},
             seed=7,
             players={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
             seats={"seat_0": ["player_0"]},

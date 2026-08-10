@@ -519,12 +519,16 @@ class EnvironmentEntry:
       current state (Hearts' lowest legal card, Spades' suggested bid) so the recording holds the
       action actually played; Flappy Bird just returns its noop (idle).
     - ``overlay`` optionally extracts the per-step overlay dict from a live env instance.
+    - ``overlay_static`` optionally extracts episode-static overlay data for the recording header.
+      A recorded episode calls it once after ``env.reset``, just before the header is written. Its
+      result must remain constant for the episode.
     """
 
     meta: EnvironmentMeta
     make: Callable[[Mapping[str, ParameterValue]], Any]
     default_action: Callable[[Any, str], Any]
     overlay: Callable[[Any], dict[str, Any]] | None = None
+    overlay_static: Callable[[Any], dict[str, Any]] | None = None
 
 
 def validate_configured_environment(

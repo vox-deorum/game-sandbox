@@ -69,6 +69,10 @@ export const RecordingHeaderSchema = z
     parameters: z.record(z.string(), ParameterValueSchema).meta({
       description: 'Complete resolved environment parameter map used by this episode.',
     }),
+    overlay_static: z.record(z.string(), z.unknown()).optional().meta({
+      description:
+        'Environment-specific immutable rendering data captured once after reset. Omitted when the environment has none.',
+    }),
     // The harness writes `datetime.isoformat()`, which carries a `+00:00` offset rather than a `Z`
     // suffix. The format keyword is an annotation here rather than a runtime check, which keeps the
     // generated schema free of a validator-specific regex.

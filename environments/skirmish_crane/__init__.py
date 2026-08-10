@@ -14,7 +14,6 @@ from game_sandbox_harness.environment import (
 from .battlefield import CAPTURE_ZONES_BOUNDS, FIELD_EXTENT_BOUNDS
 from .engine import Match, MatchConfig, Order
 from .env import CAPTURE_TARGET_BOUNDS, ROUND_CAP_BOUNDS, SEAT_PLAN_SPECS, default_action, make_env
-from .overlay import extract_overlay
 
 ENV_ID = "skirmish_crane"
 PUBLISHED_EXAMPLES = ("banner",)
@@ -151,6 +150,27 @@ META = EnvironmentMeta(
     ),
 )
 
-ENTRY = EnvironmentEntry(meta=META, make=make_env, default_action=default_action, overlay=extract_overlay)
+
+def _extract_overlay(env: object) -> dict[str, object]:
+    """Defer the renderer-owned dynamic overlay import until a frame is requested."""
+    from .overlay import extract_overlay
+
+    return extract_overlay(env)
+
+
+def _extract_overlay_static(env: object) -> dict[str, object]:
+    """Defer the renderer-owned static overlay import until recording setup."""
+    from .overlay import extract_overlay_static
+
+    return extract_overlay_static(env)
+
+
+ENTRY = EnvironmentEntry(
+    meta=META,
+    make=make_env,
+    default_action=default_action,
+    overlay=_extract_overlay,
+    overlay_static=_extract_overlay_static,
+)
 
 __all__ = ["ENTRY", "META", "Match", "MatchConfig", "Order", "PUBLISHED_EXAMPLES"]

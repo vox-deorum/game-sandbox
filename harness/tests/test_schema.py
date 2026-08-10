@@ -111,6 +111,23 @@ def test_overlay_accepts_arbitrary_content():
     validate_step(state)
 
 
+def test_static_overlay_accepts_arbitrary_content():
+    header = build_header(
+        environment="flappy",
+        parameters={"players": 1, "pipe_gap": 100},
+        players={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            }
+        },
+        layout=SINGLE_LAYOUT,
+        overlay_static={"sprites": {"bird": "blue"}, "anything": [1, 2, 3]},
+    )
+    validate_header(header)
+
+
 def test_wrong_schema_version_rejected():
     state = _valid_state()
     state["schema_version"] = 2

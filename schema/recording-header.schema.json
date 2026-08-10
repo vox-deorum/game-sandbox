@@ -13,6 +13,14 @@
       "description": "Name of the environment that produced this recording.",
       "type": "string"
     },
+    "overlay_static": {
+      "additionalProperties": {},
+      "description": "Environment-specific immutable rendering data captured once after reset. Omitted when the environment has none.",
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
     "parameters": {
       "additionalProperties": {
         "oneOf": [

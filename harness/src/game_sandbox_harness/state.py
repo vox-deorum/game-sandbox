@@ -112,6 +112,7 @@ class RecordingHeader(TypedDict):
     schema_version: int
     environment: str
     parameters: dict[str, ParameterValue]
+    overlay_static: NotRequired[dict[str, Any]]
     created_at: NotRequired[str]
     seed: NotRequired[int]
     sidecars: NotRequired[list[Sidecar]]
@@ -189,6 +190,7 @@ def build_header(
     *,
     environment: str,
     parameters: dict[str, ParameterValue],
+    overlay_static: dict[str, Any] | None = None,
     created_at: str | None = None,
     seed: int | None = None,
     sidecars: list[Sidecar] | None = None,
@@ -211,6 +213,8 @@ def build_header(
         header["created_at"] = created_at
     if seed is not None:
         header["seed"] = seed
+    if overlay_static is not None:
+        header["overlay_static"] = overlay_static
     if sidecars is not None:
         header["sidecars"] = sidecars
     return header

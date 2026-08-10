@@ -28,12 +28,12 @@ Each state contains:
 
 - A **tick** that numbers completed environment transitions; tick and step refer to the same event.
 - One or more player entries, each carrying the action when one was applied, the immediate reward, the cumulative score, and optional timing.
-- Environment-specific overlay data needed for rendering and human input. An overlay may list semantic legal choices when a human can act, or provide the semantic state the renderer needs to derive them.
+- Environment-specific dynamic overlay data needed for rendering and human input. Episode-static renderer data belongs in the optional recording-header `overlay_static` field. An overlay may list semantic legal choices when a human can act, or provide the semantic state the renderer needs to derive them.
 - Messages admitted on that step boundary.
 - Chat options for the [designated human player](#human-play) while that player remains active.
 - Optional observations and action details when an environment chooses to expose them.
 
-The renderer cannot inspect the live environment. Anything needed on screen must appear in the state.
+The renderer cannot inspect the live environment. It receives episode-static data from `ctx.header.overlay_static` when it mounts, and dynamic data from each state overlay. Anything needed on screen must appear in one of those recording payloads.
 
 A live session may also emit one opening presentation state after reset, before any player acts. It has no player entries and carries the initial overlay and chat options when available. An unpaced sequential session emits it when it has something to present. Every simultaneous session emits it before the first cadence interval. A paced sequential session instead waits for its first recorded state. The opening state uses the ordinary state schema for the live renderer but is not recorded, so replay begins with the first completed transition.
 

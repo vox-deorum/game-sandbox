@@ -27,6 +27,8 @@ The header identifies who controlled each player: a human, a named builtin agent
 
 The header also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat with a companion records the person on its primary player and the selected companion agent on every other member. A self-played wide seat records the person on every member. Every recording carries this seat map and the canonical seat-plan key, along with the complete normalized gameplay parameter map used to construct the environment. See [Environments](environment.md#configurable-gameplay-parameters).
 
+An environment may also put immutable renderer data in the optional `overlay_static` header field. The harness captures it once after reset, before writing the header. Per-step overlays then carry only dynamic renderer data. A reader that does not recognize this optional field may ignore it.
+
 ## State objects
 
 Each completed environment transition produces one [state object](interaction.md#per-step-state-object). PettingZoo [dead-step](interaction.md#session-loop) housekeeping produces no state object. A player that becomes inactive remains absent from later states. The player's final cumulative score is therefore the latest score recorded for that player anywhere in the recording, not necessarily a value in the final state.
@@ -47,6 +49,6 @@ Every session is recorded. Storage remains bounded:
 
 ## Storage
 
-The harness serializes each recording header and completed-step state once, then sends the canonical line to recording storage and the backend relay. Storage retains that canonical line. A live session may also relay the unrecorded opening presentation state defined in [Interaction](interaction.md#per-step-state-object). When a state contains targeted chat, the relay sends each client an audience-filtered derived line and never delivers the targeted content to another live audience. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
+The harness serializes each recording header and completed-step state once, then sends the canonical line to recording storage and the backend relay. Storage retains that canonical line, so live bytes and disk bytes are identical. A live session may also relay the unrecorded opening presentation state defined in [Interaction](interaction.md#per-step-state-object). When a state contains targeted chat, the relay sends each client an audience-filtered derived line and never delivers the targeted content to another live audience. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
 
 The first storage implementation uses a mounted folder. An S3-compatible implementation may be added behind the same save/load interface.

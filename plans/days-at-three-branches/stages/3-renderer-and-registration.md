@@ -16,7 +16,7 @@ Tile-map rendering joins the shared renderer base under `frontend/src/renderers/
 
 ### The renderer and its collision overlay
 
-The renderer package at `environments/three_branches/renderer/` replaces the stage 2 stub with a `PixiRenderer` subclass and its thumbnail. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset, from packed ground-grid rows the overlay carries. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a watcher sees every delivered NPC message live, the consumer test for step 1's visibility rule.
+The renderer package at `environments/three_branches/renderer/` replaces the stage 2 stub with a `PixiRenderer` subclass and its thumbnail. At mount it reads the packed ground-grid rows and other layout data from `ctx.header.overlay_static`; each step overlay carries the dynamic characters and prop states. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a watcher sees every delivered NPC message live, the consumer test for step 1's visibility rule.
 
 ### Session limits
 
@@ -28,7 +28,7 @@ A pinned fixture recording on the step 2 fixture village, with its generator scr
 
 ## Tests
 
-- Renderer unit tests from the fixture: seek anywhere, idempotent update, overlay-only state.
+- Renderer unit tests from the fixture: seek anywhere, idempotent update, header-static plus dynamic overlay state.
 - Playwright watch and replay journeys, and the spectator chat visibility check.
 - An integration test proves the live day reaches its natural end under the derived duration default.
 - While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.

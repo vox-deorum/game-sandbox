@@ -20,7 +20,7 @@ The starter agent uses the raw observation dictionary. Its stand-still action is
 
 ## Observations
 
-The observation is a dictionary. `self` describes your character, including its `id`, `position`, `heading`, `moved`, and `expression`. It also includes people and props that your character can perceive, a `bell` flag that is 1 while the beacon bell rings anywhere in the village, the current `tick`, the current `phase`, the static `village` layout, the roster, and resolved gameplay parameters.
+The observation is a dictionary. `self` describes your character, including its `id`, `position`, `heading`, `moved`, and `expression`. It also includes people and props that your character can perceive, a `bell` flag that is 1 while the beacon bell rings anywhere in the village, the current `tick`, the current `phase`, the static `village` layout, the roster, and resolved gameplay parameters. The map, roster, and parameters are identical throughout an episode, so you may cache them from `reset`. Treat them as read-only: the map and roster are shared objects, so mutating them corrupts what other characters observe.
 
 Positions have `x` and `y` values in village meters. The current heading is in degrees counterclockwise from east.
 

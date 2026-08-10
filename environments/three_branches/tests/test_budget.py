@@ -18,7 +18,8 @@ from three_branches.env import ThreeBranchesEnv
 from three_branches.naive import Agent as Naive
 from three_branches.scripted_visitor import Agent as ScriptedVisitor
 
-_MAX_RECORDING_BYTES = 10 * 1024 * 1024
+_MAX_CAST_10_RECORDING_BYTES = 2 * 1024 * 1024
+_MAX_HEADER_BYTES = 16 * 1024
 _CADENCE_SECONDS = 0.250
 _GAME_SECONDS = 120.0
 _CAST_SIZES = {"cast_5": 5, "cast_10": 10}
@@ -80,9 +81,13 @@ def test_full_recording_stays_under_budget_and_same_seed_replays_identically(
     first_frames = _without_timing(first)
     second_frames = _without_timing(second)
 
-    assert first.stat().st_size < _MAX_RECORDING_BYTES
     assert len(first_frames) == 1201
     assert first_frames == second_frames
+    if seat_plan == "cast_10":
+        header_line = first.read_bytes().splitlines()[0]
+
+        assert first.stat().st_size < _MAX_CAST_10_RECORDING_BYTES
+        assert len(header_line) < _MAX_HEADER_BYTES
 
 
 def test_cast_10_engine_transitions_and_charged_agent_work_stay_below_the_250ms_cadence() -> None:

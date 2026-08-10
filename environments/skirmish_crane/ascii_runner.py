@@ -24,9 +24,9 @@ _TILE_MARKS = {
 }
 
 
-def render_overlay(overlay: dict[str, object]) -> str:
+def render_overlay(overlay: dict[str, object], static: dict[str, object]) -> str:
     """Render one compact Stage 2 overlay without reconstructing the live rules engine."""
-    decoded = decode_overlay(overlay)
+    decoded = decode_overlay(overlay, static)
     battlefield = decoded["battlefield"]
     capture = decoded["capture"]
     units = decoded["units"]
@@ -46,11 +46,20 @@ def replay_jsonl(path: Path | str) -> str:
     """Replay the recorded Skirmish overlays in a JSONL recording as ASCII frames."""
     frames: list[str] = []
     with Path(path).open(encoding="utf-8") as handle:
+        header_line = handle.readline()
+        if not header_line:
+            raise ValueError("recording is missing its header")
+        header = json.loads(header_line)
+        static = header.get("overlay_static")
+        if not isinstance(static, dict):
+            raise ValueError("recording header is missing Crane Reach overlay static data")
         for line in handle:
             state = json.loads(line)
             overlay = state.get("overlay")
             if overlay is not None:
-                frames.append(render_overlay(overlay))
+                if not isinstance(overlay, dict):
+                    raise ValueError("recording state has a malformed Crane Reach overlay")
+                frames.append(render_overlay(overlay, static))
     return "\n\n".join(frames)
 
 

@@ -34,13 +34,13 @@ Sequential multi-agent games subclass `pettingzoo.AECEnv` directly and do not us
 
 ### Overlay
 
-`overlay.py` exposes `extract_overlay(env)`, returning JSON-compatible display data. See [Per-step state object](../../specs/interaction.md#per-step-state-object) for why the overlay must contain everything needed to draw a frame.
+`overlay.py` may expose two JSON-compatible display hooks. `extract_overlay_static(env)` returns immutable episode data once after reset for the recording header. `extract_overlay(env)` returns the dynamic display data for each completed step. The `EnvironmentEntry` names these optional hooks `overlay_static` and `overlay`; the harness calls `overlay_static` once after reset, before writing the header. See [Per-step state object](../../specs/interaction.md#per-step-state-object) for the complete rendering contract.
 
 The environment owns its display state. Test that every overlay field exists and is finite.
 
 ### Registry entry and metadata
 
-`__init__.py` exports an `EnvironmentEntry` made from `EnvironmentMeta`, the environment factory, `default_action`, and the optional overlay hook.
+`__init__.py` exports an `EnvironmentEntry` made from `EnvironmentMeta`, the environment factory, `default_action`, and optional `overlay_static` and `overlay` hooks.
 
 `EnvironmentMeta.to_json()` must round-trip through `json.dumps` because the backend serves it to the frontend.
 
@@ -83,6 +83,6 @@ Every environment runs the mode-selected PettingZoo conformance check through th
 
 The suite builds the environment through the registry entry (`entry.make(resolve_parameters(entry.meta))`), not by calling `make_env` directly. For a sequential environment it runs PettingZoo's `api_test` through a wrapper that tolerates two known PettingZoo warnings and one known dtype bug. For a simultaneous environment it calls `parallel_api_test` directly.
 
-The shared guard also checks the configured parallel roster and mapping rules, deterministic rollout output, overlay JSON and finite values, the required colocated template and example shape, and each published action mask against the declared action space, including the permitted child types of a composite space. Direct `observation_space.contains()` checks still cover a full episode. Game-specific rules and regressions belong in `environments/<env>/tests/`.
+The shared guard also checks the configured parallel roster and mapping rules, deterministic rollout output, static and dynamic overlay JSON and finite values, the required colocated template and example shape, and each published action mask against the declared action space, including the permitted child types of a composite space. Direct `observation_space.contains()` checks still cover a full episode. Game-specific rules and regressions belong in `environments/<env>/tests/`.
 
 A simultaneous environment may use a [composite action space](../../specs/environment.md#composite-actions) only when it publishes no `action_mask` and every value in the space is legal in every reachable state. A composite space with a published mask remains sequential-only because `parallel_api_test` reduces an action mask to a single index before sampling. The suite does not add its own mode check, so an unsupported masked combination fails in PettingZoo until a release carries the upstream fix.

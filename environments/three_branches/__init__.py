@@ -78,6 +78,19 @@ def _extract_overlay(env: Any) -> dict[str, Any]:
     return extract_overlay(env)
 
 
-ENTRY = EnvironmentEntry(meta=META, make=make_env, default_action=default_action, overlay=_extract_overlay)
+def _extract_overlay_static(env: Any) -> dict[str, Any]:
+    """Defer the renderer-owned static overlay import until recording setup."""
+    from .overlay import extract_overlay_static
+
+    return extract_overlay_static(env)
+
+
+ENTRY = EnvironmentEntry(
+    meta=META,
+    make=make_env,
+    default_action=default_action,
+    overlay=_extract_overlay,
+    overlay_static=_extract_overlay_static,
+)
 
 __all__ = ["Day", "DayConfig", "ENTRY", "ENV_ID", "META", "Order", "PUBLISHED_EXAMPLES"]

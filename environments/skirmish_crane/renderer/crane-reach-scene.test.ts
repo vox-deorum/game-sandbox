@@ -4,14 +4,17 @@ import { describe, expect, it } from 'vitest'
 
 import '@renderers/index.js'
 import tileTypes from '../tile_types.json'
-import { CRANE_STYLE, computeScene, decodeOverlay, unitCardFor } from './scene.js'
+import { CRANE_STYLE, decodeOverlay, unitCardFor } from './scene.js'
 import {
   armyFixture,
   armyLegalityRaw,
+  armyScene,
   armyStates,
   skirmishFixture,
   skirmishLegalityRaw,
+  skirmishScene,
   skirmishStates,
+  skirmishStaticOverlay,
   verifyLegalityFixture,
 } from './test-helpers.js'
 
@@ -21,7 +24,7 @@ describe('Crane Reach scene geometry and compact overlay', () => {
   })
 
   it('lays out pointy-top axial hexes with the void surround still visible', () => {
-    const scene = computeScene(skirmishStates[0] as StepState)
+    const scene = skirmishScene(skirmishStates[0] as StepState)
     const origin = scene.tiles.find((tile) => tile.q === 0 && tile.r === 0)
     const east = scene.tiles.find((tile) => tile.q === 1 && tile.r === 0)
     const southeast = scene.tiles.find((tile) => tile.q === 0 && tile.r === 1)
@@ -40,7 +43,7 @@ describe('Crane Reach scene geometry and compact overlay', () => {
   })
 
   it('maps every terrain and feature code from the full variant', () => {
-    const scene = computeScene(armyStates[0] as StepState)
+    const scene = armyScene(armyStates[0] as StepState)
     expect(scene.tiles.some((tile) => tile.terrain === 'grass')).toBe(true)
     expect(scene.tiles.some((tile) => tile.terrain === 'hill')).toBe(true)
     expect(scene.tiles.some((tile) => tile.terrain === 'water')).toBe(true)
@@ -55,7 +58,7 @@ describe('Crane Reach scene geometry and compact overlay', () => {
   })
 
   it('draws capture zones, all unit types, hit points, and the active unit', () => {
-    const scenes = armyStates.map((state) => computeScene(state))
+    const scenes = armyStates.map((state) => armyScene(state))
     const scene = scenes.find((candidate) => candidate.zones.length > 0)
     expect(scene?.zones.length).toBeGreaterThan(0)
     expect(new Set(scene?.units.map((unit) => unit.type))).toEqual(
@@ -71,7 +74,7 @@ describe('Crane Reach scene geometry and compact overlay', () => {
 
   it('keeps the most recent activation event as drawable scene content', () => {
     const scene = armyStates
-      .map((state) => computeScene(state))
+      .map((state) => armyScene(state))
       .find((candidate) => candidate.event !== null)
     expect(scene?.event?.actorId).toMatch(/^(red|blue)_(footman|archer|cavalry)_\d+$/)
     expect(scene?.event?.from).toEqual(
@@ -84,45 +87,28 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     expect(scene?.event?.movementTiles).toBeGreaterThanOrEqual(0)
   })
 
-  it('decodes v2 routes and recovers v1 paths before falling back to endpoint geometry', () => {
+  it('decodes the exact path recorded in a split v1 event', () => {
     const source = armyStates[0] as StepState
     const overlay = source.overlay as Record<string, unknown>
-    const event = [0, 10, 10, 10, 11, -1, 0, false, -1, 0, 0]
     const pathId = 58 // Directions 1, 3, 4: a turn that retraces q before ending at 10,11.
-    const v2 = computeScene({ ...source, overlay: { ...overlay, k: 2, e: [...event, pathId] } })
-    expect(v2.event?.movementTiles).toBe(3)
-    expect(v2.event?.route).toHaveLength(4)
-    expect(v2.event?.route[0]).toEqual(v2.tiles.find((tile) => tile.key === '10,10')?.center)
-    expect(v2.event?.route.at(-1)).toEqual(v2.tiles.find((tile) => tile.key === '10,11')?.center)
-
-    const withActorPath = (path: unknown): StepState => ({
+    const scene = armyScene({
       ...source,
-      agents: {
-        ...source.agents,
-        player_0: {
-          reward: source.agents.player_0?.reward ?? 0,
-          score: source.agents.player_0?.score ?? 0,
-          action: { path },
-        },
+      overlay: {
+        ...overlay,
+        e: [0, 10, 10, 10, 11, -1, 0, false, -1, 0, 0, pathId],
       },
     })
-    const v1 = computeScene({
-      ...withActorPath(pathId),
-      overlay: { ...overlay, k: 1, e: event },
-    })
-    expect(v1.event?.route).toEqual(v2.event?.route)
-
-    const degraded = computeScene({
-      ...withActorPath(true),
-      overlay: { ...overlay, k: 1, e: [0, 10, 10, 14, 14, -1, 0, false, -1, 0, 0] },
-    })
-    expect(degraded.event?.route).toHaveLength(2)
-    expect(degraded.event?.movementTiles).toBe(4)
+    expect(scene.event?.movementTiles).toBe(3)
+    expect(scene.event?.route).toHaveLength(4)
+    expect(scene.event?.route[0]).toEqual(scene.tiles.find((tile) => tile.key === '10,10')?.center)
+    expect(scene.event?.route.at(-1)).toEqual(
+      scene.tiles.find((tile) => tile.key === '10,11')?.center,
+    )
   })
 
   it('keeps structured HUD and terminal state in the scene rather than renderer history', () => {
-    const first = computeScene(skirmishStates[0] as StepState)
-    const final = computeScene(skirmishStates.at(-1) as StepState)
+    const first = skirmishScene(skirmishStates[0] as StepState)
+    const final = skirmishScene(skirmishStates.at(-1) as StepState)
     expect(first.hud.round).toEqual(expect.any(Number))
     expect(first.hud.capture).toBeNull()
     expect(first.hud.rosters.red).toEqual({ footman: 1, archer: 1, cavalry: 1 })
@@ -134,7 +120,7 @@ describe('Crane Reach scene geometry and compact overlay', () => {
   })
 
   it('keeps capture seals absent outside capture variants and exposes live roster losses', () => {
-    const armyScenes = armyStates.map((state) => computeScene(state))
+    const armyScenes = armyStates.map((state) => armyScene(state))
     const captureScene = armyScenes.find((scene) => scene.hud.capture !== null)
     expect(captureScene?.hud.capture).toMatchObject({
       red: expect.any(Number),
@@ -146,13 +132,13 @@ describe('Crane Reach scene geometry and compact overlay', () => {
     const records = [...(overlay.u as string[])]
     const removed = records.shift()
     expect(removed).toBeDefined()
-    const afterLoss = computeScene({ ...source, overlay: { ...overlay, u: records } })
+    const afterLoss = armyScene({ ...source, overlay: { ...overlay, u: records } })
     expect(afterLoss.hud.rosters.red.footman).toBe(7)
   })
 
   it('pairs every inspection stat icon with a label and enables configured ability lines', () => {
-    const withoutAbilities = computeScene(armyStates[0] as StepState)
-    const withAbilities = computeScene(armyStates[0] as StepState, {
+    const withoutAbilities = armyScene(armyStates[0] as StepState)
+    const withAbilities = armyScene(armyStates[0] as StepState, {
       terrainEnabled: true,
       unitAbilities: true,
     })
@@ -179,37 +165,43 @@ describe('Crane Reach scene geometry and compact overlay', () => {
   it('derives red, blue, and draw terminal tints without legacy caption text', () => {
     const source = skirmishStates.at(-1) as StepState
     const terminal = (outcome: [number, number]) =>
-      computeScene({ ...source, overlay: { ...(source.overlay as object), x: true, o: outcome } })
+      skirmishScene({ ...source, overlay: { ...(source.overlay as object), x: true, o: outcome } })
         .hud.terminal
     expect(terminal([84, 16])).toEqual({ winner: 'red', result: 'red wins 84 - 16' })
     expect(terminal([16, 84])).toEqual({ winner: 'blue', result: 'blue wins 84 - 16' })
     expect(terminal([50, 50])).toEqual({ winner: 'draw', result: 'draw 50 - 50' })
-    expect(JSON.stringify(computeScene(source).hud)).not.toMatch(/Control|activation|caption/i)
+    expect(JSON.stringify(skirmishScene(source).hud)).not.toMatch(/Control|activation|caption/i)
   })
 
   it('is deterministic when a replay seeks to a previously rendered state', () => {
     const selected = armyStates[Math.floor(armyStates.length / 2)] as StepState
-    const before = computeScene(selected)
-    for (const state of armyStates) computeScene(state)
-    expect(computeScene(selected)).toEqual(before)
+    const before = armyScene(selected)
+    for (const state of armyStates) armyScene(state)
+    const after = armyScene(selected)
+    expect(after).toEqual(before)
+    expect(after.tiles).toBe(before.tiles)
+    expect(after.zones).toBe(before.zones)
   })
 
-  it('rejects unsupported compact overlay versions', () => {
-    const state: StepState = {
-      schema_version: 1,
-      tick: 0,
-      agents: {},
-      timing: { started_at: 0, duration_ms: 0 },
-      overlay: { k: 3 },
-    }
-    expect(() => decodeOverlay(state)).toThrow('unsupported version')
+  it('requires split static data and rejects unsupported compact overlay versions', () => {
+    const state = skirmishStates[0] as StepState
+    expect(() => decodeOverlay(state, undefined)).toThrow('no static overlay')
+    expect(() => decodeOverlay(state, { ...(skirmishStaticOverlay as object), k: 2 })).toThrow(
+      'unsupported version',
+    )
+    expect(() =>
+      decodeOverlay(
+        { ...state, overlay: { ...(state.overlay as object), k: 2 } },
+        skirmishStaticOverlay,
+      ),
+    ).toThrow('unsupported version')
   })
 })
 
 describe('Crane Reach scene performance', () => {
   it('computes every army recording frame within the pinned smoke budget', () => {
     const started = performance.now()
-    for (const state of armyStates) computeScene(state)
+    for (const state of armyStates) armyScene(state)
     const elapsedMs = performance.now() - started
     expect(elapsedMs).toBeLessThan(5_000)
   })

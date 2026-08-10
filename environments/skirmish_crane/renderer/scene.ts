@@ -190,9 +190,11 @@ export interface CraneReachScene {
 }
 
 export interface SceneConfig {
-  /** Terrain is a fixed episode parameter, supplied from the recording header rather than overlay v1. */
+  /** Episode-static overlay data from the recording header. */
+  staticOverlay: unknown
+  /** Terrain is a fixed episode parameter supplied from the recording header. */
   terrainEnabled?: boolean
-  /** Abilities are a fixed episode parameter, supplied from the recording header rather than overlay v1. */
+  /** Abilities are a fixed episode parameter supplied from the recording header. */
   unitAbilities?: boolean
 }
 
@@ -208,7 +210,6 @@ export interface SceneRosterEntry {
 }
 
 interface CompactOverlay {
-  version: 1 | 2
   plan: 'skirmish' | 'army'
   side: number
   rows: string[]
@@ -320,17 +321,25 @@ function decodeBase36(value: string, message: string): number {
   return [...value].reduce((total, digit) => total * 36 + BASE36.indexOf(digit), 0)
 }
 
-/** Decode compact v1 and v2 overlays into the few values the scene needs. */
-export function decodeOverlay(state: StepState): CompactOverlay {
+/** Decode the split compact v1 overlay into the values the scene needs. */
+export function decodeOverlay(state: StepState, staticOverlay: unknown): CompactOverlay {
   const overlay = asRecord(state.overlay, 'Crane Reach state has no compact overlay')
+  const staticData = asRecord(staticOverlay, 'Crane Reach header has no static overlay')
   const version = asInteger(overlay.k, 'Crane Reach overlay has an invalid version')
-  if (version !== 1 && version !== 2)
+  const staticVersion = asInteger(
+    staticData.k,
+    'Crane Reach static overlay has an invalid version',
+  )
+  if (version !== 1 || staticVersion !== 1)
     throw new Error('Crane Reach overlay has an unsupported version')
-  const plan = asString(overlay.p, 'Crane Reach overlay has an invalid seat plan')
-  if (plan !== 'skirmish' && plan !== 'army') {
-    throw new Error('Crane Reach overlay has an unknown seat plan')
+  if ('p' in overlay || 'b' in overlay) {
+    throw new Error('Crane Reach overlay must keep static battlefield data in the header')
   }
-  const battlefield = asRecord(overlay.b, 'Crane Reach overlay has no battlefield')
+  const plan = asString(staticData.p, 'Crane Reach static overlay has an invalid seat plan')
+  if (plan !== 'skirmish' && plan !== 'army') {
+    throw new Error('Crane Reach static overlay has an unknown seat plan')
+  }
+  const battlefield = asRecord(staticData.b, 'Crane Reach static overlay has no battlefield')
   const side = asInteger(battlefield.s, 'Crane Reach overlay has an invalid battlefield side')
   const rows = battlefield.t
   const zones = battlefield.z
@@ -369,7 +378,7 @@ export function decodeOverlay(state: StepState): CompactOverlay {
     throw new Error('Crane Reach overlay has malformed visibility')
   }
   const event = overlay.e
-  if (event !== null && (!Array.isArray(event) || event.length !== (version === 1 ? 11 : 12))) {
+  if (event !== null && (!Array.isArray(event) || event.length !== 12)) {
     throw new Error('Crane Reach overlay has an invalid event')
   }
   const terminal = overlay.x
@@ -386,7 +395,6 @@ export function decodeOverlay(state: StepState): CompactOverlay {
     throw new Error('Crane Reach overlay has an invalid outcome')
   }
   return {
-    version,
     plan,
     side,
     rows: rows as string[],
@@ -647,29 +655,10 @@ export function tileCoordinate(key: string): Coordinate {
   return { q, r }
 }
 
-function fallbackRoute(
-  from: Coordinate,
-  to: Coordinate,
-): { route: Coordinate[]; movementTiles: number } {
-  const movementTiles = Math.min(4, hexDistance(from, to))
-  return { route: movementTiles === 0 ? [from] : [from, to], movementTiles }
-}
-
-function legacyActionPath(state: StepState, actorId: string): unknown {
-  const agents = state.agents as unknown
-  if (agents === null || typeof agents !== 'object' || Array.isArray(agents)) return undefined
-  const agent = (agents as Record<string, unknown>)[actorId]
-  if (agent === null || typeof agent !== 'object' || Array.isArray(agent)) return undefined
-  const action = (agent as Record<string, unknown>).action
-  if (action === null || typeof action !== 'object' || Array.isArray(action)) return undefined
-  return (action as Record<string, unknown>).path
-}
-
 function readEvent(
   overlay: CompactOverlay,
   roster: SceneRosterEntry[],
   centerFor: (q: number, r: number) => Point,
-  state: StepState,
 ): SceneEvent | null {
   if (overlay.event === null) return null
   const [actor, fromQ, fromR, toQ, toR, target, damage, automatic, death, redCapture, blueCapture] =
@@ -692,26 +681,8 @@ function readEvent(
   const fromCoordinate = coordinateFromRecord(fromQ, fromR, overlay)
   const toCoordinate = coordinateFromRecord(toQ, toR, overlay)
   const pathId = overlay.event[11]
-  let route: Coordinate[]
-  let movementTiles: number
-  if (overlay.version === 2) {
-    route = routeForPath(pathId, fromCoordinate, toCoordinate, overlay)
-    movementTiles = route.length - 1
-  } else {
-    try {
-      route = routeForPath(
-        legacyActionPath(state, actorEntry.playerId),
-        fromCoordinate,
-        toCoordinate,
-        overlay,
-      )
-      movementTiles = route.length - 1
-    } catch {
-      const fallback = fallbackRoute(fromCoordinate, toCoordinate)
-      route = fallback.route
-      movementTiles = fallback.movementTiles
-    }
-  }
+  const route = routeForPath(pathId, fromCoordinate, toCoordinate, overlay)
+  const movementTiles = route.length - 1
   return {
     actorId: actorEntry.unitId,
     from: centerFor(fromCoordinate.q, fromCoordinate.r),
@@ -732,8 +703,8 @@ function scoreText(score: number): string {
 }
 
 /** Convert one compact recorded state into the complete static Crane Reach frame. */
-export function computeScene(state: StepState, config: SceneConfig = {}): CraneReachScene {
-  const overlay = decodeOverlay(state)
+export function computeScene(state: StepState, config: SceneConfig): CraneReachScene {
+  const overlay = decodeOverlay(state, config.staticOverlay)
   const battlefield = battlefieldFor(overlay)
   const roster = rosterFor(overlay.plan)
   const units = readUnits(overlay, roster, battlefield.centerFor)
@@ -781,7 +752,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): CraneR
             unitId: activeUnit.unitId,
             position: activeUnit.position,
           },
-    event: readEvent(overlay, roster, battlefield.centerFor, state),
+    event: readEvent(overlay, roster, battlefield.centerFor),
     hud: {
       round: overlay.round,
       capture:

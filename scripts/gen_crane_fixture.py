@@ -93,11 +93,11 @@ class RetreatAgent:
         return {"path": path, "target": 0}
 
 
-def _current_activation(state: StepState) -> str:
+def _current_activation(state: StepState, static: dict[str, Any]) -> str:
     overlay = state.get("overlay")
     if not isinstance(overlay, dict):
         raise AssertionError("Crane Reach fixture state is missing its overlay")
-    activation = decode_overlay(overlay)["current_activation"]
+    activation = decode_overlay(overlay, static)["current_activation"]
     if not isinstance(activation, str):
         raise AssertionError("actionable Crane Reach fixture state is missing its current activation")
     return activation
@@ -108,10 +108,11 @@ def _legality(
     opening: StepState,
     states: list[StepState],
     masks: dict[int, tuple[str, str, str]],
+    static: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the compact fixture-only legality shape from recorded and live-only frames."""
     opening_player, opening_path, opening_target = masks.pop(0)
-    opening_activation = _current_activation(opening)
+    opening_activation = _current_activation(opening, static)
     if opening_player != opening_activation:
         raise AssertionError("opening action mask does not belong to the opening activation")
     entries: list[dict[str, Any]] = [
@@ -129,7 +130,7 @@ def _legality(
         if captured is None:
             continue
         player, path, target = captured
-        activation = _current_activation(state)
+        activation = _current_activation(state, static)
         if player != activation:
             raise AssertionError(f"tick {state['tick']} mask belongs to {player}, expected {activation}")
         entries.append(
@@ -195,8 +196,13 @@ def _write_fixture(
             episode.close()
 
         source = Path(tmp) / recording_id / "recording.jsonl"
-        states = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines()[1:]]
-        legality = _legality(recording_name, opening, states, masks)
+        lines = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines()]
+        header = lines[0]
+        static = header.get("overlay_static")
+        if not isinstance(static, dict):
+            raise AssertionError("Crane Reach fixture recording header is missing overlay static data")
+        states = lines[1:]
+        legality = _legality(recording_name, opening, states, masks, static)
         recording_dest = output_dir / recording_name
         legality_dest = output_dir / legality_name
         shutil.copyfile(source, recording_dest)

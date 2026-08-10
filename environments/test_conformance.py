@@ -65,20 +65,32 @@ def _json_bytes(value: Any) -> str:
     )
 
 
+def _overlay_static_snapshot(entry: Any, env: Any) -> str | None:
+    """Return the canonical recording-header overlay data captured once after reset."""
+    if entry.overlay_static is None:
+        return None
+    static = entry.overlay_static(env)
+    static_json = _json_bytes(static)
+    assert json.loads(static_json) == static
+    return static_json
+
+
 def _overlay_snapshot(entry: Any, env: Any, observations: Any) -> tuple[str, str]:
-    """Return one canonical observation and overlay snapshot, checking the overlay round-trips."""
+    """Return one canonical observation and dynamic overlay snapshot."""
     overlay = entry.overlay(env) if entry.overlay is not None else {}
     overlay_json = _json_bytes(overlay)
     assert json.loads(overlay_json) == overlay
     return _json_bytes(observations), overlay_json
 
 
-def _aec_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
+def _aec_rollout(entry: Any, seed: int) -> tuple[str | None, list[tuple[str, str]]]:
     """Drive an environment with its own legal timeout hook, recording observations and overlays."""
     env = entry.make(resolve_parameters(entry.meta))
     snapshots: list[tuple[str, str]] = []
+    overlay_static: str | None = None
     try:
         env.reset(seed=seed)
+        overlay_static = _overlay_static_snapshot(entry, env)
         while env.agents:
             agent = env.agent_selection
             observation, _, terminated, truncated, info = env.last()
@@ -93,20 +105,22 @@ def _aec_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
             env.step(action)
     finally:
         env.close()
-    return snapshots
+    return overlay_static, snapshots
 
 
-def _parallel_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
+def _parallel_rollout(entry: Any, seed: int) -> tuple[str | None, list[tuple[str, str]]]:
     """Drive one strict parallel rollout with legal defaults and canonical JSON snapshots."""
     parameters = resolve_parameters(entry.meta)
     layout = resolve_layout(entry.meta, parameters)
     env = entry.make(parameters)
     snapshots: list[tuple[str, str]] = []
+    overlay_static: str | None = None
     try:
         reset_result = env.reset(seed=seed)
         # Validated reset agents equal the resolved roster, so the loop below covers every player's
         # opening observation against its space.
         observations, infos = validate_parallel_reset(entry.meta, env, layout.players, reset_result)
+        overlay_static = _overlay_static_snapshot(entry, env)
         snapshots.append(_overlay_snapshot(entry, env, observations))
         while env.agents:
             active_players = list(env.agents)
@@ -123,7 +137,7 @@ def _parallel_rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
             snapshots.append(_overlay_snapshot(entry, env, observations))
     finally:
         env.close()
-    return snapshots
+    return overlay_static, snapshots
 
 
 def _run_api_test(entry: Any) -> None:
@@ -135,7 +149,7 @@ def _run_api_test(entry: Any) -> None:
         parallel_api_test(env, num_cycles=100)
 
 
-def _rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
+def _rollout(entry: Any, seed: int) -> tuple[str | None, list[tuple[str, str]]]:
     """Run the deterministic rollout selected by declared stepping mode."""
     if entry.meta.stepping == "sequential":
         return _aec_rollout(entry, seed)

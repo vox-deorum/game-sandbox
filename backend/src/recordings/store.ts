@@ -20,10 +20,8 @@ import {
 import { reduceSeatScore } from '@game-sandbox/schema/environment'
 
 const RECORDING_FILE = 'recording.jsonl'
-/** Headers are tiny; cap the header read so a huge recording never loads into memory for a listing. */
-const HEADER_READ_LIMIT = 64 * 1024
-/** Read recordings from the end in bounded chunks when finding the final complete state. */
-const TAIL_READ_SIZE = 64 * 1024
+/** Read recordings in bounded chunks so a listing never loads a whole file at once. */
+const READ_CHUNK_SIZE = 64 * 1024
 
 export interface RecordingSummary {
   id: string
@@ -100,7 +98,7 @@ export class RecordingsStore {
     return join(this.root, id, RECORDING_FILE)
   }
 
-  /** Read just the header line without loading a whole (possibly large) recording. */
+  /** Read just the header line without loading the rest of a (possibly large) recording. */
   private async firstLine(id: string): Promise<string | null> {
     let handle: Awaited<ReturnType<typeof open>>
     try {
@@ -109,11 +107,19 @@ export class RecordingsStore {
       return null
     }
     try {
-      const buffer = Buffer.alloc(HEADER_READ_LIMIT)
-      const { bytesRead } = await handle.read(buffer, 0, HEADER_READ_LIMIT, 0)
-      const text = buffer.toString('utf-8', 0, bytesRead)
-      const newline = text.indexOf('\n')
-      const line = newline === -1 ? text : text.slice(0, newline)
+      const chunks: Buffer[] = []
+      let position = 0
+      for (;;) {
+        const buffer = Buffer.alloc(READ_CHUNK_SIZE)
+        const { bytesRead } = await handle.read(buffer, 0, READ_CHUNK_SIZE, position)
+        const newline = buffer.subarray(0, bytesRead).indexOf(0x0a)
+        chunks.push(buffer.subarray(0, newline === -1 ? bytesRead : newline))
+        if (newline !== -1 || bytesRead < READ_CHUNK_SIZE) {
+          break
+        }
+        position += bytesRead
+      }
+      const line = Buffer.concat(chunks).toString('utf-8')
       return line.trim() === '' ? null : line
     } finally {
       await handle.close()
@@ -135,7 +141,7 @@ export class RecordingsStore {
       let position = (await handle.stat()).size
       let suffix = ''
       while (position > 0) {
-        const start = Math.max(0, position - TAIL_READ_SIZE)
+        const start = Math.max(0, position - READ_CHUNK_SIZE)
         const buffer = Buffer.alloc(position - start)
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
         const lines = `${buffer.toString('utf-8', 0, bytesRead)}${suffix}`.split('\n')

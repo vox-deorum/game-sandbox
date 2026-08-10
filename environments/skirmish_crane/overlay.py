@@ -13,7 +13,7 @@ from .hexes import neighbors, on_field, path_positions
 from .paths import decode_path, encode_path
 from .tile_types import TILE_CODES
 
-OVERLAY_VERSION = 2
+OVERLAY_VERSION = 1
 
 _BASE64 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_"
 _TILE_FROM_CODE = {code: tile for tile, code in TILE_CODES.items()}
@@ -91,13 +91,25 @@ def _event(env: Any) -> list[Any] | None:
     ]
 
 
-def extract_overlay(env: Any) -> dict[str, Any]:
-    """Extract one self-contained render state containing only JSON-native values.
+def _battlefield(field: Any) -> dict[str, Any]:
+    """Pack battlefield data that stays fixed for one episode."""
+    return {
+        "s": field.side,
+        "t": ["".join(TILE_CODES[tile.terrain, tile.feature] for tile in row) for row in field.tiles],
+        "z": ["".join((_base36(zone.center[0], 2), _base36(zone.center[1], 2))) for zone in field.zones],
+    }
 
-    Tile rows use one combined terrain-and-feature character per cell. Units and activations use
+
+def extract_overlay_static(env: Any) -> dict[str, Any]:
+    """Extract the immutable compact layout captured in a recording header after reset."""
+    return {"k": OVERLAY_VERSION, "p": env.config.seat_plan, "b": _battlefield(env.match.battlefield)}
+
+
+def extract_overlay(env: Any) -> dict[str, Any]:
+    """Extract one dynamic compact render state containing only JSON-native values.
+
+    Tile rows, zones, and the roster plan live in the recording header. Units and activations use
     canonical player indexes, and every visibility entry is a roster-order base-64 bitmask.
-    The plan key makes those indexes self-contained. This compact encoding keeps long recordings
-    small while preserving all state the renderer needs to draw a frame.
     """
     match = env.match
     field = match.battlefield
@@ -114,12 +126,6 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     current = None if match.result is not None else match.current_unit_id
     return {
         "k": OVERLAY_VERSION,
-        "p": env.config.seat_plan,
-        "b": {
-            "s": field.side,
-            "t": ["".join(TILE_CODES[tile.terrain, tile.feature] for tile in row) for row in field.tiles],
-            "z": ["".join((_base36(zone.center[0], 2), _base36(zone.center[1], 2))) for zone in field.zones],
-        },
         "r": match.round,
         "c": [
             match.capture_scores["red"],
@@ -145,27 +151,29 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     }
 
 
-def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate and decode the versioned compact recording overlay.
+def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Validate and decode one dynamic replay frame with its static recording-header layout."""
+    if isinstance(compact, Mapping) and ({"p", "b"} & set(compact)):
+        raise ValueError("compact overlay dynamic frame must not contain static layout data")
+    if static is None:
+        raise ValueError("compact overlay static data is required")
+    if not isinstance(static, Mapping) or set(static) != {"k", "p", "b"}:
+        raise ValueError("compact overlay static data has unexpected fields")
+    version = static["k"]
+    if type(version) is not int or version != OVERLAY_VERSION:
+        raise ValueError("compact overlay static data has an unsupported version")
+    if not isinstance(compact, Mapping) or set(compact) != {"k", "r", "c", "u", "a", "v", "e", "x", "o"}:
+        raise ValueError("compact overlay dynamic frame has unexpected fields")
+    if type(compact["k"]) is not int or compact["k"] != OVERLAY_VERSION:
+        raise ValueError("compact overlay dynamic frame has an unsupported version")
 
-    Versions 1 and 2 use one-character tiles, four-character zone centers, seven-character unit
-    records, and base-64 visibility bitmasks. Version 1 has eleven-value event records. Version 2
-    appends an encoded movement path as its twelfth event value. This decoder is the authority for
-    replay consumers and rejects unknown versions or malformed fields.
-    """
-    if set(compact) != {"k", "p", "b", "r", "c", "u", "a", "v", "e", "x", "o"}:
-        raise ValueError("compact overlay has unexpected fields")
-    version = compact["k"]
-    if type(version) is not int or version not in (1, OVERLAY_VERSION):
-        raise ValueError("compact overlay has an unsupported version")
-
-    seat_plan = compact["p"]
+    seat_plan = static["p"]
     if not isinstance(seat_plan, str):
         raise ValueError("compact overlay seat plan must be text")
     roster = _roster(seat_plan)
     player_count = len(roster)
 
-    battlefield = compact["b"]
+    battlefield = static["b"]
     if not isinstance(battlefield, Mapping) or set(battlefield) != {"s", "t", "z"}:
         raise ValueError("compact overlay battlefield is malformed")
     side = battlefield["s"]
@@ -244,9 +252,8 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
     event_record = compact["e"]
     event = None
     if event_record is not None:
-        event_length = 11 if version == 1 else 12
-        if not isinstance(event_record, list) or len(event_record) != event_length:
-            raise ValueError(f"compact overlay version {version} event must have {event_length} values")
+        if not isinstance(event_record, list) or len(event_record) != 12:
+            raise ValueError("compact overlay version 1 event must have 12 values")
         actor, start_q, start_r, end_q, end_r, target, damage, automatic, death, red_delta, blue_delta = (
             event_record[:11]
         )
@@ -266,18 +273,16 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("compact overlay event coordinates are outside the battlefield")
         if not isinstance(automatic, bool):
             raise ValueError("compact overlay event automatic flag must be boolean")
-        path = None
-        if version == 2:
-            try:
-                path = decode_path(event_record[11])
-            except ValueError as error:
-                raise ValueError("compact overlay event path id is malformed") from error
-            entered = path_positions((start_q, start_r), path)
-            if any(not on_field(position, extent) for position in entered):
-                raise ValueError("compact overlay event path leaves the battlefield")
-            path_end = entered[-1] if entered else (start_q, start_r)
-            if path_end != (end_q, end_r):
-                raise ValueError("compact overlay event path does not reach its endpoint")
+        try:
+            path = decode_path(event_record[11])
+        except ValueError as error:
+            raise ValueError("compact overlay event path id is malformed") from error
+        entered = path_positions((start_q, start_r), path)
+        if any(not on_field(position, extent) for position in entered):
+            raise ValueError("compact overlay event path leaves the battlefield")
+        path_end = entered[-1] if entered else (start_q, start_r)
+        if path_end != (end_q, end_r):
+            raise ValueError("compact overlay event path does not reach its endpoint")
         event = {
             "unit_id": roster[actor]["unit_id"],
             "from": {"q": start_q, "r": start_r},

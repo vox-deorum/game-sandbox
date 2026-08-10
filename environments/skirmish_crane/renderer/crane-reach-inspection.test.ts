@@ -15,16 +15,18 @@ import {
   selectInspectionProbe,
 } from './inspection.js'
 import { reachableTileKeys } from './legality.js'
-import { computeScene, type HexTile, type SceneUnit } from './scene.js'
+import type { HexTile, SceneUnit } from './scene.js'
 import {
   actionableStates,
   armyFixture,
   armyLegalityRaw,
+  armyScene,
   expectedDestinations,
   type LegalityEntry,
   type LegalityFixture,
   skirmishFixture,
   skirmishLegalityRaw,
+  skirmishScene,
   statesFrom,
 } from './test-helpers.js'
 import { createUnitNode } from './units.js'
@@ -183,14 +185,14 @@ describe('Crane Reach HUD inspection and range', () => {
   })
 
   it('matches fixture legality destination sets for each acting unit', () => {
-    for (const [recording, legalityRaw] of [
-      [skirmishFixture, skirmishLegalityRaw],
-      [armyFixture, armyLegalityRaw],
+    for (const [recording, legalityRaw, sceneFor] of [
+      [skirmishFixture, skirmishLegalityRaw, skirmishScene],
+      [armyFixture, armyLegalityRaw, armyScene],
     ] as const) {
       const states = statesFrom(recording)
       const legality = JSON.parse(legalityRaw) as LegalityFixture
       const opening = legality.entries[0]?.opening as StepState
-      const openingScene = computeScene(opening)
+      const openingScene = sceneFor(opening)
       const openingUnit = openingScene.units.find(
         (candidate) => candidate.playerId === openingScene.activation?.playerId,
       )
@@ -202,7 +204,7 @@ describe('Crane Reach HUD inspection and range', () => {
       )
       const actionable = actionableStates(states)
       for (const [index, state] of actionable.entries()) {
-        const scene = computeScene(state)
+        const scene = sceneFor(state)
         const unit = scene.units.find(
           (candidate) => candidate.playerId === scene.activation?.playerId,
         )

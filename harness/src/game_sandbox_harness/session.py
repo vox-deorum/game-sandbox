@@ -250,11 +250,15 @@ class Episode:
                 created_at_ms = self._clock.now_ms()
                 if self._recording_id is None:
                     self._recording_id = f"{self._entry.meta.env_id}-seed{self._seed}-{created_at_ms}"
+                overlay_static = (
+                    self._entry.overlay_static(env) if self._entry.overlay_static is not None else None
+                )
                 header = build_header(
                     environment=self._entry.meta.env_id,
                     seed=self._seed,
                     created_at=_iso_utc(created_at_ms),
                     parameters=self._parameters,
+                    overlay_static=overlay_static,
                     players=self._recording_players(),
                     layout=self._layout,
                 )

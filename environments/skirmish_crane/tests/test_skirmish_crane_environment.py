@@ -32,7 +32,7 @@ from skirmish_crane.env import FORWARD_DIRECTION, IllegalMoveError, default_acti
 from skirmish_crane.hexes import DIRECTIONS
 from skirmish_crane.naive import Agent, _decode_path, _distance, _end
 from skirmish_crane.observation_types import SelfUnit, SkirmishObservation, SkirmishObservationData
-from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay
+from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay, extract_overlay_static
 from skirmish_crane.paths import MAX_PATH_ID, MAX_PATH_STEPS, decode_path, encode_path
 from skirmish_crane.scoring import Result
 
@@ -280,7 +280,28 @@ def test_capture_state_is_all_zero_when_capture_play_is_disabled() -> None:
     env.reset(seed=0)
     observation, *_ = env.last()
     assert observation["observation"]["capture"] == {"red": 0, "blue": 0, "target": 0}
-    assert decode_overlay(extract_overlay(env))["capture"] == {"red": 0, "blue": 0, "target": 0}
+    assert decode_overlay(extract_overlay(env), extract_overlay_static(env))["capture"] == {
+        "red": 0,
+        "blue": 0,
+        "target": 0,
+    }
+    env.close()
+
+
+def test_observations_share_episode_static_data_and_refresh_it_on_reset() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=0)
+    first = env.observe("player_0")["observation"]
+    second = env.observe("player_1")["observation"]
+    cached = {key: first[key] for key in ("battlefield", "rosters", "parameters")}
+
+    for key, value in cached.items():
+        assert second[key] is value
+
+    env.reset(seed=1)
+    refreshed = env.observe("player_0")["observation"]
+    for key, value in cached.items():
+        assert refreshed[key] is not value
     env.close()
 
 
@@ -326,15 +347,17 @@ def test_staged_builtin_naive_agent_matches_the_package_copy() -> None:
 
 
 def test_overlay_is_deterministic_for_a_seeded_scripted_rollout() -> None:
-    def rollout() -> list[dict[str, Any]]:
+    def rollout() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         env = make_env(_parameters(round_cap=100, terrain=True, wasteland=True, capture_zones=2))
         env.reset(seed=11)
+        static = extract_overlay_static(env)
         states = []
         for observation in _turns(env, 18):
             states.append(extract_overlay(env))
             assert env.action_space(env.agent_selection).contains(_legal_action(observation))
+        assert extract_overlay_static(env) == static
         env.close()
-        return states
+        return static, states
 
     assert rollout() == rollout()
 
@@ -485,13 +508,17 @@ def test_compact_overlay_decodes_every_state_field() -> None:
     )
     env.reset(seed=4)
     compact = extract_overlay(env)
-    decoded = decode_overlay(compact)
+    static = extract_overlay_static(env)
+    decoded = decode_overlay(compact, static)
 
     assert compact["k"] == OVERLAY_VERSION
+    assert set(compact) == {"k", "r", "c", "u", "a", "v", "e", "x", "o"}
+    assert static["k"] == OVERLAY_VERSION
+    assert set(static) == {"k", "p", "b"}
     # The full variant exercises every wire code the renderer has to read back.
     assert any(tile["feature"] == "waste" for row in decoded["battlefield"]["tiles"] for tile in row)
-    assert all(len(row) == env.match.battlefield.side for row in compact["b"]["t"])
-    assert all(len(zone) == 4 for zone in compact["b"]["z"])
+    assert all(len(row) == env.match.battlefield.side for row in static["b"]["t"])
+    assert all(len(zone) == 4 for zone in static["b"]["z"])
     assert all(len(unit) == 7 for unit in compact["u"])
     assert decoded["battlefield"]["side"] == env.match.battlefield.side
     assert decoded["battlefield"]["tiles"] == [
@@ -559,7 +586,7 @@ def test_compact_overlay_decodes_event_capture_death_and_terminal_outcome() -> N
         0,
         encode_path((2, 3)),
     ]
-    decoded = decode_overlay(compact)
+    decoded = decode_overlay(compact, extract_overlay_static(env))
     assert target.unit_id not in {unit["unit_id"] for unit in decoded["units"]}
     assert decoded["current_activation"] is None
     assert decoded["event"] == {
@@ -580,27 +607,37 @@ def test_compact_overlay_rejects_unknown_versions() -> None:
     env = make_env(_parameters())
     env.reset(seed=0)
     compact = extract_overlay(env)
+    static = extract_overlay_static(env)
     compact["k"] = OVERLAY_VERSION + 1
-    with pytest.raises(ValueError, match="unsupported version"):
-        decode_overlay(compact)
+    with pytest.raises(ValueError, match="dynamic frame has an unsupported version"):
+        decode_overlay(compact, static)
+    compact["k"] = OVERLAY_VERSION
+    static["k"] = OVERLAY_VERSION + 1
+    with pytest.raises(ValueError, match="static data has an unsupported version"):
+        decode_overlay(compact, static)
     env.close()
 
 
-def test_compact_overlay_version_one_event_remains_compatible() -> None:
+def test_compact_overlay_requires_split_version_one_static_data() -> None:
     env = make_env(_parameters())
     env.reset(seed=2)
     actor_id = "red_archer_0"
     actor = env.match.units[actor_id]
     env.last_activation = Activation(actor_id, actor.position, actor.position, None, None, (2,))
     compact = extract_overlay(env)
-    compact["k"] = 1
-    compact["e"] = compact["e"][:11]
+    static = extract_overlay_static(env)
 
-    assert decode_overlay(compact)["event"]["path"] is None
+    with pytest.raises(ValueError, match="static data is required"):
+        decode_overlay(compact)
+    with pytest.raises(ValueError, match="must not contain static layout"):
+        decode_overlay({**compact, "p": static["p"], "b": static["b"]})
+    compact["e"] = compact["e"][:11]
+    with pytest.raises(ValueError, match="event must have 12 values"):
+        decode_overlay(compact, static)
     env.close()
 
 
-def test_compact_overlay_rejects_a_malformed_version_two_path_id() -> None:
+def test_compact_overlay_rejects_a_malformed_version_one_path_id() -> None:
     env = make_env(_parameters())
     env.reset(seed=2)
     actor_id = "red_archer_0"
@@ -610,11 +647,11 @@ def test_compact_overlay_rejects_a_malformed_version_two_path_id() -> None:
     compact["e"][11] = MAX_PATH_ID + 1
 
     with pytest.raises(ValueError, match="path id"):
-        decode_overlay(compact)
+        decode_overlay(compact, extract_overlay_static(env))
     env.close()
 
 
-def test_compact_overlay_rejects_a_version_two_path_endpoint_mismatch() -> None:
+def test_compact_overlay_rejects_a_version_one_path_endpoint_mismatch() -> None:
     env = make_env(_parameters())
     env.reset(seed=2)
     actor_id = "red_archer_0"
@@ -622,7 +659,7 @@ def test_compact_overlay_rejects_a_version_two_path_endpoint_mismatch() -> None:
     compact = extract_overlay(env)
 
     with pytest.raises(ValueError, match="does not reach its endpoint"):
-        decode_overlay(compact)
+        decode_overlay(compact, extract_overlay_static(env))
     env.close()
 
 
@@ -634,11 +671,11 @@ def test_compact_overlay_rejects_event_coordinates_outside_the_field() -> None:
     compact = extract_overlay(env)
 
     with pytest.raises(ValueError, match="coordinates are outside the battlefield"):
-        decode_overlay(compact)
+        decode_overlay(compact, extract_overlay_static(env))
     env.close()
 
 
-def test_compact_overlay_rejects_a_version_two_path_that_leaves_the_field() -> None:
+def test_compact_overlay_rejects_a_version_one_path_that_leaves_the_field() -> None:
     env = make_env(_parameters())
     env.reset(seed=2)
     actor_id = "red_archer_0"
@@ -646,11 +683,13 @@ def test_compact_overlay_rejects_a_version_two_path_that_leaves_the_field() -> N
     compact = extract_overlay(env)
 
     with pytest.raises(ValueError, match="leaves the battlefield"):
-        decode_overlay(compact)
+        decode_overlay(compact, extract_overlay_static(env))
     env.close()
 
 
-def test_full_army_recording_stays_under_ten_megabytes(tmp_path: Any) -> None:
+def test_full_army_recording_stays_under_six_and_a_half_megabytes_and_has_a_small_static_header(
+    tmp_path: Any,
+) -> None:
     parameters = _parameters(
         seat_plan="army", field_extent=10, terrain=True, unit_abilities=True, capture_zones=3, round_cap=150
     )
@@ -667,7 +706,11 @@ def test_full_army_recording_stays_under_ten_megabytes(tmp_path: Any) -> None:
         clock=ManualClock(),
     )
     assert result.ticks == 6000
-    assert (tmp_path / "army" / "recording.jsonl").stat().st_size <= 10 * 1024 * 1024
+    recording = tmp_path / "army" / "recording.jsonl"
+    header = recording.read_bytes().splitlines()[0]
+    assert len(header) < 16 * 1024
+    assert set(json.loads(header)["overlay_static"]) == {"k", "p", "b"}
+    assert recording.stat().st_size <= 13 * 512 * 1024
 
 
 def test_season_presets_match_the_published_schedule():

@@ -1,8 +1,7 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 import type { SceneEvent } from './scene.js'
-import { computeScene } from './scene.js'
-import { armyStates } from './test-helpers.js'
+import { armyScene, armyStates } from './test-helpers.js'
 import {
   activationFollowKey,
   captureCueSceneFor,
@@ -37,10 +36,10 @@ const QUIET: SceneEvent = {
 
 describe('Crane Reach event transitions', () => {
   it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
-    const before = computeScene(armyStates[0] as StepState)
+    const before = armyScene(armyStates[0] as StepState)
     const victim = before.units[0]
     const sourceEvent = armyStates
-      .map((state) => computeScene(state))
+      .map((state) => armyScene(state))
       .find((scene) => scene.event !== null)?.event
     expect(victim).toBeDefined()
     expect(sourceEvent).not.toBeNull()
@@ -131,7 +130,7 @@ describe('Crane Reach event transitions', () => {
 
   it('keeps both sides and the actual deltas in simultaneous capture cues', () => {
     const scoredScene = armyStates
-      .map((state) => computeScene(state))
+      .map((state) => armyScene(state))
       .find(
         (scene) =>
           scene.event !== null && scene.event.redCapture !== 0 && scene.event.blueCapture !== 0,

@@ -442,6 +442,7 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private sceneFor(state: StepState): CraneReachScene {
     return computeScene(state, {
+      staticOverlay: this.ctx.header.overlay_static,
       terrainEnabled: this.ctx.header.parameters.terrain === true,
       unitAbilities: this.ctx.header.parameters.unit_abilities === true,
     })

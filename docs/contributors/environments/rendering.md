@@ -21,13 +21,13 @@ Read the [interaction specification](../../specs/interaction.md) for the product
 StepState -> computeScene(state) -> Scene -> reconcile PixiJS objects -> canvas
 ```
 
-Rendering must be deterministic: a given [`StepState`](../data/state-schema.md) produces the same visible frame regardless of what was rendered before it. A replay can therefore jump directly to any tick.
+Rendering must be deterministic: the recording header's static data and a given [`StepState`](../data/state-schema.md) produce the same visible frame regardless of what was rendered before it. A replay can therefore jump directly to any tick.
 
 The renderer owns the game frame and environment-specific controls. The host page owns shared chrome such as connection status, pause, stop, the active timeout, decision log, result, and replay transport.
 
 ## Shared contract
 
-The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
+The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`. Read episode-static environment data from `ctx.header.overlay_static` at mount and retain it for the episode; each `render` call receives only the dynamic overlay for that state.
 
 `render(state, options)` returns a promise that resolves once the transition it started has finished. A draw-only renderer, a snap, a scale of zero, and a change with nothing to animate all resolve immediately. A paced host (the replay transport, the live session socket) awaits that promise alongside its own cadence timer before it delivers the next frame, so a transition that genuinely runs longer than the cadence still finishes instead of being cut off. A render that supersedes an in-flight transition resolves the earlier promise too, and so does `destroy`, so a host is never left waiting on a frame that will not come.
 

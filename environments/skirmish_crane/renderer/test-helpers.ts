@@ -10,7 +10,13 @@ import armyFixture from '../../../frontend/test/fixtures/crane-reach-army-record
 import skirmishLegalityRaw from '../../../frontend/test/fixtures/crane-reach-skirmish-legality.json?raw'
 import skirmishFixture from '../../../frontend/test/fixtures/crane-reach-skirmish-recording.jsonl?raw'
 import { decodePath, MAX_PATH_ID } from './paths.js'
-import { computeScene, HEX_DIRECTIONS, type SceneUnit } from './scene.js'
+import {
+  type CraneReachScene,
+  computeScene,
+  HEX_DIRECTIONS,
+  type SceneConfig,
+  type SceneUnit,
+} from './scene.js'
 
 export { armyFixture, armyLegalityRaw, skirmishFixture, skirmishLegalityRaw }
 
@@ -36,8 +42,31 @@ export function statesFrom(recording: string): StepState[] {
     .map((line) => JSON.parse(line) as StepState)
 }
 
+export function staticOverlayFrom(recording: string): unknown {
+  const line = recording.split('\n').find((candidate) => candidate.trim().length > 0)
+  return (JSON.parse(line ?? '{}') as { overlay_static?: unknown }).overlay_static
+}
+
 export const skirmishStates = statesFrom(skirmishFixture)
 export const armyStates = statesFrom(armyFixture)
+export const skirmishStaticOverlay = staticOverlayFrom(skirmishFixture)
+export const armyStaticOverlay = staticOverlayFrom(armyFixture)
+
+/** computeScene against the skirmish fixture's static overlay, the pairing every skirmish test wants. */
+export function skirmishScene(
+  state: StepState,
+  config: Omit<SceneConfig, 'staticOverlay'> = {},
+): CraneReachScene {
+  return computeScene(state, { ...config, staticOverlay: skirmishStaticOverlay })
+}
+
+/** computeScene against the army fixture's static overlay, the pairing every army test wants. */
+export function armyScene(
+  state: StepState,
+  config: Omit<SceneConfig, 'staticOverlay'> = {},
+): CraneReachScene {
+  return computeScene(state, { ...config, staticOverlay: armyStaticOverlay })
+}
 
 /** Decode one legality bit vector, asserting its length, its stand-still bit, and its padding. */
 function verifyBitVector(encoded: string, bitCount: number): Uint8Array {
@@ -134,14 +163,18 @@ export function verifyLegalityFixture(
   const actionable = actionableStates(states)
   expect(legality.entries).toHaveLength(actionable.length + 1)
   expect(opening?.current_activation).toBe(
-    computeScene(opening?.opening as StepState).activation?.playerId,
+    computeScene(opening?.opening as StepState, {
+      staticOverlay: header.overlay_static,
+    }).activation?.playerId,
   )
 
   for (const [index, state] of actionable.entries()) {
     const entry = legality.entries[index + 1] as LegalityEntry
     expect(entry).not.toHaveProperty('opening')
     expect(entry.tick).toBe(state.tick)
-    expect(entry.current_activation).toBe(computeScene(state).activation?.playerId)
+    expect(entry.current_activation).toBe(
+      computeScene(state, { staticOverlay: header.overlay_static }).activation?.playerId,
+    )
   }
 
   expect(legality.entries).toHaveLength(states.length)

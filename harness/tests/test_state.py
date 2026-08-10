@@ -128,6 +128,33 @@ def test_header_builder_is_valid():
     )
 
 
+def test_header_builder_emits_static_overlay_only_when_present():
+    players = {
+        "player_0": {
+            "kind": "agent",
+            "builtin_name": "naive",
+            "label": "Naive agent",
+        }
+    }
+    assert "overlay_static" not in build_header(
+        environment="flappy",
+        parameters=FLAPPY_PARAMETERS,
+        players=players,
+        layout=SINGLE_LAYOUT,
+        overlay_static=None,
+    )
+
+    header = build_header(
+        environment="flappy",
+        parameters=FLAPPY_PARAMETERS,
+        players=players,
+        layout=SINGLE_LAYOUT,
+        overlay_static={"sprites": {"bird": "blue"}},
+    )
+    validate_header(header)
+    assert header["overlay_static"] == {"sprites": {"bird": "blue"}}
+
+
 def test_header_builder_carries_player_attribution():
     header = build_header(
         environment="flappy",

@@ -10,7 +10,7 @@ This step is the platform's first production consumer of composite action spaces
 
 ## What to build
 
-`env.py` (the AEC environment and `make_env(parameters)`), `overlay.py` (`extract_overlay(env)`), and `__init__.py` with `META`, `ENTRY`, and `PUBLISHED_EXAMPLES = ()`, following the spades package shape. The naive agent's code and tests land here; its staging under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/` lands with registration in step 3.
+`env.py` (the AEC environment and `make_env(parameters)`), `overlay.py` (`extract_overlay_static(env)` and `extract_overlay(env)`), and `__init__.py` with `META`, `ENTRY`, and `PUBLISHED_EXAMPLES = ()`, following the spades package shape. The naive agent's code and tests land here; its staging under `backend/images/session-base/deps-v1/builtin/skirmish_crane/naive/` lands with registration in step 3.
 
 ### Reconciling with the step 1 engine
 
@@ -41,7 +41,7 @@ Dead-step choreography exactly as the spec's Match flow section: a killed player
 
 ### Overlay
 
-Self-contained per state and strictly JSON-safe, with a pinned size budget: a full 6000-tick army episode in the full-variant season shape (`field_extent=10`, terrain and abilities enabled, three capture zones, and `round_cap=150`) records to at most 10 MiB. The budget deliberately forces tight encoding: one character per tile combining terrain and feature, fixed-width unit records, and roster-order visibility sets as bitmask strings. If the budget is not reachable with self-contained per-state overlays, the fallback (moving the constant battlefield to the recording header) revises the spec's overlay language and goes back to the owner first. The overlay carries the spec's required content: battlefield, zones, round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. Compact overlay version 2 appends each resolved event's exact executed path id, so the renderer can animate every entered tile rather than inferring a straight endpoint route. It does not carry action masks or legal-choice lists: the renderer derives legality from this semantic state.
+The version 1 overlay is strictly JSON-safe and split between a header-static payload and dynamic per-step frames. `overlay_static`, captured once after reset, carries the battlefield and zones. Dynamic frames carry round, capture scores, living units, current activation, per-player visible-unit sets, and the most recent resolved events for animation. Tight encoding uses one character per tile combining terrain and feature, fixed-width unit records, and roster-order visibility sets as bitmask strings. Each resolved event carries its exact executed path id, so the renderer can animate every entered tile rather than inferring a straight endpoint route. The payload carries no action masks or legal-choice lists: the renderer derives legality from this semantic state. The current 6,000-tick army recording is 6,257,810 bytes with a 4,092-byte header.
 
 `current_activation` follows the [environment spec](../environment.md#rendering-and-human-input). The dead-step choreography above is what makes it subtle: derive it from the engine's next living activation rather than from `agent_selection`, which also names players queued for cleanup.
 
@@ -88,10 +88,10 @@ Under `environments/skirmish_crane/tests/`, mirroring the shared conformance sui
 - Emitted masks agree with the engine: a sampled set of masked-1 paths walk successfully, masked-0 paths and targets are rejected by `env.step()`, and the stay and none bits are always 1.
 - Dead-step choreography, complete final results for all of `possible_agents`, and the truncation path at a small round_cap.
 - Seeded golden rollouts at both plans: same seed and scripted actions produce identical recordings.
-- The recording-size test: a full-variant 6000-tick army episode through `run_episode`, using the season field extent of 10 and the shape pinned above, stays at or under 10 MiB.
+- The recording-size test: a full-variant 6000-tick army episode through `run_episode`, using the season field extent of 10 and the shape pinned above, stays at or under 6.5 MiB (6,815,744 bytes). Its header stays below 16 KiB.
 - A season-table test: every row of the spec's season schedule resolves as a valid parameter payload via `resolve_parameters` against the declared parameters.
 - Naive plays full legal games at both plans. Its actions are legal, it takes a one-step move whenever no enemy is visible and one is legal, it pursues visible enemies without naming targets, and two runs at one seed match while different seeds diverge.
 
 ## Done when
 
-Full skirmish and army episodes run through the harness with naive in every seat and record to JSONL, the step 1 ASCII runner replays those recordings, the army recording stays within 10 MiB, and the whole local conformance suite is green. The package still does not appear in the entry points or the shared suite.
+Full skirmish and army episodes run through the harness with naive in every seat and record to JSONL, the step 1 ASCII runner replays those recordings, the army recording stays within 6.5 MiB with a header below 16 KiB, and the whole local conformance suite is green. The package still does not appear in the entry points or the shared suite.

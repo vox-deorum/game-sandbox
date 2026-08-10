@@ -326,29 +326,53 @@ def _pack_dynamic(day: Day, static: Mapping[str, Any]) -> dict[str, Any]:
     return {"t": day.tick, "c": characters, "p": states, "z": "1" if day.terminal else "0"}
 
 
+def encode_overlay_static(day: Day) -> dict[str, Any]:
+    """Pack immutable layout data for a recording header without exposing the cached value."""
+    static = _pack_static(day.layout, day.config.cast_size, day.config.daynight)
+    return {"v": OVERLAY_VERSION, "s": deepcopy(static)}
+
+
 def encode_overlay(day: Day) -> dict[str, Any]:
-    """Pack an engine day into its compact, self-contained replay frame."""
-    static = deepcopy(_pack_static(day.layout, day.config.cast_size, day.config.daynight))
-    return {"v": OVERLAY_VERSION, "s": static, "d": _pack_dynamic(day, static)}
+    """Pack one dynamic replay frame, paired with its separately recorded static layout."""
+    static = _pack_static(day.layout, day.config.cast_size, day.config.daynight)
+    return {"v": OVERLAY_VERSION, "d": _pack_dynamic(day, static)}
 
 
 def extract_overlay(env: Any) -> dict[str, Any]:
     """Extract an overlay from the Three Branches environment's live engine day."""
+    return encode_overlay(_overlay_day(env))
+
+
+def extract_overlay_static(env: Any) -> dict[str, Any]:
+    """Extract immutable overlay data from the Three Branches environment's live engine day."""
+    return encode_overlay_static(_overlay_day(env))
+
+
+def _overlay_day(env: Any) -> Day:
+    """Return the live day from a compatible Three Branches environment."""
     day = getattr(env, "day", None)
     if day is None or not all(
         hasattr(day, field) for field in ("layout", "config", "characters", "prop_states", "tick", "terminal")
     ):
         raise TypeError("Three Branches overlay requires an environment with a Day at .day")
-    return encode_overlay(cast("Day", day))
+    return cast("Day", day)
 
 
-def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
-    """Strictly validate and decode a compact Three Branches replay overlay."""
-    if not isinstance(compact, Mapping) or set(compact) != {"v", "s", "d"}:
-        raise ValueError("overlay has unexpected fields")
+def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Strictly validate and decode one compact replay frame with its header static data."""
+    if isinstance(compact, Mapping) and "s" in compact:
+        raise ValueError("overlay dynamic frame must not contain static layout data")
+    if static is None:
+        raise ValueError("overlay static data is required")
+    if not isinstance(static, Mapping) or set(static) != {"v", "s"}:
+        raise ValueError("overlay static data has unexpected fields")
+    if type(static["v"]) is not int or static["v"] != OVERLAY_VERSION:
+        raise ValueError("overlay static data has an unsupported version")
+    if not isinstance(compact, Mapping) or set(compact) != {"v", "d"}:
+        raise ValueError("overlay dynamic frame has unexpected fields")
     if type(compact["v"]) is not int or compact["v"] != OVERLAY_VERSION:
-        raise ValueError("overlay has an unsupported version")
-    static = _decode_static(compact["s"])
+        raise ValueError("overlay dynamic frame has an unsupported version")
+    static_data = _decode_static(static["s"])
     dynamic = compact["d"]
     if not isinstance(dynamic, Mapping) or set(dynamic) != {"t", "c", "p", "z"}:
         raise ValueError("overlay dynamic state has unexpected fields")
@@ -362,10 +386,10 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("overlay terminal flag may occur only on the final tick")
 
     records = dynamic["c"]
-    expected_characters = static["cast_size"] + 1
+    expected_characters = static_data["cast_size"] + 1
     if not isinstance(records, list) or len(records) != expected_characters:
         raise ValueError("overlay character records must follow roster order")
-    prop_ids = static["prop_ids"]
+    prop_ids = static_data["prop_ids"]
     holders: set[str] = set()
     characters = []
     for index, record in enumerate(records):
@@ -390,7 +414,7 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
             if target_code != _NONE_TARGET or not 0 <= expression_code <= len(EMOTES):
                 raise ValueError("overlay expression and target do not agree")
             expression = "none" if expression_code == 0 else EMOTES[expression_code - 1]
-        character_id = f"npc_{index}" if index < static["cast_size"] else "visitor"
+        character_id = f"npc_{index}" if index < static_data["cast_size"] else "visitor"
         characters.append(
             {
                 "id": character_id,
@@ -415,11 +439,11 @@ def decode_overlay(compact: Mapping[str, Any]) -> dict[str, Any]:
     bell = decoded_states[BELL_ID] == BELL_RINGING
     return {
         "version": OVERLAY_VERSION,
-        "village": static["village"],
+        "village": static_data["village"],
         "tick": tick,
         "characters": characters,
         "prop_states": decoded_states,
         "bell": bell,
-        "phase": phase_at(tick, static["daynight"]),
+        "phase": phase_at(tick, static_data["daynight"]),
         "terminal": terminal == "1",
     }

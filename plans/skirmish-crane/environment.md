@@ -153,10 +153,10 @@ The messages variant maps onto the platform messaging layer, so it changes neith
 
 ## Rendering and human input
 
-The `crane-reach-field` renderer draws only from the semantic overlay. The overlay is self-contained so live play and a replay seek to the same state produce the same frame. It contains:
+The `crane-reach-field` renderer draws only from recording payloads. It reads episode-static semantic data from `ctx.header.overlay_static` at mount and dynamic semantic data from each state overlay, so live play and a replay seek produce the same frame. The header contains the battlefield and capture zones. Each dynamic overlay contains:
 
-- The battlefield, capture zones, round, capture scores, living units, current activation, and the visible-unit ids for each living player.
-- The most recent resolved move, attack, damage, death, and capture-score changes for optional animation. Compact overlay version 2 includes the exact executed path id for each resolved event, allowing movement through every entered tile.
+- The round, capture scores, living units, current activation, visible-unit ids for each living player, and the most recent resolved move, attack, damage, death, and capture-score changes for optional animation.
+- The exact executed path id for each resolved event, allowing movement through every entered tile.
 
 The production overlay contains no observations, action masks, or legal-choice lists. `current_activation` identifies the next living player who can take a real action. PettingZoo cleanup selections never appear as activations, and `current_activation` is null only after the match ends.
 
@@ -195,7 +195,7 @@ All players are human-capable so a student can control a side's primary unit, wi
 
 ## Package and student materials
 
-The platform implementation includes the environment factory, default action, overlay extractor, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's crane helper package owns the stable path encoding through its `paths` namespace and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
+The platform implementation includes the environment factory, default action, static and dynamic overlay extractors, registry entry, renderer, canonical student guide, template layer, and at least one worked example. Its package declares `PUBLISHED_EXAMPLES` explicitly, even when the first implementation keeps every worked example internal. The template's crane helper package owns the stable path encoding through its `paths` namespace and has pin tests against the environment decoder. Environment tests cover rules, scripted seeded rollouts, masks, immediate player termination, complete final results, both seat plans, and the battlefield guarantees at parameter extremes. Renderer tests cover direct replay seeks, every human control, and agreement between the renderer's legality calculation and test-only fixture masks. Course materials point students to the published platform documentation rather than the internal Sandbox specifications.
 
 ## Conformance notes
 

@@ -224,6 +224,39 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
     assert header["seat_plan"] == "solo"
 
 
+def test_static_overlay_hook_runs_once_after_reset_without_changing_opening_state(tmp_path: Path):
+    hook_calls: list[int] = []
+
+    def overlay_static(env: FakeEnv) -> dict[str, Any]:
+        hook_calls.append(env._i)
+        return {"sprites": {"bird": "blue"}}
+
+    entry = replace(make_entry(n_steps=2, with_overlay=True), overlay_static=overlay_static)
+    store = FolderRecordingStore(tmp_path)
+    with Episode(
+        entry,
+        {"player_0": AgentPlayer(ScriptedAgent([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        player_attribution={
+            "player_0": {
+                "kind": "agent",
+                "builtin_name": "naive",
+                "label": "Naive agent",
+            }
+        },
+    ) as episode:
+        opening = episode.opening_state()
+
+    assert hook_calls == [0]
+    assert opening is not None
+    assert opening["overlay"] == {"i": 0}
+    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert header["overlay_static"] == {"sprites": {"bird": "blue"}}
+
+
 def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env():
     # A turn-based env with an overlay yields a pre-action opening frame: the dealt overlay, no agent
     # having acted, tick 0. The live runner streams this so a human who leads sees the table at once.

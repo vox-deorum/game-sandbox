@@ -5,8 +5,14 @@ import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 
 import { eventVisible, perspectiveFor, visibleUnits, visionRadius } from './fog.js'
-import { computeScene, hexDistance, type SceneUnit, tileCoordinate } from './scene.js'
-import { armyStates, skirmishFixture, skirmishStates } from './test-helpers.js'
+import { hexDistance, type SceneUnit, tileCoordinate } from './scene.js'
+import {
+  armyScene,
+  armyStates,
+  skirmishFixture,
+  skirmishScene,
+  skirmishStates,
+} from './test-helpers.js'
 
 const SEATS: RecordingHeader['seats'] = {
   seat_0: ['player_0', 'player_1', 'player_2'],
@@ -16,7 +22,7 @@ const SEATS: RecordingHeader['seats'] = {
 /** The first recorded frame whose activation belongs to the given seat. */
 function frameActingFor(players: readonly string[]): StepState {
   const state = skirmishStates.find((candidate) =>
-    players.includes(computeScene(candidate).activation?.playerId ?? ''),
+    players.includes(skirmishScene(candidate).activation?.playerId ?? ''),
   )
   expect(state).toBeDefined()
   return state as StepState
@@ -25,7 +31,7 @@ function frameActingFor(players: readonly string[]): StepState {
 describe('Crane Reach fog of war', () => {
   it('draws the acting unit own vision on a controlled turn', () => {
     const state = frameActingFor(['player_0'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     const perspective = perspectiveFor(scene, ['player_0'], SEATS)
     expect(perspective?.observers).toEqual(['player_0'])
 
@@ -44,7 +50,7 @@ describe('Crane Reach fog of war', () => {
 
   it('draws the companion own vision when a seatmate acts', () => {
     const state = frameActingFor(['player_1'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     // The person controls the seat primary unit only; player_1 is a companion in the same seat.
     const perspective = perspectiveFor(scene, ['player_0'], SEATS)
     expect(perspective?.observers).toEqual(['player_1'])
@@ -52,7 +58,7 @@ describe('Crane Reach fog of war', () => {
 
   it('unions the whole seat on an opponent turn', () => {
     const state = frameActingFor(['player_3', 'player_4', 'player_5'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     const perspective = perspectiveFor(scene, ['player_0'], SEATS)
     const living = scene.units.map((unit) => unit.playerId)
     expect(perspective?.observers).toEqual(
@@ -73,7 +79,7 @@ describe('Crane Reach fog of war', () => {
     const records = (overlay.u as string[]).filter((record) => !record.startsWith('00'))
     const visibility = [...(overlay.v as (string | null)[])]
     visibility[0] = null
-    const bereaved = computeScene({ ...state, overlay: { ...overlay, u: records, v: visibility } })
+    const bereaved = skirmishScene({ ...state, overlay: { ...overlay, u: records, v: visibility } })
 
     const perspective = perspectiveFor(bereaved, ['player_0'], SEATS)
     expect(perspective?.observers).not.toContain('player_0')
@@ -83,23 +89,23 @@ describe('Crane Reach fog of war', () => {
 
   it('hides nothing from a spectator, a replay viewer, or a finished match', () => {
     const state = frameActingFor(['player_0'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     expect(perspectiveFor(scene, [], SEATS)).toBeNull()
     expect(visibleUnits(scene, null)).toBe(scene.units)
 
-    const final = computeScene(skirmishStates[skirmishStates.length - 1] as StepState)
+    const final = skirmishScene(skirmishStates[skirmishStates.length - 1] as StepState)
     expect(final.hud.terminal).not.toBeNull()
     expect(perspectiveFor(final, ['player_0'], SEATS)).toBeNull()
   })
 
   it('falls back to the controlled players when no seat map names them', () => {
     const state = frameActingFor(['player_3', 'player_4', 'player_5'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     expect(perspectiveFor(scene, ['player_0'], undefined)?.observers).toEqual(['player_0'])
   })
 
   it('reads one further from high ground and nowhere else', () => {
-    const scene = computeScene(skirmishStates[0] as StepState)
+    const scene = skirmishScene(skirmishStates[0] as StepState)
     const unit = scene.units[0] as SceneUnit
     expect(unit).toBeDefined()
     const hill = {
@@ -117,10 +123,13 @@ describe('Crane Reach fog of war', () => {
     // is what pins the copy: a unit is in a mask exactly when it stands inside the recomputed
     // radius, so the tile veil drawn from that radius can never disagree with the units drawn from
     // the masks.
-    for (const states of [skirmishStates, armyStates]) {
+    for (const [states, sceneFor] of [
+      [skirmishStates, skirmishScene],
+      [armyStates, armyScene],
+    ] as const) {
       const mismatches: string[] = []
       for (const [index, state] of states.entries()) {
-        const scene = computeScene(state)
+        const scene = sceneFor(state)
         for (const [playerId, seen] of scene.visibility) {
           const observer = scene.units.find((unit) => unit.playerId === playerId) as SceneUnit
           const from = tileCoordinate(observer.tileKey)
@@ -143,11 +152,11 @@ describe('Crane Reach fog of war', () => {
     // and may be handed any frame directly (a replay seek). Fog is a pure function of the state, so
     // arriving late must give the same picture as having watched every frame before it.
     const midway = skirmishStates[Math.floor(skirmishStates.length / 2)] as StepState
-    const cold = perspectiveFor(computeScene(midway), ['player_0'], SEATS)
+    const cold = perspectiveFor(skirmishScene(midway), ['player_0'], SEATS)
     for (const state of skirmishStates.slice(0, Math.floor(skirmishStates.length / 2))) {
-      perspectiveFor(computeScene(state), ['player_0'], SEATS)
+      perspectiveFor(skirmishScene(state), ['player_0'], SEATS)
     }
-    const warm = perspectiveFor(computeScene(midway), ['player_0'], SEATS)
+    const warm = perspectiveFor(skirmishScene(midway), ['player_0'], SEATS)
     expect(warm).toEqual(cold)
   })
 
@@ -158,10 +167,10 @@ describe('Crane Reach fog of war', () => {
     let ownMoves = 0
     let skippedByTheWrongFrame = 0
     for (const [index, state] of skirmishStates.entries()) {
-      const scene = computeScene(state)
+      const scene = skirmishScene(state)
       const actor = scene.event?.actorId
       if (actor === undefined || actor === null || !actor.startsWith('red_')) continue
-      const previous = index === 0 ? null : computeScene(skirmishStates[index - 1] as StepState)
+      const previous = index === 0 ? null : skirmishScene(skirmishStates[index - 1] as StepState)
       if (previous?.activation?.unitId !== actor) continue
       ownMoves += 1
       expect(eventVisible(perspectiveFor(previous, ['player_0'], SEATS), actor)).toBe(true)
@@ -175,7 +184,7 @@ describe('Crane Reach fog of war', () => {
 
   it('installs an activation resolved out of sight without animating it', () => {
     const state = frameActingFor(['player_3', 'player_4', 'player_5'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     const perspective = perspectiveFor(scene, ['player_0'], SEATS)
     // A unit nobody on our side can see is not one whose move we may watch.
     const unseen = scene.units.find(
@@ -190,7 +199,7 @@ describe('Crane Reach fog of war', () => {
 
   it('keeps terrain complete, since the battlefield is standing knowledge', () => {
     const state = frameActingFor(['player_0'])
-    const scene = computeScene(state)
+    const scene = skirmishScene(state)
     const perspective = perspectiveFor(scene, ['player_0'], SEATS)
     // The veil marks where perception ends; every tile is still in the scene and still drawn.
     expect(perspective?.tiles.size).toBeLessThan(scene.tiles.length)

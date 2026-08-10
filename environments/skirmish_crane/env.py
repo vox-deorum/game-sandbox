@@ -130,6 +130,9 @@ class SkirmishCraneEnv(AECEnv):
         self.last_activation = None
         self.last_capture_changes = {"red": 0, "blue": 0}
         self._last_observations: dict[str, SkirmishObservation] = {}
+        self._battlefield_snapshot: Battlefield
+        self._rosters_snapshot: Rosters
+        self._parameters_snapshot: MatchParameters
         # Player order is part of the public contract. These maps keep the initial roster slots
         # stable even after units die and leave the engine's living-unit mapping.
         self.agent_by_unit = self._agent_mapping()
@@ -256,6 +259,9 @@ class SkirmishCraneEnv(AECEnv):
         current = self.match.current_unit_id
         assert current is not None
         self.agent_selection = self.agent_by_unit[current]
+        self._battlefield_snapshot = self._battlefield()
+        self._rosters_snapshot = self._rosters()
+        self._parameters_snapshot = self._parameters()
         # PettingZoo can request a final observation while consuming a dead step. Preserve each
         # player's last living observation because the engine removes killed units immediately.
         self._last_observations = {agent: self._observe_living(agent) for agent in self.possible_agents}
@@ -365,9 +371,9 @@ class SkirmishCraneEnv(AECEnv):
                 "visible_units": visible,
                 "round": round_number,
                 "capture": self._capture(),
-                "battlefield": self._battlefield(),
-                "rosters": self._rosters(),
-                "parameters": self._parameters(),
+                "battlefield": self._battlefield_snapshot,
+                "rosters": self._rosters_snapshot,
+                "parameters": self._parameters_snapshot,
             },
             "action_mask": action_mask,
         }

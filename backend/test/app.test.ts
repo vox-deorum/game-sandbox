@@ -561,6 +561,7 @@ describe('HTTP API', () => {
         schema_version: 1,
         environment: env,
         parameters: {},
+        overlay_static: { map: 'not part of the listing' },
         seed: 0,
         players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
         seats: { seat_0: ['player_0'] },
@@ -586,6 +587,7 @@ describe('HTTP API', () => {
         user_id: string
         user_name?: string
         pinned: boolean
+        header: { overlay_static?: unknown }
       }>
       expect(all.map((r) => r.id).sort()).toEqual(['flappy_bird-1', 'other-1'])
       // The owner's display name rides beside the stable id.
@@ -595,6 +597,7 @@ describe('HTTP API', () => {
         pinned: false,
       })
       expect(all.find((r) => r.id === 'flappy_bird-1')).not.toHaveProperty('github_username')
+      expect(all.find((r) => r.id === 'flappy_bird-1')?.header).not.toHaveProperty('overlay_static')
       expect(all.find((r) => r.id === 'other-1')).toMatchObject({ user_id: 'ghost-user' })
       expect(all.find((r) => r.id === 'other-1')).not.toHaveProperty('user_name')
 
@@ -654,7 +657,7 @@ describe('HTTP API', () => {
       id: string
       user_id: string | null
       user_name?: string
-      header: { players?: Record<string, PlayerEntry> }
+      header: { players?: Record<string, PlayerEntry>; overlay_static?: unknown }
     }
 
     // A play-open recording seating a submitted agent — the state blind rating protects. The recording
@@ -669,6 +672,7 @@ describe('HTTP API', () => {
         schema_version: 1,
         environment: 'flappy_bird',
         parameters: {},
+        overlay_static: { map: 'preserved in the stream' },
         seed: 0,
         players: {
           player_0: {
@@ -726,6 +730,7 @@ describe('HTTP API', () => {
         label: 'Agent',
         submission_id: 'sub-a',
       })
+      expect(row?.header).not.toHaveProperty('overlay_static')
     })
 
     it('leaves attribution and owner fields intact for an operator', async () => {
@@ -758,10 +763,16 @@ describe('HTTP API', () => {
 
       const anon = await app.inject({ method: 'GET', url: `/api/recordings/${REC_ID}` })
       const anonLines = anon.body.split('\n')
-      expect(
-        (JSON.parse(anonLines[0] ?? '{}') as { players: Record<string, PlayerEntry> }).players
-          .player_0,
-      ).toEqual({ kind: 'agent', label: 'Agent', submission_id: 'sub-a' })
+      const anonHeader = JSON.parse(anonLines[0] ?? '{}') as {
+        players: Record<string, PlayerEntry>
+        overlay_static: unknown
+      }
+      expect(anonHeader.players.player_0).toEqual({
+        kind: 'agent',
+        label: 'Agent',
+        submission_id: 'sub-a',
+      })
+      expect(anonHeader.overlay_static).toEqual({ map: 'preserved in the stream' })
       // The state line rides through untouched.
       expect(anonLines[1]).toBe('{"tick":0}')
 

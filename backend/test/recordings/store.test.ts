@@ -51,6 +51,17 @@ describe('recordings store over the volume layout', () => {
     expect(summaries[0]?.header).toMatchObject({ schema_version: 1, environment: 'hearts' })
   })
 
+  it('reads a header whose static overlay spans several read chunks', async () => {
+    const map = `${'✓'.repeat(50 * 1024)}${'x'.repeat(100 * 1024)}`
+    const header = JSON.stringify({
+      ...(JSON.parse(HEADER) as object),
+      overlay_static: { map },
+    })
+    await writeRecording('static-overlay', [header, STATE])
+
+    expect((await store.readHeader('static-overlay'))?.overlay_static).toEqual({ map })
+  })
+
   it('skips a directory whose header is missing or invalid', async () => {
     await writeRecording('good', [HEADER])
     await writeRecording('empty', [''])

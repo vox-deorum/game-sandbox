@@ -47,7 +47,8 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
       ),
     )
     return listings.map((listing) => {
-      const header = listing.header as RecordingHeader
+      const header = { ...(listing.header as RecordingHeader) }
+      delete header.overlay_static
       const playStatus =
         listing.season_id === null ? undefined : playStatuses.get(listing.season_id)
       if (isBlindRecording(caller, playStatus, header.players)) {
@@ -64,7 +65,7 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
         }
       }
       const name = listing.user_id === null ? undefined : names.get(listing.user_id)
-      return { ...listing, ...optionalField('user_name', name) }
+      return { ...listing, header, ...optionalField('user_name', name) }
     })
   })
 

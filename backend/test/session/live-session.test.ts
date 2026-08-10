@@ -10,7 +10,8 @@ import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { FakeSessionProcess } from '../support/fake-driver.js'
 import { FakeSocket, flush } from '../support/harness.js'
 
-const HEADER = '{"schema_version":1,"environment":"flappy_bird","seed":0}'
+const HEADER =
+  '{"schema_version":1,"environment":"flappy_bird","seed":0,"overlay_static":{"map":"village"}}'
 const STATE_0 =
   '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const STATE_1 =
