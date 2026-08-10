@@ -12,17 +12,17 @@ There is no canonical map. The village is whatever these rules generate from the
 
 ## Waterways
 
-- The trunk river enters the north edge within its middle third, 5 to 7 m wide, and meanders south: its heading stays within 45 degrees of due south, and every bend keeps a radius of at least 10 m.
+- The trunk river enters the north edge within its middle third, 5 to 7 m wide, and meanders south, its course shaped by the seed's terrain so the water reads grown rather than drafted.
 - Between two fifths and three fifths of the way down the village, the trunk forks into three channels, 4 to 6 m wide, that fan out and reach the south edge. Adjacent mouths land at least 20 m apart. The fork is the village's namesake and its visual center.
-- The channels meander under the same curvature bounds as the trunk. Water is impassable everywhere.
-- Reed flats line the outer curve of bends and the channel mouths.
+- The channels meander the same way. Water is impassable everywhere.
+- Reed flats gather on low wet banks and at the channel mouths.
 
 ## The road and paths
 
-- The raised road enters at the west edge, winds east, and exits the east edge, 4 to 5 m wide: its heading stays within 45 degrees of due east, and every bend keeps a radius of at least 10 m.
+- The raised road enters at the west edge, winds east, and exits the east edge, 4 to 5 m wide.
 - The road runs south of the fork, so it crosses each channel exactly once, roughly square-on, at a bridge, and never crosses the trunk.
 - A bridge's deck is a rectangle along its crossing route, 2 to 3 m wide, spanning its channel bank to bank plus 1 m of apron on each bank; every deck carries road ground.
-- Footpaths, 1.5 to 2.5 m wide, branch from the road to the well plaza, every home cluster, and every shrine. Paths curve with at least the road's bend radius; nothing in the village runs straight for long.
+- Footpaths, 1.5 to 2.5 m wide, branch from the road to the well plaza, every home cluster, and every shrine. Paths curve; nothing in the village runs straight for long.
 - The visitor's spawn point is fixed on the road's centerline, 1 m in from the west edge, clear of every footprint.
 
 ## Grounds
@@ -46,7 +46,7 @@ Districts are anchors along the road and channels, not fixed positions:
 - The market sits on the road's middle stretch, its stalls scattered loosely on both sides of the road with the notice board among them.
 - The inn stands on the road's east stretch, facing the road.
 - The repair shed and the beacon bell stand on the road's west stretch, so the visitor walking in passes them first.
-- Homes gather in two or three loose clusters on the channel banks, each cluster reached by a footpath and, when it lies across water, a bridge. Bridges are placed before homes, and homes only on banks already connected to the road network.
+- Homes gather in two or three loose clusters on banks the terrain favors, each cluster reached by a footpath and, when it lies across water, a bridge.
 - Fields step down in low terraces between the home clusters and the south edge, their furrows following the channel curves.
 
 ## Buildings and interiors
@@ -84,7 +84,7 @@ Activities, states, and the use rules are the ruleset's; this table places the i
 
 ## Generation order and guarantees
 
-The generator runs from the match seed's generation stream, in order: boundary and river, road and bridges, district anchors, buildings and homes, footpaths, ground classes, scenery, props. Every seed satisfies:
+The generator runs from the match seed's generation stream, in order: terrain and grounds, district anchors and buildings, the road network with its bridges and footpaths, scenery and props. Every seed satisfies:
 
 - The stable features are each placed once: the well pump, the market, the inn, the repair shed, and the beacon bell.
 - The walkable ground, bridges and building interiors included, is one connected region.
