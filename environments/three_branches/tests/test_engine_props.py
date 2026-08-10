@@ -10,7 +10,7 @@ from three_branches.prop_use import resolve_uses
 
 
 def _day() -> Day:
-    return Day(DayConfig(cast_size=5))
+    return Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
 
 
 def _place(day: Day, character_id: str, position: tuple[float, float]) -> None:

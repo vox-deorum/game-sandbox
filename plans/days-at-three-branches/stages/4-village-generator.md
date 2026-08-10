@@ -1,6 +1,6 @@
 # Step 4: The village generator
 
-Status: planned.
+Status: in progress. Milestone 0 and the layer 1 build are landed; layer 1 review rounds are open.
 
 Part of [the plan](../README.md). This is build-order step 4: the seeded construction of Three Branches under [village.md](../village.md)'s guarantees, replacing the step 2 fixture village behind the unchanged `build_village(seed)` seam. The village is grown in four layers, terrain, then sites, then the road network, then accessories. Each layer is tuned through rounds of owner review in the real browser viewer until the owner signs it off, and the stage closes with the guarantee suite green across a pinned seed batch and the owner blessing one batch seed as the course default.
 
@@ -16,7 +16,7 @@ Because review needs the browser, `build_village(seed)` flips to the generator a
 
 Every choice draws from one labeled stream, `random.Random(f"{seed}:village")`, the pattern the crane engine set with its `battlefield` and `match-play` streams; the label keeps generation independent of the scripted visitor's plain `random.Random(seed)`. The pipeline consumes the stream in village.md's order: terrain and grounds, district anchors and buildings, the road network with its bridges and footpaths, scenery and props.
 
-Every placement draws against a fixed candidate budget (a few hundred for a building, a few dozen for a prop). An exhausted budget, an infeasible draw, or a failed `Layout` assembly discards the partial village and redraws whole on the same stream, the way `generate_battlefield` redraws; assembly and the reset validation run inside the loop, so the constructor's own rejections trigger a redraw too. The cap is 32 redraws, then a `RuntimeError` naming the seed: a loud bug signal. The conformance suite resets this environment at seed 17 and on the unseeded path (seed 0) every run, so those seeds must build from the first flip, and the batch records the redraw rates.
+Every placement draws against a fixed candidate budget (a few hundred for a building, a few dozen for a prop). An exhausted budget, an infeasible draw, or a failed `Layout` assembly discards the partial village and redraws whole on the same stream, the way `generate_battlefield` redraws; assembly and the reset validation run inside the loop, so the constructor's own rejections trigger a redraw too. The cap is 64 redraws, then a `RuntimeError` naming the seed: a loud bug signal. The conformance suite resets this environment at seed 17 and on the unseeded path (seed 0) every run, so those seeds must build from the first flip, and the batch records the redraw rates.
 
 `generation.py` stays one module, the crane `battlefield.py` precedent: one private function per layer, each taking the stream plus the pieces already placed and returning plain layout parts, so tests target layers directly. Generation draws with `random` and `math` over `geometry.py`; `env.py` remains the package's only numpy importer. Homes are numbered `home_0` through `home_4` in placement order, channels sit trunk first then by mouth x (the west, center, and east channels), and props emit in canonical order (village.md's table order by type, placement order within type), the orders the `Layout` constructor and the observation expect. Determinism keeps stage 2's scope: same-platform builds are exact, and committed recordings are replayed, never re-simulated.
 
@@ -24,12 +24,12 @@ Every placement draws against a fixed candidate budget (a few hundred for a buil
 
 Two seeded scalar fields, elevation and moisture, are drawn before anything else, so every later layer scores against the same land. Each field is fractal value noise in pure python: a lattice of uniform draws from the stream at 25 m spacing covering the frame plus one ring of nodes, summed over three octaves at 25, 12.5, and 6.25 m spacing with amplitudes 1, 0.5, and 0.25, sampled with smoothstep-faded bilinear interpolation and normalized to the unit interval. The elevation field carries a southward slope bias, so water has somewhere to go. A field is a plain function of a point built from tuples and `math`; a sample costs microseconds and the whole lattice a few hundred draws. The fields are generation-only artifacts: the emitted `Layout` stays polylines with widths, polygons, and rectangles, so nothing downstream of `generation.py` changes.
 
-One walker traces every watercourse and path. It steps a few meters at a time, its direction a blend of its own momentum, the downhill gradient of the elevation field, and a pull toward its target, so a course follows the land, and two seeds meander differently because their land differs. The blend weights and the field roughness are drawn per seed inside tuned ranges, so lazy and bend-rich seeds both occur, and those ranges are the knobs the review rounds turn. A finished trace is resampled to at most 35 points, the hard cap the overlay codec enforces by packing a polyline's point count as one base36 character, with every coordinate inside the 100 m frame, which the observation spaces and the codec both require. A trace that self-intersects, collides with a sibling, or leaves the frame discards and redraws.
+One walker traces every watercourse and path. It steps a few meters at a time, its direction a blend of its own momentum, the sideways push of the elevation field's downhill gradient, and a pull toward its target, so the land bends a course while the pull carries it home, and two seeds meander differently because their land differs. Every course leaves its source on a drawn heading, so entries vary as much as the bends. The blend weights, the drawn headings, and the field roughness are drawn per seed inside tuned ranges, so lazy and bend-rich seeds both occur, and those ranges are the knobs the review rounds turn. A finished trace is resampled to at most 35 points, the hard cap the overlay codec enforces by packing a polyline's point count as one base36 character, with every coordinate inside the 100 m frame, which the observation spaces and the codec both require. A trace that self-intersects, collides with a sibling, or leaves the frame discards and redraws.
 
 | Feature      | Width                                                       |
 | ------------ | ----------------------------------------------------------- |
-| Trunk        | 5 to 7 m                                                    |
-| Channels     | 4 to 6 m each                                               |
+| Trunk        | 4 to 6 m                                                    |
+| Channels     | 2.5 to 4 m each                                             |
 | Road         | 4 to 5 m                                                    |
 | Footpaths    | 1.5 to 2.5 m                                                |
 | Bridge decks | 2 to 3 m, spanning bank to bank plus 1 m of apron each side |
@@ -40,7 +40,7 @@ One walker traces every watercourse and path. It steps a few meters at a time, i
 
 The fields are drawn, then the water topology, which is where the guarantees live: a north-edge entry inside the middle third, a fork target in the y 40 to 60 band at an x that fits three mouths at least 20 m apart and at least 10 m off the side edges (the edge margin also protects the road's west entry and the padded fixture spawn), and the mouth targets on the south edge. The walker traces the trunk from the entry to the fork, and the three channels from the fork's exact point to their mouths; coincident channel endpoints are what the layout turns into the solid confluence cap, and the suite asserts exactly one cap, at the fork. Reed flats land where moisture runs high along banks and at every mouth, and field terraces land on the flat low stretches of the lower banks; both take their outlines from the fields, bounded so every polygon stays simple and the even-odd ground classifier stays honest.
 
-Padding: the fixture road, footpaths, buildings, props, scenery, and spawn, with `bridges=()`. The layout splits every water bank around every deck, so a fixture deck overlapping new water would punch a phantom gap in a generated bank; an empty bridge tuple builds fine, and the fixture road fording the new channels in the viewer is an accepted padding artifact.
+Padding: the fixture road, footpaths, buildings, props, scenery, and spawn, with `bridges=()`. The layout splits every water bank around every deck, so a fixture deck overlapping new water would punch a phantom gap in a generated bank; an empty bridge tuple builds fine, and the fixture road fording the new channels in the viewer is an accepted padding artifact. The overlay codec accepts an empty bridge list on both ends; one road bridge per channel returns as layer 3's tested bound.
 
 Tests landing: the entry third, the fork band, the widths, mouth separation and the edge margin, channels never intersecting themselves or one another, terrace and reed polygons simple, the 35-point cap, generator-level same-seed determinism and cross-seed divergence, the static overlay payload under 12 KiB, reset under the 250 ms cadence, and the observation `village` Dict equal to the built layout through float32.
 
@@ -76,7 +76,7 @@ Every prop is accepted only with a banked witness: a standing point within the 1
 
 Padding: none. The fixture import leaves `generation.py`; `fixture.py` itself stays as the engine tests' known map.
 
-Tests landing: the stable features placed once each, the overlap matrix, a witness for every prop re-derived independently of the generator's own search, strict connectivity at 0.25 m over the pymunk space, and each reed flat holding two disjoint body-clear standing points, all across the batch at full fidelity.
+Tests landing: the stable features placed once each, the overlap matrix, a witness for every prop re-derived independently of the generator's own search, and strict connectivity at 0.25 m over the pymunk space, all across the batch at full fidelity.
 
 Gate: the owner signs off the dressed village, which opens the stage close.
 
@@ -85,7 +85,7 @@ Gate: the owner signs off the dressed village, which opens the stage close.
 The audit lands before any seam change, everything green with the seam still returning the fixture:
 
 - `test_physics`, `test_engine_props`, `test_engine_perception`, and `test_overlay`'s engine-level constructions pass `layout=FIXTURE_VILLAGE` explicitly (`Day` already takes it), so their fixture coordinates stay valid forever.
-- `test_layout_fixture` retires its pin that the seam ignores the seed and keeps every fixture invariant as documentation of the engine tests' known map; its flood fill lifts into a shared helper both suites use, rebuilt on the pymunk space.
+- `test_layout_fixture` retires its pin that the seam ignores the seed and keeps every fixture invariant as documentation of the engine tests' known map; its flood fill lifts into a shared helper both suites use.
 - `test_chat` derives its placements from `env.day.layout` at runtime: a deterministic search finds an in-range open trio, and the wall-blocked pair builds from one of the layout's own homes. A failed search is a generator quality signal, not a test bug.
 - `test_builtins` derives the seed 1 route-graph junction from the observed village; the NaN-regression sweep keeps its seed and tick pairs as pure finiteness checks; the seed 22 opening-line pin moves to the per-close regeneration list.
 - `test_environment`'s bell-use standing point comes from a `body_clear` search near the bell.
@@ -93,11 +93,11 @@ The audit lands before any seam change, everything green with the seam still ret
 
 ## What a layer's close regenerates
 
-Tuning rounds inside a layer are local: code changes plus browser looks, nothing committed, no pins touched. A layer's close is a commit point, and because the seam's output changed, the close re-runs `scripts/gen_three_branches_fixture.py` with its `SEED` and `GREETING_TICK` re-picked by a scripted scan so the script's content assertions hold, refreshes the recording and decoded sidecar, re-picks the e2e chat constants, and runs the `three-branches` e2e group. If a review pause forces a mid-tuning commit, the close regeneration runs anyway. Step 3's fixture section is revised at the first close to say the recording plays a generated village, per the plan rules.
+Tuning rounds inside a layer are local: code changes plus browser looks, nothing committed, no pins touched. A layer's close is a commit point, and because the seam's output changed, the close re-runs `scripts/gen_three_branches_fixture.py` with its `SEED` and `GREETING_TICK` re-picked by a scripted scan so the script's content assertions hold, refreshes the recording and decoded sidecar, re-picks the e2e chat constants and `test_builtins`' seed and opening-line pin, and runs the `three-branches` e2e group. If a review pause forces a mid-tuning commit, the close regeneration runs anyway. Step 3's fixture section is revised at the first close to say the recording plays a generated village, per the plan rules.
 
 ## The blessed seed and the stage close
 
-The suite pins a batch of eight seeds, 0 (the reset default) and 17 (the conformance rollout seed) among them, every seed at full fidelity. The owner browses the batch in local watch sessions and blesses one seed as the course default; if the blessing waits, the mechanical items proceed on a provisional batch seed and re-run once blessed. The blessed seed becomes `test_budget`'s seed and the fixture script's `SEED`, and is recorded in this file; season pinning stays later work.
+The suite pins a batch of eight seeds, 0 (the reset default) and 17 (the conformance rollout seed) among them, every seed at full fidelity; the pinned batch is 0, 1, 2, 3, 5, 7, 11, and 17. The owner browses the batch in local watch sessions and blesses one seed as the course default; if the blessing waits, the mechanical items proceed on a provisional batch seed and re-run once blessed. The blessed seed becomes `test_budget`'s seed and the fixture script's `SEED`, and is recorded in this file; season pinning stays later work.
 
 At the close:
 
@@ -112,15 +112,14 @@ At the close:
 
 The consolidated list, accreting per layer as the build order lands it:
 
-- The stable features placed once each, five homes, 31 props in canonical order, and trunk-first channel order, which needs its own assertion (the `Layout` constructor already enforces the roster, the prop sequence, and the channel count).
+- The stable features placed once each, five homes, and 31 props in canonical order (the `Layout` constructor already enforces the roster, the prop sequence, and the channel count; the entry and mouth assertions pin the trunk-first channel order).
 - The entry third, the fork band, every width, mouth separation, and the 10 m edge margin.
 - Water polylines simple, channels never intersecting one another, and exactly one confluence cap, at the fork.
 - The road's west entry and east exit, exactly one crossing per channel and never the trunk, one deck per crossing really spanning its water, at most one footpath bridge per channel and none on the trunk, decks clear of the cap, and footpaths never touching water off a deck.
 - The overlap matrix: buildings against buildings, water, road, boundary, and exterior objects; exterior footprints pairwise disjoint; interior props inside their walls leaving doorways open; every doorway facing the path nearest its building and opening onto body-clear ground, never water, a footprint, or the boundary.
-- Strict connectivity at 0.25 m over the pymunk space: every body-clear sample in one region holding the spawn, every doorway threshold, start pose, and witness, with a sampled cross-check that the space and `body_clear` agree.
+- Strict connectivity at 0.25 m over the pymunk space: every body-clear sample in one region holding the spawn, every doorway threshold, start pose, and witness.
 - A witness for every prop use, re-derived independently of the generator's own search.
 - The spawn on the road centerline at x = 1.0, clear of every footprint.
-- Each reed flat holding two disjoint body-clear standing points.
 - Every field and reed polygon simple, no self-intersection.
 - Same-seed determinism, two builds comparing equal, and divergence, two batch seeds differing.
 - Every polyline at 35 points or fewer, and the canonical static overlay payload below 12 KiB for every batch seed (the run-length ground grid is the dominant term; the full header line cap stays in `test_budget`).

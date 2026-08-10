@@ -82,7 +82,7 @@ def test_decks_pass_motion_while_boundaries_and_walls_confine_it() -> None:
 
 
 def test_day_samples_ground_speed_once_and_wraps_heading_360() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "visitor", (10.0, 10.0))
     orders = {character_id: day.default_order(character_id) for character_id in day.character_order}
     orders["visitor"] = Order(heading=360, speed=1.0)
@@ -92,7 +92,7 @@ def test_day_samples_ground_speed_once_and_wraps_heading_360() -> None:
 
 
 def test_non_finite_orders_degrade_to_the_stand_still_default() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     before = day.characters["visitor"].position
     heading = day.characters["visitor"].heading
     orders = {character_id: day.default_order(character_id) for character_id in day.character_order}
@@ -104,7 +104,7 @@ def test_non_finite_orders_degrade_to_the_stand_still_default() -> None:
 
 
 def test_default_orders_hold_position_and_keep_the_current_heading() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     before = day.characters["visitor"].position
     day.step({character_id: day.default_order(character_id) for character_id in day.character_order})
     assert day.characters["visitor"].position == pytest.approx(before)
@@ -118,7 +118,7 @@ def test_default_orders_hold_position_and_keep_the_current_heading() -> None:
 def test_each_passable_ground_class_sets_its_documented_speed(
     position: tuple[float, float], expected: float
 ) -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "visitor", position)
     orders = {character_id: day.default_order(character_id) for character_id in day.character_order}
     orders["visitor"] = Order(heading=0, speed=1)

@@ -17,7 +17,7 @@ def _place(day: Day, character_id: str, position: tuple[float, float], heading: 
 
 
 def test_cone_and_hearing_apply_their_distinct_ranges() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "npc_0", (30.0, 60.0), 0)
     _place(day, "npc_1", (36.0, 60.0))
     _place(day, "npc_2", (30.0, 67.0))
@@ -33,7 +33,7 @@ def test_cone_and_hearing_apply_their_distinct_ranges() -> None:
 
 
 def test_walls_block_sight_and_a_doorway_does_not() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "npc_0", (8.0, 65.0), 270)
     _place(day, "npc_1", (8.0, 60.0))
     assert "npc_1" in [character.id for character in day.perception("npc_0").seen]
@@ -43,7 +43,7 @@ def test_walls_block_sight_and_a_doorway_does_not() -> None:
 
 
 def test_reeds_hide_a_character_unless_the_observer_is_in_the_same_bank() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "npc_0", (14.0, 47.0), 0)
     _place(day, "npc_1", (16.0, 46.0))
     _place(day, "npc_2", (30.0, 47.0))
@@ -62,7 +62,7 @@ def test_reeds_hide_a_character_unless_the_observer_is_in_the_same_bank() -> Non
 
 
 def test_bell_is_global_and_daynight_phases_follow_the_rules_table() -> None:
-    day = Day(DayConfig(cast_size=5, daynight=True))
+    day = Day(DayConfig(cast_size=5, daynight=True), FIXTURE_VILLAGE)
     day.prop_states["bell_0"] = "ringing"
     perception = day.perception("visitor")
     assert perception.bell
@@ -70,11 +70,11 @@ def test_bell_is_global_and_daynight_phases_follow_the_rules_table() -> None:
     assert perception.phase == "dawn"
     day.tick = 961
     assert day.phase == "night"
-    assert Day(DayConfig(cast_size=5, daynight=False)).phase == "day"
+    assert Day(DayConfig(cast_size=5, daynight=False), FIXTURE_VILLAGE).phase == "day"
 
 
 def test_prop_visibility_uses_the_same_cone_and_wall_rules_as_people() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     _place(day, "npc_0", (30.0, 32.0), 0)
     assert "stall_0" in [prop.id for prop in day.perception("npc_0").props]
     _place(day, "npc_0", (8.0, 65.0), 0)

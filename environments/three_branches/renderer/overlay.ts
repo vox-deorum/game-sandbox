@@ -125,13 +125,12 @@ export function decodeStatic(header: unknown): StaticOverlay {
 
   const channels = array(value.c, 'overlay must contain exactly four channels')
   const footpaths = array(value.f, 'overlay must contain at least one footpath')
-  const bridges = array(value.b, 'overlay must contain at least one bridge')
+  const bridges = array(value.b, 'overlay bridges must be a list')
   const buildings = array(value.h, 'overlay must contain exactly seven buildings')
   const props = array(value.p, 'overlay must contain exactly 31 props')
   const scenery = array(value.n, 'overlay scenery must be a list')
   if (channels.length !== 4) throw new Error('overlay must contain exactly four channels')
   if (footpaths.length === 0) throw new Error('overlay must contain at least one footpath')
-  if (bridges.length === 0) throw new Error('overlay must contain at least one bridge')
   if (buildings.length !== BUILDING_ROSTER.length)
     throw new Error('overlay must contain exactly seven buildings')
 

@@ -17,8 +17,8 @@ from game_sandbox_harness.session import AgentPlayer, run_episode
 from three_branches import ENTRY, META
 from three_branches.env import ThreeBranchesEnv
 from three_branches.naive import Agent as Naive
+from three_branches.scripted_visitor import _GRAPH_COORD_DIGITS, _route_graph
 from three_branches.scripted_visitor import Agent as ScriptedVisitor
-from three_branches.scripted_visitor import _route_graph
 
 
 def _village() -> dict:
@@ -122,8 +122,14 @@ def test_scripted_visitor_builds_a_joined_road_and_footpath_graph() -> None:
 def test_scripted_visitor_splits_the_fixture_road_at_footpath_junctions() -> None:
     env = ThreeBranchesEnv(seat_plan="cast_5")
     observations, _infos = env.reset(seed=1)
-    nodes, neighbors = _route_graph(observations["player_0"]["village"])
-    junction = nodes.index((12.0, 25.0))
+    village = observations["player_0"]["village"]
+    nodes, neighbors = _route_graph(village)
+    first_point = village["footpaths"][0]["points"][0]
+    start = (
+        round(float(first_point["x"]), _GRAPH_COORD_DIGITS),
+        round(float(first_point["y"]), _GRAPH_COORD_DIGITS),
+    )
+    junction = nodes.index(start)
 
     reached = {0}
     frontier = [0]

@@ -268,8 +268,8 @@ def _decode_static(value: object) -> dict[str, Any]:
         raise ValueError("overlay must contain exactly four channels")
     if not isinstance(paths, list) or not paths:
         raise ValueError("overlay must contain at least one footpath")
-    if not isinstance(bridges, list) or not bridges:
-        raise ValueError("overlay must contain at least one bridge")
+    if not isinstance(bridges, list):
+        raise ValueError("overlay bridges must be a list")
     if not isinstance(buildings, list) or len(buildings) != 7:
         raise ValueError("overlay must contain exactly seven buildings")
     if not isinstance(scenery, list):

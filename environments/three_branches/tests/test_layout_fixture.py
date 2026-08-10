@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import replace
 
 import pymunk
 import pytest
 
 from three_branches.fixture import FIXTURE_VILLAGE
-from three_branches.generation import build_village
 from three_branches.geometry import (
     add,
     distance,
@@ -21,6 +19,7 @@ from three_branches.geometry import (
 )
 from three_branches.layout import WORLD_SIZE, Bridge
 from three_branches.physics import Physics
+from three_branches.tests.helpers import flood_from_spawn, walkable_samples
 
 
 def _clear(point: tuple[float, float]) -> bool:
@@ -42,9 +41,8 @@ def _overlap(first: tuple[float, float, float, float], second: tuple[float, floa
     return first[0] < second[1] and second[0] < first[1] and first[2] < second[3] and second[2] < first[3]
 
 
-def test_fixture_has_the_fixed_inventory_and_generation_seam_ignores_the_seed() -> None:
+def test_fixture_has_the_fixed_inventory() -> None:
     layout = FIXTURE_VILLAGE
-    assert build_village(1) is layout is build_village(999)
     assert len(layout.channels) == 4
     assert [building.id for building in layout.buildings] == [
         "home_0",
@@ -256,23 +254,8 @@ def test_fixture_spawn_and_all_props_have_clear_unblocked_standing_positions() -
 
 def test_fixture_samples_one_connected_walkable_region() -> None:
     layout = FIXTURE_VILLAGE
-    points = {
-        (x / 4 + 0.125, y / 4 + 0.125)
-        for x in range(400)
-        for y in range(400)
-        if _clear((x / 4 + 0.125, y / 4 + 0.125))
-    }
-    start = layout.spawn
-    nearest = min(points, key=lambda point: distance(point, start))
-    seen = {nearest}
-    pending = deque((nearest,))
-    while pending:
-        x, y = pending.popleft()
-        for candidate in ((x + 0.25, y), (x - 0.25, y), (x, y + 0.25), (x, y - 0.25)):
-            if candidate in points and candidate not in seen:
-                seen.add(candidate)
-                pending.append(candidate)
-    assert seen == points
+    samples = walkable_samples(layout)
+    assert flood_from_spawn(layout, samples) == samples
 
 
 def test_start_poses_are_formulaic_and_keep_housemates_apart() -> None:

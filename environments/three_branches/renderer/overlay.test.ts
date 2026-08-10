@@ -61,6 +61,12 @@ describe('Three Branches compact overlay decoder', () => {
     }
   })
 
+  it('decodes a bridge-less village, which generation serves while padding covers later layers', () => {
+    const staticHeader = clonedHeader()
+    staticHeader.s.b = []
+    expect(decodeStatic(staticHeader).village.bridges).toHaveLength(0)
+  })
+
   it('rejects every static record class, inventory count, and grid run shape', () => {
     const cases: Array<[string, (staticHeader: ReturnType<typeof clonedHeader>) => void]> = [
       [
@@ -79,7 +85,6 @@ describe('Three Branches compact overlay decoder', () => {
       ['cast and daynight setting', (staticHeader) => (staticHeader.s.a = '5x')],
       ['exactly four channels', (staticHeader) => (staticHeader.s.c = [])],
       ['at least one footpath', (staticHeader) => (staticHeader.s.f = [])],
-      ['at least one bridge', (staticHeader) => (staticHeader.s.b = [])],
       ['exactly seven buildings', (staticHeader) => (staticHeader.s.h = [])],
       ['exactly 31 props', (staticHeader) => (staticHeader.s.p = [])],
       ['scenery must be a list', (staticHeader) => (staticHeader.s.n = 'pine:00000001')],

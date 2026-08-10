@@ -9,6 +9,7 @@ import pytest
 
 from three_branches.engine import Day, DayConfig, Expression
 from three_branches.env import ThreeBranchesEnv
+from three_branches.fixture import FIXTURE_VILLAGE
 from three_branches.overlay import (
     OVERLAY_VERSION,
     decode_overlay,
@@ -24,12 +25,12 @@ def _orders(day: Day) -> dict[str, object]:
 
 
 def _overlay(*, cast_size: int = 5, daynight: bool = False) -> tuple[dict[str, object], dict[str, object]]:
-    day = Day(DayConfig(cast_size=cast_size, daynight=daynight))
+    day = Day(DayConfig(cast_size=cast_size, daynight=daynight), FIXTURE_VILLAGE)
     return encode_overlay(day), encode_overlay_static(day)
 
 
 def test_overlay_round_trips_to_friendly_meters_words_and_derived_state() -> None:
-    day = Day(DayConfig(cast_size=5, daynight=True))
+    day = Day(DayConfig(cast_size=5, daynight=True), FIXTURE_VILLAGE)
     day.characters["npc_0"].expression = Expression("wave")
     day.prop_states["bell_0"] = "ringing"
 
@@ -82,7 +83,7 @@ def test_static_layout_is_separate_from_every_frame_and_env_extraction_uses_live
 
 
 def test_mutating_an_encoded_static_layout_does_not_change_later_frames() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     first = encode_overlay_static(day)
     first["s"]["r"] = "changed"
 
@@ -92,7 +93,7 @@ def test_mutating_an_encoded_static_layout_does_not_change_later_frames() -> Non
 
 
 def test_split_overlay_is_canonical_and_deterministic() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
 
     first = (encode_overlay_static(day), encode_overlay(day))
     second = (encode_overlay_static(day), encode_overlay(day))
@@ -174,7 +175,7 @@ def test_decoder_requires_split_version_one_static_data() -> None:
 
 
 def test_tick_1200_has_a_nonterminal_frame_then_a_terminal_frame() -> None:
-    day = Day(DayConfig(cast_size=5))
+    day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     for _ in range(1199):
         day.step(_orders(day))
     static = encode_overlay_static(day)

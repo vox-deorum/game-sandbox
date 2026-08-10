@@ -15,11 +15,23 @@ from three_branches.env import (
     make_env,
     player_for_character,
 )
+from three_branches.geometry import Point, add, distance, heading_vector
+from three_branches.layout import Layout
 from three_branches.rules import DAY_TICKS
 
 
 def _actions(env: ThreeBranchesEnv) -> dict[str, dict[str, float | int]]:
     return {player: default_action(env, player) for player in env.agents}
+
+
+def _standing_point_near(layout: Layout, target: Point) -> Point:
+    """A body-clear point within 1.5 m of ``target``, or the plain west offset as a fallback."""
+    for radius in (0.8, 1.0, 1.2):
+        for step in range(16):
+            candidate = add(target, heading_vector(step * 360.0 / 16), radius)
+            if distance(candidate, target) <= 1.5 and layout.body_clear(candidate):
+                return candidate
+    return target[0] - 1.0, target[1]
 
 
 @pytest.mark.parametrize(("seat_plan", "player_count"), (("cast_5", 6), ("cast_10", 11)))
@@ -94,7 +106,7 @@ def test_out_of_space_actions_name_the_player_and_in_space_use_reaches_the_engin
     env.reset(seed=3)
     bell = next(prop for prop in env.day.layout.props if prop.id == "bell_0")
     visitor = env.day.characters["visitor"]
-    visitor.position = (bell.position[0] - 1.0, bell.position[1])
+    visitor.position = _standing_point_near(env.day.layout, bell.position)
     env.day.physics.bodies["visitor"].position = visitor.position
     actions = _actions(env)
     actions["player_0"] = {"heading": 0.0, "speed": 0.0, "action": 1}

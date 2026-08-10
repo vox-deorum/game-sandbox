@@ -12,6 +12,8 @@ from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.session import AgentPlayer, run_episode
 from three_branches import ENTRY, META
 from three_branches.env import ThreeBranchesEnv, make_env
+from three_branches.geometry import add, dot, heading_vector, subtract
+from three_branches.layout import Building
 
 
 def _place(env, character_id: str, position: tuple[float, float], heading: float = 0.0) -> None:
@@ -21,13 +23,39 @@ def _place(env, character_id: str, position: tuple[float, float], heading: float
     env.day.physics.bodies[character_id].position = position
 
 
+def _anchored(env: ThreeBranchesEnv, offsets: tuple[tuple[float, float], ...]) -> list[tuple[float, float]]:
+    """Find a point where every offset lands body-clear on the day's layout, first match scanning the grid."""
+    layout = env.day.layout
+    for yi in range(10, 190):
+        for xi in range(10, 190):
+            anchor = (xi / 2.0, yi / 2.0)
+            points = [(anchor[0] + dx, anchor[1] + dy) for dx, dy in offsets]
+            if all(layout.body_clear(point) for point in points):
+                return points
+    raise AssertionError("no clear anchor found for the requested offsets")
+
+
+def _beyond_opposite_wall(building: Building) -> tuple[float, float]:
+    """A point 1 m past the building's perimeter, on the wall opposite its doorway."""
+    forward = heading_vector(building.rotation)
+    left = (-forward[1], forward[0])
+    relative = subtract(building.doorway.position, building.center)
+    along_forward, along_left = dot(relative, forward), dot(relative, left)
+    if abs(abs(along_forward) - building.width / 2) < abs(abs(along_left) - building.depth / 2):
+        axis, half_span, sign = forward, building.width / 2, (1.0 if along_forward >= 0 else -1.0)
+    else:
+        axis, half_span, sign = left, building.depth / 2, (1.0 if along_left >= 0 else -1.0)
+    return add(building.center, axis, -sign * (half_span + 1.0))
+
+
 def test_chat_policy_orders_talk_recipients_by_distance_then_roster_order() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset(seed=1)
-    _place(env, "visitor", (30.0, 60.0))
-    _place(env, "npc_0", (32.0, 60.0))
-    _place(env, "npc_1", (28.0, 60.0))
-    _place(env, "npc_2", (35.0, 60.0))
+    visitor, npc_0, npc_1, npc_2 = _anchored(env, ((0.0, 0.0), (2.0, 0.0), (-2.0, 0.0), (5.0, 0.0)))
+    _place(env, "visitor", visitor)
+    _place(env, "npc_0", npc_0)
+    _place(env, "npc_1", npc_1)
+    _place(env, "npc_2", npc_2)
 
     policy = env.chat_policy("player_0")
 
@@ -40,8 +68,9 @@ def test_chat_policy_orders_talk_recipients_by_distance_then_roster_order() -> N
 def test_chat_policy_excludes_wall_blocked_targets() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset(seed=1)
-    _place(env, "visitor", (8.0, 65.0))
-    _place(env, "npc_0", (12.0, 65.0))
+    home = env.day.layout.buildings[0]
+    _place(env, "visitor", home.center)
+    _place(env, "npc_0", _beyond_opposite_wall(home))
 
     assert env.chat_policy("player_0") == {"target_recipients": (), "default_recipient": None}
 
@@ -49,9 +78,10 @@ def test_chat_policy_excludes_wall_blocked_targets() -> None:
 def test_npc_broadcast_uses_shout_range_and_visitor_uses_talk_range() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset(seed=1)
-    _place(env, "npc_0", (30.0, 60.0))
-    _place(env, "npc_1", (40.0, 60.0))
-    _place(env, "visitor", (34.0, 60.0))
+    npc_0, npc_1, visitor = _anchored(env, ((0.0, 0.0), (10.0, 0.0), (4.0, 0.0)))
+    _place(env, "npc_0", npc_0)
+    _place(env, "npc_1", npc_1)
+    _place(env, "visitor", visitor)
 
     assert env.broadcast_recipients("player_1") == ("player_2", "player_0")
     assert env.broadcast_recipients("player_0") == ()
@@ -60,8 +90,9 @@ def test_npc_broadcast_uses_shout_range_and_visitor_uses_talk_range() -> None:
 def test_talk_policy_is_read_before_the_step_and_broadcast_audience_after_it() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset(seed=1)
-    _place(env, "visitor", (30.0, 60.0), 180.0)
-    _place(env, "npc_0", (33.0, 60.0))
+    visitor, npc_0 = _anchored(env, ((0.0, 0.0), (3.0, 0.0)))
+    _place(env, "visitor", visitor, 180.0)
+    _place(env, "npc_0", npc_0)
 
     # The harness reads this before applying the joint action, while the visitor is in talk range.
     assert env.chat_policy("player_0")["target_recipients"] == ("player_1",)
@@ -128,8 +159,9 @@ def _talking_entry():
 
         def reset_in_talk_range(*args: Any, **kwargs: Any):
             observations, infos = reset(*args, **kwargs)
-            _place(env, "visitor", (30.0, 60.0))
-            _place(env, "npc_0", (32.0, 60.0))
+            visitor, npc_0 = _anchored(env, ((0.0, 0.0), (2.0, 0.0)))
+            _place(env, "visitor", visitor)
+            _place(env, "npc_0", npc_0)
             return observations, infos
 
         env.reset = reset_in_talk_range  # type: ignore[method-assign]
