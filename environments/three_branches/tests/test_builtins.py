@@ -204,8 +204,8 @@ def test_scripted_visitor_keeps_a_finite_position_after_leaving_a_conversation(s
         assert all(math.isfinite(value) for value in env.day.characters["visitor"].position)
 
 
-def test_scripted_visitor_records_an_opening_canned_line_for_seed_23(tmp_path: Path) -> None:
-    """Pin the earliest fixture-village greeting through the real recording path."""
+def test_scripted_visitor_records_an_opening_canned_line_for_seed_21(tmp_path: Path) -> None:
+    """Pin the earliest generated-village greeting through the real recording path."""
     players = {
         f"player_{index}": AgentPlayer(ScriptedVisitor() if index == 0 else Naive()) for index in range(6)
     }
@@ -222,11 +222,11 @@ def test_scripted_visitor_records_an_opening_canned_line_for_seed_23(tmp_path: P
         ENTRY,
         players,
         parameters=resolve_parameters(META, {"seat_plan": "cast_5", "daynight": False}),
-        seed=23,
+        seed=21,
         store=FolderRecordingStore(tmp_path),
         recording_id=recording_id,
         clock=ManualClock(),
-        max_steps=412,
+        max_steps=57,
         player_attribution=attributions,
     )
 
@@ -234,8 +234,8 @@ def test_scripted_visitor_records_an_opening_canned_line_for_seed_23(tmp_path: P
         json.loads(line)
         for line in (tmp_path / recording_id / "recording.jsonl").read_text(encoding="utf-8").splitlines()[1:]
     ]
-    assert states[411]["messages"] == [
-        {"from": "player_0", "to": "player_1", "text": "A fine day for walking. How are you?"}
+    assert states[56]["messages"] == [
+        {"from": "player_0", "to": "player_1", "text": "Good day. How fares the village?"}
     ]
 
 

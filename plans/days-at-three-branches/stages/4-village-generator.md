@@ -1,6 +1,6 @@
 # Step 4: The village generator
 
-Status: in progress. Milestone 0 and layer 1 are landed and signed off; the layer 2 build is under way.
+Status: in progress. Milestone 0 and layers 1 and 2 are landed and signed off; the layer 3 build is under way.
 
 Part of [the plan](../README.md). This is build-order step 4: the seeded construction of Three Branches under [village.md](../village.md)'s guarantees, replacing the step 2 fixture village behind the unchanged `build_village(seed)` seam. The village is grown in four layers, terrain, then sites, then the road network, then accessories. Each layer is tuned through rounds of owner review in the real browser viewer until the owner signs it off, and the stage closes with the guarantee suite green across a pinned seed batch and the owner blessing one batch seed as the course default.
 
@@ -56,7 +56,7 @@ Padding: the fixture road, footpaths, props, scenery, and spawn; bridges stay em
 
 Tests landing: the roster order, five homes in two or three clusters, the building clearances, every doorway on its perimeter opening onto dry ground.
 
-Gate: the owner signs off the settlement pattern.
+Gate: the owner signs off the settlement pattern. Signed off 2026-08-10.
 
 ### Layer 3: the road network
 

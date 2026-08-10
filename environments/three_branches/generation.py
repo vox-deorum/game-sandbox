@@ -1,4 +1,4 @@
-"""Seeded village generation: the terrain and site layers over fixture placements."""
+"""Seeded village generation: the terrain, site, and road network layers over fixture props."""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ from .geometry import (
     distance,
     distance_to_rectangle,
     distance_to_segment,
+    heading_to,
+    heading_vector,
     polyline_distance,
     rectangle_corners,
     segments_intersect,
     subtract,
 )
-from .layout import WORLD_SIZE, Building, Doorway, Layout, Polyline
+from .layout import WORLD_SIZE, Bridge, Building, Doorway, Layout, Polyline
 
 type _Polygons = tuple[tuple[Point, ...], ...]
 type _Segment = tuple[Point, Point]
@@ -31,6 +33,7 @@ WATER_CLEARANCE = 2.0
 BOUNDARY_MARGIN = 2.0
 HOME_CLUSTER_RADIUS = 7.0
 HOME_CLUSTER_SEPARATION = 32.0
+SPAWN_CLEARANCE = 2.0
 
 _OCTAVE_SPACINGS = (25.0, 12.5, 6.25)
 _WALK_STEP = 2.0
@@ -47,8 +50,18 @@ _ANCHOR_BUDGET = 150
 _HOME_SIZE = (6.0, 5.0)
 _INN_SIZE = (10.0, 8.0)
 _SHED_SIZE = (6.0, 6.0)
-_SPAWN_CLEARANCE = 2.0
 _PLAZA_CLEARANCE = 5.0
+_DECK_APRON = 1.0
+_DRY_MARGIN = 0.6
+_CROSSING_BAND = 8.0
+_CROSSING_FORK_GAP = 12.0
+_JUNCTION_DECK_GAP = 3.0
+_ROUTE_GAP = 0.3
+_ROAD_TRIES = 10
+_FOOTPATH_TRIES = 4
+_FOOTPATH_REDRAWS = 3
+_SHRINE_CLEARANCE = 2.5
+_SHRINE_SEPARATION = 15.0
 _WEDGE_HALF_OPENING = 4.0
 _CLUSTER_RADIUS_LOW = 6.5
 _CLUSTER_RING_DEPTH = 2.0
@@ -123,24 +136,33 @@ def _unit(vector: Point) -> Point:
     return (vector[0] / length, vector[1] / length)
 
 
-def _away_from(point: Point, polyline: tuple[Point, ...]) -> tuple[float, Point]:
-    """The distance to a polyline and the unit direction away from its nearest point."""
-    best_distance = math.inf
+def _nearest_on(point: Point, polyline: tuple[Point, ...]) -> Point:
+    """The nearest point of a polyline, with the projection inlined for the walker's hot loop."""
+    px, py = point
+    best_span = math.inf
     best = polyline[0]
-    for start, end in itertools.pairwise(polyline):
-        run = subtract(end, start)
-        length_squared = run[0] * run[0] + run[1] * run[1]
-        if length_squared == 0.0:
-            nearest = start
+    ax, ay = polyline[0]
+    for bx, by in polyline[1:]:
+        rx, ry = bx - ax, by - ay
+        length_squared = rx * rx + ry * ry
+        if length_squared > 0.0:
+            t = ((px - ax) * rx + (py - ay) * ry) / length_squared
+            t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+            nx, ny = ax + rx * t, ay + ry * t
         else:
-            offset = subtract(point, start)
-            t = max(0.0, min(1.0, (offset[0] * run[0] + offset[1] * run[1]) / length_squared))
-            nearest = add(start, run, t)
-        span = distance(point, nearest)
-        if span < best_distance:
-            best_distance = span
-            best = nearest
-    return best_distance, _unit(subtract(point, best))
+            nx, ny = ax, ay
+        dx, dy = px - nx, py - ny
+        span = dx * dx + dy * dy
+        if span < best_span:
+            best_span = span
+            best = (nx, ny)
+        ax, ay = bx, by
+    return best
+
+
+def _coarse(channels: tuple[Polyline, ...] | list[Polyline]) -> tuple[tuple[Point, ...], ...]:
+    """Channel centerlines thinned for the walker's repel checks, endpoints kept."""
+    return tuple((*channel.points[::2], channel.points[-1]) for channel in channels)
 
 
 def _walk(
@@ -149,18 +171,22 @@ def _walk(
     target: Point,
     weights: tuple[float, float, float],
     start_heading: Point | None = None,
-    avoid: tuple[Polyline, ...] = (),
+    avoid: tuple[tuple[Point, ...], ...] = (),
+    repel: tuple[float, float] = (_REPEL_RADIUS, _REPEL_WEIGHT),
+    limit: int = _MAX_WALK_STEPS,
 ) -> list[Point] | None:
     """Trace a course from start to target as a blend of momentum, downhill flow, and target pull.
 
-    Water already on the map pushes the course away, so siblings spread instead of hugging.
-    The pull ramps up as the target nears so every course arrives, and the final point is the
-    target verbatim. Returns None when the course leaves the frame or fails to arrive.
+    Geometry already on the map pushes the course away with the given repel radius and weight, so
+    water spreads from siblings and routes bend around buildings. The pull ramps up as the target
+    nears so every course arrives, and the final point is the target verbatim. Returns None when
+    the course leaves the frame or fails to arrive inside the step limit.
     """
     momentum_weight, downhill_weight, pull_weight = weights
+    repel_radius, repel_weight = repel
     points = [start]
     heading = _unit(subtract(target, start)) if start_heading is None else start_heading
-    for _ in range(_MAX_WALK_STEPS):
+    for _ in range(limit):
         position = points[-1]
         remaining = distance(position, target)
         if remaining <= _WALK_STEP * 1.5:
@@ -170,22 +196,24 @@ def _walk(
         slope = _unit(terrain.downhill(position))
         along = slope[0] * toward[0] + slope[1] * toward[1]
         lateral = (slope[0] - along * toward[0], slope[1] - along * toward[1])
-        repel = (0.0, 0.0)
+        repulsion = (0.0, 0.0)
         for line in avoid:
-            span, away = _away_from(position, line.points)
-            if span < _REPEL_RADIUS:
-                push = _REPEL_WEIGHT * (1.0 - span / _REPEL_RADIUS)
-                repel = (repel[0] + away[0] * push, repel[1] + away[1] * push)
+            nearest = _nearest_on(position, line)
+            span = distance(position, nearest)
+            if span < repel_radius:
+                away = _unit(subtract(position, nearest))
+                push = repel_weight * (1.0 - span / repel_radius)
+                repulsion = (repulsion[0] + away[0] * push, repulsion[1] + away[1] * push)
         arrival = max(0.0, 1.0 - remaining / 20.0)
         blended = _unit(
             (
                 momentum_weight * heading[0]
                 + downhill_weight * lateral[0]
-                + repel[0]
+                + repulsion[0]
                 + (pull_weight + arrival) * toward[0],
                 momentum_weight * heading[1]
                 + downhill_weight * lateral[1]
-                + repel[1]
+                + repulsion[1]
                 + (pull_weight + arrival) * toward[1],
             )
         )
@@ -197,15 +225,23 @@ def _walk(
     return None
 
 
-def _resample(points: list[Point]) -> tuple[Point, ...]:
-    """Even arc-length resampling under the overlay point cap, keeping both endpoints exact."""
+def _leg_limit(start: Point, end: Point) -> int:
+    """A step budget that lets a course triple its straight length before giving up."""
+    return min(_MAX_WALK_STEPS, math.ceil(distance(start, end) / _WALK_STEP) * 3 + 25)
+
+
+def _course_length(points: list[Point] | tuple[Point, ...]) -> float:
+    return sum(distance(previous, current) for previous, current in itertools.pairwise(points))
+
+
+def _resample_to(points: list[Point] | tuple[Point, ...], count: int) -> tuple[Point, ...]:
+    """Even arc-length resampling to the given point count, keeping both endpoints exact."""
+    if len(points) <= count:
+        return tuple(points)
     lengths = [0.0]
     for previous, current in itertools.pairwise(points):
         lengths.append(lengths[-1] + distance(previous, current))
     total = lengths[-1]
-    count = min(MAX_POLYLINE_POINTS, max(2, math.ceil(total / _SAMPLE_SPACING) + 1))
-    if len(points) <= count:
-        return tuple(points)
     resampled: list[Point] = [points[0]]
     cursor = 1
     for index in range(1, count - 1):
@@ -218,6 +254,34 @@ def _resample(points: list[Point]) -> tuple[Point, ...]:
         resampled.append((ax + (bx - ax) * fraction, ay + (by - ay) * fraction))
     resampled.append(points[-1])
     return tuple(resampled)
+
+
+def _resample(points: list[Point]) -> tuple[Point, ...]:
+    """Even arc-length resampling under the overlay point cap, keeping both endpoints exact."""
+    total = _course_length(points)
+    count = min(MAX_POLYLINE_POINTS, max(2, math.ceil(total / _SAMPLE_SPACING) + 1))
+    return _resample_to(points, count)
+
+
+def _thread(legs: list[list[Point]], joints: list[Point]) -> tuple[Point, ...] | None:
+    """Join walker legs and their crossing joints into one polyline under the overlay point cap.
+
+    The legs share the point budget, longest legs giving up points first, and every leg endpoint
+    and joint stays verbatim, so a crossing's straight run stays exactly on its deck axis.
+    """
+    budget = MAX_POLYLINE_POINTS - len(joints)
+    if 2 * len(legs) > budget:
+        return None
+    counts = [max(2, math.ceil(_course_length(leg) / _SAMPLE_SPACING) + 1) for leg in legs]
+    while sum(counts) > budget:
+        largest = max(range(len(counts)), key=lambda index: counts[index])
+        counts[largest] -= 1
+    course: list[Point] = []
+    for index, leg in enumerate(legs):
+        course.extend(_resample_to(leg, counts[index]))
+        if index < len(joints):
+            course.append(joints[index])
+    return tuple(course)
 
 
 def _segments(points: tuple[Point, ...], closed: bool) -> list[tuple[Point, Point]]:
@@ -290,7 +354,7 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
     )
     weights = (rng.uniform(0.5, 0.85), rng.uniform(0.5, 1.2), rng.uniform(0.4, 0.65))
     trunk_heading = _angled((0.0, -1.0), rng.uniform(-45.0, 45.0))
-    trunk_course = _walk(terrain, entry, fork, weights, trunk_heading)
+    trunk_course = _walk(terrain, entry, fork, weights, trunk_heading, limit=_leg_limit(entry, fork))
     if trunk_course is None:
         return None
     trunk = Polyline(_resample(trunk_course), rng.uniform(5.0, 7.0))
@@ -300,7 +364,15 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
     for mouth in (west_mouth, center_mouth, east_mouth):
         approach = (mouth, 6.0)
         channel_heading = _angled(_unit(subtract(approach, fork)), rng.uniform(-20.0, 20.0))
-        course = _walk(terrain, fork, approach, weights, channel_heading, avoid=tuple(channels))
+        course = _walk(
+            terrain,
+            fork,
+            approach,
+            weights,
+            channel_heading,
+            avoid=_coarse(channels),
+            limit=_leg_limit(fork, approach),
+        )
         if course is None:
             return None
         course.append((mouth, 0.0))
@@ -466,7 +538,7 @@ def _edges(corners: tuple[Point, ...]) -> tuple[_Segment, ...]:
 
 def _water_gap(point: Point, channel: Polyline) -> float:
     """The distance from a point to a channel's water edge."""
-    return polyline_distance(point, channel.points) - channel.width / 2.0
+    return distance(point, _nearest_on(point, channel.points)) - channel.width / 2.0
 
 
 def _inside_frame(point: Point, margin: float) -> bool:
@@ -512,7 +584,6 @@ def _padded_gap(point: Point) -> float:
                 for prop in FIXTURE_VILLAGE.props
             ),
             (distance(point, item.position) - item.radius for item in FIXTURE_VILLAGE.scenery),
-            (distance(point, FIXTURE_VILLAGE.spawn),),
         )
     )
 
@@ -615,24 +686,32 @@ def _clear_of_water(
     return True
 
 
+_PADDED_OBSTACLES: tuple[tuple[Point, float], ...] = (
+    *((prop.position, math.hypot(*prop.footprint) / 2.0 + BUILDING_GAP) for prop in FIXTURE_VILLAGE.props),
+    *((item.position, item.radius + BUILDING_GAP) for item in FIXTURE_VILLAGE.scenery),
+)
+
+
 def _clear_of_padding(center: Point, size: tuple[float, float], rotation: float) -> bool:
     """Whether a rectangle keeps clear of the fixture objects still padding the layout.
 
     This rule leaves with the padding: the accessories layer replaces these objects, and until then
-    the padded suites derive their standing points from them.
+    the padded suites derive their standing points from them. The rectangle distance is inlined
+    with the heading computed once, because the placement budget hammers this check.
     """
-    if any(
-        distance_to_rectangle(prop.position, center, *size, rotation)
-        < math.hypot(*prop.footprint) / 2.0 + BUILDING_GAP
-        for prop in FIXTURE_VILLAGE.props
-    ):
-        return False
-    if any(
-        distance_to_rectangle(item.position, center, *size, rotation) < item.radius + BUILDING_GAP
-        for item in FIXTURE_VILLAGE.scenery
-    ):
-        return False
-    return distance_to_rectangle(FIXTURE_VILLAGE.spawn, center, *size, rotation) >= _SPAWN_CLEARANCE
+    fx, fy = heading_vector(rotation)
+    cx, cy = center
+    half_width = size[0] / 2.0
+    half_depth = size[1] / 2.0
+    for (px, py), margin in _PADDED_OBSTACLES:
+        rx, ry = px - cx, py - cy
+        along = abs(rx * fx + ry * fy) - half_width
+        across = abs(fx * ry - fy * rx) - half_depth
+        dx = along if along > 0.0 else 0.0
+        dy = across if across > 0.0 else 0.0
+        if dx * dx + dy * dy < margin * margin:
+            return False
+    return True
 
 
 def _clears(
@@ -652,6 +731,8 @@ def _clears(
         return False
     if distance_to_rectangle(clearances.plaza, center, width, depth, rotation) < _PLAZA_CLEARANCE:
         return False
+    if not _clear_of_padding(center, size, rotation):
+        return False
     edges = _edges(corners)
     if not _clear_of_water(center, size, rotation, corners, edges, clearances.channels):
         return False
@@ -668,7 +749,7 @@ def _clears(
             for corner in other_corners
         ):
             return False
-    return _clear_of_padding(center, size, rotation)
+    return True
 
 
 def _draw_placement(
@@ -680,17 +761,28 @@ def _draw_placement(
     clearances: _Clearances,
     placed: list[Building],
 ) -> tuple[Point, float] | None:
-    """Draw centers and rotations around an anchor until one clears, or None when the budget runs out."""
+    """Draw centers and rotations around an anchor until one clears, or None when the budget runs out.
+
+    Channels that no candidate around this anchor can possibly reach are dropped once up front, so
+    the budget's water checks only scan the water that is actually in play.
+    """
+    farthest = reach[1] + math.hypot(*size) / 2.0 + WATER_CLEARANCE + 0.5
+    nearby = _Clearances(
+        channels=tuple(channel for channel in clearances.channels if _water_gap(anchor, channel) <= farthest),
+        fork=clearances.fork,
+        cap_radius=clearances.cap_radius,
+        plaza=clearances.plaza,
+    )
     for _ in range(_PLACEMENT_BUDGET):
         center = add(anchor, _polar(rng, *reach))
         rotation = rng.uniform(*spin) % 360.0
-        if _clears(center, size, rotation, clearances, placed):
+        if _clears(center, size, rotation, nearby, placed):
             return center, rotation
     return None
 
 
 def _doorway(center: Point, size: tuple[float, float], rotation: float, aim: Point) -> Doorway:
-    """Open the wall whose middle faces the aim point, provisionally until the road network lands."""
+    """Open the wall whose middle faces the aim point; the network layer re-aims at the paths."""
     edges = _edges(rectangle_corners(center, size[0], size[1], rotation))
     start, end = min(edges, key=lambda edge: distance(_midpoint(*edge), aim))
     return Doorway(_midpoint(start, end))
@@ -777,12 +869,578 @@ def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...])
     )
 
 
-def build_village(seed: int) -> Layout:
-    """Build the seeded village: generated terrain and sites padded with fixture placements.
+@dataclass(frozen=True)
+class _Network:
+    """The road network layer's output.
 
-    The road network and accessories layers still come from the fixture. Bridges stay empty because
-    the layout splits water banks around every deck, so a fixture deck overlapping generated water
-    would punch a phantom gap in a bank.
+    The shrine spots ride along for the accessories layer, which stands the shrine props and their
+    roof posts on them. The buildings come back re-aimed at the finished paths.
+    """
+
+    road: Polyline
+    footpaths: tuple[Polyline, ...]
+    bridges: tuple[Bridge, ...]
+    spawn: Point
+    shrine_spots: tuple[Point, ...]
+    buildings: tuple[Building, ...]
+
+
+def _rings(buildings: tuple[Building, ...]) -> tuple[tuple[Point, ...], ...]:
+    """Closed building corner rings the walker steers around."""
+    rings: list[tuple[Point, ...]] = []
+    for building in buildings:
+        corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
+        rings.append((*corners, corners[0]))
+    return tuple(rings)
+
+
+def _water_reach(origin: Point, direction: Point, channel: Polyline) -> float | None:
+    """How far a channel's water band extends from a centerline point along a crossing direction."""
+    half = channel.width / 2.0
+    reach = 0.25
+    while reach <= 12.0:
+        if polyline_distance(add(origin, direction, reach), channel.points) > half:
+            return reach
+        reach += 0.25
+    return None
+
+
+def _crossing(
+    rng: Random, channel: Polyline, corridor_y: float, fork: Point, minimum_x: float
+) -> tuple[Point, Point] | None:
+    """Draw a crossing vertex near the corridor and the eastward unit direction square across it.
+
+    The band around the corridor doubles when it holds no candidate, so a channel that dives away
+    from the corridor still gets crossed rather than redrawing the village.
+    """
+    for band in (_CROSSING_BAND, 2.0 * _CROSSING_BAND):
+        candidates: list[tuple[Point, Point]] = []
+        for index in range(1, len(channel.points) - 1):
+            point = channel.points[index]
+            if abs(point[1] - corridor_y) > band:
+                continue
+            if not max(8.0, minimum_x) <= point[0] <= WORLD_SIZE - 8.0:
+                continue
+            if distance(point, fork) < _CROSSING_FORK_GAP:
+                continue
+            along = _unit(subtract(channel.points[index + 1], channel.points[index - 1]))
+            normal = (-along[1], along[0])
+            if normal[0] < 0.0:
+                normal = (-normal[0], -normal[1])
+            if normal[0] < 0.3:
+                continue
+            candidates.append((point, normal))
+        if candidates:
+            return rng.choice(candidates)
+    return None
+
+
+def _deck(
+    rng: Random,
+    channel: Polyline,
+    channels: tuple[Polyline, ...],
+    vertex: Point,
+    axis: Point,
+    fork: Point,
+    cap_radius: float,
+) -> tuple[Bridge, Point, Point] | None:
+    """Span the water at a crossing: the deck plus its dry near and far endpoints along the axis.
+
+    The endpoints sit one apron past the banks and dry against every channel, the axis crosses only
+    the crossed channel's centerline, and the deck keeps off the sibling bands, because the layout
+    splits every bank around every deck and a stray overlap would punch a phantom gap.
+    """
+    ahead = _water_reach(vertex, axis, channel)
+    behind = _water_reach(vertex, (-axis[0], -axis[1]), channel)
+    if ahead is None or behind is None:
+        return None
+    near = add(vertex, axis, -(behind + _DECK_APRON))
+    far = add(vertex, axis, ahead + _DECK_APRON)
+    for endpoint in (near, far):
+        if not _inside_frame(endpoint, 1.0):
+            return None
+        if any(_water_gap(endpoint, other) <= _DRY_MARGIN for other in channels):
+            return None
+    for other in channels:
+        crossed = any(
+            segments_intersect((near, far), segment) for segment in itertools.pairwise(other.points)
+        )
+        if crossed != (other is channel):
+            return None
+    bridge = Bridge(_midpoint(near, far), heading_to(near, far), rng.uniform(2.0, 3.0), distance(near, far))
+    if bridge.distance_to(fork) <= cap_radius + 0.5:
+        return None
+    corners = rectangle_corners(bridge.position, bridge.span, bridge.width, bridge.heading)
+    for other in channels:
+        if other is channel:
+            continue
+        margin = other.width / 2.0 + 1.0
+        if any(
+            distance_to_segment(corner, start, end) < margin
+            for corner in corners
+            for start, end in itertools.pairwise(other.points)
+        ):
+            return None
+    return bridge, near, far
+
+
+def _wet_off_deck(
+    points: tuple[Point, ...],
+    channels: tuple[Polyline, ...],
+    decks: list[Bridge],
+    fork: Point,
+    cap_radius: float,
+) -> bool:
+    """Whether a course touches water or the confluence cap anywhere a deck does not carry it.
+
+    Clearance to water shrinks by at most a meter per meter walked, so a segment whose endpoint
+    clearances already cover its length is skipped whole and the fine sampling only runs where the
+    course actually approaches water.
+    """
+    for start, end in itertools.pairwise(points):
+        length = distance(start, end)
+        run = subtract(end, start)
+        steps = max(1, math.ceil(length / 0.5))
+        samples: list[Point] | None = None
+        if (distance(start, fork) + distance(end, fork) - length) / 2.0 <= cap_radius + _DRY_MARGIN:
+            samples = [add(start, run, step / steps) for step in range(steps + 1)]
+            if any(distance(sample, fork) <= cap_radius + _DRY_MARGIN for sample in samples):
+                return True
+        for channel in channels:
+            reach = (_water_gap(start, channel) + _water_gap(end, channel) - length) / 2.0
+            if reach > _DRY_MARGIN:
+                continue
+            if samples is None:
+                samples = [add(start, run, step / steps) for step in range(steps + 1)]
+            for sample in samples:
+                if _water_gap(sample, channel) <= _DRY_MARGIN and not any(
+                    deck.contains(sample) for deck in decks
+                ):
+                    return True
+    return False
+
+
+def _pierces_building(points: tuple[Point, ...], buildings: tuple[Building, ...]) -> bool:
+    """Whether a course crosses into any building rectangle."""
+    for building in buildings:
+        edges = _edges(rectangle_corners(building.center, building.width, building.depth, building.rotation))
+        if any(segments_intersect(segment, edge) for segment in itertools.pairwise(points) for edge in edges):
+            return True
+    return False
+
+
+def _road_clears_buildings(
+    points: tuple[Point, ...], half_width: float, buildings: tuple[Building, ...]
+) -> bool:
+    """Whether every building keeps its rectangle off the road surface."""
+    margin = half_width + _ROUTE_GAP
+    for building in buildings:
+        rectangle = (building.center, building.width, building.depth, building.rotation)
+        corners = rectangle_corners(*rectangle)
+        edges = _edges(corners)
+        for segment in itertools.pairwise(points):
+            if any(segments_intersect(segment, edge) for edge in edges):
+                return False
+            if any(distance_to_segment(corner, *segment) < margin for corner in corners):
+                return False
+            if any(distance_to_rectangle(endpoint, *rectangle) < margin for endpoint in segment):
+                return False
+    return True
+
+
+def _straight_crossings(segment: _Segment, channels: tuple[Polyline, ...]) -> list[int]:
+    """The channel indices whose centerline the straight segment crosses, with multiplicity."""
+    return [
+        index
+        for index, channel in enumerate(channels)
+        for piece in itertools.pairwise(channel.points)
+        if segments_intersect(segment, piece)
+    ]
+
+
+def _footpath(
+    rng: Random,
+    terrain: _Terrain,
+    channels: tuple[Polyline, ...],
+    road: Polyline,
+    decks: list[Bridge],
+    bridged: set[int],
+    used: set[int],
+    target: Point,
+    avoid: tuple[tuple[Point, ...], ...],
+    fork: Point,
+    cap_radius: float,
+    buildings: tuple[Building, ...],
+) -> tuple[Polyline, int, Bridge | None, int | None] | None:
+    """Walk a footpath from a road junction to its target, bridging one channel when it must.
+
+    Junctions are road vertices clear of the decks, tried nearest first. A junction whose straight
+    line to the target crosses no water is preferred; failing that, a single crossing on a channel
+    whose footpath bridge is still free threads the path over a new deck. A failed round redraws
+    its blend locally. Returns the path, its junction vertex, and the deck with its channel index
+    or None twice, or None when every round fails.
+    """
+    candidates = [
+        index
+        for index in range(1, len(road.points) - 1)
+        if index not in used
+        and all(deck.distance_to(road.points[index]) >= _JUNCTION_DECK_GAP for deck in decks)
+    ]
+    candidates.sort(key=lambda index: distance(road.points[index], target))
+    del candidates[12:]
+    dry: list[int] = []
+    wet: list[tuple[int, int]] = []
+    for index in candidates:
+        crossings = _straight_crossings((road.points[index], target), channels)
+        if not crossings:
+            dry.append(index)
+        elif len(crossings) == 1 and crossings[0] != 0 and crossings[0] not in bridged:
+            wet.append((index, crossings[0]))
+    for _ in range(_FOOTPATH_REDRAWS):
+        weights = (rng.uniform(0.5, 0.8), rng.uniform(0.4, 1.0), rng.uniform(0.5, 0.8))
+        width = rng.uniform(1.5, 2.5)
+        swing = rng.uniform(-35.0, 35.0)
+        for index in dry[:_FOOTPATH_TRIES]:
+            junction = road.points[index]
+            heading = _angled(_unit(subtract(target, junction)), swing)
+            course = _walk(
+                terrain,
+                junction,
+                target,
+                weights,
+                heading,
+                avoid,
+                repel=(8.0, 1.5),
+                limit=_leg_limit(junction, target),
+            )
+            if course is None:
+                continue
+            points = _resample(course)
+            if _self_intersects(points) or _pierces_building(points, buildings):
+                continue
+            if _wet_off_deck(points, channels, decks, fork, cap_radius):
+                continue
+            return Polyline(points, width), index, None, None
+        for index, channel_index in wet[:_FOOTPATH_TRIES]:
+            junction = road.points[index]
+            channel = channels[channel_index]
+            order = sorted(
+                range(1, len(channel.points) - 1),
+                key=lambda i: distance(junction, channel.points[i]) + distance(channel.points[i], target),
+            )
+            for vertex_index in order[:_FOOTPATH_TRIES]:
+                vertex = channel.points[vertex_index]
+                if distance(vertex, fork) < _CROSSING_FORK_GAP:
+                    continue
+                if any(existing.distance_to(vertex) < 4.0 for existing in decks):
+                    continue
+                along = _unit(subtract(channel.points[vertex_index + 1], channel.points[vertex_index - 1]))
+                normal = (-along[1], along[0])
+                outward = subtract(target, junction)
+                if normal[0] * outward[0] + normal[1] * outward[1] < 0.0:
+                    normal = (-normal[0], -normal[1])
+                spanned = _deck(rng, channel, channels, vertex, normal, fork, cap_radius)
+                if spanned is None:
+                    continue
+                deck, near, far = spanned
+                if any(
+                    existing.distance_to(deck.position) < 1.0 or deck.distance_to(existing.position) < 1.0
+                    for existing in decks
+                ):
+                    continue
+                approach_heading = _angled(_unit(subtract(near, junction)), swing)
+                first = _walk(
+                    terrain,
+                    junction,
+                    near,
+                    weights,
+                    approach_heading,
+                    avoid,
+                    repel=(8.0, 1.5),
+                    limit=_leg_limit(junction, near),
+                )
+                if first is None:
+                    continue
+                second = _walk(
+                    terrain,
+                    far,
+                    target,
+                    weights,
+                    normal,
+                    avoid,
+                    repel=(8.0, 1.5),
+                    limit=_leg_limit(far, target),
+                )
+                if second is None:
+                    continue
+                points = _thread([first, second], [vertex])
+                if points is None or _self_intersects(points) or _pierces_building(points, buildings):
+                    continue
+                if _wet_off_deck(points, channels, [*decks, deck], fork, cap_radius):
+                    continue
+                return Polyline(points, width), index, deck, channel_index
+    return None
+
+
+def _shrine_stubs(
+    rng: Random,
+    road: Polyline,
+    decks: list[Bridge],
+    used: set[int],
+    channels: tuple[Polyline, ...],
+    buildings: tuple[Building, ...],
+    fork: Point,
+    cap_radius: float,
+) -> tuple[tuple[Point, ...], tuple[Polyline, ...]] | None:
+    """Stand a shrine spot just off the road at each of the two sharpest free bends, with its stub."""
+    ranked: list[tuple[float, int]] = []
+    for index in range(1, len(road.points) - 1):
+        point = road.points[index]
+        if index in used or any(deck.distance_to(point) < _JUNCTION_DECK_GAP for deck in decks):
+            continue
+        before = _unit(subtract(point, road.points[index - 1]))
+        after = _unit(subtract(road.points[index + 1], point))
+        ranked.append((before[0] * after[0] + before[1] * after[1], index))
+    ranked.sort()
+    spots: list[Point] = []
+    stubs: list[Polyline] = []
+    bends: list[Point] = []
+    for _turn, index in ranked:
+        if len(spots) == 2:
+            break
+        vertex = road.points[index]
+        if any(distance(vertex, bend) < _SHRINE_SEPARATION for bend in bends):
+            continue
+        along = _unit(subtract(road.points[index + 1], road.points[index - 1]))
+        normal = (-along[1], along[0])
+        side = _drawn_side(rng)
+        for orientation in (side, -side):
+            spot = add(vertex, normal, orientation * (road.width / 2.0 + rng.uniform(1.5, 2.5)))
+            if not _inside_frame(spot, 3.0):
+                continue
+            if any(_water_gap(spot, channel) < _SHRINE_CLEARANCE for channel in channels):
+                continue
+            if distance(spot, fork) < cap_radius + _SHRINE_CLEARANCE:
+                continue
+            if any(
+                distance_to_rectangle(
+                    spot, building.center, building.width, building.depth, building.rotation
+                )
+                < BUILDING_GAP
+                for building in buildings
+            ):
+                continue
+            if _padded_gap(spot) < BUILDING_GAP or any(
+                deck.distance_to(spot) < BUILDING_GAP for deck in decks
+            ):
+                continue
+            spots.append(spot)
+            stubs.append(Polyline((vertex, spot), rng.uniform(1.5, 2.0)))
+            bends.append(vertex)
+            used.add(index)
+            break
+    if len(spots) < 2:
+        return None
+    return tuple(spots), tuple(stubs)
+
+
+def _aimed_at_paths(buildings: tuple[Building, ...], paths: tuple[Polyline, ...]) -> tuple[Building, ...]:
+    """Re-aim every doorway at the path nearest its building, the network's final doorway rule."""
+    aimed: list[Building] = []
+    for building in buildings:
+        nearest = min(paths, key=lambda path: polyline_distance(building.center, path.points))
+        aim = _nearest_on(building.center, nearest.points)
+        size = (building.width, building.depth)
+        doorway = _doorway(building.center, size, building.rotation, aim)
+        aimed.append(
+            Building(
+                building.id,
+                building.type,
+                building.center,
+                building.width,
+                building.depth,
+                building.rotation,
+                doorway,
+            )
+        )
+    return tuple(aimed)
+
+
+def _spawn_point(road: Polyline) -> Point | None:
+    """The road centerline point one meter in from the west edge."""
+    for (x1, y1), (x2, y2) in itertools.pairwise(road.points):
+        if min(x1, x2) <= 1.0 <= max(x1, x2) and x1 != x2:
+            return (1.0, y1 + (y2 - y1) * (1.0 - x1) / (x2 - x1))
+    return None
+
+
+def _spawn_clear(spawn: Point, buildings: tuple[Building, ...]) -> bool:
+    """Whether the spawn clearance disk is free of every building and padded footprint."""
+    if any(
+        distance_to_rectangle(spawn, building.center, building.width, building.depth, building.rotation)
+        < SPAWN_CLEARANCE
+        for building in buildings
+    ):
+        return False
+    if any(
+        distance_to_rectangle(spawn, prop.position, *prop.footprint, prop.rotation) < SPAWN_CLEARANCE
+        for prop in FIXTURE_VILLAGE.props
+    ):
+        return False
+    return all(
+        distance(spawn, item.position) - item.radius >= SPAWN_CLEARANCE for item in FIXTURE_VILLAGE.scenery
+    )
+
+
+def _threaded_road(
+    rng: Random,
+    terrain: _Terrain,
+    channels: tuple[Polyline, ...],
+    sites: _Sites,
+    avoid: tuple[tuple[Point, ...], ...],
+    fork: Point,
+    cap_radius: float,
+) -> tuple[Polyline, list[Bridge]] | None:
+    """One attempt at the road: entry to exit through a drawn crossing and deck per channel."""
+    entry = (0.0, sites.corridor_y + rng.uniform(-5.0, 5.0))
+    exit_point = (WORLD_SIZE, sites.corridor_y + rng.uniform(-5.0, 5.0))
+    weights = (rng.uniform(0.55, 0.85), rng.uniform(0.25, 0.6), rng.uniform(0.5, 0.8))
+    heading = _angled((1.0, 0.0), rng.uniform(-30.0, 30.0))
+
+    road_decks: list[Bridge] = []
+    legs: list[list[Point]] = []
+    joints: list[Point] = []
+    position = entry
+    minimum_x = 0.0
+    for channel in channels[1:]:
+        spanned = None
+        vertex = axis = (0.0, 0.0)
+        for _ in range(8):
+            drawn = _crossing(rng, channel, sites.corridor_y, fork, minimum_x)
+            if drawn is None:
+                break
+            vertex, axis = drawn
+            spanned = _deck(rng, channel, channels, vertex, axis, fork, cap_radius)
+            if spanned is not None:
+                break
+        if spanned is None:
+            return None
+        deck, near, far = spanned
+        leg = _walk(
+            terrain,
+            position,
+            near,
+            weights,
+            heading,
+            avoid,
+            repel=(6.0, 1.5),
+            limit=_leg_limit(position, near),
+        )
+        if leg is None:
+            return None
+        legs.append(leg)
+        joints.append(vertex)
+        road_decks.append(deck)
+        position = far
+        heading = axis
+        minimum_x = vertex[0] + 8.0
+    last = _walk(
+        terrain,
+        position,
+        exit_point,
+        weights,
+        heading,
+        avoid,
+        repel=(6.0, 1.5),
+        limit=_leg_limit(position, exit_point),
+    )
+    if last is None:
+        return None
+    legs.append(last)
+    course = _thread(legs, joints)
+    if course is None:
+        return None
+    road = Polyline(course, rng.uniform(4.0, 5.0))
+    if _self_intersects(road.points):
+        return None
+    if _wet_off_deck(road.points, channels, road_decks, fork, cap_radius):
+        return None
+    if not _road_clears_buildings(road.points, road.width / 2.0, sites.buildings):
+        return None
+    return road, road_decks
+
+
+def _network_layer(
+    rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...], sites: _Sites
+) -> _Network | None:
+    """Thread the road across the channels, hang the footpaths off it, and fix the spawn.
+
+    The stream is consumed in a fixed order: per road attempt the entry and exit offsets, the blend
+    weights and entry heading, each channel's crossings and deck widths west to east, and the road
+    width; then per footpath its weights, width, and heading swing (plus a deck width when its
+    target lies across water), the well plaza first and the home clusters after; and last the
+    shrine sides and offsets. The doorway re-aim draws nothing. A failed road attempt redraws
+    locally against its budget, since the terrain and sites it threads are still good. Returns
+    None to redraw the village.
+    """
+    fork = channels[0].points[-1]
+    cap_radius = max(channel.width for channel in channels) / 2.0
+    avoid = (*_coarse(channels), *_rings(sites.buildings))
+    threaded = None
+    for _ in range(_ROAD_TRIES):
+        threaded = _threaded_road(rng, terrain, channels, sites, avoid, fork, cap_radius)
+        if threaded is not None:
+            break
+    if threaded is None:
+        return None
+    road, road_decks = threaded
+
+    decks = list(road_decks)
+    bridged: set[int] = set()
+    used: set[int] = set()
+    footpaths: list[Polyline] = []
+    for target in (sites.plaza, *sites.clusters):
+        pathed = _footpath(
+            rng,
+            terrain,
+            channels,
+            road,
+            decks,
+            bridged,
+            used,
+            target,
+            avoid,
+            fork,
+            cap_radius,
+            sites.buildings,
+        )
+        if pathed is None:
+            return None
+        path, junction, deck, channel_index = pathed
+        footpaths.append(path)
+        used.add(junction)
+        if deck is not None and channel_index is not None:
+            decks.append(deck)
+            bridged.add(channel_index)
+
+    shrined = _shrine_stubs(rng, road, decks, used, channels, sites.buildings, fork, cap_radius)
+    if shrined is None:
+        return None
+    spots, stubs = shrined
+    footpaths.extend(stubs)
+
+    spawn = _spawn_point(road)
+    if spawn is None or not _spawn_clear(spawn, sites.buildings):
+        return None
+    buildings = _aimed_at_paths(sites.buildings, (road, *footpaths))
+    return _Network(road, tuple(footpaths), tuple(decks), spawn, spots, buildings)
+
+
+def build_village(seed: int) -> Layout:
+    """Build the seeded village: generated terrain, sites, and road network over fixture props.
+
+    Only the accessories layer still comes from the fixture: its props and scenery pad the layout
+    until the generator replaces them.
     """
     rng = Random(f"{seed}:village")
     for _ in range(MAX_REDRAWS):
@@ -793,18 +1451,21 @@ def build_village(seed: int) -> Layout:
         sites = _sites_layer(rng, terrain, channels)
         if sites is None:
             continue
+        network = _network_layer(rng, terrain, channels, sites)
+        if network is None:
+            continue
         try:
             return Layout(
                 channels=channels,
-                road=FIXTURE_VILLAGE.road,
-                footpaths=FIXTURE_VILLAGE.footpaths,
-                bridges=(),
-                buildings=sites.buildings,
+                road=network.road,
+                footpaths=network.footpaths,
+                bridges=network.bridges,
+                buildings=network.buildings,
                 fields=fields,
                 reed_banks=reed_banks,
                 props=FIXTURE_VILLAGE.props,
                 scenery=FIXTURE_VILLAGE.scenery,
-                spawn=FIXTURE_VILLAGE.spawn,
+                spawn=network.spawn,
             )
         except ValueError:
             continue
