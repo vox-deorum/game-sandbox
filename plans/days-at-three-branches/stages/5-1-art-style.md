@@ -6,7 +6,7 @@ Part of [the plan](../README.md). This is the first of build-order step 5's two 
 
 ## Why this is its own seam
 
-The village's visual identity is an owner decision. This stage makes that decision buildable without taking over the HUD, interaction controls, or camera behavior, which remain in [step 5.2](5-2-hud-interaction-and-camera.md). It keeps the generated village and its collision truth visible through the same rendering path that steps 3 and 4 established.
+The village's visual identity is an owner decision. This stage makes that decision buildable without taking over the HUD or the interaction controls, which remain in [step 5.2](5-2-hud-interaction-and-camera.md). It keeps the generated village and its collision truth visible through the same rendering path that steps 3 and 4 established.
 
 ## The design: Hearthside Ink
 
@@ -127,7 +127,7 @@ The garden plot calibration is fixed now: it is a 4.0 m by 3.0 m solid fenced pl
 
 ### Review boundary
 
-Review the fixture and generated seeds at compact, simple, and detailed presentation levels by rendering fixed review scales on the existing surface. This review does not depend on camera controls. Step 5.2 later verifies the same thresholds through its interactive zoom. This stage does not choose camera limits, pan behavior, HUD typography, speech-bubble layout, use preview, or input controls. It retains the step 3 collision toggle on watch, replay, and play surfaces.
+Review the fixture and generated seeds at compact, simple, and detailed presentation levels by rendering fixed review scales on the existing surface. This review does not depend on camera controls. Step 5.2 later verifies the same thresholds through interactive zoom. This stage does not choose camera limits, pan behavior, HUD typography, speech-bubble layout, use preview, or input controls. It retains the step 3 collision toggle on watch, replay, and play surfaces.
 
 ## Tests
 
