@@ -12,26 +12,84 @@ The collision overlay is a permanent viewer feature, not scaffolding: toggled on
 
 ### The shared tiled-map base
 
-Tile-map rendering joins the shared renderer base under `frontend/src/renderers/base/`, built on [pixi-tiledmap](https://github.com/riebel/pixi-tiledmap), pinned and verified against the project's Pixi version. A renderer hands it a tile grid and a tileset and gets a drawn ground layer back. This part is common: any environment with tiled ground can reuse it.
+Tile-map rendering joins the shared renderer base as `frontend/src/renderers/base/tiled-ground.ts`, wrapping [pixi-tiledmap](https://github.com/riebel/pixi-tiledmap) behind a project-owned API. The fork requires pixi.js 8.7 or later and the project ships 8.19; the dependency is pinned exact in `frontend/package.json`. The wrapper API is the contract: environments never import the library, so if the fork misbehaves against the shipped Pixi version the wrapper is reimplemented over a plain per-cell sprite grid and no environment renderer changes.
 
-### The renderer and its collision overlay
+- `TileGrid`: a column count plus row strings of single-character ground codes, row-major.
+- `GroundTileset`: a tile size and one texture per code. `solidColorTileset(colors)` builds one from flat 2D-canvas fills, one solid square per code, no assets and no GPU.
+- `createTiledGround(grid, tileset, {cellSize})` validates the grid against the tileset and returns the drawn ground layer: a positioned `view` container, `setTile` for single-cell repaints, and `destroy`.
 
-The renderer package at `environments/three_branches/renderer/` replaces the stage 2 stub with a `PixiRenderer` subclass and its thumbnail. At mount it reads the packed ground-grid rows and other layout data from `ctx.header.overlay_static`; each step overlay carries the dynamic characters and prop states. The ground renders through the shared tiled-map base with a flat type-colored placeholder tileset. The grid is sampled Python-side from the engine's own ground classifier, so the frontend never reimplements the ground rules and the view shows exactly what the engine believes. A viewer-toggleable collision overlay draws above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, characters as 0.4 m circles with a heading tick, id, and expression label, and bell, tick, and phase chrome. The whole village fits the view; camera work comes in step 5.2. Prop types and states label themselves from the same `props.json` the engine reads. Speech reaches the chat panel, and a watcher sees every delivered NPC message live, the consumer test for step 1's visibility rule.
+Grid and tileset validation is pure and tested under jsdom; the drawing path runs only in the browser behind the base class's headless guard. Step 5.1 swaps real tile art in behind the same `GroundTileset` shape.
+
+### The renderer package
+
+`environments/three_branches/renderer/` replaces the stub, keeping the `three-branches-village` key and the automatic discovery contract (the frontend globs `environments/*/renderer/index.ts`, so no registration edits). The thumbnail stays the stage 2 placeholder until step 5.1's art pass. The package mirrors the Skirmish at Crane Reach split: pure modules with no Pixi imports carry the logic and are unit-tested under jsdom, and Pixi modules only draw.
+
+| Module | Responsibility |
+| --- | --- |
+| `overlay.ts` | The strict decoder mirroring `overlay.py`: `decodeStatic(header)` and `decodeDynamic(state, static)`, enforcing the same validations (key sets, record lengths, base36 ranges, the movement cap, use implies stillness, a single prop holder, terminal only on tick 1200) and producing the same friendly JSON in meters and words |
+| `geometry.ts` | The closed-form pieces the view needs that the overlay does not carry: building wall segments with the 1.2 m doorway gap removed (the `layout.py` formula), rotated footprint corners, heading-tick endpoints |
+| `scene.ts` | `computeScene(state, staticOverlay)`: the pure drawable scene and the placeholder palette. The static part (tile rows, building outlines, prop rectangles, scenery, bridges, spawn) is computed once per static overlay and cached by reference; the dynamic part carries characters, prop states, and the chrome strings. Labels come from `../props.json` and `../rules.json`, imported as JSON modules the way the crane renderer imports `tile_types.json` |
+| `collision.ts` | `computeCollisionScene(state, staticOverlay)`: the collision-truth drawables listed under the overlay below. Pure, and untouched by step 5.1's art swap |
+| `ground.ts` | Pixi: expands the decoded 100 ground rows into a `TileGrid`, builds the palette's `solidColorTileset`, and mounts the shared tiled base |
+| `village.ts` | Pixi: the static placeholder layer above the ground, drawn once at first state: building fills and outlines, bridge decks, scenery circles, the spawn marker |
+| `characters.ts` | Pixi: per-state reconciliation of the cast: 0.4 m circles with a heading tick, id, and expression label |
+| `collision-layer.ts` | Pixi: draws `collision.ts`'s scene, visible while the viewer has the overlay on |
+| `chrome.ts` | Pixi: the screen-fixed strip (tick, phase, bell state, terminal banner) and the in-canvas collision toggle button |
+| `index.ts` | The `PixiRenderer` subclass: layer containers in draw order (ground, village, characters, collision, chrome), everything but chrome under one world root so step 5.2 inserts the camera without restructuring, the toggle state, the probe attributes, and the `RendererDefinition` export |
+
+`internalSize` becomes 1200 by 1000: the 100 m village at 10 units per meter in a 1000-unit square, with a 200-unit chrome column beside it. The whole village fits the view; camera work comes in step 5.2. At mount the renderer decodes `ctx.header.overlay_static` once and retains it; each step it decodes the dynamic overlay and updates the layers, so live play and a replay seek to the same state produce the same frame.
+
+The browser suite reads renderer truth through data attributes on the container, the `data-crane-*` convention: `data-three-branches-ground` (ready), `data-three-branches-tick`, `data-three-branches-phase`, `data-three-branches-collision` (on or off), `data-three-branches-visitor` (the visitor position in centimeters), and `data-three-branches-terminal`.
+
+### The collision overlay
+
+A viewer-toggleable overlay above the ground layer, at collision truth: building footprints with their doorway gaps, props as footprint rectangles with state labels, and characters as 0.4 m circles with a heading tick, id, and expression label. Prop types and states label themselves from the same `props.json` the engine reads, and emote names come from `rules.json`. The overlay is on by default in this step, since until step 5.1 lands art it is the only depiction of characters and props; 5.1 revisits the default. The toggle is an interactive Pixi button inside the canvas, the pattern the crane order buttons set. It is view-only and never touches `sendAction`, so it works for spectators and replay viewers alike; keyboard access to it arrives with step 5.2's HUD pass.
+
+### Speech
+
+Chat is host chrome: NPC and visitor lines flow through `StepState.messages` to the shared chat panel, and the renderer draws nothing for them (speech bubbles are step 5.2). The e2e chat journey below is the consumer test for step 1's watcher visibility rule.
 
 ### Session limits
 
-Step 1's environment-aware duration rule applies to this live day. Its derived default covers the paced day, every agent-controlled player's compute budget, and the 60-second platform-overhead allowance, unless a deployment explicitly overrides it. The current 600-second default covers only the pacing windows and would end a live day at the finish line.
+Step 1 landed the derived live-session duration in `backend/src/session/session-duration.ts`. For a cast_5 scripted watch day the ceiling resolves to 1200 ticks times 250 ms pacing, plus six agent episode budgets of 120 seconds, plus the 60 second platform allowance: 18 minutes over a roughly five-minute paced day. A unit case in the backend session-duration test pins the three_branches numbers through `resolveSessionMaxDurationMs`, so this environment's live day provably fits its derived default.
 
-### Fixture and e2e
+### Fixture and sidecar
 
-A pinned fixture recording on the step 2 fixture village, with its generator script, recorded unpaced by the harness. The `three-branches` e2e directory; a directory with a spec under `frontend/e2e/` is the entire wiring. Live journeys watch the opening ticks and stop the session; full-day coverage rides the fixture replay, because the day length is fixed and the design declares no length parameter.
+`scripts/gen_three_branches_fixture.py` follows the `_fixture_common.run_and_copy` pattern: one unpaced harness day on the step 2 fixture village with the shipped builtins (the naive cast, the scripted visitor), Season 1 defaults (cast_5, daynight off), and a fixed seed, copied byte for byte to `frontend/test/fixtures/three-branches-recording.jsonl` (1,201 lines, about 1.2 MiB). The generator also writes a test-only sidecar, `frontend/test/fixtures/three-branches-decoded.json`: the Python `decode_overlay` output for the header static, the engine's derived wall segments per building, and friendly decodes (with the repeated village stripped) for tick 1, tick 1200, every 100th tick, and every tick where any character's expression or target changes. The sidecar is the cross-language drift guard: renderer tests assert the TypeScript decoder and `geometry.ts` reproduce it exactly.
+
+The builtins keep the fixture quiet: the cast stands still, no prop is used, and the bell never rings. The fixture therefore carries seek determinism, the static village, visitor movement, waves, and speech, while renderer coverage of the other visuals (each emote, each prop-transition kind, the bell, the daynight phases, the terminal banner) comes from hand-authored compact frames and a synthetic daynight static in the unit tests, mirrored from `test_overlay`'s vocabulary.
+
+### The e2e group
+
+`frontend/e2e/three-branches/three-branches.spec.ts`; a directory with a spec under `frontend/e2e/` is the entire wiring. The [groups table](../../../docs/contributors/testing/browser-e2e.md#groups) gains a `three-branches` row. Two journeys, neither waiting out the day:
+
+- Watch, collision truth, stop, exact replay frames. Start a scripted watch from the environment page with a pinned seed, assert the canvas paints and `data-three-branches-ground` reads ready, poll the tick attribute strictly increasing, click the collision toggle and assert the attribute flips, stop the session, open the finalized replay, and scrub: the same seek twice yields identical tick and visitor attributes, and frame 1 renders the opening presentation state.
+- Watchers see every spoken line. The spades watcher-visibility pattern: spectator contexts with read-only chat panels see the visitor's canned lines live, a mid-session reload restores the transcript, and the same lines surface in the replay and on the reopened ended-session page. The pinned seed must produce the first canned line within the opening ticks; picking it is a named implementation task.
+
+Full-day coverage rides the fixture replay in the unit suite, because the day length is fixed and the design declares no length parameter.
 
 ## Tests
 
-- Renderer unit tests from the fixture: seek anywhere, idempotent update, header-static plus dynamic overlay state.
-- Playwright watch and replay journeys, and the spectator chat visibility check.
-- An integration test proves the live day reaches its natural end under the derived duration default.
+- `renderer/overlay.test.ts`: every malformed rejection mirrored from `test_overlay` (key sets, versions, record lengths, coordinate and heading ranges, movement above one meter, use with movement, two holders of one prop, a state out of range, terminal off tick 1200), and decoder isolation from consumer mutation.
+- `renderer/agreement.test.ts`: the TypeScript static decode equals the sidecar's Python decode, `geometry.ts` wall segments equal the engine's, and every sidecar frame decodes equal.
+- `renderer/scene.test.ts`: seek-anywhere determinism over the fixture (recompute an already-visited frame after replaying every state and compare deep-equal, with static reference identity), the palette covering exactly `rules.json`'s ground codes, label pins from the shared JSON, chrome pins from synthetic frames (each emote, each prop state, the bell, each daynight phase, the terminal banner), and an all-frames wall-clock budget.
+- `renderer/collision.test.ts`: the doorway gap splitting a perimeter into up to five segments, rotated footprint corners, circle scale, heading-tick geometry, and the id, expression, and state labels.
+- `frontend/test/tiled-ground.test.ts`: grid and tileset validation, unknown-code and bounds rejection, span math.
+- The backend session-duration unit case pinning the derived three_branches limit.
+- The two Playwright journeys above.
 - While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
+
+## Build order
+
+Seven milestones, each ending green:
+
+1. Shared tiled base: pixi-tiledmap pinned and verified against the shipped Pixi, `tiled-ground.ts`, its unit tests.
+2. Fixture and sidecar: the generator script, the pinned recording, the decoded sidecar.
+3. Decoder: `overlay.ts` and `geometry.ts` with the rejection and agreement suites.
+4. Pure scenes: `scene.ts` and `collision.ts` with determinism, labels, synthetic-frame chrome, and the perf budget.
+5. The renderer: the Pixi layers, chrome, toggle, probe attributes, and the `index.ts` swap. Hands-on: `npm run play` shows a local watch-mode day.
+6. The e2e group: both journeys, the pinned chat seed, the groups-table row.
+7. Handoff: the session-duration pin, the bare full browser e2e run, and the done-when sweep.
 
 ## Done when
 
