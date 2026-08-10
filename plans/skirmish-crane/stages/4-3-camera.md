@@ -6,7 +6,7 @@ Part of [the Skirmish at Crane Reach plan](../README.md). This is build-order st
 
 ## Outcome
 
-The battlefield fills the 1200 by 860 logical view as closely as its shape allows while every non-void tile remains visible. Wheel, pointer drag, and two-pointer pinch gestures move through the field. Double-click or double-tap restores the fitted view. The board moves below the top and bottom HUD strips, while the HUD and inspection layer remain fixed to the screen.
+The battlefield fills the 1200 by 860 logical view as closely as its shape allows while every non-void tile remains visible. Wheel, pointer drag, and two-pointer pinch gestures move through the field. Double-click or double-tap over the board restores the fitted view. The board moves below the top and bottom HUD strips, while the HUD and inspection layer remain fixed to the screen.
 
 Zoom participates in the existing presentation ladder. The renderer passes the effective CSS hex radius, base display scale times camera zoom, to `presentationFor`. A wider or closer view therefore promotes compact marks to tokens and tokens to figures without changing the scene or board geometry.
 
@@ -15,7 +15,7 @@ Zoom participates in the existing presentation ladder. The renderer passes the e
 The reusable implementation lives in `frontend/src/renderers/base/` as two modules:
 
 - `camera.ts` owns pure camera state, fit and clamp rules, point projection, wheel normalization, pan, anchored zoom, and pinch reduction. It imports neither PixiJS nor the DOM.
-- `camera-gestures.ts` owns DOM pointer, wheel, double-click, and double-tap wiring. It knows nothing about PixiJS and reports view-space intents to a renderer.
+- `camera-gestures.ts` owns DOM pointer, wheel, double-click, and double-tap wiring. It knows nothing about PixiJS and reports view-space intents to a renderer. A renderer that paints its own controls supplies `accepts`, and every gesture starting on a point it rejects is ignored.
 
 Renderers compose these modules when they need a movable world, in the same way that Hearts and Spades compose the shared card-table renderer. `PixiRenderer` remains unchanged.
 
@@ -41,9 +41,9 @@ The host element carries `data-crane-camera` in the form `zoom@x,y`, rounded to 
 
 ## Gestures and teardown
 
-The canvas owns touch gestures and sets `touch-action: none` on its host. Wheel prevents the page from scrolling. Pointer down cancels the browser's mouse defaults, so a drag that leaves the canvas cannot select page text, while clicks and double-clicks still fire. A pointer drag begins after 4 CSS pixels of movement. Pointer movement and release are observed on `window`, without pointer capture, so Pixi hover continues to work. The drag flag remains set through the canvas `pointertap` and clears on the later window `pointerup`.
+The canvas owns touch gestures and sets `touch-action: none` on its host. Wheel over the board prevents the page from scrolling. Pointer down over the board cancels the browser's mouse defaults, so a drag that leaves the canvas cannot select page text, while clicks and double-clicks still fire. A pointer drag begins after 4 CSS pixels of movement. Pointer movement and release are observed on `window`, without pointer capture, so Pixi hover continues to work. The drag flag remains set through the canvas `pointertap` and clears on the later window `pointerup`.
 
-Two active pointers drive pinch. Pointer cancellation and window blur clear gesture state. Two taps within 300 ms and 30 logical view pixels reset the camera. Native double-click resets it as well. Destroying the renderer removes every listener and clears the delayed art rebuild.
+Two active pointers drive pinch. Pointer cancellation and window blur clear gesture state. Two taps within 300 ms and 30 logical view pixels reset the camera. Native double-click resets it as well. The order buttons are painted rather than DOM controls, so the renderer rejects their circles through `accepts` and pressing one never drags, zooms, or resets the board. Destroying the renderer removes every listener and clears the delayed art rebuild.
 
 ## Step 5 input seam
 

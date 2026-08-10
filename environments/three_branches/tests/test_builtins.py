@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 from pathlib import Path
 from sys import stdlib_module_names
 
+import pytest
+
+from game_sandbox_harness.clock import ManualClock
+from game_sandbox_harness.environment import resolve_parameters
+from game_sandbox_harness.recording.local import FolderRecordingStore
+from game_sandbox_harness.session import AgentPlayer, run_episode
+from three_branches import ENTRY, META
 from three_branches.env import ThreeBranchesEnv
 from three_branches.naive import Agent as Naive
 from three_branches.scripted_visitor import Agent as ScriptedVisitor
@@ -25,6 +33,7 @@ def _village() -> dict:
 
 def _observation(
     *,
+    character_id: str = "npc_0",
     tick: int = 1,
     position: tuple[float, float] = (0.0, 0.0),
     heading: float = 0.0,
@@ -32,7 +41,12 @@ def _observation(
     seen: list[dict] | None = None,
 ) -> dict:
     return {
-        "self": {"position": {"x": position[0], "y": position[1]}, "heading": heading, "moved": moved},
+        "self": {
+            "id": character_id,
+            "position": {"x": position[0], "y": position[1]},
+            "heading": heading,
+            "moved": moved,
+        },
         "tick": tick,
         "seen": [] if seen is None else seen,
         "village": _village(),
@@ -43,13 +57,59 @@ def _npc(character_id: str = "npc_0", position: tuple[float, float] = (2.0, 0.0)
     return {"id": character_id, "position": {"x": position[0], "y": position[1]}}
 
 
-def test_naive_preserves_heading_and_stands_still() -> None:
+def test_naive_starts_along_its_heading_then_takes_a_seeded_random_walk() -> None:
+    first = _observation(heading=271.5)
+    left, right = Naive(), Naive()
+    left.reset(14, first)
+    right.reset(14, first)
+
+    left_actions = [left.act(_observation(tick=tick, heading=271.5, moved=0.6)) for tick in range(1, 80)]
+    right_actions = [right.act(_observation(tick=tick, heading=271.5, moved=0.6)) for tick in range(1, 80)]
+
+    assert left_actions == right_actions
+    assert left_actions[0] == {"heading": 271.5, "speed": 0.6, "action": 0}
+    assert all(action["heading"] == 271.5 for action in left_actions[:14])
+    assert any(action["heading"] != 271.5 for action in left_actions[14:])
+    assert all(action["action"] == 0 for action in left_actions)
+
+
+def test_naive_turns_after_two_stalled_walks() -> None:
     agent = Naive()
-    observation = _observation(heading=271.5)
+    first = _observation(heading=90.0)
+    agent.reset(8, first)
 
-    agent.reset(14, observation)
+    assert agent.act(first)["heading"] == 90.0
+    assert agent.act(_observation(tick=2, heading=90.0, moved=0.0))["heading"] == 90.0
+    recovered = agent.act(_observation(tick=3, heading=90.0, moved=0.0))
 
-    assert agent.act(observation) == {"heading": 271.5, "speed": 0.0, "action": 0}
+    assert recovered["speed"] == 0.6
+    assert recovered["action"] == 0
+    assert recovered["heading"] != 90.0
+
+
+def test_naive_walks_with_valid_finite_orders_in_the_real_environment() -> None:
+    env = ThreeBranchesEnv(seat_plan="cast_5")
+    observations, _infos = env.reset(seed=14)
+    agents = {player_id: Naive() for player_id in env.agents}
+    for player_id, agent in agents.items():
+        agent.reset(14, observations[player_id])
+
+    initial_headings = {character_id: state.heading for character_id, state in env.day.characters.items()}
+    moved = False
+    turned = False
+    for _ in range(80):
+        actions = {player_id: agent.act(observations[player_id]) for player_id, agent in agents.items()}
+        assert all(env.action_space(player_id).contains(action) for player_id, action in actions.items())
+        observations, _rewards, _terminations, _truncations, _infos = env.step(actions)
+        moved = moved or any(state.moved > 0.0 for state in env.day.characters.values())
+        turned = turned or any(
+            state.heading != initial_headings[character_id]
+            for character_id, state in env.day.characters.items()
+        )
+        assert all(math.isfinite(value) for state in env.day.characters.values() for value in state.position)
+
+    assert moved
+    assert turned
 
 
 def test_scripted_visitor_builds_a_joined_road_and_footpath_graph() -> None:
@@ -119,6 +179,58 @@ def test_scripted_visitor_takes_a_seeded_detour_after_two_stalled_walks() -> Non
 
     assert detour["speed"] == 0.65
     assert detour["heading"] in {90.0, 270.0}
+
+
+@pytest.mark.parametrize(("seed", "ticks"), ((14, 127), (22, 107), (23, 107), (25, 109)))
+def test_scripted_visitor_keeps_a_finite_position_after_leaving_a_conversation(seed: int, ticks: int) -> None:
+    """Exercise the movement sequence that used to turn the visitor position into NaN."""
+    env = ThreeBranchesEnv(seat_plan="cast_5")
+    observations, _infos = env.reset(seed=seed)
+    agents = {
+        player_id: ScriptedVisitor() if player_id == "player_0" else Naive() for player_id in env.agents
+    }
+    for player_id, agent in agents.items():
+        agent.reset(seed, observations[player_id])
+
+    for _ in range(ticks):
+        actions = {player_id: agent.act(observations[player_id]) for player_id, agent in agents.items()}
+        observations, _rewards, _terminations, _truncations, _infos = env.step(actions)
+        assert all(math.isfinite(value) for value in env.day.characters["visitor"].position)
+
+
+def test_scripted_visitor_records_an_opening_canned_line_for_seed_22(tmp_path: Path) -> None:
+    """Pin the earliest fixture-village greeting through the real recording path."""
+    players = {
+        f"player_{index}": AgentPlayer(ScriptedVisitor() if index == 0 else Naive()) for index in range(6)
+    }
+    attributions = {
+        player_id: {
+            "kind": "agent",
+            "builtin_name": "scripted_visitor" if player_id == "player_0" else "naive",
+            "label": "Scripted visitor" if player_id == "player_0" else "Naive",
+        }
+        for player_id in players
+    }
+    recording_id = "opening-chat"
+    run_episode(
+        ENTRY,
+        players,
+        parameters=resolve_parameters(META, {"seat_plan": "cast_5", "daynight": False}),
+        seed=22,
+        store=FolderRecordingStore(tmp_path),
+        recording_id=recording_id,
+        clock=ManualClock(),
+        max_steps=106,
+        player_attribution=attributions,
+    )
+
+    states = [
+        json.loads(line)
+        for line in (tmp_path / recording_id / "recording.jsonl").read_text(encoding="utf-8").splitlines()[1:]
+    ]
+    assert states[105]["messages"] == [
+        {"from": "player_0", "to": "player_2", "text": "A fine day for walking. How are you?"}
+    ]
 
 
 def test_staged_builtin_copies_and_manifests_match_the_package() -> None:

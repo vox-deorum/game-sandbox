@@ -10,6 +10,12 @@ import { type CameraPinch, type CameraPoint, wheelZoomFactor } from './camera.js
 /** Renderer callbacks that connect browser gestures to camera state. */
 export interface CameraGestureHandlers {
   toView(clientPoint: CameraPoint): CameraPoint
+  /**
+   * Whether a gesture starting at this view point drives the camera. A renderer that paints its own
+   * fixed controls answers false over them, so pressing a control cannot also pan, zoom, or reset.
+   * Every point counts when a renderer leaves this out.
+   */
+  accepts?(view: CameraPoint): boolean
   zoomAt(factor: number, anchor: CameraPoint): void
   panBy(dx: number, dy: number): void
   pinch(before: CameraPinch, after: CameraPinch): void
@@ -61,6 +67,9 @@ export function wireCameraGestures(
 
   target.style.touchAction = 'none'
 
+  const acceptsView = (view: CameraPoint): boolean => handlers.accepts?.(view) ?? true
+  const acceptsClient = (client: CameraPoint): boolean => acceptsView(handlers.toView(client))
+
   const clearPointers = (): void => {
     pointers.clear()
     primaryPointerId = null
@@ -71,14 +80,14 @@ export function wireCameraGestures(
   }
 
   const onWheel = (event: WheelEvent): void => {
+    const anchor = handlers.toView({ x: event.clientX, y: event.clientY })
+    if (!acceptsView(anchor)) return
     event.preventDefault()
-    handlers.zoomAt(
-      wheelZoomFactor(event.deltaY, event.deltaMode),
-      handlers.toView({ x: event.clientX, y: event.clientY }),
-    )
+    handlers.zoomAt(wheelZoomFactor(event.deltaY, event.deltaMode), anchor)
   }
 
   const onPointerDown = (event: PointerEvent): void => {
+    if (!acceptsClient({ x: event.clientX, y: event.clientY })) return
     // Cancel the mouse defaults so a drag past the canvas cannot select page text. Click and
     // double-click still fire for a canceled pointerdown, so the reset gesture keeps working.
     event.preventDefault()
@@ -138,7 +147,10 @@ export function wireCameraGestures(
   }
 
   const onPointerCancel = (): void => clearPointers()
-  const onDoubleClick = (): void => handlers.reset()
+  const onDoubleClick = (event: MouseEvent): void => {
+    if (!acceptsClient({ x: event.clientX, y: event.clientY })) return
+    handlers.reset()
+  }
 
   const rememberTap = (view: CameraPoint): void => {
     const now = Date.now()

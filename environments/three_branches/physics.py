@@ -12,6 +12,8 @@ from .layout import SEGMENT_RADIUS, WORLD_SIZE, Layout
 from .rules import PROFILE
 
 SUBSTEPS = 8
+_CHARACTER_MASS = 1.0
+_CHARACTER_MOMENT = float("inf")
 
 
 class Physics:
@@ -28,7 +30,7 @@ class Physics:
         self.bodies: dict[str, pymunk.Body] = {}
         self._build_static_solids()
         for character_id, position in positions.items():
-            body = pymunk.Body(1.0, float("inf"))
+            body = pymunk.Body(_CHARACTER_MASS, _CHARACTER_MOMENT)
             body.position = position
             shape = pymunk.Circle(body, PROFILE.body_radius)
             shape.friction = 0.0
@@ -86,7 +88,7 @@ class Physics:
         }
 
     def step(self, velocities: Mapping[str, Point], immovable: set[str]) -> dict[str, Point]:
-        """Advance one tick, treating speed-zero characters as static for all eight substeps."""
+        """Advance one tick, treating speed-zero characters as immovable for all eight substeps."""
         original_types: dict[str, int] = {}
         for character_id, body in self.bodies.items():
             if character_id in immovable:
@@ -102,5 +104,9 @@ class Physics:
             body.velocity = (0.0, 0.0)
             if character_id in original_types:
                 body.body_type = original_types[character_id]
+                # Pymunk clears mass and moment when a static body becomes dynamic. Restore the
+                # character's ordinary dynamic body before the next tick can move it.
+                body.mass = _CHARACTER_MASS
+                body.moment = _CHARACTER_MOMENT
                 self.space.reindex_shapes_for_body(body)
         return self.positions()

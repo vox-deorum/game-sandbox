@@ -48,9 +48,9 @@ Buildings are permanently open. Each building has a local Pixi container whose o
 
 ### Static and dynamic Pixi scene
 
-The renderer keeps step 3's shared `pixi-tiledmap` pipeline. It creates a static scene once for each static-layout key, derived from the decoded layout for that key and its 100 by 100 ground grid. That build owns the Tilemap, terrain washes, generated channel, road, path, bridge and building geometry, scenery, permanent prop bases, and static mask instances. A layout change replaces the static scene. A tick update does not rebuild it.
+The renderer keeps step 3's shared `pixi-tiledmap` pipeline. It builds the static scene once at mount, from the decoded layout the recording header carries and its 100 by 100 ground grid. That build owns the Tilemap, terrain washes, generated channel, road, path, bridge and building geometry, scenery, permanent prop bases, and static mask instances. A session watches one village, so no tick update and no seek rebuilds it.
 
-Dynamic nodes reconcile by stable id: characters, prop state treatments, phase grade, emissives, and crane ambience. A seek, repeated frame, mount, or resize computes the same retained scene directly from the layout key, decoded tick, state, and id. It carries no forward-only visual state. Masks are reused, and texture loading comes through the renderer-local manifest.
+Dynamic nodes reconcile by stable id: characters, prop state treatments, phase grade, emissives, and crane ambience. A seek, repeated frame, mount, or resize computes the same retained scene directly from the decoded tick, state, and id. It carries no forward-only visual state. Masks are reused, and texture loading comes through the renderer-local manifest.
 
 The world layer order is fixed:
 

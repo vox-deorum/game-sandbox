@@ -41,6 +41,7 @@ import {
   activationPulseAlpha,
   drawFogVeil,
   drawOrderMarks,
+  CONFIRM_BUTTON,
   drawOrderControls,
   drawOrderPulse,
   FOG_CROSSFADE_MS,
@@ -282,6 +283,12 @@ export class CraneReachRenderer extends PixiRenderer {
         const scale = this.displayScale()
         return { x: (clientPoint.x - bounds.left) / scale, y: (clientPoint.y - bounds.top) / scale }
       },
+      // The order buttons are painted, not DOM controls, so the camera has to leave their circles
+      // alone. Otherwise pressing one also drags the board and double-pressing one resets it.
+      accepts: (view) =>
+        ![RESET_BUTTON, CONFIRM_BUTTON].some(
+          (button) => Math.hypot(view.x - button.x, view.y - button.y) <= button.radius,
+        ),
       zoomAt: (factor, anchor) => {
         if (this.camera === null || this.cameraLimits === null) return
         this.camera = zoomCamera(this.camera, this.cameraLimits, this.internalSize, factor, anchor)

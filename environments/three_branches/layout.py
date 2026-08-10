@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import chain
 
 from .geometry import (
     Point,
@@ -191,6 +192,9 @@ class Layout:
     props: tuple[Prop, ...]
     scenery: tuple[Scenery, ...]
     spawn: Point
+    # A layout is hashed and compared through wall_segments, which holds the same walls in one flat
+    # tuple, so this grouped view stays out of both.
+    building_walls: dict[str, tuple[Segment, ...]] = field(init=False, compare=False)
     wall_segments: tuple[Segment, ...] = field(init=False)
     water_bank_segments: tuple[Segment, ...] = field(init=False)
     water_confluence_disks: tuple[tuple[Point, float], ...] = field(init=False)
@@ -214,12 +218,15 @@ class Layout:
             for position, radius in confluence_disks
         ):
             raise ValueError("a bridge deck cannot overlap a channel confluence")
-        object.__setattr__(self, "wall_segments", self._wall_segments())
+        building_walls = self._building_walls()
+        object.__setattr__(self, "building_walls", building_walls)
+        object.__setattr__(self, "wall_segments", tuple(chain.from_iterable(building_walls.values())))
         object.__setattr__(self, "water_bank_segments", self._water_bank_segments())
         object.__setattr__(self, "water_confluence_disks", confluence_disks)
 
-    def _wall_segments(self) -> tuple[Segment, ...]:
-        walls: list[Segment] = []
+    def _building_walls(self) -> dict[str, tuple[Segment, ...]]:
+        """Split each building's perimeter around its doorway gap, keyed by building id."""
+        by_building: dict[str, tuple[Segment, ...]] = {}
         for building in self.buildings:
             corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
             edges = tuple(zip(corners, (*corners[1:], corners[0]), strict=True))
@@ -227,6 +234,7 @@ class Layout:
                 edges,
                 key=lambda edge: distance_to_segment(building.doorway.position, edge[0], edge[1]),
             )
+            walls: list[Segment] = []
             for edge in edges:
                 if edge != doorway_edge:
                     walls.append(edge)
@@ -245,7 +253,8 @@ class Layout:
                     walls.append((start, gap_start))
                 if gap_end != end:
                     walls.append((gap_end, end))
-        return tuple(walls)
+            by_building[building.id] = tuple(walls)
+        return by_building
 
     def _water_bank_segments(self) -> tuple[Segment, ...]:
         banks: list[Segment] = []
