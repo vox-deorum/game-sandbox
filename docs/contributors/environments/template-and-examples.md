@@ -12,7 +12,7 @@ Put each worked example's layer in `environments/<env>/examples/<name>/`. An exa
 
 Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published, or an empty tuple when the environment has none to publish. Each name must identify an immediate child of that environment's `examples/` directory. A name starts with a lowercase letter or digit, contains only lowercase letters, digits, dots, underscores, and hyphens, excludes `..`, and ends in neither a dot nor `.lock`. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
 
-The top-level `templates/` directory holds nothing but `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
+The top-level `templates/` directory holds only `templates/base/`; [Composition](templates.md#composition) owns generated files under `build/`.
 
 Compose renders declared `EnvParameter` and `EnvParameterChoice` values into `sandbox.env` and derives `players` and `seat_plan` from the layout (all defined in [Environment package](package.md#registry-entry-and-metadata)).
 
@@ -28,9 +28,7 @@ Hearts and Spades may re-export game-independent names from `sandbox.semantic_ca
 
 ## Composed template
 
-[Composition](templates.md#composition) covers how `scripts/compose.py` assembles a complete student repository under `build/`: the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
-
-The generated environment factory uses the required `make_env(parameters)` signature. Local play and evaluation resolve the complete default map before constructing the environment, so a composed template exercises the same contract as a server session.
+[Composition](templates.md#composition) owns the details: it generates `make_env(parameters)`, and local play and evaluation resolve the same complete parameter map as a server session.
 
 ## Student documentation
 

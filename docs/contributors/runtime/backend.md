@@ -6,6 +6,24 @@ It never steps an environment or runs participant Python. The session container 
 
 Read [the execution boundary](execution.md) for drivers and session transport, [the backend-facing specifications](../../specs/execution.md) for architectural rules, and [Testing](../testing/index.md) for the verification matrix.
 
+## Run and test
+
+Run these commands from `backend/` unless noted:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start `tsx watch` |
+| `npm run start` | Start once without watch mode |
+| `npm run build:image` | Rebuild the current session base image |
+| `npm test` | Run Docker-free unit tests |
+| `npm run test:integration` | Run real-container integration tests |
+| `npm run demo` | From the repository root, launch the app with the populated e2e fixture; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
+| `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after discarding and rebuilding the fixture |
+
+Starting the backend requires Docker because it reaps managed containers during startup. Unit tests use an in-memory SQLite database and fake driver.
+
+Tests mirror source domains under `test/`. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`; Docker-gated tests live under `test/integration/`.
+
 ## Request flow
 
 ```text
@@ -44,24 +62,6 @@ Browser
 
 Shared protocol and environment types live in `@game-sandbox/schema`. Browser-safe subpath exports avoid pulling Node-only recording readers into the frontend bundle.
 
-## Run and test
-
-Run these commands from `backend/` unless noted:
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start `tsx watch` |
-| `npm run start` | Start once without watch mode |
-| `npm run build:image` | Rebuild the current session base image |
-| `npm test` | Run Docker-free unit tests |
-| `npm run test:integration` | Run real-container integration tests |
-| `npm run demo` | From the repository root, launch the app with populated e2e data; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
-| `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after discarding and rebuilding the fixture |
-
-Starting the backend requires Docker because it reaps managed containers during startup. Unit tests use an in-memory SQLite database and fake driver.
-
-Tests mirror source domains under `test/`. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`; Docker-gated tests live under `test/integration/`.
-
 ## Configuration
 
 The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
@@ -97,7 +97,7 @@ When `FRONTEND_DIST` exists, the backend serves it through `@fastify/static`.
 
 ## Storage
 
-The `Storage` interface organizes relational data by product domain. Kysely and better-sqlite3 provide its implementation.
+The `Storage` interface organizes relational data by product domain. Kysely and better-sqlite3 provide its implementation. [Data folders](../data/folders.md) describes the local runtime layout.
 
 Callers use methods such as `createSession`, `markEnded`, `createSubmission`, and `getHumanBoard`. They do not issue SQL.
 
@@ -109,7 +109,7 @@ Callers use methods such as `createSession`, `markEnded`, `createSubmission`, an
 | `storage/kysely/index.ts`  | `KyselyStorage` facade            |
 | `storage/kysely/*.ts`      | Domain query modules              |
 
-Migration history remains flat while there is no deployed data to preserve. Update `0001_initial_schema`, then recreate the local `sandbox.db`. In-memory tests always use the latest shape.
+Migration history remains flat while there is no deployed data to preserve. For a schema change, update `storage/schema.ts`, `0001_initial_schema` in `storage/migrations.ts`, and affected `storage/kysely/` modules, then recreate local `sandbox.db` and run related tests. In-memory tests use the latest shape.
 
 ### Main table groups
 
@@ -137,11 +137,11 @@ A recording directory holds the JSONL. Its database row stores retention metadat
 
 The sweep runs at startup, on its interval, after session finalization, and after workflow-run completion:
 
-1. Protect recordings used by the latest completed leaderboard runs.
+1. Protect recordings used by the latest completed leaderboard runs and exclude them from the age and quota passes.
 2. Delete unpinned recordings older than the retention window.
 3. For each user over quota, delete oldest unpinned recordings until within quota.
 
-Pinned recordings count toward quota but are never evicted. A user at the pinned cap receives `409 pinned_quota`.
+Within the remaining live-session population, pinned recordings count toward quota but are never evicted. A user at the pinned cap receives `409 pinned_quota`.
 
 Deletion tolerates a missing row or directory so an interrupted sweep can recover on its next pass.
 
@@ -184,7 +184,7 @@ Database constraints keep each GitHub identity and account email owned by one us
 
 The canonical registry lives in Python. `scripts/generate.py` writes committed `src/environments/generated/environments.json`, and the generated-code check prevents drift.
 
-`environments/registry.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
+`environments/registry.ts` parses the generated metadata file once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
 
 ## Submission pipeline
 
@@ -242,7 +242,7 @@ Overlay image building and load checking are described in [Execution boundary](e
 
 ### Snapshots
 
-Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. The write is best-effort, so a failure is logged and the submission still reaches `ready`.
+Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. A failed snapshot write fails the static stage and prevents `ready`; the worker attempts to remove any stale archive, but logs and continues if deletion fails.
 
 When a cached overlay image has been evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission). The shared filter plus a deterministic sort make the rebuild reproduce the original overlay image. Operator download routes stream the same snapshots, and a forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
 

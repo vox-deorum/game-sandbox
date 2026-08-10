@@ -1,9 +1,6 @@
 site_name: Game Sandbox
 site_description: A classwise playground for Game AI.
-# Placeholder until the docs site is public (the Pages deploy in .github/workflows/docs.yml is
-# still disabled). scripts/compose.py reads this value and substitutes the {{DOCS_URL}} token in
-# composed templates, so a student's cloned template links back to the published docs. Update
-# this when the real site URL is known and the token resolves to the new address automatically.
+# scripts/compose.py substitutes this documentation URL for {{DOCS_URL}} in composed templates. Update `site_url` when the published documentation URL changes.
 site_url: https://vox-deorum.github.io/game-sandbox/
 repo_url: https://github.com/vox-deorum/game-sandbox
 repo_name: vox-deorum/game-sandbox
@@ -39,11 +36,7 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.details
 
-# The nav mirrors the "read in this order" progression on each section's index page, so the
-# sidebar presents pages in learning order rather than alphabetically. The environment-guide
-# hook discovers canonical environment guides as virtual student pages, so do not list each
-# environment here. AGENTS.md and CLAUDE.md are excluded because they contain authoring
-# instructions.
+# Keep navigation in reader order. The environment-guide hook discovers canonical environment guides, so do not list them here. Exclude authoring instructions.
 validation:
   nav:
     omitted_files: warn
@@ -68,6 +61,7 @@ nav:
           - Testing: contributors/testing/index.md
           - Browser end-to-end tests: contributors/testing/browser-e2e.md
       - Data:
+          - Data folders: contributors/data/folders.md
           - State schema: contributors/data/state-schema.md
           - Recordings: contributors/data/recordings.md
       - Runtime:

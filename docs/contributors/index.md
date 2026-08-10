@@ -11,11 +11,10 @@ Vue frontend ⇄ Node backend ⇄ Python session container
                     └─ recording files
 ```
 
-The container boundary determines the language split: Python runs inside sessions, while TypeScript runs the backend and browser app.
-
 ## Core concepts
 
 - **Environment**: a game or task exposed through the PettingZoo interface.
+- **Agent**: a submitted or built-in program that controls one or more environment players.
 - **Session**: a sandboxed container that runs one environment and its agent-controlled players.
 - **Submission**: a participant's GitHub repository, pinned to a commit and tagged with a season.
 - **Recording**: the saved per-step state of a session, kept for replay.
@@ -44,6 +43,7 @@ The repository is laid out as follows:
 | Configure the server, authentication, sandbox, and retention | [Configuration](setup/configuration.md) |
 | Choose and run checks | [Testing](testing/index.md) |
 | Write or run browser end-to-end tests | [Browser end-to-end tests](testing/browser-e2e.md) |
+| Locate runtime, test, or demo data | [Data folders](data/folders.md) |
 | Change wire or recording data | [State schema](data/state-schema.md), then [Recordings](data/recordings.md) |
 | Add an environment | [Adding an environment](environments/index.md), then [Rendering](environments/rendering.md) |
 | Change the template | [Template product and releases](environments/templates.md) |

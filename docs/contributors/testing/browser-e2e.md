@@ -29,7 +29,7 @@ npm run e2e --workspace @game-sandbox/frontend -- --project seasons
 npm run e2e:run --workspace @game-sandbox/frontend -- --project seasons   # skip both Vite builds
 ```
 
-These write the throwaway database, including the form with no `--project`. Only the bare `scripts/ci.py frontend-e2e` builds the fixture `npm run demo` serves, so reach for it when you want that fixture refreshed.
+These commands use and erase `partial/` by default. The supported default way to refresh the demo fixture is the bare unrestricted `scripts/ci.py frontend-e2e` helper. See [Data folders](../data/folders.md).
 
 The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend. One project per group does not change that: every group shares one backend, one database, and one port pair.
 
@@ -54,7 +54,7 @@ Nothing that submits a ready agent into the Flappy Bird Playground season may jo
 
 Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each is minutes on its own. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them.
 
-The configuration applies no filter of its own. A default that hid `@slow` would let a bare `npm run e2e` quietly produce a demo database with no released seasons in it.
+The configuration applies no filter of its own. Hiding `@slow` by default would make a complete run omit the released seasons the demo fixture needs.
 
 ## Suite setup
 
@@ -75,17 +75,15 @@ GitHub OAuth depends on an external provider, so the frontend Vitest suite cover
 5. Sign in as a GitHub-only user and confirm My Profile does not allow disconnecting the final sign-in method.
 6. Confirm that connecting a second GitHub account or a GitHub email already owned by another Game Sandbox user is refused with an inline error.
 
-## A fresh database every run
+## A fresh data directory every run
 
-`e2e/fresh-backend.mjs` starts each backend with a fresh data directory, first deleting the one directory it is launched with. This keeps local runs independent and lets tests use readable, stable names. Sibling directories under `.data/` are left untouched, including the demo snapshot and any manual backup directory a contributor keeps there.
+`e2e/fresh-backend.mjs` deletes the selected data directory before the backend starts, leaving sibling directories untouched. This keeps runs independent and lets tests use readable, stable names. See [Data folders](../data/folders.md).
 
-## This data is the demo's fixture
+## The demo source fixture
 
-`npm run demo` copies `frontend/e2e/.data/main/` to `demo/` and serves that copy. The e2e suite creates the source data, including recordings, submissions, and real sign-in accounts, so the demo and browser tests exercise the same workflows. After changing the data a journey creates, run `npm run demo -- --rerun-e2e` to rebuild the source fixture before starting the demo.
+The e2e suite creates the demo source fixture, including recordings, submissions, and real sign-in accounts. After changing journey-created data, run `npm run demo -- --rerun-e2e` before starting the demo.
 
-Only a complete run writes `.data/main/`, and a run has to claim that directory before it can touch it. `playwright.config.ts` defaults to `.data/partial/`, and `scripts/ci.py frontend-e2e` overrides it to `main` only when no narrowing flag is set. Everything else, a `--group` run or a hand-typed `playwright test`, lands in `partial`.
-
-The default has to be the throwaway one because the backend wipes whichever directory it is launched with. If `main` were the default, running a single group would replace a complete fixture with that group's data, and `npm run demo` would then serve it without noticing.
+The bare unrestricted helper run rebuilds `main/` by default. Narrowed and direct runs cannot replace it by default, which protects the complete demo fixture from a partial run.
 
 ## Naming and shared helpers
 
@@ -101,6 +99,5 @@ Shared identities live in `e2e/support/names.ts` and shared API flows in `e2e/su
 - Tag a test `@slow` when it submits agents and runs a scheduled season. Anything cheaper belongs in the default tier, where contributors will actually run it.
 - Prefer the jsdom suite under `frontend/test/`. A browser test earns its place by needing a real container, a real socket, a second browser context, a painted canvas, a real download, or real navigation and cookies. Assertions about text, disabled controls, validation, and markup structure belong in jsdom, where they run in milliseconds.
 - Add identities to `support/names.ts` and flows to `support/api.ts`; keep specs declarative.
-- A new agent fixture is a folder under `fixtures/submission/` with a `manifest.json` (mirror `good/manifest.json`) and an `agent.py` exposing a callable `Agent` with `reset`/`act`.
+- A new submission fixture is a folder under `fixtures/submission/` with a `manifest.json` (mirror `good/manifest.json`) and an `agent.py` exposing a callable `Agent` with `reset`/`act`.
 - Assert DOM facts such as visible controls, a painted canvas, and board rows. Never assert pixels: font and GPU differences between runners would make the suite unreliable.
-- Update the relevant Playwright journeys with any UI change, as [Testing](index.md#browser-end-to-end) requires.

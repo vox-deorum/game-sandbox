@@ -3,10 +3,10 @@
 A production live session crosses three processes:
 
 ```text
-Browser ⇄ Node backend ⇄ sandboxed Python container
+Browser ⇄ Node backend ⇄ Python session container
 ```
 
-The browser renders the game and sends user commands. The backend authorizes requests, supervises sessions, stores metadata, and relays traffic. The container runs the harness, environment, and agents.
+The browser renders the game and sends user commands. The backend authorizes requests, supervises sessions, stores metadata, and relays traffic. The session container runs the harness, environment, and agents.
 
 Read [the execution specification](../../specs/execution.md) for the architectural rules, [Frontend](../frontend/development.md) for the browser host, and [Backend](backend.md) for storage and HTTP routes.
 
@@ -49,14 +49,14 @@ The Docker driver maps these to Docker settings, drops capabilities, and labels 
 
 `driver/sandbox.ts` builds profiles for live sessions, matches, and submission load checks. It always uses a read-only root filesystem and bounded `/tmp`. Callers choose `none` or `llm` networking, resource limits, scratch size, and approved mounts. Add new callers through this helper and extend its invariant tests.
 
-An LLM-enabled session uses two Docker network boundaries. The agent container joins only its per-session internal network and can reach only the `llm-proxy` alias. A fixed-destination relay joins that network and one backend-facing network, forwarding only to the backend's internal LLM listener. The agent never gets general internet access.
+An LLM-enabled session uses two Docker network boundaries. The session container joins only its per-session internal network and can reach only the `llm-proxy` alias. A fixed-destination relay joins that network and one backend-facing network, forwarding only to the backend's internal LLM listener. The session container never gets general internet access.
 
 The backend-facing relay topology depends on where the backend runs:
 
 - A host-process backend uses `host-gateway` mode. The relay joins a dedicated routed egress network and targets `host.docker.internal`.
-- A Compose backend uses `compose-network` mode. The relay joins the existing named `game-sandbox-internal` network and targets the `app` service. It gets no separate egress network or host-gateway alias, and teardown never removes the shared Compose network.
+- A Compose backend uses `compose-network` mode. The relay joins the configured existing Compose internal network (`game-sandbox-internal` by default) and targets the configured backend hostname (`app` in the provided Compose setup). It gets no separate egress network or host-gateway alias, and teardown never removes the shared Compose network.
 
-Both modes leave the agent container on the per-session network alone. Startup rejects incomplete relay configuration, and Compose-mode launch fails clearly when the named network does not exist.
+Both modes leave the session container on the per-session network alone. Startup rejects incomplete relay configuration, and Compose-mode launch fails clearly when the configured network does not exist.
 
 ## Session base images
 
@@ -223,12 +223,9 @@ The runner claims stdout for protocol traffic before importing games or agents. 
 
 This timing machinery exists so an agent's LLM-call latency does not count against its own compute budget.
 
-- For an official LLM-enabled session, the launch contract (the launch configuration and stdio protocol the backend shares with the session container) wires `inflight_url` alongside the model endpoint and tick-marker URL.
-- Before every `reset`, `act`, `chat`, and `learn` hook, the harness restores the current player's base URL and key. It posts that player's tick marker when it changes. Reset keeps the setup marker.
-- Around each hook, the harness subtracts that player's total verified proxy-time change, reusing a valid post-hook reading as the next baseline.
-- Hook-thread CPU remains chargeable, and a failed reading charges the full hook time.
-- Module loading and construction are setup work outside hook timing. Reset is timed and charged to the episode budget.
-- The template's `BackgroundLLM` helper may keep running across hooks and ticks. Watchdogs (the runner's stall detectors: the live-session idle and time-limit detectors, and the automated-run wall-clock watchdog) exclude only verified blocking proxy time, so a background-marked request never extends them.
+- An official LLM-enabled launch supplies `inflight_url` with the model endpoint and tick-marker URL.
+- Before each hook, the harness restores the current player's credential. `reset` uses the setup marker; `act`, `chat`, and `learn` use the current tick marker, which the harness posts when it changes. Around each hook, it subtracts verified proxy time and reuses a valid reading as the next baseline; hook-thread CPU remains chargeable, and a failed reading charges the whole hook.
+- Module loading and construction are setup work, while reset is charged to the episode budget. `BackgroundLLM` may run across hooks and ticks, but watchdogs exclude only verified blocking proxy time, so background-marked requests never extend them.
 
 See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).
 

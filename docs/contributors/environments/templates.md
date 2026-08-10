@@ -16,11 +16,11 @@ Read [Environment template and examples](template-and-examples.md) to create an 
 
 ## Composition
 
-`scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and copies the environment's `template/` directory onto it.
+`uv run python scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and copies the environment's `template/` directory onto it.
 
 Composition is intentionally disposable. Recompose every template and example after changing environment metadata, gameplay parameter declarations, the harness launch contract (the launch configuration and stdio protocol the backend shares with the session container), or the generated factory signature. Outputs composed from another checkout are unsupported.
 
-`scripts/compose.py <env> <name>` also layers `environments/<env>/examples/<name>/` onto `build/examples/<env>/<name>/`.
+`uv run python scripts/compose.py <env> <name>` also layers `environments/<env>/examples/<name>/` onto `build/examples/<env>/<name>/`.
 
 Composition replaces whole files. The only merged file is `requirements.extra.txt`: it appends pins but cannot override a pin already in `requirements.txt`.
 
@@ -38,15 +38,17 @@ The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFA
 
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 
-An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. Once `template-v<N>` is published, its snapshot is immutable. A [republish](#cutting-a-release) reuses the unchanged `deps-v<N>` snapshot because CI pins every dependency reference to it.
+An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. The published matching `deps-v<N>` directory is immutable, and a [republish](#cutting-a-release) reuses it because CI pins every dependency reference to it.
 
 ## Cutting a release
+
+The release owner needs workflow and write permissions. Contributors should run `uv run python scripts/ci.py publish-dry-run` before asking for publication.
 
 The typical release dispatches the Publish Template workflow from `main` with the next `N` to publish. A few special cases use the same workflow with different inputs:
 
 | Dispatch input | Behavior |
 | --- | --- |
-| Greater `N` | Creates the next dependency snapshot and updates the owned version touchpoints. |
+| Greater `N` | Creates the next frozen `deps-v<N>` dependency set and updates the owned version touchpoints. |
 | Same `N` | Retries a release whose `template-v<N>` tag never landed. |
 | Same `N`, `republish: true` | Refreshes an already-tagged release from the current `main`, force-pushing the student repository. Use it to publish an environment merged after `template-v<N>` shipped. |
 | Lower `N` | Refused. |
@@ -62,4 +64,4 @@ The two release forms differ only in their final steps:
 
 Use `dry_run: true` to rehearse the full path without contacting or mutating the student repository, `main`, or tags. Combine it with `republish: true` to rehearse a republish. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.
 
-A republish keeps the existing template version. For the current template, publish these local setup changes by manually republishing v1 after they merge.
+A republish keeps the existing template version.

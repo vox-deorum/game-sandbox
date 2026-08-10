@@ -6,7 +6,7 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 ## How configuration loads
 
-`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
+`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory. See [Data folders](../data/folders.md) to locate the active `DATA_DIR`.
 
 Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file: use the Git-ignored `.env` for those and for machine-specific values. Other `.env.*` files are not loaded automatically.
 
@@ -29,7 +29,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `PORT` | `8080` | HTTP and WebSocket port |
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
-| `DATA_DIR` | `backend/data` | Repository-relative root containing `sandbox.db` and recording directories. When the app runs in a container, set an absolute path that is identical on the host and in the container; see [Run the app in Docker](docker.md) |
+| `DATA_DIR` | `backend/data` | Repository-relative runtime-data root. Container deployments need identical absolute host and Compose `app` container paths; see [Run the app in Docker](docker.md) and [Data folders](../data/folders.md). |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no viewer in scripted mode, or no owner socket in human mode |
 | `SESSION_MAX_DURATION_MS` | unset | Optional positive chargeable-duration override. When unset, each session derives its limit from its pace and episode rules. |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
@@ -79,7 +79,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 
 The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. Every listener route requires a scoped bearer key.
 
-The listener binds on all app-container interfaces so the fixed-destination relay can reach it. Host-process deployments use `host-gateway` mode. The Compose deployment selects `compose-network`, attaches the relay to `game-sandbox-internal`, and reaches the `app` service without publishing `LLM_INTERNAL_PORT` on the host. The sandbox agent cannot join or resolve that shared network.
+The listener binds on all interfaces inside the Compose `app` container so the fixed-destination relay can reach it. Host-process deployments use `host-gateway` mode. The Compose deployment selects `compose-network`, attaches the relay to `game-sandbox-internal`, and reaches the Compose `app` container without publishing `LLM_INTERNAL_PORT` on the host. The sandbox agent cannot join or resolve that shared network.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -117,7 +117,7 @@ The listener binds on all app-container interfaces so the fixed-destination rela
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
 
-`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Backend](../runtime/backend.md) for the pipeline.
+`DATA_DIR` also contains the submission snapshot directory at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Data folders](../data/folders.md) for locations and [Backend](../runtime/backend.md) for the pipeline.
 
 ## Deployment notes
 

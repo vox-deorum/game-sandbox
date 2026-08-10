@@ -1,8 +1,12 @@
 # Run the app in Docker
 
-The repository root has a `Dockerfile` and `compose.yaml` that run the app behind an nginx HTTPS origin. The app container starts session containers itself, so the stack needs no host-installed Node or Python. The [Deployment](../../specs/deployment.md) specification defines this mode and its rules. See [Configuration](configuration.md) for the full variable reference and [Development setup](development.md) for the host-process flow.
+The repository root has a `Dockerfile` and `compose.yaml` that run the app behind an nginx HTTPS origin. The Compose `app` container runs the backend and starts session containers, so the stack needs no host-installed Node or Python. The [Deployment](../../specs/deployment.md) specification defines this mode and its rules. See [Configuration](configuration.md) for the full variable reference and [Development setup](development.md) for the host-process flow.
 
 The public listener is designed for a Cloudflare-proxied hostname. It accepts only Cloudflare source networks with Cloudflare Global Authenticated Origin Pulls. A separate HTTPS listener binds only to `127.0.0.1` for local administration and health checks.
+
+## Prerequisites
+
+Use a Linux host or Docker Engine in WSL2, with Docker Compose access, permission to create `DATA_DIR`, a Cloudflare DNS hostname, and permission to open inbound port 443. Docker Desktop on Windows or macOS translates bind paths through a VM, so use the [host-process setup](development.md) there.
 
 ## Procedure
 
@@ -30,7 +34,7 @@ The repository setup script automates the local server steps, including the cert
    mkdir -m 700 .tls
    ```
 
-   The proxy generates `.tls/current/origin.crt` and `.tls/current/origin.key` on first start. `current` is an atomic link to a complete pair. The proxy validates the pair at startup and checks it daily while running. It renews when fewer than 30 days remain, reloads nginx, and retains one `previous` pair. These files are ignored by Git. Back up the whole `.tls` directory if local clients trust the certificate.
+   The proxy generates `.tls/current/origin.crt` and `.tls/current/origin.key` on first start. `current` is an atomic link to a complete pair. The proxy validates the pair at startup and checks it daily while running. It renews when fewer than 30 days remain, reloads nginx, and retains one `previous` pair. These files are ignored by Git. [Data folders](../data/folders.md) describes the proxy mount and other local storage. Back up the whole `.tls` directory if local clients trust the certificate.
 
 3. Build with current base images and start the stack:
 
@@ -64,19 +68,15 @@ The manually triggered Compose smoke workflow rehearses this deployment on a Lin
 
 ## How the container is set up
 
-`compose.yaml` mounts `/var/run/docker.sock` into the `app` container, so the backend inside it talks to the same Docker daemon as the host and starts session containers as siblings, not nested inside itself. The app has an outbound network for GitHub and model providers plus the named internal `game-sandbox-internal` network. nginx has only the internal network.
+`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container has an outbound network for GitHub and model providers plus `game-sandbox-internal`. nginx has only the internal network.
 
-The app publishes no host ports. nginx publishes public port 443 and binds `${LOCAL_HTTPS_PORT:-8443}` to IPv4 loopback. It forwards HTTP and WebSocket traffic to the app through Docker DNS, including after the app container is recreated.
+The Compose `app` container publishes no host ports. nginx publishes public port 443 and binds `${LOCAL_HTTPS_PORT:-8443}` to IPv4 loopback. It forwards HTTP and WebSocket traffic to the Compose `app` container through Docker DNS, including after that container is recreated.
 
-Session containers bind-mount `<DATA_DIR>/recordings`, and the Docker daemon resolves a bind path against its own host filesystem, not the caller's. So `DATA_DIR` must be an absolute path that exists identically on the host and inside the `app` container. `compose.yaml` guarantees this: it bind-mounts `${DATA_DIR:-/srv/game-sandbox/data}` at that same path inside the container, reading the value from the same `.env` file the backend reads, so one `DATA_DIR` value feeds both sides.
+Session containers bind-mount `<DATA_DIR>/recordings`, so `DATA_DIR` must be an existing absolute path that is identical on the host and in the Compose `app` container. `compose.yaml` binds the configured path at itself. See [Data folders](../data/folders.md).
 
 Mounting the Docker socket grants full control of the host's Docker daemon, so treat the host as single-tenant for this app.
 
-A containerized backend must be the only backend using its Docker daemon. The backend labels the containers it starts with its own process id and reaps leftover containers whose labeled owner process is gone or is itself. Inside a container those ids are namespace-local, so a containerized backend cannot tell another backend's live process from a dead one and would reap its sessions. Only host-process backends see each other's real process ids, so only they can share a daemon safely.
-
-## Supported hosts
-
-This setup needs a Linux Docker daemon that shares a filesystem with the compose project: a real Linux host, or Docker Engine inside WSL2. Docker Desktop on Windows or macOS runs containers inside a VM and translates bind paths through it, which breaks the same-path rule above. On those platforms, run the app as a host process instead, following [Development setup](development.md).
+A containerized backend must be the only backend using its Docker daemon because namespace-local process IDs make another backend's live sessions look orphaned. Host-process backends see shared process IDs and can share a daemon safely.
 
 ## LLM sessions
 

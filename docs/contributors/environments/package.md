@@ -14,12 +14,11 @@ It also defines `default_action(env, player_id)`, which returns the legal action
 
 An environment that removes players before their final outcome is known may implement `result_scores()`. Return `None` until the environment reaches natural completion. At natural completion, return a mapping whose keys exactly match the episode player ids and whose values are finite real numbers. The harness validates and caches the mapping before `env.close()`, then uses it for the reported episode scores. It does not call the hook when an episode stops, fails, or reaches a compute or tick limit before natural completion.
 
-Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but only `__init__.py` may import the [harness](../../specs/overview.md#core-model).
+Every module copied into the composed `sandbox.env` package must be self-contained for imports, may use relative and third-party imports, and cannot import the harness at runtime.
 
 The factory must use the values it owns:
 
-- Read resolved integer parameters with `int_parameter` from `game_sandbox_harness.environment`, which rejects missing values, booleans, non-integers, and integers outside the JSON-safe range at runtime. Do not use `assert` for parameter validation because optimized Python removes assertions.
-- A module copied into the composed package cannot import the harness at runtime; give it an equivalent local helper or a runtime-safe shared helper.
+- Validate every resolved integer parameter with `game_sandbox_harness.environment.int_parameter` semantics: reject missing values, booleans, non-integers, and integers outside the JSON-safe range. Do not use `assert`. Copied `sandbox.env` modules cannot import the harness, so they must use an equivalent local or runtime-safe helper.
 - A fixed-player factory must explicitly reject a `players` value that disagrees with its construction. Flappy Bird, for example, validates that `players` is `1`, narrows `pipe_gap` as an integer, and passes that value to its game constructor.
 - An environment with flexible player bounds reads `players` when it creates `possible_agents`, while one with declared plans reads `seat_plan` and uses the resolved plan's player count.
 - The harness validates and normalizes the map before calling the factory, then verifies that the resulting agent count matches the resolved layout.
@@ -28,7 +27,7 @@ The factory must use the values it owns:
 
 Gymnasium, the single-agent RL API, provides `gymnasium.Env`. `GymnasiumToAEC` in `single_agent.py` adapts a native instance into a one-player AEC environment. It forwards the reset seed and handles stepping, observations, and termination bookkeeping through the wrapped environment.
 
-The single player id is `player_0`. Player ids are PettingZoo agent ids verbatim in state objects, metadata, and harness APIs.
+The single player id is `player_0`. Player IDs are PettingZoo `agent` identifiers, copied verbatim into state objects, metadata, and harness APIs.
 
 Sequential multi-agent games subclass `pettingzoo.AECEnv` directly and do not use the adapter. Simultaneous games implement PettingZoo's parallel environment interface.
 

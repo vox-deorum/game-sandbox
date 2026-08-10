@@ -34,7 +34,7 @@ Adding an optional field or sidecar does not require a new version.
 
 A reader built for version N accepts exactly version N and reports a clear error for any other version. At the first real bump, retain old schemas under versioned directories.
 
-> _What does the pre-release checkout support today?_ Only recordings with the complete required header. The schema version remains 1 because earlier artifacts are recreated instead of read.
+> _What does the pre-release checkout support today?_ Only recordings with the complete required header. The schema version remains 1 because earlier recording files are recreated instead of read.
 
 The version appears in the header and every state. The header governs the stream, while the per-state copy keeps an isolated frame self-describing. Readers enforce equality.
 

@@ -45,7 +45,7 @@ The environment directories are the source of registration data. `npm run sync:e
 3. Add the hand-authored `template/` layer and at least one `examples/<name>/` directory beside the environment package.
 4. Add a student helper module and its pin test when raw observations or actions need decoding.
 5. Write the canonical `environments/<env>/environment.md` guide. See [Student documentation](template-and-examples.md#student-documentation).
-6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
+6. Run `npm run sync:envs`, `uv run python scripts/compose.py <env>`, `uv run python scripts/ci.py examples`, the applicable [Testing](../testing/index.md) checks, and `npm run play -- <env>`.
 7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](templates.md) with the current `N` and `republish: true`.
 
 A new environment must let a student learn, run, and improve an agent without reading its source.
@@ -56,10 +56,12 @@ A new environment must let a student learn, run, and improve an agent without re
 
 It needs no backend, Docker, or external network connection. `mode` defaults to `human`, `agent` watches the repository selected by `--agent-repo`, and `watch` uses the builtin baseline.
 
-Every mode starts paused at the first frame. Use Start when ready, then the shared pause, resume, and stop controls. The flags:
+Every mode starts paused at the first frame. Use Start when ready, then the shared pause, resume, and stop controls. Common flags:
 
 - `--preset name` fills the gameplay parameters from a named environment preset. A repeated `--parameter` for the same setting wins.
 - `--parameter name=value` overrides one gameplay parameter, repeated once per override.
 - `--seat` selects a seat from the resolved layout.
-- A human seat that covers more than one player uses the built-in naive agent for its companions by default. `--companion naive` or `--companion <manifest-path>` selects that companion explicitly or supplies another one. `--companion self` plays every member of that seat yourself instead, which needs every one of them to be human-capable. The seat's first human-capable player is the chat sender either way.
+- A human seat that covers more than one player uses the built-in naive agent for its companions by default. `--companion` accepts `naive`, `self`, a manifest path, or an agent repository directory. `self` plays every member of that seat yourself, which needs every one of them to be human-capable. The seat's first human-capable player is the chat sender either way.
 - `--agent-repo <path>` selects the agent repository (with a `manifest.json`) that agent mode runs.
+
+Run `npm run play -- <env> --help` for seed, step-cap, port, browser-launch, and human-timeout options.

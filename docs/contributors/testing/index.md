@@ -13,7 +13,7 @@ lint + types → unit tests → integration → browser e2e → GitHub Actions
 | --- | --- | --- |
 | Python and TypeScript checks | No | Formatting, lint, types |
 | Unit tests | No | Pure logic, routes with fakes, storage in memory, Vue in jsdom |
-| Backend integration | Yes | Real images, containers, limits, Git source, load checks |
+| Backend integration | Yes | Real images, containers, sandbox limits, submission overlays, load checks |
 | Frontend e2e | Yes | Chromium against the real backend and session containers |
 | Compose deployment smoke | Yes | The app image and compose topology booting against a real Linux daemon |
 | Workflow rehearsal | Yes | GitHub Actions YAML through `act` |
@@ -34,7 +34,7 @@ For documentation:
 uv run python scripts/ci.py docs
 ```
 
-For committed generated artifacts after a schema, environment metadata, or environment packaging change:
+For committed generated files after a schema, environment metadata, or environment packaging change:
 
 ```console
 uv run python scripts/generate.py
@@ -45,7 +45,7 @@ After changing a template layer, example, harness file, or shared template helpe
 
 ## CI job runner
 
-Every workflow job delegates to `scripts/ci.py`, so the same entry point works locally:
+Verification jobs expose `scripts/ci.py` entry points for local use. The Docs workflow runs `mkdocs build --strict` directly, and template publishing has separate verification, publishing, and push steps. This table covers the `scripts/ci.py` jobs:
 
 | Job | What it runs |
 | --- | --- |
@@ -54,7 +54,7 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | `generated-code-fresh` | Regenerate tracked outputs and fail on a diff |
 | `examples` | Compose every example source tree in a fresh environment and run pytest |
 | `docs` | `mkdocs build --strict` |
-| `publish-dry-run` | Build the local frontend once, stage runnable student-repository snapshots, and do not push |
+| `publish-dry-run` | Build the local frontend once, stage runnable student repositories, and do not push |
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium (narrow it with `--group` or `--fast`) |
 | `compose-smoke` | Build the app and proxy images and boot `compose.yaml` against a real Linux daemon |
@@ -92,21 +92,7 @@ Integration tests live under `backend/test/integration/`.
 
 ## Browser end-to-end
 
-```console
-# The group covering your change, while you iterate.
-uv run python scripts/ci.py frontend-e2e --group hearts
-
-# Everything, before handing the change over.
-uv run python scripts/ci.py frontend-e2e
-```
-
-This job runs on its own manually dispatched workflow instead of per-push CI; see [Browser end-to-end tests](browser-e2e.md) for why, how to trigger it, the group names, and how to add a spec or fixture.
-
-The suite builds the frontend and session image, starts the real backend, and covers browser flows for sessions, submissions, authentication, replays, seasons, and leaderboards. Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
-
-The complete run is also what `npm run demo` serves as its fixture, so it stays the default. A narrowed run writes a throwaway database instead.
-
-Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
+UI changes need matching jsdom tests and relevant browser journeys. Run the covering group while iterating and the full suite before handoff. [Browser end-to-end tests](browser-e2e.md) covers commands, groups, fixtures, and rules.
 
 ## Compose deployment smoke
 
@@ -114,11 +100,9 @@ Any UI change that renames text, changes markup, moves a control, or alters a fl
 uv run python scripts/ci.py compose-smoke
 ```
 
-This job rehearses the containerized deployment from [Run the app in Docker](../setup/docker.md) on its own manually dispatched workflow. It pulls and builds the app and proxy bases, boots `compose.yaml` under a unique Compose project with a throwaway `.env`, network names, certificate directory, and data directory, then checks the deployment boundary: the loopback HTTPS API validates against the generated certificate, the public listener rejects TLS handshakes that lack the Cloudflare AOP client certificate, loopback HTTPS rejects an unexpected host, the app publishes no host ports, nginx follows an app-container recreation through Docker DNS, `sandbox.db` appears through the same-path bind, and an app restart reaps a planted leftover session container through the mounted socket. The Cloudflare source-IP allowlist has no test coverage, since the runner never connects from a Cloudflare address; the host firewall and the AOP certificate are the tested layers.
+This manually dispatched job boots a temporary Compose project on a Linux Docker daemon and verifies the TLS boundary, proxy and Compose `app` container connectivity, mounted data, and session cleanup. It does not cover the Cloudflare source-IP allowlist, and it refuses to run while a repository-root `.env` or `.tls` exists. See [Run the app in Docker](../setup/docker.md) and [Execution boundary](../runtime/execution.md); on Windows, run it under WSL.
 
-The backend Docker integration suite separately exercises the LLM path. It proves a relay on the shared Compose-style network reaches the configured backend host while the sandbox agent cannot resolve or reach the app, shared network, host gateway, or Internet. It also proves session cleanup leaves the shared network intact.
-
-It needs a Linux Docker daemon, so on Windows run it under WSL. It refuses to run while a real `.env` or `.tls` exists at the repository root.
+Backend integration covers the LLM network boundary.
 
 ## Examples and template checks
 

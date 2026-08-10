@@ -56,10 +56,10 @@ The backend needs a running Docker daemon; see [Run and test](../runtime/backend
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Run the full local suite (every non-Docker workflow job) | `uv run python scripts/ci.py all` |
 | Run the publish dry run for the template and examples | `uv run python scripts/ci.py publish-dry-run` |
-| Run the app on the e2e-built database | `npm run demo` |
-| Force a fresh e2e run before the demo | `npm run demo -- --rerun-e2e` |
+| Run the app from the browser e2e fixture | `npm run demo` |
+| Rebuild the demo fixture, then run the app | `npm run demo -- --rerun-e2e` |
 
-`npm run demo` serves a disposable copy of the browser e2e fixture on port 8080, with realistic sessions, submissions, seasons, and replays. It never writes to the `main` fixture reused by local e2e runs. The command prints the bootstrap administrator and ordinary student credentials so you can explore both roles.
+`npm run demo` serves a disposable browser e2e fixture on port 8080 and prints bootstrap administrator and student credentials. See [Data folders](../data/folders.md) for its lifecycle.
 
 `scripts/generate.py` produces canonical JSON Schema files (built from the hand-written Zod schemas), packaged schema copies, environment metadata, packaging declarations, and golden fixtures. Edit the source, regenerate, and commit both the source and generated files. Do not edit generated files by hand.
 
@@ -67,13 +67,11 @@ The backend needs a running Docker daemon; see [Run and test](../runtime/backend
 
 `npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](../runtime/backend.md#run-and-test).
 
-## Keeping local artifacts fresh
+## Keeping local outputs fresh
 
-The demo creates the source fixture when it is missing. `npm run demo -- --rerun-e2e` discards the existing source fixture and rebuilds it before starting the demo. Run it after changing e2e specs or fixture data, or if a partial run left the student account out of the fixture.
+Rerun the demo after e2e or fixture changes, or when its fixture is incomplete. After a flat schema or harness-launch change, recreate the database, recompose templates and examples, and rebuild the session image because these outputs are tied to the current checkout. See [Data folders](../data/folders.md) and [Template product and releases](../environments/templates.md).
 
-The database schema, composed templates, and session images are development artifacts tied to the current checkout. After a flat schema change or a harness launch contract change (the launch configuration and stdio protocol the backend shares with the session container), recreate the local database, recompose templates and examples, and rebuild the current session image. There is no compatibility path for artifacts produced by an older checkout.
-
-The local browser export stays outside the template source tree. A release or publish dry run builds `frontend/dist-local/` once, then adds that output to `sandbox/web/` in each staged template and example. Publication therefore requires Node, while ordinary generation and source composition need no frontend bundle.
+The local browser export is release-only output. A release or publish dry run builds `frontend/dist-local/` and adds it to staged templates and examples, so publication requires Node while ordinary generation and source composition do not.
 
 ## Windows and WSL
 

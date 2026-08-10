@@ -9,11 +9,11 @@ line 2+: one StepState per line
 
 The [harness](../../specs/overview.md) streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
-The header contains a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry is one of three closed variants: human, submitted agent (with `submission_id`), or builtin agent (with `builtin_name`). Its optional `overlay_static` map holds immutable renderer data captured once after reset. Per-step `overlay` data holds the changing part of the scene. See [the state schema](state-schema.md) for the full definitions.
+The schema source is `schema/ts/src/schemas/`, harness recording code is `harness/src/game_sandbox_harness/recording/`, and the backend reader is `backend/src/recordings/store.ts`.
 
-The harness copies this map from the session configuration; the backend assigns each player to its session owner, submission, or builtin agent (see [orchestrator lifecycle](../runtime/execution.md#orchestrator-lifecycle)). It writes every header and state line once, then sends those same bytes to the live relay and recording store.
+The header records player attribution, canonical seats and seat plan, immutable `overlay_static` renderer data, and sidecars; each state carries changing `overlay` data. See [the state schema](state-schema.md) for their definitions and validation rules.
 
-The required `seats` map groups those player ids under canonical `seat_N` ids. Its nonempty arrays form an exact partition of `players`, so every player belongs to exactly one seat. The `seat_plan` field, also required, records the canonical plan key that produced the partition. Readers use these fields directly instead of resolving current environment metadata. Only headers carrying all three fields are readable, a pre-release policy the [version rule](state-schema.md#the-version-rule) explains.
+The harness receives attribution from the session configuration, and the backend assigns each player to its session owner, submission, or builtin agent (see [orchestrator lifecycle](../runtime/execution.md#orchestrator-lifecycle)). It writes every header and state line once, then sends those same bytes to the live relay and recording store.
 
 ## External LLM telemetry
 
@@ -44,5 +44,7 @@ Readers require every state's `schema_version` to match the header. Blank lines 
 ```
 
 Each directory maps naturally to one object-storage key prefix. The interface uses IDs and streams instead of filesystem paths, allowing a future S3-compatible implementation.
+
+For the backend folder store, `root` is `<DATA_DIR>/recordings`; see [Data folders](folders.md) for the configured location and retention behavior.
 
 There is no general sidecar writing API yet. Readers tolerate declared unknown sidecars according to [the sidecar rule](state-schema.md#the-sidecar-rule).
