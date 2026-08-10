@@ -10,7 +10,7 @@ Use a Linux host or Docker Engine in WSL2, with Docker Compose access, permissio
 
 ## Procedure
 
-The repository setup script automates the local server steps, including the certificate directory, current-image build, startup, and HTTPS health wait. Run `./setup.sh` from Linux or WSL2 and choose Docker deployment. The manual steps below remain the reference procedure.
+The repository setup script automates server setup, including the certificate directory, current-image build, startup, and HTTPS health wait. Run `./setup.sh` from Linux or WSL2 and choose Docker deployment. The manual steps below remain the reference procedure.
 
 1. Create `.env` at the repository root with real credentials. A deployment must set these explicitly; see [Deployment notes](configuration.md#deployment-notes):
 
@@ -62,13 +62,13 @@ The repository setup script automates the local server steps, including the cert
 
    Do not create an unproxied DNS record for the origin. A request that bypasses Cloudflare cannot satisfy both the source allowlist and client-certificate check.
 
-   The first session started after this builds the session-base image from inside the container. That is expected and can take a while.
+   The first session after deployment builds the session-base image from inside the container. That is expected and can take a while.
 
 The manually triggered Compose smoke workflow rehearses this deployment on a Linux CI runner; see [Compose deployment smoke](../testing/index.md#compose-deployment-smoke).
 
 ## How the container is set up
 
-`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container has an outbound network for GitHub and model providers plus `game-sandbox-internal`. nginx has only the internal network.
+`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container joins an outbound network for GitHub and model providers and the `game-sandbox-internal` network. nginx joins only the internal network.
 
 The Compose `app` container publishes no host ports. nginx publishes public port 443 and binds `${LOCAL_HTTPS_PORT:-8443}` to IPv4 loopback. It forwards HTTP and WebSocket traffic to the Compose `app` container through Docker DNS, including after that container is recreated.
 

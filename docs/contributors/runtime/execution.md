@@ -30,7 +30,7 @@ Read [the execution specification](../../specs/execution.md) for the architectur
 
 The interface guarantees an ordered, newline-delimited, bidirectional UTF-8 channel. It does not expose file descriptors, ports, or a specific attachment mechanism.
 
-The Docker implementation lives under `driver/docker/`. Keeping it behind this interface lets a later Kubernetes implementation use a different transport without changing the orchestrator.
+The Docker implementation lives under `driver/docker/`. This interface lets a later Kubernetes implementation use a different transport without changing the orchestrator.
 
 ## Sandbox profile
 
@@ -85,7 +85,7 @@ npm run build:image
 
 ## Submission overlay images
 
-A validated submission becomes an overlay image (the submission's built image, layered on the session base image). It adds source code only and never installs submission-specific dependencies.
+A validated submission becomes an overlay image: the submission's built image layered on the session base image. It adds source code only and never installs submission-specific dependencies.
 
 `submission/submission-image.ts`:
 
@@ -150,7 +150,7 @@ Inbound commands are:
 
 Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored. A client sends `pause` and `resume` only for a human session of a `human_pause: "session"` environment. A watch session, and a human session of a `human_pause: "playback"` environment, pause locally in the browser and send neither.
 
-A `clock` event reports whether a human holds a player's controls, so the container spends that player's move budget only while they can act. The browser sends `running:true` where the renderer opens the move clock and `running:false` where it closes or playback pauses. It is gated like `input`: owner-only, human mode, a human-capable player. When the last owner socket detaches the backend sends `running:false` for every external player, so a browser that has gone away cannot keep a budget running.
+A `clock` event reports whether a human holds a player's controls, so the container spends that player's move budget only while they can act. The browser sends `running:true` when the renderer opens the move clock and `running:false` when it closes or playback pauses. Like `input`, the event is accepted only from the owner, in human mode, for a human-capable player. When the last owner socket detaches, the backend sends `running:false` for every external player so a disconnected browser cannot keep a budget running.
 
 The final `result` event contains ticks, scores, termination reason, timeout counts, and recording ID.
 
@@ -173,7 +173,7 @@ Only the session owner can issue commands. Input also requires human mode and a 
 
 Local play reuses the browser protocol and live runner without starting the backend or a container.
 
-The local bridge, `game_sandbox_harness.local_server`, binds only to `127.0.0.1`, serves the generated local browser bundle, starts the requested runner command, and relays protocol lines. The server accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It neither exposes the game to a network nor steps the game itself.
+The local bridge, `game_sandbox_harness.local_server`, binds only to `127.0.0.1`. It serves the generated local browser bundle, starts the requested runner command, and relays protocol lines. The server accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It neither exposes the game to a network nor steps the game itself.
 
 ## Orchestrator lifecycle
 
@@ -215,7 +215,7 @@ Live pacing keeps separate scheduler branches:
 - Simultaneous environments emit an opening state, wait one full interval before tick 0, and schedule every later boundary one interval after the previous tick completes. They never issue catch-up ticks.
 - Sequential environments without a pace interval block for the acting human, and the move clock accumulates only while the browser reports the controls held. A browser that never reports them waits indefinitely, backstopped by the session's idle timeout and duration limit.
 
-A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause does not reach the stepping loop, which keeps stepping while the browser holds its own frames. It does reach a turn-based move clock through `clock`: pausing while you hold the controls stops your held time accumulating until you resume. Headless runs do not construct this live loop.
+A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause does not reach the stepping loop, which keeps stepping while the browser holds its own frames. Through `clock`, however, it reaches a turn-based move clock: pausing while you hold the controls stops your held time from accumulating until you resume. Headless runs do not construct this live loop.
 
 The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical. The local bridge forwards those bytes unchanged and uses a caller-owned scratch recording directory.
 
@@ -224,7 +224,7 @@ The runner claims stdout for protocol traffic before importing games or agents. 
 This timing machinery exists so an agent's LLM-call latency does not count against its own compute budget.
 
 - An official LLM-enabled launch supplies `inflight_url` with the model endpoint and tick-marker URL.
-- Before each hook, the harness restores the current player's credential. `reset` uses the setup marker; `act`, `chat`, and `learn` use the current tick marker, which the harness posts when it changes. Around each hook, it subtracts verified proxy time and reuses a valid reading as the next baseline; hook-thread CPU remains chargeable, and a failed reading charges the whole hook.
+- Before each hook, the harness restores the current player's base URL and credential. `reset` uses the setup marker. `act`, `chat`, and `learn` use the current tick marker, which the harness posts when it changes. Around each hook, the harness subtracts verified proxy time and reuses a valid reading as the next baseline. Hook-thread CPU remains chargeable, and a failed reading charges the whole hook.
 - Module loading and construction are setup work, while reset is charged to the episode budget. `BackgroundLLM` may run across hooks and ticks, but watchdogs exclude only verified blocking proxy time, so background-marked requests never extend them.
 
 See [LLM determinism and timing](../../specs/llm.md#determinism-and-timing).

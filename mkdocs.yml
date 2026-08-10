@@ -1,6 +1,6 @@
 site_name: Game Sandbox
 site_description: A classwise playground for Game AI.
-# scripts/compose.py substitutes this documentation URL for {{DOCS_URL}} in composed templates. Update `site_url` when the published documentation URL changes.
+# `scripts/compose.py` replaces {{DOCS_URL}} in composed templates with this documentation URL. Update `site_url` when the published URL changes.
 site_url: https://vox-deorum.github.io/game-sandbox/
 repo_url: https://github.com/vox-deorum/game-sandbox
 repo_name: vox-deorum/game-sandbox
@@ -36,7 +36,7 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.details
 
-# Keep navigation in reader order. The environment-guide hook discovers canonical environment guides, so do not list them here. Exclude authoring instructions.
+# Keep navigation in reader order. The environment-guide hook discovers the canonical guides, so omit them here. Keep authoring instructions excluded.
 validation:
   nav:
     omitted_files: warn

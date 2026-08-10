@@ -6,7 +6,7 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 ## How configuration loads
 
-`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory. See [Data folders](../data/folders.md) to locate the active `DATA_DIR`.
+`loadConfig()` reads configuration once at startup. From the repository root, it loads the required `.env.default` and then an optional `.env`. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The file paths and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory. See [Data folders](../data/folders.md) to locate the active `DATA_DIR`.
 
 Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file: use the Git-ignored `.env` for those and for machine-specific values. Other `.env.*` files are not loaded automatically.
 
@@ -14,7 +14,7 @@ After loading, `backend/src/config/config.ts` validates required values and pars
 
 ## Validation
 
-Dedicated parsers and Zod schemas validate every value. A missing or malformed setting therefore fails at startup with a message that names the variable. The accepted forms are:
+Dedicated parsers and Zod schemas validate every value. A missing or malformed setting fails at startup with a message that names the variable. The accepted forms are:
 
 - Integer settings must be non-negative whole numbers unless the variable reference states stricter bounds. Floats, `NaN`, negatives, and values outside stated bounds are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
@@ -129,7 +129,7 @@ Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path 
 
 Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](../runtime/backend.md#static-frontend).
 
-The Documentation page:
+The Documentation page follows these rules:
 
 - Reads shared guides from `DOCS_DIR` and discovers game guides from `environments/<env>/environment.md` at request time, so updating a guide needs no frontend rebuild.
 - Serves game guides at virtual `students/environments/<slug>.md` paths, with no mirror under `DOCS_DIR`.

@@ -1,10 +1,10 @@
 # Frontend
 
-The frontend is a Vue 3, Vite, and TypeScript browser app. It displays environments, submissions, sessions, replays, and leaderboards, and communicates with the backend through typed HTTP and WebSocket clients.
+The frontend is a Vue 3 browser app built with Vite and TypeScript. It displays environments, submissions, sessions, replays, and leaderboards, and communicates with the backend through typed HTTP and WebSocket clients.
 
 Use this page for the frontend development workflow. Read [the frontend specification](../../specs/frontend.md) for product behavior and [the interaction specification](../../specs/interaction.md) for the browser/server boundary. Before changing visuals, also read [the design system](design-system.md). Renderer-specific guidance lives in [Rendering](../environments/rendering.md).
 
-Prerequisites: Node 22 (pinned in `.nvmrc`), and Docker only when you also run the backend.
+Prerequisites: Node 22 (pinned in `.nvmrc`). You need Docker only when you also run the backend.
 
 ## Source layout
 
@@ -23,7 +23,7 @@ Frontend code lives under `frontend/src/`.
 | `replay/`        | Recording parsing and replay transport          |
 | `styles/`        | Design tokens and global styles                 |
 
-`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Focused modules hold shared state, such as the signed-in user and environment catalog. The project does not use a state-management library.
+`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Focused modules hold shared state such as the signed-in user and environment catalog. The project does not use a state-management library.
 
 ## Development workflow
 
@@ -36,14 +36,14 @@ Run these commands from `frontend/`:
 | `npm test`      | Run the Vitest unit tests                               |
 | `npm run build` | Create the production build in `frontend/dist/`         |
 
-For local development, run `npm run dev` separately in `backend/`. Starting the backend, including root `npm start`, needs a running Docker daemon; see [Run and test](../runtime/backend.md#run-and-test). Sessions and the browser end-to-end suite need it too.
+For local development, run `npm run dev` separately in `backend/`. Starting the backend requires a running Docker daemon, including when you use root `npm start`. Sessions and the browser end-to-end suite also require it. See [Run and test](../runtime/backend.md#run-and-test).
 
 When making a change:
 
 1. Confirm the intended behavior in the relevant specification.
 2. Keep route orchestration in a page, reusable UI in a component, and reusable stateful behavior in a composable.
 3. Add backend calls to the typed API clients instead of calling `fetch` from components.
-4. Update the jsdom and relevant browser journeys with any UI change. Run the covering group while iterating and the full suite before handoff; see [Browser end-to-end tests](../testing/browser-e2e.md).
+4. Update the jsdom tests and relevant browser journeys for every UI change. Run the covering group while iterating and the full suite before handoff. See [Browser end-to-end tests](../testing/browser-e2e.md).
 5. Run `npm run check`, `npm test`, and `npm run build`.
 
 ## Project conventions
@@ -62,7 +62,7 @@ The browser receives identity from the same-origin Better Auth session cookie. H
 
 ### Components and styles
 
-[The design system](design-system.md) defines tokens, primitives, variants, accessibility, and new visual patterns. Keep global styles to tokens, element defaults, application-shell layout, and deliberately shared presentation; scope feature styles to their components. Renderer modules under `environments/<env>/renderer/` are exempt because they own their game's visual identity.
+[The design system](design-system.md) defines tokens, primitives, variants, accessibility, and new visual patterns. Limit global styles to tokens, element defaults, application-shell layout, and deliberately shared presentation. Scope feature styles to their components. Renderer modules under `environments/<env>/renderer/` are exempt because they own their game's visual identity.
 
 ### Live sessions, replays, and renderers
 
@@ -72,4 +72,4 @@ Do not add environment-specific behavior to shared pages. Implement it in the en
 
 ### In-app documentation
 
-The Documentation page's product behavior, including which pages it serves, is specified in [the frontend specification](../../specs/frontend.md). Markdown compatibility and link rewriting live in `frontend/src/docs/markdown.ts`. Product documentation outside the student collection links to its source instead. In-app student documentation includes the shared `docs/students/` tree and canonical `environments/<env>/environment.md` guides, which are discovered and exposed at virtual `students/environments/<slug>.md` paths. [`DOCS_DIR`](../setup/configuration.md#execution-and-frontend) relocates only the shared documentation tree.
+[The frontend specification](../../specs/frontend.md) defines the Documentation page's product behavior, including which pages it serves. Markdown compatibility and link rewriting live in `frontend/src/docs/markdown.ts`. Product documentation outside the student collection links to its source instead. In-app student documentation includes the shared `docs/students/` tree and canonical `environments/<env>/environment.md` guides. The guides are discovered and exposed at virtual `students/environments/<slug>.md` paths. [`DOCS_DIR`](../setup/configuration.md#execution-and-frontend) relocates only the shared documentation tree.

@@ -11,9 +11,9 @@ To run the app itself inside a container on a Linux daemon, see [Run the app in 
 
 ## Guided setup
 
-From the repository root, run `./setup.sh` on Linux, WSL2, or macOS. On Windows, run `powershell -ExecutionPolicy Bypass -File .\setup.ps1`. The setup script installs uv when needed and walks through local development, host deployment, or Docker deployment.
+From the repository root, run `./setup.sh` on Linux, WSL2, or macOS. On Windows, run `powershell -ExecutionPolicy Bypass -File .\setup.ps1`. The setup script installs uv when needed and guides you through local development, host deployment, or Docker deployment.
 
-From the repository root:
+For a manual host-process setup, run these commands from the repository root:
 
 ```console
 uv sync
@@ -43,7 +43,7 @@ The committed defaults let the stack run with no setup. See [Configuration](conf
 
 ## Dev scripts
 
-The backend needs a running Docker daemon; see [Run and test](../runtime/backend.md#run-and-test) for why. Sessions and Docker-gated checks need it too. The lint, typecheck, unit-test, composition, and local-play commands do not.
+The backend, sessions, and Docker-gated checks need a running Docker daemon; see [Run and test](../runtime/backend.md#run-and-test) for why. The lint, typecheck, unit-test, composition, and local-play commands do not.
 
 | Intent | Command |
 | --- | --- |

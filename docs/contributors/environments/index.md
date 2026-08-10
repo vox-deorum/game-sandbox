@@ -36,7 +36,7 @@ environments/
 
 `templates/base/` remains the environment-agnostic student layer. See [Composition](templates.md#composition) for what compose generates from it into `build/`.
 
-The environment directories are the source of registration data. `npm run sync:envs` discovers the packages and regenerates their registration, wheel packaging, and backend metadata. The shared platform conformance test is `environments/test_conformance.py`, and shared renderer infrastructure lives in `frontend/src/renderers/`.
+The environment directories provide the registration data. `npm run sync:envs` discovers the packages and regenerates the registration, wheel package list, and backend metadata. The shared platform conformance test is `environments/test_conformance.py`, and shared renderer infrastructure lives in `frontend/src/renderers/`.
 
 ## Checklist
 
@@ -54,14 +54,14 @@ A new environment must let a student learn, run, and improve an agent without re
 
 `npm run play -- <env> [mode]` rebuilds the local frontend and starts loopback play with the production live runner and renderer.
 
-It needs no backend, Docker, or external network connection. `mode` defaults to `human`, `agent` watches the repository selected by `--agent-repo`, and `watch` uses the builtin baseline.
+It needs no backend, Docker, or external network connection. `mode` defaults to `human`. The `agent` mode watches the repository selected by `--agent-repo`, while `watch` uses the builtin baseline.
 
 Every mode starts paused at the first frame. Use Start when ready, then the shared pause, resume, and stop controls. Common flags:
 
 - `--preset name` fills the gameplay parameters from a named environment preset. A repeated `--parameter` for the same setting wins.
 - `--parameter name=value` overrides one gameplay parameter, repeated once per override.
 - `--seat` selects a seat from the resolved layout.
-- A human seat that covers more than one player uses the built-in naive agent for its companions by default. `--companion` accepts `naive`, `self`, a manifest path, or an agent repository directory. `self` plays every member of that seat yourself, which needs every one of them to be human-capable. The seat's first human-capable player is the chat sender either way.
+- A human seat that covers more than one player uses the built-in naive agent for its companions by default. `--companion` accepts `naive`, `self`, a manifest path, or an agent repository directory. With `self`, you play every member of that seat, so each one must be human-capable. In either case, the seat's first human-capable player sends chat messages.
 - `--agent-repo <path>` selects the agent repository (with a `manifest.json`) that agent mode runs.
 
 Run `npm run play -- <env> --help` for seed, step-cap, port, browser-launch, and human-timeout options.

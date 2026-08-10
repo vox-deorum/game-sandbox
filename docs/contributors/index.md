@@ -19,7 +19,7 @@ Vue frontend ⇄ Node backend ⇄ Python session container
 - **Submission**: a participant's GitHub repository, pinned to a commit and tagged with a season.
 - **Recording**: the saved per-step state of a session, kept for replay.
 - **Template**: the composed, runnable repository a student receives, combining shared base files with an environment's layer.
-- **Harness**: [the process inside the session container that steps the environment, drives every agent-controlled player, and emits the per-step state](../specs/overview.md).
+- **Harness**: the [process inside the session container](../specs/overview.md) that steps the environment, drives every agent-controlled player, and emits the per-step state.
 - **Season and workflow run**: a season is one competition round for an environment; a workflow run is an automated batch of matches scheduled to update its leaderboard.
 
 The repository is laid out as follows:

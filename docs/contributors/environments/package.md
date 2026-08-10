@@ -8,15 +8,15 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 ### The factory contract
 
-`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns the PettingZoo environment selected by metadata. For a sequential game, `make_env` returns a fresh agent-environment-cycle (AEC) environment; for a simultaneous game, it returns a fresh parallel environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
+`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns the type of PettingZoo environment declared in metadata. For a sequential game, `make_env` returns a fresh agent-environment-cycle (AEC) environment; for a simultaneous game, it returns a fresh parallel environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
 
 It also defines `default_action(env, player_id)`, which returns the legal action applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card. Return plain Python values, because the result is recorded like any other move.
 
-An environment that removes players before their final outcome is known may implement `result_scores()`. Return `None` until the environment reaches natural completion. At natural completion, return a mapping whose keys exactly match the episode player ids and whose values are finite real numbers. The harness validates and caches the mapping before `env.close()`, then uses it for the reported episode scores. It does not call the hook when an episode stops, fails, or reaches a compute or tick limit before natural completion.
+An environment that removes players before their final outcome is known may implement `result_scores()`. Return `None` until natural completion, then return a mapping whose keys exactly match the episode player ids and whose values are finite real numbers. The harness validates and caches this mapping before `env.close()`, then uses it for the reported episode scores. It does not call the hook when an episode stops, fails, or reaches a compute or tick limit before natural completion.
 
-Every module copied into the composed `sandbox.env` package must be self-contained for imports, may use relative and third-party imports, and cannot import the harness at runtime.
+Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but it cannot import the harness at runtime.
 
-The factory must use the values it owns:
+The factory must validate and use the values it receives:
 
 - Validate every resolved integer parameter with `game_sandbox_harness.environment.int_parameter` semantics: reject missing values, booleans, non-integers, and integers outside the JSON-safe range. Do not use `assert`. Copied `sandbox.env` modules cannot import the harness, so they must use an equivalent local or runtime-safe helper.
 - A fixed-player factory must explicitly reject a `players` value that disagrees with its construction. Flappy Bird, for example, validates that `players` is `1`, narrows `pipe_gap` as an integer, and passes that value to its game constructor.
@@ -39,7 +39,7 @@ The environment owns its display state. Test that every overlay field exists and
 
 ### Registry entry and metadata
 
-`__init__.py` exports an `EnvironmentEntry` made from `EnvironmentMeta`, the environment factory, `default_action`, and optional `overlay_static` and `overlay` hooks.
+`__init__.py` exports an `EnvironmentEntry` constructed from `EnvironmentMeta`, the environment factory, `default_action`, and optional `overlay_static` and `overlay` hooks.
 
 `EnvironmentMeta.to_json()` must round-trip through `json.dumps` because the backend serves it to the frontend.
 
@@ -80,8 +80,8 @@ The wheel excludes `*/environment.md`, `*/renderer`, `*/tests`, `*/template`, an
 
 Every environment runs the mode-selected PettingZoo conformance check through the shared guard in `environments/test_conformance.py`.
 
-The suite builds the environment through the registry entry (`entry.make(resolve_parameters(entry.meta))`), not by calling `make_env` directly. For a sequential environment it runs PettingZoo's `api_test` through a wrapper that tolerates two known PettingZoo warnings and one known dtype bug. For a simultaneous environment it calls `parallel_api_test` directly.
+The suite builds the environment through the registry entry (`entry.make(resolve_parameters(entry.meta))`), not by calling `make_env` directly. For a sequential environment, it runs PettingZoo's `api_test` through a wrapper that tolerates two known PettingZoo warnings and one known dtype bug. For a simultaneous environment, it calls `parallel_api_test` directly.
 
 The shared guard also checks the configured parallel roster and mapping rules, deterministic rollout output, static and dynamic overlay JSON and finite values, the required colocated template and example shape, and each published action mask against the declared action space, including the permitted child types of a composite space. Direct `observation_space.contains()` checks still cover a full episode. Game-specific rules and regressions belong in `environments/<env>/tests/`.
 
-A simultaneous environment may use a [composite action space](../../specs/environment.md#composite-actions) only when it publishes no `action_mask` and every value in the space is legal in every reachable state. A composite space with a published mask remains sequential-only because `parallel_api_test` reduces an action mask to a single index before sampling. The suite does not add its own mode check, so an unsupported masked combination fails in PettingZoo until a release carries the upstream fix.
+A simultaneous environment may use a [composite action space](../../specs/environment.md#composite-actions) only when it publishes no `action_mask` and every value in the space is legal in every reachable state. A composite space with a published mask remains sequential-only because `parallel_api_test` reduces an action mask to a single index before sampling. The suite adds no separate mode check, so an unsupported masked combination fails in PettingZoo until a release carries the upstream fix.

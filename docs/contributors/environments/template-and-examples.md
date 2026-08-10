@@ -10,7 +10,7 @@ Put the starting `agent.py`, `README.md`, student helper modules, and pin tests 
 
 Put each worked example's layer in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, README, tests, and optional `requirements.extra.txt`.
 
-Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published, or an empty tuple when the environment has none to publish. Each name must identify an immediate child of that environment's `examples/` directory. A name starts with a lowercase letter or digit, contains only lowercase letters, digits, dots, underscores, and hyphens, excludes `..`, and ends in neither a dot nor `.lock`. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
+Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published, or an empty tuple when the environment has none to publish. Each name must identify an immediate child of that environment's `examples/` directory. It starts with a lowercase letter or digit, contains only lowercase letters, digits, dots, underscores, and hyphens, excludes `..`, and ends in neither a dot nor `.lock`. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
 
 The top-level `templates/` directory holds only `templates/base/`; [Composition](templates.md#composition) owns generated files under `build/`.
 
@@ -32,7 +32,7 @@ Hearts and Spades may re-export game-independent names from `sandbox.semantic_ca
 
 ## Student documentation
 
-Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. The documentation catalog discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`; do not create a manual catalog entry, generated mirror, or committed mirror.
+Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. The documentation catalog discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`. Do not create a manual catalog entry, generated mirror, or committed mirror.
 
 Keep the starting `agent.py` body identical to the canonical guide's starter-agent listing (no automated check enforces this). The template's `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
 

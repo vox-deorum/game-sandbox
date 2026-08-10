@@ -17,12 +17,12 @@ Run these commands from `backend/` unless noted:
 | `npm run build:image` | Rebuild the current session base image |
 | `npm test` | Run Docker-free unit tests |
 | `npm run test:integration` | Run real-container integration tests |
-| `npm run demo` | From the repository root, launch the app with the populated e2e fixture; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
+| `npm run demo` | From the repository root, launch the app with the populated e2e fixture and print sign-ins for the admin and an ordinary member (`ada-lovelace`) |
 | `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after discarding and rebuilding the fixture |
 
 Starting the backend requires Docker because it reaps managed containers during startup. Unit tests use an in-memory SQLite database and fake driver.
 
-Tests mirror source domains under `test/`. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`; Docker-gated tests live under `test/integration/`.
+Tests under `test/` mirror the source domains. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`. Docker-gated tests live under `test/integration/`.
 
 ## Request flow
 
@@ -64,7 +64,7 @@ Shared protocol and environment types live in `@game-sandbox/schema`. Browser-sa
 
 ## Configuration
 
-The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, and validates the complete environment without duplicating defaults in code. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](../setup/configuration.md) for the full environment-variable reference and deployment notes.
 
@@ -74,7 +74,7 @@ The backend exposes an OpenAI-compatible proxy when the deployment configures an
 
 Official sessions reach the proxy only through their isolated relay network. The harness reads the internal timing endpoint around an agent hook so verified proxy time is excluded from the hook budget. Development keys and usage belong to an active participant in an open, LLM-enabled season.
 
-The preflight prevents two concurrent requests from double-spending the same budget, and every failure mode favors undercounting usage over overcharging. The durable telemetry store retains public usage metadata and costs. Each official scope and development ledger performs a transactional write/readback preflight before every provider admission, including when an existing handle is reused.
+The preflight prevents two concurrent requests from double-spending the same budget, and every failure mode favors undercounting usage over overcharging. The durable telemetry store retains public usage metadata and costs. Each official scope and development ledger performs a transactional write/readback preflight before every provider admission, including when reusing an existing handle.
 
 Request and completion bodies are available only to an operator or the owner of the controlling submission. Product behavior, accounting guarantees, and error codes are defined in the [LLM specification](../../specs/llm.md). See [Configuration](../setup/configuration.md#llm-proxy) for deployment settings and the [LLM source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/llm) for the implementation.
 
@@ -141,7 +141,7 @@ The sweep runs at startup, on its interval, after session finalization, and afte
 2. Delete unpinned recordings older than the retention window.
 3. For each user over quota, delete oldest unpinned recordings until within quota.
 
-Within the remaining live-session population, pinned recordings count toward quota but are never evicted. A user at the pinned cap receives `409 pinned_quota`.
+Among the remaining live-session recordings, pinned recordings count toward quota but are never evicted. A user at the pinned cap receives `409 pinned_quota`.
 
 Deletion tolerates a missing row or directory so an interrupted sweep can recover on its next pass.
 
@@ -223,7 +223,7 @@ Static validation runs no participant code. It checks:
 | `unknown_template_version`  | No registered base image              |
 | `template_version_mismatch` | Version differs from the season       |
 
-The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, then compares the result to the effective cap defined by [maximum submission size](../../specs/submission.md#maximum-submission-size). The same filter drives the snapshot pack and the overlay image build context, so all three agree on which bytes are "the submission".
+The size check runs first. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, then compares the result with the effective cap defined by [maximum submission size](../../specs/submission.md#maximum-submission-size). The same filter drives the snapshot pack and overlay image build context, so all three agree on which bytes are "the submission".
 
 The Zod manifest schema and Python harness loader are kept in sync by contract tests.
 
@@ -242,9 +242,9 @@ Overlay image building and load checking are described in [Execution boundary](e
 
 ### Snapshots
 
-Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. A failed snapshot write fails the static stage and prevents `ready`; the worker attempts to remove any stale archive, but logs and continues if deletion fails.
+Once a submission passes the size and static checks, the worker uses `SubmissionSnapshotStore` (`submission/snapshot-store.ts`) to write a compressed snapshot of its filtered source tree. Each submission has one `<id>.tar.gz` under `<DATA_DIR>/submissions`. The store mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), and `stream`, `exists`, `materialize`, and `delete`. A failed snapshot write fails the static stage and prevents `ready`. The worker attempts to remove any stale archive, but logs and continues if deletion fails.
 
-When a cached overlay image has been evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission). The shared filter plus a deterministic sort make the rebuild reproduce the original overlay image. Operator download routes stream the same snapshots, and a forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
+When a cached overlay image has been evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission). The shared filter plus a deterministic sort make the rebuild reproduce the original overlay image. Operator download routes stream the same snapshots. A forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
 
 ## HTTP API
 
@@ -299,7 +299,7 @@ Rerating upserts the existing value. Closed play returns a read-only view with p
 
 A workflow run is an automated batch of matches scheduled between submitted agents when an operator triggers a season's leaderboard update.
 
-Triggering a leaderboard run does not wait for Docker. Scheduling, forfeit, and release rules live in the [leaderboard specification](../../specs/leaderboard.md).
+Triggering a leaderboard run returns without waiting for Docker. Scheduling, forfeit, and release rules live in the [leaderboard specification](../../specs/leaderboard.md).
 
 The trigger:
 

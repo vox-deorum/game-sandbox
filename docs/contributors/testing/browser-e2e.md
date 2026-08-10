@@ -1,6 +1,6 @@
 # Browser end-to-end tests
 
-The end-to-end suite lives under `frontend/e2e/`. It runs Playwright with Chromium against the real backend, which serves the built frontend from the same origin. The suite and the `backend-integration` job require a Docker daemon. Being Docker-heavy makes the `frontend-e2e` job too slow for every push, so it has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Run it from the Actions tab with **Run workflow** when a UI change warrants it.
+The end-to-end suite lives under `frontend/e2e/`. It runs Playwright with Chromium against the real backend, which serves the built frontend from the same origin. Both this suite and the `backend-integration` job require a Docker daemon. The Docker-heavy `frontend-e2e` job is too slow for every push, so it has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Run it from the Actions tab with **Run workflow** when a UI change warrants it.
 
 For the wider verification matrix and how this job fits the pipeline, see [Testing](index.md). This page is about the suite itself: how to run it, how its data is set up, and the conventions for adding to it.
 
@@ -22,14 +22,14 @@ uv run python scripts/ci.py frontend-e2e --fast
 uv run python scripts/ci.py frontend-e2e --group spades --include-slow --no-build
 ```
 
-Once the session image and Chromium are in place, drive Playwright directly:
+Once the session image and Chromium are in place, run Playwright directly:
 
 ```console
 npm run e2e --workspace @game-sandbox/frontend -- --project seasons
 npm run e2e:run --workspace @game-sandbox/frontend -- --project seasons   # skip both Vite builds
 ```
 
-These commands use and erase `partial/` by default. The supported default way to refresh the demo fixture is the bare unrestricted `scripts/ci.py frontend-e2e` helper. See [Data folders](../data/folders.md).
+These commands use and erase `partial/` by default. Use the bare, unrestricted `scripts/ci.py frontend-e2e` helper to refresh the demo fixture. See [Data folders](../data/folders.md).
 
 The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend. One project per group does not change that: every group shares one backend, one database, and one port pair.
 
@@ -48,11 +48,11 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 
 A change to something shared, such as `src/renderers/base/`, `components/ui/`, `styles/tokens.css`, or `api/client.ts`, needs the whole suite. A change to `src/renderers/cards/` needs `hearts` and `spades`.
 
-Nothing that submits a ready agent into the Flappy Bird Playground season may join the `submissions` group. That group's watch-list assertion finds its agent by the anonymized label `Agent 1`, which is only unambiguous while its agent is the sole ready one.
+Do not add a test to the `submissions` group if it submits a ready agent to the Flappy Bird Playground season. That group's watch-list assertion finds its agent by the anonymized label `Agent 1`, which is unambiguous only while that agent is the sole ready one.
 
 ## The slow tier
 
-Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each is minutes on its own. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them.
+Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them.
 
 The configuration applies no filter of its own. Hiding `@slow` by default would make a complete run omit the released seasons the demo fixture needs.
 
@@ -62,7 +62,7 @@ The configuration applies no filter of its own. Hiding `@slow` by default would 
 
 Every group project depends on the `season-fixture` setup project, which gives the retained Playground season its local settings before any journey creates activity. Playwright runs a setup project once per run rather than once per dependent project, so selecting several groups still pays for it once. Do not pass `--no-deps`: the `play` group asserts against exactly those settings.
 
-Shared helpers stay at `e2e/support/`, and the submission fixtures at `e2e/fixtures/`, so a spec reaches them with `../support/` and `../fixtures/`. Neither moves into a group.
+Keep shared helpers in `e2e/support/` and submission fixtures in `e2e/fixtures/`, so specs reach them through `../support/` and `../fixtures/`. Neither directory belongs in a group.
 
 ## Manual GitHub OAuth check
 
@@ -95,7 +95,7 @@ Shared identities live in `e2e/support/names.ts` and shared API flows in `e2e/su
 
 ## Adding a test or fixture
 
-- Put the spec in the group whose area it covers, or add a group by creating a directory under `e2e/` and putting a spec in it. That is the whole procedure: a group is any directory holding at least one `*.spec.ts`, and both `playwright.config.ts` and `scripts/ci.py` discover them that way, so neither holds a list to update. `support/` and `fixtures/` are not groups because they hold no specs.
+- Put the spec in the group whose area it covers. To add a group, create a directory under `e2e/` and put a spec in it. A group is any directory holding at least one `*.spec.ts`; both `playwright.config.ts` and `scripts/ci.py` discover groups this way, so neither has a list to update. `support/` and `fixtures/` are not groups because they hold no specs.
 - Tag a test `@slow` when it submits agents and runs a scheduled season. Anything cheaper belongs in the default tier, where contributors will actually run it.
 - Prefer the jsdom suite under `frontend/test/`. A browser test earns its place by needing a real container, a real socket, a second browser context, a painted canvas, a real download, or real navigation and cookies. Assertions about text, disabled controls, validation, and markup structure belong in jsdom, where they run in milliseconds.
 - Add identities to `support/names.ts` and flows to `support/api.ts`; keep specs declarative.

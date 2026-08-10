@@ -13,7 +13,7 @@ Read the [interaction specification](../../specs/interaction.md) for the product
 5. Add one `thumbnail.svg` or `thumbnail.png`, default-export `{ key, renderer, thumbnail }`, and ensure the key equals `ENTRY.meta.renderer`.
 6. Add renderer unit tests and update browser journeys.
 
-`environments/flappy_bird/renderer/` is the reference for a realtime draw-only renderer, and `environments/hearts/renderer/` for turn-based card input and animation.
+`environments/flappy_bird/renderer/` is the reference for a realtime draw-only renderer, and `environments/hearts/renderer/` is the reference for turn-based card input and animation.
 
 ## Rendering model
 
@@ -27,11 +27,11 @@ The renderer owns the game frame and environment-specific controls. The host pag
 
 ## Shared contract
 
-The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`. Read episode-static environment data from `ctx.header.overlay_static` at mount and retain it for the episode; each `render` call receives only the dynamic overlay for that state.
+The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender. It exposes a fixed internal size, aspect ratio, `render`, and `destroy`. Read episode-static environment data from `ctx.header.overlay_static` at mount and retain it for the episode; each `render` call receives only the dynamic overlay for that state.
 
-`render(state, options)` returns a promise that resolves once the transition it started has finished. A draw-only renderer, a snap, a scale of zero, and a change with nothing to animate all resolve immediately. A paced host (the replay transport, the live session socket) awaits that promise alongside its own cadence timer before it delivers the next frame, so a transition that genuinely runs longer than the cadence still finishes instead of being cut off. A render that supersedes an in-flight transition resolves the earlier promise too, and so does `destroy`, so a host is never left waiting on a frame that will not come.
+`render(state, options)` returns a promise that resolves when its transition finishes. A draw-only renderer, a snap, a scale of zero, and a change with nothing to animate all resolve immediately. A paced host (the replay transport or live session socket) awaits that promise alongside its cadence timer before delivering the next frame. A transition that runs longer than the cadence therefore finishes instead of being cut off. A superseding render and `destroy` also resolve the earlier promise, so the host never waits for a frame that will not come.
 
-`RenderOptions` has two fields: `snap` jumps straight to the state with no transition, for a replay scrub, seek, or step; `transitionScale` is a multiplier on the renderer's natural phase durations, where omitted or `1` is natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so the renderer's transitions run at that pace. It is not a time budget: a renderer whose natural timing exceeds the cadence simply takes longer, and the host waits.
+`RenderOptions` has two fields. `snap` jumps straight to the state with no transition for a replay scrub, seek, or step. `transitionScale` multiplies the renderer's natural phase durations: omitted or `1` uses natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so transitions run at that pace. It is not a time budget. If the natural timing exceeds the cadence, the renderer takes longer and the host waits.
 
 The registry stores each `PixiRenderer` subclass with its static image thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
 
@@ -60,11 +60,11 @@ Use `inputs()` for fixed mappings such as Flappy Bird's flap. Make scene objects
 
 The [overlay](package.md#overlay) contains meaningful game objects. Draw and hit-test those objects directly, then convert the selection to an encoded action only at the `sendAction` boundary.
 
-An overlay may carry the semantic state a renderer needs to derive the legal choices instead of listing them, which keeps long recordings small. A renderer that does derive them owes the environment an agreement test: Skirmish at Crane Reach recomputes walkable paths and nameable targets in `environments/skirmish_crane/renderer/legality.ts`, and its mask-agreement suite asserts that the result equals the masks the environment actually published, for every recorded activation of both fixture recordings. Read shared constants such as movement costs from the same data file the rules engine reads so the two sides cannot drift.
+An overlay may carry the semantic state needed to derive legal choices instead of listing them, which keeps long recordings small. A renderer that derives them owes the environment an agreement test. Skirmish at Crane Reach recomputes walkable paths and nameable targets in `environments/skirmish_crane/renderer/legality.ts`. Its mask-agreement suite checks the result against the masks the environment published for every recorded activation in both fixture recordings. Read shared constants such as movement costs from the same data file as the rules engine so the two sides cannot drift.
 
 ### The move clock
 
-The harness counts only time while controls are held and supplies a legal default action at the session budget. When a controlled player is on the clock, open the shared `renderers/base/move-clock.ts` with a unique turn key such as `String(state.tick)` and `meta.human_timeout_ms`, and call `RendererContext.setControlHeld` with that player in the same interaction.
+The harness counts only time while controls are held and supplies a legal default action at the session budget. When a controlled player is on the clock, open the shared `renderers/base/move-clock.ts` with a unique turn key such as `String(state.tick)` and with `meta.human_timeout_ms`. In the same interaction, call `RendererContext.setControlHeld` with that player.
 
 Use the fields appropriate to the presentation from the available `remainingMs`, `fraction`, `seconds`, and `ember` set, with injectable `now` for tests. `setPaused` freezes the local clock, and releasing controls for the pause holds the harness budget for the same span. Reopening the same turn does not reset it. A newly mounted renderer that joins mid-turn starts its local display at the full budget while the harness retains elapsed time.
 

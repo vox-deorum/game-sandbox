@@ -7,9 +7,9 @@ line 1: recording header
 line 2+: one StepState per line
 ```
 
-The [harness](../../specs/overview.md) streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
+The [harness](../../specs/overview.md) streams the same serialized state lines that it stores. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
-The schema source is `schema/ts/src/schemas/`, harness recording code is `harness/src/game_sandbox_harness/recording/`, and the backend reader is `backend/src/recordings/store.ts`.
+The schemas live in `schema/ts/src/schemas/`, the harness recording code lives in `harness/src/game_sandbox_harness/recording/`, and the backend reader is `backend/src/recordings/store.ts`.
 
 The header records player attribution, canonical seats and seat plan, immutable `overlay_static` renderer data, and sidecars; each state carries changing `overlay` data. See [the state schema](state-schema.md) for their definitions and validation rules.
 
@@ -17,11 +17,11 @@ The harness receives attribution from the session configuration, and the backend
 
 ## External LLM telemetry
 
-LLM telemetry is stored separately, not as a recording [sidecar](state-schema.md#the-sidecar-rule), so it does not change the JSONL header or step schema. For an LLM-enabled recording, the backend stores durable `llm_scope_id` and `llm_session_id` metadata identifying the execution scope: one live session, or one whole workflow run shared by all of that run's matches. The backend uses these identifiers to read successful calls from that scope's single SQLite file.
+LLM telemetry is stored separately, not as a recording [sidecar](state-schema.md#the-sidecar-rule), so it does not change the JSONL header or step schema. For an LLM-enabled recording, the backend stores durable `llm_scope_id` and `llm_session_id` metadata. These identifiers associate the recording with one live session or one whole workflow run shared by all of that run's matches. The backend uses them to read successful calls from that scope's single SQLite file.
 
 A live session uses its session ID for both identifiers. Workflow matches share their run ID as `llm_scope_id` and keep the individual match ID as `llm_session_id`. This association lets a retained replay find its external telemetry after the backend prunes the session or workflow that produced it.
 
-An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope while any retained recording needs it, and the backend can reclaim the external telemetry afterward.
+An unassociated recording has no LLM calls. An associated recording with a missing or unreadable telemetry file reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope while any retained recording needs it, and the backend can reclaim the external telemetry afterward.
 
 ## The store interface
 

@@ -1,6 +1,6 @@
 # Data folders
 
-This guide locates backend state, test fixtures, demo data, and generated outputs. A normal checkout stores backend state in `backend/data/`, because `DATA_DIR` defaults to that repository-relative path.
+This guide lists the exact locations of backend state, test fixtures, demo data, and generated outputs. A normal checkout stores backend state in `backend/data/`, because `DATA_DIR` defaults to that repository-relative path.
 
 ## Find the active runtime directory
 
@@ -21,9 +21,9 @@ The active `DATA_DIR` contains:
   llm/development/<season>.sqlite
 ```
 
-`sandbox.db` holds backend state. SQLite may create `-wal` and `-shm` sibling files while a database is open. Recordings are retention-managed. Official live-session and workflow telemetry is stored in `llm/<scope>.sqlite` and is deleted after the last referencing recording is deleted. Development telemetry is stored in `llm/development/<season>.sqlite` and has no automatic cleanup. Submission snapshots rebuild and download submissions; a forced `deps_version` change that deletes a season's submissions also removes their snapshots.
+`sandbox.db` holds backend state. SQLite may create `-wal` and `-shm` sibling files while a database is open. Recordings and official live-session and workflow telemetry in `llm/<scope>.sqlite` are retention-managed. When cleanup leaves a scope unreferenced, the sweep attempts to delete its SQLite file and retries failures later. Development telemetry in `llm/development/<season>.sqlite` has no automatic cleanup. Submission snapshots support rebuilding and downloading submissions. A forced `deps_version` change deletes the season's submissions and attempts best-effort cleanup of their snapshots.
 
-On a host deployment, runtime data is at the configured `DATA_DIR`. The setup and Compose default is `/srv/game-sandbox/data`, at the identical absolute host and Compose `app` container path; another configured path is allowed when it meets that requirement. Session containers receive only `<DATA_DIR>/recordings` at `/recordings`. [Run the app in Docker](../setup/docker.md) explains the topology.
+Host deployments keep runtime data at the configured `DATA_DIR`. The setup and Compose default is `/srv/game-sandbox/data`, using the same absolute path on the host and in the Compose `app` container. Another configured path is allowed when it meets that requirement. Session containers receive only `<DATA_DIR>/recordings` at `/recordings`. [Run the app in Docker](../setup/docker.md) explains the topology.
 
 ## Test and demo data
 

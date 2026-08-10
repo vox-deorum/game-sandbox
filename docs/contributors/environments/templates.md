@@ -38,13 +38,13 @@ The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFA
 
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 
-An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. The published matching `deps-v<N>` directory is immutable, and a [republish](#cutting-a-release) reuses it because CI pins every dependency reference to it.
+An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. Once published, the matching `deps-v<N>` directory is immutable. A [republish](#cutting-a-release) reuses it because CI pins every dependency reference to it.
 
 ## Cutting a release
 
 The release owner needs workflow and write permissions. Contributors should run `uv run python scripts/ci.py publish-dry-run` before asking for publication.
 
-The typical release dispatches the Publish Template workflow from `main` with the next `N` to publish. A few special cases use the same workflow with different inputs:
+A typical release dispatches the Publish Template workflow from `main` with the next `N`. A few special cases use the same workflow with different inputs:
 
 | Dispatch input | Behavior |
 | --- | --- |
@@ -53,7 +53,7 @@ The typical release dispatches the Publish Template workflow from `main` with th
 | Same `N`, `republish: true` | Refreshes an already-tagged release from the current `main`, force-pushing the student repository. Use it to publish an environment merged after `template-v<N>` shipped. |
 | Lower `N` | Refused. |
 
-The workflow verifies the selected commit, builds the local frontend once, and uses the same composition path as local checks. It publishes the default template to the student repository's `main` branch, environment templates to `templates/<env>`, and selected examples to `examples/<env>/<name>`. After pushing every desired branch, a real publish removes generated `examples/*` branches that are no longer in `PUBLISHED_EXAMPLES` and leaves other branches unaffected.
+The workflow verifies the selected commit, builds the local frontend once, and uses the same composition path as local checks. It publishes the default template to the student repository's `main` branch, environment templates to `templates/<env>`, and selected examples to `examples/<env>/<name>`. After pushing every desired branch, a real publish removes generated `examples/*` branches that are no longer in `PUBLISHED_EXAMPLES`. It leaves all other branches unaffected.
 
 The two release forms differ only in their final steps:
 
