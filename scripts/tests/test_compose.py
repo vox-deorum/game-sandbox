@@ -52,7 +52,7 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "sandbox" / "builtins" / "naive" / "manifest.json").is_file()
 
 
-@pytest.mark.parametrize("env", ["flappy_bird", "hearts", "skirmish_crane", "spades", "three_branches"])
+@pytest.mark.parametrize("env", ["flappy_bird", "hearts", "skirmish_crane", "spades"])
 def test_composed_template_loads_every_declared_builtin(env: str):
     out = compose_template(env)
     builtin_root = out / "sandbox" / "builtins"
@@ -89,23 +89,6 @@ def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: p
     live_local = importlib.import_module("sandbox.live_local")
     assert live_local.main(["{}"]) == 2
     assert "live_local: invalid config" in capsys.readouterr().err
-
-
-def test_composed_three_branches_imports_its_nested_generation_package(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import compose as compose_mod
-
-    monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path)
-    out = compose_example("three_branches", "sweeper", out_dir=tmp_path / "sweeper")
-    generation = out / "sandbox" / "env" / "three_branches" / "generation"
-    assert (generation / "__init__.py").is_file()
-    assert (generation / "config.py").is_file()
-
-    _isolate_composed_sandbox(out, monkeypatch)
-
-    importlib.import_module("sandbox.env")
-    assert "sandbox.env.three_branches.generation" in sys.modules
 
 
 def test_composed_launchers_preserve_static_overlay_hooks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -430,7 +413,6 @@ def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_c
         ("spades", "counter"),
         ("spades", "daredevil"),
         ("spades", "signaler"),
-        ("three_branches", "sweeper"),
     ]
 
 

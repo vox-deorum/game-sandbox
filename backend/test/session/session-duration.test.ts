@@ -25,18 +25,6 @@ describe('resolveSessionMaxDurationMs', () => {
     )
   })
 
-  it('fits a paced Three Branches cast_5 watch day inside the derived limit', () => {
-    expect(
-      resolveSessionMaxDurationMs({
-        overrideMs: null,
-        paceIntervalMs: 250,
-        recommendedEpisodeTicks: 1200,
-        agentPlayerCount: 6,
-        episodeTimeoutMs: 120_000,
-      }),
-    ).toBe(18 * 60 * 1_000)
-  })
-
   it('derives a paced session limit with no agent budget for a fully human layout', () => {
     expect(resolveSessionMaxDurationMs({ ...paced, agentPlayerCount: 0 })).toBe(
       1200 * 250 + SESSION_OVERHEAD_ALLOWANCE_MS,

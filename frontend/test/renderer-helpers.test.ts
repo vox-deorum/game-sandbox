@@ -17,9 +17,9 @@ describe('renderer math', () => {
   })
 
   it('keeps presentation hashes stable', () => {
-    expect(stableHash('three-branches')).toBe(321_510_642)
+    expect(stableHash('renderer-key')).toBe(590_418_368)
     expect(stableHash('')).toBe(2_166_136_261)
-    expect(stableHash('three-branches')).not.toBe(stableHash('Three-Branches'))
+    expect(stableHash('renderer-key')).not.toBe(stableHash('Renderer-Key'))
   })
 })
 
