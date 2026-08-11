@@ -2,53 +2,41 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This is build-order step 8 and the closing step: the on-ramps [pedagogy.md](../pedagogy.md) promises for Season 4 and Season 5, shipped as one worked example named `neighbor`. It carries the routine library and its routing, and the dialogue layer that answers the visitor in character. The hands-on surface is a village whose ten villagers keep a believable day around a human visitor, and hold a conversation with them.
+Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into the [Season 4](../pedagogy.md#season-4-village-life-week-4) and [Season 5](../pedagogy.md#season-5-the-conversation-week-5) starter material: one worked example named `neighbor`. It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
 
 ## Why this is its own seam
 
-Season 4's design issue is a village that keeps living around the player, and Season 5's is grounded dialogue. Both need a working action space on day one of their season, and both are student-facing library code with their own interface contract, distinct from the helpers they build on. Routing lives here rather than in the template, which is what keeps `sandbox.village` a description of the engine's physics and leaves the interesting work to students.
-
-They ship together because they are one example. Season 5's dialogue rides beside Season 4's routines: a villager holds a conversation while it goes on with its day, so splitting them would mean two examples that only work when combined.
+Routines and dialogue ship together: each villager continues its day while it talks. The example keeps `sandbox.village` a physics description and gives both seasons a replaceable action space.
 
 ## The agent the library serves
 
-Season 4 runs `cast_10` with daynight on. A working agent is, per villager: take a role from its character id, pick a routine and a goal from the day phase and what it perceives, revisit that pair at each phase boundary and when the visitor comes near, and let the chosen routine produce each tick's action.
+Season 4 uses `cast_10` with daynight on. Each villager derives a role from its id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when the visitor comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the same interface a student's design replaces.
 
-The day arc names every routine the library needs:
+1. **Dawn:** leave home with `go_to`.
+2. **Morning:** work at stalls, pump, plots, board, and repair bench with `tend` and `wander`.
+3. **Midday:** gather at market, inn, and benches with `gather_at`, `rest`, and `watch`.
+4. **Evening:** tend lanterns and shrine, then go home with `tend` and `go_to`.
+5. **Night:** go home and sleep with `go_to` and `sleep_at`.
 
-1. **Dawn.** Villagers leave their homes for the first place their role wants. Routines: `go_to`, the routed walk.
-2. **Morning.** Work: tending a stall, working the pump, tending a plot, reading the board, working the repair bench. Routines: `tend`, `wander`.
-3. **Midday.** The village gathers at the market, the inn, and the benches. Routines: `gather_at`, `rest`, `watch`.
-4. **Evening.** Lanterns are lit, the shrine is tended, and the village drifts home. Routines: `tend`, `go_to`.
-5. **Night.** Home and asleep. Routines: `go_to`, `sleep_at`.
-
-Across all of it, the visitor reactions Season 3 introduced stay live: `greet`, `follow`, `avoid`.
-
-The arc describes the student's agent. The shipped example wires a static role-and-phase schedule through the same interface, so the slot the student's own design fills stays visible and replaceable.
+Keep Season 3's live visitor reactions: `greet`, `follow`, and `avoid`.
 
 ## What to build
 
-### The example package
+### Example package and memory
 
-`environments/three_branches/examples/neighbor/` follows the `marcher` and `vanguard` layout: `README.md`, `agent.py`, `routines.py`, `dialogue.py`, and `tests/test_neighbor.py`. `agent.py` imports its modules at module top. The harness isolates top-level imports per player, while an import inside `act` would resolve against the last-loaded player's directory and be shared across players.
+Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent.py`, `routines.py`, `dialogue.py`, and `tests/test_neighbor.py` in the `marcher` and `vanguard` layout. Import modules at the top level because the harness isolates those imports per player; imports inside `act` resolve against the last-loaded player directory and become shared.
 
-`neighbor` is a publication candidate. This step leaves `PUBLISHED_EXAMPLES` unchanged, and adding it when Season 4 opens is recorded in the plan's Later work.
+`neighbor` is a publication candidate. Keep `PUBLISHED_EXAMPLES` unchanged and record publication at Season 4 opening in the plan's Later work.
 
-### The routine interface
-
-A routine is a pure decision function: `decide(observation, memory, goal)` returns an action Dict built through the helpers, or `None` meaning the situation is not the routine's. `memory` is the villager's own instance dict, with routine state under namespaced keys, and `goal` is a position, a prop id, a character id, or `None`. No classes with hidden state: the villager's code owns its memory, matching the ruleset's no-shared-controller rule.
-
-The dispatch contract in `agent.py`: run the assigned routine, on `None` run `wander(goal)`, and stand still when even that returns nothing.
+A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, character id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing.
 
 ### Routing
 
-`go_to` is where pathfinding lives. It searches the village's own cells, taking nodes from `layout.walkable`, edges from `layout.can_step`, and edge cost from the ground's speed limit under `layout.ground_at`. Routing remains cell-based: it reads semantic static records and delegates collision geometry to the helpers' shared-catalog lookup. It caches the search graph in the villager's own memory and re-plans when the villager stalls. It is documented as one workable approach rather than the right one, and as the first thing a student with a better idea should replace.
+**Operational rules:** `go_to` searches village cells using `layout.walkable` for nodes, `layout.can_step` for edges, and `layout.ground_at` speed limits for edge cost. It reads semantic static records, delegates collision geometry to helpers, caches its graph in villager memory, and replans after a stall. Document this as a replaceable working approach, not the required routing method.
 
-The graph is built once, in `reset`, where step 1's setup observation delivers the layout before the first tick. That build is charged to the villager's episode budget rather than to any single decision, so its resolution is a budget choice the example makes explicitly and a student can change. Every `act` afterward is a search over the cached graph. The tests measure reset cost and per-tick cost separately.
+**Budget and reporting rules:** Build the graph once in `reset`, where step 1 provides the layout before tick one. Later `act` calls search the cached graph. Measure and report reset and per-tick costs separately. The graph resolution remains an explicit example choice that students may change.
 
-### The routine menu
-
-Ten routines, each typed to a job and testable in isolation:
+### Routine menu
 
 | Routine | Behavior | Empty-handed when |
 | --- | --- | --- |
@@ -63,43 +51,39 @@ Ten routines, each typed to a job and testable in isolation:
 | watch(goal) | Stand still facing the goal and let the village come to it | Never |
 | sleep_at(goal) | Inside the goal building, stand still with the sleep emote | Not inside the goal building |
 
-### The schedule hook
+`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. At reset it assigns roles through `me.rng`, maps each role to places and props by phase, and recomputes at phase boundaries and when the visitor enters hearing range. Spread roles across districts so ten villagers do not funnel onto a prop and exercise `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and fallback `wander`. The remaining routines support student schedules.
 
-`assign(observation, memory)` returns a (routine, goal) pair, and is explicitly labeled as the thing the student's Season 4 design replaces. The static schedule takes a role from the character id through `me.rng` at reset, maps each role to a place and a prop per day phase, and recomputes the pair at each phase boundary and when the visitor enters hearing range. Roles spread the cast across the village's districts so ten villagers do not funnel onto one prop, and the spread exercises `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and the `wander` fallback. The rest of the menu is there for the student's own schedule.
+### Dialogue layer
 
-### The dialogue layer
+`dialogue.py` wraps `templates/base`'s `sandbox.llm.BackgroundLLM`, which owns the request thread, one in-flight slot, non-blocking read, and captured error. The controller adds:
 
-`dialogue.py` is a thin controller over `templates/base`'s existing `sandbox.llm.BackgroundLLM`, which already owns the request thread, the single in-flight slot, the non-blocking read, and the captured error. The controller adds what the game needs:
+- At most one waiting visitor line. A newer line replaces it, and it starts only after the current reply to `visitor` is consumed.
+- Prompt with persona and perceived world state only.
+- Whitespace normalization and a 200-code-point cap before sending a villager line.
+- A canned fallback on budget exhaustion or proxy error.
+- A latest-observation validity check before starting a waiting request or returning a reply. Discard a waiting or completed line if the visitor has left hearing range or moved behind a wall.
 
-- One waiting visitor line at most. A newer line replaces an older one, and a waiting line starts only once the current reply has been consumed.
-- Persona and world-state prompting from the villager's role and what it currently perceives, so a reply refers only to true village state.
-- Whitespace normalization and truncation to 200 code points before the reply is sent as the villager's line.
-- A canned fallback on budget exhaustion or a proxy error.
-- A validity re-check against the latest observation before starting a waiting request or returning a reply: the visitor must still be within hearing range with an unblocked line. A visitor that has left hearing range or moved behind a wall gets the waiting line or completed reply discarded. A reply that passes goes out as that villager's one line for the tick; there is no recipient to choose, since every line is public.
+Use the [environment speech contract](../environment.md#speech) for delivery and visibility. A valid reply is that villager's one direct line for the tick, returned through `speech.to("visitor", text)`. It is valid only while the visitor is in hearing range with an unblocked line. Routines continue every tick while a reply is in flight.
 
-The controller runs beside the routines rather than in place of them: the villager keeps acting on every tick while a reply is in flight, which is the whole reason the request rides across ticks.
-
-### Honest strength
-
-The example's value is the interface and the menu, not its rating. It ships a static schedule with no adaptivity and documented approximations, because the schedule is the season's own work.
+Use a non-adaptive static schedule and document its approximations.
 
 ### CI wiring
 
-The example inventory assertion in `scripts/tests/test_compose.py` gains `("three_branches", "neighbor")`, and the pyright file set in `scripts/_envs.py` gains per-example additions so the composed tree type-checks `routines.py` and `dialogue.py`.
+Add `("three_branches", "neighbor")` to `scripts/tests/test_compose.py`'s example inventory. Add the example's `routines.py` and `dialogue.py` to `scripts/_envs.py`'s pyright set.
 
 ## Tests
 
-`tests/test_neighbor.py`, in the `vanguard` pattern: hand-built observations, a wrapper asserting every returned action is in space, and pinned-seed episodes whose parameters come from the environment metadata presets rather than re-declared literals.
+`tests/test_neighbor.py` follows the `vanguard` pattern: hand-built observations, an action-space wrapper, and pinned-seed episodes using environment metadata presets.
 
-- Per-routine behavior on constructed observations: `go_to` closes distance along a route, `tend` stops inside reach and commands speed 0, `rest` reaches a free bench and holds the sit, `gather_at` ends within hearing range of a bystander, `greet` turns and waves, `follow` holds its distance band, `avoid` raises the minimum distance to the nearest character, `watch` and `sleep_at` stand still, and `wander` never returns `None`.
-- A fuzz run drives every routine through full Season 4 episodes and asserts every returned action is in space and every commanded use is actually taken by the engine.
-- Routing reaches every named place from every home across a pinned seed batch, uses cell-based helpers rather than observation footprint geometry, and builds the graph once in `reset`. Reset cost and per-tick cost are measured separately, and the two together stay inside the episode budget across a full day.
-- A day-arc bar on a pinned Season 4 seed: every villager leaves home, reaches at least three districts, holds at least one prop use in each of the working phases, and is home by the end of night. The bar is absolute, because a bar relative to another example would flip whenever either side is tuned.
-- Dialogue controller against a fake proxy: request lifecycle across ticks, reply delivery as the villager's line, fallback on exhaustion and on errors, over-cap replies truncated, a newer visitor line replacing a waiting one, and a visitor leaving hearing range while a request or a waiting line exists.
-- `neighbor` completes healthy days with the LLM enabled and disabled, on both plans, inside the decision and episode budgets.
+- Per-routine constructed-observation tests cover routed distance reduction, still in-reach tending, bench rest, hearing-range gathering, greeting, follow bands, avoidance distance, still watch and sleep, and non-`None` wandering.
+- A full Season 4 fuzz run keeps every action in space and verifies that every commanded use is taken by the engine.
+- Routing reaches every named place from every home over pinned seeds, uses cell helpers rather than observation-footprint geometry, and builds once in reset. Report reset and per-tick costs separately.
+- A pinned Season 4 day-arc test absolutely requires every villager to leave home, reach three districts, use a prop in each working phase, and return home by night.
+- Fake-proxy dialogue tests cover cross-tick requests, direct villager-to-visitor delivery through `speech.to`, exhaustion and error fallbacks, reply truncation, waiting-line replacement, and leaving hearing range or moving behind a wall while a request or waiting line exists.
+- `neighbor` completes healthy days with LLM on and off, on both plans, within decision and episode budgets.
 
-The static role table, the per-phase places, and the follow and avoid distance bands are defaults the day-arc test may adjust.
+The static role table, phase places, and follow and avoid distance bands are defaults the day-arc test may adjust.
 
 ## Done when
 
-`neighbor` plays a coherent day in the browser under Season 4 parameters: villagers leave their homes at dawn, work their props through the morning, gather at midday, light the lanterns in the evening, and are asleep by night, while noticing the visitor as they pass. A villager holds an in-character conversation with the visitor in a local day and falls back to canned lines when its budget runs out. All routine, routing, and dialogue tests are green, the example composes in CI, and the Days at Three Branches plan is complete end to end.
+Under Season 4 parameters, `neighbor` plays a coherent browser day: villagers leave at dawn, work in morning, gather at midday, light lanterns in evening, and sleep at night while noticing the visitor. In a local day, a villager converses in character and falls back to canned lines when its budget ends. Routine, routing, and dialogue tests pass, the example composes in CI, and the plan is complete end to end.

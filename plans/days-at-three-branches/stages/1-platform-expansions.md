@@ -2,67 +2,49 @@
 
 Status: complete.
 
-Part of [the plan](../README.md). This is build-order step 1: every contract change the design assumes, landed together as one reviewable platform change before any game code exists. The hands-on surface is a fixture simultaneous `Dict` environment passing the parallel conformance checks, with bounded broadcasts and an agent that precomputes from its setup observation, all visible in a harness test run. Backend tests pin the related live watcher visibility rule.
+Part of [the plan](../README.md). This landed mask-free simultaneous `Dict` actions, environment-limited broadcasts, live watcher visibility, setup observations, and live-session lifetime. A simultaneous fixture and backend tests cover the contracts.
 
-## Why this is its own seam
+## Landed contracts
 
-These changes touch the harness and backend, and every later step builds on them. A fixture proves the environment-facing platform contracts before the game depends on them and keeps every existing environment green.
+### Mask-free `Dict` actions
 
-## What to build
-
-### Mask-free Dict actions in simultaneous environments
-
-The platform specification currently limits a `Dict` action space to sequential environments. The pinned PettingZoo `parallel_api_test` only breaks on a published `action_mask`: `sample_action` reduces a mask with `np.flatnonzero`, but an observation without an `action_mask` key samples through the action space itself, which handles a `Dict` correctly. Narrow the rule in [environment.md](../../../docs/specs/environment.md): a simultaneous environment may declare a `Dict` action space when it publishes no mask and every in-space value is legal in every reachable state. `Dict` plus a published mask stays sequential-only until the upstream fix reaches a release.
+A simultaneous environment may publish a `Dict` action space without an action mask when every value in the space is legal in every reachable state. The fixture proves that contract through PettingZoo parallel conformance and the platform's stricter subset.
 
 ### Environment-limited broadcasts
 
-`ChatRouter.deliver` sends a broadcast to every other active player. The environment gains an optional `broadcast_recipients(sender)` hook, discovered and validated like `chat_policy`, returning the players a broadcast from `sender` reaches this boundary. No hook keeps today's full delivery. Three Branches uses it to bound every spoken line to the characters within the speaker's hearing range. Document the hook in [communication.md](../../../docs/specs/communication.md).
+`ChatRouter.deliver` discovers and validates the optional `broadcast_recipients(sender)` hook like `chat_policy`. The hook returns the players a broadcast reaches at that boundary. Without it, broadcasts reach everyone. Three Branches uses the hook for characters within the speaker's hearing range. [communication.md](../../../docs/specs/communication.md) defines the hook.
 
 ### Live watcher visibility
 
-The live visibility rule applies globally, with no environment metadata field. A watcher receives every delivered message, including targeted messages, matching the information available in a replay. A watcher is any non-controller socket, including every socket in a scripted watch session. A human controller continues to receive broadcasts plus targeted messages sent to or from one of its external players. Both live filtering and connection catch-up use the same rule.
+Every non-controller socket receives every delivered line, including targeted messages, in both live filtering and connection catch-up. A human controller receives broadcasts and targeted lines to or from one of its external players. This matches replay visibility.
 
-### The setup observation
+### Setup observations
 
-`reset(seed)` becomes `reset(seed, observation)`, and it becomes a timed, charged hook.
+`reset(seed, observation)` is a timed, charged agent hook. Every agent-controlled player receives the observation it would see on its first turn; human players receive no reset call.
 
-Today an agent's episode setup has nowhere to go. `reset` runs before any observation exists, so anything derived from standing knowledge has to be built inside the first `act` call under the per-decision limit. An overrun there is silent: the harness substitutes the default action, charges the time, and the agent loses the tick without an error to read. This plan's case is a route graph over the village layout, which is too large to build inside 0.25 seconds and too useful to leave out.
+- Simultaneous episodes pass the mapping returned by `env.reset(seed=...)` to each agent.
+- Sequential episodes call `env.observe(player)` for each resolved player after the environment reset.
 
-The two stepping modes need different plumbing for the same contract:
+Reset follows the existing timing and attribution path for `act`, `chat`, and `learn`. Its cost counts against the episode budget, with no separate reset limit. The harness checks the budget immediately after agent resets and applies existing player forfeit attribution to exhaustion. Setup LLM calls keep null tick attribution. [llm.md](../../../docs/specs/llm.md) defines that timing.
 
-- Simultaneous environments already have it. `Episode.start` unpacks the parallel observations from `env.reset(seed=...)` before it resets agents, so each player's initial observation is in hand and passes straight through.
-- Sequential environments do not. An AEC `reset()` returns nothing, and the harness first pulls an observation through `env.last()` during the opening step, well after agents reset. The harness therefore calls `env.observe(player)` for each resolved player after the environment reset and hands each agent its own.
-
-Either way the promise is the same: every agent-controlled player receives the observation it would see on its first turn. Human players keep receiving nothing, as they do today.
-
-`reset` currently runs through no timer and touches no budget, so it is bounded by nothing short of the backend's container watchdog. Route it through the same timing path as `act`, `chat`, and `learn`, and add its cost to the player's episode budget. That budget is the only bound: an environment that wants to allow heavy setup raises it, and there is no separate per-call limit to tune. Run the episode-limit check immediately after agents reset, with the existing attribution, so an agent that spends its whole budget on setup fails there instead of after the first step. Setup LLM calls keep their null tick attribution, and [llm.md](../../../docs/specs/llm.md) drops the claim that they occur before turn timing.
-
-The seam is not specific to this game. A Crane agent can build its terrain cost map once per match, and a card agent can study its opening hand, both off the per-decision clock.
-
-Blast radius, landed together here: `AgentBase.reset`, the harness call site, four environment templates, twelve example agents, six builtins, and the test doubles under `harness/tests/`, `environments/*/tests/`, `backend/test/fixtures/validate/`, and `frontend/e2e/fixtures/submission/`. The callable-only `is_agent` structural check does not inspect arity and remains unchanged. The parity test comparing each template stub against `AgentBase` catches any that drift. The interface table in [submission.md](../../../docs/specs/submission.md) and the student [agent interface](../../../docs/students/agent-interface.md), including its call-order diagram, follow in the same change.
+`AgentBase.reset`, all environment templates, shipped examples, builtins, test doubles, the submission interface table, and the student agent-interface guide now use the same contract. The callable-only `is_agent` structural check remains unchanged, and template parity tests compare each stub with `AgentBase`.
 
 ### Live-session lifetime
 
-Make `SESSION_MAX_DURATION_MS` an optional explicit override. When it is set, its positive value remains the chargeable-duration limit for every live session. When it is absent and `pace_interval_ms` is positive, derive the limit from `recommended_episode_ticks * pace_interval_ms`, plus the sum of each agent-controlled player's resolved `episode_timeout_ms`, plus a 60-second platform-overhead allowance. That allowance covers session startup, completed environment transitions, recording work, and teardown. When the override is absent and the pace interval is absent or zero, use the current 600-second fallback. Remove the default environment setting that would otherwise turn 600 seconds into an override for every deployment. Replace the fixed deployment-wide rule in [execution.md](../../../docs/specs/execution.md), update the configuration guide, implement the calculation in backend session setup, and cover each branch with integration tests. This lets a naturally paced day reach its final transition without changing the default bound for turn-based games.
+`SESSION_MAX_DURATION_MS`, when set, is the positive chargeable-duration limit. Otherwise, a positive `pace_interval_ms` derives the limit from `recommended_episode_ticks * pace_interval_ms`, every agent-controlled player's resolved `episode_timeout_ms`, and a 60-second platform allowance. An absent or zero pace interval uses the 600-second fallback. [execution.md](../../../docs/specs/execution.md), the configuration guide, session setup, and integration tests share this rule.
 
-Human-session idleness is owned separately from the duration cap. A connected owner socket keeps a human-play session alive even when the owner sends no commands. Arm the idle timeout only when the last owner socket disconnects. Spectator sockets do not keep a human-play session alive. Scripted watch sessions retain their viewer-based idle rule. Update the lifetime rule in [frontend.md](../../../docs/specs/frontend.md) and the pause behavior in [interaction.md](../../../docs/specs/interaction.md).
+Human-session idleness is separate: a connected owner socket keeps a human-play session alive, the idle timeout starts after the last owner disconnects, and spectator sockets do not extend that session. Scripted watch sessions retain viewer-based idleness. [frontend.md](../../../docs/specs/frontend.md) and [interaction.md](../../../docs/specs/interaction.md) define the corresponding pause and lifetime rules.
 
-### The fixture
+## Fixture and verification
 
-A minimal simultaneous environment with a mask-free `Dict` action space joins the harness test fixtures, exercising parallel conformance, the broadcast hook, the setup observation, and natural paced completion.
+The minimal simultaneous fixture has a mask-free `Dict` action space and three human-capable players. It exercises parallel conformance, the broadcast hook, setup observations, and natural paced completion.
 
-The fixture declares all three players as human-capable so any player can be used to exercise live simultaneous input contracts.
+Tests verify:
 
-## Tests
+- parallel conformance, the broadcast hook and its no-hook fallback, and exact delivery bounds;
+- watcher and human-controller visibility, including connection catch-up;
+- first-turn setup observations in both stepping modes, no human reset call, reset-budget attribution, reset exhaustion, and reset-crash attribution;
+- derived paced duration with its allowance, the unpaced fallback, and an explicit positive override; and
+- connected-owner idleness, last-owner disconnect, spectator exclusion, and scripted-watch viewer idleness.
 
-- The fixture through PettingZoo's `parallel_api_test` and the platform's stricter parallel subset.
-- Broadcast hook validation, the no-hook fallback, and delivery bounds.
-- Live delivery and connection catch-up show targeted messages to every watcher, while a human controller remains limited to broadcasts and lines involving its own players.
-- Every agent-controlled player receives its first-turn observation at reset in both stepping modes: a simultaneous fixture through the reset mapping, and each shipped sequential environment through `env.observe`. A human player still receives no reset call.
-- Reset time is charged to the player's episode budget, an agent that exhausts its budget in reset fails at reset with its own player attributed at the environment's forfeit floor, and the existing reset-crash attribution still holds.
-- With no override, a paced environment receives the derived duration, including its 60-second platform-overhead allowance, and an unpaced environment receives the 600-second fallback. A positive `SESSION_MAX_DURATION_MS` overrides both. Tests cover all three paths.
-- A quiet connected human owner remains live, the timeout starts after the last owner socket detaches, spectators do not extend a human session, and scripted watch sessions remain viewer-based.
-
-## Done when
-
-The fixture is green across the parallel conformance checks, a fixture broadcast reaches exactly the hook's audience, a targeted line is visible to a non-controller, an agent builds from its first-turn observation inside `reset` in both stepping modes with the cost on its episode budget, a naturally paced fixture can reach its final transition, and the revised specifications state each rule.
+The fixture and platform tests are green, including bounded broadcasts, watcher-visible targeted delivery, charged setup observations in both modes, and a paced episode that reaches its final transition. The revised specifications state these contracts.

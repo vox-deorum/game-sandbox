@@ -1,71 +1,102 @@
 # The RPG Game: Pedagogy Design
 
-The RPG game is the course's believability track. Students design game AI that makes a small village feel alive, and their work is judged mainly by classmates through the human-rating leaderboard. The automated leaderboard serves only as a health/robust check: its rank does not measure believability.
+Days at Three Branches is the course's believability track. Students make a small village feel alive. Classmates judge that work on the human-rating leaderboard; the automated leaderboard is only a health check.
 
-The world is one village throughout. Each season foregrounds one small capability that motivates that week's techniques, introduced explicitly that week. Every season builds directly on the previous one: a small delta, never a rebuild.
+Every season runs the same village and extends the previous season by one small capability. A submission controls separately running copies of one NPC program, distinguished by character id. NPCs coordinate through [perception and speech](ruleset.md#perception), not shared state.
+
+## Shared evaluation
+
+Every season requires a healthy full episode: the agent loads, completes the day, and avoids crashes and timeouts. This is the automated score and never measures believability or grading.
+
+The human-rating board is the meaningful leaderboard. Each student writes a short prompt about observable behavior and classmates rate it against the declared design goal. The score invites a 1 to 5 rating.
 
 ## Design pillars
 
-- Believability over performance: the question is always "does this read as alive," not "does this win"
-- One village throughout: familiarity compounds, and each season's new capability stands out
-- Same code, many characters: when the submission controls multiple NPCs, every copy runs the same code, differentiated only by the ID it reads from its observation; coordination happens through perception and messages
-- Core and optional: each season lists core techniques (the path the season materials assume) and optional techniques (a stretch menu); per the syllabus, no technique is ever required or off-limits
+- **Believability over performance:** The question is whether a villager reads as alive, not whether it wins.
+- **One familiar village:** Familiarity accumulates and makes each new capability visible.
+- **Same code, many characters:** NPC copies share code but not memory. Id, perception, and messages support coordination.
+- **Core and optional techniques:** Core techniques are the material's expected path. Optional techniques are a stretch menu. The syllabus never requires or prohibits a technique.
 
 ## The six seasons
 
 ### Season 1: Signs of Life (Week 1)
 
-- What unlocks: the village map and its props. A human player avatar can walk the village (peer reviewers play it during peer play). The scene holds 5 NPCs. Perception is a vision cone and a hearing radius. Actions: move, idle emotes, prop interaction.
-- Design issue: characters reading as alive and intentional.
-- Core techniques: an FSM for basic behaviors (wander, patrol, pursue, flee, idle); steering.
-- Optional: behavior-tree interruptible routines (a startle preempts a chore, then resumes). This becomes core in Season 2.
-- Evaluation: health check; human rating, e.g. "Could you tell what my villager wanted at any moment? Rate how alive they felt, 1-5."
+**Unlocks:** The map, props, five NPCs, vision cone, hearing radius, movement, idle emotes, and prop interaction. A human avatar walks the village during peer play. See [ruleset actions](ruleset.md#actions) and [environment visitor input](environment.md#rendering-and-human-input).
+
+**Design issue:** Characters should read as alive and intentional.
+
+**Core:** An FSM for wander, patrol, pursue, flee, and idle; steering.
+
+**Optional:** Behavior-tree interruptible routines, such as startle preempting a chore and then resuming. This becomes core in Season 2.
+
+**Rating prompt:** “Could you tell what my villager wanted at any moment? Rate how alive they felt, 1-5.”
 
 ### Season 2: The Village (Week 2)
 
-- What unlocks: the full cast. The submission now controls the whole cast of 10 NPCs: same code per NPC, each copy running as its own agent instance.
-- Design issue: ensemble storytelling under decentralization.
-- Core techniques: role assignment from the NPC ID; interruptible routines (promoted from Season 1).
-- Evaluation: health check; human rating, e.g. "Watch for one minute: what mood is this village in? Rate how strongly my declared vibe came through, 1-5."
+**Unlocks:** The full cast of 10 NPCs. Each runs a separate instance of the same submission.
+
+**Design issue:** Ensemble storytelling under decentralization.
+
+**Core:** Role assignment from NPC id; interruptible routines.
+
+**Optional:** None beyond the season's open technique menu.
+
+**Rating prompt:** “Watch for one minute: what mood is this village in? Rate how strongly my declared vibe came through, 1-5.”
 
 ### Season 3: The Visitor (Week 3)
 
-- What unlocks: nothing new; speech and the visitor are live from Season 1. NPCs start speaking lines, which only nearby characters receive, and build a small set of player-facing reactions (greet, follow, avoid, flee) from ordinary locomotion and expression.
-- Design issue: reactivity to an unpredictable human. Characters are defined by simple drives (curiosity, safety, gossip) rather than by enumerating scripts.
-- Core techniques: hand-authored drive/utility reactions layered on the Season 2 routines.
-- Evaluation: health check; human rating from live play, e.g. "Did the village notice you, in ways that fit who each NPC seemed to be? 1-5."
+**Unlocks:** No new platform capability. Visitor play and [range-limited speech](ruleset.md#speech) were available from Season 1. NPCs now speak and react to a visitor by greeting, following, avoiding, or fleeing with ordinary movement and expression.
+
+**Design issue:** React to an unpredictable human through simple drives such as curiosity, safety, and gossip, not enumerated scripts.
+
+**Core:** Hand-authored drive or utility reactions layered on Season 2 routines.
+
+**Optional:** None beyond the season's open technique menu.
+
+**Rating prompt:** “Did the village notice you, in ways that fit who each NPC seemed to be? 1-5.”
 
 ### Season 4: Village Life (Week 4)
 
-- What unlocks: day and night. The daynight variant turns on, and every character observes the day phase.
-- Starter material: a worked example, distributed by course operations when the season opens, provides a routine library (routing between the village's places, day-phase schedules, and the visitor reactions) as the working action space for the season's schedules. Students may copy it, edit or replace the routines, or reuse their own Season 3 behavior.
-- Design issue: a village that keeps living around the player. NPCs go about their day while staying reactive, and Season 3 peer feedback shows where intended and perceived behavior diverged.
-- Core techniques: day schedules built over the starter routine library, with routing between home, well, and market handled by that example; deepened player reactions revised from Season 3 feedback.
-- Optional: per-NPC memory of repeat encounters; rumor about the player spread through messages.
-- Evaluation: health check; human rating, e.g. "Walk around for two minutes. Rate how much the village felt like it had a life of its own while still noticing you, 1-5."
+**Unlocks:** The `daynight` variant and visible day phase. See [ruleset phases](ruleset.md#the-daynight-variant-season-4-onward).
+
+**Starter material:** A course-distributed worked example provides routine-library routing among village places, day-phase schedules, and visitor reactions. Students may copy, edit, replace, or ignore it in favor of Season 3 behavior.
+
+**Design issue:** A village that follows a daily life while staying reactive. Season 3 peer feedback identifies gaps between intended and perceived behavior.
+
+**Core:** Day schedules built on the starter routine library, with routes among home, well, and market; revised reactions.
+
+**Optional:** Per-NPC memory of repeat encounters; rumors spreading through messages.
+
+**Rating prompt:** “Walk around for two minutes. Rate how much the village felt like it had a life of its own while still noticing you, 1-5.”
 
 ### Season 5: The Conversation (Week 5)
 
-- What unlocks: platform-provided LLM access with a per-student budget. The player's freeform chat is live from Season 1; the new capability is answering it in character.
-- Design issue: grounded dialogue: staying in character and referring only to true world state.
-- Core techniques: persona plus world-state prompting; canned fallbacks when the budget runs out.
-- Optional: structured output binding dialogue to action (an NPC that says "follow me" then actually walks); retrieval memory per player.
-- Evaluation: health check including budget compliance; human rating, e.g. "Talk to my innkeeper. Rate how in-character and connected to the real village the conversation stayed, 1-5."
+**Unlocks:** Platform LLM access with a per-student budget. Freeform visitor chat already exists; the new capability is an in-character answer.
+
+**Design issue:** Grounded dialogue that stays in character and refers only to true world state.
+
+**Core:** Persona and world-state prompting; canned fallbacks after budget exhaustion. The health check includes budget compliance.
+
+**Optional:** Structured output that binds dialogue to action, such as “follow me” followed by movement; per-player retrieval memory.
+
+**Rating prompt:** “Talk to my innkeeper. Rate how in-character and connected to the real village the conversation stayed, 1-5.”
 
 ### Season 6: The Living Village (Week 6)
 
-- What unlocks: nothing new. Everything from Seasons 1-5 is live at once: routines, reactions, memory, chat.
-- Design issue: an open brief. Combine the reactive village (Seasons 3-4) with LLM dialogue (Season 5) to make the world more interactive as a whole. Students declare what "more interactive" means for their village; how they get there is not constrained.
-- Leads, not requirements: NPCs whose chat reflects what they saw the player do; conversations that change behavior afterward ("follow me," then actually walking); rumors about the player surfacing in dialogue; a small staged event that reacts to the player.
-- Evaluation: health check; human rating, e.g. "Spend five minutes in my village. Rate how much it felt like a world that noticed and responded to you, 1-5."
+**Unlocks:** Nothing new. Routines, reactions, memory, and chat operate together.
 
-## How the seasons pair
+**Design issue:** An open brief that combines the reactive village from Seasons 3 and 4 with Season 5 dialogue. Students define what “more interactive” means for their village.
 
-- Seasons 1-2: the Season 1 character becomes the citizen template for the Season 2 cast.
-- Seasons 3-4: Season 3 brings the player in; Season 4 simply extends the reactive village with daily life. Week 4 is a tactical-focus week, so the RPG delta stays small.
-- Seasons 5-6: Season 5 builds the dialogue layer; Season 6 opens the brief to combine it all.
+**Core:** The student's declared interaction goal.
 
-## Evaluation stance
+**Optional:** Chat that reflects observed player actions, dialogue that changes later behavior, player rumors surfacing in dialogue, or a small player-reactive staged event.
 
-- The automated leaderboard ranks by episode score like every environment, but here the score only reflects run health: the agent loads, completes the full episode, and has no crashes or timeouts. That rank does not matter for grading and never measures believability.
-- The human-rating leaderboard is this game's real leaderboard. Students author a short observable-behavior rating prompt each season, and classmates rate against the declared design goal.
+These are leads, not requirements.
+
+**Rating prompt:** “Spend five minutes in my village. Rate how much it felt like a world that noticed and responded to you, 1-5.”
+
+## Progression
+
+- Seasons 1 and 2 turn one recognizable character into a decentralized citizen template for the full cast.
+- Seasons 3 and 4 introduce the visitor, then daily life around the visitor. Week 4 is a tactical-focus week, so the RPG addition stays small.
+- Seasons 5 and 6 add dialogue, then open the brief to combine every layer.

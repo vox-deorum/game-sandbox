@@ -2,110 +2,99 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This is build-order step 3: it replaces step 2's minimal registered renderer stub with the real browser renderer and watch surface, and it is the first production exercise of the platform's simultaneous frontend paths. The hands-on surface is a live match watched in the browser and explored close up, its replay scrubbed to exact frames, and `npm run play` showing a local watch-mode day.
+Part of [the plan](../README.md). This step replaces step 2's registered renderer stub with the production watch and replay surface. It is the first production use of simultaneous frontend paths: a browser can watch a live day, explore the village, scrub exact replay frames, and show a local watch-mode day through `npm run play`.
 
-## Why this is its own seam
+## Scope
 
-The collision overlay is a permanent viewer feature, not scaffolding: toggled on, it shows the game at collision truth, which is what students need when their villager gets stuck. Shipping the tile layers, the overlay, and the camera before any art proves the whole watch surface complete and seek-safe, turns the registered stub into the real viewer, and gives step 4 the tool it uses to iterate on village generation visually. The camera ships here because its machinery already exists in the shared renderer base; this stage only mounts it, and step 5.2 tunes its limits under the final art and HUD.
+The permanent collision overlay shows collision truth. This step ships it with tile layers and camera before art. Step 4 uses the viewer for review. The shared camera machinery already exists; this step mounts it, and step 5.2 tunes limits with final art and HUD.
 
-## What to build
+### Shared tile base
 
-### The shared tile base
+`frontend/src/renderers/base/tiled-ground.ts` keeps the project on one drawing path. Extend `createTiledGround` with:
 
-`frontend/src/renderers/base/tiled-ground.ts` already wraps [pixi-tiledmap](https://github.com/riebel/pixi-tiledmap) behind a project-owned API: `TileGrid`, `GroundTileset`, `solidColorTileset`, the validators, `createTiledGround`, and `setTile` for single-cell repaints. The village needs two additions to it and nothing else, so there is one tile module in the project and one drawing path.
+- an ordered layer stack over one frame, with a reserved empty code, while preserving single-grid callers; and
+- an eight-bit same-code neighbour mask passed to the `variant` callback for step 5.1's autotiler.
 
-- **A layer stack.** `createTiledGround` accepts an ordered list of grids over one frame, drawn bottom to top, with one reserved code that draws nothing. The village's terrain, its wall tops, and its object tiles become layers over one frame rather than three separate maps. A single grid keeps working unchanged, which is how Skirmish at Crane Reach already calls it.
-- **A neighbour mask.** The `variant` callback receives the eight-bit mask of surrounding cells carrying the same code, computed by the base. That mask is exactly what step 5.1's autotiler consumes, and the hook is the whole seam between the base and the art.
+`setTile` remains unchanged. One unit case covers a repaint landing on the correct cell and rejecting an out-of-bounds cell. Layer and tileset validation stays pure and jsdom-tested with a small packed map. Browser tests cover pixels behind the renderer base's headless guard.
 
-`setTile` stays as it is: the village is fixed for a whole session so nothing repaints it here, but the contract belongs to the base rather than to any one environment. One unit case covers a repaint landing on the right cell and rejecting an out-of-bounds one.
+### Renderer package
 
-Layer and tileset validation is pure and tested under jsdom, where the suite also builds a small packed map to keep the one drawing path exercised. Real pixels stay the browser suite's job, since a renderer's own drawing sits behind the base class's headless guard.
-
-### The renderer package
-
-`environments/three_branches/renderer/` replaces the stub, keeping the `three-branches-village` key and the automatic discovery contract (the frontend globs `environments/*/renderer/index.ts`, so no registration edits). The thumbnail stays the stage 2 placeholder until step 5.1's art pass. The package mirrors the Skirmish at Crane Reach split: pure modules with no Pixi imports carry the logic and are unit-tested under jsdom, and Pixi modules only draw.
+`environments/three_branches/renderer/` replaces the stub under the existing automatic discovery glob. The thumbnail remains the stage 2 placeholder until step 5.1. Pure logic has no Pixi imports and is unit-tested under jsdom; Pixi modules draw only.
 
 | Module | Responsibility |
 | --- | --- |
-| `overlay.ts` | The TypeScript types for the recording's static and dynamic payloads, and one `readStatic(header)` shape check run at mount: the declared frame, ground rows summing to it, and the character and prop rosters present. The payloads are plain JSON in metres, cells, and words, so there is nothing to decode |
-| `scene.ts` | `computeScene(state, staticOverlay)`: the pure drawable scene and placeholder palette. The static part reads the ground grid, semantic buildings, props, scenery, and spawn, and is computed once per static payload and cached by reference. The dynamic part carries characters, prop states, and chrome strings, every drawable keyed by stable id. Labels come from `../catalog.json` and `../rules.json`, imported as JSON modules the way the crane renderer imports `tile_types.json` |
-| `collision.ts` | `computeCollisionScene(state, staticOverlay)`: the collision-truth drawables listed under the overlay below. Pure, and untouched by step 5.1's art swap |
-| `map-layer.ts` | Pixi: expands the ground rows into the layer stack, builds the palette's `solidColorTileset`, and mounts the shared tile base |
-| `buildings.ts` | Pixi: semantic building roof containers keyed by building id, with floors, walls, and doorways already present in the ground grid |
-| `props-layer.ts` | Pixi: per-state interactive props and their labels, plus scenery, reconciled by stable id; the seam step 5.1's stills and sustained animations replace |
-| `characters.ts` | Pixi: per-state reconciliation of the cast by character id: body circles with a heading tick, id, and expression label |
-| `collision-layer.ts` | Pixi: draws `collision.ts`'s scene, visible while the viewer has the overlay on |
-| `chrome.ts` | Pixi: the screen-fixed strip (tick, phase, bell state, terminal banner) and the in-canvas collision toggle button, whose rectangle it exports so tests can press it by name |
-| `index.ts` | The `PixiRenderer` subclass: the world container tree, the shared camera mount, the toggle state, the probe attributes, and the `RendererDefinition` export |
+| `overlay.ts` | Recording types and mount-time `readStatic(header)` checks for frame, ground rows, and rosters |
+| `scene.ts` | Cached static and per-state dynamic drawable scene, palette, labels from shared JSON |
+| `collision.ts` | Pure collision-truth scene |
+| `map-layer.ts`, `buildings.ts`, `props-layer.ts`, `characters.ts` | Pixi ground stack, semantic roofs, stable-id props and scenery, and stable-id character reconciliation |
+| `collision-layer.ts`, `chrome.ts` | Overlay drawing; fixed tick, phase, bell, terminal strip and named collision-toggle rectangle |
+| `index.ts` | `PixiRenderer`, container tree, camera, toggle, probes, and `RendererDefinition` |
 
-There is no duplicate geometry module and no renderer-side building expansion. The ground grid already carries every floor, wall, and doorway cell, so a building's only renderer-side geometry is its rect, taken from its origin and its catalog footprint. Small shared-catalog helpers turn each prop's type token into its footprint, shape, and art. No renderer formula can drift from the engine catalog.
+The renderer does not expand building geometry. Ground rows already encode floors, walls, and doorways; semantic building rects come from origin and catalog footprint. Shared catalog helpers resolve prop footprint, shape, and art. World space is 16 units per cell, with a single exported metres-to-world conversion. `internalSize` is 1200 by 1000 and layout uses `aspectRatio`.
 
-World space uses 16 units per cell, the authoring scale step 5.1 fixes, so a tile lands at scale 1. The static payload reports the frame and its cell size, and the scene layer converts metres through one exported constant. `internalSize` is 1200 by 1000, a near-square logical view with room for the chrome strip; the host lays out from `aspectRatio`.
+`worldRoot` contains `gradedWorld` (map, building statics, props, characters) followed by collision. Chrome is separate and screen-fixed. Step 5.1 can add roofs, phase grade, and emissives inside `gradedWorld`; collision stays above art and ungraded, and the later HUD joins chrome.
 
-The container tree is built for the art pass: `worldRoot` carries `gradedWorld` (map layers, building statics, props, characters, in that order) and then the collision layer, with chrome outside `worldRoot` entirely. Step 5.1 inserts its roofs, world-only phase grade, and emissives inside `gradedWorld` without restructuring, the collision overlay stays above the art and outside the grade as 5.1 requires, and the HUD later joins chrome unscaled and ungraded.
+The header's `overlay_static` is read once at mount. The renderer retains it and builds static layers once; dynamic payloads update stable-id layers. Live play and seeks to the same state produce the same frame. Probes follow the `data-crane-*` convention: ground readiness, first live opening, tick, phase, collision state, centimetre visitor position, camera value, and terminal state.
 
-One recording header pins one village for a whole session, so at mount the renderer reads `ctx.header.overlay_static` once, retains it, and builds the map, the buildings, and the prop, character, and collision layers from it. Each step it reads the dynamic payload and updates those layers by stable id. Nothing rebuilds the village, because no state carries it, and live play and a replay seek to the same state therefore produce the same frame.
+### Camera and collision contracts
 
-The browser suite reads renderer truth through data attributes on the container, the `data-crane-*` convention: `data-three-branches-ground` (ready), `data-three-branches-opening` (seen once the live tick 1 presentation renders), `data-three-branches-tick`, `data-three-branches-phase`, `data-three-branches-collision` (on or off), `data-three-branches-visitor` (the visitor position in centimetres), `data-three-branches-camera` (the shared `cameraProbeValue`), and `data-three-branches-terminal`.
+The shared `base/camera.ts` and `base/camera-gestures.ts` provide limits, fit, clamp, pan, wheel and pinch zoom, and transforms. The renderer:
 
-### The camera
+- uses the village frame as world bounds and fits it into the content viewport below the 54-unit chrome strip;
+- transforms `worldRoot` only, keeping chrome fixed;
+- accepts gestures only in that content viewport, so the collision button cannot pan, zoom, or reset the view;
+- opens every session and replay at the fitted reset, with every cell visible; and
+- uses the shared default clamped zoom range until step 5.2 tunes the maximum.
 
-The shared camera modules carry the whole feature: `base/camera.ts` supplies limits, fit, clamp, pan, wheel and pinch zoom, and the world transform, and `base/camera-gestures.ts` wires the pointer and wheel events, both already proven by Skirmish at Crane Reach. The renderer feeds them the village bounds (the frame in world units), fits against the masked content viewport below the 54-unit chrome strip, applies the resulting transform to `worldRoot`, and keeps chrome screen-fixed. The strip is outside the camera in both directions: the renderer answers the gesture module's `accepts` check with the content viewport, so pressing the collision button never also pans, zooms, or resets the view. The reset view is the fit: the whole village visible with nothing hidden, which is also the state every session and replay opens in. Zoom, pan, and pinch stay inside the module's clamped limits with its default zoom range; step 5.2 tunes the maximum zoom for expression and speech-bubble readability once the final art and HUD exist. This stage guarantees only that camera state is part of no scene computation, so a seek at any zoom renders the same world.
+Camera state is not part of scene computation. A seek at any zoom draws the same world. Tests pin frame-derived bounds, fit, default range, and probe format. The shared camera reducer tests remain in `frontend/test/camera.test.ts`.
 
-### The collision overlay
+The toggleable collision overlay is above the map and depicts:
 
-A viewer-toggleable overlay above the map, at collision truth: every impassable ground cell shaded, which is exactly the water and the building walls; every interactive prop and scenery collision shape drawn from its catalog type, with interactive shapes carrying their type and state labels; doorway ground left visibly open; the four world boundaries; and characters as body circles with a heading tick, id, and expression label. Together the shaded cells and the catalog shapes are the engine's whole static collision model, in the same two layers the engine keeps them in. `catalog.json` supplies prop types and shapes, and `rules.json` supplies ground passability and emote names.
+- every impassable ground cell, including water and building walls, while leaving doorways open;
+- catalog-derived shapes for every interactive prop and scenery item, with interactive type and state labels;
+- all four world boundaries; and
+- every character body circle, heading tick, id, and expression.
 
-The overlay is on by default in this step, since until step 5.1 lands art it is the only depiction of characters and props; 5.1 revisits the default. The toggle is an interactive Pixi button inside the canvas, the pattern the crane order buttons set. It is view-only and never touches `sendAction`, so it works for spectators and replay viewers alike; keyboard access to it arrives with step 5.2's HUD pass.
+It is on by default in this step, is view-only, and works for spectators and replay viewers. Keyboard access arrives with step 5.2.
 
-### Speech
+### Speech, duration, and fixture
 
-Chat is host chrome: every line flows through `StepState.messages` to the shared chat panel, and the renderer draws nothing for them (speech bubbles are step 5.2). Because every line is a broadcast, every socket sees every line, which the e2e journey below is the consumer test for.
+Speech remains host chrome through `StepState.messages`; the renderer draws no bubbles until step 5.2. Messages are range-limited broadcasts or direct lines naming one addressee, and both require hearing range and an unblocked line. Watchers and replay see every delivered line. A visitor controller sees broadcasts delivered to `player_0` and direct lines sent to or received by `player_0`. Stage 5.2 specifies the host controls, and stage 6 implements them.
 
-### Session limits
+Stage 1's live-duration contract is pinned in `backend/src/session/session-duration.ts`. A `resolveSessionMaxDurationMs` regression case pins the Three Branches default: 1200 paced 250-millisecond ticks, six 120-second agent budgets, and the 60-second allowance, or 18 minutes. The roughly five-minute scripted watch day fits this derived limit.
 
-Step 1 landed the derived live-session duration in `backend/src/session/session-duration.ts`. For a cast_5 scripted watch day the ceiling resolves to 1200 ticks times 250 ms pacing, plus six agent episode budgets of 120 seconds, plus the 60 second platform allowance: 18 minutes over a roughly five-minute paced day. A unit case in the backend session-duration test pins the three_branches numbers through `resolveSessionMaxDurationMs`, so this environment's live day provably fits its derived default.
+`scripts/gen_three_branches_fixture.py` records an unpaced Season 1 cast_5 fixture day, with naive cast, scripted visitor, daynight off, and a pinned seed. It writes `frontend/test/fixtures/three-branches-recording.jsonl` with one header and 1200 post-step states. The live tick 1 opening is not a recording requirement. Step 4 regenerates the fixture at each gate.
 
-### The fixture
+The generator asserts fixture properties, not fixed lines or ticks: every cast member moves, one stalls after beginning to walk, the visitor waves, and at least one line is spoken and delivered. The fixture covers static village, simultaneous movement, collision contacts, waves, speech, and seek determinism. Hand-authored unit frames cover remaining emotes, prop transitions, bell, daynight phases, and terminal chrome.
 
-`scripts/gen_three_branches_fixture.py` records one unpaced harness day on the fixture village with the shipped builtins (the naive cast and scripted visitor), Season 1 defaults (cast_5, daynight off), and a pinned seed. It writes `frontend/test/fixtures/three-branches-recording.jsonl` with 1,201 lines: one header plus 1,200 recorded post-step states. The live tick 1 opening presentation is intentionally not part of the recording contract. Step 4 regenerates the file at each of its gates.
+### Browser journeys
 
-The recording is plain JSON in the same words the engine and the guide use, so the renderer tests read it directly. There is no second decoded copy to keep in step and no cross-language drift guard to maintain.
+`frontend/e2e/three-branches/three-branches.spec.ts` creates the `three-branches` group. Add it to the [groups table](../../../docs/contributors/testing/browser-e2e.md#groups).
 
-The fixture is an interactive collision and rendering exercise: the naive cast performs its seeded random walk while the scripted visitor moves through the village. Generation asserts that every cast member moves, at least one cast member stalls after walking begins, the visitor waves, and at least one line is spoken and delivered. It asserts those as properties rather than as pinned ticks or pinned text, so a regenerated fixture never drags a constant behind it. The fixture therefore carries seek determinism, the static village, simultaneous cast and visitor movement, collision contacts, waves, and speech, while renderer coverage of the other visuals (each emote, each prop-transition kind, the bell, the daynight phases, the terminal banner) comes from hand-authored frames in the unit tests.
+- The watch journey starts a pinned-seed scripted watch, checks its fitted live opening and ready canvas, observes increasing ticks, drives clamped zoom and pan, toggles collision, stops the session, then opens replay. Repeating a seek returns identical tick and visitor probes, and replay frame 1 is the first recorded post-step state at fit.
+- The watcher journey uses the spades visibility pattern. Read-only spectators see delivered broadcasts and direct visitor lines live; a mid-session reload has at most one best-effort catch-up copy because only latest state is retained; replay and the reopened ended session show the recorded lines. It carries produced lines forward without pinning text or tick. Visitor-controller visibility of delivered broadcasts and direct lines sent to or from `player_0` stays in the shared host coverage until stages 5.2 and 6 add Three Branches controls.
 
-### The e2e group
-
-`frontend/e2e/three-branches/three-branches.spec.ts`; a directory with a spec under `frontend/e2e/` is the entire wiring. The [groups table](../../../docs/contributors/testing/browser-e2e.md#groups) gains a `three-branches` row. Two journeys, neither waiting out the day:
-
-- Watch, explore, collision truth, stop, exact replay frames. Start a scripted watch from the environment page with a pinned seed, assert the live opening presentation renders at the fitted camera, assert the canvas paints and `data-three-branches-ground` reads ready, poll the tick attribute strictly increasing, drive a wheel zoom and a drag pan and assert the camera attribute changes and clamps, click the collision toggle and assert its attribute flips, stop the session, open the finalized replay, and scrub: the same seek twice yields identical tick and visitor attributes, and replay frame 1 renders the first recorded post-step state at the fitted camera.
-- Every socket sees every line. The spades watcher-visibility pattern: spectator contexts with read-only chat panels see the visitor's lines live; after a mid-session reload, the live best-effort catch-up contains at most one copy because only the latest state is retained; and the recording supplies the same line in replay and on the reopened ended-session page. The journey reads whatever line the session actually produced and carries it forward through replay, so it pins no text and no tick.
-
-Full-day coverage rides the fixture replay in the unit suite, because the day length is fixed and the design declares no length parameter.
+The unit suite exercises the full fixture replay. No e2e journey waits out the day.
 
 ## Tests
 
-- `renderer/overlay.test.ts`: the mount-time shape check accepting the fixture header and rejecting a frame that disagrees with its ground rows, a missing roster, and a state whose character or prop count does not match the header.
-- `renderer/scene.test.ts`: seek-anywhere determinism over the fixture (recompute an already-visited frame after replaying every state and compare deep-equal, with static reference identity), the palette covering exactly `rules.json`'s ground codes, label pins from the shared JSON, chrome pins from hand-authored frames (each emote, each prop state, the bell, each daynight phase, the terminal banner), and an all-frames wall-clock budget.
-- `renderer/collision.test.ts`: the shaded set equal to the impassable ground of the header's grid, water and wall alike; doorway ground unshaded; one drawn shape per interactive prop and scenery item, exact under each facing and catalog extent; the boundary; character circle and heading-tick geometry; and stable ids and labels.
-- `renderer/camera.test.ts`: the village bounds in world units derived from the frame, the fitted reset containing every cell below the chrome strip, the default zoom range, and the probe value format. The reducers themselves stay covered by the shared `frontend/test/camera.test.ts`.
-- `renderer/chrome.test.ts`: the collision toggle centred where the browser journey presses it, and inside the strip. The journey has no DOM control to locate, so a moved button fails here in milliseconds instead of as a press that lands on nothing.
-- `frontend/test/tiled-ground.test.ts`: the added layer stack and reserved empty code, the neighbour mask at edges and corners feeding deterministic variant selection, and one repaint case. The module's existing validation coverage stays as it is.
-- `scripts/tests/test_gen_three_branches_fixture.py`: regenerate the recording in a temporary directory and require it to remain byte-identical to the checked-in fixture.
-- The backend session-duration unit case pinning the derived three_branches limit.
-- The two Playwright journeys above.
-- While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.
+- `renderer/overlay.test.ts` accepts the fixture header and rejects inconsistent ground, missing roster, and mismatched state counts.
+- `renderer/scene.test.ts` checks seek determinism and static reference identity, ground-code palette, shared labels, hand-authored chrome states, and all-frame wall-clock budget.
+- `renderer/collision.test.ts` checks impassable cells, open doors, catalog shapes and facings, boundaries, character geometry, stable ids, and labels.
+- `renderer/camera.test.ts` and `renderer/chrome.test.ts` cover the camera contract and toggle hit rectangle.
+- `frontend/test/tiled-ground.test.ts` covers layer stack, empty code, edge and corner neighbour masks, deterministic variants, and repaint.
+- `scripts/tests/test_gen_three_branches_fixture.py` regenerates a byte-identical temporary fixture; the backend test pins the duration regression; and the two journeys above cover browser behavior, including watcher visibility for broadcasts and direct lines.
+
+Run the `three-branches` e2e group while iterating and the bare full browser suite before handoff.
 
 ## Build order
 
-Five milestones, each ending green:
-
-1. The shared tile base: the layer stack and the neighbour-aware variant hook added to `tiled-ground.ts`, with its unit tests.
-2. The fixture: the generator script and the pinned recording.
-3. Pure scenes: `overlay.ts`, `scene.ts`, and `collision.ts` with the shape-check, determinism, label, hand-authored-frame, and performance suites.
-4. The renderer: the Pixi layers, chrome, toggle, camera mount and gestures, probe attributes, and the `index.ts` swap. Hands-on: `npm run play` shows a local watch-mode day explored close up.
-5. Handoff: the e2e group and its groups-table row, the session-duration pin, the bare full browser e2e run, and the done-when sweep.
+1. Add the shared layer stack and neighbour hook with unit coverage.
+2. Add the generator script and pinned recording.
+3. Add pure overlay, scene, and collision modules with shape, determinism, label, frame, and performance suites.
+4. Add Pixi layers, chrome, toggle, camera, gestures, probes, and the `index.ts` swap. Verify a local watch-mode day.
+5. Add the e2e group and group-table row, duration pin, full browser run, and handoff sweep.
 
 ## Done when
 
-A live match renders in the browser and can be panned and zoomed within bounds, its replay scrubs to exact frames, `npm run play` shows a local watch-mode day, and the bare full browser e2e suite passes.
+A live match renders, pans, and zooms within bounds; replay seeks exact frames; `npm run play` shows a local watch-mode day; and the full browser e2e suite passes.

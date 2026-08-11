@@ -1,57 +1,52 @@
 # Days at Three Branches: Ruleset
 
-Days at Three Branches is one day in the life of a village in Crane Reach. Every NPC in the cast runs a separately constructed copy of one submitted program, differentiated only by the id it reads from its observation. Coordination happens through perception and speech, never through a shared controller or shared memory.
+Days at Three Branches follows one village day in Crane Reach. Every NPC runs a separately constructed copy of one submitted program, distinguished only by the character id in its observation. NPCs coordinate through perception and speech, never shared memory or a shared controller.
 
-One more character walks the village: the visitor. The visitor is not part of the submission. A human plays it in live sessions, and a scripted visitor plays it in automated runs, wandering the village, approaching NPCs, and offering a few lines of talk. Everything an NPC does about the visitor, greeting, following, avoiding, or fleeing, is built from ordinary locomotion and expression.
+The visitor is outside the submission. A human plays it live and `scripted_visitor` plays it in automated runs. NPC behavior toward the visitor, including greeting, following, avoiding, and fleeing, uses ordinary locomotion and expression.
 
-The game is one environment plus one variant: daynight. Seasons switch it on and set the cast size. The season schedule is at the end of this document; the teaching arc behind it lives in [pedagogy.md](pedagogy.md).
+There is one environment variant, `daynight`. Seasons select it and cast size. The [pedagogy arc](pedagogy.md) explains the teaching sequence.
 
 ## Conventions
 
-- Characters move on a continuous 2D plane measured in metres. The village's static map is a grid of square cells. `rules.json` fixes the shipped frame at 100 by 100 cells of 1 metre. Grid and overlay code read those values rather than copying them. The boundary is impassable.
-- A character's state is turtle-style: a position (x, y), a heading, and the metres it moved on the latest tick. Facing is the heading.
-- The map has two layers, and they stay separate. The cell grid carries ground: every cell has one class, and the class carries the cell's speed limit, its passability, and whether it blocks sight. Props stand on that grid: interactive props and solid scenery reserve cells and carry their own catalog collision shape, so a well pump is round and a bench is square. The ground under a prop keeps its own class. Two placed props never share a cell.
-- Water and building walls are impassable ground. Walls are the only ground that blocks sight, so an unblocked line is one that crosses no wall cell, and a doorway carries sight, hearing, and speech normally.
-- A building is a semantic, axis-aligned cell group. Its template paints its site: floor ground inside, wall ground around the perimeter, and a 2-cell doorway run through one side. The building record carries an id, a type, and an origin cell; it has no collision object of its own, never enters use selection or prop-state observations, and does not prevent allowed interior props from standing on its floor.
-- Every range is measured position to position except interactive-prop use and prop perception. Those rules measure to the nearest point on the prop's collision shape.
-- A character is a circle of radius 0.4 m and stands anywhere.
-- Characters have one order: the visitor first, then npc_0 upward. That single order fixes the roster, same-tick prop contention, and the platform's player numbering.
-- Time advances in ticks, and a day is 1200 ticks.
-- The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically on the same platform build. Each season pins one default seed, so its matches all play the same village.
+- Characters move continuously in metres. `rules.json` fixes the shipped grid at 100 by 100 square 1 metre cells. Grid and overlay code read these values.
+- Character state is position, heading, and metres moved on the latest tick. Facing is heading.
+- The grid carries ground. Its class sets speed limit, passability, and sight blocking. Interactive props and solid scenery stand on it, reserve cells, and use catalog collision shapes. The ground beneath a prop retains its class. Placed props do not share cells.
+- Water and building walls are impassable. Only walls block sight. An unblocked line crosses no wall cell, and doorways carry sight, hearing, and speech.
+- A building is a semantic axis-aligned cell group. Its template paints floor inside, wall around the perimeter, and a 2-cell doorway run through one side. Its record has id, type, and origin only; it has no collision object, use selection, or prop-state observation.
+- Ranges measure position to position except interactive-prop use and perception, which measure to the nearest point on the prop collision shape.
+- A character is a 0.4 m circle. The frame boundary is impassable.
+- Character order is visitor, then `npc_0` upward. It sets roster order, same-tick prop contention, and platform player numbering.
+- A day has 1200 ticks. The match seed generates the village, and `scripted_visitor` derives its choices from it. The same seed and action sequence replay identically on the same platform build.
+- Stage 4 blesses one course default seed. Later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
 ## Ticks
 
-A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together:
+Every character chooses one action from the same pre-tick state. The engine then resolves the tick together.
 
-- Movement: every character moves at once, resolved by the physics engine. A character advances at its commanded speed along its heading; solid contact stops it or deflects it along the surface, and nothing passes through a solid or another character. A character commanding speed 0 is immovable for the tick: it turns in place, stays exactly put, and cannot be pushed.
-- Prop use: an interactive prop holds one user at a time. When several characters reach for it in the same tick, the first in character order gets it and the rest resolve to expression none. The visitor leads that order, so a human reaching for a bench is never beaten to it by the cast.
+- **Movement:** Characters advance at commanded speed along heading. Physics stops or slides them at solids and other characters. Speed 0 turns in place, holds position exactly, and cannot be pushed.
+- **Prop use:** One interactive prop holds one user. Same-tick contenders resolve in character order; the visitor leads, so a human is never beaten to a prop by the cast.
 
-A late or missing action, the default, is speed 0, heading unchanged, expression none: the character stands still. Commanded values degrade rather than fail: a heading of 360 wraps to 0, and an expression that is not available, no usable prop or a prop already held, resolves to none.
+A late or missing action is heading unchanged, speed 0, expression none. In-space commands degrade rather than fail: heading 360 wraps to 0, and unavailable expressions, missing usable props, and held props resolve to none.
 
 ## The village
 
-Every match plays in Three Branches, generated from the match seed under fixed guarantees; the full generation rules, districts, and grounds live in [village.md](village.md):
+Every match generates Three Branches from the match seed under the [village layout and placement guarantees](village.md#generation-order-and-guarantees). The village always has five homes, `home_0` through `home_4`, regardless of cast size. `npc_i` lives in `home_(i mod 5)`, placing two villagers in each home for cast_10. The visitor spawns on the road, `network.spawn.edge_inset` cells inside the west edge.
 
-- The stable features are each placed once: the central well with its magic pump, the market beside the raised road, the inn, the repair shed, and the old beacon bell.
-- A trunk river forks into three channels that cross the village, with homes and fields spread along them. Water is impassable, each channel carries the road's crossing and at most one footpath crossing, and the walkable cells, crossings and building floors included, form one connected region.
-- The village always generates five homes, `home_0` through `home_4`, whatever the cast size, so every season plays the same layout. `npc_i` lives in `home_(i mod 5)`, which puts two villagers in each house when the cast is ten. The visitor spawns on the road at the west edge.
-- The generator places the village dressing under [village.md](village.md)'s placement rules. Type data, including every count, lives in the catalog below.
+Every cell has a ground class. `rules.json` holds its speed limit, passability, and sight behavior.
 
-Every cell has a ground class. The classes, their speed limits, their passability, and whether they block sight live in `rules.json`, so a new class is a data entry:
-
-| Ground                                     | Speed limit     | Sight   |
-| ------------------------------------------ | --------------- | ------- |
-| Road, footpaths, and crossings             | 1.0 m per tick  | carries |
+| Ground | Speed limit | Sight |
+| --- | --- | --- |
+| Road, footpaths, and crossings | 1.0 m per tick | carries |
 | Open ground, building floors, and doorways | 0.75 m per tick | carries |
-| Fields and reed banks                      | 0.5 m per tick  | carries |
-| Water                                      | impassable      | carries |
-| Building walls                             | impassable      | blocks  |
+| Fields and reed banks | 0.5 m per tick | carries |
+| Water | impassable | carries |
+| Building walls | impassable | blocks |
 
-The full static layout is standing knowledge for every character: the ground grid with its crossings, walls, doorways, and floors, the semantic buildings, the scenery, and every interactive-prop placement. What changes during play, characters and interactive-prop states, must be perceived.
+The complete static layout is standing knowledge: ground, crossings, walls, doorways, floors, semantic buildings, scenery, and interactive-prop locations. Character and interactive-prop states must be perceived.
 
 ## Canonical catalog
 
-`catalog.json` is the machine-readable source. The following tables are the one canonical human-readable catalog. The placement and art documents link here rather than repeat these values.
+`catalog.json` is the machine-readable source. These tables are the canonical human-readable catalog. Placement and art documents link here rather than restating values.
 
 ### Building templates
 
@@ -83,108 +78,95 @@ The full static layout is standing knowledge for every character: the ground gri
 | pine | 1 by 1, solid inscribed circle | road stations and seeded scatter candidates |
 | crate | 1 by 1, solid box filling its rect | one or two beside each stall |
 
-Props and scenery are solid and never block sight. Only interactive props participate in use selection, holding, transitions, and dynamic prop-state observations; scenery is static layout knowledge.
+Props and scenery are solid but never block sight. Only interactive props participate in use selection, holding, transitions, and dynamic prop-state observations. Scenery is static layout knowledge.
 
 ## Characters
 
-Every character, NPC or visitor, has the same profile:
+NPCs and the visitor share this profile.
 
-| Property    | Value                                                         |
-| ----------- | ------------------------------------------------------------- |
-| Body radius | 0.4 m                                                         |
-| Speed       | commanded as a fraction, 0 to 1 of the ground's limit         |
-| Running     | above 0.5 m per tick reads as running, at or below as walking |
-| Vision      | 120 degree cone on the heading, out to 12 m                   |
-| Hearing     | 6 m, all around, and the range a spoken line carries          |
-| Prop reach  | 1.5 m                                                         |
+| Property | Value |
+| --- | --- |
+| Body radius | 0.4 m |
+| Speed | commanded as a fraction, 0 to 1 of the ground's limit |
+| Running | above 0.5 m per tick reads as running, at or below as walking |
+| Vision | 120 degree cone on the heading, out to 12 m |
+| Hearing | 6 m, all around, and the range a spoken line carries |
+| Prop reach | 1.5 m |
 
-A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day on the floor of its home facing the doorway, housemates spaced at least a body diameter apart, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
+A cast of N has `npc_0` through `npc_N-1` for the full match. The visitor id is `visitor`. Each NPC begins on its home's floor facing the doorway, with housemates at least one body diameter apart. The visitor begins at the road spawn facing along the road into the village. Everyone begins still with expression none. The engine assigns ids and homes; the submission authors roles, personalities, and relationships.
 
 ## Actions
 
-Each tick a character issues one composite action with two independent parts, and both resolve every tick, so a character can walk and wave at once:
+Each tick has locomotion and expression, so a character can walk and wave together.
 
-- Locomotion: a heading and a relative speed from 0 to 1. The character moves at that fraction of the speed limit of the ground under it at the tick's start. Speed 0 turns in place: the new heading applies and the character stays put.
-- Expression: none, one emote, or one prop use.
+- **Locomotion:** heading and relative speed 0 to 1. The fraction applies to the ground speed limit at the tick's start. Speed 0 turns without moving.
+- **Expression:** none, one emote, or one prop use.
 
-Emotes are engine-defined and all available from Season 1:
+All emotes are available from Season 1.
 
-| Emote      | Reads as                        |
-| ---------- | ------------------------------- |
-| wave       | greeting                        |
-| nod        | agreement                       |
-| shake_head | refusal                         |
-| point      | directing attention             |
-| laugh      | amusement                       |
-| shrug      | uncertainty                     |
-| startle    | surprise, a routine interrupted |
-| sleep      | off duty                        |
-| sweep      | a chore                         |
+| Emote | Reads as |
+| --- | --- |
+| wave | greeting |
+| nod | agreement |
+| shake_head | refusal |
+| point | directing attention |
+| laugh | amusement |
+| shrug | uncertainty |
+| startle | surprise, a routine interrupted |
+| sleep | off duty |
+| sweep | a chore |
 
-A prop use engages the nearest interactive prop whose collision shape has its nearest point within reach with an unblocked line to that point, and puts the character into that prop's activity, sitting on a bench or working the pump, visible to observers like an emote. Ties break by canonical prop order. Facing does not enter into it: a prop you are standing beside is always in reach of a use. Selection and reach are judged on the tick's starting pose, and a use needs stillness: commanded speed above 0 resolves the expression to none. A character holds a use by choosing it again each tick, and releases it by choosing anything else, by moving, or by leaving its reach.
+A prop use selects the nearest interactive prop whose nearest collision-shape point is within reach and visible by an unblocked line. Ties use canonical prop order. Facing does not matter. Selection uses the tick's starting pose. Commanded speed above 0 resolves use to none. A character holds use by selecting it each tick and releases it by choosing another expression, moving, or leaving reach.
 
-Every interactive prop starts the day unheld in its start state, and its state follows its transition rule:
+Every interactive prop starts unheld in its start state.
 
-- toggle: the state flips on the tick a use newly begins; holding never retoggles, and the state keeps after release.
-- occupancy: the active state holds exactly while a character holds the use.
-- timed: beginning a use sets the active state, which holds while the use is held and reverts the table's count of ticks after it was last held.
+- **toggle:** State flips when use begins. Holding does not retoggle, and release preserves the state.
+- **occupancy:** Active state lasts exactly while a character holds use.
+- **timed:** Beginning use sets active state. It lasts while held, then reverts after the table's tick count since it was last held.
 
-The interactive-prop table above is `catalog.json`'s content in canonical reading order. A data-only prop type works when it uses an existing transition, placement, and art mechanism.
+A data-only prop type works when it uses an existing transition, placement, and art mechanism.
 
 ## Speech
 
-Speech runs beside the tick action, so a character can speak while doing anything else.
+Speech runs beside the tick action. A message is a broadcast or names one addressee. Broadcast remains available. Both require hearing range and an unblocked line. The beacon bell is the village-wide signal.
 
-- A character may speak one short line per tick, up to 200 code points.
-- The line reaches every character within hearing range with an unblocked line, which is exactly the set of characters that can hear the speaker. If you can hear someone, you hear what they say, so there is no separate loudness to choose and no addressee to pick. The village-wide signal is the beacon bell.
-- A line spoken on tick T reaches its hearers during tick T+1, after they have chosen that tick's action, so the earliest action it can inform is tick T+2's.
-- Every line is public. It appears as a speech bubble over the speaker and in the chat panel of every client, the playing visitor's included, because nothing in this village is hidden from a viewer.
+Each message has at most 200 code points. A message sent on tick T reaches its recipients during T+1 after action choice. The earliest reaction is T+2.
 
-Visitor speech is freeform text typed by a human, or canned lines from the scripted visitor, and NPCs answer with their ordinary speech, so a conversation is two characters standing within hearing range and exchanging lines two ticks apart.
+Visitor speech is freeform human text or canned scripted-visitor text. NPCs use ordinary speech. [Environment speech](environment.md#speech) defines recipient policy and viewer visibility.
 
 ## Perception
 
-Each tick a character receives:
+Every tick, a character receives itself, other characters it sees, other characters it hears, states of visible interactive props, the global bell state, tick, phase, and static standing knowledge.
 
-- Itself: id, position, heading, the distance it moved on the latest tick, and current expression.
-- Every character it sees, within the vision cone with an unblocked line: id, position, heading, distance moved, and current expression.
-- Every character it hears, within hearing range with an unblocked line, whatever the facing: id and position.
-- The state of every interactive prop it sees, under the cone and line rules applied to the nearest point of the prop's collision shape. While the beacon bell rings, every character perceives it, whatever the distance and whatever stands between.
-- The tick number, and the day phase when the daynight variant is on.
+Seen characters are inside the vision cone and an unblocked line, with id, position, heading, latest moved distance, and expression. Heard characters are inside hearing range and an unblocked line, with id and position. Visible prop state uses the same cone and line rule measured to its collision shape. A ringing beacon bell is visible to every character at any distance.
 
-Only wall ground blocks a line, so a doorway lets a villager see and hear into a house while its walls do not, and props and scenery never hide anything.
-
-This observation, plus standing knowledge (the full static layout, the cast roster, and the season's parameter values) and the speech that has reached it, is everything available when the character selects its action. Anything about the past lives in the character's own code.
+Only walls block lines. Doorways carry sight and hearing; props and scenery do not hide anything. This observation, static layout, roster, parameter values, and received speech are all that is available for an action. Past state belongs in the character's code.
 
 ## The daynight variant (Season 4 onward)
 
-The day gains phases, observed by every character:
+| Phase | Ticks |
+| --- | --- |
+| Dawn | 1 to 120 |
+| Morning | 121 to 480 |
+| Midday | 481 to 720 |
+| Evening | 721 to 960 |
+| Night | 961 to 1200 |
 
-| Phase   | Ticks       |
-| ------- | ----------- |
-| Dawn    | 1 to 120    |
-| Morning | 121 to 480  |
-| Midday  | 481 to 720  |
-| Evening | 721 to 960  |
-| Night   | 961 to 1200 |
-
-The phases name the time of day for characters, and set how the village is lit on screen; every movement and perception rule holds around the clock.
+Phases name the time and set screen lighting. Movement and perception rules do not change.
 
 ## The day and the score
 
-A match is one village day and ends at tick 1200.
-
-The episode score is a health check, identical for every player in the cast: 100 when every NPC instance completes the day without crashing, sending a malformed action, or exhausting its compute budget, and 0 otherwise. A single late action is not a failure: the character simply stands still for that tick. Believability is judged by people rather than by this score; each season's human rating is described in [pedagogy.md](pedagogy.md).
+A match ends at tick 1200. The cast health check is 100 when every NPC instance completes without crashing, malformed action, or exhausted compute budget; otherwise it is 0. A late action only stands still for that tick. Human ratings judge believability, as [pedagogy.md](pedagogy.md) defines.
 
 ## Seasons
 
 | Season | Cast | daynight |
-| ------ | ---- | -------- |
-| 1      | 5    | off      |
-| 2      | 10   | off      |
-| 3      | 10   | off      |
-| 4      | 10   | on       |
-| 5      | 10   | on       |
-| 6      | 10   | on       |
+| --- | --- | --- |
+| 1 | 5 | off |
+| 2 | 10 | off |
+| 3 | 10 | off |
+| 4 | 10 | on |
+| 5 | 10 | on |
+| 6 | 10 | on |
 
-Seasons that share a row differ in the course rather than the game; the arc lives in [pedagogy.md](pedagogy.md).
+Seasons sharing a row differ in course design rather than game parameters. See [pedagogy.md](pedagogy.md).
