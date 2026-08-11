@@ -10,7 +10,7 @@ The engine is the physics and rules authority. The environment is the face used 
 
 `pymunk` owns movement. `physics.py` builds one static `pymunk.Space` from the layout at reset and advances it once per tick. Plain Python owns perception, prop logic, ground classes, and speech range. Step 7 helpers, builtins, and template code are stdlib-only. `pymunk` is pinned in `environments/pyproject.toml` and reaches the sandbox through the wheel-dependency flow. `env.py` is the only module importing gymnasium, pettingzoo, or numpy.
 
-The map keeps two layers:
+The engine models the map and characters as follows:
 
 - Grid cells carry speed, passability, and sight. Water and building walls become deterministic coalesced collision rectangles. Sight walks the grid using each class's `blocks_sight` flag.
 - Interactive props and scenery use their catalog box or inscribed-circle shapes. Layout, use selection, perception, the renderer, and clearance helpers resolve those shapes from the type token.
@@ -29,13 +29,15 @@ The map keeps two layers:
 
 ## Data, layout, and engine
 
-`rules.json` and `catalog.json` are import-time-validated shared data files, read by the renderer by relative path. `rules.json` contains the village frame, ordered ground records and fill class, emote order, character profile, contiguous phases, off-variant phase, day length, and substeps. Its loader validates positive dimensions and profile values, unique valid grid codes, an existing passable fill class, an impassable class, nine unique emotes, and contiguous phases. `catalog.json` carries ordered templates and prop types, their identities, footprints, placement data, ground classes, states, transitions, and collision shapes. Its loader validates unique snake_case tokens, positive fitting shapes, valid states and transitions, valid interior props, and known ground classes. [ruleset.md](../ruleset.md) is the human-readable catalog authority. `catalog.py` maps toggle, occupancy, timed, and none to begin, hold, release, and tick functions. `generation.json` is validated by the generation package and is owned by [village.md](../village.md#generation-tuning).
+`rules.json` and `catalog.json` are import-time-validated shared data files that the renderer reads by relative path. `rules.json` contains the village frame, ordered ground records and fill class, emote order, character profile, contiguous phases, off-variant phase, day length, and substeps. Its loader validates positive dimensions and profile values, unique valid grid codes, an existing passable fill class, an impassable class, nine unique emotes, and contiguous phases.
+
+`catalog.json` carries ordered templates and prop types, their identities, footprints, placement data, ground classes, states, transitions, and collision shapes. Its loader validates unique snake_case tokens, positive fitting shapes, valid states and transitions, valid interior props, and known ground classes. [ruleset.md](../ruleset.md) is the human-readable catalog authority. `catalog.py` maps toggle, occupancy, timed, and none to begin, hold, release, and tick functions. The generation package validates `generation.json`, which [village.md](../village.md#generation-tuning) owns.
 
 `Grid` stores frame and ground rows, and provides cell and point conversion, bounds, neighbours, flood fill, and supercover raycasts without attaching meaning to codes. `Layout` is the sole site-painting boundary. From base grid, semantic buildings, props, scenery, and spawn it derives coalesced `blocked` rectangles, catalog-driven `solids`, and distinct prop `occupancy`. It exposes `ground_at`, `body_clear`, `doorway`, and residence start poses. `fixture.py` supplies ASCII land plus semantic placements; invariant tests hold its implementer-chosen cells to [village.md](../village.md).
 
 Physics uses infinite-moment, zero-friction, zero-restitution character circles; four boundaries; and static ground and catalog solids. Per tick, it applies commanded heading and fraction to the pre-tick ground speed, advances `physics.substeps`, then clears velocity. Speed zero makes a character static for that tick: it turns in place and cannot be displaced. Movers have equal mass. The shipped substep count is the smallest that passes a maximum-speed, thinnest-solid no-tunnel test. Solver positions are float32 in observations; recording rounds only at encoding. Same-build rollouts and same-platform replays are exact. Cross-platform bit identity is not promised. The engine draws no randomness.
 
-`Day.step(orders)` degrades commands as [the ruleset](../ruleset.md) requires, resolves expressions on pre-tick state and character-order contention, moves everyone together, applies end-of-tick transitions, then advances tick and serves the new perception and optional phase. `prop_use.py` and `perception.py` implement [the ruleset's](../ruleset.md#actions) use and perception contracts, including a held prop having no fall-through target, walls blocking sight and hearing, props and scenery not blocking either, and the universally perceived bell.
+`Day.step(orders)` degrades commands, resolves expression eligibility and prop candidates from the pre-tick state, moves everyone together, resolves character-order prop contention and end-of-tick transitions, then advances the tick and serves the new perception and optional phase. `prop_use.py` and `perception.py` implement [the ruleset's](../ruleset.md#actions) use and perception contracts. A held prop has no fall-through target, walls block sight and hearing, props and scenery block neither, and everyone perceives the bell.
 
 ## Environment, recording, and builtins
 
@@ -53,7 +55,7 @@ Each message is either a range-limited broadcast or names one addressee. `env.py
 
 ## Registration and milestones
 
-Until the last milestone, the package is in `.envignore` with no renderer directory. Discovery otherwise requires the full authoring shape and forbids a renderer on an ignored package. Registration removes that line and ships the minimal real contracts: a `three-branches-village` `renderer/index.ts` and thumbnail; stand-still raw-observation template and README; `examples/sweeper/`; factual `environment.md`; and explicit `PUBLISHED_EXAMPLES = ()`. Step 3 replaces the renderer, and step 7 replaces student-facing stubs.
+Until the last milestone, the package is in `.envignore` with no renderer directory. Discovery requires the full authoring shape and forbids a renderer on an ignored package. Registration removes that line and ships the minimal real contracts: a `three-branches-village` `renderer/index.ts` and thumbnail; stand-still raw-observation template and README; `examples/sweeper/`; factual `environment.md`; and explicit `PUBLISHED_EXAMPLES = ()`. Step 3 replaces the renderer, and step 7 replaces the student-facing stubs.
 
 Run `npm run sync:envs`, add `three_branches` to both Dockerfile smoke lists, add `("three_branches", "sweeper")` to the compose inventory pin, and stage builtin copies. The existing default `forfeitScore` of 0 is the environment's floor.
 

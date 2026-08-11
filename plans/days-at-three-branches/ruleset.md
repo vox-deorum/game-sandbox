@@ -13,7 +13,7 @@ There is one environment variant, `daynight`. Seasons select it and cast size. T
 - The grid carries ground. Its class sets speed limit, passability, and sight blocking. Interactive props and solid scenery stand on it, reserve cells, and use catalog collision shapes. The ground beneath a prop retains its class. Placed props do not share cells.
 - Water and building walls are impassable. Only walls block sight. An unblocked line crosses no wall cell, and doorways carry sight, hearing, and speech.
 - A building is a semantic axis-aligned cell group. Its template paints floor inside, wall around the perimeter, and a 2-cell doorway run through one side. Its record has id, type, and origin only; it has no collision object, use selection, or prop-state observation.
-- Ranges measure position to position except interactive-prop use and perception, which measure to the nearest point on the prop collision shape.
+- Ranges measure position to position. Interactive-prop use and perception instead measure to the nearest point on the prop collision shape.
 - A character is a 0.4 m circle. The frame boundary is impassable.
 - Character order is visitor, then `npc_0` upward. It sets roster order, same-tick prop contention, and platform player numbering.
 - A day has 1200 ticks. The match seed generates the village, and `scripted_visitor` derives its choices from it. The same seed and action sequence replay identically on the same platform build.
@@ -42,7 +42,7 @@ Every cell has a ground class. `rules.json` holds its speed limit, passability, 
 | Water | impassable | carries |
 | Building walls | impassable | blocks |
 
-The complete static layout is standing knowledge: ground, crossings, walls, doorways, floors, semantic buildings, scenery, and interactive-prop locations. Character and interactive-prop states must be perceived.
+The complete static layout is standing knowledge: ground, crossings, walls, doorways, floors, semantic buildings, scenery, and interactive-prop locations. Characters and interactive-prop states must still be perceived.
 
 ## Canonical catalog
 
@@ -124,7 +124,7 @@ Every interactive prop starts unheld in its start state.
 - **occupancy:** Active state lasts exactly while a character holds use.
 - **timed:** Beginning use sets active state. It lasts while held, then reverts after the table's tick count since it was last held.
 
-A data-only prop type works when it uses an existing transition, placement, and art mechanism.
+A prop type can remain data-only when it uses existing transition, placement, and art mechanisms.
 
 ## Speech
 

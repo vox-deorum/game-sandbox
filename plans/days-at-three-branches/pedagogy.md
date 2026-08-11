@@ -8,7 +8,7 @@ Every season runs the same village and extends the previous season by one small 
 
 Every season requires a healthy full episode: the agent loads, completes the day, and avoids crashes and timeouts. This is the automated score and never measures believability or grading.
 
-The human-rating board is the meaningful leaderboard. Each student writes a short prompt about observable behavior and classmates rate it against the declared design goal. The score invites a 1 to 5 rating.
+The human-rating board is the meaningful leaderboard. Each student writes a short prompt about observable behavior, and classmates rate it against the declared design goal from 1 to 5.
 
 ## Design pillars
 
@@ -27,7 +27,7 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 **Core:** An FSM for wander, patrol, pursue, flee, and idle; steering.
 
-**Optional:** Behavior-tree interruptible routines, such as startle preempting a chore and then resuming. This becomes core in Season 2.
+**Optional:** Behavior-tree interruptible routines, such as a startle that preempts a chore and then resumes it. This becomes core in Season 2.
 
 **Rating prompt:** “Could you tell what my villager wanted at any moment? Rate how alive they felt, 1-5.”
 
@@ -47,7 +47,7 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 **Unlocks:** No new platform capability. Visitor play and [range-limited speech](ruleset.md#speech) were available from Season 1. NPCs now speak and react to a visitor by greeting, following, avoiding, or fleeing with ordinary movement and expression.
 
-**Design issue:** React to an unpredictable human through simple drives such as curiosity, safety, and gossip, not enumerated scripts.
+**Design issue:** React to an unpredictable human through simple drives such as curiosity, safety, and gossip rather than enumerated scripts.
 
 **Core:** Hand-authored drive or utility reactions layered on Season 2 routines.
 
@@ -85,7 +85,7 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 **Unlocks:** Nothing new. Routines, reactions, memory, and chat operate together.
 
-**Design issue:** An open brief that combines the reactive village from Seasons 3 and 4 with Season 5 dialogue. Students define what “more interactive” means for their village.
+**Design issue:** An open brief combining the reactive village from Seasons 3 and 4 with Season 5 dialogue. Students define what “more interactive” means for their village.
 
 **Core:** The student's declared interaction goal.
 

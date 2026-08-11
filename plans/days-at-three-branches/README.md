@@ -8,9 +8,9 @@ Ship Days at Three Branches as a complete Game Sandbox environment. A student cl
 
 ## Contributor build path
 
-Read the design contracts first: [rules](ruleset.md), [village](village.md), [environment interface](environment.md), [teaching arc](pedagogy.md), and [setting](worldview.md). Then work through the numbered [stage plans](stages/) in order where they depend on one another. Step 1 lands the required platform support, including the first simultaneous mask-free `Dict` action space. Nothing here depends on Skirmish at Crane Reach, which continues in parallel.
+Read the design contracts first: [rules](ruleset.md), [village](village.md), [environment interface](environment.md), [teaching arc](pedagogy.md), and [setting](worldview.md). Then follow the numbered [stage plans](stages/) in dependency order. Step 1 lands the required platform support, including the first simultaneous mask-free `Dict` action space. Nothing here depends on Skirmish at Crane Reach, which continues in parallel.
 
-Steps 1 through 4 are a chain. Step 2 registers a real stub with the engine and a fixture village, step 3 replaces it with the browser renderer and watch surface, and step 4 replaces the fixture with the generator. Generation then iterates in the real viewer. Step 5.1 follows 4; step 5.2 follows 5.1 and defines the input UI before step 6 builds it. Step 7 can begin after step 4 and completes after step 6. Step 8 closes the plan.
+Steps 1 through 4 form a chain. Step 2 registers a real stub with the engine and a fixture village. Step 3 replaces the stub with the browser renderer and watch surface, and step 4 replaces the fixture with the generator. Generation then iterates in the real viewer. Step 5.1 follows step 4. Step 5.2 follows step 5.1 and defines the input UI before step 6 builds it. Step 7 can begin after step 4 and completes after step 6. Step 8 closes the plan.
 
 The completed platform stages supply named builtins and restricted seats (16), simultaneous stepping (17), the canonical zod contract (18), composite action spaces (19), and the LLM gateway's proxy, credentials, and budgets. Steps 2 and 3 are the first production use of the simultaneous path.
 
@@ -68,7 +68,7 @@ Cast size and day length stay fixed throughout: `cast_5` in Season 1, `cast_10` 
 
 ## Done when
 
-A student can clone the composed template, run helper pin tests, and run a local day with villagers beside the scripted visitor. A viewer can watch a full live day, scrub its replay to exact frames, and toggle the collision overlay. A human can play the visitor with pointer and keyboard locomotion, the expression palette and its preview, and chat. cast_5 and cast_10 days record and replay identically. Watchers and replay viewers see every delivered line. A human visitor sees broadcasts delivered to `player_0` and direct lines sent to or from `player_0`. The shared conformance suite covers three_branches defaults, tests pin the six season presets, and the platform specification identifies Days at Three Branches as its shipped simultaneous mask-free `Dict` environment.
+A student can clone the composed template, run helper pin tests, and play a local day with villagers beside the scripted visitor. A viewer can watch a full live day, scrub its replay to exact frames, and toggle the collision overlay. A human can play the visitor with pointer and keyboard locomotion, the expression palette and its preview, and chat. `cast_5` and `cast_10` days record and replay identically. Watchers and replay viewers see every delivered line. A human visitor sees broadcasts delivered to `player_0` and direct lines sent to or from `player_0`. The shared conformance suite covers `three_branches` defaults, tests pin all six season presets, and the platform specification identifies Days at Three Branches as its shipped simultaneous mask-free `Dict` environment.
 
 ## Later work
 

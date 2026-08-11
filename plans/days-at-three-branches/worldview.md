@@ -52,7 +52,7 @@ The RPG game shows ordinary life in Three Branches. Routines, conversations, mem
 
 The tactical game shows clashes elsewhere in Crane Reach. Armies are detachments serving banners, temples, or alliances. Battlefields include roads, terraces, river crossings, beacon sites, and towers. Capture points remain mechanical goals.
 
-Both games use local communication with the same character: shouts, runners, bells, lantern signals, and simple magic beacons. Village communication carries warnings and rumors; battle communication carries target calls, movement signals, and requests for help.
+Local communication has the same character in both games: shouts, runners, bells, lantern signals, and simple magic beacons. Village communication carries warnings and rumors; battle communication carries target calls, movement signals, and requests for help.
 
 ## Naming guide
 

@@ -6,9 +6,9 @@ Part of [the plan](../README.md). This step replaces the step 2 fixture behind u
 
 ## Correctness, review, and configuration
 
-The generator paints cells and places rectangles over step 2 grid types. Engine, environment, recording, and renderer contracts do not change. Mechanical guarantees live in [village.md](../village.md#generation-order-and-guarantees) and tests. A village that looks grown rather than drafted is assessed by owner review through `npm run play -- three_branches watch --seed N` with collision overlay enabled. Record each sign-off and its date in this file. No review tooling is added.
+The generator paints cells and places rectangles over step 2 grid types. Engine, environment, recording, and renderer contracts do not change. [village.md](../village.md#generation-order-and-guarantees) and tests define the mechanical guarantees. The owner assesses whether a village looks grown rather than drafted through `npm run play -- three_branches watch --seed N` with the collision overlay enabled. Record each sign-off and its date in this file. No review tooling is added.
 
-`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. The browser receives a complete `Layout`; padded combinations can violate guarantees, and review covers only generated content. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map.
+`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. The browser receives a complete `Layout`. Padded combinations can violate guarantees, so review covers only generated content. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map.
 
 | Area | Ownership |
 | --- | --- |
@@ -22,7 +22,7 @@ The labelled stream remains separate from the scripted visitor's `random.Random(
 
 ## Construction and redraws
 
-The committed order is terrain fields, water, ground classes, road with crossings and spawn, building sites and painting, footpaths, then accessories. Later stages read committed earlier output. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns; only mandatory failure redraws. Local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+The committed order is terrain fields, water, ground classes, road with crossings and spawn, building sites and painting, footpaths, then accessories. Each stage reads the committed output of earlier stages. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
 
 Reset timing includes generation and validation. The batch summary records it for every seed, including reset-default seed 0 and conformance seed 17. It is reported only, with no timing limit or pass/fail assertion.
 
@@ -59,11 +59,11 @@ The owner signs off the dressed village, opening stage close.
 
 ## Gate close and seed blessing
 
-During a gate, tuning is local code and configuration work plus browser review. On a gate close, regenerate `scripts/gen_three_branches_fixture.py`. Its property assertions avoid pinned text and ticks. Perform this regeneration even after a mid-tuning commit. At the first close, revise step 3 to state that its fixture is generated.
+During a gate, tuning consists of local code and configuration work plus browser review. On a gate close, regenerate `scripts/gen_three_branches_fixture.py`. Its property assertions avoid pinned text and ticks. Regenerate even after a mid-tuning commit. At the first close, revise step 3 to state that its fixture is generated.
 
 The pinned full-fidelity batch is `0, 1, 2, 3, 5, 7, 11, 17`; 0 is the reset default and 17 the conformance seed. The owner browses it in local watch sessions and blesses one course default seed. Mechanical close work may use a provisional batch seed and re-runs once blessing occurs. The blessed seed is `test_budget`'s seed and the fixture script's `SEED`, and is recorded here. Later season configuration pins that same blessed seed for each season.
 
-At stage close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence; revalidate the scripted visitor across the batch for a full unstalled day and per-game reset budget; rerun the fixture script at the blessed seed; name it in step 3; run the full browser suite; and report every batch seed's generation-and-validation reset time.
+At stage close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence. Revalidate the scripted visitor across the batch for a full unstalled day and per-game reset budget. Rerun the fixture script at the blessed seed, name it in step 3, run the full browser suite, and report every batch seed's generation-and-validation reset time.
 
 ## Tests
 

@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This step replaces step 2's registered renderer stub with the production watch and replay surface. It is the first production use of simultaneous frontend paths: a browser can watch a live day, explore the village, scrub exact replay frames, and show a local watch-mode day through `npm run play`.
+Part of [the plan](../README.md). This step replaces step 2's registered renderer stub with the production watch and replay surface. It is the first production use of the simultaneous frontend paths. A browser can watch a live day, explore the village, scrub exact replay frames, and show a local watch-mode day through `npm run play`.
 
 ## Scope
 
@@ -38,7 +38,7 @@ The header's `overlay_static` is read once at mount. The renderer retains it and
 
 ### Camera and collision contracts
 
-The shared `base/camera.ts` and `base/camera-gestures.ts` provide limits, fit, clamp, pan, wheel and pinch zoom, and transforms. The renderer:
+The shared `base/camera.ts` and `base/camera-gestures.ts` provide limits, fit, clamp, pan, wheel and pinch zoom, and transforms. The renderer follows these rules:
 
 - uses the village frame as world bounds and fits it into the content viewport below the 54-unit chrome strip;
 - transforms `worldRoot` only, keeping chrome fixed;
@@ -61,11 +61,11 @@ It is on by default in this step, is view-only, and works for spectators and rep
 
 Speech remains host chrome through `StepState.messages`; the renderer draws no bubbles until step 5.2. Messages are range-limited broadcasts or direct lines naming one addressee, and both require hearing range and an unblocked line. Watchers and replay see every delivered line. A visitor controller sees broadcasts delivered to `player_0` and direct lines sent to or received by `player_0`. Stage 5.2 specifies the host controls, and stage 6 implements them.
 
-Stage 1's live-duration contract is pinned in `backend/src/session/session-duration.ts`. A `resolveSessionMaxDurationMs` regression case pins the Three Branches default: 1200 paced 250-millisecond ticks, six 120-second agent budgets, and the 60-second allowance, or 18 minutes. The roughly five-minute scripted watch day fits this derived limit.
+Stage 1's live-duration contract is pinned in `backend/src/session/session-duration.ts`. A `resolveSessionMaxDurationMs` regression case pins the Three Branches default at 18 minutes: 1200 paced 250-millisecond ticks, six 120-second agent budgets, and the 60-second allowance. The roughly five-minute scripted watch day fits this derived limit.
 
 `scripts/gen_three_branches_fixture.py` records an unpaced Season 1 cast_5 fixture day, with naive cast, scripted visitor, daynight off, and a pinned seed. It writes `frontend/test/fixtures/three-branches-recording.jsonl` with one header and 1200 post-step states. The live tick 1 opening is not a recording requirement. Step 4 regenerates the fixture at each gate.
 
-The generator asserts fixture properties, not fixed lines or ticks: every cast member moves, one stalls after beginning to walk, the visitor waves, and at least one line is spoken and delivered. The fixture covers static village, simultaneous movement, collision contacts, waves, speech, and seek determinism. Hand-authored unit frames cover remaining emotes, prop transitions, bell, daynight phases, and terminal chrome.
+The generator asserts fixture properties rather than fixed lines or ticks: every cast member moves, one stalls after beginning to walk, the visitor waves, and at least one line is spoken and delivered. The fixture covers the static village, simultaneous movement, collision contacts, waves, speech, and seek determinism. Hand-authored unit frames cover the remaining emotes, prop transitions, bell, daynight phases, and terminal chrome.
 
 ### Browser journeys
 

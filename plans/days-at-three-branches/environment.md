@@ -18,7 +18,7 @@ Every plan has `seat_0`, the cast, and `seat_1`, the visitor.
 | cast_10 | seat_0, the cast | player_1 through player_10 |
 | cast_10 | seat_1, the visitor | player_0 |
 
-`cast_5` is declared first and is the default. Character order and player numbering are one order: the visitor is character 0 and `player_0`; `npc_i` is character i+1 and `player_(i+1)`. Roster order, prop contention, `possible_agents`, active-player mappings, and conformance use it.
+`cast_5` is declared first and is the default. Character order and player numbering share one sequence: the visitor is character 0 and `player_0`; `npc_i` is character i+1 and `player_(i+1)`. Roster order, prop contention, `possible_agents`, active-player mappings, and conformance use this sequence.
 
 Player ids stay inside the environment. Observations, helpers, and student material use only `visitor` and `npc_0` through `npc_9`. The visitor is identified by `id == "visitor"`, so no observation needs a visitor flag.
 
@@ -48,7 +48,7 @@ Each row is a declared `META.presets` entry, available in web dialogs and throug
 
 ## Match flow
 
-`reset(seed)` generates the village from the session seed and draws no later environment randomness. Every agent receives that seed and its first observation through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that needs a character-specific stream uses `me.rng(observation, session_seed)` during reset, and performs layout work there rather than inside a decision.
+`reset(seed)` generates the village from the session seed. The environment draws no further randomness. Every agent receives that seed and its first observation through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that needs a character-specific stream uses `me.rng(observation, session_seed)` during reset and performs layout work there rather than inside a decision.
 
 Characters begin in the [ruleset's initial poses](ruleset.md#characters). Props begin unheld in their start state. The same seed and action sequence replay identically.
 
@@ -70,7 +70,7 @@ Dict{
 
 An order applies heading, moves at the relative speed, and resolves expression. Action ids 2 through 10 are the [ruleset emotes](ruleset.md#actions) in table order: wave 2, nod 3, shake_head 4, point 5, laugh 6, shrug 7, startle 8, sleep 9, and sweep 10. `none` and `use` keep the low ids so later emotes extend the tail without renumbering.
 
-`use` selects the nearest interactive prop within ruleset reach and an unblocked line, measured to the nearest point on its collision shape. Ties use canonical prop order. Selection uses the pre-tick pose, commanded speed must be 0, and facing is irrelevant. A missing, held, or unavailable target resolves to none. The agent never names a prop.
+`use` selects the nearest interactive prop within ruleset reach and an unblocked line, measured to the nearest point on its collision shape. Ties use canonical prop order. Selection uses the pre-tick pose, commanded speed must be 0, and facing is irrelevant. If the target is missing, held, or unavailable, the expression resolves to none. The agent never names a prop.
 
 Every in-space value is legal in every state, so no action mask is published. Values outside the declared space raise an illegal-participant-action error from `env.step()`. `default_action(env, player_id)` returns the current heading, speed 0, action 0. The harness uses it for a late or missing action.
 
@@ -93,7 +93,7 @@ The observation is a plain `Dict` with fixed Gymnasium shapes after parameter re
 
 `moved` is `Box(0.0, 1.0)`, the metres advanced on the latest tick. `nearby` carries presence only; speech is platform messaging. Expressions are `{"type", "target"}` Text fields, where type is none, an emote, or use and target is a prop id or `"none"`. Roster `home` is `Text(max_length=16)`; the visitor's value is `"none"`. Prop entries are `{"prop", "state"}`.
 
-`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with minimum length 1: character ids are `Text(max_length=8)`; prop and building ids 16; prop types 12; states 9; phase 7; expression type 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`. Tick names the tick whose action will play: reset carries tick 1 and the terminal observation keeps tick 1200. The inbox is not an observation field.
+`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with minimum length 1: character ids are `Text(max_length=8)`; prop and building ids 16; prop types 12; states 9; phase 7; expression type 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`. The `tick` field names the tick whose action will play: reset carries tick 1, and the terminal observation keeps tick 1200. The inbox is not an observation field.
 
 ### The village field
 
@@ -116,7 +116,7 @@ Nothing in `village` changes during an episode. The environment retains one immu
 
 Every nonterminal reward is 0. On tick 1200 every player, including the visitor, receives 100. The platform's forfeit rules realize the health check: a cast member that crashes, submits an illegal action, or exhausts its episode compute budget forfeits the cast seat to floor 0. A session ending early retains its accumulated 0. A late `act` uses the default action and does not fail.
 
-Every honestly completed day scores 100, so the automated board orders by compute-time tiebreak. Believability is judged by people, as [pedagogy.md](pedagogy.md) defines.
+Every completed day that avoids a forfeit scores 100, so the automated board orders by compute-time tiebreak. People judge believability, as [pedagogy.md](pedagogy.md) defines.
 
 ## Speech
 

@@ -14,7 +14,7 @@ Construction order is terrain fields, water, ground classes, road and spawn, bui
 
 The origin is the southwest corner. x runs east and y north. Zero-indexed cell `(cx, cy)` covers `cx * cell_size` to `(cx + 1) * cell_size` metres east and `cy * cell_size` to `(cy + 1) * cell_size` metres north. Its centre is `((cx + 0.5) * cell_size, (cy + 0.5) * cell_size)`.
 
-Characters use continuous metre positions. The grid constrains the map, while ground classes and placed props occupy cells. All four frame edges are impassable. Rules express bounds in cells and fix no coordinate.
+Characters use continuous metre positions. The grid constrains the map, while ground classes and placed props occupy cells. All four frame edges are impassable. Rules express bounds in cells without fixing coordinates.
 
 ## Grounds
 
@@ -33,7 +33,7 @@ Water and wall are impassable. Wall alone blocks sight. Door ground carries sigh
 
 ## The road and paths
 
-- The raised road enters west, winds east, exits east, and uses width `network.road.width`.
+- The raised road enters from the west, winds across the village, exits east, and uses width `network.road.width`.
 - It runs south of the fork, crosses each channel exactly once, never crosses the trunk, and paints bridge ground over water with `network.road.apron` of bank on each side.
 - Footpaths curve from the road to the well plaza, each home cluster, and each shrine at width `network.path.width`. Routes do not run straight for long.
 - The connectivity flood fill uses the same body clearance as physics.
@@ -92,7 +92,7 @@ Every seed satisfies:
 
 ## Generation tuning
 
-`generation.json` is all generator tuning and is validated when the generation package imports. Its groups follow construction.
+`generation.json` contains all generator tuning and is validated when the generation package imports. Its groups follow construction order.
 
 | Group | What it holds |
 | --- | --- |

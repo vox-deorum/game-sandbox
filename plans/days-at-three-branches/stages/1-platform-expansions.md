@@ -2,7 +2,7 @@
 
 Status: complete.
 
-Part of [the plan](../README.md). This landed mask-free simultaneous `Dict` actions, environment-limited broadcasts, live watcher visibility, setup observations, and live-session lifetime. A simultaneous fixture and backend tests cover the contracts.
+Part of [the plan](../README.md). This step landed mask-free simultaneous `Dict` actions, environment-limited broadcasts, live watcher visibility, setup observations, and live-session lifetime. A simultaneous fixture and backend tests cover these contracts.
 
 ## Landed contracts
 
@@ -12,7 +12,7 @@ A simultaneous environment may publish a `Dict` action space without an action m
 
 ### Environment-limited broadcasts
 
-`ChatRouter.deliver` discovers and validates the optional `broadcast_recipients(sender)` hook like `chat_policy`. The hook returns the players a broadcast reaches at that boundary. Without it, broadcasts reach everyone. Three Branches uses the hook for characters within the speaker's hearing range. [communication.md](../../../docs/specs/communication.md) defines the hook.
+`ChatRouter.deliver` discovers and validates the optional `broadcast_recipients(sender)` hook in the same way as `chat_policy`. The hook returns the players a broadcast reaches at that boundary. Without it, broadcasts reach everyone. Three Branches uses the hook for characters within the speaker's hearing range. [communication.md](../../../docs/specs/communication.md) defines the hook.
 
 ### Live watcher visibility
 
@@ -33,7 +33,7 @@ Reset follows the existing timing and attribution path for `act`, `chat`, and `l
 
 `SESSION_MAX_DURATION_MS`, when set, is the positive chargeable-duration limit. Otherwise, a positive `pace_interval_ms` derives the limit from `recommended_episode_ticks * pace_interval_ms`, every agent-controlled player's resolved `episode_timeout_ms`, and a 60-second platform allowance. An absent or zero pace interval uses the 600-second fallback. [execution.md](../../../docs/specs/execution.md), the configuration guide, session setup, and integration tests share this rule.
 
-Human-session idleness is separate: a connected owner socket keeps a human-play session alive, the idle timeout starts after the last owner disconnects, and spectator sockets do not extend that session. Scripted watch sessions retain viewer-based idleness. [frontend.md](../../../docs/specs/frontend.md) and [interaction.md](../../../docs/specs/interaction.md) define the corresponding pause and lifetime rules.
+Human-session idleness is separate. A connected owner socket keeps a human-play session alive, the idle timeout starts after the last owner disconnects, and spectator sockets do not extend that session. Scripted watch sessions retain viewer-based idleness. [frontend.md](../../../docs/specs/frontend.md) and [interaction.md](../../../docs/specs/interaction.md) define the corresponding pause and lifetime rules.
 
 ## Fixture and verification
 
