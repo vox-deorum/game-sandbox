@@ -1,6 +1,6 @@
 # Step 5.1: Art style
 
-Status: in progress. The owner approved the Hearthside Ink direction and bounded prop-calibration policy on 2026-08-09. The implemented catalog dimensions still require the fixture review defined below.
+Status: planned. The owner approved the Hearthside Ink direction on 2026-08-09, and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, roofs that cut away, and one rotating character sheet.
 
 Part of [the plan](../README.md). This is the first of build-order step 5's two signed parts: it replaces step 3's placeholder tileset with the final village identity while preserving the same renderer contract and collision overlay. The hands-on review surface is the pinned fixture replayed in Hearthside Ink, with the collision overlay available as a toggle. The owner's approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
@@ -10,9 +10,9 @@ The village's visual identity is an owner decision. This stage makes that decisi
 
 ## The design: Hearthside Ink
 
-Hearthside Ink is a peaceful domestic sibling to Estuary Ink. It combines Estuary's natural ink wash with flatter woodblock value grouping: parchment ground, quiet water and reeds, warm timber, and small deliberate marks that make a lived-in village readable. It uses an exact 90-degree orthographic 2D RPG plan view. There is no perspective, isometric face, opaque roof, or separate interior scene.
+Hearthside Ink is a peaceful domestic sibling to Estuary Ink. It combines Estuary's natural ink wash with flatter woodblock value grouping: parchment ground, quiet water and reeds, warm timber, and small deliberate marks that make a lived-in village readable. It is drawn as a conventional 2D top-down RPG in exact 90 degree plan view, with every tile a village cell. There is no perspective, isometric face, or separate interior scene.
 
-The approval image fixes the palette, material, projection, scale relationships, and readability standard. It does not fix a canonical generated layout, exact building placement, or incidental scenery placement. Every seed remains a valid interpretation of [village.md](../village.md)'s generator rules.
+Tiles are flat shapes drawn at high resolution rather than pixel art, so the village stays clean at every zoom the camera allows. The approval image fixes the palette, material, value grouping, and readability standard. It does not fix a canonical generated layout, exact building placement, or incidental scenery placement. Every seed remains a valid interpretation of [village.md](../village.md)'s generator rules.
 
 ![Hearthside Ink approval mockup](../art/hearthside-ink-approval.png)
 
@@ -36,63 +36,62 @@ The renderer exports one `HEARTHSIDE_STYLE` palette. Names and values are fixed 
 | violet | #6b5d72 | ash violet | dusk shadow and weathered secondary marks |
 | timber | #8a6246 | cedar timber | building bands, furniture, fences, and warm woodblock grouping |
 
-The world uses broad value groups before small ink detail. Cinnabar identifies the visitor without turning the village into a side-colored game board. NPC palettes are selected deterministically from their character id and use muted combinations of reed, pine, charcoal indigo, ash violet, parchment, and cedar timber. The selection never depends on arrival order or replay history.
+The world uses broad value groups before small ink detail. Cinnabar identifies the visitor without turning the village into a side-coloured game board. NPC palettes are selected deterministically from their character id and use muted combinations of reed, pine, charcoal indigo, ash violet, parchment, and cedar timber. The selection never depends on arrival order or replay history.
 
-### Village, buildings, and interiors
+### The tiled village
 
-Author world and assets at 16 logical px per meter. The world is always drawn in plan view, with x and y mapped directly to the renderer's world axes. Character bodies, prop footprints, and the collision overlay therefore share one unprojected coordinate system.
+Art is authored at 64 px per cell and drawn at the renderer's 16-unit cell, so a tile carries four times the detail the fitted view needs and stays clean when the camera zooms in. The world is always drawn in plan view, with x and y mapped directly to the renderer's world axes, so character bodies, prop footprints, and the collision overlay share one unprojected coordinate system.
 
-Ground begins with the engine-authored 100 by 100 grid from `overlay_static`. Each cell paints one flat color for its class, and all material variation comes from the paper grain over the whole field and from wash, furrow, and reed marks that each cover a four-metre block, so brushwork keeps the scale it was drawn at. Nothing is drawn inside a single metre cell: a mark that fits one cell repeats in every cell in the village and turns the ground into a lattice.
+The ground is the engine-authored grid from `overlay_static`, painted through the shared tile map base in two layers:
 
-The grid is a one-metre point sampling of the same geometry the renderer already draws exactly, so the `road` and `water` classes take the surrounding land color and carry no mark. Water, road, and footpath surfaces come from the decoded channels, road, and footpaths alone, drawn a metre wider than their collision width so the surface covers every cell the engine calls its own. Every channel fills in one pass, so no channel outlines itself over the water it meets at a fork. Bank, road, and path edge strips run down both sides of the surface they edge, repeating at a fixed length along the run rather than being stretched to whatever each segment happens to measure. The road draws over the footpaths that meet it, so the through route reads as one route.
+1. **Fill.** Every cell takes a tile for its ground class. Each class ships a few interior variants, chosen deterministically from the cell so a wide field or a broad channel never reads as a repeating stamp.
+2. **Edges.** A pure pass over the ground grid derives an edge code per cell where a class meets a different one, and the edge layer paints bank lines, road and path shoulders, reed fringes, and field furrow ends over the fill. Both layers ride the shared base's neighbour-mask `variant` hook, which is the only seam between the tileset and the renderer.
 
-The renderer draws the generated channels, road, footpaths, bridges, buildings, doorway gaps, prop rectangles, and scenery from decoded layout geometry. It never substitutes a baked village map.
+Bridge cells take plank tiles over the water fill, so a crossing reads as a deck. Nothing is ever drawn smaller than a cell: a mark that fits inside one cell repeats in every cell of its class and turns the ground into a lattice.
 
-Buildings are permanently open. Each building has a local Pixi container whose origin, rotation, width, depth, and doorway are taken from the generated record, so arbitrary generator rotations remain exact. Its non-solid floor paint lies below occupants. The generated solid wall segments, including the exact 1.2 m doorway gap, render as shallow dark eave and wall bands above occupants. The bands explain the collision shape without concealing people inside. Homes contain only their flat non-solid floor treatment. The inn contains only its hearth. The repair shed contains only its repair bench. Floors, fixtures, bands, doorway clearance, and collision overlay all agree with the generated rectangle and its local rotation.
+### Buildings and cutaway roofs
+
+The ground grid supplies every building floor through its open-ground override. A building record is a semantic grouping, not collision occupancy. Its perimeter is rendered from distinct non-interactive structural wall props, and its 2-cell opening from passable structural doorway props. Those structural props supply the wall and doorway tiles and shapes, while interactive interior props remain separate objects with their own stills and state treatments. Walls draw above occupants as shallow dark eave and wall bands, so the collision truth reads without hiding the people inside.
+
+Each semantic building owns a roof container aligned to its rect. The roof is opaque while the building is empty and clears away while anyone stands inside the building's semantic rect. The target alpha is a pure function of the decoded tick's occupancy of that rect, the between-tick clock eases toward that target, and a seek, a repeated frame, a mount, or a resize snaps straight to it, so cutaway state carries no forward-only history and a replay seek is exact. Homes hold only their floor treatment, the inn holds its hearth, and the repair shed holds its repair bench, exactly as their catalog records say.
 
 ### Static and dynamic Pixi scene
 
-The renderer keeps step 3's shared `pixi-tiledmap` pipeline. It builds the static scene once at mount, from the decoded layout the recording header carries and its 100 by 100 ground grid. That build owns the Tilemap, terrain washes, generated channel, road, path, bridge and building geometry, scenery, permanent prop bases, and static mask instances. A session watches one village, so no tick update and no seek rebuilds it.
+The renderer keeps step 3's shared tile map pipeline. It builds the static scene once at mount from the decoded layout the recording header carries: the two terrain layers, structural wall and doorway props, semantic building roofs, scenery, and permanent interactive-prop bases. A session watches one village, so no tick update and no seek rebuilds it.
 
-Dynamic nodes reconcile by stable id: characters, prop state treatments, phase grade, emissives, and crane ambience. Normal playback uses the shared Pixi ticker to smooth character movement and heading, walking poses, sustained prop effects, and crane motion between decoded ticks.
+Dynamic nodes reconcile by stable id: characters, prop state treatments, roof alpha, phase grade, emissives, and crane dressing. Normal playback uses the shared Pixi ticker to smooth character movement and heading, walking frames, sustained prop effects, and crane motion between decoded ticks.
 
-One decoded tick resolves every state treatment once. The frames in between carry the cast and the sustained effects and touch no artwork, so an in-between frame costs transforms rather than a rebuilt scene, and the collision bodies move with the art they describe. The renderer-local presentation configuration owns the natural one-second transition duration, and a paced host's render options scale it to replay or watch cadence. A live human session is unpaced and passes no cadence at all, so the renderer measures the gap between arriving states and animates over that instead, capped at the natural duration; without it a quarter-second village would crawl through a one-second transition and draw the cast three ticks behind where it is. The frame loop holds briefly after a transition settles rather than stopping, because restarting it at every tick boundary costs a frame and reads as a stutter. A seek, repeated frame, mount, or resize computes the same retained endpoint directly from the decoded tick, state, and id. It carries no forward-only visual state. Masks are reused, and texture loading comes through the renderer-local manifest.
+One decoded tick resolves every state treatment once. The frames in between carry the cast and the sustained effects and touch no artwork, so an in-between frame costs transforms rather than a rebuilt scene, and the collision bodies move with the art they describe. The renderer-local presentation configuration owns the natural one-second transition duration, and a paced host's render options scale it to replay or watch cadence. A live human session is unpaced and passes no cadence at all, so the renderer measures the gap between arriving states and animates over that instead, capped at the natural duration; without it a quarter-second village would crawl through a one-second transition and draw the cast three ticks behind where it is. The frame loop holds briefly after a transition settles rather than stopping, because restarting it at every tick boundary costs a frame and reads as a stutter. Masks are reused, and texture loading comes through the renderer-local manifest.
 
 The world layer order is fixed:
 
-1. Night-ink surround, ground Tilemap, and paper and terrain washes.
-2. Generated water, roads, paths, bridge decks, scenery shadows, and building floors.
-3. Static prop bases and dynamic prop stills.
+1. Night-ink surround and the two terrain tile layers, including building floor ground and bridge planks.
+2. Scenery shadows and static interactive-prop bases.
+3. Dynamic interactive-prop stills.
 4. Character shadows and characters.
-5. Building wall and eave bands, doorway-side details, and any prop effect that belongs above a character.
-6. The world-only day-phase color grade.
+5. Structural wall and doorway props, semantic building roofs, and any prop effect that belongs above a character.
+6. The world-only day-phase colour grade.
 7. Sparse post-grade emissives, including lit lantern and hearth warmth.
 8. The collision overlay, always above the art and never graded.
 
-HUD and interaction layers are not part of this stage. Step 5.2 owns them, and they are never color-graded by the world phase treatment.
+HUD and interaction layers are not part of this stage. Step 5.2 owns them, and they are never colour-graded by the world phase treatment.
 
-### Characters and presentation levels
+### Characters
 
-`presentationFor(bodyCssWidth)` is a pure helper based on the character's displayed CSS width. It does not own camera zoom, fitting, or panning.
+A character is one sprite sheet authored facing north and rotated to the exact recorded heading, so facing on screen is the heading the engine holds and the vision cone reads honestly. The sheet carries a rest frame and a short walk cycle; the cycle advances one frame per tick from the character id, the tick, and the movement state, so the stride keeps pace with the ground a walker covers and a replay seek is exact. A shadow sits under the body and a small direction mark rides the sprite, both readable when the village is fitted and the bodies are small.
 
-- Compact is below 12 CSS px: a high-contrast top-down head, shadow, and rotated direction mark. The hands are omitted.
-- Simple is 12 CSS px through below 24 CSS px: the selected top-down head or headwear sprite and the shared hands layer.
-- Detailed is 24 CSS px and above: the same head and hands at full texture detail.
-
-The head and hands containers rotate to the exact recorded heading. Each head has one small asymmetric north marker, such as a bun, scarf tail, cap knot, or hood tie, so facing remains readable from the art. The separate direction mark reinforces it at compact scale. The shared hands sheet provides rest, left-forward, passing, and right-forward frames around an empty center reserved for the head. Walking frames use a deterministic tick, character id, and movement-state selection, so replay seek is exact. The cycle advances one frame per tick, so the stride keeps pace with the ground a walker actually covers.
-
-The visitor uses a small cinnabar hood tie alongside the same warm materials as villagers. A stable character-id hash selects one of the three villager heads. NPCs remain people rather than team tokens, and no body or clothing layer is drawn.
+A stable character-id hash selects one of the villager sheets. The visitor uses a small cinnabar hood tie alongside the same warm materials as villagers. NPCs remain people rather than team tokens.
 
 ### Props, state stills, and sustained motion
 
-Every state in `props.json` has a distinct readable still. The art is driven by the existing prop id, type, state, rotation, and tick, never by inferred use history.
+Every state in the catalog has a distinct readable still, drawn across the prop's reserved cells and turned to its facing. The art is driven by the existing prop id, type, state, facing, and tick, never by inferred use history.
 
 | Prop | Still treatment |
 | --- | --- |
 | Market stall | `open` shows a raised awning, displayed goods, and a pale counter; `closed` has a lowered shutter and cleared counter. |
 | Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. |
 | Bench | `occupied` has a distinct laid cushion or folded wrap; `empty` leaves the bare slats readable. |
-| Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine. |
+| Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine under its roof. |
 | Notice board | Its single `none` state is a fixed readable board with pale posted notices. |
 | Garden plot | `tended` has ordered dark furrows and young green rows; `overgrown` has irregular pine-green growth that does not hide the fence. |
 | Inn hearth | `lit` has a gilt-and-cinnabar coal core; `unlit` has cool ash and stacked dark wood. |
@@ -102,71 +101,55 @@ Every state in `props.json` has a distinct readable still. The art is driven by 
 
 The only sustained prop animations are a lit lantern's restrained flicker, a lit hearth's fire, a tended shrine's incense drift, a flowing pump's water, and a ringing bell's swing. Each is a function of fractional playback tick, prop id, and current state, with a phase derived from a stable hash. It is smooth between recorded ticks and safe to seek directly to any replay tick.
 
-White cranes are sparse renderer dressing, not layout or game data. Their count, start, route, and frame derive from the static-layout key and tick. They have no footprint and no collision or perception effect. Each crane is drawn facing north like every other rotatable sprite here, and turns onto the tangent of the lane it flies.
+Because the catalog drives the stills, a new prop type needs no renderer change only when it reuses an existing placement token, art treatment, and transition mechanism. Other types extend the relevant generator, art, or state contracts.
+
+White cranes are sparse renderer dressing, not layout or game data. Their count, start, route, and frame derive from the static-layout key and tick. They have no cell, no footprint, and no collision or perception effect. Each crane is drawn facing north like every other rotatable sprite here, and turns onto the tangent of the lane it flies.
 
 ### Day phase
 
-When `daynight` is enabled, the phase name derived by the overlay selects one world-only color grade for dawn, morning, midday, evening, or night. It changes the broad wash and contrast without changing geometry, state meaning, or the palette's identity. Sparse emissives render after this grade, so lanterns and the hearth retain their warm readability at night. When daynight is off, the `day` grade is neutral. The collision overlay and the HUD implemented later remain ungraded.
+When `daynight` is enabled, the phase name derived by the overlay selects one world-only colour grade for dawn, morning, midday, evening, or night. It changes the broad wash and contrast without changing geometry, state meaning, or the palette's identity. Sparse emissives render after this grade, so lanterns and the hearth retain their warm readability at night. When daynight is off, the `day` grade is neutral. The collision overlay and the HUD implemented later remain ungraded.
 
 ### Assets and thumbnail
 
-The renderer declares a local manifest as the only runtime loading contract. High-resolution originals, including superseded source variants, live in `environments/three_branches/renderer/source-art/`. Optimized runtime files live in `environments/three_branches/renderer/assets/`. Grayscale-alpha masks are used wherever a texture needs palette tinting. Full-color raster art is reserved for paper grain or a treatment that cannot be represented as a tintable mask.
+The renderer declares a local manifest as the only runtime loading contract. High-resolution originals, including superseded source variants, live in `environments/three_branches/renderer/source-art/`. Optimised runtime files live in `environments/three_branches/renderer/assets/`. Grayscale-alpha masks are used wherever a texture needs palette tinting. Full-colour raster art is reserved for a treatment that cannot be represented as a tintable mask.
 
-Renderer presentation tuning lives in `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`. It owns the Hearthside palette, ground variants, presentation thresholds, phase grades, prop effects, and crane dressing. `generation.json` remains limited to village-generation tuning, so visual calibration never changes seeded layout generation.
+Renderer presentation tuning lives in `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`. It owns the Hearthside palette, the ground fill variants and edge mapping, the roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains limited to village-generation tuning, so visual calibration never changes seeded layout generation.
 
-The manifest names the source file, runtime file, dimensions, tintability, consumer, and frame grid where an asset is a sprite sheet. The exact 65-entry contract lives in [`renderer/assets.ts`](../../../environments/three_branches/renderer/assets.ts):
+The manifest names the source file, runtime file, dimensions, tintability, consumer, and frame grid where an asset is a sprite sheet. It lives in [`renderer/assets.ts`](../../../environments/three_branches/renderer/assets.ts) and its entry count is recorded here when it lands:
 
-| Group | Entries | Runtime dimensions | Contents |
-| --- | --: | --- | --- |
-| Paper and ground | 16 | 512 by 512 paper grain; 128 by 128 wash masks; 128 by 64 road, furrow, reed, and ripple marks | Paper tooth, three wash variants, and three variants for each class-specific mark. Ripple and dry-brush marks ride the water and road surfaces themselves, where they can be seen. |
-| Linear geometry and buildings | 10 | 128 by 64 through 256 by 64; 128 by 128 or 192 by 128 floors | Bank, road, and path edges; bridge planks; wall, eave, and doorway marks; home, inn, and repair-shed floors. |
-| Solid scenery | 6 | 128 by 128 | Three pine canopies, a market crate, a market barrel, and a shrine roof post. |
-| Props | 19 | 128 by 128, 192 by 128, or 256 by 128 | One still for every catalog state, including the notice board's single state. |
-| Characters | 7 | 64 by 64 marks; 192 by 192 heads; 768 by 192 hands sheet | Shadow and direction marks, three rotatable villager heads, the visitor head, and shared four-frame hands. |
-| Effects and dressing | 7 | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses. |
+| Group | Runtime dimensions | Contents |
+| --- | --- | --- |
+| Terrain | 64 px cells on one atlas page | For each ground class, a few interior fill variants and its edge and corner set, plus the bridge plank tiles |
+| Buildings | 64 px cells | Structural wall and doorway tiles, plus semantic roof tiles for the home, the inn, and the repair shed |
+| Props | cell-sized stills up to 3 by 2 cells | One still for every catalog state, including the notice board's single state |
+| Scenery | 64 px cells | Three red pine variants and the market crate |
+| Characters | 192 by 192 frames | One rotatable sheet per villager variant and one for the visitor, each with a rest frame and its walk cycle, plus shadow and direction marks |
+| Effects and dressing | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses |
 
-Every head is authored facing north and rotates continuously around its center. The hands sheet holds four 192 by 192 north-facing frames in manifest order: rest, left forward, pass, and right forward. The head and hands share one center and rotate together. Prop entries fix the file and state contract, while the calibration review below fixes the painted physical extents before those assets are accepted as final.
+The separate 320 by 180 thumbnail is a final Hearthside Ink village image, not a screenshot requirement or a map claim. It uses night ink around a parchment village fragment: a slack-water branch, a low crossing, one home with its garden, warm lantern light, and a small cinnabar visitor. It communicates the approved style without declaring a canonical seed or layout.
 
-The separate 320 by 180 thumbnail is a final Hearthside Ink village image, not a screenshot requirement or a map claim.
+### Visual agreement with collision truth
 
-The thumbnail uses night ink around a parchment village fragment: a slack-water branch, a low bridge, one open home with its garden, warm lantern light, and a small cinnabar visitor. It communicates the approved style without declaring a canonical seed or layout.
-
-### One-time prop geometry calibration
-
-Before final art assets are produced, implement the bounded calibration policy by proposing one complete dimensions table for the existing prop catalog and reviewing it with the owner in the pinned fixture. Art may revise a prop type's width and depth only when its physical form requires it. The reviewed table updates `props.json`, [village.md](../village.md), [ruleset.md](../ruleset.md), relevant environment or platform specifications, physics, generation, fixture positions, overlay expectations, and tests in the same implementation. Physical art, physics shapes, and collision-overlay footprints must match. Shadows, glow, smoke, and other non-solid effects may extend beyond the footprint. Prop ids, counts, states, transitions, districts, and the universal 1.5 m reach remain fixed. Exterior props stay at or below 4 m in width and depth. Interior props fit their building and leave the doorway clear. The owner approves the complete table before final production assets are accepted.
-
-The implemented review table preserves the existing physical catalog except for the fixed garden calibration:
-
-| Prop | Width | Depth |
-| --- | ---: | ---: |
-| Market stall | 1.5 m | 1.5 m |
-| Lantern post | 0.6 m | 0.6 m |
-| Bench | 1.6 m | 0.5 m |
-| Roadside shrine | 1.5 m | 1.5 m |
-| Notice board | 0.6 m | 0.6 m |
-| Garden plot | 4.0 m | 3.0 m |
-| Inn hearth | 0.6 m | 0.6 m |
-| Repair bench | 1.6 m | 0.5 m |
-| Well pump | 0.6 m | 0.6 m |
-| Beacon bell | 0.6 m | 0.6 m |
-
-The garden plot calibration is fixed now: it is a 4.0 m by 3.0 m solid fenced plot with no gate. Its 4 m edge is centered on, parallel to, and flush with the home wall opposite the doorway, extending outward from the building. This keeps the doorway and its approach clear. Villagers tend the plot from outside. Prop selection and tie ranking change for every prop from center distance to distance from the nearest point on its rotated footprint, with the unblocked line checked to that nearest point and a canonical-index tie break. All non-prop ranges remain position-to-position. This rule replaces the position-to-position prop wording in [ruleset.md](../ruleset.md), [environment.md](../environment.md), and [step 2](2-engine-and-environment.md). Step 5.2's use preview and step 7's `props.in_reach` and `props.usable` helpers use the same engine-owned footprint-distance and nearest-point rule, and their tests pin them to engine selection. This implementation updates fixture plot positions and step 4's generator guarantees and standing witnesses. The environment is pre-release, so no historical overlay compatibility layer is needed. Static recording fixtures and pins regenerate together.
+[ruleset.md](../ruleset.md) owns the canonical catalog tables for cells, collision shapes, counts, states, and transitions, and separately fixes prop reach. Physical art and collision-overlay drawings must agree with those records exactly. Round shapes must read round, so a walker visibly slides around the pump, hearth, bell, lantern, and pine. Structural wall props read as solid perimeter pieces, while passable structural doorway props visibly keep the 2-cell opening clear. Shadows, glow, smoke, and other non-solid effects may extend beyond a collision shape. Any art that needs a different extent changes the canonical catalog and its dependent generator, fixture, overlay, and test contracts in the same implementation.
 
 ### Review boundary
 
-Review the fixture and generated seeds at compact, simple, and detailed presentation levels by rendering fixed review scales on the existing surface. This review does not depend on camera controls. Step 5.2 later verifies the same thresholds through interactive zoom. This stage does not choose camera limits, pan behavior, HUD typography, speech-bubble layout, use preview, or input controls. It retains the step 3 collision toggle on watch, replay, and play surfaces.
+Review the fixture and generated seeds at fitted, mid, and close review scales by rendering fixed scales on the existing surface. This review does not depend on camera controls. Step 5.2 later verifies the same readability through interactive zoom. This stage does not choose camera limits, pan behaviour, HUD typography, speech-bubble layout, use preview, or input controls. It retains the step 3 collision toggle on watch, replay, and play surfaces.
 
 ## Tests
 
-- Renderer scene tests prove that one static Tilemap and generated static geometry build per static-layout key, dynamic nodes reconcile by id, and no tick rebuilds static ground or layout geometry.
-- Projection and presentation tests cover the exact 90-degree plan projection, arbitrary building rotation, open interiors, floors below occupants, wall and eave bands above them, the 1.2 m doorway gap, and values on both sides of the 12 and 24 CSS px thresholds. They also prove the exact-heading direction mark remains readable.
-- Prop-catalog tests validate the exterior 4 m size cap and a distinct still for every shipped state. State tests cover stall, bench, board, plot, repair bench, lantern, hearth, shrine, pump, and bell treatments.
-- Deterministic seek tests compare direct renders and replayed renders for every sustained animation, phase grade, character walk frame, and crane dressing. Interpolation tests cover exact endpoints, smooth midpoints, cadence scaling, the measured-gap fallback for an unpaced host, shortest-path heading turns, and offscreen crane wrapping. A per-frame motion pass is proved to reach the same retained pose as a full decoded tick.
+- Renderer scene tests prove that the static terrain layers and building containers build once per static-layout key, that dynamic nodes reconcile by id, and that no tick rebuilds static tiles.
+- Tile tests cover the fill variant choice being deterministic per cell, the derived edge codes for every class boundary including frame edges and corners, and bridge planks landing on exactly the bridge cells.
+- Building tests cover open floor ground matching each semantic building rect, structural wall and passable doorway props matching its perimeter and 2-cell opening, walls drawing above occupants, and roof alpha resolving from semantic-building occupancy alone, with a seek snapping to the target and a replayed render equal to a direct one.
+- Prop tests validate a distinct still for every shipped state, correct placement under each facing, and the catalog cap on exterior footprints. State tests cover stall, bench, board, plot, repair bench, lantern, hearth, shrine, pump, and bell treatments.
+- Shape tests prove every circular interactive prop and pine is drawn round within its catalog extent, every box interactive prop fills its catalog extent, and structural walls and doorways use their recorded solid and passable shapes.
+- Character tests cover the rotation to the exact heading, deterministic walk-frame selection from id, tick, and movement state, and villager sheet selection from the character-id hash.
+- Deterministic seek tests compare direct renders and replayed renders for every sustained animation, phase grade, walk frame, roof state, and crane. Interpolation tests cover exact endpoints, smooth midpoints, cadence scaling, the measured-gap fallback for an unpaced host, shortest-path heading turns, and offscreen crane wrapping. A per-frame motion pass is proved to reach the same retained pose as a full decoded tick.
 - Phase tests prove one world-only grade, post-grade emissives, neutral day when daynight is off, and ungraded collision overlay and HUD boundary.
-- Asset tests validate the renderer-local manifest, dimensions, source-art originals, optimized runtime files, tintable masks where declared, and the final thumbnail.
-- Prop calibration tests cover the catalog's exterior size cap, the garden's 4.0 m by 3.0 m rotated footprint centered against the wall opposite each doorway, clear doorway approaches, nearest-edge reach boundary, nearest-point line check, canonical-index ties, fixture and generator standing witnesses, overlap rules, physics/body-clear agreement, and renderer/collision footprint agreement. They also prove interior props fit and keep doorways clear.
+- Asset tests validate the renderer-local manifest, dimensions, source-art originals, optimised runtime files, tintable masks where declared, and the final thumbnail.
+- Collision agreement tests prove that structural wall props are exactly the solid wall shapes the overlay draws, structural doorway props are passable, and every interactive prop and scenery sprite sits on the shape the overlay draws for it.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
 
 ## Done when
 
-The fixture and generated villages replay in the approved Hearthside Ink style with exact plan-view open interiors, deterministic state treatments, phase grade, and a toggleable collision overlay that agrees with collision truth. The owner has approved the implemented prop-dimensions table, and that calibrated geometry, including the fenced garden, is implemented across data, rules, physics, generation, fixtures, recordings, and tests. The manifest assets and thumbnail load in the production build, the Three Branches and bare full browser e2e suites pass, and the owner's 2026-08-09 direction and policy approval remain recorded in this file.
+The fixture and generated villages replay in the approved Hearthside Ink style with autotiled terrain, cutaway roofs, deterministic state treatments, phase grade, and a toggleable collision overlay that agrees with collision truth. The manifest assets and thumbnail load in the production build, the Three Branches and bare full browser e2e suites pass, and the owner's direction and presentation approvals remain recorded in this file.
