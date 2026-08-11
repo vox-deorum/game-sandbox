@@ -67,15 +67,15 @@ HUD and interaction layers are not part of this stage. Step 5.2 owns them, and t
 
 ### Characters and presentation levels
 
-`presentationFor(bodyCssWidth)` is a pure helper based on the body's displayed CSS width. It does not own camera zoom, fitting, or panning.
+`presentationFor(bodyCssWidth)` is a pure helper based on the character's displayed CSS width. It does not own camera zoom, fitting, or panning.
 
-- Compact is below 12 CSS px: a high-contrast body mark, shadow, and rotated direction mark.
-- Simple is 12 CSS px through below 24 CSS px: an eight-direction sprite with a clear apron, hair, or sleeve silhouette.
-- Detailed is 24 CSS px and above: an eight-direction, four-frame sprite with legible domestic clothing and a restrained personal palette.
+- Compact is below 12 CSS px: a high-contrast top-down head, shadow, and rotated direction mark. The hands are omitted.
+- Simple is 12 CSS px through below 24 CSS px: the selected top-down head or headwear sprite and the shared hands layer.
+- Detailed is 24 CSS px and above: the same head and hands at full texture detail.
 
-The sprite's facing is quantized only for its body art. A separate rotated direction mark shows the exact recorded heading at every level, including headings between the eight sprite directions. Walking frames use a deterministic tick, character id, and movement-state selection, so replay seek is exact. Under reduced motion, the selected standing frame remains still.
+The head and hands containers rotate to the exact recorded heading. Each head has one small asymmetric north marker, such as a bun, scarf tail, cap knot, or hood tie, so facing remains readable from the art. The separate direction mark reinforces it at compact scale. The shared hands sheet provides rest, left-forward, passing, and right-forward frames around an empty center reserved for the head. Walking frames use a deterministic tick, character id, and movement-state selection, so replay seek is exact. Under reduced motion, the rest frame remains still.
 
-The visitor uses cinnabar in a restrained sash, coat panel, or head covering alongside the same warm materials as villagers. NPCs remain people rather than team tokens: their stable id palette and silhouette are enough to follow them over a day.
+The visitor uses a small cinnabar hood tie alongside the same warm materials as villagers. A stable character-id hash selects one of the three villager heads. NPCs remain people rather than team tokens, and no body or clothing layer is drawn.
 
 ### Props, state stills, and sustained motion
 
@@ -106,7 +106,7 @@ When `daynight` is enabled, the phase name derived by the overlay selects one wo
 
 The renderer declares a local manifest as the only runtime loading contract. High-resolution originals, including superseded source variants, live in `environments/three_branches/renderer/source-art/`. Optimized runtime files live in `environments/three_branches/renderer/assets/`. Grayscale-alpha masks are used wherever a texture needs palette tinting. Full-color raster art is reserved for paper grain or a treatment that cannot be represented as a tintable mask.
 
-The manifest names the source file, runtime file, dimensions, tintability, consumer, and frame grid where an asset is a sprite sheet. The exact 69-entry contract lives in [`renderer/assets.ts`](../../../environments/three_branches/renderer/assets.ts):
+The manifest names the source file, runtime file, dimensions, tintability, consumer, and frame grid where an asset is a sprite sheet. The exact 65-entry contract lives in [`renderer/assets.ts`](../../../environments/three_branches/renderer/assets.ts):
 
 | Group | Entries | Runtime dimensions | Contents |
 | --- | --: | --- | --- |
@@ -114,10 +114,10 @@ The manifest names the source file, runtime file, dimensions, tintability, consu
 | Linear geometry and buildings | 10 | 128 by 64 through 256 by 64; 128 by 128 or 192 by 128 floors | Bank, road, and path edges; bridge planks; wall, eave, and doorway marks; home, inn, and repair-shed floors. |
 | Solid scenery | 6 | 128 by 128 | Three pine canopies, a market crate, a market barrel, and a shrine roof post. |
 | Props | 19 | 128 by 128, 192 by 128, or 256 by 128 | One still for every catalog state, including the notice board's single state. |
-| Characters | 11 | 64 by 64 marks; 1024 by 128 simple sheets; 1536 by 768 detailed sheets | Shadow, direction and compact marks, three villager variants, and the visitor. |
+| Characters | 7 | 64 by 64 marks; 192 by 192 heads; 768 by 192 hands sheet | Shadow and direction marks, three rotatable villager heads, the visitor head, and shared four-frame hands. |
 | Effects and dressing | 7 | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses. |
 
-Each simple character sheet holds eight 128 by 128 direction frames in manifest order. Each detailed sheet holds eight 192 by 192 directions across four rows: stand, left step, pass, and right step. Prop entries fix the file and state contract, while the calibration review below fixes the painted physical extents before those assets are accepted as final.
+Every head is authored facing north and rotates continuously around its center. The hands sheet holds four 192 by 192 north-facing frames in manifest order: rest, left forward, pass, and right forward. The head and hands share one center and rotate together. Prop entries fix the file and state contract, while the calibration review below fixes the painted physical extents before those assets are accepted as final.
 
 The separate 320 by 180 thumbnail is a final Hearthside Ink village image, not a screenshot requirement or a map claim.
 

@@ -101,9 +101,34 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
     (package / "renderer").mkdir()
     (package / "tests").mkdir()
 
-    spec = _envs._template_spec(package, SimpleNamespace(display_name="Hearts", human_players=()))
+    spec = _envs._template_spec(
+        package,
+        SimpleNamespace(display_name="Hearts", human_players=()),
+        SimpleNamespace(overlay_static=None),
+    )
     assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
     assert spec.player_id == "player_0"
+    assert spec.has_overlay_static is False
+
+
+@pytest.mark.parametrize(
+    ("overlay_static", "expected"),
+    [(None, False), (lambda _env: {"k": 1}, True)],
+)
+def test_template_spec_discovers_static_overlay_capability(
+    overlay_static: object, expected: bool, tmp_path: Path
+):
+    package = tmp_path / "example"
+    package.mkdir()
+    (package / "env.py").write_text("", encoding="utf-8")
+
+    spec = _envs._template_spec(
+        package,
+        SimpleNamespace(display_name="Example", human_players=()),
+        SimpleNamespace(overlay_static=overlay_static),
+    )
+
+    assert spec.has_overlay_static is expected
 
 
 def test_environment_wheel_excludes_canonical_guides_and_keeps_license(tmp_path: Path):
@@ -132,13 +157,17 @@ def test_skirmish_crane_is_installable_and_discovered_as_an_environment():
     package_names = {path.name for path in _envs.package_dirs()}
     patterns = _envs._ignore_patterns()
     recognized_names = {path.name for path in _envs.recognized_package_dirs()}
-    discovered_names = set(_envs.discover_environments())
+    discovered = _envs.discover_environments()
+    discovered_names = set(discovered)
     pyproject = (REPO_ROOT / "environments" / "pyproject.toml").read_text(encoding="utf-8")
 
     assert "skirmish_crane" in package_names
     assert not _envs._is_ignored("skirmish_crane", patterns)
     assert "skirmish_crane" in recognized_names
     assert "skirmish_crane" in discovered_names
+    assert discovered["skirmish_crane"].spec.has_overlay_static is True
+    assert discovered["three_branches"].spec.has_overlay_static is True
+    assert discovered["flappy_bird"].spec.has_overlay_static is False
     assert (
         'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades", '
         '"three_branches"]' in pyproject

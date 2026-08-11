@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -24,6 +25,19 @@ from compose import (  # noqa: E402
 )
 from game_sandbox_harness.environment import load_environment  # noqa: E402
 from game_sandbox_harness.manifest import load_agent  # noqa: E402
+
+
+def _isolate_composed_sandbox(out: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the next sandbox import come from one composed template output."""
+    sandbox_modules = [
+        module_name
+        for module_name in sys.modules
+        if module_name == "sandbox" or module_name.startswith("sandbox.")
+    ]
+    for module_name in sandbox_modules:
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.syspath_prepend(str(out))
+    importlib.invalidate_caches()
 
 
 def test_compose_template_has_base_and_env_files():
@@ -78,6 +92,59 @@ def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: p
     live_local = importlib.import_module("sandbox.live_local")
     assert live_local.main(["{}"]) == 2
     assert "live_local: invalid config" in capsys.readouterr().err
+
+
+def test_composed_launchers_preserve_static_overlay_hooks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    for env_id, has_overlay_static in (
+        ("skirmish_crane", True),
+        ("flappy_bird", False),
+    ):
+        out = compose_template(env_id, out_dir=tmp_path / env_id)
+        _isolate_composed_sandbox(out, monkeypatch)
+        play = importlib.import_module("sandbox.play")
+        live_local = importlib.import_module("sandbox.live_local")
+
+        assert play.META.env_id == env_id
+        assert (play._entry().overlay_static is not None) is has_overlay_static
+        assert (live_local.ENTRY.overlay_static is not None) is has_overlay_static
+
+
+def test_composed_three_branches_exports_its_static_overlay_hook(tmp_path: Path):
+    out = compose_template("three_branches", out_dir=tmp_path / "template")
+
+    outer_init = (out / "sandbox" / "env" / "__init__.py").read_text(encoding="utf-8")
+    inner_init = (out / "sandbox" / "env" / "three_branches" / "__init__.py").read_text(encoding="utf-8")
+    assert "extract_overlay_static" in outer_init
+    assert "from .overlay import extract_overlay, extract_overlay_static" in inner_init
+
+
+def test_composed_skirmish_crane_records_its_static_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    out = compose_template("skirmish_crane", out_dir=tmp_path / "template")
+    _isolate_composed_sandbox(out, monkeypatch)
+    play = importlib.import_module("sandbox.play")
+    session = importlib.import_module("sandbox.harness.session")
+    environment = importlib.import_module("sandbox.harness.environment")
+    recording = importlib.import_module("sandbox.harness.recording.local")
+
+    entry = play._entry()
+    parameters = environment.resolve_parameters(entry.meta)
+    layout = environment.resolve_layout(entry.meta, parameters)
+    players = {player_id: session.ExternalPlayer(object()) for player_id in layout.players}
+    store = recording.FolderRecordingStore(tmp_path / "recordings")
+    with session.Episode(
+        entry,
+        players,
+        parameters=parameters,
+        seed=1,
+        store=store,
+        recording_id="crane",
+    ):
+        pass
+
+    header = json.loads(
+        (tmp_path / "recordings" / "crane" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert set(header["overlay_static"]) == {"k", "p", "b"}
 
 
 def test_env_layer_wins_over_base():

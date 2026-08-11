@@ -17,7 +17,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Literal
 
-from sandbox.env import META, PLAYER_ID, default_action, extract_overlay, make_env
+from sandbox.env import META, PLAYER_ID, default_action, extract_overlay, extract_overlay_static, make_env
 from sandbox.harness.environment import (
     EnvironmentEntry,
     ParameterValue,
@@ -56,6 +56,7 @@ def _entry(make: Any = make_env) -> EnvironmentEntry:
         make=make,
         default_action=default_action,
         overlay=extract_overlay,
+        overlay_static=extract_overlay_static,
     )
 
 

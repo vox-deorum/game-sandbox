@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 
-from sandbox.env import META, default_action, extract_overlay, make_env
+from sandbox.env import META, default_action, extract_overlay, extract_overlay_static, make_env
 from sandbox.harness.clock import SystemClock
 from sandbox.harness.environment import EnvironmentEntry
 from sandbox.harness.live import LiveConfigError, _claim_stdout, parse_config, run
@@ -27,6 +27,7 @@ ENTRY = EnvironmentEntry(
     make=make_env,
     default_action=default_action,
     overlay=extract_overlay,
+    overlay_static=extract_overlay_static,
 )
 
 

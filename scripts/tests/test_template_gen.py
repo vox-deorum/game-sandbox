@@ -82,7 +82,28 @@ def test_write_env_package_copies_modules_and_renders_uniform_inits(
     assert 'PLAYER_ID = "player_0"' in rendered
     assert '"PLAYER_ID",' in rendered
     assert '"META",' in rendered
+    assert "extract_overlay_static" in rendered
     assert rendered.startswith("# GAME-SANDBOX-GENERATED-ENV: scripts/compose.py\n")
+
+
+@pytest.mark.parametrize(
+    ("has_overlay_static", "expected"),
+    [
+        (True, "from .overlay import extract_overlay, extract_overlay_static"),
+        (False, "extract_overlay_static = None"),
+    ],
+)
+def test_rendered_inner_init_always_exports_the_static_overlay_hook(
+    has_overlay_static: bool, expected: str
+) -> None:
+    spec = TemplateEnvironmentSpec(
+        "Example", "example", ("example/env.py",), has_overlay_static=has_overlay_static
+    )
+
+    rendered = template_gen._render_inner_init(spec)
+
+    assert expected in rendered
+    assert '"extract_overlay_static"' in rendered
 
 
 def test_rendered_metadata_constructs_declared_seats() -> None:

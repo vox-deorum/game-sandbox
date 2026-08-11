@@ -102,7 +102,7 @@ def _import_source_package(package_dir: Path) -> Any:
     return module
 
 
-def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
+def _template_spec(package_dir: Path, meta: Any, entry: Any) -> TemplateEnvironmentSpec:
     """Build template facts from environment metadata and directly-owned source files."""
     modules = tuple(
         f"{package_dir.name}/{path.name}"
@@ -145,6 +145,7 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         inner_package=package_dir.name,
         modules=modules,
         player_id=human_players[0] if human_players else "player_0",
+        has_overlay_static=entry.overlay_static is not None,
         env_sandbox_modules=env_sandbox_modules,
         pyright_files=pyright_files,
         pyright_example_files=pyright_example_files,
@@ -209,7 +210,7 @@ def discover_environments() -> dict[str, DiscoveredEnvironment]:
         discovered[env_id] = DiscoveredEnvironment(
             env_id,
             entry,
-            _template_spec(package_dir, meta),
+            _template_spec(package_dir, meta, entry),
             _published_examples(package_dir, module),
         )
     return dict(sorted(discovered.items()))

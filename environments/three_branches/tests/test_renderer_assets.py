@@ -14,16 +14,25 @@ ASSET_ENTRY = re.compile(
 )
 SUPERSEDED_SOURCES = {
     "bell-ringing-source-v1.png",
+    "compact-body-source.png",
     "hearth-lit-source-v1.png",
     "lantern-lit-source-v1.png",
     "pump-flowing-source-v1.png",
     "shrine-tended-source-v1.png",
+    "villager-detailed-a-source.png",
+    "villager-detailed-b-source.png",
+    "villager-detailed-c-source.png",
+    "villager-simple-a-source.png",
+    "villager-simple-b-source.png",
+    "villager-simple-c-source.png",
+    "visitor-detailed-source.png",
+    "visitor-simple-source.png",
 }
 
 
 def manifest_assets() -> dict[str, tuple[str, int, int, bool]]:
     entries = list(ASSET_ENTRY.finditer((RENDERER / "assets.ts").read_text(encoding="utf-8")))
-    assert len(entries) == 69
+    assert len(entries) == 65
     assert len({entry.group("name") for entry in entries}) == len(entries)
     assert len({entry.group("source") for entry in entries}) == len(entries)
     return {
@@ -55,22 +64,16 @@ def test_renderer_asset_manifest_preserves_source_art() -> None:
     assert actual_sources == declared_sources | SUPERSEDED_SOURCES | {"thumbnail-source.png"}
 
 
-def test_character_sheet_dimensions_match_the_declared_frame_grids() -> None:
+def test_character_assets_match_the_declared_layer_contract() -> None:
     declared = manifest_assets()
     for name in (
-        "villager-simple-a.png",
-        "villager-simple-b.png",
-        "villager-simple-c.png",
-        "visitor-simple.png",
+        "villager-head-a.png",
+        "villager-head-b.png",
+        "villager-head-c.png",
+        "visitor-head.png",
     ):
-        assert declared[name][1:3] == (8 * 128, 128)
-    for name in (
-        "villager-detailed-a.png",
-        "villager-detailed-b.png",
-        "villager-detailed-c.png",
-        "visitor-detailed.png",
-    ):
-        assert declared[name][1:3] == (8 * 192, 4 * 192)
+        assert declared[name][1:3] == (192, 192)
+    assert declared["character-hands.png"][1:3] == (4 * 192, 192)
 
 
 def test_generated_thumbnail_is_a_320_by_180_rgb_png() -> None:

@@ -86,6 +86,8 @@ class TemplateEnvironmentSpec:
     modules: tuple[str, ...]
     default_action: str = "default_action"
     player_id: str = "player_0"
+    # Whether the canonical entry provides immutable overlay data for each recording header.
+    has_overlay_static: bool = False
     # Per-environment sandbox modules copied into this template's sandbox/ at compose time,
     # alongside the shared TEMPLATE_BASE_MODULES: destination filename under sandbox/ -> source
     # path under environments/. Empty for environments that need no such module.
