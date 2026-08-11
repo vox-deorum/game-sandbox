@@ -19,6 +19,7 @@ from ..geometry import (
     subtract,
 )
 from ..layout import Building, Doorway
+from .config import GENERATION_CONFIG
 from .terrain import _Water
 from .walker import (
     _drawn_side,
@@ -33,36 +34,36 @@ from .walker import (
     _water_gap,
 )
 
-BUILDING_GAP = 2.0
-WATER_CLEARANCE = 2.0
-BOUNDARY_MARGIN = 2.0
-HOME_CLUSTER_RADIUS = 7.0
-HOME_CLUSTER_SEPARATION = 32.0
+BUILDING_GAP = GENERATION_CONFIG.sites.building_gap
+WATER_CLEARANCE = GENERATION_CONFIG.sites.water_clearance
+BOUNDARY_MARGIN = GENERATION_CONFIG.sites.boundary_margin
+HOME_CLUSTER_RADIUS = GENERATION_CONFIG.sites.home_cluster_radius
+HOME_CLUSTER_SEPARATION = GENERATION_CONFIG.sites.home_cluster_separation
 
 
-_PLACEMENT_BUDGET = 300
-_ANCHOR_BUDGET = 150
-_SPOT_CLEARANCE = 2.5
-_SPOT_BUDGET = 20
-_MARKET_WATER_ROOM = 3.0
-_LANDMARK_WATER_ROOM = 2.5
-_HOME_SIZE = (6.0, 5.0)
-_INN_SIZE = (10.0, 8.0)
-_SHED_SIZE = (6.0, 6.0)
-_PLAZA_CLEARANCE = 5.0
+_PLACEMENT_BUDGET = GENERATION_CONFIG.sites.placement_budget
+_ANCHOR_BUDGET = GENERATION_CONFIG.sites.anchor_budget
+_SPOT_CLEARANCE = GENERATION_CONFIG.sites.spot_clearance
+_SPOT_BUDGET = GENERATION_CONFIG.sites.spot_budget
+_MARKET_WATER_ROOM = GENERATION_CONFIG.sites.market_water_room
+_LANDMARK_WATER_ROOM = GENERATION_CONFIG.sites.landmark_water_room
+_HOME_SIZE = GENERATION_CONFIG.sites.home_size
+_INN_SIZE = GENERATION_CONFIG.sites.inn_size
+_SHED_SIZE = GENERATION_CONFIG.sites.shed_size
+_PLAZA_CLEARANCE = GENERATION_CONFIG.sites.plaza_clearance
 
 
-_SITES_TRIES = 6
+_SITES_TRIES = GENERATION_CONFIG.sites.tries
 
 
-_WEDGE_HALF_OPENING = 4.0
-_CLUSTER_RADIUS_LOW = 6.5
-_CLUSTER_RING_DEPTH = 2.0
-_CLUSTER_WATER_MIN = 10.0
-_CLUSTER_CORRIDOR_ROOM = 10.0
+_WEDGE_HALF_OPENING = GENERATION_CONFIG.sites.wedge_half_opening
+_CLUSTER_RADIUS_LOW = GENERATION_CONFIG.sites.cluster_radius_low
+_CLUSTER_RING_DEPTH = GENERATION_CONFIG.sites.cluster_ring_depth
+_CLUSTER_WATER_MIN = GENERATION_CONFIG.sites.cluster_water_min
+_CLUSTER_CORRIDOR_ROOM = GENERATION_CONFIG.sites.cluster_corridor_room
 
 
-_WEDGE_SLIDE_LIMIT = 36.0
+_WEDGE_SLIDE_LIMIT = GENERATION_CONFIG.sites.wedge_slide_limit
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,19 @@ class _Clearances:
     spots: tuple[Point, ...] = ()
 
 
-_CLUSTER_GRID = tuple((float(x), float(y)) for x in range(12, 89, 6) for y in range(12, 89, 6))
+_CLUSTER_GRID = tuple(
+    (float(x), float(y))
+    for x in range(
+        GENERATION_CONFIG.sites.cluster_grid_start,
+        GENERATION_CONFIG.sites.cluster_grid_stop,
+        GENERATION_CONFIG.sites.cluster_grid_step,
+    )
+    for y in range(
+        GENERATION_CONFIG.sites.cluster_grid_start,
+        GENERATION_CONFIG.sites.cluster_grid_stop,
+        GENERATION_CONFIG.sites.cluster_grid_step,
+    )
+)
 
 
 def _well_plaza(rng: Random, water: _Water) -> Point | None:
@@ -112,13 +125,13 @@ def _well_plaza(rng: Random, water: _Water) -> Point | None:
         bisector = _unit((left[0] + right[0], left[1] + right[1]))
         if bisector == (0.0, 0.0):
             continue
-        reach = water.cap_radius + 3.0
+        reach = water.cap_radius + GENERATION_CONFIG.sites.plaza_reach_offset
         while reach <= _WEDGE_SLIDE_LIMIT:
             candidate = add(water.fork, bisector, reach)
             opening = min(_water_gap(candidate, first), _water_gap(candidate, second))
             if opening >= _WEDGE_HALF_OPENING and _inside_frame(candidate, BOUNDARY_MARGIN):
                 return candidate
-            reach += 1.0
+            reach += GENERATION_CONFIG.sites.plaza_reach_step
     return None
 
 
@@ -140,7 +153,15 @@ def _corridor_anchor(
     for _ in range(_ANCHOR_BUDGET):
         x = rng.uniform(*band)
         side = _drawn_side(rng)
-        candidate = (x, corridor_y + side * rng.uniform(6.0, 10.0))
+        candidate = (
+            x,
+            corridor_y
+            + side
+            * rng.uniform(
+                GENERATION_CONFIG.sites.corridor_anchor_offset.low,
+                GENERATION_CONFIG.sites.corridor_anchor_offset.high,
+            ),
+        )
         if all(
             candidate[0] < extent[0] - channel.width / 2.0 - room - EPSILON
             or extent[2] + channel.width / 2.0 + room + EPSILON < candidate[0]
@@ -156,13 +177,14 @@ def _corridor_anchor(
 def _cluster_scores(terrain: _Terrain, water: _Water, plaza: Point) -> list[tuple[float, Point]]:
     """Score every feasible home cluster center without consuming the generation stream.
 
-    A fixed 6 m grid is scored on bank proximity, flatness, and dryness, and the coarse channel
+    A fixed grid is scored on bank proximity, flatness, and dryness, and the coarse channel
     polylines keep the water term cheap. A grid point only enters the running when its homes have a
     ring to stand on, clear of the water and the plaza clearing, so a cluster does not seed where
     its homes cannot follow.
     """
+    stride = GENERATION_CONFIG.sites.cluster_channel_stride
     coarse = tuple(
-        ((*channel.points[::3], channel.points[-1]), channel.width / 2.0) for channel in water.channels
+        ((*channel.points[::stride], channel.points[-1]), channel.width / 2.0) for channel in water.channels
     )
     scored: list[tuple[float, Point]] = []
     for point in _CLUSTER_GRID:
@@ -174,10 +196,18 @@ def _cluster_scores(terrain: _Terrain, water: _Water, plaza: Point) -> list[tupl
             continue
         if distance(point, plaza) < HOME_CLUSTER_RADIUS + _PLAZA_CLEARANCE:
             continue
-        bank = 1.0 - min(abs(water_gap - 10.0) / 12.0, 1.0)
-        flat = 1.0 - min(math.hypot(*terrain.downhill(point)) * 25.0, 1.0)
+        bank = 1.0 - min(
+            abs(water_gap - GENERATION_CONFIG.sites.cluster_bank_target)
+            / GENERATION_CONFIG.sites.cluster_bank_band,
+            1.0,
+        )
+        flat = 1.0 - min(
+            math.hypot(*terrain.downhill(point)) * GENERATION_CONFIG.sites.cluster_slope_scale,
+            1.0,
+        )
         dry = 1.0 - terrain.moisture(point)
-        scored.append((1.2 * bank + 0.8 * flat + 0.6 * dry, point))
+        bank_weight, flat_weight, dry_weight = GENERATION_CONFIG.sites.cluster_score_weights
+        scored.append((bank_weight * bank + flat_weight * flat + dry_weight * dry, point))
     scored.sort(key=lambda entry: (-entry[0], entry[1]))
     return scored
 
@@ -189,7 +219,7 @@ def _pick_clusters(
 
     Clusters keep off the corridor band, so homes never straddle the stretch the road threads.
     """
-    count = rng.choice((2, 3))
+    count = rng.randint(*GENERATION_CONFIG.sites.cluster_count)
     centers: list[Point] = []
     for _score, point in scored:
         if len(centers) == count:
@@ -320,7 +350,9 @@ def _draw_placement(
     Channels that no candidate around this anchor can possibly reach are dropped once up front, so
     the budget's water checks only scan the water that is actually in play.
     """
-    farthest = reach[1] + math.hypot(*size) / 2.0 + WATER_CLEARANCE + 0.5
+    farthest = (
+        reach[1] + math.hypot(*size) / 2.0 + WATER_CLEARANCE + GENERATION_CONFIG.sites.placement_prune_slack
+    )
     nearby = replace(
         clearances,
         water=replace(
@@ -374,16 +406,32 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
         return None
     scored = _cluster_scores(terrain, water, plaza)
     for _ in range(_SITES_TRIES):
-        corridor_y = water.fork[1] - rng.uniform(14.0, 24.0)
+        corridor_y = water.fork[1] - rng.uniform(
+            GENERATION_CONFIG.sites.corridor_below_fork.low,
+            GENERATION_CONFIG.sites.corridor_below_fork.high,
+        )
 
-        shed_anchor = _corridor_anchor(rng, water, corridor_y, (10.0, 30.0), _SHED_SIZE)
+        shed_anchor = _corridor_anchor(
+            rng,
+            water,
+            corridor_y,
+            (GENERATION_CONFIG.sites.shed_x.low, GENERATION_CONFIG.sites.shed_x.high),
+            _SHED_SIZE,
+        )
         if shed_anchor is None:
             continue
         bell = None
         for _ in range(_SPOT_BUDGET):
-            bell_x = rng.uniform(8.0, 26.0)
+            bell_x = rng.uniform(GENERATION_CONFIG.sites.bell_x.low, GENERATION_CONFIG.sites.bell_x.high)
             bell_side = _drawn_side(rng)
-            candidate = (bell_x, corridor_y + bell_side * rng.uniform(2.0, 4.0))
+            candidate = (
+                bell_x,
+                corridor_y
+                + bell_side
+                * rng.uniform(
+                    GENERATION_CONFIG.sites.bell_offset.low, GENERATION_CONFIG.sites.bell_offset.high
+                ),
+            )
             if _dry(water, candidate, _LANDMARK_WATER_ROOM):
                 bell = candidate
                 break
@@ -392,7 +440,10 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
 
         market = None
         for _ in range(_SPOT_BUDGET):
-            candidate = (rng.uniform(42.0, 58.0), corridor_y)
+            candidate = (
+                rng.uniform(GENERATION_CONFIG.sites.market_x.low, GENERATION_CONFIG.sites.market_x.high),
+                corridor_y,
+            )
             if _dry(water, candidate, _MARKET_WATER_ROOM):
                 market = candidate
                 break
@@ -404,8 +455,18 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
             spot = None
             for attempt in range(_SPOT_BUDGET):
                 side = stall_side if attempt < _SPOT_BUDGET // 2 else -stall_side
-                stall_x = market[0] + rng.uniform(-10.0, 10.0)
-                candidate = (stall_x, corridor_y + side * rng.uniform(2.5, 5.5))
+                stall_x = market[0] + rng.uniform(
+                    GENERATION_CONFIG.sites.stall_x_offset.low,
+                    GENERATION_CONFIG.sites.stall_x_offset.high,
+                )
+                candidate = (
+                    stall_x,
+                    corridor_y
+                    + side
+                    * rng.uniform(
+                        GENERATION_CONFIG.sites.stall_offset.low, GENERATION_CONFIG.sites.stall_offset.high
+                    ),
+                )
                 if _dry(water, candidate, _LANDMARK_WATER_ROOM):
                     spot = candidate
                     break
@@ -418,14 +479,29 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
         host = stalls[rng.randrange(5)]
         board = None
         for _ in range(_SPOT_BUDGET):
-            candidate = (host[0] + rng.uniform(-2.0, 2.0), host[1] + rng.uniform(-2.0, 2.0))
+            candidate = (
+                host[0]
+                + rng.uniform(
+                    GENERATION_CONFIG.sites.board_offset.low, GENERATION_CONFIG.sites.board_offset.high
+                ),
+                host[1]
+                + rng.uniform(
+                    GENERATION_CONFIG.sites.board_offset.low, GENERATION_CONFIG.sites.board_offset.high
+                ),
+            )
             if _dry(water, candidate, _LANDMARK_WATER_ROOM):
                 board = candidate
                 break
         if board is None:
             continue
 
-        inn_anchor = _corridor_anchor(rng, water, corridor_y, (70.0, 90.0), _INN_SIZE)
+        inn_anchor = _corridor_anchor(
+            rng,
+            water,
+            corridor_y,
+            (GENERATION_CONFIG.sites.inn_x.low, GENERATION_CONFIG.sites.inn_x.high),
+            _INN_SIZE,
+        )
         if inn_anchor is None:
             continue
         seeded = _pick_clusters(rng, scored, corridor_y)
@@ -437,7 +513,15 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
         placed: list[_Placement] = []
         corridor_buildings: list[Building] = []
         for identifier, size, anchor in (("inn", _INN_SIZE, inn_anchor), ("shed", _SHED_SIZE, shed_anchor)):
-            placement = _draw_placement(rng, size, anchor, (0.0, 4.0), (-15.0, 15.0), clearances, placed)
+            placement = _draw_placement(
+                rng,
+                size,
+                anchor,
+                (GENERATION_CONFIG.sites.building_reach.low, GENERATION_CONFIG.sites.building_reach.high),
+                (GENERATION_CONFIG.sites.building_spin.low, GENERATION_CONFIG.sites.building_spin.high),
+                clearances,
+                placed,
+            )
             if placement is None:
                 break
             center, width, depth, rotation = placement.rectangle

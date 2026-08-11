@@ -12,13 +12,14 @@ from typing import Any, cast
 from .engine import Day, Expression
 from .layout import BUILDING_ROSTER, Bridge, Building, Layout, Polyline, Prop, Scenery
 from .perception import phase_at
-from .prop_types import BELL_ID, BELL_RINGING, PROP_TYPE_BY_TOKEN
+from .prop_types import BELL_ID, BELL_RINGING, PROP_TYPE_BY_TOKEN, PROP_TYPES
 from .rules import DAY_TICKS, EMOTES, GROUND_BY_TOKEN
 
 OVERLAY_VERSION = 1
 
 _BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
-_NONE_TARGET = "z"
+_NONE_TARGET = "zz"
+_MAX_PROPS = 36**2 - 1
 _SCENERY_TYPE = re.compile(r"[a-z][a-z0-9_]*\Z")
 
 
@@ -228,6 +229,11 @@ def _decode_ground(rows: object) -> list[list[str]]:
 @lru_cache
 def _pack_static(layout: Layout, cast_size: int, daynight: bool) -> dict[str, Any]:
     """Encode immutable layout data once for every layout and gameplay setting."""
+    prop_counts = tuple(
+        sum(prop.type == prop_type.token for prop in layout.props) for prop_type in PROP_TYPES
+    )
+    if sum(prop_counts) > _MAX_PROPS:
+        raise ValueError(f"overlay prop count cannot exceed {_MAX_PROPS}")
     return {
         "a": _base36(cast_size, 1) + ("1" if daynight else "0"),
         "c": [_pack_polyline(channel) for channel in layout.channels],
@@ -235,6 +241,7 @@ def _pack_static(layout: Layout, cast_size: int, daynight: bool) -> dict[str, An
         "f": [_pack_polyline(path) for path in layout.footpaths],
         "b": [_pack_bridge(bridge) for bridge in layout.bridges],
         "h": [_pack_building(building) for building in layout.buildings],
+        "q": "".join(_base36(count, 2) for count in prop_counts),
         "p": [_pack_prop(prop) for prop in layout.props],
         "n": [_pack_scenery(scenery) for scenery in layout.scenery],
         "x": _point(layout.spawn, "spawn"),
@@ -243,18 +250,43 @@ def _pack_static(layout: Layout, cast_size: int, daynight: bool) -> dict[str, An
 
 
 def _prop_ids(static: Mapping[str, Any]) -> tuple[str, ...]:
+    packed_counts = static["q"]
     packed = static["p"]
-    if not isinstance(packed, list) or len(packed) != 31:
-        raise ValueError("overlay must contain exactly 31 props")
+    if not isinstance(packed_counts, str) or len(packed_counts) != len(PROP_TYPES) * 2:
+        raise ValueError("overlay prop counts must contain two characters per catalog prop")
+    counts = tuple(
+        _decode_base36(packed_counts[index : index + 2], 2, "prop count")
+        for index in range(0, len(packed_counts), 2)
+    )
+    for prop_type, count in zip(PROP_TYPES, counts, strict=True):
+        if prop_type.count is not None and count != prop_type.count:
+            raise ValueError(f"overlay fixed prop count for {prop_type.token} is invalid")
+    total = sum(counts)
+    if total > _MAX_PROPS:
+        raise ValueError(f"overlay prop count cannot exceed {_MAX_PROPS}")
+    if not isinstance(packed, list) or len(packed) != total:
+        raise ValueError("overlay prop pose count does not match prop counts")
     ids: list[str] = []
-    for prop_type in PROP_TYPE_BY_TOKEN.values():
-        for index in range(prop_type.count):
+    for prop_type, count in zip(PROP_TYPES, counts, strict=True):
+        for index in range(count):
             ids.append(f"{prop_type.token}_{index}")
     return tuple(ids)
 
 
 def _decode_static(value: object) -> dict[str, Any]:
-    if not isinstance(value, Mapping) or set(value) != {"a", "c", "r", "f", "b", "h", "p", "n", "x", "g"}:
+    if not isinstance(value, Mapping) or set(value) != {
+        "a",
+        "c",
+        "r",
+        "f",
+        "b",
+        "h",
+        "q",
+        "p",
+        "n",
+        "x",
+        "g",
+    }:
         raise ValueError("overlay static layout has unexpected fields")
     setting = value["a"]
     if not isinstance(setting, str) or len(setting) != 2 or setting[1] not in "01":
@@ -299,7 +331,7 @@ def _expression_code(expression: Expression, prop_index: Mapping[str, int]) -> t
     if expression.type == "use":
         if expression.target not in prop_index:
             raise ValueError("overlay use expression names an unknown prop")
-        return _base36(10, 1), _base36(prop_index[expression.target], 1)
+        return _base36(10, 1), _base36(prop_index[expression.target], 2)
     if expression.type not in EMOTES:
         raise ValueError("overlay expression is unknown")
     return _base36(EMOTES.index(expression.type) + 1, 1), _NONE_TARGET
@@ -393,16 +425,16 @@ def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None 
     holders: set[str] = set()
     characters = []
     for index, record in enumerate(records):
-        if not isinstance(record, str) or len(record) != 13:
-            raise ValueError("overlay character record must be 13 characters")
+        if not isinstance(record, str) or len(record) != 14:
+            raise ValueError("overlay character record must be 14 characters")
         moved = _meters(record[9:11], 2, "character movement")
         if moved > 1.0:
             raise ValueError("overlay character movement cannot exceed one meter")
         expression_code = _decode_base36(record[11], 1, "expression")
-        target_code = record[12]
+        target_code = record[12:]
         target = "none"
         if expression_code == 10:
-            target_index = _decode_base36(target_code, 1, "use target")
+            target_index = _decode_base36(target_code, 2, "use target")
             if target_index >= len(prop_ids) or moved != 0:
                 raise ValueError("overlay use target or movement is invalid")
             target = prop_ids[target_index]
@@ -428,7 +460,7 @@ def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None 
 
     prop_states = dynamic["p"]
     if not isinstance(prop_states, str) or len(prop_states) != len(prop_ids):
-        raise ValueError("overlay prop states must contain exactly 31 characters")
+        raise ValueError(f"overlay prop states must contain exactly {len(prop_ids)} characters")
     decoded_states: dict[str, str] = {}
     for prop_id, code in zip(prop_ids, prop_states, strict=True):
         prop_type = PROP_TYPE_BY_TOKEN[prop_id.rsplit("_", 1)[0]]

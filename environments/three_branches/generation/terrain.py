@@ -8,11 +8,13 @@ from random import Random
 
 from ..geometry import Point, add, subtract
 from ..layout import WORLD_SIZE, Polyline
+from .config import GENERATION_CONFIG
 from .walker import (
     _ABORT_SLACK,
     _angled,
     _Bounds,
     _coarse,
+    _draw_weights,
     _Field,
     _leg_limit,
     _lines_cross,
@@ -25,19 +27,19 @@ from .walker import (
     _walk,
 )
 
-_MOUTH_EDGE_MARGIN = 10.0
-_MOUTH_GAP_LOW = 22.0
-_MOUTH_GAP_HIGH = 32.0
+_MOUTH_EDGE_MARGIN = GENERATION_CONFIG.terrain.mouth_edge_margin
+_MOUTH_GAP_LOW = GENERATION_CONFIG.terrain.mouth_gap.low
+_MOUTH_GAP_HIGH = GENERATION_CONFIG.terrain.mouth_gap.high
 
 
-_TOPOLOGY_TRIES = 3
-_COURSE_TRIES = 6
+_TOPOLOGY_TRIES = GENERATION_CONFIG.terrain.topology_tries
+_COURSE_TRIES = GENERATION_CONFIG.terrain.course_tries
 
 
-_REED_MOISTURE = 0.58
+_REED_MOISTURE = GENERATION_CONFIG.terrain.reed_moisture
 
 
-_SIBLING_CLEARANCE = 1.0
+_SIBLING_CLEARANCE = GENERATION_CONFIG.terrain.sibling_clearance
 
 
 def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
@@ -47,10 +49,18 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
     each course has a local retry budget before the terrain layer asks for a whole redraw.
     """
     for _ in range(_TOPOLOGY_TRIES):
-        entry = (rng.uniform(WORLD_SIZE / 3.0 + 1.0, WORLD_SIZE * 2.0 / 3.0 - 1.0), WORLD_SIZE)
-        fork = (rng.uniform(25.0, 75.0), rng.uniform(40.0, 60.0))
-        center_low = max(_MOUTH_EDGE_MARGIN + _MOUTH_GAP_LOW, fork[0] - 8.0)
-        center_high = min(WORLD_SIZE - _MOUTH_EDGE_MARGIN - _MOUTH_GAP_LOW, fork[0] + 8.0)
+        entry_margin = GENERATION_CONFIG.terrain.entry_x_margin
+        entry = (
+            rng.uniform(WORLD_SIZE / 3.0 + entry_margin, WORLD_SIZE * 2.0 / 3.0 - entry_margin),
+            WORLD_SIZE,
+        )
+        fork = (
+            rng.uniform(GENERATION_CONFIG.terrain.fork_x.low, GENERATION_CONFIG.terrain.fork_x.high),
+            rng.uniform(GENERATION_CONFIG.terrain.fork_y.low, GENERATION_CONFIG.terrain.fork_y.high),
+        )
+        reach = GENERATION_CONFIG.terrain.mouth_center_fork_reach
+        center_low = max(_MOUTH_EDGE_MARGIN + _MOUTH_GAP_LOW, fork[0] - reach)
+        center_high = min(WORLD_SIZE - _MOUTH_EDGE_MARGIN - _MOUTH_GAP_LOW, fork[0] + reach)
         center_mouth = rng.uniform(center_low, center_high)
         west_mouth = center_mouth - rng.uniform(
             _MOUTH_GAP_LOW, min(_MOUTH_GAP_HIGH, center_mouth - _MOUTH_EDGE_MARGIN)
@@ -58,12 +68,19 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
         east_mouth = center_mouth + rng.uniform(
             _MOUTH_GAP_LOW, min(_MOUTH_GAP_HIGH, WORLD_SIZE - _MOUTH_EDGE_MARGIN - center_mouth)
         )
-        weights = (rng.uniform(0.5, 0.85), rng.uniform(0.5, 1.2), rng.uniform(0.4, 0.65))
+        weights = _draw_weights(rng, GENERATION_CONFIG.terrain.water_weights)
 
         trunk = None
         for _ in range(_COURSE_TRIES):
-            heading = _angled((0.0, -1.0), rng.uniform(-45.0, 45.0))
-            width = rng.uniform(5.0, 7.0)
+            heading = _angled(
+                (0.0, -1.0),
+                rng.uniform(
+                    GENERATION_CONFIG.terrain.trunk_heading.low, GENERATION_CONFIG.terrain.trunk_heading.high
+                ),
+            )
+            width = rng.uniform(
+                GENERATION_CONFIG.terrain.trunk_width.low, GENERATION_CONFIG.terrain.trunk_width.high
+            )
             course = _walk(terrain, entry, fork, weights, heading, limit=_leg_limit(entry, fork))
             if course is None:
                 continue
@@ -76,13 +93,21 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
 
         channels: list[Polyline] = [trunk]
         for mouth in (west_mouth, center_mouth, east_mouth):
-            approach = (mouth, 6.0)
+            approach = (mouth, GENERATION_CONFIG.terrain.channel_approach_y)
             prior = tuple(channels)
             avoid = _coarse(prior)
             channel = None
             for _ in range(_COURSE_TRIES):
-                heading = _angled(_unit(subtract(approach, fork)), rng.uniform(-20.0, 20.0))
-                width = rng.uniform(2.5, 4.0)
+                heading = _angled(
+                    _unit(subtract(approach, fork)),
+                    rng.uniform(
+                        GENERATION_CONFIG.terrain.channel_heading.low,
+                        GENERATION_CONFIG.terrain.channel_heading.high,
+                    ),
+                )
+                width = rng.uniform(
+                    GENERATION_CONFIG.terrain.channel_width.low, GENERATION_CONFIG.terrain.channel_width.high
+                )
                 clearances = tuple(
                     (width + existing.width) / 2.0 + _SIBLING_CLEARANCE + _ABORT_SLACK for existing in prior
                 )
@@ -94,7 +119,7 @@ def _waterways(terrain: _Terrain, rng: Random) -> tuple[Polyline, ...] | None:
                     heading,
                     avoid=avoid,
                     clearances=clearances,
-                    exempt=(fork, 15.0),
+                    exempt=(fork, GENERATION_CONFIG.terrain.fork_exempt_radius),
                     limit=_leg_limit(fork, approach),
                 )
                 if course is None:
@@ -164,20 +189,36 @@ def _reed_banks(
     flats: list[tuple[Point, ...]] = []
 
     def _reed_flat(window: tuple[Point, ...], channel: Polyline) -> tuple[Point, ...] | None:
-        side = _moister_side(terrain, window, channel.width / 2.0 + 2.0)
-        return _strip(window, side, channel.width / 2.0 - 0.2, rng.uniform(2.0, 4.0), terrain.moisture)
+        side = _moister_side(
+            terrain,
+            window,
+            channel.width / 2.0 + GENERATION_CONFIG.terrain.reed_side_probe_offset,
+        )
+        return _strip(
+            window,
+            side,
+            channel.width / 2.0 + GENERATION_CONFIG.terrain.reed_inner_offset,
+            rng.uniform(GENERATION_CONFIG.terrain.reed_depth.low, GENERATION_CONFIG.terrain.reed_depth.high),
+            terrain.moisture,
+        )
 
     for channel in channels[1:]:
-        window = channel.points[max(0, len(channel.points) - 5) : -1]
+        window = channel.points[
+            max(0, len(channel.points) - GENERATION_CONFIG.terrain.reed_mouth_window_points) : -1
+        ]
         flat = _reed_flat(window, channel)
         if flat is not None:
             flats.append(flat)
     for channel in channels:
         placed = 0
-        for start in range(2, len(channel.points) - 6, 4):
-            if placed >= 2:
+        for start in range(
+            GENERATION_CONFIG.terrain.bank_scan_start,
+            len(channel.points) - GENERATION_CONFIG.terrain.bank_scan_end,
+            GENERATION_CONFIG.terrain.reed_window_step,
+        ):
+            if placed >= GENERATION_CONFIG.terrain.maximum_bank_features:
                 break
-            window = channel.points[start : start + 4]
+            window = channel.points[start : start + GENERATION_CONFIG.terrain.bank_window_points]
             if terrain.moisture(window[1]) <= _REED_MOISTURE:
                 continue
             flat = _reed_flat(window, channel)
@@ -194,15 +235,34 @@ def _terraces(
     terraces: list[tuple[Point, ...]] = []
     for channel in channels[1:]:
         placed = 0
-        for start in range(2, len(channel.points) - 6, 5):
-            if placed == 2:
+        for start in range(
+            GENERATION_CONFIG.terrain.bank_scan_start,
+            len(channel.points) - GENERATION_CONFIG.terrain.bank_scan_end,
+            GENERATION_CONFIG.terrain.terrace_window_step,
+        ):
+            if placed == GENERATION_CONFIG.terrain.maximum_bank_features:
                 break
-            window = channel.points[start : start + 4]
+            window = channel.points[start : start + GENERATION_CONFIG.terrain.bank_window_points]
             middle = window[1]
-            if middle[1] > 35.0 or terrain.elevation(middle) > 0.5:
+            if (
+                middle[1] > GENERATION_CONFIG.terrain.terrace_y_max
+                or terrain.elevation(middle) > GENERATION_CONFIG.terrain.terrace_elevation_max
+            ):
                 continue
-            side = _moister_side(terrain, window, channel.width / 2.0 + 4.0)
-            terrace = _strip(window, side, channel.width / 2.0 + 1.5, rng.uniform(5.0, 8.0), terrain.moisture)
+            side = _moister_side(
+                terrain,
+                window,
+                channel.width / 2.0 + GENERATION_CONFIG.terrain.terrace_side_probe_offset,
+            )
+            terrace = _strip(
+                window,
+                side,
+                channel.width / 2.0 + GENERATION_CONFIG.terrain.terrace_inner_offset,
+                rng.uniform(
+                    GENERATION_CONFIG.terrain.terrace_depth.low, GENERATION_CONFIG.terrain.terrace_depth.high
+                ),
+                terrain.moisture,
+            )
             if terrace is not None:
                 terraces.append(terrace)
                 placed += 1

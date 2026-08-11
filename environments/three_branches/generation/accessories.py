@@ -1,17 +1,15 @@
-"""Layer 4: the pine clusters, the prop catalog with a banked witness per prop, and their scenery.
+"""Layer 4: required village props followed by optional lantern and pine dressing.
 
-Pines land first, then the props in canonical catalog order, each accepted only with a banked
-witness: a standing point within the use reach where the body is clear and the line to the prop is
-unblocked. Every later solid is checked against the banked witnesses, the doorway thresholds, and
-the spawn disk, so nothing placed afterward can break them. Stall crates and shrine roof posts land
-with their prop as one unit, before its witness is banked.
+Props are placed in constraint order and then restored to catalog order. Each prop is accepted only
+with a standing witness in reach. Later solids preserve those witnesses, doorway thresholds, and the
+spawn disk. Stall crates and shrine roof posts land with their prop before its witness is banked.
 """
 
 from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from random import Random
 
 from ..geometry import (
@@ -26,64 +24,72 @@ from ..geometry import (
     rectangle_corners,
     segments_intersect,
     subtract,
+    wrap_heading,
 )
-from ..layout import SEGMENT_RADIUS, WORLD_SIZE, Building, Prop, Scenery, building_wall_segments
-from ..prop_types import PROP_TYPE_BY_TOKEN
+from ..layout import SEGMENT_RADIUS, WORLD_SIZE, Building, Polyline, Prop, Scenery, building_wall_segments
+from ..prop_types import PROP_TYPE_BY_TOKEN, PROP_TYPES, fixed_prop_count
 from ..rules import PROFILE
+from .config import GENERATION_CONFIG
 from .network import SPAWN_CLEARANCE, _Network
 from .sites import _Sites
 from .terrain import _Water
 from .walker import _Bounds, _drawn_side, _edges, _inside_frame, _polar, _unit, _water_gap
 
-PINE_RADIUS = 0.8
-CRATE_RADIUS = 0.5
-POST_RADIUS = 0.2
+PINE_RADIUS = GENERATION_CONFIG.accessories.pine.radius
+CRATE_RADIUS = GENERATION_CONFIG.accessories.crate.radius
+POST_RADIUS = GENERATION_CONFIG.accessories.post.radius
 
 _BODY_ROOM = PROFILE.body_radius + SEGMENT_RADIUS + 0.02
+_BODY_CLEARANCE_SLACK = 0.05
 _WITNESS_SOLID_GAP = PROFILE.body_radius + 0.1
-_PROP_GAP = 0.3
-_PROP_WATER_MARGIN = 1.0
-_PROP_PATH_MARGIN = 0.3
-_PROP_BUILDING_GAP = 0.5
-_PROP_FRAME_MARGIN = 1.0
-_THRESHOLD_GAP = 1.0
-_SPAWN_SLACK = 0.05
-_PROTECTED_GAP = 2.2
-_STALL_DRY_STRETCH = 3.0
-_LANTERN_DRY_STRETCH = 2.0
+_PROP_GAP = GENERATION_CONFIG.accessories.prop.gap
+_PROP_WATER_MARGIN = GENERATION_CONFIG.accessories.prop.water_margin
+_PROP_PATH_MARGIN = GENERATION_CONFIG.accessories.prop.path_margin
+_PROP_BUILDING_GAP = GENERATION_CONFIG.accessories.prop.building_gap
+_PROP_FRAME_MARGIN = GENERATION_CONFIG.accessories.prop.frame_margin
+_THRESHOLD_GAP = GENERATION_CONFIG.accessories.prop.threshold_gap
+_SPAWN_SLACK = GENERATION_CONFIG.accessories.prop.spawn_slack
+_PROTECTED_GAP = GENERATION_CONFIG.accessories.prop.protected_gap
+_STALL_DRY_STRETCH = GENERATION_CONFIG.accessories.stall.dry_stretch
+_LANTERN_DRY_STRETCH = GENERATION_CONFIG.accessories.lantern.dry_stretch
 
-_PINE_CLUSTERS = (4, 6)
-_PINE_SIZE_SPREADS = {2: (0.6, 1.6), 3: (0.6, 1.05), 4: (0.7, 1.05), 5: (0.85, 1.05)}
-_PINE_MIN_SPACING = 1.1
-_PINE_PATH_GAP = 2.0
-_PINE_SOLID_GAP = 1.2
-_PINE_BUILDING_GAP = 3.0
-_PINE_ANCHOR_GAP = 2.0
-_PINE_CENTER_GAP = 8.0
-_CLUSTER_TRIES = 40
-_PINE_TRIES = 30
+_PINE_PATH_GAP = GENERATION_CONFIG.accessories.pine.path_edge_gap
+_PINE_SOLID_GAP = GENERATION_CONFIG.accessories.pine.solid_gap
+_PINE_BUILDING_GAP = GENERATION_CONFIG.accessories.pine.building_gap
+_PINE_ANCHOR_GAP = GENERATION_CONFIG.accessories.pine.anchor_gap
 
-_PROP_TRIES = 80
-_CRATE_TRIES = 12
-_LANTERN_SETS = 4
-_LANTERN_TRIES = 24
-_LANTERN_SPACING = 4.0
-_SHRINE_TRIES = 60
-_PLOT_SLIDES = 8
-_INTERIOR_TRIES = 20
+_PROP_TRIES = GENERATION_CONFIG.accessories.prop.tries
+_CRATE_TRIES = GENERATION_CONFIG.accessories.crate.tries
+_SHRINE_TRIES = GENERATION_CONFIG.accessories.shrine.tries
+_PLOT_SLIDES = GENERATION_CONFIG.accessories.plot.slides
+_INTERIOR_TRIES = GENERATION_CONFIG.accessories.interior.tries
 
-_WITNESS_ANGLES = 16
-_WITNESS_FIRST_RING = 0.06
-_WITNESS_RADIUS_STEP = 0.1
+_WITNESS_ANGLES = GENERATION_CONFIG.accessories.witness.angles
+_WITNESS_FIRST_RING = GENERATION_CONFIG.accessories.witness.first_ring
+_WITNESS_RADIUS_STEP = GENERATION_CONFIG.accessories.witness.radius_step
+
+_GOLDEN_ANGLE = 137.50776405003785
 
 
 @dataclass(frozen=True)
 class _Accessories:
     """The accessories layer's output: the catalog, its scenery, and the banked witnesses."""
 
-    props: tuple[Prop, ...]
-    scenery: tuple[Scenery, ...]
-    witnesses: tuple[Point, ...]
+    mandatory_props: tuple[Prop, ...]
+    lantern_props: tuple[Prop, ...]
+    mandatory_scenery: tuple[Scenery, ...]
+    pines: tuple[Scenery, ...]
+    mandatory_witnesses: tuple[Point, ...]
+    lantern_witnesses: tuple[Point, ...]
+
+    def layout_parts(
+        self, include_pines: bool, include_lanterns: bool
+    ) -> tuple[tuple[Prop, ...], tuple[Scenery, ...], tuple[Point, ...]]:
+        """Return one validation candidate without drawing or changing placement state."""
+        props = self.mandatory_props + (self.lantern_props if include_lanterns else ())
+        scenery = self.mandatory_scenery + (self.pines if include_pines else ())
+        witnesses = self.mandatory_witnesses + (self.lantern_witnesses if include_lanterns else ())
+        return _ordered_props(props), scenery, witnesses
 
 
 def _rect_samples(corners: tuple[Point, ...], center: Point) -> tuple[Point, ...]:
@@ -95,30 +101,64 @@ def _rect_samples(corners: tuple[Point, ...], center: Point) -> tuple[Point, ...
     return (*corners, *midpoints, center)
 
 
-def _arc_lengths(points: tuple[Point, ...]) -> list[float]:
-    lengths = [0.0]
-    for start, end in itertools.pairwise(points):
-        lengths.append(lengths[-1] + distance(start, end))
-    return lengths
+@dataclass(frozen=True)
+class RoadArc:
+    """Exact arc-length projection and local frames for the threaded road."""
+
+    points: tuple[Point, ...]
+    lengths: tuple[float, ...]
+
+    @classmethod
+    def of(cls, points: tuple[Point, ...]) -> RoadArc:
+        lengths = [0.0]
+        for start, end in itertools.pairwise(points):
+            lengths.append(lengths[-1] + distance(start, end))
+        return cls(points, tuple(lengths))
+
+    @property
+    def total(self) -> float:
+        return self.lengths[-1]
+
+    def frame(self, along: float) -> tuple[Point, Point, Point]:
+        """Return the clamped point, unit tangent, and unit left normal at an arc length."""
+        along = min(max(along, 0.0), self.total)
+        for index in range(1, len(self.lengths)):
+            if along <= self.lengths[index] or index == len(self.lengths) - 1:
+                start, end = self.points[index - 1], self.points[index]
+                span = self.lengths[index] - self.lengths[index - 1]
+                fraction = 0.0 if span <= 0.0 else (along - self.lengths[index - 1]) / span
+                tangent = _unit(subtract(end, start))
+                return add(start, subtract(end, start), fraction), tangent, (-tangent[1], tangent[0])
+        tangent = _unit(subtract(self.points[-1], self.points[-2]))
+        return self.points[-1], tangent, (-tangent[1], tangent[0])
+
+    def nearest(self, target: Point) -> float:
+        """Project a point on every segment, returning the exact nearest arc length."""
+        best_along = 0.0
+        best_span = math.inf
+        for index, (start, end) in enumerate(itertools.pairwise(self.points)):
+            run = subtract(end, start)
+            length_squared = run[0] * run[0] + run[1] * run[1]
+            if length_squared == 0.0:
+                fraction = 0.0
+            else:
+                offset = subtract(target, start)
+                fraction = min(1.0, max(0.0, (offset[0] * run[0] + offset[1] * run[1]) / length_squared))
+            point = add(start, run, fraction)
+            span = distance(target, point)
+            if span < best_span:
+                best_span = span
+                best_along = self.lengths[index] + (self.lengths[index + 1] - self.lengths[index]) * fraction
+        return best_along
 
 
-def _arc_point(points: tuple[Point, ...], lengths: list[float], along: float) -> tuple[Point, Point]:
-    """The polyline point at an arc length, with the local unit direction."""
-    along = min(max(along, 0.0), lengths[-1])
-    for index in range(1, len(lengths)):
-        if along <= lengths[index] or index == len(lengths) - 1:
-            start, end = points[index - 1], points[index]
-            span = lengths[index] - lengths[index - 1]
-            fraction = 0.0 if span <= 0.0 else (along - lengths[index - 1]) / span
-            direction = _unit(subtract(end, start))
-            return add(start, subtract(end, start), fraction), direction
-    return points[-1], _unit(subtract(points[-1], points[-2]))
-
-
-def _nearest_arc(points: tuple[Point, ...], lengths: list[float], target: Point) -> float:
-    """The arc length of the polyline vertex nearest a target point."""
-    index = min(range(len(points)), key=lambda candidate: distance(points[candidate], target))
-    return lengths[index]
+def _ordered_props(props: tuple[Prop, ...]) -> tuple[Prop, ...]:
+    """Restore catalog type order and contiguous ids after placement-priority ordering."""
+    ordered: list[Prop] = []
+    for prop_type in PROP_TYPES:
+        typed = [prop for prop in props if prop.type == prop_type.token]
+        ordered.extend(replace(prop, id=f"{prop_type.token}_{index}") for index, prop in enumerate(typed))
+    return tuple(ordered)
 
 
 class _Placer:
@@ -284,6 +324,7 @@ class _Placer:
         rotation: float,
         *,
         path_margin: float = _PROP_PATH_MARGIN,
+        witness_gap: float = _WITNESS_SOLID_GAP,
         skip_building: Building | None = None,
         skip_paths: tuple[int, ...] = (),
         skip_protected: bool = False,
@@ -309,7 +350,7 @@ class _Placer:
             distance_to_rectangle(threshold, *rectangle) < _THRESHOLD_GAP for threshold in self.thresholds
         ):
             return False
-        if any(distance_to_rectangle(witness, *rectangle) < _WITNESS_SOLID_GAP for witness in self.witnesses):
+        if any(distance_to_rectangle(witness, *rectangle) < witness_gap for witness in self.witnesses):
             return False
         if any(
             distance_to_rectangle(item.position, *rectangle) < item.radius + _PROP_GAP
@@ -350,7 +391,7 @@ class _Placer:
         radius: float,
         *,
         path_margin: float = _PROP_PATH_MARGIN,
-        water_margin: float = 0.5,
+        water_margin: float = GENERATION_CONFIG.accessories.crate.water_margin,
         exempt: Prop | None = None,
         skip_paths: tuple[int, ...] = (),
         skip_protected: bool = False,
@@ -389,8 +430,8 @@ class _Placer:
             return False
         return self._paths_clear(samples, radius + path_margin, skip_paths)
 
-    def pine_clear(self, center: Point, cluster: list[Point]) -> bool:
-        """Whether a pine keeps the layer's wide margins from everything outside its own cluster."""
+    def pine_clear(self, center: Point, group: tuple[Point, ...] = ()) -> bool:
+        """Whether a pine clears all solids, with only its own group using the close gap."""
         if not _inside_frame(center, PINE_RADIUS + _PINE_SOLID_GAP):
             return False
         if distance(center, self.spawn) - PINE_RADIUS < SPAWN_CLEARANCE + _SPAWN_SLACK:
@@ -399,12 +440,31 @@ class _Placer:
             return False
         if any(distance(center, threshold) < PINE_RADIUS + _PINE_ANCHOR_GAP for threshold in self.thresholds):
             return False
-        if any(distance(center, pine.position) < 2.0 * PINE_RADIUS + _PINE_SOLID_GAP for pine in self.pines):
+        if any(distance(center, witness) < PINE_RADIUS + _WITNESS_SOLID_GAP for witness in self.witnesses):
             return False
+        for pine in self.pines:
+            minimum = (
+                2.0 * PINE_RADIUS + GENERATION_CONFIG.accessories.pine.companion_gap
+                if pine.position in group
+                else 2.0 * PINE_RADIUS + _PINE_SOLID_GAP
+            )
+            if distance(center, pine.position) < minimum:
+                return False
         if any(
             distance_to_rectangle(center, building.center, building.width, building.depth, building.rotation)
             < PINE_RADIUS + _PINE_BUILDING_GAP
             for building in self.buildings
+        ):
+            return False
+        if any(
+            distance_to_rectangle(center, prop.position, *prop.footprint, prop.rotation)
+            < PINE_RADIUS + _PROP_GAP
+            for prop in self.props
+        ):
+            return False
+        if any(
+            distance(center, item.position) < PINE_RADIUS + item.radius + _PROP_GAP
+            for item in (*self.crates, *self.posts)
         ):
             return False
         if any(point_in_polygon(center, polygon) for polygon in self.polygons):
@@ -434,19 +494,22 @@ class _Placer:
         for prop in self.props:
             if (
                 distance_to_rectangle(point, prop.position, *prop.footprint, prop.rotation)
-                < PROFILE.body_radius + 0.05
+                < PROFILE.body_radius + _BODY_CLEARANCE_SLACK
             ):
                 return False
         for center, width, depth, rotation in pending_rects:
-            if distance_to_rectangle(point, center, width, depth, rotation) < PROFILE.body_radius + 0.05:
+            if (
+                distance_to_rectangle(point, center, width, depth, rotation)
+                < PROFILE.body_radius + _BODY_CLEARANCE_SLACK
+            ):
                 return False
         if any(
-            distance(point, item.position) < item.radius + PROFILE.body_radius + 0.05
+            distance(point, item.position) < item.radius + PROFILE.body_radius + _BODY_CLEARANCE_SLACK
             for item in self.scenery()
         ):
             return False
         return all(
-            distance(point, center) >= radius + PROFILE.body_radius + 0.05
+            distance(point, center) >= radius + PROFILE.body_radius + _BODY_CLEARANCE_SLACK
             for center, radius in pending_circles
         )
 
@@ -461,6 +524,7 @@ class _Placer:
         inside: Building | None = None,
         pending_rects: tuple[tuple[Point, float, float, float], ...] = (),
         pending_circles: tuple[tuple[Point, float], ...] = (),
+        toward: Point | None = None,
     ) -> Point | None:
         """Scan for a standing point within reach of the prop, or None when none exists.
 
@@ -475,12 +539,13 @@ class _Placer:
             radii.append(radius)
             radius += _WITNESS_RADIUS_STEP
         own = (center, footprint[0], footprint[1], rotation)
+        first_angle = rotation if toward is None else heading_to(center, toward)
         for candidate_radius in radii:
             for step in range(_WITNESS_ANGLES):
-                angle = rotation + step * (360.0 / _WITNESS_ANGLES)
+                angle = first_angle + step * (360.0 / _WITNESS_ANGLES)
                 offset = _heading_offset(angle)
                 candidate = add(center, offset, candidate_radius)
-                if distance_to_rectangle(candidate, *own) < PROFILE.body_radius + 0.05:
+                if distance_to_rectangle(candidate, *own) < PROFILE.body_radius + _BODY_CLEARANCE_SLACK:
                     continue
                 if not self.open_ground(candidate, inside, pending_rects, pending_circles):
                     continue
@@ -496,43 +561,99 @@ def _heading_offset(angle: float) -> Point:
     return (math.cos(radians), math.sin(radians))
 
 
-def _pines(rng: Random, placer: _Placer) -> bool:
-    """Stand the pine clusters on open land, tight enough that a cluster is one solid blob."""
-    target = rng.randint(*_PINE_CLUSTERS)
-    centers: list[Point] = []
-    for _ in range(target):
-        for _ in range(_CLUSTER_TRIES):
-            candidate = (rng.uniform(0.0, WORLD_SIZE), rng.uniform(0.0, WORLD_SIZE))
-            if any(distance(candidate, taken) < _PINE_CENTER_GAP for taken in centers):
+def _pine_anchor(rng: Random, placer: _Placer, candidate: Point) -> None:
+    """Place one anchor and its optional companions, skipping every invalid candidate."""
+    if not placer.pine_clear(candidate):
+        return
+    group = [candidate]
+    placer.pines.append(Scenery("pine", candidate, PINE_RADIUS))
+    if rng.random() >= GENERATION_CONFIG.accessories.pine.companion_probability:
+        return
+    for _ in range(rng.randint(*GENERATION_CONFIG.accessories.pine.companions)):
+        member = add(
+            candidate,
+            _polar(
+                rng,
+                GENERATION_CONFIG.accessories.pine.companion_distance.low,
+                GENERATION_CONFIG.accessories.pine.companion_distance.high,
+            ),
+        )
+        if not placer.pine_clear(member, tuple(group)):
+            continue
+        placer.pines.append(Scenery("pine", member, PINE_RADIUS))
+        group.append(member)
+
+
+def _road_stations(total: float, margin: float, spacing: float) -> tuple[float, ...]:
+    """Enumerate bounded road stations without a quota or any random retry loop."""
+    if total <= margin * 2.0:
+        return ()
+    stations: list[float] = []
+    station = margin
+    while station <= total - margin:
+        stations.append(station)
+        station += spacing
+    return tuple(stations)
+
+
+def _polar_candidates(
+    rng: Random, anchor: Point, low: float, high: float, count: int
+) -> tuple[tuple[Point, float], ...]:
+    """Enumerate a seeded, even spiral over an annulus without repeated random retries."""
+    phase = rng.uniform(0.0, 360.0)
+    low_squared = low * low
+    span_squared = high * high - low_squared
+    return tuple(
+        (
+            add(
+                anchor,
+                _heading_offset(phase + index * _GOLDEN_ANGLE),
+                math.sqrt(low_squared + span_squared * ((index + 0.5) / count)),
+            ),
+            (phase + index * _GOLDEN_ANGLE) % 360.0,
+        )
+        for index in range(count)
+    )
+
+
+def _centered_values(low: float, high: float, count: int) -> tuple[float, ...]:
+    """Return evenly spread values, trying those nearest zero first."""
+    if count == 1:
+        return ((low + high) / 2.0,)
+    values = tuple(low + (high - low) * index / (count - 1) for index in range(count))
+    return tuple(sorted(values, key=lambda value: (abs(value), value)))
+
+
+def _pines(rng: Random, placer: _Placer, network: _Network) -> None:
+    """Dress road stations and selected scatter cells with independently optional pines."""
+    arc = RoadArc.of(network.road.points)
+    for index, station in enumerate(
+        _road_stations(
+            arc.total,
+            GENERATION_CONFIG.accessories.pine.road_end_margin,
+            GENERATION_CONFIG.accessories.pine.road_spacing,
+        )
+    ):
+        point, _tangent, normal = arc.frame(station)
+        side = 1.0 if index % 2 == 0 else -1.0
+        offset = network.road.width / 2.0 + PINE_RADIUS + GENERATION_CONFIG.accessories.pine.path_edge_gap
+        _pine_anchor(rng, placer, add(point, normal, side * offset))
+    cell = GENERATION_CONFIG.accessories.pine.scatter_cell
+    columns = math.ceil(WORLD_SIZE / cell)
+    for column in range(columns):
+        for row in range(columns):
+            if rng.random() >= GENERATION_CONFIG.accessories.pine.scatter_probability:
                 continue
-            if not placer.pine_clear(candidate, []):
-                continue
-            size = rng.randint(2, 5)
-            spread = _PINE_SIZE_SPREADS[size]
-            cluster: list[Point] = []
-            for _ in range(size):
-                for _ in range(_PINE_TRIES):
-                    member = add(candidate, _polar(rng, *spread))
-                    if any(distance(member, other) < _PINE_MIN_SPACING for other in cluster):
-                        continue
-                    if not placer.pine_clear(member, cluster):
-                        continue
-                    cluster.append(member)
-                    break
-                else:
-                    break
-            if len(cluster) == size:
-                placer.pines.extend(Scenery("pine", member, PINE_RADIUS) for member in cluster)
-                centers.append(candidate)
-                break
-        else:
-            return False
-    return True
+            candidate = (
+                min(WORLD_SIZE, (column + rng.random()) * cell),
+                min(WORLD_SIZE, (row + rng.random()) * cell),
+            )
+            _pine_anchor(rng, placer, candidate)
 
 
 def _crates(rng: Random, placer: _Placer, stall: Prop) -> bool:
     """Land one or two crates at the stall's corners, walking the corners until one fits."""
-    count = rng.randint(1, 2)
+    count = rng.randint(*GENERATION_CONFIG.accessories.crate.count)
     corners = rectangle_corners(stall.position, *stall.footprint, stall.rotation)
     first = rng.randrange(4)
     placed = 0
@@ -541,13 +662,60 @@ def _crates(rng: Random, placer: _Placer, stall: Prop) -> bool:
             break
         corner = corners[(first + offset) % 4]
         for _ in range(_CRATE_TRIES):
-            reach = CRATE_RADIUS + rng.uniform(0.1, 0.35)
+            reach = CRATE_RADIUS + rng.uniform(
+                GENERATION_CONFIG.accessories.crate.offset.low,
+                GENERATION_CONFIG.accessories.crate.offset.high,
+            )
             center = add(corner, _unit(subtract(corner, stall.position)), reach)
             if placer.circle_clear(center, CRATE_RADIUS, exempt=stall):
                 placer.crates.append(Scenery("crate", center, CRATE_RADIUS))
                 placed += 1
                 break
     return placed >= 1
+
+
+def _roadside_stall(rng: Random, placer: _Placer, road: Polyline, arc: RoadArc, anchor: Point) -> bool:
+    """Use the shared road schedule when a market spot's local candidates are all blocked."""
+    footprint = _footprint("stall")
+    anchor_along = arc.nearest(anchor)
+    stations = sorted(
+        _road_stations(
+            arc.total,
+            GENERATION_CONFIG.accessories.stall.fallback_end_margin,
+            GENERATION_CONFIG.accessories.stall.fallback_spacing,
+        ),
+        key=lambda station: abs(station - anchor_along),
+    )
+    for station in stations:
+        point, direction, normal = arc.frame(station)
+        if placer.stretch_wet(point, _STALL_DRY_STRETCH):
+            continue
+        toward = subtract(anchor, point)
+        preferred = 1.0 if normal[0] * toward[0] + normal[1] * toward[1] >= 0.0 else -1.0
+        for side in (preferred, -preferred):
+            center = add(
+                point,
+                normal,
+                side
+                * (
+                    road.width / 2.0
+                    + footprint[1] / 2.0
+                    + _PROP_PATH_MARGIN
+                    + GENERATION_CONFIG.accessories.stall.edge_gap.low
+                ),
+            )
+            rotation = heading_to(point, add(point, direction))
+            if not placer.rect_clear(center, footprint, rotation):
+                continue
+            witness = placer.witness_for(center, footprint, rotation, toward=point)
+            if witness is None:
+                continue
+            mark = placer.mark()
+            stall = placer.bank("stall", center, rotation, witness)
+            if _crates(rng, placer, stall):
+                return True
+            placer.rewind(mark)
+    return False
 
 
 def _stalls(rng: Random, placer: _Placer, sites: _Sites, network: _Network) -> bool:
@@ -559,26 +727,50 @@ def _stalls(rng: Random, placer: _Placer, sites: _Sites, network: _Network) -> b
     """
     footprint = _footprint("stall")
     road = network.road
-    lengths = _arc_lengths(road.points)
+    arc = RoadArc.of(road.points)
     half_depth = footprint[1] / 2.0
-    for spot in sites.stalls[: PROP_TYPE_BY_TOKEN["stall"].count]:
-        anchor_along = _nearest_arc(road.points, lengths, spot)
+    samples = max(1, (_PROP_TRIES + 1) // 2)
+    along_offsets = _centered_values(
+        GENERATION_CONFIG.accessories.stall.arc_jitter.low,
+        GENERATION_CONFIG.accessories.stall.arc_jitter.high,
+        samples,
+    )
+    edge_gaps = _centered_values(
+        GENERATION_CONFIG.accessories.stall.edge_gap.low,
+        GENERATION_CONFIG.accessories.stall.edge_gap.high,
+        samples,
+    )
+    rotation_offsets = _centered_values(
+        GENERATION_CONFIG.accessories.stall.rotation_jitter.low,
+        GENERATION_CONFIG.accessories.stall.rotation_jitter.high,
+        samples,
+    )
+    stall_count = fixed_prop_count(PROP_TYPE_BY_TOKEN["stall"])
+    for spot in sites.stalls[:stall_count]:
+        anchor_along = arc.nearest(spot)
         for attempt in range(_PROP_TRIES):
-            along = anchor_along + rng.uniform(-12.0, 12.0)
-            point, direction = _arc_point(road.points, lengths, along)
+            candidate_index = attempt // 2
+            along = anchor_along + along_offsets[candidate_index]
+            point, direction, normal = arc.frame(along)
             if placer.stretch_wet(point, _STALL_DRY_STRETCH):
                 continue
-            normal = (-direction[1], direction[0])
             toward = subtract(spot, point)
             side = 1.0 if normal[0] * toward[0] + normal[1] * toward[1] >= 0.0 else -1.0
-            if attempt >= _PROP_TRIES // 2:
+            if attempt % 2:
                 side = -side
-            offset = road.width / 2.0 + half_depth + _PROP_PATH_MARGIN + rng.uniform(0.15, 1.6)
+            offset = (
+                road.width / 2.0
+                + half_depth
+                + _PROP_PATH_MARGIN
+                + edge_gaps[(candidate_index * 17) % samples]
+            )
             center = add(point, normal, side * offset)
-            rotation = heading_to(point, add(point, direction)) + rng.uniform(-20.0, 20.0)
+            rotation = wrap_heading(
+                heading_to(point, add(point, direction)) + rotation_offsets[(candidate_index * 23) % samples]
+            )
             if not placer.rect_clear(center, footprint, rotation):
                 continue
-            witness = placer.witness_for(center, footprint, rotation)
+            witness = placer.witness_for(center, footprint, rotation, toward=point)
             if witness is None:
                 continue
             mark = placer.mark()
@@ -587,59 +779,95 @@ def _stalls(rng: Random, placer: _Placer, sites: _Sites, network: _Network) -> b
                 break
             placer.rewind(mark)
         else:
+            if _roadside_stall(rng, placer, road, arc, spot):
+                continue
             return False
     return True
 
 
-def _lanterns(rng: Random, placer: _Placer, network: _Network, sites: _Sites) -> bool:
-    """Space the lanterns just off the road edge, denser near the market."""
-    count = PROP_TYPE_BY_TOKEN["lantern"].count
+def _lanterns(rng: Random, placer: _Placer, network: _Network, sites: _Sites) -> None:
+    """Follow the road with deterministic stations, skipping a blocked station outright."""
     footprint = _footprint("lantern")
-    road = network.road
-    lengths = _arc_lengths(road.points)
-    total = lengths[-1]
-    market_along = _nearest_arc(road.points, lengths, sites.market)
-    near_market = count // 2
-    for _ in range(_LANTERN_SETS):
-        stations = []
-        for index in range(count):
-            if index < near_market:
-                along = market_along + rng.uniform(-18.0, 18.0)
-            else:
-                along = rng.uniform(0.03, 0.97) * total
-            stations.append(min(max(along, 2.0), total - 2.0))
-        stations.sort()
-        spaced: list[float] = []
-        for station in stations:
-            spaced.append(station if not spaced else max(station, spaced[-1] + _LANTERN_SPACING))
-        if spaced[-1] > total - 2.0:
-            continue
-        mark = placer.mark()
-        placed = 0
-        for station in spaced:
-            for _ in range(_LANTERN_TRIES):
-                jitter = rng.uniform(-6.0, 6.0)
-                side = _drawn_side(rng)
-                extra = rng.uniform(0.2, 0.6)
-                point, direction = _arc_point(road.points, lengths, station + jitter)
-                if placer.stretch_wet(point, _LANTERN_DRY_STRETCH):
-                    continue
-                normal = (-direction[1], direction[0])
-                center = add(point, normal, side * (road.width / 2.0 + footprint[0] / 2.0 + extra))
+    arc = RoadArc.of(network.road.points)
+    market_along = arc.nearest(sites.market)
+    initial_side = _drawn_side(rng)
+    station = GENERATION_CONFIG.accessories.lantern.end_margin
+    index = 0
+    while station <= arc.total - GENERATION_CONFIG.accessories.lantern.end_margin:
+        point, direction, normal = arc.frame(station)
+        spacing = (
+            GENERATION_CONFIG.accessories.lantern.market_spacing
+            if abs(station - market_along) <= GENERATION_CONFIG.accessories.lantern.market_radius
+            else GENERATION_CONFIG.accessories.lantern.spacing
+        )
+        if not placer.stretch_wet(point, _LANTERN_DRY_STRETCH):
+            preferred = initial_side if index % 2 == 0 else -initial_side
+            for side in (preferred, -preferred):
+                center = add(
+                    point,
+                    normal,
+                    side
+                    * (
+                        network.road.width / 2.0
+                        + footprint[0] / 2.0
+                        + GENERATION_CONFIG.accessories.lantern.road_edge_gap
+                    ),
+                )
                 rotation = heading_to(point, add(point, direction))
-                if not placer.rect_clear(center, footprint, rotation, path_margin=0.05):
+                if not placer.rect_clear(
+                    center,
+                    footprint,
+                    rotation,
+                    path_margin=GENERATION_CONFIG.accessories.lantern.path_margin,
+                    witness_gap=PROFILE.body_radius * 2.0 + 0.1,
+                ):
                     continue
-                witness = placer.witness_for(center, footprint, rotation)
+                witness = placer.witness_for(center, footprint, rotation, toward=point)
                 if witness is None:
                     continue
                 placer.bank("lantern", center, rotation, witness)
-                placed += 1
                 break
-            else:
-                break
-        if placed == count:
+        station += spacing
+        index += 1
+
+
+def _roadside_bench(placer: _Placer, road: Polyline, anchor: Point) -> bool:
+    """Place a bench at the nearest available road station when its district anchor is crowded."""
+    footprint = _footprint("bench")
+    arc = RoadArc.of(road.points)
+    anchor_along = arc.nearest(anchor)
+    stations = sorted(
+        _road_stations(
+            arc.total,
+            GENERATION_CONFIG.accessories.bench.fallback_end_margin,
+            GENERATION_CONFIG.accessories.bench.fallback_spacing,
+        ),
+        key=lambda station: abs(station - anchor_along),
+    )
+    for station in stations:
+        point, direction, normal = arc.frame(station)
+        toward = subtract(anchor, point)
+        preferred = 1.0 if normal[0] * toward[0] + normal[1] * toward[1] >= 0.0 else -1.0
+        for side in (preferred, -preferred):
+            center = add(
+                point,
+                normal,
+                side
+                * (
+                    road.width / 2.0
+                    + footprint[1] / 2.0
+                    + _PROP_PATH_MARGIN
+                    + GENERATION_CONFIG.accessories.bench.road_edge_gap
+                ),
+            )
+            rotation = heading_to(point, add(point, direction))
+            if not placer.rect_clear(center, footprint, rotation):
+                continue
+            witness = placer.witness_for(center, footprint, rotation, toward=point)
+            if witness is None:
+                continue
+            placer.bank("bench", center, rotation, witness)
             return True
-        placer.rewind(mark)
     return False
 
 
@@ -647,40 +875,79 @@ def _benches(rng: Random, placer: _Placer, sites: _Sites, network: _Network) -> 
     """Split the benches across the plaza, the market, and the inn front, every site served."""
     footprint = _footprint("bench")
     anchored = (
-        (sites.plaza, (1.5, 5.0)),
-        (sites.plaza, (1.5, 5.0)),
-        (sites.market, (2.0, 7.5)),
-        (sites.market, (2.0, 7.5)),
+        (
+            sites.plaza,
+            (
+                GENERATION_CONFIG.accessories.bench.plaza_reach.low,
+                GENERATION_CONFIG.accessories.bench.plaza_reach.high,
+            ),
+        ),
+        (
+            sites.plaza,
+            (
+                GENERATION_CONFIG.accessories.bench.plaza_reach.low,
+                GENERATION_CONFIG.accessories.bench.plaza_reach.high,
+            ),
+        ),
+        (
+            sites.market,
+            (
+                GENERATION_CONFIG.accessories.bench.market_reach.low,
+                GENERATION_CONFIG.accessories.bench.market_reach.high,
+            ),
+        ),
+        (
+            sites.market,
+            (
+                GENERATION_CONFIG.accessories.bench.market_reach.low,
+                GENERATION_CONFIG.accessories.bench.market_reach.high,
+            ),
+        ),
     )
     for anchor, reach in anchored:
-        for _ in range(_PROP_TRIES):
-            center = add(anchor, _polar(rng, *reach))
-            rotation = heading_to(center, anchor) + 90.0
+        for center, _angle in _polar_candidates(rng, anchor, *reach, _PROP_TRIES):
+            rotation = wrap_heading(heading_to(center, anchor) + 90.0)
             if not placer.rect_clear(center, footprint, rotation):
                 continue
-            witness = placer.witness_for(center, footprint, rotation)
+            witness = placer.witness_for(center, footprint, rotation, toward=anchor)
             if witness is None:
                 continue
             placer.bank("bench", center, rotation, witness)
             break
         else:
-            return False
+            if not _roadside_bench(placer, network.road, anchor):
+                return False
     inn = network.buildings[5]
     door = inn.doorway.position
     outward = _unit(subtract(door, inn.center))
     along_wall = (-outward[1], outward[0])
     for _ in range(_PROP_TRIES):
         side = _drawn_side(rng)
-        center = add(add(door, outward, rng.uniform(1.0, 4.5)), along_wall, side * rng.uniform(1.9, 6.0))
+        center = add(
+            add(
+                door,
+                outward,
+                rng.uniform(
+                    GENERATION_CONFIG.accessories.bench.inn_forward.low,
+                    GENERATION_CONFIG.accessories.bench.inn_forward.high,
+                ),
+            ),
+            along_wall,
+            side
+            * rng.uniform(
+                GENERATION_CONFIG.accessories.bench.inn_side.low,
+                GENERATION_CONFIG.accessories.bench.inn_side.high,
+            ),
+        )
         rotation = heading_to(door, add(door, along_wall))
         if not placer.rect_clear(center, footprint, rotation, skip_building=inn):
             continue
-        witness = placer.witness_for(center, footprint, rotation)
+        witness = placer.witness_for(center, footprint, rotation, toward=door)
         if witness is None:
             continue
         placer.bank("bench", center, rotation, witness)
         return True
-    return False
+    return _roadside_bench(placer, network.road, door)
 
 
 def _shrines(rng: Random, placer: _Placer, network: _Network) -> bool:
@@ -691,26 +958,43 @@ def _shrines(rng: Random, placer: _Placer, network: _Network) -> bool:
     """
     footprint = _footprint("shrine")
     road = network.road
-    lengths = _arc_lengths(road.points)
+    arc = RoadArc.of(road.points)
     first_stub = len(placer.paths) - len(network.shrine_spots)
     for spot_index, spot in enumerate(network.shrine_spots):
         stub = (first_stub + spot_index,)
-        along = _nearest_arc(road.points, lengths, spot)
-        _, direction = _arc_point(road.points, lengths, along)
+        along = arc.nearest(spot)
+        _, direction, _normal = arc.frame(along)
         rotation = heading_to(spot, add(spot, direction))
         for _ in range(_SHRINE_TRIES):
-            center = add(spot, _polar(rng, 0.0, 0.8))
+            center = add(
+                spot,
+                _polar(
+                    rng,
+                    GENERATION_CONFIG.accessories.shrine.jitter.low,
+                    GENERATION_CONFIG.accessories.shrine.jitter.high,
+                ),
+            )
             if not placer.rect_clear(
-                center, footprint, rotation, path_margin=0.15, skip_paths=stub, skip_protected=True
+                center,
+                footprint,
+                rotation,
+                path_margin=GENERATION_CONFIG.accessories.shrine.path_margin,
+                skip_paths=stub,
+                skip_protected=True,
             ):
                 continue
-            posts = rectangle_corners(center, 2.0, 2.0, rotation)
+            posts = rectangle_corners(
+                center,
+                GENERATION_CONFIG.accessories.shrine.post_size,
+                GENERATION_CONFIG.accessories.shrine.post_size,
+                rotation,
+            )
             if not all(
                 placer.circle_clear(
                     post,
                     POST_RADIUS,
-                    path_margin=0.05,
-                    water_margin=0.3,
+                    path_margin=GENERATION_CONFIG.accessories.shrine.post_path_margin,
+                    water_margin=GENERATION_CONFIG.accessories.shrine.post_water_margin,
                     skip_paths=stub,
                     skip_protected=True,
                 )
@@ -739,12 +1023,17 @@ def _board(rng: Random, placer: _Placer, sites: _Sites) -> bool:
     footprint = _footprint("board")
     stalls = [prop for prop in placer.props if prop.type == "stall"]
     host = min(stalls, key=lambda prop: distance(prop.position, sites.board))
-    for _ in range(_PROP_TRIES):
-        center = add(host.position, _polar(rng, 1.4, 3.0))
-        rotation = rng.uniform(0.0, 360.0)
+    for center, angle in _polar_candidates(
+        rng,
+        host.position,
+        GENERATION_CONFIG.accessories.board.reach.low,
+        GENERATION_CONFIG.accessories.board.reach.high,
+        _PROP_TRIES,
+    ):
+        rotation = angle
         if not placer.rect_clear(center, footprint, rotation):
             continue
-        witness = placer.witness_for(center, footprint, rotation)
+        witness = placer.witness_for(center, footprint, rotation, toward=host.position)
         if witness is None:
             continue
         placer.bank("board", center, rotation, witness)
@@ -770,10 +1059,17 @@ def _plots(rng: Random, placer: _Placer) -> bool:
             middle = ((start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0)
             along = _unit(subtract(end, start))
             outward = _unit(subtract(middle, home.center))
-            slide_limit = max(0.0, distance(start, end) / 2.0 - footprint[0] / 2.0 - 0.1)
+            slide_limit = max(
+                0.0,
+                distance(start, end) / 2.0 - footprint[0] / 2.0 - GENERATION_CONFIG.accessories.plot.gap,
+            )
             for _ in range(_PLOT_SLIDES):
                 slide = rng.uniform(-slide_limit, slide_limit)
-                center = add(add(middle, along, slide), outward, half_depth + 0.05)
+                center = add(
+                    add(middle, along, slide),
+                    outward,
+                    half_depth + GENERATION_CONFIG.accessories.plot.wall_gap,
+                )
                 rotation = home.rotation
                 if not placer.rect_clear(center, footprint, rotation, skip_building=home):
                     continue
@@ -800,7 +1096,10 @@ def _interior(rng: Random, placer: _Placer, building: Building, token: str) -> b
     base = add(building.center, inward, span - footprint[1] / 2.0)
     rotation = heading_to(door, add(door, along_wall))
     for _ in range(_INTERIOR_TRIES):
-        slide = rng.uniform(-1.2, 1.2)
+        slide = rng.uniform(
+            GENERATION_CONFIG.accessories.interior.slide.low,
+            GENERATION_CONFIG.accessories.interior.slide.high,
+        )
         center = add(base, along_wall, slide)
         corners = rectangle_corners(center, footprint[0], footprint[1], rotation)
         if not all(
@@ -809,7 +1108,7 @@ def _interior(rng: Random, placer: _Placer, building: Building, token: str) -> b
         ):
             continue
         rectangle = (center, footprint[0], footprint[1], rotation)
-        if distance_to_rectangle(door, *rectangle) < 1.2:
+        if distance_to_rectangle(door, *rectangle) < GENERATION_CONFIG.accessories.interior.door_gap:
             continue
         if any(distance_to_rectangle(prop.position, *rectangle) < _PROP_GAP for prop in placer.props):
             continue
@@ -824,13 +1123,18 @@ def _interior(rng: Random, placer: _Placer, building: Building, token: str) -> b
 def _pump(rng: Random, placer: _Placer, sites: _Sites) -> bool:
     """Stand the pump on the plaza, at the end of the plaza footpath, which is exempt for it."""
     footprint = _footprint("pump")
-    plaza_path = (1,)
-    for _ in range(_PROP_TRIES):
-        center = add(sites.plaza, _polar(rng, 0.0, 2.0))
-        rotation = rng.uniform(0.0, 360.0)
+    plaza_path = (0,)
+    for center, angle in _polar_candidates(
+        rng,
+        sites.plaza,
+        GENERATION_CONFIG.accessories.pump.reach.low,
+        GENERATION_CONFIG.accessories.pump.reach.high,
+        _PROP_TRIES,
+    ):
+        rotation = angle
         if not placer.rect_clear(center, footprint, rotation, skip_paths=plaza_path):
             continue
-        witness = placer.witness_for(center, footprint, rotation)
+        witness = placer.witness_for(center, footprint, rotation, toward=sites.plaza)
         if witness is None:
             continue
         placer.bank("pump", center, rotation, witness)
@@ -842,19 +1146,38 @@ def _bell(rng: Random, placer: _Placer, sites: _Sites, network: _Network) -> boo
     """Stand the bell just off the road, on the stretch nearest its drawn west spot."""
     footprint = _footprint("bell")
     road = network.road
-    lengths = _arc_lengths(road.points)
-    anchor_along = _nearest_arc(road.points, lengths, sites.bell)
+    arc = RoadArc.of(road.points)
+    anchor_along = arc.nearest(sites.bell)
     for _ in range(_PROP_TRIES):
-        along = anchor_along + rng.uniform(-4.0, 4.0)
-        point, direction = _arc_point(road.points, lengths, along)
-        normal = (-direction[1], direction[0])
+        along = anchor_along + rng.uniform(
+            GENERATION_CONFIG.accessories.bell.arc_jitter.low,
+            GENERATION_CONFIG.accessories.bell.arc_jitter.high,
+        )
+        point, direction, normal = arc.frame(along)
         toward = subtract(sites.bell, point)
         side = 1.0 if normal[0] * toward[0] + normal[1] * toward[1] >= 0.0 else -1.0
-        center = add(point, normal, side * (road.width / 2.0 + footprint[0] / 2.0 + rng.uniform(0.3, 0.9)))
+        center = add(
+            point,
+            normal,
+            side
+            * (
+                road.width / 2.0
+                + footprint[0] / 2.0
+                + rng.uniform(
+                    GENERATION_CONFIG.accessories.bell.edge_gap.low,
+                    GENERATION_CONFIG.accessories.bell.edge_gap.high,
+                )
+            ),
+        )
         rotation = heading_to(point, add(point, direction))
-        if not placer.rect_clear(center, footprint, rotation, path_margin=0.1):
+        if not placer.rect_clear(
+            center,
+            footprint,
+            rotation,
+            path_margin=GENERATION_CONFIG.accessories.bell.path_margin,
+        ):
             continue
-        witness = placer.witness_for(center, footprint, rotation)
+        witness = placer.witness_for(center, footprint, rotation, toward=point)
         if witness is None:
             continue
         placer.bank("bell", center, rotation, witness)
@@ -875,22 +1198,8 @@ def _accessories_layer(
     fields: tuple[tuple[Point, ...], ...],
     reed_banks: tuple[tuple[Point, ...], ...],
 ) -> _Accessories | None:
-    """Dress the village: pines, then the catalog in canonical order, or None to redraw."""
+    """Place required props first, then optional roadside dressing without redraw pressure."""
     placer = _Placer(water, sites, network, fields, reed_banks)
-    if not _pines(rng, placer):
-        return None
-    if not _stalls(rng, placer, sites, network):
-        return None
-    if not _lanterns(rng, placer, network, sites):
-        return None
-    if not _benches(rng, placer, sites, network):
-        return None
-    if not _shrines(rng, placer, network):
-        return None
-    if not _board(rng, placer, sites):
-        return None
-    if not _plots(rng, placer):
-        return None
     if not _interior(rng, placer, network.buildings[5], "hearth"):
         return None
     if not _interior(rng, placer, network.buildings[6], "repair_bench"):
@@ -899,4 +1208,28 @@ def _accessories_layer(
         return None
     if not _bell(rng, placer, sites, network):
         return None
-    return _Accessories(tuple(placer.props), placer.scenery(), tuple(placer.witnesses))
+    if not _shrines(rng, placer, network):
+        return None
+    if not _stalls(rng, placer, sites, network):
+        return None
+    if not _board(rng, placer, sites):
+        return None
+    if not _plots(rng, placer):
+        return None
+    if not _benches(rng, placer, sites, network):
+        return None
+    mandatory_props = tuple(placer.props)
+    mandatory_witnesses = tuple(placer.witnesses)
+    mandatory_scenery = (*placer.crates, *placer.posts)
+    _lanterns(rng, placer, network, sites)
+    lantern_props = tuple(placer.props[len(mandatory_props) :])
+    lantern_witnesses = tuple(placer.witnesses[len(mandatory_witnesses) :])
+    _pines(rng, placer, network)
+    return _Accessories(
+        mandatory_props,
+        lantern_props,
+        mandatory_scenery,
+        tuple(placer.pines),
+        mandatory_witnesses,
+        lantern_witnesses,
+    )

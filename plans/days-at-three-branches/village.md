@@ -59,12 +59,12 @@ Districts are anchors along the road and channels, not fixed positions:
 
 ## Props
 
-Activities, states, and the use rules are the ruleset's; this table places the instances and fixes the counts:
+Activities, states, and the use rules are the ruleset's. This table places the instances. Every type except lanterns has a fixed catalog count.
 
 | Prop | Placement | Footprint | Count |
 | --- | --- | --- | --- |
 | Market stall | both sides of the road at the market | 1.5 x 1.5 m | 5 |
-| Lantern post | spaced along the road, denser near the market | 0.6 x 0.6 m | 9 |
+| Lantern post | road stations, denser through the market | 0.6 x 0.6 m | road length and clearance |
 | Bench | the well plaza, the market, and the inn front | 1.6 x 0.5 m | 5 |
 | Roadside shrine | road bends | 1.5 x 1.5 m plus roof posts | 2 |
 | Notice board | the market | 0.6 x 0.6 m | 1 |
@@ -78,13 +78,13 @@ Activities, states, and the use rules are the ruleset's; this table places the i
 
 ## Scenery
 
-- Solid scenery blocks movement and never blocks perception: red pines in clusters of two to five, market crates and barrels (one or two beside each stall), and the four roof posts of each shrine. Solid scenery never breaks the connected walkable region, a doorway's approach, or a prop's reach.
+- Solid scenery blocks movement and never blocks perception: red pines at road stations and scattered open-land cells, with optional nearby companions, market crates and barrels (one or two beside each stall), and the four roof posts of each shrine. Solid scenery never breaks the connected walkable region, a doorway's approach, or a prop's reach.
 - Passable scenery carries its ground class: reed flats are reed-bank ground, with the concealment and speed the ruleset gives them, and field furrows are field ground.
 - White cranes are renderer ambience: no footprint, no position, no rules.
 
 ## Generation order and guarantees
 
-The generator runs from the match seed's generation stream, in order: terrain and grounds, district anchors and buildings, the road network with its bridges and footpaths, scenery and props. Every seed satisfies:
+The generator runs from the match seed's generation stream, in order: terrain and grounds, district anchors and buildings, the road network with its bridges and footpaths, constrained accessories, lanterns, then pines. Its immutable tuning is in `generation.json`. Every seed satisfies:
 
 - The stable features are each placed once: the well pump, the market, the inn, the repair shed, and the beacon bell.
 - The walkable ground, bridges and building interiors included, is one connected region.

@@ -8,6 +8,7 @@ from random import Random
 
 from ..geometry import EPSILON, Point, add, distance, segments_intersect, subtract
 from ..layout import WORLD_SIZE, Polyline
+from .config import GENERATION_CONFIG, Range
 
 type _Polygons = tuple[tuple[Point, ...], ...]
 type _Segment = tuple[Point, Point]
@@ -17,18 +18,30 @@ type _Bounds = tuple[float, float, float, float]
 MAX_POLYLINE_POINTS = 35
 
 
-_OCTAVE_SPACINGS = (25.0, 12.5, 6.25)
-_WALK_STEP = 2.0
-_MAX_WALK_STEPS = 300
-_SAMPLE_SPACING = 3.0
+_OCTAVE_SPACINGS = GENERATION_CONFIG.walker.octave_spacings
+_WALK_STEP = GENERATION_CONFIG.walker.step
+_MAX_WALK_STEPS = GENERATION_CONFIG.walker.max_steps
+_SAMPLE_SPACING = GENERATION_CONFIG.walker.sample_spacing
 
 
-_REPEL_RADIUS = 12.0
-_REPEL_WEIGHT = 1.5
-_EDGE_RADIUS = 6.0
-_EDGE_WEIGHT = 1.2
-_EDGE_FADE = 15.0
-_ABORT_SLACK = 0.5
+_REPEL_RADIUS = GENERATION_CONFIG.walker.repel_radius
+_REPEL_WEIGHT = GENERATION_CONFIG.walker.repel_weight
+_EDGE_RADIUS = GENERATION_CONFIG.walker.edge_radius
+_EDGE_WEIGHT = GENERATION_CONFIG.walker.edge_weight
+_EDGE_FADE = GENERATION_CONFIG.walker.edge_fade
+
+
+def _draw_weights(rng: Random, ranges: tuple[Range, Range, Range]) -> tuple[float, float, float]:
+    """Draw one walker blend weight from each configured range in order."""
+    first, second, third = ranges
+    return (
+        rng.uniform(first.low, first.high),
+        rng.uniform(second.low, second.high),
+        rng.uniform(third.low, third.high),
+    )
+
+
+_ABORT_SLACK = GENERATION_CONFIG.walker.abort_slack
 
 
 def _fade(t: float) -> float:
@@ -81,10 +94,12 @@ class _Terrain:
     """The seed's land: elevation with a southward fall, and a moisture field."""
 
     def __init__(self, rng: Random) -> None:
-        roughness = rng.uniform(0.5, 1.6)
+        roughness = rng.uniform(
+            GENERATION_CONFIG.walker.roughness.low, GENERATION_CONFIG.walker.roughness.high
+        )
         self._relief = _Field(rng, roughness)
         self.moisture = _Field(rng, roughness)
-        self._slope = rng.uniform(0.35, 0.55)
+        self._slope = rng.uniform(GENERATION_CONFIG.walker.slope.low, GENERATION_CONFIG.walker.slope.high)
 
     def elevation(self, point: Point) -> float:
         return (1.0 - self._slope) * self._relief(point) + self._slope * (point[1] / WORLD_SIZE)
@@ -183,7 +198,7 @@ def _walk(
     for _ in range(limit):
         position = points[-1]
         remaining = distance(position, target)
-        if remaining <= _WALK_STEP * 1.5:
+        if remaining <= _WALK_STEP * GENERATION_CONFIG.walker.finish_step_factor:
             points.append(target)
             return points
         toward = _unit(subtract(target, position))
@@ -226,7 +241,7 @@ def _walk(
                 repulsion[0],
                 repulsion[1] - edge_fade * (1.0 - (WORLD_SIZE - position[1]) / _EDGE_RADIUS),
             )
-        arrival = max(0.0, 1.0 - remaining / 20.0)
+        arrival = max(0.0, 1.0 - remaining / GENERATION_CONFIG.walker.arrival_pull_radius)
         blended = _unit(
             (
                 momentum_weight * heading[0]
@@ -249,7 +264,11 @@ def _walk(
 
 def _leg_limit(start: Point, end: Point) -> int:
     """A step budget that lets a course triple its straight length before giving up."""
-    return min(_MAX_WALK_STEPS, math.ceil(distance(start, end) / _WALK_STEP) * 3 + 25)
+    return min(
+        _MAX_WALK_STEPS,
+        math.ceil(distance(start, end) / _WALK_STEP) * GENERATION_CONFIG.walker.leg_distance_multiplier
+        + GENERATION_CONFIG.walker.leg_base_steps,
+    )
 
 
 def _course_length(points: list[Point] | tuple[Point, ...]) -> float:

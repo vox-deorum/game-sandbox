@@ -235,7 +235,11 @@ class Layout:
         expected_props = tuple(
             (f"{prop_type.token}_{index}", prop_type.token)
             for prop_type in PROP_TYPES
-            for index in range(prop_type.count)
+            for index in range(
+                sum(prop.type == prop_type.token for prop in self.props)
+                if prop_type.count is None
+                else prop_type.count
+            )
         )
         if tuple((prop.id, prop.type) for prop in self.props) != expected_props:
             raise ValueError("props must use the canonical id and type sequence")

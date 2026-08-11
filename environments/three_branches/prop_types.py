@@ -34,7 +34,7 @@ class PropType:
     start: str
     transition: Transition
     footprint: Footprint
-    count: int
+    count: int | None
     district: str
 
 
@@ -67,6 +67,14 @@ def _positive_int(value: Any, owner: str) -> int:
     if type(value) is not int or value <= 0:
         raise ValueError(f"props: {owner} must be a positive integer")
     return value
+
+
+def _count(value: Any, token: str) -> int | None:
+    if token == "lantern":
+        if value is not None:
+            raise ValueError("props: lantern count must be null")
+        return None
+    return _positive_int(value, "prop count")
 
 
 def _transition(value: Any) -> Transition:
@@ -111,9 +119,10 @@ def load(data: Any) -> tuple[PropType, ...]:
         if transition.kind in {"occupancy", "timed"} and start != states[1]:
             raise ValueError("props: an occupancy or timed prop must start in its second, resting state")
         footprint = _object(entry["footprint"], "a footprint", {"width", "depth"})
+        token = _token(entry["token"], "a prop token")
         props.append(
             PropType(
-                _token(entry["token"], "a prop token"),
+                token,
                 _string(entry["title"], "a prop title"),
                 _string(entry["activity"], "a prop activity"),
                 states,
@@ -123,7 +132,7 @@ def load(data: Any) -> tuple[PropType, ...]:
                     _positive_number(footprint["width"], "footprint width"),
                     _positive_number(footprint["depth"], "footprint depth"),
                 ),
-                _positive_int(entry["count"], "prop count"),
+                _count(entry["count"], token),
                 _token(entry["district"], "a prop district"),
             )
         )
@@ -134,11 +143,18 @@ def load(data: Any) -> tuple[PropType, ...]:
 
 PROP_TYPES = load(json.loads(resources.files(__package__).joinpath("props.json").read_text(encoding="utf-8")))
 PROP_TYPE_BY_TOKEN = {prop.token: prop for prop in PROP_TYPES}
-PROP_TOTAL = sum(prop.count for prop in PROP_TYPES)
+
+
+def fixed_prop_count(prop_type: PropType) -> int:
+    """Return a catalog prop's required count."""
+    if prop_type.count is None:
+        raise ValueError(f"props: {prop_type.token} has a variable count")
+    return prop_type.count
+
 
 # The engine and overlay treat this one prop as the global beacon everyone perceives while it rings.
 BELL_ID = "bell_0"
 BELL_RINGING = "ringing"
 _bell = PROP_TYPE_BY_TOKEN.get(BELL_ID.rsplit("_", 1)[0])
-if _bell is None or _bell.count != 1 or BELL_RINGING not in _bell.states:
+if _bell is None or fixed_prop_count(_bell) != 1 or BELL_RINGING not in _bell.states:
     raise ValueError("props: the catalog must keep a single beacon bell with a ringing state")

@@ -32,7 +32,7 @@ Every match plays in Three Branches, generated from the match seed under fixed g
 - The stable features are each placed once: the central well with its magic pump, the market beside the raised road, the inn, the repair shed, and the old beacon bell.
 - A trunk river forks into three channels that cross the village, with homes and fields spread along them. Water is impassable, each channel carries one or two bridges, and the walkable ground, bridges and building interiors included, is one connected region.
 - The village always generates five homes, `home_0` through `home_4`, whatever the cast size, so every season plays the same layout. `npc_i` lives in `home_(i mod 5)`, which puts two villagers in each house when the cast is ten. The visitor spawns on the road at the west edge.
-- The generator scatters the village dressing: market stalls, lantern posts, benches, roadside shrines, and garden plots. [village.md](village.md) fixes the counts.
+- The generator places the village dressing: market stalls, lantern posts, benches, roadside shrines, and garden plots. [village.md](village.md) fixes every catalog count except lanterns, which follow road stations and clearance.
 
 Each point of walkable ground has a class that sets its speed limit:
 

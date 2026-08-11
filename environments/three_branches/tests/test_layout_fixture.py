@@ -68,6 +68,20 @@ def test_fixture_has_the_fixed_inventory() -> None:
     ]
 
 
+@pytest.mark.parametrize("lantern_count", (0, 2))
+def test_layout_accepts_a_variable_contiguous_lantern_roster(lantern_count: int) -> None:
+    stalls = FIXTURE_VILLAGE.props[:5]
+    lanterns = tuple(
+        replace(prop, id=f"lantern_{index}")
+        for index, prop in enumerate(FIXTURE_VILLAGE.props[5 : 5 + lantern_count])
+    )
+    layout = replace(FIXTURE_VILLAGE, props=(*stalls, *lanterns, *FIXTURE_VILLAGE.props[14:]))
+
+    assert [prop.id for prop in layout.props if prop.type == "lantern"] == [
+        f"lantern_{index}" for index in range(lantern_count)
+    ]
+
+
 def test_wall_segments_leave_exactly_one_doorway_gap_per_building() -> None:
     layout = FIXTURE_VILLAGE
     assert len(layout.wall_segments) == len(layout.buildings) * 5
@@ -132,6 +146,18 @@ def test_layout_rejects_a_rotated_bridge_overlapping_a_confluence_cap() -> None:
 def test_layout_rejects_prop_reordering_and_id_type_mismatches(props: tuple[object, ...]) -> None:
     with pytest.raises(ValueError, match="canonical id and type sequence"):
         replace(FIXTURE_VILLAGE, props=props)  # type: ignore[arg-type]
+
+
+def test_layout_rejects_gapped_variable_and_incorrect_fixed_prop_rosters() -> None:
+    gapped_lanterns = (
+        *FIXTURE_VILLAGE.props[:5],
+        replace(FIXTURE_VILLAGE.props[5], id="lantern_1"),
+        *FIXTURE_VILLAGE.props[14:],
+    )
+    with pytest.raises(ValueError, match="canonical id and type sequence"):
+        replace(FIXTURE_VILLAGE, props=gapped_lanterns)
+    with pytest.raises(ValueError, match="canonical id and type sequence"):
+        replace(FIXTURE_VILLAGE, props=FIXTURE_VILLAGE.props[1:])
 
 
 def test_layout_rejects_a_building_roster_off_the_canonical_sequence() -> None:

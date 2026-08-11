@@ -6,6 +6,7 @@ from random import Random
 
 from ..layout import Layout
 from .accessories import CRATE_RADIUS, PINE_RADIUS, POST_RADIUS, _accessories_layer
+from .config import GENERATION_CONFIG
 from .network import SPAWN_CLEARANCE, _network_layer
 from .sites import BOUNDARY_MARGIN, BUILDING_GAP, HOME_CLUSTER_RADIUS, WATER_CLEARANCE, _sites_layer
 from .terrain import _terrain_layer, _Water
@@ -25,8 +26,7 @@ __all__ = [
     "build_village",
 ]
 
-
-MAX_REDRAWS = 64
+MAX_REDRAWS = GENERATION_CONFIG.pipeline.max_redraws
 
 
 def build_village(seed: int) -> Layout:
@@ -53,22 +53,23 @@ def build_village(seed: int) -> Layout:
         accessories = _accessories_layer(rng, water, sites, network, fields, reed_banks)
         if accessories is None:
             continue
-        try:
-            layout = Layout(
-                channels=water.channels,
-                road=network.road,
-                footpaths=network.footpaths,
-                bridges=network.bridges,
-                buildings=network.buildings,
-                fields=fields,
-                reed_banks=reed_banks,
-                props=accessories.props,
-                scenery=accessories.scenery,
-                spawn=network.spawn,
-            )
-        except ValueError:
-            continue
-        if not _validated(layout, accessories.witnesses):
-            continue
-        return layout
+        for include_pines, include_lanterns in ((True, True), (False, True), (False, False)):
+            props, scenery, witnesses = accessories.layout_parts(include_pines, include_lanterns)
+            try:
+                layout = Layout(
+                    channels=water.channels,
+                    road=network.road,
+                    footpaths=network.footpaths,
+                    bridges=network.bridges,
+                    buildings=network.buildings,
+                    fields=fields,
+                    reed_banks=reed_banks,
+                    props=props,
+                    scenery=scenery,
+                    spawn=network.spawn,
+                )
+            except ValueError:
+                continue
+            if _validated(layout, witnesses):
+                return layout
     raise RuntimeError(f"could not build a village for seed {seed} within {MAX_REDRAWS} redraws")

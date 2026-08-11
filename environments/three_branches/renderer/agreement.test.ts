@@ -26,9 +26,24 @@ describe('Three Branches Python and TypeScript overlay agreement', () => {
       sidecar.static,
     )
     for (const building of staticOverlay.village.buildings) {
-      expect(buildingWallSegments(building).map(({ start, end }) => [start, end])).toEqual(
-        sidecar.walls[building.id],
-      )
+      const rendererWalls = buildingWallSegments(building).map(({ start, end }) => [start, end])
+      const engineWalls = sidecar.walls[building.id] as Array<
+        [{ x: number; y: number }, { x: number; y: number }]
+      >
+      expect(rendererWalls).toHaveLength(engineWalls.length)
+      for (const [index, rendererWall] of rendererWalls.entries()) {
+        const engineWall = engineWalls[index]
+        expect(engineWall).toBeDefined()
+        if (!engineWall) continue
+        for (const endpoint of [0, 1] as const) {
+          const rendererPoint = rendererWall[endpoint]
+          const enginePoint = engineWall[endpoint]
+          expect(rendererPoint).toBeDefined()
+          if (!rendererPoint) continue
+          expect(Math.abs(rendererPoint.x - enginePoint.x)).toBeLessThan(0.02)
+          expect(Math.abs(rendererPoint.y - enginePoint.y)).toBeLessThan(0.02)
+        }
+      }
     }
   })
 

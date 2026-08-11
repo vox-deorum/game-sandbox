@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from three_branches.prop_types import PROP_TOTAL, PROP_TYPES
+from three_branches.prop_types import PROP_TYPES, fixed_prop_count
 from three_branches.prop_types import load as load_props
 from three_branches.rules import DAY_TICKS, EMOTES, GROUND_BY_TOKEN, OFF_PHASE, PHASES, PROFILE
 from three_branches.rules import load as load_rules
@@ -91,12 +91,24 @@ def test_rules_loader_rejects_malformed_documents(change: Any, message: str) -> 
             "footprint width must be positive",
         ),
         (lambda doc: doc["props"][0].update(count=0), "prop count must be a positive integer"),
+        (lambda doc: doc["props"][0].update(count=None), "prop count must be a positive integer"),
     ],
 )
 def test_prop_loader_rejects_malformed_documents(change: Any, message: str) -> None:
     document = _props_document()
     change(document)
     with pytest.raises(ValueError, match=message):
+        load_props(document)
+
+
+def test_prop_loader_allows_only_lantern_to_have_a_variable_count() -> None:
+    document = _props_document()
+    document["props"][0].update(token="lantern", count=None)
+
+    assert load_props(document)[0].count is None
+
+    document["props"][0]["count"] = 1
+    with pytest.raises(ValueError, match="lantern count must be null"):
         load_props(document)
 
 
@@ -156,7 +168,18 @@ def test_the_shipped_props_pin_the_ruleset_and_village_tables() -> None:
             1.5,
             5,
         ),
-        ("lantern", "Lantern post", "lighting", ("lit", "unlit"), "unlit", "toggle", None, 0.6, 0.6, 9),
+        (
+            "lantern",
+            "Lantern post",
+            "lighting",
+            ("lit", "unlit"),
+            "unlit",
+            "toggle",
+            None,
+            0.6,
+            0.6,
+            None,
+        ),
         ("bench", "Bench", "sitting", ("occupied", "empty"), "empty", "occupancy", None, 1.6, 0.5, 5),
         (
             "shrine",
@@ -221,4 +244,6 @@ def test_the_shipped_props_pin_the_ruleset_and_village_tables() -> None:
             1,
         ),
     ]
-    assert PROP_TOTAL == 31
+    assert fixed_prop_count(PROP_TYPES[0]) == 5
+    with pytest.raises(ValueError, match="variable count"):
+        fixed_prop_count(PROP_TYPES[1])

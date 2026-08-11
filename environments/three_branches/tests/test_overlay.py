@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
@@ -29,6 +30,13 @@ def _overlay(*, cast_size: int = 5, daynight: bool = False) -> tuple[dict[str, o
     return encode_overlay(day), encode_overlay_static(day)
 
 
+def _layout_with_lantern_count(count: int):
+    stalls = FIXTURE_VILLAGE.props[:5]
+    lantern = FIXTURE_VILLAGE.props[5]
+    lanterns = tuple(replace(lantern, id=f"lantern_{index}") for index in range(count))
+    return replace(FIXTURE_VILLAGE, props=(*stalls, *lanterns, *FIXTURE_VILLAGE.props[14:]))
+
+
 def test_overlay_round_trips_to_friendly_meters_words_and_derived_state() -> None:
     day = Day(DayConfig(cast_size=5, daynight=True), FIXTURE_VILLAGE)
     day.characters["npc_0"].expression = Expression("wave")
@@ -43,8 +51,9 @@ def test_overlay_round_trips_to_friendly_meters_words_and_derived_state() -> Non
     assert static["v"] == OVERLAY_VERSION
     assert set(static) == {"v", "s"}
     assert len(compact["d"]["c"]) == 6
-    assert all(len(record) == 13 for record in compact["d"]["c"])
-    assert len(compact["d"]["p"]) == 31
+    assert all(len(record) == 14 for record in compact["d"]["c"])
+    assert len(compact["d"]["p"]) == len(FIXTURE_VILLAGE.props)
+    assert static["s"]["q"] == "05090502010501010101"
     assert decoded["characters"][0]["expression"] == "wave"
     assert decoded["characters"][-1]["id"] == "visitor"
     assert decoded["village"]["props"][0]["position"] == {"x": 32.0, "y": 32.0}
@@ -82,6 +91,31 @@ def test_static_layout_is_separate_from_every_frame_and_env_extraction_uses_live
     assert second["d"]["t"] == 2
 
 
+def test_overlay_uses_the_static_lantern_count_for_variable_rosters_and_states() -> None:
+    layout = _layout_with_lantern_count(2)
+    day = Day(DayConfig(cast_size=5), layout)
+    compact = encode_overlay(day)
+    static = encode_overlay_static(day)
+    decoded = decode_overlay(compact, static)
+
+    assert static["s"]["q"] == "05020502010501010101"
+    assert len(compact["d"]["p"]) == len(layout.props)
+    assert [prop["id"] for prop in decoded["village"]["props"] if prop["type"] == "lantern"] == [
+        "lantern_0",
+        "lantern_1",
+    ]
+
+
+def test_overlay_supports_use_targets_above_base36_one_character_range() -> None:
+    day = Day(DayConfig(cast_size=5), _layout_with_lantern_count(15))
+    day.characters["npc_0"].expression = Expression("use", "bell_0")
+    compact = encode_overlay(day)
+    static = encode_overlay_static(day)
+
+    assert compact["d"]["c"][0][-2:] == "10"
+    assert decode_overlay(compact, static)["characters"][0]["target"] == "bell_0"
+
+
 def test_mutating_an_encoded_static_layout_does_not_change_later_frames() -> None:
     day = Day(DayConfig(cast_size=5), FIXTURE_VILLAGE)
     first = encode_overlay_static(day)
@@ -110,8 +144,13 @@ def test_split_overlay_is_canonical_and_deterministic() -> None:
     [
         (lambda compact, static: compact.update(extra=None), "unexpected fields"),
         (lambda compact, static: compact["d"].update(c=compact["d"]["c"][:-1]), "roster order"),
-        (lambda compact, static: compact["d"]["c"].__setitem__(0, "short"), "13 characters"),
-        (lambda compact, static: compact["d"].update(p="z" * 31), "prop state"),
+        (lambda compact, static: compact["d"]["c"].__setitem__(0, "short"), "14 characters"),
+        (lambda compact, static: compact["d"].update(p="z" * len(compact["d"]["p"])), "prop state"),
+        (lambda compact, static: static["s"].update(q="bad"), "prop counts"),
+        (lambda compact, static: static["s"].update(q="?" + static["s"]["q"][1:]), "prop count"),
+        (lambda compact, static: static["s"].update(q="04090502010501010101"), "fixed prop count"),
+        (lambda compact, static: static["s"]["p"].pop(), "pose count"),
+        (lambda compact, static: static["s"].update(q="05zz0502010501010101"), "cannot exceed 1295"),
         (lambda compact, static: static["s"]["g"].__setitem__(0, "o00"), "ground row"),
         (lambda compact, static: compact["d"].update(t=1199, z="1"), "terminal flag"),
         (lambda compact, static: static["s"].update(a="10"), "cast size"),
@@ -135,20 +174,20 @@ def test_decoder_rejects_malformed_keys_counts_records_ranges_grid_and_terminal(
 def test_decoder_rejects_use_expression_target_and_holder_conflicts() -> None:
     compact, static = map(deepcopy, _overlay())
     record = compact["d"]["c"][0]
-    compact["d"]["c"][0] = record[:11] + "a" + "z"
+    compact["d"]["c"][0] = record[:11] + "a" + "zz"
     with pytest.raises(ValueError, match="use target"):
         decode_overlay(compact, static)
 
     compact, static = map(deepcopy, _overlay())
     for index in (0, 1):
         record = compact["d"]["c"][index]
-        compact["d"]["c"][index] = record[:11] + "a0"
+        compact["d"]["c"][index] = record[:11] + "a00"
     with pytest.raises(ValueError, match="multiple holders"):
         decode_overlay(compact, static)
 
     compact, static = map(deepcopy, _overlay())
     record = compact["d"]["c"][0]
-    compact["d"]["c"][0] = record[:9] + "01" + "a0"
+    compact["d"]["c"][0] = record[:9] + "01" + "a00"
     with pytest.raises(ValueError, match="movement"):
         decode_overlay(compact, static)
 

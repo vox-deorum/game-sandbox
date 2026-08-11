@@ -29,13 +29,13 @@ describe('Three Branches pure scene', () => {
         propType.title,
       )
     }
-    expect(scene.dynamic.props).toHaveLength(31)
+    expect(scene.dynamic.props).toHaveLength(staticOverlay.village.props.length)
   })
 
   it('labels every rules.json emote and every props.json state vocabulary', () => {
     const frame = clonedFrame()
     for (const [index, emote] of rulesData.emotes.entries()) {
-      frame.d.c[0] = `${frame.d.c[0]?.slice(0, 11)}${index + 1}z`
+      frame.d.c[0] = `${frame.d.c[0]?.slice(0, 11)}${index + 1}zz`
       expect(
         computeScene(decodeDynamic(frame, staticOverlay), staticOverlay).dynamic.characters[0]
           ?.expressionLabel,

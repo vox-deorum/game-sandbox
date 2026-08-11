@@ -22,11 +22,13 @@ from ..geometry import (
     subtract,
 )
 from ..layout import WORLD_SIZE, Bridge, Building, Polyline
+from .config import GENERATION_CONFIG
 from .sites import BUILDING_GAP, _doorway, _Sites
 from .terrain import _Water
 from .walker import (
     _angled,
     _coarse,
+    _draw_weights,
     _drawn_side,
     _edges,
     _inside_frame,
@@ -43,27 +45,27 @@ from .walker import (
     _water_gap,
 )
 
-SPAWN_CLEARANCE = 2.0
+SPAWN_CLEARANCE = GENERATION_CONFIG.network.spawn_clearance
 
 
-_DECK_APRON = 1.0
-_DRY_MARGIN = 0.6
-_CROSSING_BAND = 8.0
-_CROSSING_FORK_GAP = 12.0
-_JUNCTION_DECK_GAP = 3.0
-_ROUTE_GAP = 0.3
-_ROAD_TRIES = 16
+_DECK_APRON = GENERATION_CONFIG.network.deck_apron
+_DRY_MARGIN = GENERATION_CONFIG.network.dry_margin
+_CROSSING_BAND = GENERATION_CONFIG.network.crossing_band
+_CROSSING_FORK_GAP = GENERATION_CONFIG.network.crossing_fork_gap
+_JUNCTION_DECK_GAP = GENERATION_CONFIG.network.junction_deck_gap
+_ROUTE_GAP = GENERATION_CONFIG.network.route_gap
+_ROAD_TRIES = GENERATION_CONFIG.network.road_tries
 
 
-_NETWORK_TRIES = 3
+_NETWORK_TRIES = GENERATION_CONFIG.network.network_tries
 
 
-_FOOTPATH_TRIES = 4
-_FOOTPATH_REDRAWS = 3
+_FOOTPATH_TRIES = GENERATION_CONFIG.network.footpath_tries
+_FOOTPATH_REDRAWS = GENERATION_CONFIG.network.footpath_redraws
 
 
-_SHRINE_CLEARANCE = 2.5
-_SHRINE_SEPARATION = 15.0
+_SHRINE_CLEARANCE = GENERATION_CONFIG.network.shrine_clearance
+_SHRINE_SEPARATION = GENERATION_CONFIG.network.shrine_separation
 
 
 @dataclass(frozen=True)
@@ -95,13 +97,16 @@ def _water_reach(origin: Point, direction: Point, channel: Polyline) -> float | 
     """How far a channel's water band extends from a centerline point along a crossing direction."""
     half = channel.width / 2.0
     low = 0.0
-    high = 1.0
-    while high <= 12.0 and polyline_distance(add(origin, direction, high), channel.points) <= half:
+    high = GENERATION_CONFIG.network.water_reach_step
+    while (
+        high <= GENERATION_CONFIG.network.water_reach_limit
+        and polyline_distance(add(origin, direction, high), channel.points) <= half
+    ):
         low = high
-        high += 1.0
-    if high > 12.0:
+        high += GENERATION_CONFIG.network.water_reach_step
+    if high > GENERATION_CONFIG.network.water_reach_limit:
         return None
-    for _ in range(2):
+    for _ in range(GENERATION_CONFIG.network.water_reach_refinements):
         middle = (low + high) / 2.0
         if polyline_distance(add(origin, direction, middle), channel.points) > half:
             high = middle
@@ -118,13 +123,20 @@ def _crossing(
     The band around the corridor doubles when it holds no candidate, so a channel that dives away
     from the corridor still gets crossed rather than redrawing the village.
     """
-    for band in (_CROSSING_BAND, 2.0 * _CROSSING_BAND):
+    for band in (
+        _CROSSING_BAND,
+        GENERATION_CONFIG.network.crossing_band_multiplier * _CROSSING_BAND,
+    ):
         candidates: list[tuple[Point, Point]] = []
         for index in range(1, len(channel.points) - 1):
             point = channel.points[index]
             if abs(point[1] - corridor_y) > band:
                 continue
-            if not max(8.0, minimum_x) <= point[0] <= WORLD_SIZE - 8.0:
+            if (
+                not max(GENERATION_CONFIG.network.crossing_min_x, minimum_x)
+                <= point[0]
+                <= (WORLD_SIZE - GENERATION_CONFIG.network.crossing_edge_margin)
+            ):
                 continue
             if distance(point, fork) < _CROSSING_FORK_GAP:
                 continue
@@ -132,7 +144,7 @@ def _crossing(
             normal = (-along[1], along[0])
             if normal[0] < 0.0:
                 normal = (-normal[0], -normal[1])
-            if normal[0] < 0.3:
+            if normal[0] < GENERATION_CONFIG.network.crossing_min_normal_x:
                 continue
             candidates.append((point, normal))
         if candidates:
@@ -160,7 +172,7 @@ def _deck(
     near = add(vertex, axis, -(behind + _DECK_APRON))
     far = add(vertex, axis, ahead + _DECK_APRON)
     for endpoint in (near, far):
-        if not _inside_frame(endpoint, 1.0):
+        if not _inside_frame(endpoint, GENERATION_CONFIG.network.deck_frame_margin):
             return None
         if any(
             not (
@@ -192,8 +204,13 @@ def _deck(
         )
         if crossed != (other is channel):
             return None
-    bridge = Bridge(_midpoint(near, far), heading_to(near, far), rng.uniform(2.0, 3.0), distance(near, far))
-    if bridge.distance_to(water.fork) <= water.cap_radius + 0.5:
+    bridge = Bridge(
+        _midpoint(near, far),
+        heading_to(near, far),
+        rng.uniform(GENERATION_CONFIG.network.deck_width.low, GENERATION_CONFIG.network.deck_width.high),
+        distance(near, far),
+    )
+    if bridge.distance_to(water.fork) <= water.cap_radius + GENERATION_CONFIG.network.deck_fork_gap:
         return None
     corners = rectangle_corners(bridge.position, bridge.span, bridge.width, bridge.heading)
     bridge_bounds = (
@@ -205,7 +222,7 @@ def _deck(
     for other, segments, channel_bounds in zip(water.channels, water.segments, water.bounds, strict=True):
         if other is channel:
             continue
-        margin = other.width / 2.0 + 1.0
+        margin = other.width / 2.0 + GENERATION_CONFIG.network.deck_sibling_margin
         if any(
             distance_to_segment(corner, *segment) < margin
             for corner in corners
@@ -379,7 +396,10 @@ def _footpath_decks(
         vertex = channel.points[vertex_index]
         if distance(vertex, water.fork) < _CROSSING_FORK_GAP:
             continue
-        if any(existing.distance_to(vertex) < 4.0 for existing in decks):
+        if any(
+            existing.distance_to(vertex) < GENERATION_CONFIG.network.footpath_deck_vertex_gap
+            for existing in decks
+        ):
             continue
         along = _unit(subtract(channel.points[vertex_index + 1], channel.points[vertex_index - 1]))
         normal = (-along[1], along[0])
@@ -391,7 +411,8 @@ def _footpath_decks(
             continue
         deck, near, far = spanned
         if any(
-            existing.distance_to(deck.position) < 1.0 or deck.distance_to(existing.position) < 1.0
+            existing.distance_to(deck.position) < GENERATION_CONFIG.network.footpath_deck_gap
+            or deck.distance_to(existing.position) < GENERATION_CONFIG.network.footpath_deck_gap
             for existing in decks
         ):
             continue
@@ -425,7 +446,7 @@ def _footpath(
         and all(deck.distance_to(road.points[index]) >= _JUNCTION_DECK_GAP for deck in decks)
     ]
     candidates.sort(key=lambda index: distance(road.points[index], target))
-    del candidates[12:]
+    del candidates[GENERATION_CONFIG.network.junction_candidate_limit :]
     dry: list[int] = []
     wet: list[tuple[int, int]] = []
     for index in candidates:
@@ -435,9 +456,13 @@ def _footpath(
         elif len(crossings) == 1 and crossings[0] != 0 and crossings[0] not in bridged:
             wet.append((index, crossings[0]))
     for _ in range(_FOOTPATH_REDRAWS):
-        weights = (rng.uniform(0.5, 0.8), rng.uniform(0.4, 1.0), rng.uniform(0.5, 0.8))
-        width = rng.uniform(1.5, 2.5)
-        swing = rng.uniform(-35.0, 35.0)
+        weights = _draw_weights(rng, GENERATION_CONFIG.network.footpath_weights)
+        width = rng.uniform(
+            GENERATION_CONFIG.network.footpath_width.low, GENERATION_CONFIG.network.footpath_width.high
+        )
+        swing = rng.uniform(
+            GENERATION_CONFIG.network.footpath_swing.low, GENERATION_CONFIG.network.footpath_swing.high
+        )
         for index in dry[:_FOOTPATH_TRIES]:
             junction = road.points[index]
             heading = _angled(_unit(subtract(target, junction)), swing)
@@ -448,7 +473,7 @@ def _footpath(
                 weights,
                 heading,
                 avoid,
-                repel_radius=8.0,
+                repel_radius=GENERATION_CONFIG.network.footpath_repel_radius,
                 limit=_leg_limit(junction, target),
             )
             if course is None:
@@ -473,7 +498,7 @@ def _footpath(
                     weights,
                     approach_heading,
                     avoid,
-                    repel_radius=8.0,
+                    repel_radius=GENERATION_CONFIG.network.footpath_repel_radius,
                     limit=_leg_limit(junction, near),
                 )
                 if first is None:
@@ -485,7 +510,7 @@ def _footpath(
                     weights,
                     normal,
                     avoid,
-                    repel_radius=8.0,
+                    repel_radius=GENERATION_CONFIG.network.footpath_repel_radius,
                     limit=_leg_limit(far, target),
                 )
                 if second is None:
@@ -535,8 +560,19 @@ def _shrine_stubs(
         normal = (-along[1], along[0])
         side = _drawn_side(rng)
         for orientation in (side, -side):
-            spot = add(vertex, normal, orientation * (road.width / 2.0 + rng.uniform(1.5, 2.5)))
-            if not _inside_frame(spot, 3.0):
+            spot = add(
+                vertex,
+                normal,
+                orientation
+                * (
+                    road.width / 2.0
+                    + rng.uniform(
+                        GENERATION_CONFIG.network.shrine_offset.low,
+                        GENERATION_CONFIG.network.shrine_offset.high,
+                    )
+                ),
+            )
+            if not _inside_frame(spot, GENERATION_CONFIG.network.shrine_frame_margin):
                 continue
             if any(
                 not (
@@ -567,7 +603,15 @@ def _shrine_stubs(
             ):
                 continue
             spots.append(spot)
-            stubs.append(Polyline((vertex, spot), rng.uniform(1.5, 2.0)))
+            stubs.append(
+                Polyline(
+                    (vertex, spot),
+                    rng.uniform(
+                        GENERATION_CONFIG.network.shrine_path_width.low,
+                        GENERATION_CONFIG.network.shrine_path_width.high,
+                    ),
+                )
+            )
             bends.append(vertex)
             break
     if len(spots) < 2:
@@ -616,10 +660,25 @@ def _threaded_road(
     avoid: tuple[tuple[Point, ...], ...],
 ) -> tuple[Polyline, list[Bridge]] | None:
     """One attempt at the road: entry to exit through a drawn crossing and deck per channel."""
-    entry = (0.0, sites.corridor_y + rng.uniform(-5.0, 5.0))
-    exit_point = (WORLD_SIZE, sites.corridor_y + rng.uniform(-5.0, 5.0))
-    weights = (rng.uniform(0.55, 0.85), rng.uniform(0.25, 0.6), rng.uniform(0.5, 0.8))
-    heading = _angled((1.0, 0.0), rng.uniform(-30.0, 30.0))
+    entry = (
+        0.0,
+        sites.corridor_y
+        + rng.uniform(
+            GENERATION_CONFIG.network.road_edge_offset.low, GENERATION_CONFIG.network.road_edge_offset.high
+        ),
+    )
+    exit_point = (
+        WORLD_SIZE,
+        sites.corridor_y
+        + rng.uniform(
+            GENERATION_CONFIG.network.road_edge_offset.low, GENERATION_CONFIG.network.road_edge_offset.high
+        ),
+    )
+    weights = _draw_weights(rng, GENERATION_CONFIG.network.road_weights)
+    heading = _angled(
+        (1.0, 0.0),
+        rng.uniform(GENERATION_CONFIG.network.road_heading.low, GENERATION_CONFIG.network.road_heading.high),
+    )
 
     road_decks: list[Bridge] = []
     legs: list[list[Point]] = []
@@ -630,7 +689,7 @@ def _threaded_road(
         spanned: tuple[Bridge, Point, Point] | None = None
         vertex: Point
         axis: Point
-        for _ in range(8):
+        for _ in range(GENERATION_CONFIG.network.crossing_draws):
             drawn = _crossing(rng, channel, sites.corridor_y, water.fork, minimum_x)
             if drawn is None:
                 return None
@@ -648,7 +707,7 @@ def _threaded_road(
             weights,
             heading,
             avoid,
-            repel_radius=6.0,
+            repel_radius=GENERATION_CONFIG.network.road_repel_radius,
             limit=_leg_limit(position, near),
         )
         if leg is None or _pierces_building(tuple(leg), sites.buildings):
@@ -658,7 +717,7 @@ def _threaded_road(
         road_decks.append(deck)
         position = far
         heading = axis
-        minimum_x = vertex[0] + 8.0
+        minimum_x = vertex[0] + GENERATION_CONFIG.network.crossing_min_gap
     last = _walk(
         terrain,
         position,
@@ -666,7 +725,7 @@ def _threaded_road(
         weights,
         heading,
         avoid,
-        repel_radius=6.0,
+        repel_radius=GENERATION_CONFIG.network.road_repel_radius,
         limit=_leg_limit(position, exit_point),
     )
     if last is None or _pierces_building(tuple(last), sites.buildings):
@@ -675,7 +734,10 @@ def _threaded_road(
     course = _thread(legs, joints)
     if course is None:
         return None
-    road = Polyline(course, rng.uniform(4.0, 5.0))
+    road = Polyline(
+        course,
+        rng.uniform(GENERATION_CONFIG.network.road_width.low, GENERATION_CONFIG.network.road_width.high),
+    )
     if _self_intersects(road.points):
         return None
     if _wet_off_deck(road.points, water, road_decks):

@@ -167,7 +167,7 @@ class ThreeBranchesEnv(ParallelEnv[str, dict[str, Any], dict[str, Any]]):
                 "buildings": spaces.Tuple([building] * 7),
                 "fields": spaces.Sequence(spaces.Sequence(position)),
                 "reed_banks": spaces.Sequence(spaces.Sequence(position)),
-                "props": spaces.Tuple([prop] * 31),
+                "props": spaces.Sequence(prop),
                 "scenery": spaces.Sequence(scenery),
                 "spawn": position,
             }

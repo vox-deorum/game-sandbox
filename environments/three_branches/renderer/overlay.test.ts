@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import propsData from '../props.json'
 import { decodeDynamic, decodeStatic } from './overlay.js'
 import { firstDynamic, header, states } from './test-helpers.js'
 
@@ -11,7 +12,18 @@ function clonedFrame(): { v: number; d: { t: number; c: string[]; p: string; z: 
 }
 
 function clonedHeader(): { v: number; s: Record<string, unknown> } {
-  return structuredClone(header.overlay_static) as { v: number; s: Record<string, unknown> }
+  return structuredClone(header.overlay_static) as {
+    v: number
+    s: Record<string, unknown>
+  }
+}
+
+function setLanternCount(staticHeader: ReturnType<typeof clonedHeader>, count: number): void {
+  const lanternIndex = propsData.props.findIndex((prop) => prop.token === 'lantern')
+  const packed = staticHeader.s.q as string
+  staticHeader.s.q = `${packed.slice(0, lanternIndex * 2)}${count
+    .toString(36)
+    .padStart(2, '0')}${packed.slice(lanternIndex * 2 + 2)}`
 }
 
 describe('Three Branches compact overlay decoder', () => {
@@ -37,8 +49,8 @@ describe('Three Branches compact overlay decoder', () => {
     > = [
       ['unexpected fields', (frame) => Object.assign(frame, { extra: null })],
       ['roster order', (frame) => frame.d.c.pop()],
-      ['13 characters', (frame) => (frame.d.c[0] = 'short')],
-      ['prop state', (frame) => (frame.d.p = 'z'.repeat(31))],
+      ['14 characters', (frame) => (frame.d.c[0] = 'short')],
+      ['prop state', (frame) => (frame.d.p = 'z'.repeat(frame.d.p.length))],
       ['ground row', (_frame, staticHeader) => ((staticHeader.s.g as string[])[0] = 'o00')],
       [
         'terminal flag',
@@ -78,6 +90,7 @@ describe('Three Branches compact overlay decoder', () => {
         (staticHeader) => Object.assign(staticHeader, { extra: true }),
       ],
       ['static layout has unexpected fields', (staticHeader) => delete staticHeader.s.a],
+      ['static layout has unexpected fields', (staticHeader) => delete staticHeader.s.q],
       [
         'static layout has unexpected fields',
         (staticHeader) => Object.assign(staticHeader.s, { extra: true }),
@@ -86,7 +99,8 @@ describe('Three Branches compact overlay decoder', () => {
       ['exactly four channels', (staticHeader) => (staticHeader.s.c = [])],
       ['at least one footpath', (staticHeader) => (staticHeader.s.f = [])],
       ['exactly seven buildings', (staticHeader) => (staticHeader.s.h = [])],
-      ['exactly 31 props', (staticHeader) => (staticHeader.s.p = [])],
+      ['counts do not match prop records', (staticHeader) => (staticHeader.s.p = [])],
+      ['prop counts must contain', (staticHeader) => (staticHeader.s.q = '0')],
       ['scenery must be a list', (staticHeader) => (staticHeader.s.n = 'pine:00000001')],
       ['channel is malformed', (staticHeader) => ((staticHeader.s.c as string[])[0] = 'short')],
       ['road is malformed', (staticHeader) => (staticHeader.s.r = 'short')],
@@ -171,9 +185,9 @@ describe('Three Branches compact overlay decoder', () => {
       ['character lies outside', (frame) => (frame.d.c[0] = `zzz000${frame.d.c[0]?.slice(6)}`)],
       [
         'expression and target do not agree',
-        (frame) => (frame.d.c[0] = `${frame.d.c[0]?.slice(0, 11)}1x`),
+        (frame) => (frame.d.c[0] = `${frame.d.c[0]?.slice(0, 11)}100`),
       ],
-      ['prop states must contain exactly 31 characters', (frame) => (frame.d.p = '0')],
+      ['prop states must contain exactly', (frame) => (frame.d.p = '0')],
       ['prop state must be 1 base36 characters', (frame) => (frame.d.p = `!${frame.d.p.slice(1)}`)],
     ]
     for (const [message, mutate] of cases) {
@@ -185,20 +199,20 @@ describe('Three Branches compact overlay decoder', () => {
 
   it('rejects invalid use targets, duplicate holders, moving use, and headings', () => {
     const invalidTarget = clonedFrame()
-    invalidTarget.d.c[0] = `${invalidTarget.d.c[0]?.slice(0, 11)}az`
+    invalidTarget.d.c[0] = `${invalidTarget.d.c[0]?.slice(0, 11)}azz`
     expect(() => decodeDynamic(invalidTarget, decodeStatic(clonedHeader()))).toThrow('use target')
 
     const duplicateHolder = clonedFrame()
     for (const index of [0, 1]) {
       const character = duplicateHolder.d.c[index] ?? ''
-      duplicateHolder.d.c[index] = `${character.slice(0, 9)}00a0`
+      duplicateHolder.d.c[index] = `${character.slice(0, 9)}00a00`
     }
     expect(() => decodeDynamic(duplicateHolder, decodeStatic(clonedHeader()))).toThrow(
       'multiple holders',
     )
 
     const movingUse = clonedFrame()
-    movingUse.d.c[0] = `${movingUse.d.c[0]?.slice(0, 9)}01a0`
+    movingUse.d.c[0] = `${movingUse.d.c[0]?.slice(0, 9)}01a00`
     expect(() => decodeDynamic(movingUse, decodeStatic(clonedHeader()))).toThrow('movement')
 
     const invalidHeading = clonedFrame()
@@ -216,6 +230,37 @@ describe('Three Branches compact overlay decoder', () => {
       'unsupported version',
     )
     expect(() => decodeStatic({ ...clonedHeader(), v: 2 })).toThrow('unsupported version')
+  })
+
+  it('derives a variable lantern roster and decodes two-character use targets', () => {
+    const staticHeader = clonedHeader()
+    const props = staticHeader.s.p as string[]
+    const lanternCount = 40
+    setLanternCount(staticHeader, lanternCount)
+    while (props.length < 62) props.push(props.at(-1) ?? '000000000')
+    const staticOverlay = decodeStatic(staticHeader)
+    expect(staticOverlay.propIds).toHaveLength(62)
+    expect(staticOverlay.propIds[44]).toBe('lantern_39')
+
+    const frame = clonedFrame()
+    frame.d.p = frame.d.p.padEnd(staticOverlay.propIds.length, '0')
+    const character = frame.d.c[0] ?? ''
+    frame.d.c[0] = `${character.slice(0, 9)}00a10`
+    expect(decodeDynamic(frame, staticOverlay).characters[0]?.target).toBe('lantern_31')
+  })
+
+  it('requires fixed catalog counts and a matching bounded prop roster', () => {
+    const fixedCount = clonedHeader()
+    fixedCount.s.q = `04${(fixedCount.s.q as string).slice(2)}`
+    const props = fixedCount.s.p as string[]
+    props.pop()
+    expect(() => decodeStatic(fixedCount)).toThrow('fixed catalog count')
+
+    const overlong = clonedHeader()
+    setLanternCount(overlong, 1295)
+    const overlongProps = overlong.s.p as string[]
+    while (overlongProps.length < 1318) overlongProps.push(overlongProps.at(-1) ?? '000000000')
+    expect(() => decodeStatic(overlong)).toThrow('cannot exceed 1295')
   })
 
   it('does not retain consumer mutations between decodes', () => {

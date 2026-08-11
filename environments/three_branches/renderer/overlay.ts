@@ -5,7 +5,8 @@ import rulesData from '../rules.json'
 export const OVERLAY_VERSION = 1
 
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz'
-const NONE_TARGET = 'z'
+const NONE_TARGET = 'zz'
+const MAX_PROP_COUNT = 1295
 const SCENERY_TYPE = /^[a-z][a-z0-9_]*$/
 const BUILDING_ROSTER = [
   ['home_0', 'home'],
@@ -113,7 +114,7 @@ export function decodeStatic(header: unknown): StaticOverlay {
   const value = record(outer.s, 'overlay static layout has unexpected fields')
   exactKeys(
     value,
-    ['a', 'c', 'r', 'f', 'b', 'h', 'p', 'n', 'x', 'g'],
+    ['a', 'c', 'r', 'f', 'b', 'h', 'p', 'q', 'n', 'x', 'g'],
     'overlay static layout has unexpected fields',
   )
   const setting = value.a
@@ -127,14 +128,14 @@ export function decodeStatic(header: unknown): StaticOverlay {
   const footpaths = array(value.f, 'overlay must contain at least one footpath')
   const bridges = array(value.b, 'overlay bridges must be a list')
   const buildings = array(value.h, 'overlay must contain exactly seven buildings')
-  const props = array(value.p, 'overlay must contain exactly 31 props')
+  const props = array(value.p, 'overlay prop records must be a list')
   const scenery = array(value.n, 'overlay scenery must be a list')
   if (channels.length !== 4) throw new Error('overlay must contain exactly four channels')
   if (footpaths.length === 0) throw new Error('overlay must contain at least one footpath')
   if (buildings.length !== BUILDING_ROSTER.length)
     throw new Error('overlay must contain exactly seven buildings')
 
-  const propIds = propertyIds(props)
+  const propIds = propertyIds(value.q, props.length)
   return {
     version: OVERLAY_VERSION,
     castSize,
@@ -190,17 +191,17 @@ export function decodeDynamic(state: unknown, staticOverlay?: StaticOverlay): Dy
   }
   const holders = new Set<string>()
   const characters = records.map((value, index) => {
-    if (typeof value !== 'string' || value.length !== 13) {
-      throw new Error('overlay character record must be 13 characters')
+    if (typeof value !== 'string' || value.length !== 14) {
+      throw new Error('overlay character record must be 14 characters')
     }
     const moved = meters(value.slice(9, 11), 2, 'character movement')
     if (moved > 1) throw new Error('overlay character movement cannot exceed one meter')
     const expressionCode = base36(value[11] ?? '', 1, 'expression')
-    const targetCode = value[12] ?? ''
+    const targetCode = value.slice(12, 14)
     let expression: string
     let target = 'none'
     if (expressionCode === 10) {
-      const targetIndex = base36(targetCode, 1, 'use target')
+      const targetIndex = base36(targetCode, 2, 'use target')
       if (targetIndex >= staticOverlay.propIds.length || moved !== 0) {
         throw new Error('overlay use target or movement is invalid')
       }
@@ -229,7 +230,9 @@ export function decodeDynamic(state: unknown, staticOverlay?: StaticOverlay): Dy
   })
 
   if (typeof dynamic.p !== 'string' || dynamic.p.length !== staticOverlay.propIds.length) {
-    throw new Error('overlay prop states must contain exactly 31 characters')
+    throw new Error(
+      `overlay prop states must contain exactly ${staticOverlay.propIds.length} characters`,
+    )
   }
   const prop_states: Record<string, string> = {}
   for (const [index, propId] of staticOverlay.propIds.entries()) {
@@ -306,7 +309,7 @@ function decodeProp(value: unknown, index: number, propIds: string[]): VillagePr
   if (typeof value !== 'string' || value.length !== 9)
     throw new Error('overlay prop record must be nine characters')
   const id = propIds[index]
-  if (!id) throw new Error('overlay must contain exactly 31 props')
+  if (!id) throw new Error('overlay prop record has no roster id')
   return {
     id,
     type: propToken(id),
@@ -348,10 +351,24 @@ function decodeGround(value: unknown): string[][] {
   })
 }
 
-function propertyIds(packed: unknown[]): string[] {
-  if (packed.length !== 31) throw new Error('overlay must contain exactly 31 props')
-  return propsData.props.flatMap((prop) =>
-    Array.from({ length: prop.count }, (_, index) => `${prop.token}_${index}`),
+function propertyIds(packed: unknown, poseCount: number): string[] {
+  if (typeof packed !== 'string' || packed.length !== propsData.props.length * 2) {
+    throw new Error('overlay prop counts must contain two base36 characters per prop type')
+  }
+
+  const counts = propsData.props.map((prop, index) => {
+    const count = base36(packed.slice(index * 2, index * 2 + 2), 2, 'prop count')
+    if (typeof prop.count === 'number' && count !== prop.count) {
+      throw new Error('overlay prop count does not match the fixed catalog count')
+    }
+    return count
+  })
+  const total = counts.reduce((sum, count) => sum + count, 0)
+  if (total > MAX_PROP_COUNT) throw new Error('overlay prop roster cannot exceed 1295 props')
+  if (total !== poseCount) throw new Error('overlay prop counts do not match prop records')
+
+  return propsData.props.flatMap((prop, typeIndex) =>
+    Array.from({ length: counts[typeIndex] ?? 0 }, (_, index) => `${prop.token}_${index}`),
   )
 }
 

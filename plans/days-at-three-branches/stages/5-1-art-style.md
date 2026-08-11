@@ -106,16 +106,20 @@ When `daynight` is enabled, the phase name derived by the overlay selects one wo
 
 The renderer declares a local manifest as the only runtime loading contract. High-resolution originals, including superseded source variants, live in `environments/three_branches/renderer/source-art/`. Optimized runtime files live in `environments/three_branches/renderer/assets/`. Grayscale-alpha masks are used wherever a texture needs palette tinting. Full-color raster art is reserved for paper grain or a treatment that cannot be represented as a tintable mask.
 
-The manifest names the source file, runtime file, dimensions, tintability, and consumer. Feasible categories are:
+The manifest names the source file, runtime file, dimensions, tintability, consumer, and frame grid where an asset is a sprite sheet. The exact 69-entry contract lives in [`renderer/assets.ts`](../../../environments/three_branches/renderer/assets.ts):
 
-| Category | Runtime dimensions | Contents |
-| --- | --- | --- |
-| Paper and terrain masks | 512 by 512 paper grain; 128 by 128 wash variants; 128 by 64 ripple, furrow, and reed marks | Reusable ground material, with three or four variants per ground class. |
-| Linear geometry masks | 256 by 64 and 128 by 64 | Bank edges, road dry-brush marks, path edges, bridge planks, wall and eave bands. |
-| Buildings and props | 128 by 128, 192 by 128, or 256 by 128 as needed | Local floor fills, reusable fixture masks, stalls, shrines, fences, and state marks. |
-| Characters | 128 by 128 per eight-direction simple frame; 192 by 192 per detailed frame | Compact mark, simple sprite, detailed four-frame sprite, shadow, and direction mark. |
-| Effects and dressing | 64 by 64 through 192 by 128 | Glow, flame, smoke, water stream, bell lines, and white crane masks. |
-| Thumbnail | 320 by 180 | Final Hearthside Ink village image, not a screenshot requirement or a map claim. |
+| Group | Entries | Runtime dimensions | Contents |
+| --- | --: | --- | --- |
+| Paper and ground | 16 | 512 by 512 paper grain; 128 by 128 wash masks; 128 by 64 road, furrow, reed, and ripple marks | Paper tooth, three wash variants, and three variants for each class-specific mark. |
+| Linear geometry and buildings | 10 | 128 by 64 through 256 by 64; 128 by 128 or 192 by 128 floors | Bank, road, and path edges; bridge planks; wall, eave, and doorway marks; home, inn, and repair-shed floors. |
+| Solid scenery | 6 | 128 by 128 | Three pine canopies, a market crate, a market barrel, and a shrine roof post. |
+| Props | 19 | 128 by 128, 192 by 128, or 256 by 128 | One still for every catalog state, including the notice board's single state. |
+| Characters | 11 | 64 by 64 marks; 1024 by 128 simple sheets; 1536 by 768 detailed sheets | Shadow, direction and compact marks, three villager variants, and the visitor. |
+| Effects and dressing | 7 | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses. |
+
+Each simple character sheet holds eight 128 by 128 direction frames in manifest order. Each detailed sheet holds eight 192 by 192 directions across four rows: stand, left step, pass, and right step. Prop entries fix the file and state contract, while the calibration review below fixes the painted physical extents before those assets are accepted as final.
+
+The separate 320 by 180 thumbnail is a final Hearthside Ink village image, not a screenshot requirement or a map claim.
 
 The thumbnail uses night ink around a parchment village fragment: a slack-water branch, a low bridge, one open home with its garden, warm lantern light, and a small cinnabar visitor. It communicates the approved style without declaring a canonical seed or layout.
 

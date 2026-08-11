@@ -34,7 +34,7 @@ SIDECAR_NAME = "three-branches-decoded.json"
 RECORDING_ID = "three-branches-fixture"
 SEED = 23
 EXPECTED_STATE_COUNT = 1_200
-GREETING_TICK = 411
+GREETING_TICK = 103
 GREETING = {"from": "player_0", "to": "player_1", "text": "A fine day for walking. How are you?"}
 
 

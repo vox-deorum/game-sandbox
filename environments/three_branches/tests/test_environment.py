@@ -48,6 +48,7 @@ def test_spaces_are_shared_and_cover_the_opening_roster(seat_plan: str, player_c
         env.observation_space(player).contains(observation) for player, observation in observations.items()
     )
     assert observations["player_0"]["tick"] == 1
+    assert isinstance(observations["player_0"]["village"]["props"], tuple)
     assert [entry["id"] for entry in observations["player_0"]["roster"]] == [
         *(f"npc_{index}" for index in range(player_count - 1)),
         "visitor",
