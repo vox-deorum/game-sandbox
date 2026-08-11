@@ -102,8 +102,9 @@ def _import_source_package(package_dir: Path) -> Any:
     return module
 
 
-def _template_spec(package_dir: Path, meta: Any, entry: Any) -> TemplateEnvironmentSpec:
+def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
     """Build template facts from environment metadata and directly-owned source files."""
+    meta = entry.meta
     modules = tuple(
         f"{package_dir.name}/{path.name}"
         for path in sorted(package_dir.iterdir())
@@ -210,7 +211,7 @@ def discover_environments() -> dict[str, DiscoveredEnvironment]:
         discovered[env_id] = DiscoveredEnvironment(
             env_id,
             entry,
-            _template_spec(package_dir, meta, entry),
+            _template_spec(package_dir, entry),
             _published_examples(package_dir, module),
         )
     return dict(sorted(discovered.items()))

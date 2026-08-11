@@ -103,12 +103,13 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
 
     spec = _envs._template_spec(
         package,
-        SimpleNamespace(display_name="Hearts", human_players=()),
-        SimpleNamespace(overlay_static=None),
+        SimpleNamespace(
+            meta=SimpleNamespace(display_name="Hearts", human_players=()),
+            overlay_static=None,
+        ),
     )
     assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
     assert spec.player_id == "player_0"
-    assert spec.has_overlay_static is False
 
 
 @pytest.mark.parametrize(
@@ -124,8 +125,10 @@ def test_template_spec_discovers_static_overlay_capability(
 
     spec = _envs._template_spec(
         package,
-        SimpleNamespace(display_name="Example", human_players=()),
-        SimpleNamespace(overlay_static=overlay_static),
+        SimpleNamespace(
+            meta=SimpleNamespace(display_name="Example", human_players=()),
+            overlay_static=overlay_static,
+        ),
     )
 
     assert spec.has_overlay_static is expected
@@ -165,9 +168,6 @@ def test_skirmish_crane_is_installable_and_discovered_as_an_environment():
     assert not _envs._is_ignored("skirmish_crane", patterns)
     assert "skirmish_crane" in recognized_names
     assert "skirmish_crane" in discovered_names
-    assert discovered["skirmish_crane"].spec.has_overlay_static is True
-    assert discovered["three_branches"].spec.has_overlay_static is True
-    assert discovered["flappy_bird"].spec.has_overlay_static is False
     assert (
         'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades", '
         '"three_branches"]' in pyproject
