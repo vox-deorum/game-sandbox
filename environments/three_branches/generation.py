@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from random import Random
+from typing import NamedTuple
 
 from .fixture import FIXTURE_VILLAGE
 from .geometry import (
+    EPSILON,
     Point,
     add,
     distance,
@@ -25,6 +27,7 @@ from .layout import WORLD_SIZE, Bridge, Building, Doorway, Layout, Polyline
 
 type _Polygons = tuple[tuple[Point, ...], ...]
 type _Segment = tuple[Point, Point]
+type _Bounds = tuple[float, float, float, float]
 
 MAX_REDRAWS = 64
 MAX_POLYLINE_POINTS = 35
@@ -85,10 +88,13 @@ class _Field:
     def __init__(self, rng: Random, roughness: float) -> None:
         amplitudes = (1.0, 0.5 * roughness, 0.25 * roughness)
         self._total = sum(amplitudes)
-        self._lattices: list[tuple[float, float, dict[tuple[int, int], float]]] = []
+        self._lattices: list[tuple[float, float, list[list[float]]]] = []
         for spacing, amplitude in zip(_OCTAVE_SPACINGS, amplitudes, strict=True):
             nodes = math.ceil(WORLD_SIZE / spacing) + 3
-            lattice = {(column, row): rng.random() for column in range(-2, nodes) for row in range(-2, nodes)}
+            lattice = [[0.0] * (nodes + 2) for _ in range(nodes + 2)]
+            for column in range(-2, nodes):
+                for row in range(-2, nodes):
+                    lattice[row + 2][column + 2] = rng.random()
             self._lattices.append((spacing, amplitude, lattice))
 
     def __call__(self, point: Point) -> float:
@@ -100,11 +106,14 @@ class _Field:
             row = math.floor(v)
             fu = _fade(u - column)
             fv = _fade(v - row)
-            low = lattice[(column, row)] + (lattice[(column + 1, row)] - lattice[(column, row)]) * fu
-            high = (
-                lattice[(column, row + 1)]
-                + (lattice[(column + 1, row + 1)] - lattice[(column, row + 1)]) * fu
-            )
+            lower = lattice[row + 2]
+            upper = lattice[row + 3]
+            lower_left = lower[column + 2]
+            lower_right = lower[column + 3]
+            upper_left = upper[column + 2]
+            upper_right = upper[column + 3]
+            low = lower_left + (lower_right - lower_left) * fu
+            high = upper_left + (upper_right - upper_left) * fu
             total += amplitude * (low + (high - low) * fv)
         return total / self._total
 
@@ -170,10 +179,11 @@ def _walk(
     start: Point,
     target: Point,
     weights: tuple[float, float, float],
-    start_heading: Point | None = None,
+    start_heading: Point,
     avoid: tuple[tuple[Point, ...], ...] = (),
-    repel: tuple[float, float] = (_REPEL_RADIUS, _REPEL_WEIGHT),
-    limit: int = _MAX_WALK_STEPS,
+    repel_radius: float = _REPEL_RADIUS,
+    *,
+    limit: int,
 ) -> list[Point] | None:
     """Trace a course from start to target as a blend of momentum, downhill flow, and target pull.
 
@@ -183,9 +193,8 @@ def _walk(
     the course leaves the frame or fails to arrive inside the step limit.
     """
     momentum_weight, downhill_weight, pull_weight = weights
-    repel_radius, repel_weight = repel
     points = [start]
-    heading = _unit(subtract(target, start)) if start_heading is None else start_heading
+    heading = start_heading
     for _ in range(limit):
         position = points[-1]
         remaining = distance(position, target)
@@ -202,7 +211,7 @@ def _walk(
             span = distance(position, nearest)
             if span < repel_radius:
                 away = _unit(subtract(position, nearest))
-                push = repel_weight * (1.0 - span / repel_radius)
+                push = _REPEL_WEIGHT * (1.0 - span / repel_radius)
                 repulsion = (repulsion[0] + away[0] * push, repulsion[1] + away[1] * push)
         arrival = max(0.0, 1.0 - remaining / 20.0)
         blended = _unit(
@@ -291,27 +300,41 @@ def _segments(points: tuple[Point, ...], closed: bool) -> list[tuple[Point, Poin
     return segments
 
 
+def _cross_off_ends(first: _Segment, second: _Segment) -> bool:
+    """Whether segments cross anywhere other than a shared endpoint."""
+    if first[0] in second or first[1] in second:
+        return False
+    first_min_x = min(first[0][0], first[1][0])
+    first_max_x = max(first[0][0], first[1][0])
+    first_min_y = min(first[0][1], first[1][1])
+    first_max_y = max(first[0][1], first[1][1])
+    second_min_x = min(second[0][0], second[1][0])
+    second_max_x = max(second[0][0], second[1][0])
+    second_min_y = min(second[0][1], second[1][1])
+    second_max_y = max(second[0][1], second[1][1])
+    if (
+        first_max_x + EPSILON < second_min_x
+        or second_max_x + EPSILON < first_min_x
+        or first_max_y + EPSILON < second_min_y
+        or second_max_y + EPSILON < first_min_y
+    ):
+        return False
+    return segments_intersect(first, second)
+
+
 def _self_intersects(points: tuple[Point, ...], closed: bool = False) -> bool:
     """Whether a polyline or polygon crosses itself, ignoring segments that share an endpoint."""
     segments = _segments(points, closed)
-    for index, first in enumerate(segments):
-        for second in segments[index + 1 :]:
-            if first[0] in second or first[1] in second:
-                continue
-            if segments_intersect(first, second):
-                return True
-    return False
+    return any(
+        _cross_off_ends(first, second)
+        for index, first in enumerate(segments)
+        for second in segments[index + 1 :]
+    )
 
 
 def _lines_cross(first: tuple[Point, ...], second: tuple[Point, ...]) -> bool:
     """Whether two polylines cross anywhere away from a shared endpoint like the fork."""
-    for a in itertools.pairwise(first):
-        for b in itertools.pairwise(second):
-            if a[0] in b or a[1] in b:
-                continue
-            if segments_intersect(a, b):
-                return True
-    return False
+    return any(_cross_off_ends(a, b) for a in itertools.pairwise(first) for b in itertools.pairwise(second))
 
 
 def _angled(base: Point, degrees: float) -> Point:
@@ -434,10 +457,14 @@ def _reed_banks(
 ) -> tuple[tuple[Point, ...], ...]:
     """Reed flats at every channel mouth and on the wettest bank stretches."""
     flats: list[tuple[Point, ...]] = []
+
+    def _reed_flat(window: tuple[Point, ...], channel: Polyline) -> tuple[Point, ...] | None:
+        side = _moister_side(terrain, window, channel.width / 2.0 + 2.0)
+        return _strip(window, side, channel.width / 2.0 - 0.2, rng.uniform(2.0, 4.0), terrain.moisture)
+
     for channel in channels[1:]:
         window = channel.points[max(0, len(channel.points) - 5) : -1]
-        side = _moister_side(terrain, window, channel.width / 2.0 + 2.0)
-        flat = _strip(window, side, channel.width / 2.0 - 0.2, rng.uniform(2.0, 4.0), terrain.moisture)
+        flat = _reed_flat(window, channel)
         if flat is not None:
             flats.append(flat)
     for channel in channels:
@@ -448,8 +475,7 @@ def _reed_banks(
             window = channel.points[start : start + 4]
             if terrain.moisture(window[1]) <= 0.62:
                 continue
-            side = _moister_side(terrain, window, channel.width / 2.0 + 2.0)
-            flat = _strip(window, side, channel.width / 2.0 - 0.2, rng.uniform(2.0, 4.0), terrain.moisture)
+            flat = _reed_flat(window, channel)
             if flat is not None:
                 flats.append(flat)
                 placed += 1
@@ -489,6 +515,39 @@ def _terrain_layer(rng: Random) -> tuple[_Terrain, tuple[Polyline, ...], _Polygo
 
 
 @dataclass(frozen=True)
+class _Water:
+    """The channels and the confluence geometry shared by later village layers."""
+
+    channels: tuple[Polyline, ...]
+    fork: Point
+    cap_radius: float
+    segments: tuple[tuple[_Segment, ...], ...] = field(init=False, repr=False)
+    bounds: tuple[tuple[_Bounds, ...], ...] = field(init=False, repr=False)
+
+    @classmethod
+    def of(cls, channels: tuple[Polyline, ...]) -> _Water:
+        """Capture the channels' shared fork and maximum confluence cap."""
+        return cls(channels, channels[0].points[-1], max(channel.width for channel in channels) / 2.0)
+
+    def __post_init__(self) -> None:
+        segments = tuple(tuple(itertools.pairwise(channel.points)) for channel in self.channels)
+        bounds = tuple(
+            tuple(
+                (
+                    min(start[0], end[0]),
+                    min(start[1], end[1]),
+                    max(start[0], end[0]),
+                    max(start[1], end[1]),
+                )
+                for start, end in pieces
+            )
+            for pieces in segments
+        )
+        object.__setattr__(self, "segments", segments)
+        object.__setattr__(self, "bounds", bounds)
+
+
+@dataclass(frozen=True)
 class _Sites:
     """The settlement's anchors and its buildings.
 
@@ -510,9 +569,7 @@ class _Sites:
 class _Clearances:
     """The fixed things every building candidate has to stand clear of."""
 
-    channels: tuple[Polyline, ...]
-    fork: Point
-    cap_radius: float
+    water: _Water
     plaza: Point
 
 
@@ -545,24 +602,54 @@ def _inside_frame(point: Point, margin: float) -> bool:
     return all(margin <= value <= WORLD_SIZE - margin for value in point)
 
 
-def _well_plaza(rng: Random, channels: tuple[Polyline, ...]) -> Point | None:
+_RAW_OBSTACLES: tuple[tuple[float, float, float], ...] = (
+    *(
+        (prop.position[0], prop.position[1], math.hypot(*prop.footprint) / 2.0)
+        for prop in FIXTURE_VILLAGE.props
+    ),
+    *((item.position[0], item.position[1], item.radius) for item in FIXTURE_VILLAGE.scenery),
+)
+
+_PADDED_OBSTACLES: tuple[tuple[Point, float], ...] = tuple(
+    ((x, y), radius + BUILDING_GAP) for x, y, radius in _RAW_OBSTACLES
+)
+
+
+def _padded_room(point: Point, needed: float) -> bool:
+    """Whether a point keeps the needed room from every padded fixture object."""
+    for x, y, radius in _RAW_OBSTACLES:
+        dx = point[0] - x
+        dy = point[1] - y
+        reach = radius + needed
+        if dx * dx + dy * dy < reach * reach:
+            return False
+    return True
+
+
+_CLUSTER_GRID = tuple(
+    (float(x), float(y))
+    for x in range(12, 89, 6)
+    for y in range(12, 89, 6)
+    if _padded_room((float(x), float(y)), HOME_CLUSTER_RADIUS + BUILDING_GAP)
+)
+
+
+def _well_plaza(rng: Random, water: _Water) -> Point | None:
     """Slide out from the fork along a crook bisector until the wedge between its channels opens.
 
     A crook is the wedge between an adjacent channel pair, west with center or center with east,
     and which one is tried first is drawn. Returns None when neither crook ever opens.
     """
-    fork = channels[0].points[-1]
-    cap_radius = max(channel.width for channel in channels) / 2.0
-    crooks = ((channels[1], channels[2]), (channels[2], channels[3]))
+    crooks = ((water.channels[1], water.channels[2]), (water.channels[2], water.channels[3]))
     for first, second in crooks if rng.random() < 0.5 else crooks[::-1]:
-        left = _unit(subtract(first.points[2], fork))
-        right = _unit(subtract(second.points[2], fork))
+        left = _unit(subtract(first.points[2], water.fork))
+        right = _unit(subtract(second.points[2], water.fork))
         bisector = _unit((left[0] + right[0], left[1] + right[1]))
         if bisector == (0.0, 0.0):
             continue
-        reach = cap_radius + 3.0
+        reach = water.cap_radius + 3.0
         while reach <= _WEDGE_SLIDE_LIMIT:
-            candidate = add(fork, bisector, reach)
+            candidate = add(water.fork, bisector, reach)
             opening = min(_water_gap(candidate, first), _water_gap(candidate, second))
             if opening >= _WEDGE_HALF_OPENING and _inside_frame(candidate, BOUNDARY_MARGIN):
                 return candidate
@@ -570,27 +657,9 @@ def _well_plaza(rng: Random, channels: tuple[Polyline, ...]) -> Point | None:
     return None
 
 
-def _padded_gap(point: Point) -> float:
-    """The room a point has around the fixture objects still padding the layout.
-
-    This measure leaves with the padding, like the placement rule that keeps buildings off those
-    objects. The corridor runs straight through the fixture's market and road dressing, so an
-    anchor that ignored them would spend its whole placement budget inside a prop field.
-    """
-    return min(
-        itertools.chain(
-            (
-                distance(point, prop.position) - math.hypot(*prop.footprint) / 2.0
-                for prop in FIXTURE_VILLAGE.props
-            ),
-            (distance(point, item.position) - item.radius for item in FIXTURE_VILLAGE.scenery),
-        )
-    )
-
-
 def _corridor_anchor(
     rng: Random,
-    channels: tuple[Polyline, ...],
+    water: _Water,
     corridor_y: float,
     band: tuple[float, float],
     size: tuple[float, float],
@@ -608,16 +677,16 @@ def _corridor_anchor(
         side = _drawn_side(rng)
         candidate = (x, corridor_y + side * rng.uniform(6.0, 10.0))
         if (
-            all(_water_gap(candidate, channel) >= room for channel in channels)
+            all(_water_gap(candidate, channel) >= room for channel in water.channels)
             and _inside_frame(candidate, BOUNDARY_MARGIN + half_diagonal)
-            and _padded_gap(candidate) >= half_diagonal
+            and _padded_room(candidate, half_diagonal)
         ):
             return candidate
     return None
 
 
 def _home_clusters(
-    rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...], plaza: Point
+    rng: Random, terrain: _Terrain, water: _Water, plaza: Point
 ) -> tuple[tuple[Point, ...], tuple[float, ...]] | None:
     """Seed two or three home clusters on the best-scoring bank regions.
 
@@ -628,21 +697,20 @@ def _home_clusters(
     only the cluster count and the per-cluster radii move it. Returns None when too few separated
     seeds are found.
     """
-    coarse = tuple(((*channel.points[::3], channel.points[-1]), channel.width / 2.0) for channel in channels)
-    ring = HOME_CLUSTER_RADIUS + BUILDING_GAP
+    coarse = tuple(
+        ((*channel.points[::3], channel.points[-1]), channel.width / 2.0) for channel in water.channels
+    )
     scored: list[tuple[float, Point]] = []
-    for x in range(12, 89, 6):
-        for y in range(12, 89, 6):
-            point = (float(x), float(y))
-            water = min(polyline_distance(point, points) - half for points, half in coarse)
-            if water < _CLUSTER_WATER_MIN:
-                continue
-            if distance(point, plaza) < HOME_CLUSTER_RADIUS + _PLAZA_CLEARANCE or _padded_gap(point) < ring:
-                continue
-            bank = 1.0 - min(abs(water - 10.0) / 12.0, 1.0)
-            flat = 1.0 - min(math.hypot(*terrain.downhill(point)) * 25.0, 1.0)
-            dry = 1.0 - terrain.moisture(point)
-            scored.append((1.2 * bank + 0.8 * flat + 0.6 * dry, point))
+    for point in _CLUSTER_GRID:
+        if distance(point, plaza) < HOME_CLUSTER_RADIUS + _PLAZA_CLEARANCE:
+            continue
+        water_gap = min(polyline_distance(point, points) - half for points, half in coarse)
+        if water_gap < _CLUSTER_WATER_MIN:
+            continue
+        bank = 1.0 - min(abs(water_gap - 10.0) / 12.0, 1.0)
+        flat = 1.0 - min(math.hypot(*terrain.downhill(point)) * 25.0, 1.0)
+        dry = 1.0 - terrain.moisture(point)
+        scored.append((1.2 * bank + 0.8 * flat + 0.6 * dry, point))
     scored.sort(key=lambda entry: (-entry[0], entry[1]))
     count = rng.choice((2, 3))
     centers: list[Point] = []
@@ -657,39 +725,51 @@ def _home_clusters(
 
 
 def _clear_of_water(
-    center: Point,
-    size: tuple[float, float],
-    rotation: float,
-    corners: tuple[Point, ...],
-    edges: tuple[_Segment, ...],
-    channels: tuple[Polyline, ...],
+    placement: _Placement,
+    water: _Water,
 ) -> bool:
     """Whether a rectangle keeps the bank margin from every channel.
 
     A channel whose centerline is a rectangle diagonal away needs no further work, so the exact
     crossing and distance tests only run on the water that is actually nearby.
     """
-    half_diagonal = math.hypot(size[0], size[1]) / 2.0
-    for channel in channels:
+    center, width, depth, rotation = placement.rectangle
+    rectangle_bounds = (
+        min(corner[0] for corner in placement.corners),
+        min(corner[1] for corner in placement.corners),
+        max(corner[0] for corner in placement.corners),
+        max(corner[1] for corner in placement.corners),
+    )
+    for channel, channel_segments, channel_bounds in zip(
+        water.channels, water.segments, water.bounds, strict=True
+    ):
         margin = channel.width / 2.0 + WATER_CLEARANCE
-        if _water_gap(center, channel) >= half_diagonal + WATER_CLEARANCE:
+        if _water_gap(center, channel) >= placement.half_diagonal + WATER_CLEARANCE:
             continue
-        water = tuple(itertools.pairwise(channel.points))
-        if any(segments_intersect(segment, edge) for segment in water for edge in edges):
-            return False
+        if (
+            max(bounds[2] + margin for bounds in channel_bounds) + EPSILON < rectangle_bounds[0]
+            or rectangle_bounds[2] + EPSILON < min(bounds[0] - margin for bounds in channel_bounds)
+            or max(bounds[3] + margin for bounds in channel_bounds) + EPSILON < rectangle_bounds[1]
+            or rectangle_bounds[3] + EPSILON < min(bounds[1] - margin for bounds in channel_bounds)
+        ):
+            continue
+        for segment, segment_bounds in zip(channel_segments, channel_bounds, strict=True):
+            if (
+                segment_bounds[2] + margin + EPSILON < rectangle_bounds[0]
+                or rectangle_bounds[2] + EPSILON < segment_bounds[0] - margin
+                or segment_bounds[3] + margin + EPSILON < rectangle_bounds[1]
+                or rectangle_bounds[3] + EPSILON < segment_bounds[1] - margin
+            ):
+                continue
+            if any(segments_intersect(segment, edge) for edge in placement.edges):
+                return False
+            if any(distance_to_segment(corner, *segment) < margin for corner in placement.corners):
+                return False
         if any(
-            distance_to_segment(corner, start, end) < margin for corner in corners for start, end in water
+            distance_to_rectangle(point, center, width, depth, rotation) < margin for point in channel.points
         ):
             return False
-        if any(distance_to_rectangle(point, center, *size, rotation) < margin for point in channel.points):
-            return False
     return True
-
-
-_PADDED_OBSTACLES: tuple[tuple[Point, float], ...] = (
-    *((prop.position, math.hypot(*prop.footprint) / 2.0 + BUILDING_GAP) for prop in FIXTURE_VILLAGE.props),
-    *((item.position, item.radius + BUILDING_GAP) for item in FIXTURE_VILLAGE.scenery),
-)
 
 
 def _clear_of_padding(center: Point, size: tuple[float, float], rotation: float) -> bool:
@@ -714,39 +794,56 @@ def _clear_of_padding(center: Point, size: tuple[float, float], rotation: float)
     return True
 
 
+class _Placement(NamedTuple):
+    """Cached geometry for one placed building rectangle."""
+
+    rectangle: tuple[Point, float, float, float]
+    corners: tuple[Point, ...]
+    edges: tuple[_Segment, ...]
+    half_diagonal: float
+
+
+def _placement(center: Point, size: tuple[float, float], rotation: float) -> _Placement:
+    """Build the rectangle geometry a placement needs across every later clearance check."""
+    corners = rectangle_corners(center, *size, rotation)
+    return _Placement((center, *size, rotation), corners, _edges(corners), math.hypot(*size) / 2.0)
+
+
 def _clears(
-    center: Point,
-    size: tuple[float, float],
-    rotation: float,
+    placement: _Placement,
     clearances: _Clearances,
-    placed: list[Building],
+    placed: list[_Placement],
 ) -> bool:
     """Whether a candidate rectangle clears the frame, the water, the clearings, and every solid."""
-    width, depth = size
-    corners = rectangle_corners(center, width, depth, rotation)
-    if not all(_inside_frame(corner, BOUNDARY_MARGIN) for corner in corners):
+    center, width, depth, rotation = placement.rectangle
+    if not all(_inside_frame(corner, BOUNDARY_MARGIN) for corner in placement.corners):
         return False
-    cap = distance_to_rectangle(clearances.fork, center, width, depth, rotation)
-    if cap < clearances.cap_radius + WATER_CLEARANCE:
+    cap = distance_to_rectangle(clearances.water.fork, center, width, depth, rotation)
+    if cap < clearances.water.cap_radius + WATER_CLEARANCE:
         return False
     if distance_to_rectangle(clearances.plaza, center, width, depth, rotation) < _PLAZA_CLEARANCE:
         return False
-    if not _clear_of_padding(center, size, rotation):
+    if not _clear_of_padding(center, (width, depth), rotation):
         return False
-    edges = _edges(corners)
-    if not _clear_of_water(center, size, rotation, corners, edges, clearances.channels):
+    if not _clear_of_water(placement, clearances.water):
         return False
     for other in placed:
-        neighbor = (other.center, other.width, other.depth, other.rotation)
-        other_corners = rectangle_corners(*neighbor)
-        other_edges = _edges(other_corners)
-        if any(segments_intersect(edge, other_edge) for edge in edges for other_edge in other_edges):
+        other_center, other_width, other_depth, other_rotation = other.rectangle
+        if distance(center, other_center) >= placement.half_diagonal + other.half_diagonal + BUILDING_GAP:
+            continue
+        if any(
+            segments_intersect(edge, other_edge) for edge in placement.edges for other_edge in other.edges
+        ):
             return False
-        if any(distance_to_rectangle(corner, *neighbor) < BUILDING_GAP for corner in corners):
+        if any(
+            distance_to_rectangle(corner, other_center, other_width, other_depth, other_rotation)
+            < BUILDING_GAP
+            for corner in placement.corners
+        ):
             return False
         if any(
             distance_to_rectangle(corner, center, width, depth, rotation) < BUILDING_GAP
-            for corner in other_corners
+            for corner in other.corners
         ):
             return False
     return True
@@ -759,25 +856,29 @@ def _draw_placement(
     reach: tuple[float, float],
     spin: tuple[float, float],
     clearances: _Clearances,
-    placed: list[Building],
-) -> tuple[Point, float] | None:
+    placed: list[_Placement],
+) -> _Placement | None:
     """Draw centers and rotations around an anchor until one clears, or None when the budget runs out.
 
     Channels that no candidate around this anchor can possibly reach are dropped once up front, so
     the budget's water checks only scan the water that is actually in play.
     """
     farthest = reach[1] + math.hypot(*size) / 2.0 + WATER_CLEARANCE + 0.5
-    nearby = _Clearances(
-        channels=tuple(channel for channel in clearances.channels if _water_gap(anchor, channel) <= farthest),
-        fork=clearances.fork,
-        cap_radius=clearances.cap_radius,
-        plaza=clearances.plaza,
+    nearby = replace(
+        clearances,
+        water=replace(
+            clearances.water,
+            channels=tuple(
+                channel for channel in clearances.water.channels if _water_gap(anchor, channel) <= farthest
+            ),
+        ),
     )
     for _ in range(_PLACEMENT_BUDGET):
         center = add(anchor, _polar(rng, *reach))
         rotation = rng.uniform(*spin) % 360.0
-        if _clears(center, size, rotation, nearby, placed):
-            return center, rotation
+        candidate = _placement(center, size, rotation)
+        if _clears(candidate, nearby, placed):
+            return candidate
     return None
 
 
@@ -788,7 +889,7 @@ def _doorway(center: Point, size: tuple[float, float], rotation: float, aim: Poi
     return Doorway(_midpoint(start, end))
 
 
-def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...]) -> _Sites | None:
+def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None:
     """Anchor the settlement on the terrain and stand its buildings, or None to redraw.
 
     The stream is consumed in a fixed order: the well plaza, the corridor, the west stretch's shed
@@ -797,13 +898,12 @@ def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...])
     shed first so the corridor keeps its landmarks, then home_0 through home_4 around their
     clusters. Homes take their clusters round robin.
     """
-    plaza = _well_plaza(rng, channels)
+    plaza = _well_plaza(rng, water)
     if plaza is None:
         return None
-    fork = channels[0].points[-1]
-    corridor_y = fork[1] - rng.uniform(14.0, 24.0)
+    corridor_y = water.fork[1] - rng.uniform(14.0, 24.0)
 
-    shed_anchor = _corridor_anchor(rng, channels, corridor_y, (10.0, 30.0), _SHED_SIZE)
+    shed_anchor = _corridor_anchor(rng, water, corridor_y, (10.0, 30.0), _SHED_SIZE)
     if shed_anchor is None:
         return None
     bell_x = rng.uniform(8.0, 26.0)
@@ -820,27 +920,33 @@ def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...])
     host = stalls[rng.randrange(5)]
     board = (host[0] + rng.uniform(-2.0, 2.0), host[1] + rng.uniform(-2.0, 2.0))
 
-    inn_anchor = _corridor_anchor(rng, channels, corridor_y, (70.0, 90.0), _INN_SIZE)
+    inn_anchor = _corridor_anchor(rng, water, corridor_y, (70.0, 90.0), _INN_SIZE)
     if inn_anchor is None:
         return None
-    seeded = _home_clusters(rng, terrain, channels, plaza)
+    seeded = _home_clusters(rng, terrain, water, plaza)
     if seeded is None:
         return None
     clusters, radii = seeded
 
-    clearances = _Clearances(channels, fork, max(channel.width for channel in channels) / 2.0, plaza)
-    placed: list[Building] = []
+    clearances = _Clearances(water, plaza)
+    placed: list[_Placement] = []
     corridor_buildings: list[Building] = []
     for identifier, size, anchor in (("inn", _INN_SIZE, inn_anchor), ("shed", _SHED_SIZE, shed_anchor)):
         placement = _draw_placement(rng, size, anchor, (0.0, 4.0), (-15.0, 15.0), clearances, placed)
         if placement is None:
             return None
-        center, rotation = placement
+        center, width, depth, rotation = placement.rectangle
         aim = (center[0], corridor_y)
         building = Building(
-            identifier, identifier, center, *size, rotation, _doorway(center, size, rotation, aim)
+            identifier,
+            identifier,
+            center,
+            width,
+            depth,
+            rotation,
+            _doorway(center, (width, depth), rotation, aim),
         )
-        placed.append(building)
+        placed.append(placement)
         corridor_buildings.append(building)
 
     homes: list[Building] = []
@@ -851,10 +957,10 @@ def _sites_layer(rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...])
         placement = _draw_placement(rng, _HOME_SIZE, cluster, spread, (0.0, 360.0), clearances, placed)
         if placement is None:
             return None
-        center, rotation = placement
-        doorway = _doorway(center, _HOME_SIZE, rotation, cluster)
-        home = Building(f"home_{index}", "home", center, *_HOME_SIZE, rotation, doorway)
-        placed.append(home)
+        center, width, depth, rotation = placement.rectangle
+        doorway = _doorway(center, (width, depth), rotation, cluster)
+        home = Building(f"home_{index}", "home", center, width, depth, rotation, doorway)
+        placed.append(placement)
         homes.append(home)
 
     return _Sites(
@@ -897,12 +1003,20 @@ def _rings(buildings: tuple[Building, ...]) -> tuple[tuple[Point, ...], ...]:
 def _water_reach(origin: Point, direction: Point, channel: Polyline) -> float | None:
     """How far a channel's water band extends from a centerline point along a crossing direction."""
     half = channel.width / 2.0
-    reach = 0.25
-    while reach <= 12.0:
-        if polyline_distance(add(origin, direction, reach), channel.points) > half:
-            return reach
-        reach += 0.25
-    return None
+    low = 0.0
+    high = 1.0
+    while high <= 12.0 and polyline_distance(add(origin, direction, high), channel.points) <= half:
+        low = high
+        high += 1.0
+    if high > 12.0:
+        return None
+    for _ in range(2):
+        middle = (low + high) / 2.0
+        if polyline_distance(add(origin, direction, middle), channel.points) > half:
+            high = middle
+        else:
+            low = middle
+    return high
 
 
 def _crossing(
@@ -938,11 +1052,9 @@ def _crossing(
 def _deck(
     rng: Random,
     channel: Polyline,
-    channels: tuple[Polyline, ...],
+    water: _Water,
     vertex: Point,
     axis: Point,
-    fork: Point,
-    cap_radius: float,
 ) -> tuple[Bridge, Point, Point] | None:
     """Span the water at a crossing: the deck plus its dry near and far endpoints along the axis.
 
@@ -959,26 +1071,51 @@ def _deck(
     for endpoint in (near, far):
         if not _inside_frame(endpoint, 1.0):
             return None
-        if any(_water_gap(endpoint, other) <= _DRY_MARGIN for other in channels):
+        if any(_water_gap(endpoint, other) <= _DRY_MARGIN for other in water.channels):
             return None
-    for other in channels:
+    deck_bounds = (
+        min(near[0], far[0]),
+        min(near[1], far[1]),
+        max(near[0], far[0]),
+        max(near[1], far[1]),
+    )
+    for other, segments, channel_bounds in zip(water.channels, water.segments, water.bounds, strict=True):
         crossed = any(
-            segments_intersect((near, far), segment) for segment in itertools.pairwise(other.points)
+            segments_intersect((near, far), segment)
+            for segment, segment_bounds in zip(segments, channel_bounds, strict=True)
+            if not (
+                deck_bounds[2] + EPSILON < segment_bounds[0]
+                or segment_bounds[2] + EPSILON < deck_bounds[0]
+                or deck_bounds[3] + EPSILON < segment_bounds[1]
+                or segment_bounds[3] + EPSILON < deck_bounds[1]
+            )
         )
         if crossed != (other is channel):
             return None
     bridge = Bridge(_midpoint(near, far), heading_to(near, far), rng.uniform(2.0, 3.0), distance(near, far))
-    if bridge.distance_to(fork) <= cap_radius + 0.5:
+    if bridge.distance_to(water.fork) <= water.cap_radius + 0.5:
         return None
     corners = rectangle_corners(bridge.position, bridge.span, bridge.width, bridge.heading)
-    for other in channels:
+    bridge_bounds = (
+        min(corner[0] for corner in corners),
+        min(corner[1] for corner in corners),
+        max(corner[0] for corner in corners),
+        max(corner[1] for corner in corners),
+    )
+    for other, segments, channel_bounds in zip(water.channels, water.segments, water.bounds, strict=True):
         if other is channel:
             continue
         margin = other.width / 2.0 + 1.0
         if any(
-            distance_to_segment(corner, start, end) < margin
+            distance_to_segment(corner, *segment) < margin
             for corner in corners
-            for start, end in itertools.pairwise(other.points)
+            for segment, segment_bounds in zip(segments, channel_bounds, strict=True)
+            if not (
+                bridge_bounds[2] + EPSILON < segment_bounds[0] - margin
+                or segment_bounds[2] + margin + EPSILON < bridge_bounds[0]
+                or bridge_bounds[3] + EPSILON < segment_bounds[1] - margin
+                or segment_bounds[3] + margin + EPSILON < bridge_bounds[1]
+            )
         ):
             return None
     return bridge, near, far
@@ -986,10 +1123,8 @@ def _deck(
 
 def _wet_off_deck(
     points: tuple[Point, ...],
-    channels: tuple[Polyline, ...],
+    water: _Water,
     decks: list[Bridge],
-    fork: Point,
-    cap_radius: float,
 ) -> bool:
     """Whether a course touches water or the confluence cap anywhere a deck does not carry it.
 
@@ -1001,17 +1136,22 @@ def _wet_off_deck(
         length = distance(start, end)
         run = subtract(end, start)
         steps = max(1, math.ceil(length / 0.5))
-        samples: list[Point] | None = None
-        if (distance(start, fork) + distance(end, fork) - length) / 2.0 <= cap_radius + _DRY_MARGIN:
-            samples = [add(start, run, step / steps) for step in range(steps + 1)]
-            if any(distance(sample, fork) <= cap_radius + _DRY_MARGIN for sample in samples):
-                return True
-        for channel in channels:
-            reach = (_water_gap(start, channel) + _water_gap(end, channel) - length) / 2.0
-            if reach > _DRY_MARGIN:
-                continue
-            if samples is None:
-                samples = [add(start, run, step / steps) for step in range(steps + 1)]
+        cap_nearby = (
+            distance(start, water.fork) + distance(end, water.fork) - length
+        ) / 2.0 <= water.cap_radius + _DRY_MARGIN
+        nearby = tuple(
+            channel
+            for channel in water.channels
+            if (_water_gap(start, channel) + _water_gap(end, channel) - length) / 2.0 <= _DRY_MARGIN
+        )
+        if not cap_nearby and not nearby:
+            continue
+        samples = [add(start, run, step / steps) for step in range(steps + 1)]
+        if cap_nearby and any(
+            distance(sample, water.fork) <= water.cap_radius + _DRY_MARGIN for sample in samples
+        ):
+            return True
+        for channel in nearby:
             for sample in samples:
                 if _water_gap(sample, channel) <= _DRY_MARGIN and not any(
                     deck.contains(sample) for deck in decks
@@ -1022,10 +1162,30 @@ def _wet_off_deck(
 
 def _pierces_building(points: tuple[Point, ...], buildings: tuple[Building, ...]) -> bool:
     """Whether a course crosses into any building rectangle."""
+    segments = tuple(itertools.pairwise(points))
+    segment_bounds = tuple(
+        (min(start[0], end[0]), min(start[1], end[1]), max(start[0], end[0]), max(start[1], end[1]))
+        for start, end in segments
+    )
     for building in buildings:
-        edges = _edges(rectangle_corners(building.center, building.width, building.depth, building.rotation))
-        if any(segments_intersect(segment, edge) for segment in itertools.pairwise(points) for edge in edges):
-            return True
+        corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
+        rectangle_bounds = (
+            min(corner[0] for corner in corners),
+            min(corner[1] for corner in corners),
+            max(corner[0] for corner in corners),
+            max(corner[1] for corner in corners),
+        )
+        edges = _edges(corners)
+        for segment, bounds in zip(segments, segment_bounds, strict=True):
+            if (
+                bounds[2] + EPSILON < rectangle_bounds[0]
+                or rectangle_bounds[2] + EPSILON < bounds[0]
+                or bounds[3] + EPSILON < rectangle_bounds[1]
+                or rectangle_bounds[3] + EPSILON < bounds[1]
+            ):
+                continue
+            if any(segments_intersect(segment, edge) for edge in edges):
+                return True
     return False
 
 
@@ -1034,11 +1194,29 @@ def _road_clears_buildings(
 ) -> bool:
     """Whether every building keeps its rectangle off the road surface."""
     margin = half_width + _ROUTE_GAP
+    segments = tuple(itertools.pairwise(points))
+    segment_bounds = tuple(
+        (min(start[0], end[0]), min(start[1], end[1]), max(start[0], end[0]), max(start[1], end[1]))
+        for start, end in segments
+    )
     for building in buildings:
         rectangle = (building.center, building.width, building.depth, building.rotation)
         corners = rectangle_corners(*rectangle)
+        rectangle_bounds = (
+            min(corner[0] for corner in corners),
+            min(corner[1] for corner in corners),
+            max(corner[0] for corner in corners),
+            max(corner[1] for corner in corners),
+        )
         edges = _edges(corners)
-        for segment in itertools.pairwise(points):
+        for segment, bounds in zip(segments, segment_bounds, strict=True):
+            if (
+                bounds[2] + EPSILON < rectangle_bounds[0] - margin
+                or rectangle_bounds[2] + margin + EPSILON < bounds[0]
+                or bounds[3] + EPSILON < rectangle_bounds[1] - margin
+                or rectangle_bounds[3] + margin + EPSILON < bounds[1]
+            ):
+                continue
             if any(segments_intersect(segment, edge) for edge in edges):
                 return False
             if any(distance_to_segment(corner, *segment) < margin for corner in corners):
@@ -1048,12 +1226,26 @@ def _road_clears_buildings(
     return True
 
 
-def _straight_crossings(segment: _Segment, channels: tuple[Polyline, ...]) -> list[int]:
+def _straight_crossings(segment: _Segment, water: _Water) -> list[int]:
     """The channel indices whose centerline the straight segment crosses, with multiplicity."""
+    segment_bounds = (
+        min(segment[0][0], segment[1][0]),
+        min(segment[0][1], segment[1][1]),
+        max(segment[0][0], segment[1][0]),
+        max(segment[0][1], segment[1][1]),
+    )
     return [
         index
-        for index, channel in enumerate(channels)
-        for piece in itertools.pairwise(channel.points)
+        for index, (channel_segments, channel_bounds) in enumerate(
+            zip(water.segments, water.bounds, strict=True)
+        )
+        for piece, channel_bounds in zip(channel_segments, channel_bounds, strict=True)
+        if not (
+            segment_bounds[2] + EPSILON < channel_bounds[0]
+            or channel_bounds[2] + EPSILON < segment_bounds[0]
+            or segment_bounds[3] + EPSILON < channel_bounds[1]
+            or channel_bounds[3] + EPSILON < segment_bounds[1]
+        )
         if segments_intersect(segment, piece)
     ]
 
@@ -1061,15 +1253,13 @@ def _straight_crossings(segment: _Segment, channels: tuple[Polyline, ...]) -> li
 def _footpath(
     rng: Random,
     terrain: _Terrain,
-    channels: tuple[Polyline, ...],
+    water: _Water,
     road: Polyline,
     decks: list[Bridge],
     bridged: set[int],
     used: set[int],
     target: Point,
     avoid: tuple[tuple[Point, ...], ...],
-    fork: Point,
-    cap_radius: float,
     buildings: tuple[Building, ...],
 ) -> tuple[Polyline, int, Bridge | None, int | None] | None:
     """Walk a footpath from a road junction to its target, bridging one channel when it must.
@@ -1091,7 +1281,7 @@ def _footpath(
     dry: list[int] = []
     wet: list[tuple[int, int]] = []
     for index in candidates:
-        crossings = _straight_crossings((road.points[index], target), channels)
+        crossings = _straight_crossings((road.points[index], target), water)
         if not crossings:
             dry.append(index)
         elif len(crossings) == 1 and crossings[0] != 0 and crossings[0] not in bridged:
@@ -1110,7 +1300,7 @@ def _footpath(
                 weights,
                 heading,
                 avoid,
-                repel=(8.0, 1.5),
+                repel_radius=8.0,
                 limit=_leg_limit(junction, target),
             )
             if course is None:
@@ -1118,19 +1308,19 @@ def _footpath(
             points = _resample(course)
             if _self_intersects(points) or _pierces_building(points, buildings):
                 continue
-            if _wet_off_deck(points, channels, decks, fork, cap_radius):
+            if _wet_off_deck(points, water, decks):
                 continue
             return Polyline(points, width), index, None, None
         for index, channel_index in wet[:_FOOTPATH_TRIES]:
             junction = road.points[index]
-            channel = channels[channel_index]
+            channel = water.channels[channel_index]
             order = sorted(
                 range(1, len(channel.points) - 1),
                 key=lambda i: distance(junction, channel.points[i]) + distance(channel.points[i], target),
             )
             for vertex_index in order[:_FOOTPATH_TRIES]:
                 vertex = channel.points[vertex_index]
-                if distance(vertex, fork) < _CROSSING_FORK_GAP:
+                if distance(vertex, water.fork) < _CROSSING_FORK_GAP:
                     continue
                 if any(existing.distance_to(vertex) < 4.0 for existing in decks):
                     continue
@@ -1139,7 +1329,7 @@ def _footpath(
                 outward = subtract(target, junction)
                 if normal[0] * outward[0] + normal[1] * outward[1] < 0.0:
                     normal = (-normal[0], -normal[1])
-                spanned = _deck(rng, channel, channels, vertex, normal, fork, cap_radius)
+                spanned = _deck(rng, channel, water, vertex, normal)
                 if spanned is None:
                     continue
                 deck, near, far = spanned
@@ -1156,7 +1346,7 @@ def _footpath(
                     weights,
                     approach_heading,
                     avoid,
-                    repel=(8.0, 1.5),
+                    repel_radius=8.0,
                     limit=_leg_limit(junction, near),
                 )
                 if first is None:
@@ -1168,7 +1358,7 @@ def _footpath(
                     weights,
                     normal,
                     avoid,
-                    repel=(8.0, 1.5),
+                    repel_radius=8.0,
                     limit=_leg_limit(far, target),
                 )
                 if second is None:
@@ -1176,7 +1366,7 @@ def _footpath(
                 points = _thread([first, second], [vertex])
                 if points is None or _self_intersects(points) or _pierces_building(points, buildings):
                     continue
-                if _wet_off_deck(points, channels, [*decks, deck], fork, cap_radius):
+                if _wet_off_deck(points, water, [*decks, deck]):
                     continue
                 return Polyline(points, width), index, deck, channel_index
     return None
@@ -1187,10 +1377,8 @@ def _shrine_stubs(
     road: Polyline,
     decks: list[Bridge],
     used: set[int],
-    channels: tuple[Polyline, ...],
+    water: _Water,
     buildings: tuple[Building, ...],
-    fork: Point,
-    cap_radius: float,
 ) -> tuple[tuple[Point, ...], tuple[Polyline, ...]] | None:
     """Stand a shrine spot just off the road at each of the two sharpest free bends, with its stub."""
     ranked: list[tuple[float, int]] = []
@@ -1218,9 +1406,9 @@ def _shrine_stubs(
             spot = add(vertex, normal, orientation * (road.width / 2.0 + rng.uniform(1.5, 2.5)))
             if not _inside_frame(spot, 3.0):
                 continue
-            if any(_water_gap(spot, channel) < _SHRINE_CLEARANCE for channel in channels):
+            if any(_water_gap(spot, channel) < _SHRINE_CLEARANCE for channel in water.channels):
                 continue
-            if distance(spot, fork) < cap_radius + _SHRINE_CLEARANCE:
+            if distance(spot, water.fork) < water.cap_radius + _SHRINE_CLEARANCE:
                 continue
             if any(
                 distance_to_rectangle(
@@ -1230,14 +1418,13 @@ def _shrine_stubs(
                 for building in buildings
             ):
                 continue
-            if _padded_gap(spot) < BUILDING_GAP or any(
+            if not _padded_room(spot, BUILDING_GAP) or any(
                 deck.distance_to(spot) < BUILDING_GAP for deck in decks
             ):
                 continue
             spots.append(spot)
             stubs.append(Polyline((vertex, spot), rng.uniform(1.5, 2.0)))
             bends.append(vertex)
-            used.add(index)
             break
     if len(spots) < 2:
         return None
@@ -1252,17 +1439,7 @@ def _aimed_at_paths(buildings: tuple[Building, ...], paths: tuple[Polyline, ...]
         aim = _nearest_on(building.center, nearest.points)
         size = (building.width, building.depth)
         doorway = _doorway(building.center, size, building.rotation, aim)
-        aimed.append(
-            Building(
-                building.id,
-                building.type,
-                building.center,
-                building.width,
-                building.depth,
-                building.rotation,
-                doorway,
-            )
-        )
+        aimed.append(replace(building, doorway=doorway))
     return tuple(aimed)
 
 
@@ -1295,11 +1472,9 @@ def _spawn_clear(spawn: Point, buildings: tuple[Building, ...]) -> bool:
 def _threaded_road(
     rng: Random,
     terrain: _Terrain,
-    channels: tuple[Polyline, ...],
+    water: _Water,
     sites: _Sites,
     avoid: tuple[tuple[Point, ...], ...],
-    fork: Point,
-    cap_radius: float,
 ) -> tuple[Polyline, list[Bridge]] | None:
     """One attempt at the road: entry to exit through a drawn crossing and deck per channel."""
     entry = (0.0, sites.corridor_y + rng.uniform(-5.0, 5.0))
@@ -1312,15 +1487,15 @@ def _threaded_road(
     joints: list[Point] = []
     position = entry
     minimum_x = 0.0
-    for channel in channels[1:]:
+    for channel in water.channels[1:]:
         spanned = None
         vertex = axis = (0.0, 0.0)
         for _ in range(8):
-            drawn = _crossing(rng, channel, sites.corridor_y, fork, minimum_x)
+            drawn = _crossing(rng, channel, sites.corridor_y, water.fork, minimum_x)
             if drawn is None:
                 break
             vertex, axis = drawn
-            spanned = _deck(rng, channel, channels, vertex, axis, fork, cap_radius)
+            spanned = _deck(rng, channel, water, vertex, axis)
             if spanned is not None:
                 break
         if spanned is None:
@@ -1333,7 +1508,7 @@ def _threaded_road(
             weights,
             heading,
             avoid,
-            repel=(6.0, 1.5),
+            repel_radius=6.0,
             limit=_leg_limit(position, near),
         )
         if leg is None:
@@ -1351,7 +1526,7 @@ def _threaded_road(
         weights,
         heading,
         avoid,
-        repel=(6.0, 1.5),
+        repel_radius=6.0,
         limit=_leg_limit(position, exit_point),
     )
     if last is None:
@@ -1363,16 +1538,14 @@ def _threaded_road(
     road = Polyline(course, rng.uniform(4.0, 5.0))
     if _self_intersects(road.points):
         return None
-    if _wet_off_deck(road.points, channels, road_decks, fork, cap_radius):
+    if _wet_off_deck(road.points, water, road_decks):
         return None
     if not _road_clears_buildings(road.points, road.width / 2.0, sites.buildings):
         return None
     return road, road_decks
 
 
-def _network_layer(
-    rng: Random, terrain: _Terrain, channels: tuple[Polyline, ...], sites: _Sites
-) -> _Network | None:
+def _network_layer(rng: Random, terrain: _Terrain, water: _Water, sites: _Sites) -> _Network | None:
     """Thread the road across the channels, hang the footpaths off it, and fix the spawn.
 
     The stream is consumed in a fixed order: per road attempt the entry and exit offsets, the blend
@@ -1383,12 +1556,10 @@ def _network_layer(
     locally against its budget, since the terrain and sites it threads are still good. Returns
     None to redraw the village.
     """
-    fork = channels[0].points[-1]
-    cap_radius = max(channel.width for channel in channels) / 2.0
-    avoid = (*_coarse(channels), *_rings(sites.buildings))
+    avoid = (*_coarse(water.channels), *_rings(sites.buildings))
     threaded = None
     for _ in range(_ROAD_TRIES):
-        threaded = _threaded_road(rng, terrain, channels, sites, avoid, fork, cap_radius)
+        threaded = _threaded_road(rng, terrain, water, sites, avoid)
         if threaded is not None:
             break
     if threaded is None:
@@ -1403,15 +1574,13 @@ def _network_layer(
         pathed = _footpath(
             rng,
             terrain,
-            channels,
+            water,
             road,
             decks,
             bridged,
             used,
             target,
             avoid,
-            fork,
-            cap_radius,
             sites.buildings,
         )
         if pathed is None:
@@ -1423,7 +1592,7 @@ def _network_layer(
             decks.append(deck)
             bridged.add(channel_index)
 
-    shrined = _shrine_stubs(rng, road, decks, used, channels, sites.buildings, fork, cap_radius)
+    shrined = _shrine_stubs(rng, road, decks, used, water, sites.buildings)
     if shrined is None:
         return None
     spots, stubs = shrined
@@ -1448,15 +1617,16 @@ def build_village(seed: int) -> Layout:
         if land is None:
             continue
         terrain, channels, fields, reed_banks = land
-        sites = _sites_layer(rng, terrain, channels)
+        water = _Water.of(channels)
+        sites = _sites_layer(rng, terrain, water)
         if sites is None:
             continue
-        network = _network_layer(rng, terrain, channels, sites)
+        network = _network_layer(rng, terrain, water, sites)
         if network is None:
             continue
         try:
             return Layout(
-                channels=channels,
+                channels=water.channels,
                 road=network.road,
                 footpaths=network.footpaths,
                 bridges=network.bridges,

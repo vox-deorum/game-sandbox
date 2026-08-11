@@ -295,24 +295,24 @@ def test_evaluate_forwards_the_selected_seat(monkeypatch, capsys):
 
     assert evaluate.main(["--episodes", "2", "--seat", "1"]) == 0
     assert calls == [
-        {
-            "seed": 0,
-            "max_steps": None,
-            "seat": 1,
-            "vs": None,
-            "parameters": parameters,
-            "decision_limit_ms": None,
-            "game_limit_ms": None,
-        },
-        {
-            "seed": 1,
-            "max_steps": None,
-            "seat": 1,
-            "vs": None,
-            "parameters": parameters,
-            "decision_limit_ms": None,
-            "game_limit_ms": None,
-        },
+        dict(
+            seed=0,
+            max_steps=None,
+            seat=1,
+            vs=None,
+            parameters=parameters,
+            decision_limit_ms=None,
+            game_limit_ms=None,
+        ),
+        dict(
+            seed=1,
+            max_steps=None,
+            seat=1,
+            vs=None,
+            parameters=parameters,
+            decision_limit_ms=None,
+            game_limit_ms=None,
+        ),
     ]
     assert "mean over 2 episode(s): 2.00" in capsys.readouterr().out
 
@@ -719,13 +719,13 @@ def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
 
     assert evaluate.main(["--seeds", "5", "--vs", str(rival)]) == 0
     assert calls == [
-        {
-            "seed": 5,
-            "max_steps": None,
-            "seat": 0,
-            "vs": rival.resolve(),
-            "parameters": parameters,
-            "decision_limit_ms": None,
-            "game_limit_ms": None,
-        }
+        dict(
+            seed=5,
+            max_steps=None,
+            seat=0,
+            vs=rival.resolve(),
+            parameters=parameters,
+            decision_limit_ms=None,
+            game_limit_ms=None,
+        )
     ]
