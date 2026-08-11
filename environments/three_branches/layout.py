@@ -125,6 +125,34 @@ class StartPose:
     home: str
 
 
+def building_wall_segments(building: Building) -> tuple[Segment, ...]:
+    """Split a building's perimeter around its doorway gap."""
+    corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
+    edges = tuple(zip(corners, (*corners[1:], corners[0]), strict=True))
+    doorway_edge = min(
+        edges,
+        key=lambda edge: distance_to_segment(building.doorway.position, edge[0], edge[1]),
+    )
+    walls: list[Segment] = []
+    for edge in edges:
+        if edge != doorway_edge:
+            walls.append(edge)
+            continue
+        start, end = edge
+        edge_heading = heading_to(start, end)
+        direction = heading_vector(edge_heading)
+        projected = (building.doorway.position[0] - start[0]) * direction[0] + (
+            building.doorway.position[1] - start[1]
+        ) * direction[1]
+        gap_start = add(start, direction, max(0.0, projected - building.doorway.width / 2))
+        gap_end = add(start, direction, min(distance(start, end), projected + building.doorway.width / 2))
+        if gap_start != start:
+            walls.append((start, gap_start))
+        if gap_end != end:
+            walls.append((gap_end, end))
+    return tuple(walls)
+
+
 def _offset_points(line: Polyline, side: float) -> tuple[Point, ...]:
     """Make a simple bank polyline offset from each centerline vertex."""
     offset: list[Point] = []
@@ -226,35 +254,7 @@ class Layout:
 
     def _building_walls(self) -> dict[str, tuple[Segment, ...]]:
         """Split each building's perimeter around its doorway gap, keyed by building id."""
-        by_building: dict[str, tuple[Segment, ...]] = {}
-        for building in self.buildings:
-            corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
-            edges = tuple(zip(corners, (*corners[1:], corners[0]), strict=True))
-            doorway_edge = min(
-                edges,
-                key=lambda edge: distance_to_segment(building.doorway.position, edge[0], edge[1]),
-            )
-            walls: list[Segment] = []
-            for edge in edges:
-                if edge != doorway_edge:
-                    walls.append(edge)
-                    continue
-                start, end = edge
-                edge_heading = heading_to(start, end)
-                direction = heading_vector(edge_heading)
-                projected = (building.doorway.position[0] - start[0]) * direction[0] + (
-                    building.doorway.position[1] - start[1]
-                ) * direction[1]
-                gap_start = add(start, direction, max(0.0, projected - building.doorway.width / 2))
-                gap_end = add(
-                    start, direction, min(distance(start, end), projected + building.doorway.width / 2)
-                )
-                if gap_start != start:
-                    walls.append((start, gap_start))
-                if gap_end != end:
-                    walls.append((gap_end, end))
-            by_building[building.id] = tuple(walls)
-        return by_building
+        return {building.id: building_wall_segments(building) for building in self.buildings}
 
     def _water_bank_segments(self) -> tuple[Segment, ...]:
         banks: list[Segment] = []
