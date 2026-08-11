@@ -3,7 +3,7 @@
  * building the session base image when it is absent or when the policy demands a rebuild.
  *
  * Whether an existing tag is reused or always rebuilt is driver configuration ({@link ImagePolicy}),
- * not caller policy — the orchestrator asks for an image and gets back a tag. The build context is
+ * not caller policy: the orchestrator asks for an image and gets back a tag. The build context is
  * the repo root, because the base image is assembled from monorepo sources (see the Dockerfile);
  * the heavy, irrelevant directories are excluded from the tar so only the sources the Dockerfile
  * copies are sent to the daemon.
@@ -53,18 +53,22 @@ const BUILD_CONTEXT_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
   ...SUBMISSION_IGNORED_SEGMENTS,
   'data',
 ])
+const ROOT_TEMP_PREFIXES = ['.codex-pytest-budget-', '.test-tmp-']
 
 /** True when an outer-edge ignored directory or a compiled-Python artifact sits on this path. */
 function isIgnored(absolutePath: string): boolean {
   const rel = relative(REPO_ROOT, absolutePath)
   const rootLocalEnvironmentFile =
     !rel.includes(sep) && (rel === '.env' || (rel.startsWith('.env.') && rel !== '.env.default'))
+  const rootLocalTemp =
+    !rel.includes(sep) && ROOT_TEMP_PREFIXES.some((prefix) => rel.startsWith(prefix))
   const buildContextIgnoredSegment = rel
     .split(sep)
     .some((segment) => BUILD_CONTEXT_IGNORED_SEGMENTS.has(segment))
   // isSubmissionIgnored also covers the shared set anchored at the repo root and compiled-Python artifacts.
   return (
     rootLocalEnvironmentFile ||
+    rootLocalTemp ||
     buildContextIgnoredSegment ||
     isSubmissionIgnored(REPO_ROOT, absolutePath)
   )

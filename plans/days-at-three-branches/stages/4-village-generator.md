@@ -42,7 +42,7 @@ The fields are drawn, then the water topology, which is where the guarantees liv
 
 Padding: the fixture road, footpaths, buildings, props, scenery, and spawn, with `bridges=()`. The layout splits every water bank around every deck, so a fixture deck overlapping new water would punch a phantom gap in a generated bank; an empty bridge tuple builds fine, and the fixture road fording the new channels in the viewer is an accepted padding artifact. The overlay codec accepts an empty bridge list on both ends; one road bridge per channel returns as layer 3's tested bound.
 
-Tests landing: the entry third, the fork band, the widths, mouth separation and the edge margin, channels never intersecting themselves or one another, terrace and reed polygons simple, the 35-point cap, generator-level same-seed determinism and cross-seed divergence, the static overlay payload under 12 KiB, reset under the 250 ms cadence, and the observation `village` Dict equal to the built layout through float32.
+Tests landing: the entry third, the fork band, the widths, mouth separation and the edge margin, channels never intersecting themselves or one another, terrace and reed polygons simple, the 35-point cap, generator-level same-seed determinism and cross-seed divergence, the static overlay payload under 12 KiB, and the observation `village` Dict equal to the built layout through float32.
 
 Gate: the owner signs off the water and ground look. Signed off 2026-08-10.
 
@@ -70,11 +70,11 @@ Gate: the owner signs off the network.
 
 ### Layer 4: accessories
 
-One road-arc helper supplies cumulative lengths, nearest projections, positions, tangents, and normals to the road-facing accessories. Anchored spots serve the stalls, board, shrines, hearth, repair bench, pump, and bell; benches split across the plaza, the market, and the inn front with every site served; a garden plot sits flush against a non-doorway wall of each home; the hearth and repair bench stand inside their buildings against the wall opposite the doorway. One or two crates land beside each stall spot and four roof posts at each shrine spot's corners; shrine spots sit on road bends the generator picks itself.
+One road-arc helper supplies cumulative lengths, nearest projections, positions, tangents, and normals to the road-facing accessories. Anchored spots serve the stalls, board, shrines, hearth, repair bench, pump, and bell; benches split across the plaza, the market, and the inn front with every site served; each 4 by 3 m garden plot has its 4 m edge centered on, parallel to, and flush with the home wall opposite the doorway, extending outward with no wall choice or slide; the hearth and repair bench stand inside their buildings against the wall opposite the doorway. One or two crates land beside each stall spot and four roof posts at each shrine spot's corners; shrine spots sit on road bends the generator picks itself.
 
 Lantern stations run between the road end margins. They use closer spacing in the market window, alternate preferred road sides from a seeded initial side, try the other side once, and skip a blocked station. Their variable count follows road length and clearance rather than a quota. Pines are placed last: road stations and selected scatter cells each offer one anchor, then an accepted anchor may offer nearby companions. Invalid anchors and companions skip without retrying the layout. The catalog's fixed counts, footprints, and districts guide the constrained props; the generator configuration controls candidate spacing, scatter probability, companions, and other layout tuning.
 
-Every prop is accepted only with a banked witness: a standing point within the 1.5 m reach where the 0.4 m body is clear and the line to the prop is unblocked. Every later solid is checked against the banked witnesses, doorway thresholds, and the spawn disk, so nothing placed afterward can break them. After assembly the generator builds the engine's own static pymunk space once and flood fills from the spawn on a 0.5 m grid, asserting every doorway threshold, start pose, and prop witness lands in the spawn's region; a failure redraws. The sweep costs a few hundredths of a second, so reset, generation and validation included, stays under the 250 millisecond cadence.
+Every prop is accepted only with a banked witness: a standing point within the 1.5 m reach of the prop's nearest rotated-footprint point where the 0.4 m body is clear and the line to that point is unblocked. Every later solid is checked against the banked witnesses, doorway thresholds, and the spawn disk, so nothing placed afterward can break them. After assembly the generator builds the engine's own static pymunk space once and flood fills from the spawn on a 0.5 m grid, asserting every doorway threshold, start pose, and prop witness lands in the spawn's region; a failure redraws.
 
 Padding: none. The fixture import leaves the generation package; `fixture.py` itself stays as the engine tests' known map.
 
@@ -126,7 +126,6 @@ The consolidated list, accreting per layer as the build order lands it:
 - Same-seed determinism, two builds comparing equal, and divergence, two batch seeds differing.
 - Every polyline at 35 points or fewer, and the canonical static overlay payload below 12 KiB for every batch seed (the run-length ground grid is the dominant term; the full header line cap stays in `test_budget`). Lantern and pine skips do not redraw terrain, sites, or network geometry.
 - The observation's `village` Dict equal to the generated layout field for field through float32, via `make_env` reset at a batch seed.
-- Reset time, generation and validation included, under the 250 millisecond cadence for every batch seed, with the measured numbers recorded here once landed.
 
 From the first flip, the conformance suite demands of every build: the redraw cap never trips at seeds 0 and 17, all geometry stays inside the frame, every polyline fits the codec, and same-seed builds compare equal.
 

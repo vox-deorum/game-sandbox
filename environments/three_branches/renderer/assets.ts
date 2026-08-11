@@ -615,3 +615,35 @@ export const THREE_BRANCHES_ASSET_MANIFEST = [
 
 type ThreeBranchesAssetDraft = Omit<ThreeBranchesAsset, 'name'> & { name: string }
 export type ThreeBranchesAssetName = (typeof THREE_BRANCHES_ASSET_MANIFEST)[number]['name']
+
+/** Resolve every manifest entry through an injected loader so tests need no image decoder. */
+export async function loadThreeBranchesAssets<T>(
+  load: (asset: (typeof THREE_BRANCHES_ASSET_MANIFEST)[number]) => Promise<T> | T,
+): Promise<Record<ThreeBranchesAssetName, T>> {
+  const loaded = await Promise.all(
+    THREE_BRANCHES_ASSET_MANIFEST.map(async (asset) => [asset.name, await load(asset)] as const),
+  )
+  return Object.fromEntries(loaded) as Record<ThreeBranchesAssetName, T>
+}
+
+/** Vite bundles every approved runtime image and returns its production URL. */
+function threeBranchesAssetUrls(): Record<string, string> {
+  return import.meta.glob('./assets/*', {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  }) as Record<string, string>
+}
+
+/** Match every manifest path to one bundled URL and reject a missing production asset. */
+export function threeBranchesAssetSources(
+  urls: Record<string, string> = threeBranchesAssetUrls(),
+): Record<ThreeBranchesAssetName, string> {
+  return Object.fromEntries(
+    THREE_BRANCHES_ASSET_MANIFEST.map((asset) => {
+      const url = urls[asset.path]
+      if (url === undefined) throw new Error(`Three Branches asset is missing: ${asset.path}`)
+      return [asset.name, url]
+    }),
+  ) as Record<ThreeBranchesAssetName, string>
+}

@@ -10,33 +10,27 @@ import {
   worldPoint,
 } from './geometry.js'
 import type { DynamicOverlay, Point, StaticOverlay } from './overlay.js'
+import { HEARTHSIDE_STYLE, type HearthsideStyle, PRESENTATION, stableHash } from './presentation.js'
 
-export interface Palette {
+export interface Palette extends HearthsideStyle {
   ground: Record<string, string>
-  buildingFill: string
-  buildingOutline: string
-  bridge: string
-  scenery: string
-  prop: string
-  character: string
   collision: string
 }
 
-const groundColors = ['#a98262', '#8da970', '#aab764', '#6f9b7d', '#5d8da5']
 const ground = Object.fromEntries(
-  rulesData.ground.map((item, index) => [item.code, groundColors[index] ?? '#000000']),
+  rulesData.ground.map((item) => {
+    const colorName = PRESENTATION.ground.colors[item.code]
+    if (colorName === undefined)
+      throw new Error(`no presentation color for ground code ${item.code}`)
+    return [item.code, HEARTHSIDE_STYLE[colorName]]
+  }),
 )
 
-/** The deliberately plain stage-three palette. Ground keys stay in rules.json code order. */
+/** Hearthside Ink plus the derived ground-code and collision contracts. */
 export const PALETTE: Palette = {
+  ...HEARTHSIDE_STYLE,
   ground,
-  buildingFill: '#d8c19b',
-  buildingOutline: '#624d3a',
-  bridge: '#8b6a4d',
-  scenery: '#537a4c',
-  prop: '#b27746',
-  character: '#3d536b',
-  collision: '#e03e3e',
+  collision: HEARTHSIDE_STYLE.cinnabar,
 }
 
 export interface WorldLine {
@@ -45,6 +39,7 @@ export interface WorldLine {
 }
 
 export interface StaticScene {
+  layoutKey: string
   tileRows: string[]
   channels: WorldLine[]
   road: WorldLine
@@ -53,6 +48,11 @@ export interface StaticScene {
   buildings: Array<{
     id: string
     type: string
+    center: Point
+    width: number
+    depth: number
+    rotation: number
+    doorway: { position: Point; width: number }
     corners: Point[]
     walls: Array<{ start: Point; end: Point }>
   }>
@@ -70,17 +70,27 @@ export interface StaticScene {
   spawn: Point
 }
 
-export interface DynamicScene {
-  characters: Array<{
-    id: string
-    position: Point
-    radius: number
-    headingEnd: Point
-    expression: string
-    expressionLabel: string
-    target: string
-  }>
-  props: Array<{ id: string; state: string; stateLabel: string }>
+export interface SceneCharacter {
+  id: string
+  position: Point
+  radius: number
+  heading: number
+  moved: number
+  headingEnd: Point
+  expression: string
+  expressionLabel: string
+  target: string
+}
+
+/** The only part of a scene that differs between two decoded ticks, so the only per-frame work. */
+export interface MotionScene {
+  tick: number
+  characters: SceneCharacter[]
+}
+
+export interface DynamicScene extends MotionScene {
+  phase: string
+  props: Array<{ id: string; type: string; state: string; stateLabel: string }>
   chrome: { tick: string; phase: string; bell: string; terminal: string | null }
 }
 
@@ -103,7 +113,9 @@ export function staticScene(staticOverlay: StaticOverlay): StaticScene {
   const cached = staticScenes.get(staticOverlay)
   if (cached) return cached
   const village = staticOverlay.village
+  const layoutKey = layoutKeyFor(staticOverlay)
   const scene: StaticScene = {
+    layoutKey,
     tileRows: village.ground.map((row) => row.map(groundCode).join('')),
     channels: village.channels.map(worldLine),
     road: worldLine(village.road),
@@ -117,6 +129,14 @@ export function staticScene(staticOverlay: StaticOverlay): StaticScene {
     buildings: village.buildings.map((building) => ({
       id: building.id,
       type: building.type,
+      center: worldPoint(building.center),
+      width: worldLength(building.width),
+      depth: worldLength(building.depth),
+      rotation: building.rotation,
+      doorway: {
+        position: worldPoint(building.doorway.position),
+        width: worldLength(building.doorway.width),
+      },
       corners: footprintCorners(
         building.center,
         building.width,
@@ -159,19 +179,36 @@ export function staticScene(staticOverlay: StaticOverlay): StaticScene {
   return scene
 }
 
-function dynamicScene(state: DynamicOverlay): DynamicScene {
+/** Hash every decoded static-layout field that can affect deterministic dressing or ground art. */
+export function layoutKeyFor(staticOverlay: StaticOverlay): string {
+  return String(stableHash(JSON.stringify(staticOverlay.village)))
+}
+
+/** Place the cast for one frame, skipping the state treatment a decoded tick already resolved. */
+export function motionScene(state: DynamicOverlay): MotionScene {
   return {
+    tick: state.tick,
     characters: state.characters.map((character) => ({
       id: character.id,
       position: worldPoint(character.position),
       radius: worldLength(CHARACTER_RADIUS_METERS),
+      heading: character.heading,
+      moved: character.moved,
       headingEnd: worldPoint(headingEndpoint(character.position, character.heading)),
       expression: character.expression,
       expressionLabel: expressionLabel(character.expression, character.target),
       target: character.target,
     })),
+  }
+}
+
+function dynamicScene(state: DynamicOverlay): DynamicScene {
+  return {
+    ...motionScene(state),
+    phase: state.phase,
     props: Object.entries(state.prop_states).map(([id, stateLabel]) => ({
       id,
+      type: id.slice(0, id.lastIndexOf('_')),
       state: stateLabel,
       stateLabel,
     })),

@@ -302,28 +302,23 @@ describe('Crane Reach order controls', () => {
     expect(clockArc(-1)).toEqual(clockArc(0))
   })
 
-  it('pulses a reverted tile once and not at all under reduced motion', () => {
-    expect(revertPulse(0, false)).toBe(1)
-    expect(revertPulse(REVERT_PULSE_MS / 2, false)).toBeCloseTo(0.5)
-    expect(revertPulse(REVERT_PULSE_MS, false)).toBe(0)
+  it('pulses a reverted tile exactly once', () => {
+    expect(revertPulse(0)).toBe(1)
+    expect(revertPulse(REVERT_PULSE_MS / 2)).toBeCloseTo(0.5)
+    expect(revertPulse(REVERT_PULSE_MS)).toBe(0)
     // It fades to nothing and stays there, so it never reads as a repeating highlight.
-    expect(revertPulse(REVERT_PULSE_MS * 4, false)).toBe(0)
-    expect(revertPulse(0, true)).toBe(0)
+    expect(revertPulse(REVERT_PULSE_MS * 4)).toBe(0)
   })
 
-  it('snaps the preview to its final highlight under reduced motion', () => {
-    expect(previewPhase(0, true)).toBe(1)
-    expect(previewPhase(400, true)).toBe(1)
-    expect(previewPhase(0, false)).toBeCloseTo(0)
-    expect(previewPhase(800, false)).toBeCloseTo(1)
+  it('swells the preview across its period', () => {
+    expect(previewPhase(0)).toBeCloseTo(0)
+    expect(previewPhase(800)).toBeCloseTo(1)
   })
 
-  it('fades the activation seal only while motion is allowed', () => {
-    expect(activationPulseAlpha(0, false)).toBe(1)
-    expect(activationPulseAlpha(800, false)).toBeCloseTo(0.35)
-    expect(activationPulseAlpha(1_600, false)).toBeCloseTo(1)
-    expect(activationPulseAlpha(0, true)).toBe(1)
-    expect(activationPulseAlpha(800, true)).toBe(1)
+  it('fades the activation seal across its period', () => {
+    expect(activationPulseAlpha(0)).toBe(1)
+    expect(activationPulseAlpha(800)).toBeCloseTo(0.35)
+    expect(activationPulseAlpha(1_600)).toBeCloseTo(1)
   })
 
   it('bakes step numerals at the supplied resolution in the mono family', () => {

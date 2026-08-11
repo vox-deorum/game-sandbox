@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from random import Random
 from typing import NamedTuple
@@ -20,6 +21,7 @@ from ..geometry import (
 )
 from ..layout import Building, Doorway
 from .config import GENERATION_CONFIG
+from .gardens import plot_rectangle, plot_reservations
 from .terrain import _Water
 from .walker import (
     _drawn_side,
@@ -51,6 +53,8 @@ _HOME_SIZE = GENERATION_CONFIG.sites.home_size
 _INN_SIZE = GENERATION_CONFIG.sites.inn_size
 _SHED_SIZE = GENERATION_CONFIG.sites.shed_size
 _PLAZA_CLEARANCE = GENERATION_CONFIG.sites.plaza_clearance
+_GARDEN_WATER_CLEARANCE = GENERATION_CONFIG.accessories.prop.water_margin
+_GARDEN_SOLID_GAP = GENERATION_CONFIG.accessories.prop.building_gap
 
 
 _SITES_TRIES = GENERATION_CONFIG.sites.tries
@@ -236,6 +240,7 @@ def _pick_clusters(
 def _clear_of_water(
     placement: _Placement,
     water: _Water,
+    clearance: float = WATER_CLEARANCE,
 ) -> bool:
     """Whether a rectangle keeps the bank margin from every channel.
 
@@ -252,7 +257,7 @@ def _clear_of_water(
     for channel, channel_segments, channel_bounds in zip(
         water.channels, water.segments, water.bounds, strict=True
     ):
-        margin = channel.width / 2.0 + WATER_CLEARANCE
+        margin = channel.width / 2.0 + clearance
         for segment, segment_bounds in zip(channel_segments, channel_bounds, strict=True):
             if (
                 segment_bounds[2] + margin + EPSILON < rectangle_bounds[0]
@@ -275,6 +280,38 @@ def _clear_of_water(
                 continue
             if distance_to_rectangle(point, center, width, depth, rotation) < margin:
                 return False
+    return True
+
+
+def _garden_clears(placement: _Placement, water: _Water, placed: list[_Placement]) -> bool:
+    """Whether a future garden wall choice clears the frame, water, and existing solids."""
+    if not all(_inside_frame(corner, BOUNDARY_MARGIN) for corner in placement.corners):
+        return False
+    if not _clear_of_water(placement, water, _GARDEN_WATER_CLEARANCE):
+        return False
+    center, width, depth, rotation = placement.rectangle
+    for other in placed:
+        other_center, other_width, other_depth, other_rotation = other.rectangle
+        if (
+            distance(center, other_center)
+            >= placement.half_diagonal + other.half_diagonal + _GARDEN_SOLID_GAP
+        ):
+            continue
+        if any(
+            segments_intersect(edge, other_edge) for edge in placement.edges for other_edge in other.edges
+        ):
+            return False
+        if any(
+            distance_to_rectangle(corner, other_center, other_width, other_depth, other_rotation)
+            < _GARDEN_SOLID_GAP
+            for corner in placement.corners
+        ):
+            return False
+        if any(
+            distance_to_rectangle(corner, center, width, depth, rotation) < _GARDEN_SOLID_GAP
+            for corner in other.corners
+        ):
+            return False
     return True
 
 
@@ -344,6 +381,7 @@ def _draw_placement(
     spin: tuple[float, float],
     clearances: _Clearances,
     placed: list[_Placement],
+    accept: Callable[[_Placement], bool] | None = None,
 ) -> _Placement | None:
     """Draw centers and rotations around an anchor until one clears, or None when the budget runs out.
 
@@ -374,7 +412,7 @@ def _draw_placement(
         center = add(anchor, _polar(rng, *reach))
         rotation = rng.uniform(*spin) % 360.0
         candidate = _placement(center, size, rotation)
-        if _clears(candidate, nearby, placed):
+        if _clears(candidate, nearby, placed) and (accept is None or accept(candidate)):
             return candidate
     return None
 
@@ -543,8 +581,29 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
                 cluster = clusters[index % len(clusters)]
                 radius = radii[index % len(clusters)]
                 spread = (radius - _CLUSTER_RING_DEPTH, radius)
+
+                def reserve(
+                    candidate: _Placement,
+                    cluster: Point = cluster,
+                    clearances: _Clearances = clearances,
+                    placed: list[_Placement] = placed,
+                ) -> bool:
+                    center, width, depth, rotation = candidate.rectangle
+                    doorway = _doorway(center, (width, depth), rotation, cluster)
+                    home = Building("home", "home", center, width, depth, rotation, doorway)
+                    return all(
+                        _garden_clears(
+                            _placement(garden_center, (garden_width, garden_depth), garden_rotation),
+                            clearances.water,
+                            placed,
+                        )
+                        for garden_center, garden_width, garden_depth, garden_rotation in plot_reservations(
+                            home
+                        )
+                    )
+
                 placement = _draw_placement(
-                    rng, _HOME_SIZE, cluster, spread, (0.0, 360.0), clearances, placed
+                    rng, _HOME_SIZE, cluster, spread, (0.0, 360.0), clearances, placed, reserve
                 )
                 if placement is None:
                     break
@@ -552,6 +611,8 @@ def _sites_layer(rng: Random, terrain: _Terrain, water: _Water) -> _Sites | None
                 doorway = _doorway(center, (width, depth), rotation, cluster)
                 home = Building(f"home_{index}", "home", center, width, depth, rotation, doorway)
                 placed.append(placement)
+                garden_center, garden_width, garden_depth, garden_rotation = plot_rectangle(home)
+                placed.append(_placement(garden_center, (garden_width, garden_depth), garden_rotation))
                 homes.append(home)
             else:
                 return _Sites(

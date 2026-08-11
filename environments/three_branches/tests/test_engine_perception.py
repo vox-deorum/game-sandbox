@@ -81,6 +81,16 @@ def test_prop_visibility_uses_the_same_cone_and_wall_rules_as_people() -> None:
     assert "bell_0" not in [prop.id for prop in day.perception("npc_0").props]
 
 
+def test_prop_visibility_uses_the_nearest_footprint_point() -> None:
+    plot_index = next(index for index, prop in enumerate(FIXTURE_VILLAGE.props) if prop.id == "plot_0")
+    props = list(FIXTURE_VILLAGE.props)
+    props[plot_index] = replace(props[plot_index], position=(14.0, 10.0))
+    layout = replace(FIXTURE_VILLAGE, props=tuple(props))
+    observer = CharacterState("observer", (0.0, 10.0), 0.0)
+
+    assert can_see_prop(layout, observer, layout.props[plot_index])
+
+
 def test_reeds_do_not_conceal_props() -> None:
     layout = replace(
         FIXTURE_VILLAGE,

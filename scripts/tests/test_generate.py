@@ -100,6 +100,13 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
         (package / name).write_text("", encoding="utf-8")
     (package / "renderer").mkdir()
     (package / "tests").mkdir()
+    generation = package / "generation"
+    generation.mkdir()
+    for name in ("__init__.py", "build.py", "tuning.json"):
+        (generation / name).write_text("", encoding="utf-8")
+    cache = generation / "__pycache__"
+    cache.mkdir()
+    (cache / "build.pyc").write_bytes(b"")
 
     spec = _envs._template_spec(
         package,
@@ -108,7 +115,13 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
             overlay_static=None,
         ),
     )
-    assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
+    assert set(spec.modules) == {
+        "hearts/UPSTREAM_LICENSE.md",
+        "hearts/env.py",
+        "hearts/generation/__init__.py",
+        "hearts/generation/build.py",
+        "hearts/generation/tuning.json",
+    }
     assert spec.player_id == "player_0"
 
 

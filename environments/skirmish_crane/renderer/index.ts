@@ -47,7 +47,6 @@ import {
   FOG_CROSSFADE_MS,
   fogCrossfade,
   type OrderPlan,
-  prefersReducedMotion,
   previewPhase,
   REVERT_PULSE_MS,
   RESET_BUTTON,
@@ -320,9 +319,7 @@ export class CraneReachRenderer extends PixiRenderer {
     // A host paces its delivery on this renderer's own completion, so a state normally arrives with
     // nothing in flight. One that arrives anyway (an unpaced live burst) finishes the scene it lands
     // on first, so the interrupted action is fully reconciled rather than left half-drawn beneath the
-    // next one. Only an explicit seek, mount, or repeat snap stills an event outright; the OS
-    // reduced-motion preference does not, because motion is the replay's content and remote desktop
-    // sessions force that preference on.
+    // next one. Only an explicit seek, mount, or repeat snap stills an event outright.
     if (this.eventAnimating) this.completeEvent()
     this.installSceneUpdate(state, scene, options, freshForwardEvent)
   }
@@ -425,24 +422,18 @@ export class CraneReachRenderer extends PixiRenderer {
     const session = this.orderSession
     const plan = session?.plan ?? null
     if (session === null || plan === null) return
-    const reducedMotion = prefersReducedMotion()
     const revert =
       this.revertedTile === null
         ? null
-        : { tileKey: this.revertedTile, strength: revertPulse(this.revertElapsedMs, reducedMotion) }
+        : { tileKey: this.revertedTile, strength: revertPulse(this.revertElapsedMs) }
     const frame: OrderPlan = { ...plan, revert, clock: this.moveClock.read() }
     session.plan = frame
     setResetButtonActive(this.resetButtonHit, frame.order.path.directions.length > 0)
     clear(this.orderPulseLayer)
-    drawOrderPulse(
-      this.orderPulseLayer,
-      scene,
-      frame,
-      previewPhase(this.humanElapsedMs, reducedMotion),
-    )
+    drawOrderPulse(this.orderPulseLayer, scene, frame, previewPhase(this.humanElapsedMs))
     clear(this.orderControlLayer)
     drawOrderControls(this.orderControlLayer, this.sprite, frame)
-    this.activationLayer.alpha = activationPulseAlpha(this.humanElapsedMs, reducedMotion)
+    this.activationLayer.alpha = activationPulseAlpha(this.humanElapsedMs)
     this.ctx.container.dataset.craneClock =
       frame.clock === null ? 'none' : String(frame.clock.seconds)
   }
@@ -603,12 +594,11 @@ export class CraneReachRenderer extends PixiRenderer {
     clear(this.fogLayer)
     if (perspective !== null) drawFogVeil(this.fogLayer, this.sprite, scene, perspective)
     this.ctx.container.dataset.craneFog = after
-    if (before !== after && prefersReducedMotion()) this.fogElapsedMs = FOG_CROSSFADE_MS
     this.applyFogCrossfade()
   }
 
   private applyFogCrossfade(): void {
-    const settled = fogCrossfade(this.fogElapsedMs, prefersReducedMotion())
+    const settled = fogCrossfade(this.fogElapsedMs)
     this.fogLayer.alpha = settled
     this.fadingFogLayer.alpha = 1 - settled
     if (settled >= 1) clear(this.fadingFogLayer)
@@ -1068,7 +1058,7 @@ export class CraneReachRenderer extends PixiRenderer {
           ? null
           : {
               tileKey: this.revertedTile,
-              strength: revertPulse(this.revertElapsedMs, prefersReducedMotion()),
+              strength: revertPulse(this.revertElapsedMs),
             },
       clock: this.moveClock.read(),
     }

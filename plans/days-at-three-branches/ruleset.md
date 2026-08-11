@@ -10,7 +10,7 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 
 - The village is a continuous 2D plane measured in meters, 100 by 100, with an impassable boundary.
 - A character's state is turtle-style: a position (x, y), a heading, and the meters it moved on the latest tick. Facing is the heading.
-- Every range in this document is measured position to position.
+- Every range in this document is measured position to position except prop use and prop perception. Those rules measure to the nearest point on the prop's rotated solid footprint.
 - Time advances in ticks, and a day is 1200 ticks.
 - Characters and props have solid footprints, and a character is a circle of radius 0.4 m. A building's outer rectangle reserves its site from other buildings and exterior objects, but its interior is walkable. Interior props may occupy that reserved rectangle when they stay inside the walls, leave the doorway open, and do not overlap each other.
 - A building wall is the perimeter of its outer rectangle, with its 1.2 m doorway gap removed. Movement collision and line-of-sight checks use these same derived wall segments. A line that crosses a wall carries neither sight, nor presence, nor speech.
@@ -82,7 +82,7 @@ Emotes are engine-defined and all available from Season 1:
 | sleep      | off duty                        |
 | sweep      | a chore                         |
 
-A prop use engages the nearest prop within reach with an unblocked line, and puts the character into that prop's activity, sitting on a bench or working the pump, visible to observers like an emote. Facing does not enter into it: a prop you are standing beside is always in reach of a use. Selection and reach are judged on the tick's starting pose, and a use needs stillness: commanded speed above 0 resolves the expression to none. A character holds a use by choosing it again each tick, and releases it by choosing anything else, by moving, or by leaving its reach.
+A prop use engages the nearest prop whose nearest rotated-footprint point lies within reach with an unblocked line to that point, and puts the character into that prop's activity, sitting on a bench or working the pump, visible to observers like an emote. Ties break by canonical prop order. Facing does not enter into it: a prop you are standing beside is always in reach of a use. Selection and reach are judged on the tick's starting pose, and a use needs stillness: commanded speed above 0 resolves the expression to none. A character holds a use by choosing it again each tick, and releases it by choosing anything else, by moving, or by leaving its reach.
 
 Every prop starts the day unheld in its start state, and its state follows its transition rule:
 
@@ -90,18 +90,18 @@ Every prop starts the day unheld in its start state, and its state follows its t
 - occupancy: the active state holds exactly while a character holds the use.
 - timed: beginning a use sets the active state, which holds while the use is held and reverts the table's count of ticks after it was last held.
 
-| Prop | Where | Activity | States | Start | Transition |
-| --- | --- | --- | --- | --- | --- |
-| Market stall | market | tending the stall | open, closed | closed | toggle |
-| Lantern post | along the road | lighting | lit, unlit | unlit | toggle |
-| Bench | plaza, market, and inn front | sitting | occupied, empty | empty | occupancy |
-| Roadside shrine | road bends | tending the shrine | tended, untended | untended | timed, 300 |
-| Notice board | market | reading the board | none | none | none |
-| Garden plot | beside homes | tending the plot | tended, overgrown | overgrown | timed, 600 |
-| Inn hearth | inn | tending the hearth | lit, unlit | unlit | toggle |
-| Repair bench | repair shed | working the bench | busy, idle | idle | occupancy |
-| Well pump | well plaza | working the pump | flowing, idle | idle | timed, 10 |
-| Beacon bell | west road | ringing the bell | ringing, silent | silent | timed, 40 |
+| Prop | Where | Footprint | Activity | States | Start | Transition |
+| --- | --- | --- | --- | --- | --- | --- |
+| Market stall | market | 1.5 x 1.5 m | tending the stall | open, closed | closed | toggle |
+| Lantern post | along the road | 0.6 x 0.6 m | lighting | lit, unlit | unlit | toggle |
+| Bench | plaza, market, and inn front | 1.6 x 0.5 m | sitting | occupied, empty | empty | occupancy |
+| Roadside shrine | road bends | 1.5 x 1.5 m | tending the shrine | tended, untended | untended | timed, 300 |
+| Notice board | market | 0.6 x 0.6 m | reading the board | none | none | none |
+| Garden plot | wall opposite each home doorway | 4 x 3 m | tending the plot | tended, overgrown | overgrown | timed, 600 |
+| Inn hearth | inn | 0.6 x 0.6 m | tending the hearth | lit, unlit | unlit | toggle |
+| Repair bench | repair shed | 1.6 x 0.5 m | working the bench | busy, idle | idle | occupancy |
+| Well pump | well plaza | 0.6 x 0.6 m | working the pump | flowing, idle | idle | timed, 10 |
+| Beacon bell | west road | 0.6 x 0.6 m | ringing the bell | ringing, silent | silent | timed, 40 |
 
 Speech runs beside the tick action, so a character can speak while doing anything else. A talk is one short line addressed to one character within 3 m with an unblocked line, and a character may talk to each character in range once per tick. A shout is one short line reaching every character within 15 m with an unblocked line, one per tick. A line spoken on tick T reaches its hearers during tick T+1, after they have chosen that tick's action, so the earliest action it can inform is tick T+2's. Viewers see every line as a speech bubble over the speaker. NPC speech carries both loudnesses. Visitor speech is talk: freeform text typed by a human, or canned lines from the scripted visitor, and NPCs answer with their ordinary speech, so a conversation is two characters within talk range exchanging lines two ticks apart.
 
@@ -113,7 +113,7 @@ Each tick a character receives:
 - Every character it sees, within the vision cone with an unblocked line: id, kind, position, heading, speed, and current expression.
 - Every character it hears, within hearing range with an unblocked line, whatever the facing: id and position.
 - Reed banks conceal: a character standing in a reed bank is seen only by observers standing in the same bank. Hearing and speech are unaffected.
-- The state of every prop it sees, under the same cone and line rules. While the beacon bell rings, every character perceives it, whatever the distance and whatever stands between.
+- The state of every prop it sees, under the cone and line rules applied to its nearest rotated-footprint point. While the beacon bell rings, every character perceives it, whatever the distance and whatever stands between.
 - The tick number, and the day phase when the daynight variant is on.
 
 This observation, plus standing knowledge (the full static layout, the cast roster, and the season's parameter values) and the speech that has reached it, is everything available when the character selects its action. Anything about the past lives in the character's own code.

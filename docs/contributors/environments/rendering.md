@@ -33,6 +33,8 @@ The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts wi
 
 `RenderOptions` has two fields. `snap` jumps straight to the state with no transition for a replay scrub, seek, or step. `transitionScale` multiplies the renderer's natural phase durations: omitted or `1` uses natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so transitions run at that pace. It is not a time budget. If the natural timing exceeds the cadence, the renderer takes longer and the host waits.
 
+A realtime environment's live human session is unpaced: the host draws every frame on arrival and passes no `transitionScale` at all. Natural timing is calibrated to a one-second cadence, so a renderer whose environment steps faster than that cannot use it there, and one that tries will draw its world several ticks behind where it actually is. Such a renderer measures the wall-clock gap between states and animates over that instead, capping it at the natural duration so a stall resumes at ordinary speed. Three Branches does this in `interpolation.ts`.
+
 The registry stores each `PixiRenderer` subclass with its static image thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
 
 `PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.

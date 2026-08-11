@@ -20,6 +20,7 @@ from three_branches.geometry import (
     add,
     distance,
     distance_to_rectangle,
+    dot,
     heading_vector,
     polyline_distance,
     rectangle_corners,
@@ -243,21 +244,24 @@ def _reachable_fill(layout):
     return fill
 
 
-def _has_reachable_witness(fill: _Fill, prop: Prop) -> bool:
-    start = min(prop.footprint) / 2.0 + PROFILE.body_radius + 0.06
-    radius = start
-    while radius <= PROFILE.prop_reach - 0.02:
+def _has_reachable_witness(layout, fill: _Fill, prop: Prop) -> bool:
+    offset = PROFILE.body_radius + 0.06
+    while offset <= PROFILE.prop_reach - 0.02:
         for step in range(16):
             angle = math.tau * step / 16.0
-            point = add(prop.position, (math.cos(angle), math.sin(angle)), radius)
+            direction = math.cos(angle), math.sin(angle)
+            forward = heading_vector(prop.rotation)
+            support = prop.footprint[0] / 2.0 * abs(direction[0] * forward[0] + direction[1] * forward[1])
+            support += prop.footprint[1] / 2.0 * abs(direction[0] * -forward[1] + direction[1] * forward[0])
+            point = add(prop.position, direction, support + offset)
             if (
                 distance_to_rectangle(point, prop.position, *prop.footprint, prop.rotation)
                 < PROFILE.body_radius
             ):
                 continue
-            if fill.connected(point):
+            if fill.connected(point) and layout.reaches_prop(point, prop, PROFILE.prop_reach):
                 return True
-        radius += 0.1
+        offset += 0.1
     return False
 
 
@@ -311,4 +315,19 @@ def test_generated_accessories_clear_each_other_and_stay_reachable(seed: int) ->
             )
 
     fill = _reachable_fill(layout)
-    assert all(_has_reachable_witness(fill, prop) for prop in props)
+    assert all(_has_reachable_witness(layout, fill, prop) for prop in props)
+
+
+@pytest.mark.parametrize("seed", BATCH_SEEDS)
+def test_generated_plots_are_centered_flush_with_the_wall_opposite_each_doorway(seed: int) -> None:
+    layout = _village(seed)
+    plots = [prop for prop in layout.props if prop.type == "plot"]
+    homes = [building for building in layout.buildings if building.type == "home"]
+
+    for home, plot in zip(homes, plots, strict=True):
+        doorway_outward = _unit(subtract(home.doorway.position, home.center))
+        forward = heading_vector(home.rotation)
+        wall_span = home.width if abs(dot(doorway_outward, forward)) > 0.5 else home.depth
+        expected = add(home.center, doorway_outward, -(wall_span / 2.0 + plot.footprint[1] / 2.0))
+        assert plot.position == pytest.approx(expected)
+        assert abs(dot(heading_vector(plot.rotation), doorway_outward)) == pytest.approx(0)

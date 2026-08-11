@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { computeCollisionScene } from './collision.js'
+import { computeDynamicCollisionScene, computeStaticCollisionScene } from './collision.js'
 import {
   buildingWallSegments,
   CHARACTER_RADIUS_METERS,
   footprintCorners,
   headingEndpoint,
   STATIC_SEGMENT_RADIUS_METERS,
+  WORLD_SCALE,
   waterBankSegments,
   waterConfluenceDisks,
-  WORLD_SCALE,
   worldLength,
   worldPoint,
 } from './geometry.js'
@@ -68,9 +68,10 @@ describe('Three Branches collision geometry', () => {
     }
     frame.d.c[0] = `${frame.d.c[0]?.slice(0, 11)}1zz`
     const state = decodeDynamic(frame, staticOverlay)
-    const scene = computeCollisionScene(state, staticOverlay)
-    expect(scene.buildings).toHaveLength(7)
-    expect(scene.waterBanks).toEqual(
+    const staticScene = computeStaticCollisionScene(staticOverlay)
+    const dynamicScene = computeDynamicCollisionScene(state, staticOverlay)
+    expect(staticScene.buildings).toHaveLength(7)
+    expect(staticScene.waterBanks).toEqual(
       waterBankSegments(staticOverlay.village).map((segment, index) => ({
         id: `water_bank_${index}`,
         start: worldPoint(segment.start),
@@ -79,16 +80,18 @@ describe('Three Branches collision geometry', () => {
         label: `Water bank ${index + 1}`,
       })),
     )
-    expect(scene.confluences).toHaveLength(1)
-    expect(scene.boundaries).toHaveLength(4)
-    expect(scene.props).toHaveLength(staticOverlay.village.props.length)
-    expect(scene.scenery).toHaveLength(staticOverlay.village.scenery.length)
-    expect(scene.characters).toHaveLength(6)
-    expect(scene.props.find((prop) => prop.id === 'stall_0')?.label).toBe('Market stall: closed')
-    expect(scene.characters[0]?.radius).toBe(CHARACTER_RADIUS_METERS * WORLD_SCALE)
-    expect(scene.characters[0]?.expression).toBe('wave')
-    expect(scene.buildings[0]?.walls[0]?.radius).toBe(0.05 * WORLD_SCALE)
-    expect(scene.confluences).toEqual(
+    expect(staticScene.confluences).toHaveLength(1)
+    expect(staticScene.boundaries).toHaveLength(4)
+    expect(staticScene.props).toHaveLength(staticOverlay.village.props.length)
+    expect(staticScene.scenery).toHaveLength(staticOverlay.village.scenery.length)
+    expect(dynamicScene.characters).toHaveLength(6)
+    expect(dynamicScene.propLabels.find((prop) => prop.id === 'stall_0')?.label).toBe(
+      'Market stall: closed',
+    )
+    expect(dynamicScene.characters[0]?.radius).toBe(CHARACTER_RADIUS_METERS * WORLD_SCALE)
+    expect(dynamicScene.characterLabels[0]?.label).toBe('npc_0: wave')
+    expect(staticScene.buildings[0]?.walls[0]?.radius).toBe(0.05 * WORLD_SCALE)
+    expect(staticScene.confluences).toEqual(
       waterConfluenceDisks(staticOverlay.village).map((disk, index) => ({
         id: `water_confluence_${index}`,
         center: worldPoint(disk.center),
@@ -96,7 +99,7 @@ describe('Three Branches collision geometry', () => {
         label: `Water confluence ${index + 1}`,
       })),
     )
-    expect(scene.boundaries).toEqual([
+    expect(staticScene.boundaries).toEqual([
       {
         id: 'world_boundary_0',
         start: { x: 0, y: 0 },
@@ -129,24 +132,30 @@ describe('Three Branches collision geometry', () => {
     const firstScenery = staticOverlay.village.scenery[0]
     expect(firstScenery).toBeDefined()
     if (!firstScenery) throw new Error('fixture has no scenery')
-    expect(scene.scenery[0]).toEqual({
+    expect(staticScene.scenery[0]).toEqual({
       id: `${firstScenery.type}_0`,
       center: worldPoint(firstScenery.position),
       radius: worldLength(firstScenery.radius),
       label: `${firstScenery.type} 1`,
     })
-    expect(new Set(scene.buildings.map((building) => building.id)).size).toBe(
-      scene.buildings.length,
+    expect(new Set(staticScene.buildings.map((building) => building.id)).size).toBe(
+      staticScene.buildings.length,
     )
-    expect(new Set(scene.props.map((prop) => prop.id)).size).toBe(scene.props.length)
-    expect(new Set(scene.waterBanks.map((bank) => bank.id)).size).toBe(scene.waterBanks.length)
-    expect(new Set(scene.confluences.map((disk) => disk.id)).size).toBe(scene.confluences.length)
-    expect(new Set(scene.boundaries.map((boundary) => boundary.id)).size).toBe(
-      scene.boundaries.length,
+    expect(new Set(staticScene.props.map((prop) => prop.id)).size).toBe(staticScene.props.length)
+    expect(new Set(staticScene.waterBanks.map((bank) => bank.id)).size).toBe(
+      staticScene.waterBanks.length,
     )
-    expect(new Set(scene.scenery.map((scenery) => scenery.id)).size).toBe(scene.scenery.length)
-    expect(new Set(scene.characters.map((character) => character.id)).size).toBe(
-      scene.characters.length,
+    expect(new Set(staticScene.confluences.map((disk) => disk.id)).size).toBe(
+      staticScene.confluences.length,
+    )
+    expect(new Set(staticScene.boundaries.map((boundary) => boundary.id)).size).toBe(
+      staticScene.boundaries.length,
+    )
+    expect(new Set(staticScene.scenery.map((scenery) => scenery.id)).size).toBe(
+      staticScene.scenery.length,
+    )
+    expect(new Set(dynamicScene.characters.map((character) => character.id)).size).toBe(
+      dynamicScene.characters.length,
     )
   })
 })

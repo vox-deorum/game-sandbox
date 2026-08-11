@@ -1,8 +1,9 @@
 /** Closed-form village geometry used by the placeholder and collision scenes. */
 import rulesData from '../rules.json'
 import type { Bridge, Building, Point, Polyline, Village } from './overlay.js'
+import { PRESENTATION } from './presentation.js'
 
-export const WORLD_SCALE = 16
+export const WORLD_SCALE = PRESENTATION.worldScale
 export const WORLD_SIZE_METERS = 100
 export const WORLD_SIZE = WORLD_SIZE_METERS * WORLD_SCALE
 /** The body the engine gives every character, so drawn circles match the collision truth. */
@@ -108,7 +109,7 @@ export function waterBankSegments(village: Village): Segment[] {
   const banks: Segment[] = []
   for (const channel of village.channels) {
     for (const side of [-channel.width / 2, channel.width / 2]) {
-      const points = offsetPoints(channel, side)
+      const points = offsetPolyline(channel.points, side)
       for (let index = 0; index < points.length - 1; index += 1) {
         const start = points[index]
         const end = points[index + 1]
@@ -224,10 +225,11 @@ function samePoint(left: Point, right: Point): boolean {
   return left.x === right.x && left.y === right.y
 }
 
-function offsetPoints(line: Polyline, side: number): Point[] {
-  return line.points.map((point, index) => {
-    const previous = line.points[Math.max(0, index - 1)] as Point
-    const following = line.points[Math.min(line.points.length - 1, index + 1)] as Point
+/** Shift a polyline sideways by `side`, following the local tangent so the two sides stay parallel. */
+export function offsetPolyline(points: readonly Point[], side: number): Point[] {
+  return points.map((point, index) => {
+    const previous = points[Math.max(0, index - 1)] as Point
+    const following = points[Math.min(points.length - 1, index + 1)] as Point
     const forward = normalize(subtract(following, previous))
     const normal = { x: -forward.y, y: forward.x }
     return add(point, normal, side)

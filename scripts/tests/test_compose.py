@@ -91,6 +91,23 @@ def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: p
     assert "live_local: invalid config" in capsys.readouterr().err
 
 
+def test_composed_three_branches_imports_its_nested_generation_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import compose as compose_mod
+
+    monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path)
+    out = compose_example("three_branches", "sweeper", out_dir=tmp_path / "sweeper")
+    generation = out / "sandbox" / "env" / "three_branches" / "generation"
+    assert (generation / "__init__.py").is_file()
+    assert (generation / "config.py").is_file()
+
+    _isolate_composed_sandbox(out, monkeypatch)
+
+    importlib.import_module("sandbox.env")
+    assert "sandbox.env.three_branches.generation" in sys.modules
+
+
 def test_composed_launchers_preserve_static_overlay_hooks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     canonical_environments = discover_environments()
     for env_id in ("skirmish_crane", "flappy_bird"):

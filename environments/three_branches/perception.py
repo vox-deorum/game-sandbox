@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from .geometry import Point, in_cone, point_in_polygon
-from .layout import Layout
+from .layout import Layout, Prop
 from .rules import OFF_PHASE, PHASES, PROFILE
 
 
@@ -49,9 +49,16 @@ def can_see(layout: Layout, observer: Facing, target: Positioned) -> bool:
     return _in_sight(layout, observer, target)
 
 
-def can_see_prop(layout: Layout, observer: Facing, target: Positioned) -> bool:
-    """Apply sight rules for props, which reeds do not conceal."""
-    return _in_sight(layout, observer, target)
+def can_see_prop(layout: Layout, observer: Facing, target: Prop) -> bool:
+    """Apply sight rules to the nearest point of a prop footprint, which reeds do not conceal."""
+    nearest = target.nearest_point(observer.position)
+    return in_cone(
+        observer.position,
+        observer.heading,
+        nearest,
+        PROFILE.vision_degrees,
+        PROFILE.vision_range,
+    ) and not layout.line_blocked(observer.position, nearest)
 
 
 def can_hear(layout: Layout, observer: Positioned, target: Positioned) -> bool:

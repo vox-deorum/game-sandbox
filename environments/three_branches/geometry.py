@@ -68,6 +68,18 @@ def distance_to_rectangle(
     return hypot(max(0.0, along), max(0.0, across))
 
 
+def nearest_point_on_rectangle(
+    point: Point, center: Point, width: float, depth: float, heading: float = 0.0
+) -> Point:
+    """Return the nearest point on or inside a rotated rectangle."""
+    forward = heading_vector(heading)
+    normal = -forward[1], forward[0]
+    relative = subtract(point, center)
+    along = max(-width / 2, min(width / 2, dot(relative, forward)))
+    across = max(-depth / 2, min(depth / 2, dot(relative, normal)))
+    return add(add(center, forward, along), normal, across)
+
+
 def in_cone(observer: Point, heading: float, target: Point, degrees_wide: float, reach: float) -> bool:
     """Return whether ``target`` lies in the inclusive range and vision cone."""
     offset = subtract(target, observer)

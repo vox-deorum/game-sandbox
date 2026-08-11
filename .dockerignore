@@ -12,6 +12,8 @@ dist
 site
 .tls
 .pytest-tmp
+.codex-pytest-budget-*
+.test-tmp-*
 .pytest-cache
 .pytest_cache
 .mypy_cache

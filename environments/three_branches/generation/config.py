@@ -274,13 +274,6 @@ class BoardConfig:
 
 
 @dataclass(frozen=True)
-class PlotConfig:
-    slides: int
-    gap: float
-    wall_gap: float
-
-
-@dataclass(frozen=True)
 class InteriorConfig:
     tries: int
     slide: Range
@@ -311,7 +304,6 @@ class AccessoriesConfig:
     bench: BenchConfig
     shrine: ShrineConfig
     board: BoardConfig
-    plot: PlotConfig
     interior: InteriorConfig
     pump: PumpConfig
     bell: BellConfig
@@ -579,7 +571,6 @@ def load_generation_config(data: Any) -> GenerationConfig:
             "bench",
             "shrine",
             "board",
-            "plot",
             "interior",
             "pump",
             "bell",
@@ -670,7 +661,6 @@ def load_generation_config(data: Any) -> GenerationConfig:
         {"tries", "jitter", "path_margin", "post_size", "post_path_margin", "post_water_margin"},
     )
     board = _object(accessories["board"], "accessories.board", {"reach"})
-    plot = _object(accessories["plot"], "accessories.plot", {"slides", "gap", "wall_gap"})
     interior = _object(accessories["interior"], "accessories.interior", {"tries", "slide", "door_gap"})
     pump = _object(accessories["pump"], "accessories.pump", {"reach"})
     bell = _object(accessories["bell"], "accessories.bell", {"arc_jitter", "edge_gap", "path_margin"})
@@ -1048,11 +1038,6 @@ def load_generation_config(data: Any) -> GenerationConfig:
                 ),
             ),
             board=BoardConfig(reach=_range(board["reach"], "accessories.board.reach", positive=True)),
-            plot=PlotConfig(
-                slides=_integer(plot["slides"], "accessories.plot.slides", positive=True),
-                gap=_number(plot["gap"], "accessories.plot.gap", positive=True),
-                wall_gap=_number(plot["wall_gap"], "accessories.plot.wall_gap", positive=True),
-            ),
             interior=InteriorConfig(
                 tries=_integer(interior["tries"], "accessories.interior.tries", positive=True),
                 slide=_range(interior["slide"], "accessories.interior.slide"),

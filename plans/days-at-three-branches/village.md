@@ -54,7 +54,7 @@ Districts are anchors along the road and channels, not fixed positions:
 - Three building types, all enterable: the home (five instances, 6 by 5 m), the inn (one, 10 by 8 m), and the repair shed (one, 6 by 6 m). The outer rectangle of each building is its placement footprint.
 - Every building is one room with a single permanent doorway opening, 1.2 m wide, facing the nearest path. The solid wall perimeter is the outer rectangle with that doorway gap removed, and the interior is walkable. Movement collision and line-of-sight checks use the same wall segments derived from this geometry. The opening carries sight, hearing, and speech normally.
 - Doorways open onto walkable ground, never onto water, another footprint, or the boundary.
-- The inn hearth stands inside the inn and the repair bench inside the shed, each against the wall opposite the doorway. Homes hold no interior props; each home's garden plot sits outside, flush against one exterior wall.
+- The inn hearth stands inside the inn and the repair bench inside the shed, each against the wall opposite the doorway. Homes hold no interior props. Each home's 4 by 3 m fenced garden plot has no gate: its 4 m edge is centered on, parallel to, and flush with the exterior wall opposite the doorway, extending outward from that wall.
 - Homes are numbered `home_0` through `home_4` in the order the generator places them, and `npc_i` lives in `home_(i mod 5)`, so cast_10 seats two villagers per home. The village always generates five homes, whatever the plan, so a seed yields one identical layout for cast_5 and cast_10 alike.
 
 ## Props
@@ -68,13 +68,13 @@ Activities, states, and the use rules are the ruleset's. This table places the i
 | Bench | the well plaza, the market, and the inn front | 1.6 x 0.5 m | 5 |
 | Roadside shrine | road bends | 1.5 x 1.5 m plus roof posts | 2 |
 | Notice board | the market | 0.6 x 0.6 m | 1 |
-| Garden plot | against home walls, one per home | 2 x 2 m | 5 |
+| Garden plot | centered on the wall opposite each home doorway, extending outward | 4 x 3 m | 5 |
 | Inn hearth | inside the inn | 0.6 x 0.6 m | 1 |
 | Repair bench | inside the repair shed | 1.6 x 0.5 m | 1 |
 | Well pump | the well plaza | 0.6 x 0.6 m | 1 |
 | Beacon bell | beside the road's west stretch | 0.6 x 0.6 m | 1 |
 
-- Every prop has a standing position in the connected walkable region within the ruleset's 1.5 m reach. A character can stand there with its full body clear of solid geometry and an unblocked line to the prop.
+- Every prop has a standing position in the connected walkable region within the ruleset's 1.5 m reach of its nearest rotated-footprint point. A character can stand there with its full body clear of solid geometry and an unblocked line to that point.
 
 ## Scenery
 
@@ -89,7 +89,7 @@ The generator runs from the match seed's generation stream, in order: terrain an
 - The stable features are each placed once: the well pump, the market, the inn, the repair shed, and the beacon bell.
 - The walkable ground, bridges and building interiors included, is one connected region.
 - Five homes exist, and every doorway opens onto walkable ground.
-- Every prop has a connected walkable standing position within reach, with room for the full body, along an unblocked line.
+- Every prop has a connected walkable standing position within reach of its nearest rotated-footprint point, with room for the full body and an unblocked line to that point.
 - Building placement rectangles do not overlap one another, water, the road, the boundary, or exterior objects. Other exterior footprints do not overlap. An interior prop stays inside its building, leaves the doorway open, and does not overlap another prop.
 - The visitor spawn sits on the road's centerline 1 m inside the west edge, clear of every footprint.
 - Each channel carries the road's bridge and at most one footpath bridge; the trunk carries none.

@@ -13,6 +13,7 @@ from three_branches.geometry import (
     heading_to,
     heading_vector,
     in_cone,
+    nearest_point_on_rectangle,
     point_in_polygon,
     point_in_rectangle,
     segments_intersect,
@@ -65,6 +66,12 @@ def test_rectangle_distance_is_zero_inside_and_exact_at_edges_and_corners() -> N
     assert distance_to_rectangle((2, 0), (0, 0), 2, 4) == 1
     assert distance_to_rectangle((2, 3), (0, 0), 2, 4) == pytest.approx(math.sqrt(2))
     assert distance_to_rectangle((0, 3), (0, 0), 2, 4, 90) == 2
+
+
+def test_nearest_point_on_rotated_rectangle_clamps_in_local_axes() -> None:
+    assert nearest_point_on_rectangle((3, 4), (0, 0), 2, 4) == pytest.approx((1, 2))
+    assert nearest_point_on_rectangle((0.25, -0.5), (0, 0), 2, 4, 45) == pytest.approx((0.25, -0.5))
+    assert nearest_point_on_rectangle((0, 3), (0, 0), 2, 4, 90) == pytest.approx((0, 1))
 
 
 def test_polygons_and_rotated_rectangles_include_their_boundaries() -> None:

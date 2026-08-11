@@ -34,7 +34,7 @@ Return a dictionary with all three keys:
 | `speed` | Number from 0 through 1 | A fraction of the ground speed limit. Use 0 to stay still. |
 | `action` | Whole number from 0 through 10 | An expression: 0 is none, 1 is use, and 2 through 10 are emotes. |
 
-The action describes one complete tick. A character can turn, move, or choose an expression in the same action. An expression that uses a prop requires speed 0 and works only when a suitable prop is in reach.
+The action describes one complete tick. A character can turn, move, or choose an expression in the same action. An expression that uses a prop requires speed 0 and works only when the nearest point on a suitable prop's footprint is within 1.5 m along an unblocked line.
 
 ## First experiment
 

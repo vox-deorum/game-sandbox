@@ -12,6 +12,7 @@ from three_branches.geometry import (
     add,
     distance,
     distance_to_segment,
+    dot,
     heading_to,
     heading_vector,
     orientation,
@@ -267,15 +268,28 @@ def test_fixture_spawn_and_all_props_have_clear_unblocked_standing_positions() -
     for prop in layout.props:
         candidates = (
             (x / 4, y / 4)
-            for x in range(round((prop.position[0] - 1.5) * 4), round((prop.position[0] + 1.5) * 4) + 1)
-            for y in range(round((prop.position[1] - 1.5) * 4), round((prop.position[1] + 1.5) * 4) + 1)
+            for x in range(round((prop.position[0] - 4.0) * 4), round((prop.position[0] + 4.0) * 4) + 1)
+            for y in range(round((prop.position[1] - 4.0) * 4), round((prop.position[1] + 4.0) * 4) + 1)
         )
         assert any(
-            _clear(candidate)
-            and distance(candidate, prop.position) <= 1.5
-            and not layout.line_blocked(candidate, prop.position)
-            for candidate in candidates
+            _clear(candidate) and layout.reaches_prop(candidate, prop, 1.5) for candidate in candidates
         ), prop.id
+
+
+def test_fixture_plots_are_centered_flush_with_the_wall_opposite_each_doorway() -> None:
+    plots = [prop for prop in FIXTURE_VILLAGE.props if prop.type == "plot"]
+    homes = [building for building in FIXTURE_VILLAGE.buildings if building.type == "home"]
+
+    for home, plot in zip(homes, plots, strict=True):
+        doorway_outward = heading_vector(heading_to(home.center, home.doorway.position))
+        forward = heading_vector(home.rotation)
+        wall_span = home.width if abs(dot(doorway_outward, forward)) > 0.5 else home.depth
+        assert plot.position == pytest.approx(
+            add(home.center, doorway_outward, -(wall_span / 2.0 + plot.footprint[1] / 2.0))
+        )
+        assert plot.nearest_point(home.center) == pytest.approx(
+            add(home.center, doorway_outward, -wall_span / 2.0)
+        )
 
 
 def test_fixture_samples_one_connected_walkable_region() -> None:

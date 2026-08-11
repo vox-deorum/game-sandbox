@@ -14,6 +14,7 @@ from .geometry import (
     distance_to_segment,
     heading_to,
     heading_vector,
+    nearest_point_on_rectangle,
     point_in_polygon,
     point_in_rectangle,
     polyline_distance,
@@ -109,6 +110,10 @@ class Prop:
     def __post_init__(self) -> None:
         if self.footprint[0] <= 0 or self.footprint[1] <= 0:
             raise ValueError("a prop needs a positive footprint")
+
+    def nearest_point(self, point: Point) -> Point:
+        """Return the point on this solid footprint nearest to ``point``."""
+        return nearest_point_on_rectangle(point, self.position, *self.footprint, self.rotation)
 
 
 @dataclass(frozen=True)
@@ -333,6 +338,10 @@ class Layout:
     def reaches(self, start: Point, end: Point, limit: float) -> bool:
         """Return whether ``end`` lies within ``limit`` meters of ``start`` along an unblocked line."""
         return distance(start, end) <= limit and not self.line_blocked(start, end)
+
+    def reaches_prop(self, start: Point, prop: Prop, limit: float) -> bool:
+        """Return whether a prop's nearest solid point is reachable along an unblocked line."""
+        return self.reaches(start, prop.nearest_point(start), limit)
 
     def body_clear(self, point: Point, radius: float = PROFILE.body_radius) -> bool:
         """Return whether a character circle stands clear of every static movement solid."""

@@ -43,9 +43,23 @@ def test_renderer_asset_manifest_files_have_the_declared_formats_and_sizes() -> 
 
 
 def test_renderer_asset_manifest_preserves_source_art() -> None:
-    declared_sources = {source for source, _, _, _ in manifest_assets().values()}
+    declared = manifest_assets()
+    declared_sources = {source for source, _, _, _ in declared.values()}
     actual_sources = {path.name for path in SOURCE_ART.iterdir() if path.is_file()}
     assert actual_sources == declared_sources | {"thumbnail-source.png"}
+
+    for source, width, height, _ in declared.values():
+        data = (SOURCE_ART / source).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        source_width, source_height = struct.unpack(">II", data[16:24])
+        assert source_width >= width
+        assert source_height >= height
+
+    thumbnail_source = (SOURCE_ART / "thumbnail-source.png").read_bytes()
+    assert thumbnail_source[:8] == b"\x89PNG\r\n\x1a\n"
+    thumbnail_width, thumbnail_height = struct.unpack(">II", thumbnail_source[16:24])
+    assert thumbnail_width >= 320
+    assert thumbnail_height >= 180
 
 
 def test_character_assets_match_the_declared_layer_contract() -> None:

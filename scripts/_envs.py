@@ -105,12 +105,26 @@ def _import_source_package(package_dir: Path) -> Any:
 def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
     """Build template facts from environment metadata and directly-owned source files."""
     meta = entry.meta
-    modules = tuple(
-        f"{package_dir.name}/{path.name}"
-        for path in sorted(package_dir.iterdir())
+    nested_packages = [
+        path for path in package_dir.iterdir() if path.is_dir() and (path / "__init__.py").is_file()
+    ]
+    module_files = {
+        path
+        for path in package_dir.iterdir()
         if path.is_file()
         and path.name not in {"__init__.py", "environment.md"}
         and not path.name.endswith((".pyc", ".pyo"))
+    }
+    module_files.update(
+        path
+        for nested_package in nested_packages
+        for path in nested_package.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.relative_to(nested_package).parts
+        and not path.name.endswith((".pyc", ".pyo"))
+    )
+    modules = tuple(
+        f"{package_dir.name}/{path.relative_to(package_dir).as_posix()}" for path in sorted(module_files)
     )
     human_players = getattr(meta, "human_players", ())
     pyright_files = (

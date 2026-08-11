@@ -83,7 +83,6 @@
       "post_path_margin": 0.05, "post_water_margin": 0.3
     },
     "board": { "reach": [1.4, 3] },
-    "plot": { "slides": 8, "gap": 0.1, "wall_gap": 0.05 },
     "interior": { "tries": 20, "slide": [-1.2, 1.2], "door_gap": 1.2 },
     "pump": { "reach": [0, 2] },
     "bell": { "arc_jitter": [-4, 4], "edge_gap": [0.3, 0.9], "path_margin": 0.1 }

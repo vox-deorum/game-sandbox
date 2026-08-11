@@ -146,7 +146,7 @@ Terrain is standing knowledge, so the painted battlefield never dims structurall
 - Hidden tiles take a fog-glaze fill (night ink at alpha 0.45) shaped by the tile's `wash-hex` mask, so the glaze's edges stay soft and painterly rather than hard hex cuts. Glazed terrain remains identifiable through its fill and terrain marks.
 - The visible set carries no glaze; the glaze edge is the boundary, so no outline is needed.
 - Units outside vision are absent. Not ghosted, not remembered: the past lives in a unit's own code, and the picture mirrors that honesty.
-- Perspective switches crossfade the glaze layer over 200 ms with the host ease; reduced motion snaps it.
+- Perspective switches crossfade the glaze layer over 200 ms with the host ease.
 
 ### The thumbnail
 

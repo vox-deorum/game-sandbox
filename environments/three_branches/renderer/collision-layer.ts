@@ -1,33 +1,22 @@
 /** Collision-truth overlay nodes, kept outside the graded art world. */
 import { Container, Graphics, Text } from 'pixi.js'
 
-import type { CollisionScene } from './collision.js'
+import type { CollisionBody, DynamicCollisionScene, StaticCollisionScene } from './collision.js'
 import type { Palette } from './scene.js'
 
 interface CollisionNode {
   root: Container
   shape: Graphics
   label?: Text
+  /** Present on a character: carries the heading so the label under it stays upright. */
+  facing?: Container
 }
 
-interface CollisionSegment {
-  id: string
-  start: { x: number; y: number }
-  end: { x: number; y: number }
-  radius: number
-  label: string
-}
-
-interface CollisionCircle {
-  id: string
-  center: { x: number; y: number }
-  radius: number
-  label: string
-}
-
-/** Reconcile collision shapes by their stable building, prop, and character ids. */
+/** Mount immutable geometry once, then reconcile only moving bodies and state labels. */
 export class CollisionLayer {
   readonly view = new Container()
+  readonly staticView = new Container()
+  readonly dynamicView = new Container()
   private readonly buildings = new Map<string, CollisionNode>()
   private readonly waterBanks = new Map<string, CollisionNode>()
   private readonly confluences = new Map<string, CollisionNode>()
@@ -35,24 +24,45 @@ export class CollisionLayer {
   private readonly props = new Map<string, CollisionNode>()
   private readonly scenery = new Map<string, CollisionNode>()
   private readonly characters = new Map<string, CollisionNode>()
+  private staticBuilds = 0
+  private dynamicUpdates = 0
+  private textResolution: number | null = null
 
   constructor(private readonly palette: Palette) {
+    this.view.addChild(this.staticView, this.dynamicView)
     this.view.eventMode = 'none'
   }
 
-  update(scene: CollisionScene, visible: boolean, textResolution: number): void {
-    this.view.visible = visible
-    this.reconcileBuildings(scene)
-    this.reconcileSegments(this.waterBanks, scene.waterBanks)
-    this.reconcileCircles(this.confluences, scene.confluences)
-    this.reconcileSegments(this.boundaries, scene.boundaries)
-    this.reconcileProps(scene)
-    this.reconcileCircles(this.scenery, scene.scenery)
+  mountStatic(scene: StaticCollisionScene): void {
+    if (this.staticBuilds > 0) return
+    this.buildBuildings(scene)
+    this.buildSegments(this.waterBanks, scene.waterBanks)
+    this.buildCircles(this.confluences, scene.confluences)
+    this.buildSegments(this.boundaries, scene.boundaries)
+    this.buildProps(scene)
+    this.buildCircles(this.scenery, scene.scenery)
+    this.staticBuilds += 1
+  }
+
+  updateDynamic(scene: DynamicCollisionScene, visible: boolean, textResolution: number): void {
+    this.setVisible(visible)
+    if (!visible) return
+    this.dynamicUpdates += 1
+    for (const prop of scene.propLabels) {
+      const label = this.props.get(prop.id)?.label
+      if (label !== undefined && label.text !== prop.label) label.text = prop.label
+    }
     this.reconcileCharacters(scene)
     this.setTextResolution(textResolution)
   }
 
+  setVisible(visible: boolean): void {
+    if (this.view.visible !== visible) this.view.visible = visible
+  }
+
   setTextResolution(resolution: number): void {
+    if (this.textResolution === resolution) return
+    this.textResolution = resolution
     for (const map of [
       this.buildings,
       this.waterBanks,
@@ -68,6 +78,10 @@ export class CollisionLayer {
     }
   }
 
+  snapshot(): { staticBuilds: number; dynamicUpdates: number } {
+    return { staticBuilds: this.staticBuilds, dynamicUpdates: this.dynamicUpdates }
+  }
+
   destroy(): void {
     this.buildings.clear()
     this.waterBanks.clear()
@@ -79,11 +93,9 @@ export class CollisionLayer {
     this.view.destroy({ children: true })
   }
 
-  private reconcileBuildings(scene: CollisionScene): void {
-    this.removeMissing(this.buildings, new Set(scene.buildings.map((building) => building.id)))
+  private buildBuildings(scene: StaticCollisionScene): void {
     for (const building of scene.buildings) {
-      const node = this.buildings.get(building.id) ?? this.create(this.buildings, building.id, true)
-      node.shape.clear()
+      const node = this.create(this.buildings, building.id, this.staticView)
       for (const wall of building.walls) {
         node.shape
           .moveTo(wall.start.x, wall.start.y)
@@ -98,12 +110,13 @@ export class CollisionLayer {
     }
   }
 
-  private reconcileSegments(map: Map<string, CollisionNode>, segments: CollisionSegment[]): void {
-    this.removeMissing(map, new Set(segments.map((segment) => segment.id)))
+  private buildSegments(
+    map: Map<string, CollisionNode>,
+    segments: StaticCollisionScene['waterBanks'],
+  ): void {
     for (const segment of segments) {
-      const node = map.get(segment.id) ?? this.create(map, segment.id, true)
+      const node = this.create(map, segment.id, this.staticView)
       node.shape
-        .clear()
         .moveTo(segment.start.x, segment.start.y)
         .lineTo(segment.end.x, segment.end.y)
         .stroke({ color: this.palette.collision, width: segment.radius * 2 })
@@ -114,12 +127,13 @@ export class CollisionLayer {
     }
   }
 
-  private reconcileCircles(map: Map<string, CollisionNode>, circles: CollisionCircle[]): void {
-    this.removeMissing(map, new Set(circles.map((circle) => circle.id)))
+  private buildCircles(
+    map: Map<string, CollisionNode>,
+    circles: StaticCollisionScene['confluences'],
+  ): void {
     for (const circle of circles) {
-      const node = map.get(circle.id) ?? this.create(map, circle.id, true)
+      const node = this.create(map, circle.id, this.staticView)
       node.shape
-        .clear()
         .circle(circle.center.x, circle.center.y, circle.radius)
         .stroke({ color: this.palette.collision, width: 2 })
       if (node.label !== undefined) {
@@ -129,70 +143,92 @@ export class CollisionLayer {
     }
   }
 
-  private reconcileProps(scene: CollisionScene): void {
-    this.removeMissing(this.props, new Set(scene.props.map((prop) => prop.id)))
+  private buildProps(scene: StaticCollisionScene): void {
     for (const prop of scene.props) {
-      const node = this.props.get(prop.id) ?? this.create(this.props, prop.id, true)
+      const node = this.create(this.props, prop.id, this.staticView)
       const [first, ...rest] = prop.corners
-      node.shape.clear()
       if (first !== undefined) {
         node.shape.moveTo(first.x, first.y)
         for (const corner of rest) node.shape.lineTo(corner.x, corner.y)
         node.shape.closePath().stroke({ color: this.palette.collision, width: 2 })
         node.label?.position.set(first.x, first.y)
       }
-      if (node.label !== undefined) node.label.text = prop.label
     }
   }
 
-  private reconcileCharacters(scene: CollisionScene): void {
-    this.removeMissing(this.characters, new Set(scene.characters.map((character) => character.id)))
-    for (const character of scene.characters) {
-      const node =
-        this.characters.get(character.id) ?? this.create(this.characters, character.id, true)
-      node.shape.clear()
-      node.shape
-        .circle(character.center.x, character.center.y, character.radius)
-        .stroke({ color: this.palette.collision, width: 2 })
-      node.shape
-        .moveTo(character.center.x, character.center.y)
-        .lineTo(character.headingEnd.x, character.headingEnd.y)
-        .stroke({ color: this.palette.collision, width: 2 })
-      if (node.label !== undefined) {
-        node.label.text = `${character.id}: ${character.expression}`
-        node.label.position.set(character.center.x, character.center.y + character.radius + 2)
-      }
-    }
-  }
-
-  private create(map: Map<string, CollisionNode>, id: string, labelled: boolean): CollisionNode {
-    const root = new Container()
-    const shape = new Graphics()
-    const label = labelled
-      ? new Text({
-          text: '',
-          style: {
-            fill: this.palette.collision,
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: 10,
-          },
-        })
-      : undefined
-    if (label !== undefined) label.anchor.set(0, 0)
-    root.addChild(shape)
-    if (label !== undefined) root.addChild(label)
-    const node = { root, shape, label }
-    map.set(id, node)
-    this.view.addChild(root)
-    return node
-  }
-
-  private removeMissing(map: Map<string, CollisionNode>, present: Set<string>): void {
-    for (const [id, node] of map) {
+  private reconcileCharacters(scene: DynamicCollisionScene): void {
+    const present = new Set(scene.characters.map((character) => character.id))
+    for (const [id, node] of this.characters) {
       if (!present.has(id)) {
-        map.delete(id)
+        this.characters.delete(id)
         node.root.destroy({ children: true })
       }
     }
+    for (const character of scene.characters) {
+      if (!this.characters.has(character.id)) this.createCharacter(character)
+    }
+    for (const entry of scene.characterLabels) {
+      const label = this.characters.get(entry.id)?.label
+      if (label !== undefined && label.text !== entry.label) label.text = entry.label
+    }
+    this.applyMotion(scene.characters)
+  }
+
+  /**
+   * Carry the retained bodies to one in-between position. Every body is the same circle and the same
+   * heading tick, so an interpolated frame only moves and turns them.
+   */
+  applyMotion(characters: readonly CollisionBody[]): void {
+    for (const character of characters) {
+      const node = this.characters.get(character.id)
+      if (node?.facing === undefined) continue
+      node.root.position.set(character.position.x, character.position.y)
+      node.facing.rotation = Math.atan2(
+        character.headingEnd.y - character.position.y,
+        character.headingEnd.x - character.position.x,
+      )
+    }
+  }
+
+  /** Draw one body at the origin, so the node's own transform is all a later frame has to move. */
+  private createCharacter(character: CollisionBody): void {
+    const node = this.create(this.characters, character.id, this.dynamicView)
+    const facing = new Container()
+    node.root.removeChild(node.shape)
+    facing.addChild(node.shape)
+    node.root.addChildAt(facing, 0)
+    node.facing = facing
+    const headingLength = Math.hypot(
+      character.headingEnd.x - character.position.x,
+      character.headingEnd.y - character.position.y,
+    )
+    node.shape
+      .circle(0, 0, character.radius)
+      .stroke({ color: this.palette.collision, width: 2 })
+      .moveTo(0, 0)
+      .lineTo(headingLength, 0)
+      .stroke({ color: this.palette.collision, width: 2 })
+    node.label?.position.set(0, character.radius + 2)
+  }
+
+  private create(map: Map<string, CollisionNode>, id: string, parent: Container): CollisionNode {
+    const root = new Container()
+    root.label = id
+    const shape = new Graphics()
+    const label = new Text({
+      text: '',
+      style: {
+        fill: this.palette.collision,
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 10,
+      },
+    })
+    label.anchor.set(0, 0)
+    if (this.textResolution !== null) label.resolution = this.textResolution
+    root.addChild(shape, label)
+    const node = { root, shape, label }
+    map.set(id, node)
+    parent.addChild(root)
+    return node
   }
 }

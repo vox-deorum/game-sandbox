@@ -33,7 +33,7 @@ const FOG_VEIL_ALPHA = 0.45
 export const RESET_BUTTON = { x: 564, y: 802, radius: 30 } as const
 export const CONFIRM_BUTTON = { x: 636, y: 802, radius: 30 } as const
 
-/** The preview pulse repeats on this period; reduced motion snaps to its final highlight instead. */
+/** The preview pulse repeats on this period. */
 const PREVIEW_PERIOD_MS = 1_600
 
 /** A step taken back pulses the tile it left, once, over this long. */
@@ -55,10 +55,6 @@ export interface OrderPlan {
   clock: MoveClockReading | null
 }
 
-export function prefersReducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
 /**
  * The move clock as an arc: a full perimeter at the start of the turn, draining clockwise from the
  * top to nothing. There is no separate countdown anywhere, so this is the whole readout.
@@ -73,20 +69,17 @@ export function clockArc(fraction: number): { start: number; end: number } {
 }
 
 /** How much of the revert pulse is left. It fades once and does not repeat. */
-export function revertPulse(elapsedMs: number, reducedMotion: boolean): number {
-  if (reducedMotion) return 0
+export function revertPulse(elapsedMs: number): number {
   return Math.max(0, 1 - elapsedMs / REVERT_PULSE_MS)
 }
 
-/** The preview's swell, or the settled final highlight when motion is unwelcome. */
-export function previewPhase(elapsedMs: number, reducedMotion: boolean): number {
-  if (reducedMotion) return 1
+/** The preview's swell. */
+export function previewPhase(elapsedMs: number): number {
   return (1 - Math.cos((elapsedMs / PREVIEW_PERIOD_MS) * Math.PI * 2)) / 2
 }
 
 /** The activated unit's quiet fade while a person is deciding on an order. */
-export function activationPulseAlpha(elapsedMs: number, reducedMotion: boolean): number {
-  if (reducedMotion) return 1
+export function activationPulseAlpha(elapsedMs: number): number {
   return 0.35 + 0.65 * ((1 + Math.cos((elapsedMs / PREVIEW_PERIOD_MS) * Math.PI * 2)) / 2)
 }
 
@@ -121,8 +114,7 @@ export function drawFogVeil(
 /** How long a perspective switch takes to cross-dissolve, and its ease. */
 export const FOG_CROSSFADE_MS = 200
 
-export function fogCrossfade(elapsedMs: number, reducedMotion: boolean): number {
-  if (reducedMotion) return 1
+export function fogCrossfade(elapsedMs: number): number {
   const t = Math.min(1, Math.max(0, elapsedMs / FOG_CROSSFADE_MS))
   return t * t * (3 - 2 * t)
 }

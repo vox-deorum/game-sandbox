@@ -5,8 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import gen_three_branches_fixture  # noqa: E402
@@ -18,7 +16,6 @@ FIXTURE_NAMES = (
 )
 
 
-@pytest.mark.skip(reason="Three Branches layer 3 tuning defers fixture regeneration until the layer closes")
 def test_three_branches_fixtures_are_fresh(tmp_path: Path) -> None:
     gen_three_branches_fixture.generate(tmp_path)
 

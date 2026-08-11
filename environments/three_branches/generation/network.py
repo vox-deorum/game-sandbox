@@ -23,6 +23,7 @@ from ..geometry import (
 )
 from ..layout import WORLD_SIZE, Bridge, Building, Polyline
 from .config import GENERATION_CONFIG
+from .gardens import Rectangle, plot_rectangles
 from .sites import BUILDING_GAP, _doorway, _Sites
 from .terrain import _Water
 from .walker import (
@@ -84,11 +85,16 @@ class _Network:
     buildings: tuple[Building, ...]
 
 
-def _rings(buildings: tuple[Building, ...]) -> tuple[tuple[Point, ...], ...]:
-    """Closed building corner rings the walker steers around."""
+def _rings(buildings: tuple[Building, ...], *, include_gardens: bool = True) -> tuple[tuple[Point, ...], ...]:
+    """Closed building and reserved-garden rings the walker steers around."""
     rings: list[tuple[Point, ...]] = []
-    for building in buildings:
-        corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
+    rectangles = tuple(
+        (building.center, building.width, building.depth, building.rotation) for building in buildings
+    )
+    if include_gardens:
+        rectangles += plot_rectangles(buildings)
+    for rectangle in rectangles:
+        corners = rectangle_corners(*rectangle)
         rings.append((*corners, corners[0]))
     return tuple(rings)
 
@@ -290,14 +296,18 @@ def _wet_off_deck(
 
 
 def _pierces_building(points: tuple[Point, ...], buildings: tuple[Building, ...]) -> bool:
-    """Whether a course crosses into any building rectangle."""
+    """Whether a course crosses into a building or reserved garden rectangle."""
     segments = tuple(itertools.pairwise(points))
     segment_bounds = tuple(
         (min(start[0], end[0]), min(start[1], end[1]), max(start[0], end[0]), max(start[1], end[1]))
         for start, end in segments
     )
-    for building in buildings:
-        corners = rectangle_corners(building.center, building.width, building.depth, building.rotation)
+    rectangles: tuple[Rectangle, ...] = (
+        *((building.center, building.width, building.depth, building.rotation) for building in buildings),
+        *plot_rectangles(buildings),
+    )
+    for rectangle in rectangles:
+        corners = rectangle_corners(*rectangle)
         rectangle_bounds = (
             min(corner[0] for corner in corners),
             min(corner[1] for corner in corners),
@@ -319,17 +329,25 @@ def _pierces_building(points: tuple[Point, ...], buildings: tuple[Building, ...]
 
 
 def _road_clears_buildings(
-    points: tuple[Point, ...], half_width: float, buildings: tuple[Building, ...]
+    points: tuple[Point, ...],
+    half_width: float,
+    buildings: tuple[Building, ...],
+    *,
+    include_gardens: bool = True,
 ) -> bool:
-    """Whether every building keeps its rectangle off the road surface."""
+    """Whether every building and reserved garden keeps its rectangle off the road surface."""
     margin = half_width + _ROUTE_GAP
     segments = tuple(itertools.pairwise(points))
     segment_bounds = tuple(
         (min(start[0], end[0]), min(start[1], end[1]), max(start[0], end[0]), max(start[1], end[1]))
         for start, end in segments
     )
-    for building in buildings:
-        rectangle = (building.center, building.width, building.depth, building.rotation)
+    rectangles = tuple(
+        (building.center, building.width, building.depth, building.rotation) for building in buildings
+    )
+    if include_gardens:
+        rectangles += plot_rectangles(buildings)
+    for rectangle in rectangles:
         corners = rectangle_corners(*rectangle)
         rectangle_bounds = (
             min(corner[0] for corner in corners),
@@ -479,7 +497,11 @@ def _footpath(
             if course is None:
                 continue
             points = _resample(course)
-            if _self_intersects(points) or _pierces_building(points, buildings):
+            if (
+                _self_intersects(points)
+                or _pierces_building(points, buildings)
+                or not _road_clears_buildings(points, width / 2.0, buildings)
+            ):
                 continue
             if _wet_off_deck(points, water, decks):
                 continue
@@ -516,7 +538,12 @@ def _footpath(
                 if second is None:
                     continue
                 points = _thread([first, second], [vertex])
-                if points is None or _self_intersects(points) or _pierces_building(points, buildings):
+                if (
+                    points is None
+                    or _self_intersects(points)
+                    or _pierces_building(points, buildings)
+                    or not _road_clears_buildings(points, width / 2.0, buildings)
+                ):
                     continue
                 if _wet_off_deck(points, water, [*decks, deck]):
                     continue
@@ -645,11 +672,11 @@ def _spawn_clear(spawn: Point, buildings: tuple[Building, ...]) -> bool:
     The accessories layer holds every prop and scenery placement off the same disk, so the
     building check is the only one the network needs.
     """
-    return all(
-        distance_to_rectangle(spawn, building.center, building.width, building.depth, building.rotation)
-        >= SPAWN_CLEARANCE
-        for building in buildings
+    rectangles: tuple[Rectangle, ...] = (
+        *((building.center, building.width, building.depth, building.rotation) for building in buildings),
+        *plot_rectangles(buildings),
     )
+    return all(distance_to_rectangle(spawn, *rectangle) >= SPAWN_CLEARANCE for rectangle in rectangles)
 
 
 def _threaded_road(
@@ -742,12 +769,22 @@ def _threaded_road(
         return None
     if _wet_off_deck(road.points, water, road_decks):
         return None
-    if not _road_clears_buildings(road.points, road.width / 2.0, sites.buildings):
+    if not _road_clears_buildings(
+        road.points,
+        road.width / 2.0,
+        sites.buildings,
+        include_gardens=False,
+    ):
         return None
     return road, road_decks
 
 
-def _network_layer(rng: Random, terrain: _Terrain, water: _Water, sites: _Sites) -> _Network | None:
+def _network_layer(
+    rng: Random,
+    terrain: _Terrain,
+    water: _Water,
+    sites: _Sites,
+) -> _Network | None:
     """Thread the road across the channels, hang the footpaths off it, and fix the spawn.
 
     The road uses ten attempts, each drawing entry and exit offsets, weights, heading, crossings,
@@ -755,10 +792,11 @@ def _network_layer(rng: Random, terrain: _Terrain, water: _Water, sites: _Sites)
     redraws every footpath, its possible deck widths, the shrine, and checks the spawn. Doorway
     re-aiming draws nothing and runs only after a complete round succeeds.
     """
+    road_avoid = (*_coarse(water.channels), *_rings(sites.buildings, include_gardens=False))
     avoid = (*_coarse(water.channels), *_rings(sites.buildings))
     threaded = None
     for _ in range(_ROAD_TRIES):
-        threaded = _threaded_road(rng, terrain, water, sites, avoid)
+        threaded = _threaded_road(rng, terrain, water, sites, road_avoid)
         if threaded is not None:
             break
     if threaded is None:
@@ -802,5 +840,9 @@ def _network_layer(rng: Random, terrain: _Terrain, water: _Water, sites: _Sites)
             if spawn is None or not _spawn_clear(spawn, sites.buildings):
                 continue
             buildings = _aimed_at_paths(sites.buildings, (road, *footpaths))
+            if not _road_clears_buildings(road.points, road.width / 2.0, buildings) or any(
+                not _road_clears_buildings(path.points, path.width / 2.0, buildings) for path in footpaths
+            ):
+                continue
             return _Network(road, tuple(footpaths), tuple(decks), spawn, spots, buildings)
     return None

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "worldScale": 16,
+  "palette": {
+    "backdrop": "#101816",
+    "parchment": "#cfc5a9",
+    "bone": "#efe7d3",
+    "ink": "#6f6757",
+    "reed": "#a9ae8a",
+    "silt": "#bfa072",
+    "water": "#5a7680",
+    "pine": "#4f6a4b",
+    "indigo": "#27436b",
+    "cinnabar": "#b0402e",
+    "gilt": "#d9a441",
+    "violet": "#6b5d72",
+    "timber": "#8a6246"
+  },
+  "ground": {
+    "variantCount": 3,
+    "washStride": 3,
+    "markCells": 4,
+    "colors": {
+      "r": "reed",
+      "o": "reed",
+      "f": "silt",
+      "e": "reed",
+      "w": "reed"
+    },
+    "marks": {
+      "o": ["washCellA", "washCellB", "washCellC"],
+      "f": ["furrowA", "furrowB", "furrowC"],
+      "e": ["reedsA", "reedsB", "reedsC"]
+    }
+  },
+  "surfaces": {
+    "widenMeters": 1,
+    "edgeBandMeters": 0.6,
+    "tileMeters": 4
+  },
+  "characters": {
+    "simpleCssWidth": 12,
+    "detailedCssWidth": 24,
+    "spriteMeters": 1.35,
+    "walkFrameTicks": 1
+  },
+  "timing": {
+    "tickTransitionMs": 1000
+  },
+  "phaseGrades": {
+    "day": { "color": "#ffffff", "alpha": 0 },
+    "dawn": { "color": "#6b5d72", "alpha": 0.12 },
+    "morning": { "color": "#efe7d3", "alpha": 0.05 },
+    "midday": { "color": "#efe7d3", "alpha": 0.02 },
+    "evening": { "color": "#b0402e", "alpha": 0.1 },
+    "night": { "color": "#27436b", "alpha": 0.24 }
+  },
+  "props": {
+    "stateAssets": {
+      "stall": { "open": "stallOpen", "closed": "stallClosed" },
+      "lantern": { "lit": "lanternLit", "unlit": "lanternUnlit" },
+      "bench": { "occupied": "benchOccupied", "empty": "benchEmpty" },
+      "shrine": { "tended": "shrineTended", "untended": "shrineUntended" },
+      "board": { "none": "noticeBoard" },
+      "plot": { "tended": "gardenTended", "overgrown": "gardenOvergrown" },
+      "hearth": { "lit": "hearthLit", "unlit": "hearthUnlit" },
+      "repair_bench": { "busy": "repairBenchBusy", "idle": "repairBenchIdle" },
+      "pump": { "flowing": "pumpFlowing", "idle": "pumpIdle" },
+      "bell": { "ringing": "bellRinging", "silent": "bellSilent" }
+    },
+    "activeEffects": {
+      "lantern": { "state": "lit", "asset": "glow", "postGrade": true, "periodTicks": 17 },
+      "hearth": { "state": "lit", "asset": "flame", "postGrade": false, "periodTicks": 13 },
+      "shrine": { "state": "tended", "asset": "smoke", "postGrade": false, "periodTicks": 29 },
+      "pump": { "state": "flowing", "asset": "waterStream", "postGrade": false, "periodTicks": 11 },
+      "bell": { "state": "ringing", "asset": "bellLines", "postGrade": false, "periodTicks": 9 }
+    },
+    "emissiveStates": {
+      "hearth": { "state": "lit", "asset": "glow" }
+    }
+  },
+  "cranes": {
+    "count": 3,
+    "periodTicks": 420,
+    "spriteWidthMeters": 2.8,
+    "spriteHeightMeters": 1.8,
+    "marginMeters": 8
+  }
+}

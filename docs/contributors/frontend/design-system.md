@@ -22,7 +22,7 @@ Read this page before changing the interface. See [Frontend](development.md) for
 - **Clarity for data-dense views.** Sessions, replays, and leaderboards primarily present tables and counters. Keep them legible with a clear type scale, monospace identifiers and numbers, and restrained color.
 - **Accessibility is a rule, not an aspiration.** The baseline below holds for every page and every primitive.
 - **The game stage is the focus.** On session and replay pages, the renderer canvas is the main visual element and the surrounding controls stay quiet. The host owns the calm frame around them.
-- **Calm motion.** Motion is purposeful, short, and expressed through the motion tokens. The token system below covers how `prefers-reduced-motion` stills it. Nothing animates to draw attention to itself.
+- **Calm motion.** Motion is purposeful, short, and expressed through the motion tokens. Nothing animates to draw attention to itself. Game renderers do not honor `prefers-reduced-motion`.
 - **Be considerate about what to show.** Show the facts that matter and highlight the most important one. Do not surface everything just because it is available.
 
 ## The token system
@@ -39,12 +39,12 @@ The scales:
 - **Spacing** `--space-1`…`--space-8` on a 4px base: 4, 8, 12, 16, 24, 32, 48, 64.
 - **Type size** `--text-xs`…`--text-2xl`: 0.75, 0.875, 1, 1.125, 1.375, 1.75 rem.
 - **Radii** `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (pill).
-- **Motion** `--motion-fast` (~120ms), `--motion-base` (~200ms), `--motion-spinner` (~800ms), `--ease-out`. A global `prefers-reduced-motion: reduce` block in `base.css` zeroes the durations, so any component animating with the tokens calms down automatically.
+- **Motion** `--motion-fast` (~120ms), `--motion-base` (~200ms), `--motion-spinner` (~800ms), `--ease-out`. Components animate with these only, so one change here retimes the whole product.
 
 `main.ts` imports five global stylesheets in order:
 
 1. `tokens.css` defines the tokens.
-2. `base.css` provides the reset, element defaults, global `:focus-visible` style, and reduced-motion block.
+2. `base.css` provides the reset, element defaults, and the global `:focus-visible` style.
 3. `app.css` contains only the application shell layout.
 4. `season-rows.css` provides the compact row, status stripe, and date styles shared by My Agents and agent profiles. Global accessibility utilities, including visually hidden text, live in `base.css`.
 5. Highlight.js's `github-dark.css` colors syntax tokens in the in-app documentation's code blocks.
@@ -121,7 +121,6 @@ This is the checklist the responsive-and-accessibility audit walks for every pag
 - **Color is never the sole indicator.** Status pairs a dot with a text label (`UiStatusBadge`); badges carry text; the pin marker is a labelled badge, not a glyph; error and success colors always accompany words.
 - **Interactive controls are labelled.** Form fields get automatic label and `aria-describedby` wiring through `UiField`; icon-only affordances carry an `aria-label` or visually hidden text. The dialog traps focus, closes on escape, and restores focus to its trigger.
 - **The replay transport is fully keyboard operable.** Space toggles play, the arrows step, Home and End jump, and the scrubber announces its position (`aria-valuenow` against the tick count). The keyboard map lives in `useReplayTransport` and is tested.
-- **Motion respects `prefers-reduced-motion`,** as the global block in the token system above requires.
 - **Touch targets** on the replay transport controls clear a 44px minimum.
 
 The renderer canvas itself is exempt (it is the game, and renderers own their identity), but the chrome around it is not: the session and replay pages must be fully operable without a pointer, except for playing a game that itself demands one.

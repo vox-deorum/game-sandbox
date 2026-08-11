@@ -52,6 +52,9 @@ def test_maximum_speed_does_not_tunnel_through_a_prop_or_water_bank() -> None:
         ((0.44, 50.0), (0.46, 50.0)),
         ((4.56, 65.0), (4.54, 65.0)),
         ((47.06, 40.0), (47.04, 40.0)),
+        # The calibrated 4 by 3 m garden plot's west edge: the shared footprint remains exact
+        # between the closed-form body-clear test and the physics collision body.
+        ((5.61, 69.0), (5.59, 69.0)),
         # The bell's northeast corner: inside the corner wedge a sharp inflated rectangle would
         # over-block, just past the true rounded corner the physics circle test allows.
         ((16.55, 29.55), (16.6, 29.6)),

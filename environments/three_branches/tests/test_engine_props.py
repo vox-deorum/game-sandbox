@@ -53,9 +53,9 @@ def test_nearest_selection_stillness_and_character_order_contention_are_pinned()
     first, second, *remaining = FIXTURE_VILLAGE.props
     layout = replace(
         FIXTURE_VILLAGE,
-        props=(replace(first, position=(10.0, 10.0)), replace(second, position=(11.0, 10.0)), *remaining),
+        props=(replace(first, position=(10.0, 10.0)), replace(second, position=(13.0, 10.0)), *remaining),
     )
-    characters = {"npc_0": CharacterState("npc_0", (10.5, 10.0), 0)}
+    characters = {"npc_0": CharacterState("npc_0", (11.5, 10.0), 0)}
     holders = {prop.id: None for prop in layout.props}
     resolution = resolve_uses(layout, characters, {"npc_0": Order(action="use")}, holders, ("npc_0",))
     assert resolution.targets == {"npc_0": "stall_0"}
@@ -80,10 +80,19 @@ def test_occupancy_and_timed_transitions_follow_the_catalog_counts() -> None:
 
 def test_stateless_board_can_be_held_without_changing_its_only_state() -> None:
     day = _day()
-    _place(day, "npc_0", (37.0, 33.5))
+    _place(day, "npc_0", (37.0, 34.4))
     day.step(_orders(day, "npc_0", "use"))
     assert day.prop_holders["board_0"] == "npc_0"
     assert day.prop_states["board_0"] == "none"
+
+
+def test_a_large_footprint_is_usable_at_its_near_edge_beyond_center_reach() -> None:
+    day = _day()
+    _place(day, "npc_0", (4.5, 69.0))
+
+    day.step(_orders(day, "npc_0", "use"))
+
+    assert day.prop_holders["plot_0"] == "npc_0"
 
 
 def test_leaving_reach_releases_a_hold_and_timed_uses_refresh_their_counter() -> None:

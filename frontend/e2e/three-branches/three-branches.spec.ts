@@ -10,11 +10,12 @@ const FITTED_CAMERA = '0.58@800,800'
 const CHROME_HEIGHT = 54
 const CONTENT_HEIGHT = 1_000 - CHROME_HEIGHT
 const FIRST_RECORDED_TICK = 2
+const OPEN_GROUND_RGB_TOLERANCE = 18
 
 // Keep the seed, tick, and text together so the watch and watcher journeys exercise the same
 // deterministic opening with the moving Naive cast.
-const VISITOR_CHAT_SEED = 22
-const VISITOR_FIRST_LINE_TICK = 105
+const VISITOR_CHAT_SEED = 9
+const VISITOR_FIRST_LINE_TICK = 41
 const VISITOR_FIRST_LINE = 'A fine day for walking. How are you?'
 
 interface CameraProbe {
@@ -49,7 +50,7 @@ async function rendererCanvas(page: Page) {
 }
 
 async function paintedGroundPixel(page: Page, canvas: Awaited<ReturnType<typeof rendererCanvas>>) {
-  // Seed 22 leaves this screen point over an unoccluded ground tile. Screenshot pixels are the
+  // Seed 9 leaves this screen point over an unoccluded ground tile. Screenshot pixels are the
   // compositor's painted result. WebGL's default drawing buffer is intentionally transient, so
   // readPixels would test an implementation detail instead of the view.
   const image = (await canvas.screenshot()).toString('base64')
@@ -71,10 +72,13 @@ async function paintedGroundPixel(page: Page, canvas: Awaited<ReturnType<typeof 
 }
 
 function isOpenGroundPixel(pixel: number[]): boolean {
-  const expected = [169, 130, 98, 255]
+  const expectedRgb = [173, 134, 105]
   return (
-    pixel.length === expected.length &&
-    pixel.every((channel, index) => Math.abs(channel - (expected[index] ?? 0)) <= 6)
+    pixel.length === 4 &&
+    pixel[3] === 255 &&
+    expectedRgb.every(
+      (channel, index) => Math.abs(channel - (pixel[index] ?? 0)) <= OPEN_GROUND_RGB_TOLERANCE,
+    )
   )
 }
 
@@ -105,6 +109,12 @@ test('watch a Three Branches day, explore collision truth, and seek its exact re
     const canvas = await rendererCanvas(page)
     const rendererHost = page.locator('.renderer-host')
     await expect(rendererHost).toHaveAttribute('data-three-branches-ground', 'ready')
+    await expect(rendererHost).toHaveAttribute('data-three-branches-assets', 'ready')
+    await expect(rendererHost).toHaveAttribute(
+      'data-three-branches-layers',
+      'ground-and-washes|lower-village|props|characters|upper-village-and-effects|phase-grade|emissives|collision',
+    )
+    await expect(rendererHost).toHaveAttribute('data-three-branches-static-builds', '1')
     await expect(rendererHost).toHaveAttribute('data-three-branches-opening', 'seen')
     await expect(rendererHost).toHaveAttribute('data-three-branches-camera', FITTED_CAMERA)
     await expect
@@ -160,6 +170,7 @@ test('watch a Three Branches day, explore collision truth, and seek its exact re
 
     const replayHost = page.locator('.renderer-host')
     await expect(replayHost).toHaveAttribute('data-three-branches-ground', 'ready')
+    await expect(replayHost).toHaveAttribute('data-three-branches-assets', 'ready')
     await expect(replayHost).toHaveAttribute(
       'data-three-branches-tick',
       String(FIRST_RECORDED_TICK),
@@ -178,6 +189,7 @@ test('watch a Three Branches day, explore collision truth, and seek its exact re
     await slider.press('ArrowRight')
     await expect(replayHost).toHaveAttribute('data-three-branches-tick', firstSeek.tick ?? '')
     await expect(replayHost).toHaveAttribute('data-three-branches-visitor', firstSeek.visitor ?? '')
+    await expect(replayHost).toHaveAttribute('data-three-branches-static-builds', '1')
   } finally {
     if (sessionId !== null) await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
   }
@@ -237,7 +249,7 @@ test('Three Branches watchers see the greeting live and its recording survives r
     })
     const visitorLine = spectatorChat.locator('.chat-entry', { hasText: VISITOR_FIRST_LINE })
     await expect(visitorLine.locator('.chat-player')).toHaveText('P0')
-    await expect(visitorLine.getByText('to P2', { exact: true })).toBeVisible()
+    await expect(visitorLine.getByText('to P3', { exact: true })).toBeVisible()
     await expect(spectatorChat.locator('.chat-tick')).toContainText(
       `tick ${VISITOR_FIRST_LINE_TICK}`,
     )

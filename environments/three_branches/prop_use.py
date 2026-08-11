@@ -37,9 +37,9 @@ class PropUseResolution:
 def usable_prop(layout: Layout, position: Point) -> Prop | None:
     """Return the nearest canonical prop in reach with an unblocked rules line."""
     candidates = (
-        (distance(position, prop.position), index, prop)
+        (distance(position, prop.nearest_point(position)), index, prop)
         for index, prop in enumerate(layout.props)
-        if layout.reaches(position, prop.position, PROFILE.prop_reach)
+        if layout.reaches_prop(position, prop, PROFILE.prop_reach)
     )
     return min(candidates, default=(0.0, 0, None), key=lambda candidate: candidate[:2])[2]
 

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import propsData from '../props.json'
 import rulesData from '../rules.json'
-import { decodeDynamic, decodeStatic } from './overlay.js'
-import { computeScene, PALETTE } from './scene.js'
+import { decodeDynamic, decodeStatic, type StaticOverlay } from './overlay.js'
+import { computeScene, layoutKeyFor, PALETTE } from './scene.js'
 import { header, states } from './test-helpers.js'
 
 describe('Three Branches pure scene', () => {
@@ -30,6 +30,37 @@ describe('Three Branches pure scene', () => {
       )
     }
     expect(scene.dynamic.props).toHaveLength(staticOverlay.village.props.length)
+  })
+
+  it('retains exact open-building geometry for split lower and upper art layers', () => {
+    const scene = computeScene(decodeDynamic(states[0], staticOverlay), staticOverlay)
+    for (const building of scene.static.buildings) {
+      expect(building.width).toBeGreaterThan(0)
+      expect(building.depth).toBeGreaterThan(0)
+      expect(building.doorway.width).toBe(1.2 * 16)
+      expect(building.walls).toHaveLength(5)
+    }
+  })
+
+  it('includes every decoded static-layout family in the dressing key', () => {
+    const original = layoutKeyFor(staticOverlay)
+    const variants = [
+      changedStatic(staticOverlay, (overlay) => {
+        const point = overlay.village.footpaths[0]?.points[0]
+        if (point !== undefined) point.x += 0.01
+      }),
+      changedStatic(staticOverlay, (overlay) => {
+        const bridge = overlay.village.bridges[0]
+        if (bridge !== undefined) bridge.heading += 0.1
+      }),
+      changedStatic(staticOverlay, (overlay) => {
+        overlay.village.spawn.y += 0.01
+      }),
+      changedStatic(staticOverlay, (overlay) => replaceGroundToken(overlay, 'field', 'open')),
+      changedStatic(staticOverlay, (overlay) => replaceGroundToken(overlay, 'reeds', 'open')),
+    ]
+    expect(variants.map(layoutKeyFor)).not.toContain(original)
+    expect(new Set(variants.map(layoutKeyFor)).size).toBe(variants.length)
   })
 
   it('labels every rules.json emote and every props.json state vocabulary', () => {
@@ -100,4 +131,21 @@ function clonedFrame(): { v: number; d: { t: number; c: string[]; p: string; z: 
 
 function replaceCharacter(value: string, index: number, replacement: string): string {
   return `${value.slice(0, index)}${replacement}${value.slice(index + 1)}`
+}
+
+function changedStatic<T>(source: T, change: (overlay: T) => void): T {
+  const overlay = structuredClone(source)
+  change(overlay)
+  return overlay
+}
+
+function replaceGroundToken(overlay: StaticOverlay, token: string, replacement: string): void {
+  for (const row of overlay.village.ground) {
+    const column = row.indexOf(token)
+    if (column >= 0) {
+      row[column] = replacement
+      return
+    }
+  }
+  throw new Error(`fixture has no ${token} ground cell`)
 }

@@ -214,12 +214,6 @@ const failedDetails = computed(() =>
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
-}
-
 .stage-details {
   margin-top: var(--space-3);
   display: flex;

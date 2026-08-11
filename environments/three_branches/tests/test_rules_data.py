@@ -202,8 +202,8 @@ def test_the_shipped_props_pin_the_ruleset_and_village_tables() -> None:
             "overgrown",
             "timed",
             600,
-            2.0,
-            2.0,
+            4.0,
+            3.0,
             5,
         ),
         (

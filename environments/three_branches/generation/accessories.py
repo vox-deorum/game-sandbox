@@ -19,6 +19,8 @@ from ..geometry import (
     distance_to_rectangle,
     distance_to_segment,
     heading_to,
+    heading_vector,
+    nearest_point_on_rectangle,
     point_in_polygon,
     point_in_rectangle,
     rectangle_corners,
@@ -30,6 +32,7 @@ from ..layout import SEGMENT_RADIUS, WORLD_SIZE, Building, Polyline, Prop, Scene
 from ..prop_types import PROP_TYPE_BY_TOKEN, PROP_TYPES, fixed_prop_count
 from ..rules import PROFILE
 from .config import GENERATION_CONFIG
+from .gardens import plot_rectangle
 from .network import SPAWN_CLEARANCE, _Network
 from .sites import _Sites
 from .terrain import _Water
@@ -61,7 +64,6 @@ _PINE_ANCHOR_GAP = GENERATION_CONFIG.accessories.pine.anchor_gap
 _PROP_TRIES = GENERATION_CONFIG.accessories.prop.tries
 _CRATE_TRIES = GENERATION_CONFIG.accessories.crate.tries
 _SHRINE_TRIES = GENERATION_CONFIG.accessories.shrine.tries
-_PLOT_SLIDES = GENERATION_CONFIG.accessories.plot.slides
 _INTERIOR_TRIES = GENERATION_CONFIG.accessories.interior.tries
 
 _WITNESS_ANGLES = GENERATION_CONFIG.accessories.witness.angles
@@ -358,10 +360,16 @@ class _Placer:
         ):
             return False
         edges = _edges(corners)
+        half_diagonal = math.hypot(*footprint) / 2.0
         for building in self.buildings:
             if building is skip_building:
                 continue
             other = (building.center, building.width, building.depth, building.rotation)
+            if (
+                distance(center, building.center)
+                >= half_diagonal + math.hypot(building.width, building.depth) / 2.0 + _PROP_BUILDING_GAP
+            ):
+                continue
             other_corners = rectangle_corners(*other)
             if any(segments_intersect(edge, wall) for edge in edges for wall in _edges(other_corners)):
                 return False
@@ -374,6 +382,11 @@ class _Placer:
                 return False
         for prop in self.props:
             other = (prop.position, prop.footprint[0], prop.footprint[1], prop.rotation)
+            if (
+                distance(center, prop.position)
+                >= half_diagonal + math.hypot(*prop.footprint) / 2.0 + _PROP_GAP
+            ):
+                continue
             other_corners = rectangle_corners(*other)
             if any(segments_intersect(edge, wall) for edge in edges for wall in _edges(other_corners)):
                 return False
@@ -528,30 +541,31 @@ class _Placer:
     ) -> Point | None:
         """Scan for a standing point within reach of the prop, or None when none exists.
 
-        The scan is deterministic and draws nothing: radii walk outward from the prop's near edge,
+        The scan is deterministic and draws nothing: offsets walk outward from the footprint edge,
         angles walk the compass from the prop's own rotation, and the first point that stands clear
-        with an unblocked line to the prop wins.
+        with an unblocked line to the nearest footprint point wins.
         """
         reach = PROFILE.prop_reach - 0.02
-        radius = min(footprint) / 2.0 + PROFILE.body_radius + _WITNESS_FIRST_RING
-        radii: list[float] = []
-        while radius <= reach:
-            radii.append(radius)
-            radius += _WITNESS_RADIUS_STEP
         own = (center, footprint[0], footprint[1], rotation)
         first_angle = rotation if toward is None else heading_to(center, toward)
-        for candidate_radius in radii:
+        offset = PROFILE.body_radius + _WITNESS_FIRST_RING
+        while offset <= reach:
             for step in range(_WITNESS_ANGLES):
                 angle = first_angle + step * (360.0 / _WITNESS_ANGLES)
-                offset = _heading_offset(angle)
-                candidate = add(center, offset, candidate_radius)
+                direction = _heading_offset(angle)
+                forward = heading_vector(rotation)
+                support = footprint[0] / 2.0 * abs(direction[0] * forward[0] + direction[1] * forward[1])
+                support += footprint[1] / 2.0 * abs(direction[0] * -forward[1] + direction[1] * forward[0])
+                candidate = add(center, direction, support + offset)
                 if distance_to_rectangle(candidate, *own) < PROFILE.body_radius + _BODY_CLEARANCE_SLACK:
                     continue
                 if not self.open_ground(candidate, inside, pending_rects, pending_circles):
                     continue
-                if not self.line_open(candidate, center):
+                nearest = nearest_point_on_rectangle(candidate, center, *footprint, rotation)
+                if not self.line_open(candidate, nearest):
                     continue
                 return candidate
+            offset += _WITNESS_RADIUS_STEP
         return None
 
 
@@ -1041,48 +1055,18 @@ def _board(rng: Random, placer: _Placer, sites: _Sites) -> bool:
     return False
 
 
-def _plots(rng: Random, placer: _Placer) -> bool:
-    """Set a garden plot flush against a non-doorway wall of each home."""
+def _plots(placer: _Placer) -> bool:
+    """Set each garden plot flush against the wall opposite its home doorway."""
     footprint = _footprint("plot")
-    half_depth = footprint[1] / 2.0
     for home in placer.buildings[:5]:
-        corners = rectangle_corners(home.center, home.width, home.depth, home.rotation)
-        edges = _edges(corners)
-        doorway_index = min(
-            range(4), key=lambda index: distance_to_segment(home.doorway.position, *edges[index])
-        )
-        order = [index for index in range(4) if index != doorway_index]
-        rng.shuffle(order)
-        placed = False
-        for wall_index in order:
-            start, end = edges[wall_index]
-            middle = ((start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0)
-            along = _unit(subtract(end, start))
-            outward = _unit(subtract(middle, home.center))
-            slide_limit = max(
-                0.0,
-                distance(start, end) / 2.0 - footprint[0] / 2.0 - GENERATION_CONFIG.accessories.plot.gap,
-            )
-            for _ in range(_PLOT_SLIDES):
-                slide = rng.uniform(-slide_limit, slide_limit)
-                center = add(
-                    add(middle, along, slide),
-                    outward,
-                    half_depth + GENERATION_CONFIG.accessories.plot.wall_gap,
-                )
-                rotation = home.rotation
-                if not placer.rect_clear(center, footprint, rotation, skip_building=home):
-                    continue
-                witness = placer.witness_for(center, footprint, rotation)
-                if witness is None:
-                    continue
-                placer.bank("plot", center, rotation, witness)
-                placed = True
-                break
-            if placed:
-                break
-        if not placed:
+        center, width, depth, rotation = plot_rectangle(home)
+        assert footprint == (width, depth)
+        if not placer.rect_clear(center, footprint, rotation, skip_building=home):
             return False
+        witness = placer.witness_for(center, footprint, rotation)
+        if witness is None:
+            return False
+        placer.bank("plot", center, rotation, witness)
     return True
 
 
@@ -1200,6 +1184,8 @@ def _accessories_layer(
 ) -> _Accessories | None:
     """Place required props first, then optional roadside dressing without redraw pressure."""
     placer = _Placer(water, sites, network, fields, reed_banks)
+    if not _plots(placer):
+        return None
     if not _interior(rng, placer, network.buildings[5], "hearth"):
         return None
     if not _interior(rng, placer, network.buildings[6], "repair_bench"):
@@ -1213,8 +1199,6 @@ def _accessories_layer(
     if not _stalls(rng, placer, sites, network):
         return None
     if not _board(rng, placer, sites):
-        return None
-    if not _plots(rng, placer):
         return None
     if not _benches(rng, placer, sites, network):
         return None
