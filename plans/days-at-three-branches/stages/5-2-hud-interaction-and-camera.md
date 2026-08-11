@@ -12,7 +12,7 @@ These are interface decisions rather than art, and step 6 must not invent intera
 
 Mockups are authored inside this stage and approved before build. The scope:
 
-- The information layer: tick and phase, the bell state, character identification, and speech bubbles over speakers per the public-message rule, with the chat panel carrying the transcript.
+- The information layer: tick and phase, the bell state, character identification, and speech bubbles over every speaker for every viewer, since every line is public, with the chat panel carrying the transcript.
 - The interaction specification for step 6: the locomotion affordances, the expression palette with its nine emotes plus use, and the use-preview highlight, computed by the same reach-plus-unblocked-line selection rule the environment applies to prop use, as text mockups.
 - The camera tuning: the step 3 camera keeps its fitted reset below the fixed HUD, and its zoom limits land far enough to see the village and close enough to read expressions and speech bubbles.
 

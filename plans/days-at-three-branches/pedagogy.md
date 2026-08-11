@@ -30,7 +30,7 @@ The world is one village throughout. Each season foregrounds one small capabilit
 
 ### Season 3: The Visitor (Week 3)
 
-- What unlocks: nothing new; speech and the visitor are live from Season 1. NPCs start using talks and shouts, which only nearby characters receive, and build a small set of player-facing reactions (greet, follow, avoid, flee) from ordinary locomotion and expression.
+- What unlocks: nothing new; speech and the visitor are live from Season 1. NPCs start speaking lines, which only nearby characters receive, and build a small set of player-facing reactions (greet, follow, avoid, flee) from ordinary locomotion and expression.
 - Design issue: reactivity to an unpredictable human. Characters are defined by simple drives (curiosity, safety, gossip) rather than by enumerating scripts.
 - Core techniques: hand-authored drive/utility reactions layered on the Season 2 routines.
 - Evaluation: health check; human rating from live play, e.g. "Did the village notice you, in ways that fit who each NPC seemed to be? 1-5."

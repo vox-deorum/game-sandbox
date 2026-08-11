@@ -16,9 +16,9 @@ Pointer and keyboard input composed into a heading and relative speed each input
 
 ### Expression and speech
 
-The expression palette with the nine emotes plus use, and the use-preview highlight computed by the same reach-plus-unblocked-line selection rule the environment applies, informational only. Chat through the host page's panel, with recipient choices following the talk policy: nearest first, the nearest as default, broadcast when nobody is near. Spectators and replay viewers receive no input.
+The expression palette with the nine emotes plus use, and the use-preview highlight computed by the same reach-plus-unblocked-line selection rule the environment applies, informational only. Chat is one text field in the host page's panel: type a line and send it, and it reaches every character within hearing range with no recipient to choose. Spectators and replay viewers receive no input.
 
-One visibility question is settled here deliberately: the platform's live rule sends a human controller only broadcasts and lines involving its own players, while the ruleset promises viewers every line, so this step decides what the playing visitor's client shows about NPC-to-NPC talk and pins the answer in tests.
+Every line is a broadcast and every client shows every line, so the playing visitor's client renders NPC-to-NPC talk exactly like every other viewer's.
 
 ### Session behavior
 
@@ -31,7 +31,7 @@ The visitor seat playable through `scripts/play.py` and the template launcher, w
 ## Tests
 
 - jsdom unit tests for input composition, palette state, and preview correctness against fixture observations. Renderer tests cover every human control, per the design.
-- A Playwright human-play journey: join as the visitor, walk, emote, observe the use preview, send a talk.
+- A Playwright human-play journey: join as the visitor, walk, emote, observe the use preview, send a line.
 - Local launcher coverage for the visitor seat.
 - Integration coverage keeps a quiet connected visitor live, starts the idle timeout after the final owner disconnects, and confirms that a spectator alone does not extend the session.
 - While iterating, run the `three-branches` browser e2e group. Before handoff, run the bare full browser e2e suite.

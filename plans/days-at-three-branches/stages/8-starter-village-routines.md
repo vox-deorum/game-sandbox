@@ -56,8 +56,8 @@ Ten routines, each typed to a job and testable in isolation:
 | wander(goal) | Drift near the goal, changing heading now and then; also the dispatch fallback | Never |
 | tend(goal) | Walk into reach of the goal prop, stop, and hold the use | Goal is not a prop |
 | rest(goal) | Take a free bench near the goal and sit | No free bench near the goal |
-| gather_at(goal) | Stand within talk range of whoever is already near the goal, turned toward them | Nobody near the goal |
-| greet(goal) | Turn to a character in sight, wave, then hold a talk-range station | Nobody in sight |
+| gather_at(goal) | Stand within hearing range of whoever is already near the goal, turned toward them | Nobody near the goal |
+| greet(goal) | Turn to a character in sight, wave, then hold a station within hearing range | Nobody in sight |
 | follow(goal) | Keep a character at a comfortable distance, matching its pace | Target neither in sight nor within hearing |
 | avoid(goal) | Open distance from the nearest character while working toward the goal | Nobody in sight or within hearing |
 | watch(goal) | Stand still facing the goal and let the village come to it | Never |
@@ -65,7 +65,7 @@ Ten routines, each typed to a job and testable in isolation:
 
 ### The schedule hook
 
-`assign(observation, memory)` returns a (routine, goal) pair, and is explicitly labeled as the thing the student's Season 4 design replaces. The static schedule takes a role from the character id through `me.rng` at reset, maps each role to a place and a prop per day phase, and recomputes the pair at each phase boundary and when the visitor enters talk range. Roles spread the cast across the village's districts so ten villagers do not funnel onto one prop, and the spread exercises `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and the `wander` fallback. The rest of the menu is there for the student's own schedule.
+`assign(observation, memory)` returns a (routine, goal) pair, and is explicitly labeled as the thing the student's Season 4 design replaces. The static schedule takes a role from the character id through `me.rng` at reset, maps each role to a place and a prop per day phase, and recomputes the pair at each phase boundary and when the visitor enters hearing range. Roles spread the cast across the village's districts so ten villagers do not funnel onto one prop, and the spread exercises `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and the `wander` fallback. The rest of the menu is there for the student's own schedule.
 
 ### The dialogue layer
 
@@ -73,9 +73,9 @@ Ten routines, each typed to a job and testable in isolation:
 
 - One waiting visitor line at most. A newer line replaces an older one, and a waiting line starts only once the current reply has been consumed.
 - Persona and world-state prompting from the villager's role and what it currently perceives, so a reply refers only to true village state.
-- Whitespace normalization and truncation to 200 code points before the reply is sent as a talk.
+- Whitespace normalization and truncation to 200 code points before the reply is sent as the villager's line.
 - A canned fallback on budget exhaustion or a proxy error.
-- A validity re-check against the latest observation before starting a waiting request or returning a reply. A visitor that has left talk range or moved behind a wall gets the waiting line or completed reply discarded, so the controller never hands back a direct message the recipient policy would drop.
+- A validity re-check against the latest observation before starting a waiting request or returning a reply: the visitor must still be within hearing range with an unblocked line. A visitor that has left hearing range or moved behind a wall gets the waiting line or completed reply discarded. A reply that passes goes out as that villager's one line for the tick; there is no recipient to choose, since every line is public.
 
 The controller runs beside the routines rather than in place of them: the villager keeps acting on every tick while a reply is in flight, which is the whole reason the request rides across ticks.
 
@@ -91,11 +91,11 @@ The example inventory assertion in `scripts/tests/test_compose.py` gains `("thre
 
 `tests/test_neighbor.py`, in the `vanguard` pattern: hand-built observations, a wrapper asserting every returned action is in space, and pinned-seed episodes whose parameters come from the environment metadata presets rather than re-declared literals.
 
-- Per-routine behavior on constructed observations: `go_to` closes distance along a route, `tend` stops inside reach and commands speed 0, `rest` reaches a free bench and holds the sit, `gather_at` ends within talk range of a bystander, `greet` turns and waves, `follow` holds its distance band, `avoid` raises the minimum distance to the nearest character, `watch` and `sleep_at` stand still, and `wander` never returns `None`.
+- Per-routine behavior on constructed observations: `go_to` closes distance along a route, `tend` stops inside reach and commands speed 0, `rest` reaches a free bench and holds the sit, `gather_at` ends within hearing range of a bystander, `greet` turns and waves, `follow` holds its distance band, `avoid` raises the minimum distance to the nearest character, `watch` and `sleep_at` stand still, and `wander` never returns `None`.
 - A fuzz run drives every routine through full Season 4 episodes and asserts every returned action is in space and every commanded use is actually taken by the engine.
 - Routing reaches every named place from every home across a pinned seed batch, uses cell-based helpers rather than observation footprint geometry, and builds the graph once in `reset`. Reset cost and per-tick cost are measured separately, and the two together stay inside the episode budget across a full day.
 - A day-arc bar on a pinned Season 4 seed: every villager leaves home, reaches at least three districts, holds at least one prop use in each of the working phases, and is home by the end of night. The bar is absolute, because a bar relative to another example would flip whenever either side is tuned.
-- Dialogue controller against a fake proxy: request lifecycle across ticks, reply delivery as a talk, fallback on exhaustion and on errors, over-cap replies truncated, a newer visitor line replacing a waiting one, and a visitor leaving talk range while a request or a waiting line exists.
+- Dialogue controller against a fake proxy: request lifecycle across ticks, reply delivery as the villager's line, fallback on exhaustion and on errors, over-cap replies truncated, a newer visitor line replacing a waiting one, and a visitor leaving hearing range while a request or a waiting line exists.
 - `neighbor` completes healthy days with the LLM enabled and disabled, on both plans, inside the decision and episode budgets.
 
 The static role table, the per-phase places, and the follow and avoid distance bands are defaults the day-arc test may adjust.

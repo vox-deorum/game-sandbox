@@ -30,7 +30,7 @@ The renderer exports one `HEARTHSIDE_STYLE` palette. Names and values are fixed 
 | silt | #bfa072 | silt | field soil, banks, and dry earth |
 | water | #5a7680 | slack water | channels and water marks |
 | pine | #4f6a4b | pine | trees, garden growth, and dark vegetation |
-| indigo | #27436b | charcoal indigo | cool structural shadow and stable NPC accents |
+| indigo | #27436b | charcoal indigo | cool architectural shadow and stable NPC accents |
 | cinnabar | #b0402e | cinnabar | restrained visitor distinction and active domestic accents |
 | gilt | #d9a441 | gilt | hearth, lantern, and tiny warm points only |
 | violet | #6b5d72 | ash violet | dusk shadow and weathered secondary marks |
@@ -51,25 +51,25 @@ Bridge cells take plank tiles over the water fill, so a crossing reads as a deck
 
 ### Buildings and cutaway roofs
 
-The ground grid supplies every building floor through its open-ground override. A building record is a semantic grouping, not collision occupancy. Its perimeter is rendered from distinct non-interactive structural wall props, and its 2-cell opening from passable structural doorway props. Those structural props supply the wall and doorway tiles and shapes, while interactive interior props remain separate objects with their own stills and state treatments. Walls draw above occupants as shallow dark eave and wall bands, so the collision truth reads without hiding the people inside.
+Floor, wall, and doorway are ground classes like any other, and the terrain tile layers paint a building's site straight from the grid: floor fill inside, wall fill around the perimeter, and the 2-cell doorway opening through one side, all using the same neighbour-mask autotile hook that fills and edges every other class. A building record stays purely semantic: an id, a type, and an origin cell. It carries no collision object of its own and never enters use selection or prop-state observations. Interior props such as the hearth and the repair bench remain separate objects with their own stills and state treatments, placed on the floor ground but not part of the building record. Wall tiles repeat in the upper terrain layer, drawn above occupants as shallow dark eave and wall bands, so the collision truth reads without hiding the people inside.
 
-Each semantic building owns a roof container aligned to its rect. The roof is opaque while the building is empty and clears away while anyone stands inside the building's semantic rect. The target alpha is a pure function of the decoded tick's occupancy of that rect, the between-tick clock eases toward that target, and a seek, a repeated frame, a mount, or a resize snaps straight to it, so cutaway state carries no forward-only history and a replay seek is exact. Homes hold only their floor treatment, the inn holds its hearth, and the repair shed holds its repair bench, exactly as their catalog records say.
+Each semantic building owns a roof container aligned to its rect. The roof is opaque while the building is empty and clears away while anyone stands inside the building's semantic rect. The target alpha is a pure function of the recorded tick's occupancy of that rect, the between-tick clock eases toward that target, and a seek, a repeated frame, a mount, or a resize snaps straight to it, so cutaway state carries no forward-only history and a replay seek is exact. Homes hold only their floor treatment, the inn holds its hearth, and the repair shed holds its repair bench, exactly as their catalog records say.
 
 ### Static and dynamic Pixi scene
 
-The renderer keeps step 3's shared tile map pipeline. It builds the static scene once at mount from the decoded layout the recording header carries: the two terrain layers, structural wall and doorway props, semantic building roofs, scenery, and permanent interactive-prop bases. A session watches one village, so no tick update and no seek rebuilds it.
+The renderer keeps step 3's shared tile map pipeline. It builds the static scene once at mount from the layout the recording header carries: the terrain tile layers, including the upper wall layer, semantic building roofs, scenery, and permanent interactive-prop bases. A session watches one village, so no tick update and no seek rebuilds it.
 
-Dynamic nodes reconcile by stable id: characters, prop state treatments, roof alpha, phase grade, emissives, and crane dressing. Normal playback uses the shared Pixi ticker to smooth character movement and heading, walking frames, sustained prop effects, and crane motion between decoded ticks.
+Dynamic nodes reconcile by stable id: characters, prop state treatments, roof alpha, phase grade, emissives, and crane dressing. Normal playback uses the shared Pixi ticker to smooth character movement and heading, walking frames, sustained prop effects, and crane motion between recorded ticks.
 
-One decoded tick resolves every state treatment once. The frames in between carry the cast and the sustained effects and touch no artwork, so an in-between frame costs transforms rather than a rebuilt scene, and the collision bodies move with the art they describe. The renderer-local presentation configuration owns the natural one-second transition duration, and a paced host's render options scale it to replay or watch cadence. A live human session is unpaced and passes no cadence at all, so the renderer measures the gap between arriving states and animates over that instead, capped at the natural duration; without it a quarter-second village would crawl through a one-second transition and draw the cast three ticks behind where it is. The frame loop holds briefly after a transition settles rather than stopping, because restarting it at every tick boundary costs a frame and reads as a stutter. Masks are reused, and texture loading comes through the renderer-local manifest.
+One recorded tick resolves every state treatment once. The frames in between carry the cast and the sustained effects and touch no artwork, so an in-between frame costs transforms rather than a rebuilt scene, and the collision bodies move with the art they describe. The renderer-local presentation configuration owns the natural one-second transition duration, and a paced host's render options scale it to replay or watch cadence. A live human session is unpaced and passes no cadence at all, so the renderer measures the gap between arriving states and animates over that instead, capped at the natural duration; without it a quarter-second village would crawl through a one-second transition and draw the cast three ticks behind where it is. The frame loop holds briefly after a transition settles rather than stopping, because restarting it at every tick boundary costs a frame and reads as a stutter. Masks are reused, and texture loading comes through the renderer-local manifest.
 
 The world layer order is fixed:
 
-1. Night-ink surround and the two terrain tile layers, including building floor ground and bridge planks.
+1. Night-ink surround and the base terrain tile layers, fill then edges, for every ground class including building floor and doorway ground and bridge planks.
 2. Scenery shadows and static interactive-prop bases.
 3. Dynamic interactive-prop stills.
 4. Character shadows and characters.
-5. Structural wall and doorway props, semantic building roofs, and any prop effect that belongs above a character.
+5. The upper terrain layer, which repeats wall tiles above occupants so the eave and wall bands still read, plus semantic building roofs and any prop effect that belongs above a character.
 6. The world-only day-phase colour grade.
 7. Sparse post-grade emissives, including lit lantern and hearth warmth.
 8. The collision overlay, always above the art and never graded.
@@ -119,8 +119,8 @@ The manifest names the source file, runtime file, dimensions, tintability, consu
 
 | Group | Runtime dimensions | Contents |
 | --- | --- | --- |
-| Terrain | 64 px cells on one atlas page | For each ground class, a few interior fill variants and its edge and corner set, plus the bridge plank tiles |
-| Buildings | 64 px cells | Structural wall and doorway tiles, plus semantic roof tiles for the home, the inn, and the repair shed |
+| Terrain | 64 px cells on one atlas page | For each ground class, including wall and doorway, a few interior fill variants and its edge and corner set, the wall tiles' upper-layer repaint, and the bridge plank tiles |
+| Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
 | Props | cell-sized stills up to 3 by 2 cells | One still for every catalog state, including the notice board's single state |
 | Scenery | 64 px cells | Three red pine variants and the market crate |
 | Characters | 192 by 192 frames | One rotatable sheet per villager variant and one for the visitor, each with a rest frame and its walk cycle, plus shadow and direction marks |
@@ -130,7 +130,7 @@ The separate 320 by 180 thumbnail is a final Hearthside Ink village image, not a
 
 ### Visual agreement with collision truth
 
-[ruleset.md](../ruleset.md) owns the canonical catalog tables for cells, collision shapes, counts, states, and transitions, and separately fixes prop reach. Physical art and collision-overlay drawings must agree with those records exactly. Round shapes must read round, so a walker visibly slides around the pump, hearth, bell, lantern, and pine. Structural wall props read as solid perimeter pieces, while passable structural doorway props visibly keep the 2-cell opening clear. Shadows, glow, smoke, and other non-solid effects may extend beyond a collision shape. Any art that needs a different extent changes the canonical catalog and its dependent generator, fixture, overlay, and test contracts in the same implementation.
+[ruleset.md](../ruleset.md) owns the ground table that fixes which classes are impassable, and the canonical catalog tables for interactive-prop and scenery collision shapes, counts, states, and transitions, and separately fixes prop reach. Physical art and collision-overlay drawings must agree with those records exactly. Impassable ground reads solid, which is water and wall alike, with the wall band keeping its eave line, while doorway ground stays visibly open. Round catalog shapes must read round, so a walker visibly slides around the pump, hearth, bell, lantern, and pine. Shadows, glow, smoke, and other non-solid effects may extend beyond a collision shape. Any art that needs a different extent changes the ground table or the canonical catalog and its dependent generator, fixture, overlay, and test contracts in the same implementation.
 
 ### Review boundary
 
@@ -140,14 +140,14 @@ Review the fixture and generated seeds at fitted, mid, and close review scales b
 
 - Renderer scene tests prove that the static terrain layers and building containers build once per static-layout key, that dynamic nodes reconcile by id, and that no tick rebuilds static tiles.
 - Tile tests cover the fill variant choice being deterministic per cell, the derived edge codes for every class boundary including frame edges and corners, and bridge planks landing on exactly the bridge cells.
-- Building tests cover open floor ground matching each semantic building rect, structural wall and passable doorway props matching its perimeter and 2-cell opening, walls drawing above occupants, and roof alpha resolving from semantic-building occupancy alone, with a seek snapping to the target and a replayed render equal to a direct one.
+- Building tests cover floor, wall, and doorway ground painting matching each semantic building rect, walls repeating in the upper terrain layer above occupants, and roof alpha resolving from semantic-building occupancy alone, with a seek snapping to the target and a replayed render equal to a direct one.
 - Prop tests validate a distinct still for every shipped state, correct placement under each facing, and the catalog cap on exterior footprints. State tests cover stall, bench, board, plot, repair bench, lantern, hearth, shrine, pump, and bell treatments.
-- Shape tests prove every circular interactive prop and pine is drawn round within its catalog extent, every box interactive prop fills its catalog extent, and structural walls and doorways use their recorded solid and passable shapes.
+- Shape tests prove every circular interactive prop and pine is drawn round within its catalog extent, and every box interactive prop fills its catalog extent.
 - Character tests cover the rotation to the exact heading, deterministic walk-frame selection from id, tick, and movement state, and villager sheet selection from the character-id hash.
-- Deterministic seek tests compare direct renders and replayed renders for every sustained animation, phase grade, walk frame, roof state, and crane. Interpolation tests cover exact endpoints, smooth midpoints, cadence scaling, the measured-gap fallback for an unpaced host, shortest-path heading turns, and offscreen crane wrapping. A per-frame motion pass is proved to reach the same retained pose as a full decoded tick.
+- Deterministic seek tests compare direct renders and replayed renders for every sustained animation, phase grade, walk frame, roof state, and crane. Interpolation tests cover exact endpoints, smooth midpoints, cadence scaling, the measured-gap fallback for an unpaced host, shortest-path heading turns, and offscreen crane wrapping. A per-frame motion pass is proved to reach the same retained pose as a full recorded tick.
 - Phase tests prove one world-only grade, post-grade emissives, neutral day when daynight is off, and ungraded collision overlay and HUD boundary.
 - Asset tests validate the renderer-local manifest, dimensions, source-art originals, optimised runtime files, tintable masks where declared, and the final thumbnail.
-- Collision agreement tests prove that structural wall props are exactly the solid wall shapes the overlay draws, structural doorway props are passable, and every interactive prop and scenery sprite sits on the shape the overlay draws for it.
+- Collision agreement tests prove that wall ground cells are exactly the solid shapes the overlay draws, doorway ground stays passable, and every interactive prop and scenery sprite sits on the catalog shape the overlay draws for it.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
 
 ## Done when

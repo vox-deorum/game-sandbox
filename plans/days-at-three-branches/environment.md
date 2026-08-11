@@ -4,7 +4,7 @@ This document defines how the [ruleset](ruleset.md) appears through the platform
 
 ## Seats and players
 
-The environment declares seat plans. seat_0 is the cast and seat_1 is the visitor in every plan. The visitor is `player_0`. The NPCs use `player_1` upward in NPC-id order.
+The environment declares seat plans. seat_0 is the cast and seat_1 is the visitor in every plan.
 
 | Plan    | Title          | Players |
 | ------- | -------------- | ------- |
@@ -18,9 +18,9 @@ The environment declares seat plans. seat_0 is the cast and seat_1 is the visito
 | cast_10 | seat_0, the cast    | player_1 through player_10 |
 | cast_10 | seat_1, the visitor | player_0                   |
 
-cast_5 is declared first and is the default. PettingZoo player order is player_0, then player_1 upward, with the visitor first. It controls the order of `possible_agents`, active-player mappings, and platform conformance. The ruleset's character order is different: npc_0 upward, then the visitor. It controls same-tick prop contention and the roster.
+cast_5 is declared first and is the default. There is one character order in this game and the player numbering is that same order: the visitor is character 0 and `player_0`, and `npc_i` is character i+1 and `player_(i+1)`. Roster order, same-tick prop contention, `possible_agents`, active-player mappings, and platform conformance all read that single order, so nothing anywhere has to reconcile two of them.
 
-Player ids stay inside the environment. No observation field, helper, or student document names one, so an agent works in character ids alone: npc_0 through npc_9 and visitor, one vocabulary to learn. A character is the visitor exactly when its id is `visitor`, which is why no observation carries a visitor flag.
+Player ids stay inside the environment. No observation field, helper, or student document names one, so an agent works in character ids alone: npc_0 through npc_9 and visitor. A character is the visitor exactly when its id is `visitor`, which is why no observation carries a visitor flag.
 
 The cast seat takes one submission, and every NPC runs a separately constructed instance of it, differentiated only by the id it reads from its observation. The visitor seat is restricted to the scripted_visitor builtin and its player is human-capable: a human plays the visitor in live sessions, and the builtin plays it in automated runs. Two builtins are declared: naive (Naive), the platform baseline that fills the cast seat in automated schedules, and scripted_visitor (Scripted visitor), which wanders the village, approaches NPCs, and offers a few canned lines. Seat order does not change the game, since the plans hold one unrestricted seat.
 
@@ -48,9 +48,9 @@ Each row ships as a declared `META.presets` entry, choosable in the web dialogs 
 
 ## Match flow
 
-`reset(seed)` uses the session seed for village generation. The environment draws no randomness after generation. Every agent receives that same seed, and its first observation with it, through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that wants an NPC-specific random stream builds it there with the template's `me.rng(observation, session_seed)`, which reads the character id for it, and an agent with layout work to do does that there too rather than inside a decision. Characters start in the ruleset's initial pose (each NPC inside its home facing the doorway with housemates spaced apart, the visitor at the road spawn facing into the village, everyone still with expression none), and every prop starts unheld in its start state. The same seed and action sequence replay identically, per the ruleset's determinism rule.
+`reset(seed)` uses the session seed for village generation. The environment draws no randomness after generation. Every agent receives that same seed, and its first observation with it, through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that wants an NPC-specific random stream builds it there with the template's `me.rng(observation, session_seed)`, which reads the character id for it, and an agent with layout work to do does that there too rather than inside a decision. Characters start in the ruleset's initial pose (each NPC on its home's floor facing the doorway with housemates spaced apart, the visitor at the road spawn facing into the village, everyone still with expression none), and every prop starts unheld in its start state. The same seed and action sequence replay identically, per the ruleset's determinism rule.
 
-The environment is simultaneous: one ruleset tick is one parallel `env.step()` with a complete PettingZoo-player-keyed action map. Every character selects from the same pre-tick state, and the engine resolves all actions together: movement through the physics engine, prop contention in character order. Within a tick the harness collects every action first and runs chat hooks after, so speech follows action selection, as the speech section describes.
+The environment is simultaneous: one ruleset tick is one parallel `env.step()` with a complete player-keyed action map. Every character selects from the same pre-tick state, and the engine resolves all actions together: movement through the physics engine, prop contention in character order. Within a tick the harness collects every action first and runs chat hooks after, so speech follows action selection, as the speech section describes.
 
 Nobody leaves the village early: the active set is the full roster for the whole day. On tick 1200 the environment marks every player terminated (the day's end is natural completion, not truncation) and the episode ends. Accumulated rewards are the final scores, so no `result_scores()` hook is needed.
 
@@ -74,7 +74,7 @@ Every value inside the space is legal in every state, because commanded values d
 
 ## Observations
 
-The observation is a plain `Dict`: with no action mask there is no wrapper. Its schema and Gymnasium shapes are fixed by the resolved parameters at construction and stay constant for the whole episode. Positions everywhere are `{"x", "y"}` Dicts of `Box(0.0, extent, shape=(), float32)` meters, where each extent is the frame's cell count times its cell size, read from `rules.json`. Cell coordinates are `{"x", "y"}` Dicts of `Discrete` over the frame's cell counts. Headings use the action convention.
+The observation is a plain `Dict`: with no action mask there is no wrapper. Its schema and Gymnasium shapes are fixed by the resolved parameters at construction and stay constant for the whole episode. Positions everywhere are `{"x", "y"}` Dicts of `Box(0.0, extent, shape=(), float32)` metres, where each extent is the frame's cell count times its cell size, read from `rules.json`. Cell coordinates are `{"x", "y"}` Dicts of `Discrete` over the frame's cell counts. Headings use the action convention.
 
 | Field | Space | Content |
 | --- | --- | --- |
@@ -86,15 +86,15 @@ The observation is a plain `Dict`: with no action mask there is no wrapper. Its 
 | tick | Discrete(1200, start=1) | the current tick |
 | phase | Text | the day phase; the constant day when daynight is off |
 | village | Dict | the static layout, generated at reset and constant |
-| roster | Tuple of Dicts | NPCs from npc_0 upward, then the visitor: id, home |
+| roster | Tuple of Dicts | the visitor, then NPCs from npc_0 upward: id, home |
 | parameters | Dict | encoded values for both resolved gameplay parameters |
 
-- `moved` is `Box(0.0, 1.0)`, the meters the character advanced on the latest tick. It is a distance; the action's `speed` is a fraction of the ground's limit. The ruleset reads above 0.5 as running.
+- `moved` is `Box(0.0, 1.0)`, the metres the character advanced on the latest tick. It is a distance; the action's `speed` is a fraction of the ground's limit. The ruleset reads above 0.5 as running.
 - `nearby` is presence by sound, id and position only. The lines characters speak travel through the messaging layer, not this field.
 - An expression is `{"type", "target"}`, both Text: type is none, an emote name, or use, and target is the id of the prop in use or the literal `"none"`.
 - In roster, `home` is `Text(max_length=16)`: an NPC carries its home building id and the visitor carries the literal `"none"`.
-- props entries are `{"prop": Text, "state": Text}`, naming an interactive prop by its id. States use the ruleset's state words. Reed concealment and every other perception rule is applied by the environment, so these fields contain exactly what the ruleset lets the character perceive.
-- village is the ground grid plus the objects standing on it, and it carries the ruleset's full standing knowledge. Its keys are below.
+- props entries are `{"prop": Text, "state": Text}`, naming an interactive prop by its id. States use the ruleset's state words. Every perception rule is applied by the environment, so these fields contain exactly what the ruleset lets the character perceive.
+- village is the ground grid plus the props standing on it, and it carries the ruleset's full standing knowledge. Its keys are below.
 - Text fields use lowercase letters, digits, and underscore, minimum length 1: character ids are `Text(max_length=8)`, prop and building ids `Text(max_length=16)`, prop types `Text(max_length=12)`, states `Text(max_length=9)`, phase `Text(max_length=7)`, expression type `Text(max_length=10)`.
 - `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`.
 - tick names the tick the observation's action will play in: the reset observation carries tick 1, and the terminal observation of the final step keeps tick 1200.
@@ -104,19 +104,18 @@ The observation is a plain `Dict`: with no action mask there is no wrapper. Its 
 
 | Key | Space | Content |
 | --- | --- | --- |
-| size | Dict | cells_x and cells_y as `Discrete`, and cell_size as `Box` in meters |
+| size | Dict | cells_x and cells_y as `Discrete`, and cell_size as `Box` in metres |
 | ground | Tuple of Text | one row per cell row, south row first, one ground code character per cell |
 | buildings | Tuple of Dicts | id, type, cell |
-| structural_props | Tuple of Dicts | type, cell, owner |
 | props | Sequence of Dicts | id, type, cell, facing |
 | scenery | Sequence of Dicts | type, cell |
-| spawn | Dict | the visitor's spawn position in meters |
+| spawn | Dict | the visitor's spawn position in metres |
 
-Ground codes are `rules.json`'s single characters, so `ground[cy][cx]` is the class of cell `(cx, cy)` and the whole map is one indexed lookup. Water cells are impassable. Every building site has open ground, and its wall and doorway cells come from the structural-prop records. Collision and opacity derive from the canonical catalog.
+Ground codes are `rules.json`'s single characters, so `ground[cy][cx]` is the class of cell `(cx, cy)` and the whole map is one indexed lookup: speed, passability, and sight all come from it. Water and wall cells are impassable, wall cells are the only ones that block a line, and a building's floor, walls, and doorway are all ground, so nothing outside this grid describes a building's geometry. The doorway helper reads the doorway cells off the building's own perimeter.
 
-Building ids are home_0 through home_4, inn, and shed. Each structural-prop record names its building owner, and its cell states the finished wall or doorway layout directly. The doorway helper finds the two doorway records owned by the building, so the semantic building record carries no duplicate doorway geometry. Props are in canonical catalog order by type and generation order within type, with ids the type token plus the index in that order, stall_0 upward. `facing` is one of north, east, south, or west. Scenery type tokens are pine and crate.
+Building ids are home_0 through home_4, inn, and shed. Props are in canonical catalog order by type and generation order within type, with ids the type token plus the index in that order, stall_0 upward. `facing` is one of north, east, south, or west. Scenery type tokens are pine and crate.
 
-Catalog types determine reservation, drawing extent, collision, passability, opacity, and interactive behavior. Every rule that measures to an interactive prop measures to the nearest point of its catalog collision shape, so a helper combining this record with `catalog.json` computes the same reach the engine does. Structural props never enter use selection or dynamic prop-state observations.
+Catalog types determine reservation, drawing extent, collision, and interactive behaviour. Every rule that measures to an interactive prop measures to the nearest point of its catalog collision shape, so a helper combining this record with `catalog.json` computes the same reach the engine does.
 
 Nothing in village changes during an episode. The environment keeps one immutable internal snapshot, then projects it into isolated plain observation mappings for each player and episode. Immutable tuples and strings may be shared, but no player or episode receives a shared mutable village mapping.
 
@@ -126,21 +125,21 @@ Every nonterminal reward is 0. On the final tick every player, the visitor inclu
 
 ## Speech
 
-The ruleset's speech maps onto the platform messaging layer, with loudness carried by the two message forms.
+The ruleset gives speech one range and no addressee, so every line is one message form: a broadcast the environment bounds.
 
-- A talk is a direct message. The environment's recipient policy lists, for each sender, the characters within talk range with an unblocked line, nearest first; the default recipient is the first listed, or broadcast when nobody is near. A sender may talk to each permitted recipient once per tick.
-- A shout is a broadcast, and the environment limits its delivery: an NPC broadcast reaches every character within shout range with an unblocked line, and the visitor's broadcast reaches talk range, because visitor speech is talk.
-- Every delivered line reaches watchers under the platform's visibility rule: it appears in the client state, renders as a speech bubble over the speaker, and shows in the chat panel, so viewers see every line, per the ruleset.
+- The environment implements `broadcast_recipients(sender)`, returning the characters within hearing range of the sender with an unblocked line. It declares no `chat_policy`, because there are no direct messages to rank.
+- Because every line is a broadcast, every client receives every delivered line under the platform's ordinary rules: watchers by the visibility rule, and the human playing the visitor as a controller receiving broadcasts. There is nothing to decide about what a playing visitor may see, and the chat UI needs no recipient control.
+- A character may send one line per tick, up to 200 code points.
 - A line recorded on tick T reaches its hearers' inboxes during tick T+1, after that tick's actions are chosen, so the first action that can react to a line is tick T+2's. A character keeps its inbox in its own memory between ticks.
-- The text limit is 200 code points.
+- Audiences resolve at end-of-tick state, since delivery happens after the step.
 
 ## Rendering and human input
 
-The three-branches-village renderer draws from the semantic overlay and the state's admitted messages. The overlay is self-contained, so live play and a replay seek to the same state produce the same frame: it carries the layout, every character's position, heading, distance moved, and expression, every interactive-prop state, the bell, the tick, and the phase. Active prop states render as sustained animation, derived from the state alone: a lit lantern glows, the lit hearth burns, a tended shrine trails incense smoke, the flowing pump pours, and the ringing bell swings. There is no fog: every viewer, the human visitor included, sees the whole village, because the game is judged by watching it. Every live session emits the opening presentation state, so the village renders before the first tick.
+The three-branches-village renderer draws from the semantic overlay and the state's admitted messages. The overlay is self-contained, so live play and a replay seek to the same state produce the same frame: the recording's header carries the whole static village once, and each state carries every character's position, heading, distance moved, and expression, every interactive-prop state, the tick, and the phase. Active prop states render as sustained animation, derived from the state alone: a lit lantern glows, the lit hearth burns, a tended shrine trails incense smoke, the flowing pump pours, and the ringing bell swings. There is no fog: every viewer, the human visitor included, sees the whole village and reads every line, because the game is judged by watching it. Every live session emits the opening presentation state, so the village renders before the first tick.
 
-Above the village sits one viewer-toggleable collision overlay: impassable ground cells are shaded, catalog collision shapes are drawn for structural props, interactive props, and scenery, passable doorway props stay visibly open, and characters appear as 0.4 m circles with a heading tick, id, and expression label. Interactive props carry state labels. It is a permanent viewer feature on watch, replay, and play, so a student chasing a villager that keeps snagging on a wall sees the art and the collision truth in one frame.
+Above the village sits one viewer-toggleable collision overlay: impassable ground cells are shaded, which is exactly the water and the building walls; catalog collision shapes are drawn for interactive props and scenery; doorway ground stays visibly open; and characters appear as 0.4 m circles with a heading tick, id, and expression label. Interactive props carry state labels. It is a permanent viewer feature on watch, replay, and play, so a student chasing a villager that keeps snagging on a wall sees the art and the collision truth in one frame.
 
-On the visitor seat, pointer and keyboard input compose the locomotion, and an expression palette offers the emotes and use, with the prop a use would select highlighted as an informational preview that sends nothing. The 250 millisecond cadence is the human input window; there is no separate move clock. Speech uses the host page's chat panel, whose recipient choices follow the talk policy above. Spectators and replay viewers receive no input.
+On the visitor seat, pointer and keyboard input compose the locomotion, and an expression palette offers the emotes and use, with the prop a use would select highlighted as an informational preview that sends nothing. The 250 millisecond cadence is the human input window; there is no separate move clock. Speech is one text field in the host page's chat panel: type a line and everyone within hearing range gets it. Spectators and replay viewers receive no input.
 
 ## Platform metadata
 
@@ -185,7 +184,7 @@ The template's helper package is `sandbox.village`, in the shape Skirmish at Cra
 | `geometry` | `distance`, `heading_to`, `wrap`, `in_cone`, and the character profile's ranges and body radius. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
 
-`layout` keeps movement and perception apart, because the ruleset does. `line_of_sight` answers perception from catalog opacity, where only structural walls cut a line. `can_step` answers the static map: whether a straight step crosses impassable ground, a catalog collision shape, or the boundary, ignoring characters, whose pushing and sliding belong to the engine. `walkable` asks whether a body of the character radius stands clear at a point at all. Both read the same ground and catalog shapes the engine collides with, so a helper cannot describe a village the physics does not agree with.
+`layout` keeps movement and perception apart, because the ruleset does. `line_of_sight` walks the ground grid and is blocked only by wall cells. `can_step` answers the static map: whether a straight step crosses impassable ground, a catalog prop shape, or the boundary, ignoring characters, whose pushing and sliding belong to the engine. `walkable` asks whether a body of the character radius stands clear at a point at all. Both read the same ground grid and catalog shapes the engine collides with, so a helper cannot describe a village the physics does not agree with.
 
 No helper decides anything: none picks a destination, a companion, or a prop. There is deliberately no pathfinder, the rule `sandbox.crane` already states. What the package withholds is the search, not the map: `observation["village"]` is the whole layout as standing knowledge, and `walkable`, `can_step`, and `ground_at` are exactly the node test, the edge test, and the edge cost a route planner is built from. Routing between the village's places belongs to the Season 4 starter example, which keeps the package a description of the engine's physics rather than a strategy library.
 
@@ -195,7 +194,7 @@ All helpers are pin-tested against their authoritative engine or data contract, 
 
 ## Conformance notes
 
-- The environment passes PettingZoo's parallel_api_test and the platform's stricter parallel subset: after reset the active set exactly covers the resolved players in PettingZoo player order and stays constant until every player terminates on tick 1200, and every mapping a step accepts or returns exactly covers the active players.
+- The environment passes PettingZoo's parallel_api_test and the platform's stricter parallel subset: after reset the active set exactly covers the resolved players in player order and stays constant until every player terminates on tick 1200, and every mapping a step accepts or returns exactly covers the active players.
 - `observation_space.contains()` holds for every observation across a full episode. Sequence fields are emitted as tuples, every Dict carries exactly its declared keys, and Text fields stay within the declared charset.
 - Spaces are built once from the resolved parameters and never change within an episode. The default action is contained in the action space and legal in every reachable state; no action mask is published because none is needed.
 - Overlay values are finite and JSON-safe, and recorded actions and messages normalize to plain JSON values.

@@ -16,7 +16,7 @@ The platform specification currently limits a `Dict` action space to sequential 
 
 ### Environment-limited broadcasts
 
-`ChatRouter.deliver` sends a broadcast to every other active player. The environment gains an optional `broadcast_recipients(sender)` hook, discovered and validated like `chat_policy`, returning the players a broadcast from `sender` reaches this boundary. No hook keeps today's full delivery. Three Branches uses it to bound an NPC shout to shout range and the visitor's broadcast to talk range. Document the hook in [communication.md](../../../docs/specs/communication.md).
+`ChatRouter.deliver` sends a broadcast to every other active player. The environment gains an optional `broadcast_recipients(sender)` hook, discovered and validated like `chat_policy`, returning the players a broadcast from `sender` reaches this boundary. No hook keeps today's full delivery. Three Branches uses it to bound every spoken line to the characters within the speaker's hearing range. Document the hook in [communication.md](../../../docs/specs/communication.md).
 
 ### Live watcher visibility
 

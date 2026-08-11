@@ -8,12 +8,15 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 
 ## Conventions
 
-- Characters move on a continuous 2D plane measured in meters. The village's static map is a grid of square cells. `rules.json` fixes the shipped frame at 100 by 100 cells of 1 meter. Grid and overlay code read those values rather than copying them. The boundary is impassable.
-- A character's state is turtle-style: a position (x, y), a heading, and the meters it moved on the latest tick. Facing is the heading.
-- Every range in this document is measured position to position except interactive-prop use and perception. Those rules measure to the nearest point on the prop's collision shape.
+- Characters move on a continuous 2D plane measured in metres. The village's static map is a grid of square cells. `rules.json` fixes the shipped frame at 100 by 100 cells of 1 metre. Grid and overlay code read those values rather than copying them. The boundary is impassable.
+- A character's state is turtle-style: a position (x, y), a heading, and the metres it moved on the latest tick. Facing is the heading.
+- The map has two layers, and they stay separate. The cell grid carries ground: every cell has one class, and the class carries the cell's speed limit, its passability, and whether it blocks sight. Props stand on that grid: interactive props and solid scenery reserve cells and carry their own catalog collision shape, so a well pump is round and a bench is square. The ground under a prop keeps its own class. Two placed props never share a cell.
+- Water and building walls are impassable ground. Walls are the only ground that blocks sight, so an unblocked line is one that crosses no wall cell, and a doorway carries sight, hearing, and speech normally.
+- A building is a semantic, axis-aligned cell group. Its template paints its site: floor ground inside, wall ground around the perimeter, and a 2-cell doorway run through one side. The building record carries an id, a type, and an origin cell; it has no collision object of its own, never enters use selection or prop-state observations, and does not prevent allowed interior props from standing on its floor.
+- Every range is measured position to position except interactive-prop use and prop perception. Those rules measure to the nearest point on the prop's collision shape.
+- A character is a circle of radius 0.4 m and stands anywhere.
+- Characters have one order: the visitor first, then npc_0 upward. That single order fixes the roster, same-tick prop contention, and the platform's player numbering.
 - Time advances in ticks, and a day is 1200 ticks.
-- A character is a circle of radius 0.4 m and stands anywhere. Water is solid by the cell. Structural props, interactive props, and solid scenery reserve cells and carry their catalog collision shapes, so a well pump is round and a bench is square. Two placed objects never share a cell.
-- A building is a semantic, axis-aligned cell group. Its template changes the whole site to open ground, then emits non-interactive wall structural props around the perimeter and a 2-cell doorway structural-prop run. Walls are solid and opaque. Doorways are passable and transparent. Buildings themselves have no occupied collision object, never enter use selection or prop-state observations, and do not prevent allowed interior props from occupying distinct cells.
 - The match seed drives village generation, and the scripted visitor derives its own choices from the same seed. A scripted match with the same seed and actions replays identically on the same platform build. Each season pins one default seed, so its matches all play the same village.
 
 ## Ticks
@@ -21,7 +24,7 @@ The game is one environment plus one variant: daynight. Seasons switch it on and
 A match is a sequence of ticks. Each tick, every character selects one action from the same pre-tick state: nobody sees anyone else's choice for the current tick. The engine then resolves all actions together:
 
 - Movement: every character moves at once, resolved by the physics engine. A character advances at its commanded speed along its heading; solid contact stops it or deflects it along the surface, and nothing passes through a solid or another character. A character commanding speed 0 is immovable for the tick: it turns in place, stays exactly put, and cannot be pushed.
-- Prop use: an interactive prop holds one user at a time. When several characters reach for it in the same tick, the first in character order, npc_0 upward and the visitor last, gets it and the rest resolve to expression none. Character order is distinct from the PettingZoo player order, which is player_0 for the visitor and player_1 upward for the NPCs.
+- Prop use: an interactive prop holds one user at a time. When several characters reach for it in the same tick, the first in character order gets it and the rest resolve to expression none. The visitor leads that order, so a human reaching for a bench is never beaten to it by the cast.
 
 A late or missing action, the default, is speed 0, heading unchanged, expression none: the character stands still. Commanded values degrade rather than fail: a heading of 360 wraps to 0, and an expression that is not available, no usable prop or a prop already held, resolves to none.
 
@@ -34,16 +37,17 @@ Every match plays in Three Branches, generated from the match seed under fixed g
 - The village always generates five homes, `home_0` through `home_4`, whatever the cast size, so every season plays the same layout. `npc_i` lives in `home_(i mod 5)`, which puts two villagers in each house when the cast is ten. The visitor spawns on the road at the west edge.
 - The generator places the village dressing under [village.md](village.md)'s placement rules. Type data, including every count, lives in the catalog below.
 
-Every cell has a ground class that sets its speed limit. The classes and their values live in `rules.json`, so a new class is a data entry:
+Every cell has a ground class. The classes, their speed limits, their passability, and whether they block sight live in `rules.json`, so a new class is a data entry:
 
-| Ground                          | Speed limit     |
-| ------------------------------- | --------------- |
-| Road, footpaths, and crossings  | 1.0 m per tick  |
-| Open ground and building floors | 0.75 m per tick |
-| Fields and reed banks           | 0.5 m per tick  |
-| Water                           | impassable      |
+| Ground                                       | Speed limit     | Sight       |
+| -------------------------------------------- | --------------- | ----------- |
+| Road, footpaths, and crossings               | 1.0 m per tick  | carries     |
+| Open ground, building floors, and doorways   | 0.75 m per tick | carries     |
+| Fields and reed banks                        | 0.5 m per tick  | carries     |
+| Water                                        | impassable      | carries     |
+| Building walls                               | impassable      | blocks      |
 
-The full static layout is standing knowledge for every character: the ground grid and its crossings, semantic buildings, structural props, scenery, and every interactive-prop placement. What changes during play, characters and interactive-prop states, must be perceived.
+The full static layout is standing knowledge for every character: the ground grid with its crossings, walls, doorways, and floors, the semantic buildings, the scenery, and every interactive-prop placement. What changes during play, characters and interactive-prop states, must be perceived.
 
 ## Canonical catalog
 
@@ -51,11 +55,11 @@ The full static layout is standing knowledge for every character: the ground gri
 
 ### Building templates
 
-| Token | Site cells | Count | Collision | Ground override | Structural emission per instance |
-| --- | --- | --- | --- | --- | --- |
-| home | 6 by 5 | 5 | none, semantic group only | open across the full site rect | 16 wall cells, 2 doorway cells |
-| inn | 10 by 8 | 1 | none, semantic group only | open across the full site rect | 30 wall cells, 2 doorway cells |
-| shed | 6 by 6 | 1 | none, semantic group only | open across the full site rect | 18 wall cells, 2 doorway cells |
+| Token | Site cells | Count | Site painting | Interior props |
+| --- | --- | --- | --- | --- |
+| home | 6 by 5 | 5 | floor inside, wall around the perimeter, a 2-cell doorway run through one side | none |
+| inn | 10 by 8 | 1 | the same | the hearth |
+| shed | 6 by 6 | 1 | the same | the repair bench |
 
 ### Interactive prop types
 
@@ -72,38 +76,29 @@ The full static layout is standing knowledge for every character: the ground gri
 | pump | 1 by 1, solid inscribed circle | 1 | working the pump | flowing, idle | idle | timed, 10 ticks |
 | bell | 1 by 1, solid inscribed circle | 1 | ringing the bell | ringing, silent | silent | timed, 40 ticks |
 
-### Structural prop types
-
-| Token | Physical cells and collision | Count | Passability | Opacity | Activity and state |
-| --- | --- | --- | --- | --- | --- |
-| wall | 1 by 1, solid box filling its cell | 128 | solid | opaque | none |
-| doorway | 1 by 1, no collision shape | 14 | passable | transparent | none |
-
 ### Scenery types
 
-| Token | Physical cells and collision | Count | Passability | Opacity |
-| --- | --- | --- | --- | --- |
-| pine | 1 by 1, solid inscribed circle | road stations and seeded scatter candidates | solid | transparent |
-| crate | 1 by 1, solid box filling its rect | one or two beside each stall | solid | transparent |
+| Token | Physical cells and collision | Count |
+| --- | --- | --- |
+| pine | 1 by 1, solid inscribed circle | road stations and seeded scatter candidates |
+| crate | 1 by 1, solid box filling its rect | one or two beside each stall |
 
-Only interactive props participate in use selection, holding, transitions, and dynamic prop-state observations. Structural props and scenery are static layout knowledge. Exterior interactive props stay at or below 4 cells in each dimension.
+Props and scenery are solid and never block sight. Only interactive props participate in use selection, holding, transitions, and dynamic prop-state observations; scenery is static layout knowledge.
 
 ## Characters
 
 Every character, NPC or visitor, has the same profile:
 
-| Property    | Value                                                         |
-| ----------- | ------------------------------------------------------------- |
-| Body radius | 0.4 m                                                         |
-| Speed       | commanded as a fraction, 0 to 1 of the ground's limit         |
-| Running     | above 0.5 m per tick reads as running, at or below as walking |
-| Vision      | 120 degree cone on the heading, out to 12 m                   |
-| Hearing     | 6 m, all around                                               |
-| Talk range  | 3 m                                                           |
-| Shout range | 15 m                                                          |
-| Prop reach  | 1.5 m                                                         |
+| Property    | Value                                                          |
+| ----------- | -------------------------------------------------------------- |
+| Body radius | 0.4 m                                                          |
+| Speed       | commanded as a fraction, 0 to 1 of the ground's limit          |
+| Running     | above 0.5 m per tick reads as running, at or below as walking  |
+| Vision      | 120 degree cone on the heading, out to 12 m                    |
+| Hearing     | 6 m, all around, and the range a spoken line carries           |
+| Prop reach  | 1.5 m                                                          |
 
-A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day inside its home facing the doorway, housemates spaced at least a body diameter apart, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
+A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day on the floor of its home facing the doorway, housemates spaced at least a body diameter apart, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
 
 ## Actions
 
@@ -136,18 +131,28 @@ Every interactive prop starts the day unheld in its start state, and its state f
 
 The interactive-prop table above is `catalog.json`'s content in canonical reading order. A data-only prop type works when it uses an existing transition, placement, and art mechanism.
 
-Speech runs beside the tick action, so a character can speak while doing anything else. A talk is one short line addressed to one character within 3 m with an unblocked line, and a character may talk to each character in range once per tick. A shout is one short line reaching every character within 15 m with an unblocked line, one per tick. A line spoken on tick T reaches its hearers during tick T+1, after they have chosen that tick's action, so the earliest action it can inform is tick T+2's. Viewers see every line as a speech bubble over the speaker. NPC speech carries both loudnesses. Visitor speech is talk: freeform text typed by a human, or canned lines from the scripted visitor, and NPCs answer with their ordinary speech, so a conversation is two characters within talk range exchanging lines two ticks apart.
+## Speech
+
+Speech runs beside the tick action, so a character can speak while doing anything else.
+
+- A character may speak one short line per tick, up to 200 code points.
+- The line reaches every character within hearing range with an unblocked line, which is exactly the set of characters that can hear the speaker. If you can hear someone, you hear what they say, so there is no separate loudness to choose and no addressee to pick. The village-wide signal is the beacon bell.
+- A line spoken on tick T reaches its hearers during tick T+1, after they have chosen that tick's action, so the earliest action it can inform is tick T+2's.
+- Every line is public. It appears as a speech bubble over the speaker and in the chat panel of every client, the playing visitor's included, because nothing in this village is hidden from a viewer.
+
+Visitor speech is freeform text typed by a human, or canned lines from the scripted visitor, and NPCs answer with their ordinary speech, so a conversation is two characters standing within hearing range and exchanging lines two ticks apart.
 
 ## Perception
 
 Each tick a character receives:
 
-- Itself: id, position, heading, speed, and current expression.
-- Every character it sees, within the vision cone with an unblocked line: id, kind, position, heading, speed, and current expression.
+- Itself: id, position, heading, the distance it moved on the latest tick, and current expression.
+- Every character it sees, within the vision cone with an unblocked line: id, position, heading, distance moved, and current expression.
 - Every character it hears, within hearing range with an unblocked line, whatever the facing: id and position.
-- Reed banks conceal: a character standing on a reed cell is seen only by observers standing in the same connected reed area. Hearing and speech are unaffected.
-- The state of every interactive prop it sees, under the cone and line rules applied to the nearest point of its collision shape. While the beacon bell rings, every character perceives it, whatever the distance and whatever stands between.
+- The state of every interactive prop it sees, under the cone and line rules applied to the nearest point of the prop's collision shape. While the beacon bell rings, every character perceives it, whatever the distance and whatever stands between.
 - The tick number, and the day phase when the daynight variant is on.
+
+Only wall ground blocks a line, so a doorway lets a villager see and hear into a house while its walls do not, and props and scenery never hide anything.
 
 This observation, plus standing knowledge (the full static layout, the cast roster, and the season's parameter values) and the speech that has reached it, is everything available when the character selects its action. Anything about the past lives in the character's own code.
 
