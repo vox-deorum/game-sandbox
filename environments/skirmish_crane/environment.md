@@ -9,12 +9,12 @@ Most importantly: every unit runs a separate `Agent` instance with its own state
 Complete the [Getting Started guide](../../docs/students/getting-started.md) first, then open `agent.py` in the template. An **episode** is one complete match. As you edit, run these three commands from the template folder:
 
 ```console
-python -m sandbox play
-python -m sandbox test
-python -m sandbox eval
+python -m sandbox play  # watch your agent play both sides
+python -m sandbox test  # run the provided checks
+python -m sandbox eval  # compare your agent with Naive
 ```
 
-`play` watches copies of your agent play both sides, `test` runs the provided checks, and `eval` runs seeded episodes and reports the mean team score. The guide also covers saved rivals, `--vs`, presets, and other command flags. Use the same seeds before and after a change. `eval` helps you compare changes, but it cannot predict a leaderboard result.
+`eval` runs repeatable matches against **Naive**, a simple built-in opponent, and reports your selected side's average team score. Use the same seeds before and after a change. Local results cannot predict a leaderboard result.
 
 ## Make an order
 
@@ -76,7 +76,7 @@ Try one experiment at a time:
 
 Change one behavior at a time and watch a complete recording, not only the final score. Look for the first contact, the tiles where units become targets, and whether a unit arrives with allies nearby. A change that wins one short fight can still lose a match by leaving a capture zone empty or exposing the archer.
 
-For a head-to-head comparison, pass a saved rival with `--vs`. Your side uses your current agent, and the enemy side uses the saved one. Before developing these ideas further, read the rules below. When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md).
+`python -m sandbox eval --vs rivals/v1` puts the saved rival on the enemy side while your current agent controls the selected side. Add `--seat 1` to switch sides. Before developing these ideas further, read the rules below. When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md).
 
 ## Match flow
 

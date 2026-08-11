@@ -16,3 +16,4 @@ jsonschema
 websockets>=16,<17
 python-dotenv
 openai
+wcwidth==0.2.13

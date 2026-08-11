@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from sandbox import evaluate, play
-from sandbox.harness.environment import EnvParameter, resolve_parameters
+from sandbox.harness.environment import EnvParameter, PlayerBounds, resolve_parameters
 from sandbox.season import SeasonSettings, load_season_settings
 
 
@@ -142,7 +142,7 @@ def test_play_browser_passes_season_limits_to_the_local_runner(monkeypatch, caps
 def test_eval_loads_and_announces_settings_once_for_many_seeds(monkeypatch, capsys):
     settings = SeasonSettings("Spring practice", resolve_parameters(play.META), 50, 3_000)
     monkeypatch.setattr(evaluate, "load_season_settings", lambda root, meta: settings)
-    monkeypatch.setattr(evaluate, "parse_rival", lambda parser, raw, parameters: None)
+    monkeypatch.setattr(evaluate, "parse_rival", lambda parser, raw, seat, parameters: None)
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(evaluate, "run_headless", lambda **kwargs: calls.append(kwargs) or 1.0)
 
@@ -153,13 +153,14 @@ def test_eval_loads_and_announces_settings_once_for_many_seeds(monkeypatch, caps
     assert capsys.readouterr().out.count("Using Spring practice settings from season.json.") == 1
 
 
-def test_eval_rejects_a_player_outside_the_resolved_season_layout(monkeypatch, capsys):
-    settings = SeasonSettings("Duo season", resolve_parameters(play.META), 50, 3_000)
+def test_eval_rejects_a_seat_outside_the_resolved_season_layout(monkeypatch, capsys):
+    meta = replace(play.META, layout=PlayerBounds(min=1, max=1), presets=())
+    monkeypatch.setattr(play, "META", meta)
+    settings = SeasonSettings("Solo season", resolve_parameters(meta), 50, 3_000)
     monkeypatch.setattr(evaluate, "load_season_settings", lambda root, meta: settings)
-    monkeypatch.setattr(evaluate.play, "possible_players", lambda parameters: ("player_0",))
 
     with pytest.raises(SystemExit) as error:
-        evaluate.main(["--player", "1"])
+        evaluate.main(["--seat", "1"])
 
     assert error.value.code == 2
-    assert "--player must name one of 0..0" in capsys.readouterr().err
+    assert "--seat must name one of 0..0" in capsys.readouterr().err

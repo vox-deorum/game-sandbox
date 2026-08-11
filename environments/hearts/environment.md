@@ -67,12 +67,12 @@ Run the agent from the template folder:
 
 ```console
 python -m sandbox play                 # watch separate copies of your agent play all four positions
-python -m sandbox eval                 # play several seeded episodes and report the mean score
-python -m sandbox eval --vs rivals/v1  # play against a saved copy of your agent
+python -m sandbox eval                 # compare your agent with Naive over repeatable games
+python -m sandbox eval --vs rivals/v1  # play against a saved rival
 python -m sandbox test                 # run the checks
 ```
 
-An episode is one complete 13-trick deal. `eval` reports the [higher-is-better reward](#scoring-and-rewards): `-2` is better than `-10` because it is closer to zero. Compare the same seeds, not one run.
+`eval` plays your selected position against three copies of **Naive**, a simple built-in agent. One episode is a complete 13-trick deal. `eval` reports the [higher-is-better reward](#scoring-and-rewards): `-2` is better than `-10` because it is closer to zero. Compare the same seeds before and after a change.
 
 ## Scoring and rewards
 

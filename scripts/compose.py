@@ -26,6 +26,7 @@ at those local copies, keeping the public guides as the single source of truth.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -38,7 +39,9 @@ from _paths import (
     DOCS_DIR,
     ENVIRONMENT_PACKAGES_DIR,
     REPO_ROOT,
+    SESSION_BASE_IMAGES_DIR,
     TEMPLATE_BASE_DIR,
+    TEMPLATE_BASE_MANIFEST,
     env_examples_dir,
     env_template_layer,
 )
@@ -232,6 +235,34 @@ def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) ->
         shutil.copyfile(src, dest)
 
 
+def _copy_builtin_agents(env: str, meta: object, sandbox: Path) -> None:
+    """Ship this environment's frozen builtin repositories with the student launcher."""
+    from game_sandbox_harness.environment import EnvironmentMeta
+
+    if not isinstance(meta, EnvironmentMeta):
+        raise TypeError(f"expected EnvironmentMeta for {env!r}, got {type(meta).__name__}")
+    try:
+        version = json.loads(TEMPLATE_BASE_MANIFEST.read_text(encoding="utf-8"))["template_version"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ComposeError(f"cannot read template_version from {TEMPLATE_BASE_MANIFEST}: {error}") from error
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ComposeError(f"{TEMPLATE_BASE_MANIFEST} template_version must be an integer")
+
+    source_root = SESSION_BASE_IMAGES_DIR / f"deps-v{version}" / "builtin" / env
+    destination = sandbox / "builtins"
+    destination.mkdir(parents=True, exist_ok=True)
+    for declaration in meta.builtin_agents:
+        name = declaration.name
+        source = source_root / name
+        if not source.is_dir():
+            raise ComposeError(f"environment {env!r} declares builtin {name!r}, but {source} does not exist")
+        shutil.copytree(
+            source,
+            destination / name,
+            ignore=shutil.ignore_patterns("__pycache__", "*.py[cod]"),
+        )
+
+
 def list_envs() -> list[str]:
     """Every recognized environment package."""
     return sorted(discover_environments())
@@ -319,6 +350,7 @@ def compose_template(env: str, *, out_dir: Path | None = None) -> Path:
     write_harness(sandbox / "harness")
     write_base_helpers(sandbox, discovered.spec)
     write_env_package(env, discovered.spec, discovered.entry.meta, sandbox / "env")
+    _copy_builtin_agents(env, discovered.entry.meta, sandbox)
     # 3. The hand-authored env layer overlays it, whole-file.
     _overlay_files(env_dir, out_dir)
     # 4. Ship the environment's student docs page as environment.md: the local reference the

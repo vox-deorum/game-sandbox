@@ -6,13 +6,14 @@ It overrides the template's starting ``agent.py`` and picks up where the environ
 be on the next step, not where it is now, by adding its velocity before the comparison. It clearly
 outperforms doing nothing, which the example test asserts.
 
-It also uses the extra pinned dependency ``wcwidth`` (declared in ``requirements.extra.txt``)
-in a trivial display helper, so the dependency-set extension path stays exercised end to end.
+It also uses the extra pinned dependency ``six`` (declared in ``requirements.extra.txt``) in a
+trivial display helper, so the dependency-set extension path stays exercised end to end.
 """
 
 from __future__ import annotations
 
 from sandbox.features import FLAP, IDLE, FlappyObservation, next_gap_center, player_velocity, player_y
+from six import text_type
 from wcwidth import wcswidth
 
 NAME = "hello-flappy"
@@ -36,5 +37,5 @@ class Agent:
 
 
 def display_width(text: str = NAME) -> int:
-    """Display width of ``text``, computed via the extra dependency (wcwidth)."""
-    return wcswidth(text)
+    """Display width of ``text``, normalized through the extra dependency (six)."""
+    return wcswidth(text_type(text))

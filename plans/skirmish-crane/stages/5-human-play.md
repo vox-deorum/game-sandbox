@@ -43,17 +43,18 @@ The harness owns the move budget and substitutes `default_action` once a person 
 
 ### Local play
 
-Both local launchers must support whole-seat play through a `self` companion value. In both, selecting `self` makes every player in the human's seat externally controlled, while the seat's first declared human-capable player remains the chat sender. Other seats keep their existing assignments.
+Both local launchers support whole-seat play through a `self` companion value. Selecting `self` makes every player in a fully human-capable selected seat externally controlled, while the seat's first declared human-capable player remains the chat sender. Other seats keep their existing assignments.
 
 For `npm run play -- skirmish_crane human`, `scripts/play.py` resolves a seat through `--seat` and defaults a wide human seat's other members to the built-in naive companion. `--companion` continues to accept `self`, `naive`, or a manifest path, and `self` binds every player in the seat as external.
 
-For `python -m sandbox human`, the shared template launcher provides the same option for every environment. `--player` continues to index `possible_agents` flat. The launcher must:
+For `python -m sandbox human`, the shared template launcher selects a resolved seat through `--seat`. It defaults to the platform-preferred human-capable seat, choosing a restricted seat first when one exists. The launcher:
 
-- Resolve the selected player's seat through `resolve_layout`, which it already imports for `--vs`.
-- Accept `--companion self` and bind every player in that seat as external.
-- Emit `external_chat_player` in its local config.
+- Treats omitted `--companion` and `--companion self` as whole-seat control when every member is human-capable.
+- Accepts a declared builtin name or manifest path as a companion. The first human-capable member remains external and the companion controls the rest.
+- Derives the designated builtin for a restricted human seat and rejects an explicit companion there.
+- Emits `external_chat_player` in its local config.
 
-Without `--companion self`, one player is external and the repository's own agent controls the rest of the seat. The student guide's local-play commands change with this launcher support.
+A mixed-capability wide seat requires an explicit companion because a person cannot control its non-human-capable members. The student guide's local-play commands use seat indices throughout.
 
 ## Tests
 

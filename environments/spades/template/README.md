@@ -4,7 +4,7 @@ This repository is a complete starter project for a Spades agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Spades is a four-player partnership card game. The player across the table is your partner. Unless you pick a saved rival with `--vs`, local play runs a separate copy of this repository's agent for every agent-controlled player. See the course documentation for the environments and examples available to your class.
+Spades is a four-player partnership card game. The player across the table is your partner. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -31,13 +31,15 @@ From the project folder:
 python -m sandbox
 ```
 
-The first run creates `.venv`, installs the pinned packages, and opens a game you control. Click a bid chip during bidding and a highlighted card during play. Use these commands as you work:
+The first run creates `.venv`, installs the pinned packages, and opens a game you control. Click a bid chip during bidding and a highlighted card during play. **Naive** is a simple built-in agent you can use as a consistent opponent or partner while you improve your own agent.
+
+Use these commands as you work:
 
 ```console
-python -m sandbox            # play one chosen position yourself; your agent runs the other three
+python -m sandbox            # control your partnership yourself; your agent runs the opponents
 python -m sandbox play       # watch separate copies of your agent play all four positions
-python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
-python -m sandbox eval       # repeat that headless check over seeded episodes and report the mean score
+python -m sandbox play --headless  # run one game against Naive without a browser
+python -m sandbox eval       # compare your partnership with Naive over repeatable games
 python -m sandbox play --parameter seat_plan=solo  # override one setting for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
@@ -45,11 +47,12 @@ python -m sandbox setup      # just (re)install dependencies into .venv
 
 When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
 
-A few notes on these commands:
+These options use the default `partnership` setting:
 
 - `play --seed 7` repeats the same game.
-- `human --player 2` lets you play a different position.
-- `play --vs rivals/v1` plays your partnership against a saved rival, a folder holding that version's `agent.py` and `manifest.json`. Your partner keeps your current agent, and the flag also works with `human` and `eval`.
+- `python -m sandbox human --seat 1` lets you play the other partnership.
+- Human play lets you control both partners by default. Add `--companion naive` or an agent folder to control one player while that agent controls your partner.
+- `--vs rivals/v1` uses a saved rival for the other partnership. `play` keeps your current agent on your partnership; `human` keeps your controls and companion. The option also works with `eval`. The getting started guide explains how to make the rival folder.
 - `eval` reports a higher-is-better team score. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.

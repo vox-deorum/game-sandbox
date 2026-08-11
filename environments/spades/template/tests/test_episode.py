@@ -43,5 +43,5 @@ def test_template_play_loop_completes_a_bounded_episode():
 def test_rival_players_cover_only_the_opposing_partnership():
     parameters = resolve_parameters(META)
 
-    assert rival_player_ids("player_0", parameters) == {"player_1", "player_3"}
-    assert rival_player_ids("player_1", parameters) == {"player_0", "player_2"}
+    assert rival_player_ids(0, parameters) == {"player_1", "player_3"}
+    assert rival_player_ids(1, parameters) == {"player_0", "player_2"}

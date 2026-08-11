@@ -4,7 +4,7 @@ This repository is a complete starter project for a Hearts agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Hearts is a four-player trick-taking game. In local play, every agent-controlled player runs a separate copy of the agent in this repository, unless you pick a saved rival with `--vs`. See the course documentation for the environments and examples available to your class.
+Hearts is a four-player trick-taking game. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -31,13 +31,15 @@ From the project folder:
 python -m sandbox
 ```
 
-The first run creates `.venv`, installs the pinned packages, and opens a game you control by clicking a highlighted card. Use these commands as you work:
+The first run creates `.venv`, installs the pinned packages, and opens a game you control by clicking a highlighted card. **Naive** is a simple built-in agent you can use as a consistent opponent while you improve your own agent.
+
+Use these commands as you work:
 
 ```console
 python -m sandbox            # play one chosen position yourself; your agent runs the other three
 python -m sandbox play       # watch separate copies of your agent play all four positions
-python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
-python -m sandbox eval       # repeat that headless check over seeded episodes and report the mean score
+python -m sandbox play --headless  # run one game against Naive without a browser
+python -m sandbox eval       # compare your agent with Naive over repeatable games
 python -m sandbox play --decision-limit-ms 500  # override the decision limit for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
@@ -45,11 +47,11 @@ python -m sandbox setup      # just (re)install dependencies into .venv
 
 When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
 
-A few more flags help while you work, plus one thing to know about `eval`:
+Useful options:
 
 - `--seed N`, for example `python -m sandbox play --seed 7`, repeats the same game.
-- `human --player N`, for example `python -m sandbox human --player 2`, lets you play a different position.
-- `--vs rivals/v1` plays your current agent against a saved rival, a folder holding that version's `agent.py` and `manifest.json`. It also works with `human` and `eval`.
+- `python -m sandbox human --seat 2` lets you play player 2. In Hearts, each seat contains one player.
+- `--vs rivals/v1` uses a saved rival in the other positions. `play` and `eval` keep your current agent in the selected position; `human` keeps the position you control. The getting started guide explains how to make the rival folder.
 - `eval` reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. Use it to compare changes against the same seeds, not to predict leaderboard results.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.

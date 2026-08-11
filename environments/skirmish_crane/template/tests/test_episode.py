@@ -9,7 +9,7 @@ from sandbox.env import META, make_env
 from sandbox.env.skirmish_crane import naive
 from sandbox.harness.environment import resolve_parameters
 from sandbox.observation_types import SkirmishAction, SkirmishObservation
-from sandbox.play import play_episode, rival_player_ids
+from sandbox.play import play_episode, rival_player_ids, run_headless
 
 SEED = 4
 RUNTIME_LIMIT_S = 20.0
@@ -44,5 +44,15 @@ def test_template_play_loop_completes_a_bounded_episode():
 def test_rival_players_cover_the_opposing_side():
     parameters = resolve_parameters(META)
 
-    assert rival_player_ids("player_0", parameters) == {"player_3", "player_4", "player_5"}
-    assert rival_player_ids("player_4", parameters) == {"player_0", "player_1", "player_2"}
+    assert rival_player_ids(0, parameters) == {"player_3", "player_4", "player_5"}
+    assert rival_player_ids(1, parameters) == {"player_0", "player_1", "player_2"}
+
+
+def test_headless_default_uses_the_bundled_baseline_without_human_fallback(capsys):
+    started = time.monotonic()
+
+    score = run_headless(seed=SEED, max_steps=None, seat=0)
+
+    assert 0.0 <= score <= 100.0
+    assert "human player" not in capsys.readouterr().err
+    assert time.monotonic() - started < RUNTIME_LIMIT_S

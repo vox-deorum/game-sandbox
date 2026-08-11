@@ -16,7 +16,7 @@ Read [Environment template and examples](template-and-examples.md) to create an 
 
 ## Composition
 
-`uv run python scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and copies the environment's `template/` directory onto it.
+`uv run python scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, copies every declared builtin from the matching frozen `deps-v<N>` tree into `sandbox/builtins/`, and copies the environment's `template/` directory onto it.
 
 Composition is intentionally disposable. Recompose every template and example after changing environment metadata, gameplay parameter declarations, the harness launch contract (the launch configuration and stdio protocol the backend shares with the session container), or the generated factory signature. Outputs composed from another checkout are unsupported.
 

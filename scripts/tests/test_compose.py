@@ -22,6 +22,8 @@ from compose import (  # noqa: E402
     list_examples,
     list_published_examples,
 )
+from game_sandbox_harness.environment import load_environment  # noqa: E402
+from game_sandbox_harness.manifest import load_agent  # noqa: E402
 
 
 def test_compose_template_has_base_and_env_files():
@@ -33,6 +35,20 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "sandbox" / "card_utils.py").exists()  # generated shared helper
     assert (out / "sandbox" / "card_types.py").exists()  # generated shared helper
     assert (out / "sandbox" / "shared_modules.py").exists()  # generated shared helper
+    assert (out / "sandbox" / "builtins" / "naive" / "manifest.json").is_file()
+
+
+@pytest.mark.parametrize("env", ["flappy_bird", "hearts", "skirmish_crane", "spades", "three_branches"])
+def test_composed_template_loads_every_declared_builtin(env: str):
+    out = compose_template(env)
+    builtin_root = out / "sandbox" / "builtins"
+
+    assert not list(builtin_root.rglob("__pycache__"))
+    assert not list(builtin_root.rglob("*.py[cod]"))
+    for declaration in load_environment(env).meta.builtin_agents:
+        agent_root = builtin_root / declaration.name
+        assert (agent_root / "manifest.json").is_file()
+        assert callable(load_agent(agent_root).act)
 
 
 def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: pytest.MonkeyPatch, capsys):
@@ -164,6 +180,7 @@ def test_composition_ignores_bytecode_in_base_and_overlay(tmp_path: Path, monkey
     monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
     monkeypatch.setattr(compose_mod, "write_base_helpers", lambda *_: None)
     monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
+    monkeypatch.setattr(compose_mod, "_copy_builtin_agents", lambda *_: None)
     monkeypatch.setattr(compose_mod, "_copy_environment_page", lambda *_: None)
     monkeypatch.setattr(compose_mod, "_copy_llm_page", lambda _: None)
     monkeypatch.setattr(compose_mod, "_substitute_docs_url", lambda _: None)
@@ -306,6 +323,7 @@ def test_compose_env_without_canonical_guide_raises(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
     monkeypatch.setattr(compose_mod, "write_base_helpers", lambda *_: None)
     monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
+    monkeypatch.setattr(compose_mod, "_copy_builtin_agents", lambda *_: None)
 
     with pytest.raises(ComposeError, match="no canonical guide"):
         compose_mod.compose_template("stray")
@@ -324,7 +342,7 @@ def test_extra_requirements_are_appended():
     # A template pin and the example's extra pin both end up in the composed file.
     assert "websockets==" in composed
     assert "flappy-bird-gymnasium" not in composed
-    assert "wcwidth==0.2.13" in composed
+    assert "six==1.17.0" in composed
 
 
 def test_inherited_and_overlay_tests_coexist():

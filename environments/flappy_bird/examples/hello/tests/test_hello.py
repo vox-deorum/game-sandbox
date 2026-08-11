@@ -10,7 +10,7 @@ _SEEDS = [0, 1, 2, 3, 4]
 
 
 def test_extra_dependency_is_usable():
-    # wcwidth comes from requirements.extra.txt; a positive width proves it composed in.
+    # six comes from requirements.extra.txt; reaching the helper proves it composed in.
     assert agent.display_width("hello") == 5
 
 

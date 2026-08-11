@@ -69,12 +69,12 @@ Use these commands most often:
 ```console
 python -m sandbox                     # play it yourself in a browser
 python -m sandbox play                # watch your agent in a browser
-python -m sandbox eval --episodes 10  # run ten repeatable headless games
+python -m sandbox eval --episodes 10  # run ten repeatable games without a browser
 ```
 
-`python -m sandbox play` runs the game with every player as an instance of your agent. `python -m sandbox` lets you control the selected player in a browser.
+A **seat** is one position, side, or team scored together, with one or more players. `eval` runs without a browser: your agent takes one seat, and **Naive**, a simple built-in agent, fills the opposing seats that accept student agents. Each complete game is an **episode** and starts from a repeatable condition called a **seed**. `eval` runs five episodes by default and reports your seat's average score.
 
-`eval` runs several headless games. Each complete game is an **episode** and begins from a repeatable condition called a **seed**. It plays five episodes by default and reports the average score. Local results cannot predict the official board, where your agent may face different opponents or settings.
+Use the same seeds before and after a change to compare your results. Local results cannot predict the official board, where your agent may face different opponents or settings.
 
 ## 5. Run the checks
 
@@ -103,17 +103,19 @@ Submit your repository URL through the course website. The server records one ex
 
 ## More local-run options
 
-| Option or command | Use it when you need to |
+| Option or command | What it does |
 | --- | --- |
-| `--vs PATH` | Fill the other seat or seats with the agent at `PATH`. Players in the selected seat keep your current agent. To compare an older version, copy the project files to a folder such as `rivals/v1`, then use `--vs rivals/v1` with `play`, `human`, or `eval`. An absolute project path also works. |
-| `--player N` | Choose player `N` when a game has more than one player. The default is player `0`. |
-| `--companion self` | Control every player in the selected seat yourself when the environment supports it. |
-| `season.json` | Apply the season's gameplay parameters and decision and game limits to `human`, `play`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
-| `--preset NAME` | Use one named gameplay preset for `human` or `play`. It replaces `season.json` gameplay parameters for that command but keeps its time limits. A repeated `--parameter` wins. |
-| `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Override `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change several settings. |
+| `--vs PATH` | Use a saved agent in opposing seats that accept student agents. Human controls, companions, and fixed built-in roles do not change. `PATH` may be the agent folder or its `manifest.json` file. |
+| `--seat N` | Choose seat `N`. Seats start at `0`. Without this option, human play chooses a human seat, while agent play and `eval` choose the first seat that accepts your agent. |
+| `--companion NAME_OR_PATH` | Let an agent control your teammates while you play. Pass a built-in name or agent folder; omit this option, or pass `self`, to control the whole team when allowed. Any required companion is chosen automatically. |
+| `season.json` | Apply the season's gameplay settings and time limits to `human`, `play`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
+| `--preset NAME` | Use one named gameplay preset for `human` or `play`. It replaces the gameplay settings from `season.json` for that command but keeps the time limits. If you also pass `--parameter`, that value takes priority. |
+| `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Change a setting or time limit from `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change several settings. |
 | `python -m sandbox setup` | Prepare the virtual environment without starting a game. |
 | `python -m sandbox play --seed N` | Repeat one starting condition and random generator. |
 | `--help` | List the options for any command. |
+
+To compare an older version, copy its project files to `rivals/v1`, then add `--vs rivals/v1` to `play`, `human`, or `eval`. An absolute path also works.
 
 ## Optional: use the LLM API
 

@@ -27,7 +27,7 @@ Deliberately no pathfinder: turning routes into legal orders is Season 2's core 
 
 `template/agent.py` completed as an intentionally weak starter that demonstrates one stay, one move, and one named-target order through the helpers, so Season 1's design issue stays open. While it sees no enemy it takes one step in `me.direction(observation)`, checked against `action.legal_steps`. Once an enemy is visible it steps at the nearest one and names it. It keeps no memory between turns, so its `reset` is empty. Both sides run the same starter, and the match ends by elimination in 40 to 47 ticks, about 10 rounds.
 
-`template/README.md` completed. The canonical guide `environments/skirmish_crane/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, walking through the starter agent line by line and then teaching the observation, the mask, the helpers, messaging, and local play, with season variants, terrain, abilities, capture, and wasteland among them, described as instructor-controlled.
+`template/README.md` completed. The canonical guide `environments/skirmish_crane/environment.md` finished per [docs/AGENTS.md](../../../docs/AGENTS.md): a student reader with no assumed tooling knowledge, links to published documentation only, walking through the starter agent line by line and then teaching the observation, the mask, the helpers, messaging, and local play, with season variants, terrain, abilities, capture, and wasteland among them, described as instructor-controlled. Composition bundles every metadata-declared builtin from the matching frozen dependency tree. Headless play and `eval` put the selected unrestricted seat against Naive unless `--vs` supplies a saved rival, and they report the mean score across every player in the selected seat.
 
 ### The worked examples
 
@@ -45,6 +45,7 @@ Two, both kept internal, and `PUBLISHED_EXAMPLES` stays empty. Step 7 adds banne
 - Vanguard tests: the FSMs behave on constructed observations, vanguard beats naive on every pinned skirmish seed from both seats and in the pinned Season 3 army battles, and every order it submits is mask-legal.
 - Marcher tests, kept light: every order is mask-legal, and a match between marchers ends by elimination well short of the round cap. No beats-naive claim.
 - Compose smoke: the composed template and each example build and their inherited tests pass.
+- Local evaluation runs real agent instances for every player, uses Naive for unrestricted opponents when `--vs` is absent, and never falls through to a human input binding.
 - The docs CI lane green with the finished guide at its virtual path.
 
 ## Done when

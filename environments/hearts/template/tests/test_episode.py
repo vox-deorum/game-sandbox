@@ -68,6 +68,6 @@ def test_run_headless_accepts_a_rival_snapshot(tmp_path: Path):
     for name in ("agent.py", "manifest.json"):
         shutil.copy(REPO_ROOT / name, rival / name)
 
-    score = run_headless(seed=SEED, max_steps=None, player=0, vs=rival)
+    score = run_headless(seed=SEED, max_steps=None, seat=0, vs=rival)
 
     assert -26 <= score <= 0

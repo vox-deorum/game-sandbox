@@ -1,9 +1,8 @@
 """Evaluate your agent over seeded headless episodes.
 
 This command deliberately reuses ``sandbox.play.run_headless``. Evaluation therefore shares the
-same injected environment entry, agent loader, timeout accounting, and legal default-action behavior
-as browser local play without starting the loopback relay. ``--vs`` flows through to the same seat
-filling as ``python -m sandbox play``.
+same environment entry, agent loader, timeout accounting, seat filling, and Naive baseline as
+headless local play without starting the loopback relay.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import argparse
 
 from sandbox import play
-from sandbox.harness.environment import resolve_parameters
+from sandbox.harness.environment import resolve_layout, resolve_parameters
 from sandbox.play import parse_rival, run_headless
 from sandbox.season import announce, load_season_settings, parse_parameter_overrides
 
@@ -21,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--seeds", type=int, nargs="+", help="explicit list of seeds")
     group.add_argument("--episodes", type=int, default=5, help="run seeds 0..N-1 (default 5)")
-    parser.add_argument("--player", type=int, default=0, help="player index to evaluate (default 0)")
+    parser.add_argument("--seat", type=int, help="seat index; defaults to the first unrestricted seat")
     parser.add_argument(
         "--vs",
         metavar="PATH",
@@ -64,10 +63,15 @@ def main(argv: list[str] | None = None) -> int:
         else season.game_limit_ms
     )
     announce(season)
-    player_ids = play.possible_players(parameters)
-    if args.player < 0 or args.player >= len(player_ids):
-        parser.error(f"--player must name one of 0..{len(player_ids) - 1}")
-    rival = parse_rival(parser, args.vs, parameters)
+    layout = resolve_layout(play.META, parameters)
+    try:
+        seat = args.seat if args.seat is not None else play.default_agent_seat_index(layout)
+        chosen = play.selected_seat(seat, parameters)
+    except ValueError as error:
+        parser.error(str(error))
+    if chosen.restricted_builtin is not None:
+        parser.error(f"seat {seat} is restricted to builtin {chosen.restricted_builtin!r}")
+    rival = parse_rival(parser, args.vs, seat, parameters)
 
     seeds = args.seeds if args.seeds is not None else list(range(args.episodes))
     scores: list[float] = []
@@ -75,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         score = run_headless(
             seed=seed,
             max_steps=None,
-            player=args.player,
+            seat=seat,
             vs=rival,
             parameters=parameters,
             decision_limit_ms=decision_limit_ms,

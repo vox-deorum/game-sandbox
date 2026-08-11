@@ -46,7 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: Import lines that prove an interpreter has what a command needs. The runtime deps cover
 #: play/eval/human; ``test`` additionally needs pytest, so each command probes for its own deps —
 #: otherwise ``test`` could run under an interpreter that lacks pytest instead of bootstrapping.
-_RUNTIME_PROBE = "import pettingzoo, gymnasium, jsonschema, websockets"
+_RUNTIME_PROBE = "import pettingzoo, gymnasium, jsonschema, websockets, wcwidth"
 _TEST_PROBE = "import pettingzoo, gymnasium, pytest"
 _LLM_PROBE = "import openai, dotenv"
 
