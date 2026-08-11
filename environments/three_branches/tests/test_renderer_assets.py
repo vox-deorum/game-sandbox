@@ -12,22 +12,6 @@ ASSET_ENTRY = re.compile(
     r"width:\s*(?P<width>\d+),\s*height:\s*(?P<height>\d+),\s*"
     r"tintable:\s*(?P<tintable>true|false),"
 )
-SUPERSEDED_SOURCES = {
-    "bell-ringing-source-v1.png",
-    "compact-body-source.png",
-    "hearth-lit-source-v1.png",
-    "lantern-lit-source-v1.png",
-    "pump-flowing-source-v1.png",
-    "shrine-tended-source-v1.png",
-    "villager-detailed-a-source.png",
-    "villager-detailed-b-source.png",
-    "villager-detailed-c-source.png",
-    "villager-simple-a-source.png",
-    "villager-simple-b-source.png",
-    "villager-simple-c-source.png",
-    "visitor-detailed-source.png",
-    "visitor-simple-source.png",
-}
 
 
 def manifest_assets() -> dict[str, tuple[str, int, int, bool]]:
@@ -61,7 +45,7 @@ def test_renderer_asset_manifest_files_have_the_declared_formats_and_sizes() -> 
 def test_renderer_asset_manifest_preserves_source_art() -> None:
     declared_sources = {source for source, _, _, _ in manifest_assets().values()}
     actual_sources = {path.name for path in SOURCE_ART.iterdir() if path.is_file()}
-    assert actual_sources == declared_sources | SUPERSEDED_SOURCES | {"thumbnail-source.png"}
+    assert actual_sources == declared_sources | {"thumbnail-source.png"}
 
 
 def test_character_assets_match_the_declared_layer_contract() -> None:
