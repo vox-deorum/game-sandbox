@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into the [Season 4](../pedagogy.md#season-4-village-life-week-4) and [Season 5](../pedagogy.md#season-5-the-conversation-week-5) starter material: one worked example named `neighbor`. It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
+Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into one worked example named `neighbor`, which serves the [Season 4](../pedagogy.md#season-4-village-life-week-4) and [Season 5](../pedagogy.md#season-5-the-conversation-week-5) starter material. It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
 
 ## Why this is its own seam
 
@@ -10,7 +10,7 @@ Routines and dialogue ship together: each villager continues its day while it ta
 
 ## The agent the library serves
 
-Season 4 uses `cast_10` with daynight on. Each villager derives a role from its id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when the visitor comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the same interface a student's design replaces.
+Season 4 uses `cast_10` with daynight on. Each villager derives a role from its id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when the visitor comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the interface that students replace with their own design.
 
 1. **Dawn:** leave home with `go_to`.
 2. **Morning:** work at stalls, pump, plots, board, and repair bench with `tend` and `wander`.
@@ -78,7 +78,7 @@ Add `("three_branches", "neighbor")` to `scripts/tests/test_compose.py`'s exampl
 - Per-routine constructed-observation tests cover routed distance reduction, still in-reach tending, bench rest, hearing-range gathering, greeting, follow bands, avoidance distance, still watch and sleep, and non-`None` wandering.
 - A full Season 4 fuzz run keeps every action in space and verifies that every commanded use is taken by the engine.
 - Routing reaches every named place from every home over pinned seeds, uses cell helpers rather than observation-footprint geometry, and builds once in reset. Report reset and per-tick costs separately.
-- A pinned Season 4 day-arc test absolutely requires every villager to leave home, reach three districts, use a prop in each working phase, and return home by night.
+- A pinned Season 4 day-arc test requires every villager to leave home, reach three districts, use a prop in each working phase, and return home by night.
 - Fake-proxy dialogue tests cover cross-tick requests, direct villager-to-visitor delivery through `speech.to`, exhaustion and error fallbacks, reply truncation, waiting-line replacement, and leaving hearing range or moving behind a wall while a request or waiting line exists.
 - `neighbor` completes healthy days with LLM on and off, on both plans, within decision and episode budgets.
 

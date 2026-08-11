@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands, implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review live browser play against a running cast and local play.
+Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands by implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review both live browser play against a running cast and local play.
 
 ## What to build
 
@@ -32,4 +32,4 @@ Make the visitor playable through `scripts/play.py` and the template launcher, b
 
 ## Done when
 
-A human plays the visitor live and locally with designed locomotion, palette, preview, and chat. A quiet connected visitor is never reclaimed, and the bare full browser e2e suite passes.
+A human plays the visitor live and locally with the designed locomotion, palette, preview, and chat. A quiet connected visitor is never reclaimed, and the bare full browser e2e suite passes.

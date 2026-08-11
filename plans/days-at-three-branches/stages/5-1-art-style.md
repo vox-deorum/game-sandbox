@@ -2,11 +2,11 @@
 
 Status: planned. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating character sheet.
 
-Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
+Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
 ## The design: Hearthside Ink
 
-Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, flatter woodblock value grouping, parchment ground, quiet water and reeds, warm timber, and deliberate small marks. It is an exact 90 degree top-down RPG plan view where each tile is one village cell, with no perspective, isometric face, or separate interiors.
+Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, flatter woodblock value grouping, parchment ground, quiet water and reeds, warm timber, and deliberate small marks. The game uses an exact 90 degree top-down RPG plan view. Each tile is one village cell, with no perspective, isometric face, or separate interiors.
 
 Tiles are high-resolution flat shapes, not pixel art. The approval fixes palette, material, value grouping, and readability, but not a canonical layout, building placement, or scenery placement. Every seed remains a valid [village.md](../village.md) layout.
 
@@ -55,7 +55,7 @@ Keep step 3's shared tile-map pipeline. Build static terrain, upper walls, seman
 
 Reconcile characters, prop-state treatments, roof alpha, phase grade, emissives, and crane dressing by stable id. The shared Pixi ticker smooths position, heading, walk frames, sustained effects, and crane motion between recorded ticks.
 
-Resolve state treatments once per recorded tick. Between ticks, transform the cast and sustained effects without rebuilding art, and move collision bodies with their art. `presentation.json` owns the natural one-second transition; paced hosts scale it to replay or watch cadence. An unpaced human session measures the gap between states, caps it at the natural duration, and passes no cadence. Keep the frame loop briefly alive after settling, reuse masks, and load textures only through the renderer-local manifest.
+Resolve state treatments once per recorded tick. Between ticks, transform the cast and sustained effects without rebuilding art, and move collision bodies with their art. `presentation.json` owns the natural one-second transition. Paced hosts scale it to replay or watch cadence. An unpaced human session measures the gap between states, caps it at the natural duration, and passes no cadence. Keep the frame loop briefly alive after settling, reuse masks, and load textures only through the renderer-local manifest.
 
 Draw world layers in this order:
 
@@ -99,7 +99,7 @@ With `daynight`, the overlay's dawn, morning, midday, evening, or night phase se
 
 ### Assets and thumbnail
 
-The local manifest is the only runtime loading contract. Keep high-resolution originals, including superseded variants, in `environments/three_branches/renderer/source-art/` and optimised runtime files in `environments/three_branches/renderer/assets/`. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
+The local manifest is the only runtime loading contract. Keep high-resolution originals, including superseded variants, in `environments/three_branches/renderer/source-art/`. Keep optimised runtime files in `environments/three_branches/renderer/assets/`. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
 
 `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants and edges, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 

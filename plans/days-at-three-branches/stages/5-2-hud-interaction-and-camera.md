@@ -6,7 +6,7 @@ Part of [the plan](../README.md). This second signed part of build-order step 5 
 
 ## Why this is its own seam
 
-Step 6 implements only the owner-approved input design. Final art and the fixed HUD determine the camera's zoom limits.
+Step 6 implements only the owner-approved input design. The final art and fixed HUD set the camera's zoom limits.
 
 ## Ordered path
 
@@ -16,7 +16,7 @@ Step 6 implements only the owner-approved input design. Final art and the fixed 
 4. Tune and test the step 3 camera against the fixture and final art.
 5. Record the approved step 6 input specification in this file.
 
-The approved information layer refines or replaces step 3's tick, phase, and bell chrome, adds character identification, speech bubbles, and a chat transcript. Its chat mockup shows a recipient selector with Broadcast and the currently permitted character-id addressees. A broadcast and a direct line both require hearing range and an unblocked line. Watchers and replay viewers see every delivered line. The playing visitor sees broadcasts delivered to it and direct lines sent to or from it. [The environment speech contract](../environment.md#speech) is authoritative.
+The approved information layer refines or replaces step 3's tick, phase, and bell chrome. It adds character identification, speech bubbles, and a chat transcript. Its chat mockup shows a recipient selector with Broadcast and the currently permitted character-id addressees. Broadcasts and direct lines both require hearing range and an unblocked line. Watchers and replay viewers see every delivered line. The playing visitor sees broadcasts delivered to it and direct lines sent to or from it. [The environment speech contract](../environment.md#speech) is authoritative.
 
 The approved step 6 specification covers locomotion affordances, the expression palette with nine emotes plus use, and an informational use-preview highlight. The preview applies the environment's reach-plus-unblocked-line selection rule.
 
