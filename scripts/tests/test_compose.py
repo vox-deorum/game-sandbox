@@ -420,5 +420,5 @@ def test_published_example_readmes_describe_the_runnable_checkout():
     for env, name in list_published_examples():
         readme = (compose_example(env, name) / "README.md").read_text(encoding="utf-8")
 
-        assert "python -m sandbox play" in readme
+        assert "python -m sandbox watch" in readme
         assert "scripts/compose.py" not in readme

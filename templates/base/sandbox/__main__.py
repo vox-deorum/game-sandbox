@@ -1,16 +1,16 @@
 """One command to set up, run, and human-test your agent: ``python -m sandbox``.
 
     python -m sandbox            # set up if needed, then play it yourself
-    python -m sandbox human      # control a player in your browser
-    python -m sandbox play       # watch YOUR agent in your browser
+    python -m sandbox play       # control a player in your browser
+    python -m sandbox watch      # watch YOUR agent in your browser
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
     python -m sandbox llm [tier] # smoke-test small, medium, or large (default: small)
     python -m sandbox setup      # just install dependencies into .venv
 
 The first time you run any of these from a fresh clone, it creates a local ``.venv`` and installs
-the pinned dependencies for you, then runs your command inside it — so there is no separate
-install step. Extra arguments are passed straight through, e.g. ``python -m sandbox play
+the pinned dependencies for you, then runs your command inside it, so there is no separate
+install step. Extra arguments are passed straight through, e.g. ``python -m sandbox watch
 --headless --seed 7`` or ``python -m sandbox test -k manifest``.
 
 This module imports only the standard library, so it works before any dependencies exist.
@@ -28,16 +28,16 @@ _USAGE = """\
 usage: python -m sandbox [command] [args...]
 
 commands:
-  (none)   control a player in your browser (same as `human`)
-  human    control a player in your browser
-  play     watch YOUR agent in your browser
+  (none)   control a player in your browser (same as `play`)
+  play     control a player in your browser
+  watch    watch YOUR agent in your browser
   eval     run several seeded episodes and print the mean
   test     run the checks (pytest)
   llm      smoke-test small, medium, or large (default: small)
   setup    install dependencies into .venv
 
-Extra args pass straight through, e.g. `python -m sandbox play --seed 7` or
-`python -m sandbox play --decision-limit-ms 500`. Local episode commands also use an optional
+Extra args pass straight through, e.g. `python -m sandbox watch --seed 7` or
+`python -m sandbox watch --decision-limit-ms 500`. Local episode commands also use an optional
 `season.json` beside manifest.json.\
 """
 
@@ -109,10 +109,11 @@ def _run(module_args: list[str], probe: str) -> int:
 
 #: command -> (argv run under the resolved runtime, the probe that runtime must satisfy). ``setup``
 #: is special-cased in ``main`` (it builds the runtime rather than running under it), and a bare
-#: ``python -m sandbox`` — or a leading flag — maps to ``human``.
+#: ``python -m sandbox``, or a leading flag, maps to ``play``. The launcher's own positional mode
+#: names the controller (``human`` or ``agent``); the command names what you do (play or watch).
 _DISPATCH = {
-    "human": (["-m", "sandbox.play", "human"], _RUNTIME_PROBE),
-    "play": (["-m", "sandbox.play", "agent"], _RUNTIME_PROBE),
+    "play": (["-m", "sandbox.play", "human"], _RUNTIME_PROBE),
+    "watch": (["-m", "sandbox.play", "agent"], _RUNTIME_PROBE),
     "eval": (["-m", "sandbox.evaluate"], _RUNTIME_PROBE),
     "test": (["-m", "pytest"], _TEST_PROBE),
     "llm": (["-m", "sandbox.llm_example"], _LLM_PROBE),
@@ -130,11 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     # A bare `python -m sandbox` plays it yourself; a leading known command selects the action,
     # and everything after it passes straight through to the underlying tool.
     if not argv:
-        command, rest = "human", []
+        command, rest = "play", []
     elif argv[0] in _COMMANDS:
         command, rest = argv[0], argv[1:]
     elif argv[0].startswith("-"):
-        command, rest = "human", argv  # `python -m sandbox --seed 7` -> human with flags
+        command, rest = "play", argv  # `python -m sandbox --seed 7` -> play with flags
     else:
         print(f"unknown command {argv[0]!r}\n", file=sys.stderr)
         print(_USAGE, file=sys.stderr)

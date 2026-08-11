@@ -1,7 +1,7 @@
 """Your agent.
 
 The template starts as a working agent: it bids one trick, then always plays its lowest-ranked
-legal card. Run ``python -m sandbox play`` to watch it and ``python -m sandbox test`` to check it;
+legal card. Run ``python -m sandbox watch`` to watch it and ``python -m sandbox test`` to check it;
 both work before you change anything. Your job starts at the ``TODO(you)`` comment inside ``act``.
 
 Spades in one paragraph: four players in two partnerships, you and the player across from you (player

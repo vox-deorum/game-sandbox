@@ -5,12 +5,13 @@ Banner is the Season 4 starting point: a library of tactical blocks and a side t
 Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder:
 
 ```console
-python -m sandbox play  # watch Banner play both sides
-python -m sandbox test  # run the provided checks
-python -m sandbox eval  # compare Banner with Naive
+python -m sandbox play   # command a side yourself in your browser
+python -m sandbox watch  # watch Banner take on Naive
+python -m sandbox test   # run the provided checks
+python -m sandbox eval   # compare Banner with Naive
 ```
 
-`eval` runs repeatable matches against **Naive**, a simple built-in opponent, and reports Banner's average team score. The [`environment.md`](environment.md) guide explains rivals, presets, and the other command options.
+**Naive** is a simple built-in opponent. It holds the other side in `watch` and `eval`, and `eval` reports Banner's average team score over repeatable matches. The [`environment.md`](environment.md) guide explains rivals, presets, and the other command options.
 
 ## How Banner works
 

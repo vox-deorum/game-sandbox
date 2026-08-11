@@ -2,7 +2,7 @@
 
 Flappy Bird is a one-button game. A small bird constantly falls, and pressing the button makes it flap upward. Your agent controls this button and tries to fly through gaps in pipes without crashing. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Flappy Bird.
 
-After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox play`, then follow [Your first agent](#your-first-agent).
+After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox watch`, then follow [Your first agent](#your-first-agent).
 
 ## How the game works
 
@@ -40,7 +40,7 @@ class Agent:
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch it play, in your browser
+python -m sandbox watch   # watch it play, in your browser
 python -m sandbox eval    # play several seeded episodes and report the mean score
 python -m sandbox test    # run the checks
 ```
@@ -83,7 +83,7 @@ The module provides these helpers and constants:
 
 ## Your first improvement
 
-The starting agent aims for the middle of the screen instead of the next pipe gap. For your first improvement, add `next_gap_center` to the import, replace `screen_height(observation) / 2` with `next_gap_center(observation)`, then run `python -m sandbox play`.
+The starting agent aims for the middle of the screen instead of the next pipe gap. For your first improvement, add `next_gap_center` to the import, replace `screen_height(observation) / 2` with `next_gap_center(observation)`, then run `python -m sandbox watch`.
 
 ```python
 target_y = next_gap_center(observation)

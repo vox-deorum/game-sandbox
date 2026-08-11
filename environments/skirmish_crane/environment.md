@@ -6,15 +6,16 @@ Most importantly: every unit runs a separate `Agent` instance with its own state
 
 ## Start with the template
 
-Complete the [Getting Started guide](../../docs/students/getting-started.md) first, then open `agent.py` in the template. An **episode** is one complete match. As you edit, run these three commands from the template folder:
+Complete the [Getting Started guide](../../docs/students/getting-started.md) first, then open `agent.py` in the template. An **episode** is one complete match. As you edit, run these commands from the template folder:
 
 ```console
-python -m sandbox play  # watch your agent play both sides
-python -m sandbox test  # run the provided checks
-python -m sandbox eval  # compare your agent with Naive
+python -m sandbox play   # command a side yourself in your browser
+python -m sandbox watch  # watch your agent take on Naive
+python -m sandbox test   # run the provided checks
+python -m sandbox eval   # compare your agent with Naive
 ```
 
-`eval` runs repeatable matches against **Naive**, a simple built-in opponent, and reports your selected side's average team score. Use the same seeds before and after a change. Local results cannot predict a leaderboard result.
+**Naive** is a simple built-in opponent. It holds the other side in `watch` and `eval`, so both commands measure the same matchup. `eval` runs repeatable matches and reports your selected side's average team score. Use the same seeds before and after a change. Local results cannot predict a leaderboard result.
 
 ## Make an order
 
@@ -66,7 +67,7 @@ if me.unit_type(observation) == "archer":
     return action.stay(nearest["unit_id"], observation)
 ```
 
-This change is deliberately narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `play`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster, units, zone` gives you longer routes, full-roster coordination, fixed unit stats, and capture-zone geometry.
+This change is deliberately narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `watch`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster, units, zone` gives you longer routes, full-roster coordination, fixed unit stats, and capture-zone geometry.
 
 Try one experiment at a time:
 
@@ -76,7 +77,7 @@ Try one experiment at a time:
 
 Change one behavior at a time and watch a complete recording, not only the final score. Look for the first contact, the tiles where units become targets, and whether a unit arrives with allies nearby. A change that wins one short fight can still lose a match by leaving a capture zone empty or exposing the archer.
 
-`python -m sandbox eval --vs rivals/v1` puts the saved rival on the enemy side while your current agent controls the selected side. Add `--seat 1` to switch sides. Before developing these ideas further, read the rules below. When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md).
+`python -m sandbox eval --vs rivals/v1` puts the saved rival on the enemy side in place of Naive, while your current agent controls the selected side. Add `--seat 1` to switch sides. Before developing these ideas further, read the rules below. When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md).
 
 ## Match flow
 
@@ -205,9 +206,9 @@ Your submission uses the settings of the season you submit to. On your computer,
 
 Field extent is the hex distance from center to edge. All six included presets use a capture target of 200 and a round cap of 1000. Season settings and local overrides can change either. Messaging is controlled separately by the season, so it is always available in local runs. Season 6 adds wasteland, whose entry cost cannot kill a unit by itself.
 
-The local start dialog lets you choose any of the six seasons. For example, run `python -m sandbox play --preset season_4`.
+The local start dialog lets you choose any of the six seasons. For example, run `python -m sandbox watch --preset season_4`.
 
-`season.json`, beside `manifest.json`, supplies local settings automatically to `play`, `human`, and `eval`. It can set gameplay parameters and decision and game time limits. Submitted matches use the stored settings for their season.
+`season.json`, beside `manifest.json`, supplies local settings automatically to `play`, `watch`, and `eval`. It can set gameplay parameters and decision and game time limits. Submitted matches use the stored settings for their season.
 
 For one command, a preset replaces the gameplay parameters in `season.json` but keeps its decision and game time limits. Repeated `--parameter` flags override gameplay settings, and `--decision-limit-ms` and `--game-limit-ms` override their respective time limits.
 

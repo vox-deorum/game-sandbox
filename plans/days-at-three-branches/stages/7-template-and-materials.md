@@ -62,4 +62,4 @@ The example inventory assertion in `scripts/tests/test_compose.py` gains `("thre
 
 ## Done when
 
-A student-shaped reader composes the template, runs the green pin tests, watches a local day with `python -m sandbox play`, and plays the visitor beside their own villagers, following the published guide alone. The guide reads complete against the shipped behavior, and the pins and budgets hold.
+A student-shaped reader composes the template, runs the green pin tests, watches a local day with `python -m sandbox watch`, and plays the visitor beside their own villagers, following the published guide alone. The guide reads complete against the shipped behavior, and the pins and budgets hold.

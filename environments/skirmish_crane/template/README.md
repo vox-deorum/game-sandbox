@@ -5,12 +5,13 @@ Edit `agent.py` to build one unit's behavior for Skirmish at Crane Reach. Every 
 Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder as you work:
 
 ```console
-python -m sandbox play  # watch your agent play both sides
-python -m sandbox test  # run the provided checks
-python -m sandbox eval  # compare your agent with Naive
+python -m sandbox play   # command a side yourself in your browser
+python -m sandbox watch  # watch your agent take on Naive
+python -m sandbox test   # run the provided checks
+python -m sandbox eval   # compare your agent with Naive
 ```
 
-`eval` runs repeatable matches against **Naive**, a simple built-in opponent, and reports your side's average score. The [`environment.md`](environment.md) guide explains rivals, presets, and the other command options.
+**Naive** is a simple built-in opponent. It holds the other side in `watch` and `eval`, and `eval` reports your side's average score over repeatable matches. The [`environment.md`](environment.md) guide explains rivals, presets, and the other command options.
 
 ## Files you will use
 

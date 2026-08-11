@@ -45,7 +45,7 @@ Resolve commit → Static check → Build → Load check → Ready
 | Build | Combine your code with the season's fixed packages. It cannot install new packages. | Usually temporary and not caused by your files. Try again, then ask your instructor if it continues. |
 | Load check | Import your module and create the agent class in an isolated sandbox. | An import error, missing class or required method, or an error while creating the agent. |
 
-The process stops at the first failure and shows the reason. Validation does not play a game, so a logic error inside `act` can still pass. Use `python -m sandbox play`, `eval`, and `test` to catch that.
+The process stops at the first failure and shows the reason. Validation does not play a game, so a logic error inside `act` can still pass. Use `python -m sandbox watch`, `eval`, and `test` to catch that.
 
 ## Repository rules
 
@@ -87,4 +87,4 @@ Here is what to know about the season's boards and official games:
 - Official matches run on the server's schedule, and you can watch their replays on the website.
 - While the season's play window is open, watch, play, and rating surfaces show anonymized agents under neutral numbered labels. See [Seasons](../specs/seasons.md) for the release rules.
 
-`python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board. A downloaded `season.json` applies only to local episode commands. The server always uses its stored season. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.
+`python -m sandbox watch` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board. A downloaded `season.json` applies only to local episode commands. The server always uses its stored season. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.

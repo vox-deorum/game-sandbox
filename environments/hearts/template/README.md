@@ -37,21 +37,21 @@ Use these commands as you work:
 
 ```console
 python -m sandbox            # play one chosen position yourself; your agent runs the other three
-python -m sandbox play       # watch separate copies of your agent play all four positions
-python -m sandbox play --headless  # run one game against Naive without a browser
+python -m sandbox watch      # watch your agent play three copies of Naive
+python -m sandbox watch --headless  # run that same game without a browser
 python -m sandbox eval       # compare your agent with Naive over repeatable games
-python -m sandbox play --decision-limit-ms 500  # override the decision limit for this run
+python -m sandbox watch --decision-limit-ms 500  # override the decision limit for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
+When `season.json` is present beside `manifest.json`, `play`, `watch`, and `eval` use its settings automatically.
 
 Useful options:
 
-- `--seed N`, for example `python -m sandbox play --seed 7`, repeats the same game.
-- `python -m sandbox human --seat 2` lets you play player 2. In Hearts, each seat contains one player.
-- `--vs rivals/v1` uses a saved rival in the other positions. `play` and `eval` keep your current agent in the selected position; `human` keeps the position you control. The getting started guide explains how to make the rival folder.
+- `--seed N`, for example `python -m sandbox watch --seed 7`, repeats the same game.
+- `python -m sandbox play --seat 2` lets you play player 2. In Hearts, each seat contains one player.
+- `--vs rivals/v1` uses a saved rival in the other positions. `watch` and `eval` keep your current agent in the selected position; `play` keeps the position you control. The getting started guide explains how to make the rival folder.
 - `eval` reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. Use it to compare changes against the same seeds, not to predict leaderboard results.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.

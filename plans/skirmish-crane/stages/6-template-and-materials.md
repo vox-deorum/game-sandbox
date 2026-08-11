@@ -50,4 +50,4 @@ Two, both kept internal, and `PUBLISHED_EXAMPLES` stays empty. Step 7 adds banne
 
 ## Done when
 
-A student-shaped user composes the template, runs `python -m sandbox play` to watch and `python -m sandbox human` to play in the browser, runs the green pin tests, and watches vanguard beat naive on the pinned seeds. This step completes after step 5 supplies that human-play behavior. The guide reads complete against the shipped behavior, and every test above is green.
+A student-shaped user composes the template, runs `python -m sandbox watch` to watch and `python -m sandbox play` to play in the browser, runs the green pin tests, and watches vanguard beat naive on the pinned seeds. This step completes after step 5 supplies that human-play behavior. The guide reads complete against the shipped behavior, and every test above is green.

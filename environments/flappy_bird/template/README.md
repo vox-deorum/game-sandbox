@@ -35,14 +35,14 @@ The first run creates `.venv`, installs the pinned packages, and opens a game yo
 
 ```console
 python -m sandbox            # play it yourself
-python -m sandbox play       # run YOUR agent in your browser (add --headless to run without opening the browser)
+python -m sandbox watch      # run YOUR agent in your browser (add --headless to run without opening the browser)
 python -m sandbox eval       # run several seeded episodes and report the mean score
-python -m sandbox play --parameter pipe_gap=120  # override one setting for this run
+python -m sandbox watch --parameter pipe_gap=120  # override one setting for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
+When `season.json` is present beside `manifest.json`, `play`, `watch`, and `eval` use its settings automatically.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 

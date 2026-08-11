@@ -2,7 +2,7 @@
 
 Hearts is a four-player card game where your goal is to take as few penalty points as possible. Your agent controls one player. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
 
-After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox play`, then follow [Your first agent](#your-first-agent).
+After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox watch`, then follow [Your first agent](#your-first-agent).
 
 ## How the game works
 
@@ -66,13 +66,14 @@ class Agent:
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play                 # watch separate copies of your agent play all four positions
+python -m sandbox play                 # play one position yourself
+python -m sandbox watch                # watch your agent play three copies of Naive
 python -m sandbox eval                 # compare your agent with Naive over repeatable games
 python -m sandbox eval --vs rivals/v1  # play against a saved rival
 python -m sandbox test                 # run the checks
 ```
 
-`eval` plays your selected position against three copies of **Naive**, a simple built-in agent. One episode is a complete 13-trick deal. `eval` reports the [higher-is-better reward](#scoring-and-rewards): `-2` is better than `-10` because it is closer to zero. Compare the same seeds before and after a change.
+`watch` and `eval` both play your selected position against three copies of **Naive**, a simple built-in agent. One episode is a complete 13-trick deal. `eval` reports the [higher-is-better reward](#scoring-and-rewards): `-2` is better than `-10` because it is closer to zero. Compare the same seeds before and after a change.
 
 ## Scoring and rewards
 

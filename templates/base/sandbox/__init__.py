@@ -6,7 +6,7 @@ a one-command helper (``python -m sandbox``) that sets up dependencies and runs 
 file you implement lives at the repository root: ``agent.py``.
 
     python -m sandbox            # set up if needed, then play it yourself
-    python -m sandbox play       # set up if needed, then run YOUR agent in a window
+    python -m sandbox watch      # set up if needed, then run YOUR agent in a window
     python -m sandbox test       # set up if needed, then run the checks
 
 This package imports nothing heavy on its own, so ``python -m sandbox`` runs on a fresh clone

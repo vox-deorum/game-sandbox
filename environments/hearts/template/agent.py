@@ -1,7 +1,7 @@
 """Your agent.
 
 The template starts as a working agent: it plays the lowest-ranked card that is legal right now.
-Run ``python -m sandbox play`` to watch it and ``python -m sandbox test`` to check it; both work
+Run ``python -m sandbox watch`` to watch it and ``python -m sandbox test`` to check it; both work
 before you change anything. Your job starts at the ``TODO(you)`` comment inside ``act``.
 
 Hearts in one paragraph: four players, follow suit if you can, you cannot lead a heart until one

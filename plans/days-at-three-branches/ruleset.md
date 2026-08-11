@@ -39,13 +39,13 @@ Every match plays in Three Branches, generated from the match seed under fixed g
 
 Every cell has a ground class. The classes, their speed limits, their passability, and whether they block sight live in `rules.json`, so a new class is a data entry:
 
-| Ground                                       | Speed limit     | Sight       |
-| -------------------------------------------- | --------------- | ----------- |
-| Road, footpaths, and crossings               | 1.0 m per tick  | carries     |
-| Open ground, building floors, and doorways   | 0.75 m per tick | carries     |
-| Fields and reed banks                        | 0.5 m per tick  | carries     |
-| Water                                        | impassable      | carries     |
-| Building walls                               | impassable      | blocks      |
+| Ground                                     | Speed limit     | Sight   |
+| ------------------------------------------ | --------------- | ------- |
+| Road, footpaths, and crossings             | 1.0 m per tick  | carries |
+| Open ground, building floors, and doorways | 0.75 m per tick | carries |
+| Fields and reed banks                      | 0.5 m per tick  | carries |
+| Water                                      | impassable      | carries |
+| Building walls                             | impassable      | blocks  |
 
 The full static layout is standing knowledge for every character: the ground grid with its crossings, walls, doorways, and floors, the semantic buildings, the scenery, and every interactive-prop placement. What changes during play, characters and interactive-prop states, must be perceived.
 
@@ -89,14 +89,14 @@ Props and scenery are solid and never block sight. Only interactive props partic
 
 Every character, NPC or visitor, has the same profile:
 
-| Property    | Value                                                          |
-| ----------- | -------------------------------------------------------------- |
-| Body radius | 0.4 m                                                          |
-| Speed       | commanded as a fraction, 0 to 1 of the ground's limit          |
-| Running     | above 0.5 m per tick reads as running, at or below as walking  |
-| Vision      | 120 degree cone on the heading, out to 12 m                    |
-| Hearing     | 6 m, all around, and the range a spoken line carries           |
-| Prop reach  | 1.5 m                                                          |
+| Property    | Value                                                         |
+| ----------- | ------------------------------------------------------------- |
+| Body radius | 0.4 m                                                         |
+| Speed       | commanded as a fraction, 0 to 1 of the ground's limit         |
+| Running     | above 0.5 m per tick reads as running, at or below as walking |
+| Vision      | 120 degree cone on the heading, out to 12 m                   |
+| Hearing     | 6 m, all around, and the range a spoken line carries          |
+| Prop reach  | 1.5 m                                                         |
 
 A cast of N runs ids npc_0 through npc_N-1, fixed for the whole match; the visitor's id is visitor. Each NPC starts the day on the floor of its home facing the doorway, housemates spaced at least a body diameter apart, and the visitor starts at the road spawn, facing into the village along the road; everyone starts still, expression none. The engine assigns ids and homes; roles, personalities, and relationships are the submission's to author.
 

@@ -15,7 +15,7 @@ From the composed repository, first make the smoke call, then run one complete l
 ```console
 cd build/examples/hearts/oracle
 python -m sandbox llm small
-python -m sandbox play --headless --seed 7
+python -m sandbox watch --headless --seed 7
 ```
 
 For an official check, commit and push the composed repository without `.env`, then submit it to the same LLM-enabled season. The official session provides its own endpoint and player key.

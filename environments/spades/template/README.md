@@ -37,22 +37,22 @@ Use these commands as you work:
 
 ```console
 python -m sandbox            # control your partnership yourself; your agent runs the opponents
-python -m sandbox play       # watch separate copies of your agent play all four positions
-python -m sandbox play --headless  # run one game against Naive without a browser
+python -m sandbox watch      # watch your partnership play the Naive partnership
+python -m sandbox watch --headless  # run that same game without a browser
 python -m sandbox eval       # compare your partnership with Naive over repeatable games
-python -m sandbox play --parameter seat_plan=solo  # override one setting for this run
+python -m sandbox watch --parameter seat_plan=solo  # override one setting for this run
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-When `season.json` is present beside `manifest.json`, `human`, `play`, and `eval` use its settings automatically.
+When `season.json` is present beside `manifest.json`, `play`, `watch`, and `eval` use its settings automatically.
 
 These options use the default `partnership` setting:
 
-- `play --seed 7` repeats the same game.
-- `python -m sandbox human --seat 1` lets you play the other partnership.
-- Human play lets you control both partners by default. Add `--companion naive` or an agent folder to control one player while that agent controls your partner.
-- `--vs rivals/v1` uses a saved rival for the other partnership. `play` keeps your current agent on your partnership; `human` keeps your controls and companion. The option also works with `eval`. The getting started guide explains how to make the rival folder.
+- `watch --seed 7` repeats the same game.
+- `python -m sandbox play --seat 1` lets you play the other partnership.
+- Playing by hand lets you control both partners by default. Add `--companion naive` or an agent folder to control one player while that agent controls your partner. The opposing partnership runs your own agent, so you can play against what you built.
+- `--vs rivals/v1` uses a saved rival for the other partnership. `watch` keeps your current agent on your partnership; `play` keeps your controls and companion. The option also works with `eval`. The getting started guide explains how to make the rival folder.
 - `eval` reports a higher-is-better team score. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.

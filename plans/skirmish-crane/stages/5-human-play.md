@@ -47,7 +47,7 @@ Both local launchers support whole-seat play through a `self` companion value. S
 
 For `npm run play -- skirmish_crane human`, `scripts/play.py` resolves a seat through `--seat` and defaults a wide human seat's other members to the built-in naive companion. `--companion` continues to accept `self`, `naive`, or a manifest path, and `self` binds every player in the seat as external.
 
-For `python -m sandbox human`, the shared template launcher selects a resolved seat through `--seat`. It defaults to the platform-preferred human-capable seat, choosing a restricted seat first when one exists. The launcher:
+For `python -m sandbox play`, the shared template launcher selects a resolved seat through `--seat`. It defaults to the platform-preferred human-capable seat, choosing a restricted seat first when one exists. The launcher:
 
 - Treats omitted `--companion` and `--companion self` as whole-seat control when every member is human-capable.
 - Accepts a declared builtin name or manifest path as a companion. The first human-capable member remains external and the companion controls the rest.

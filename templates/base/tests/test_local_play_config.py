@@ -192,7 +192,8 @@ def test_restricted_human_seat_derives_its_builtin_companion(monkeypatch, tmp_pa
         )
 
 
-def test_template_play_does_not_offer_unsupported_watch_mode():
+def test_launcher_rejects_a_mode_it_does_not_define():
+    # `python -m sandbox watch` reaches this launcher as its `agent` mode, not by that name.
     with pytest.raises(SystemExit) as error:
         play.main(["watch"])
 
@@ -491,17 +492,22 @@ def test_whole_seat_default_uses_the_first_member_as_the_chat_sender(monkeypatch
     assert config["external_chat_player"] == "player_0"
     assert config["player_bindings"]["player_0"] == {"kind": "external"}
     assert config["player_bindings"]["player_2"] == {"kind": "external"}
+    # Playing by hand leaves your own agent opposite you, so a session can test it.
+    assert config["player_bindings"]["player_1"]["path"] == str(tmp_path / "repo")
+    assert config["player_bindings"]["player_3"]["path"] == str(tmp_path / "repo")
 
 
-def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatch, tmp_path: Path):
+def test_watching_without_vs_puts_the_naive_baseline_opposite_your_agent(monkeypatch, tmp_path: Path):
     _use_partnership_layout(monkeypatch)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtins")
+    (play.BUILTIN_AGENT_ROOT / "naive").mkdir(parents=True)
 
     config = play.local_config(
         seed=1, mode="agent", seat=0, recording_dir=tmp_path / "recordings", step_limit=None
     )
 
-    for player_id in ("player_0", "player_1", "player_2", "player_3"):
+    for player_id in ("player_0", "player_2"):
         assert config["player_bindings"][player_id] == {
             "kind": "builtin-agent",
             "path": str(tmp_path / "repo"),
@@ -510,6 +516,17 @@ def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatc
             "kind": "agent",
             "submission_id": "local",
             "label": "Your agent",
+        }
+    for player_id in ("player_1", "player_3"):
+        assert config["player_bindings"][player_id] == {
+            "kind": "builtin-agent",
+            "path": str(play.BUILTIN_AGENT_ROOT / "naive"),
+            "name": "naive",
+        }
+        assert config["players"][player_id] == {
+            "kind": "agent",
+            "builtin_name": "naive",
+            "label": play.META.builtin_agents[0].label,
         }
 
 

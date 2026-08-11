@@ -2,7 +2,7 @@
 
 Spades is a four-player partnership card game. You and the player across the table form a team. Your team bids how many tricks it expects to take, then tries to take that many and score more points than the other team. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Spades.
 
-After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox play`, then follow [Your first agent](#your-first-agent).
+After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py`, run `python -m sandbox watch`, then follow [Your first agent](#your-first-agent).
 
 ## Seats and players
 
@@ -78,13 +78,14 @@ class Agent:
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play                 # watch separate copies of your agent play all four positions
+python -m sandbox play                 # play your partnership yourself
+python -m sandbox watch                # watch your partnership play the Naive partnership
 python -m sandbox eval                 # compare your partnership with Naive
 python -m sandbox eval --vs rivals/v1  # play against a saved rival
 python -m sandbox test                 # run the checks
 ```
 
-`eval` puts copies of your agent in both positions of your selected partnership. The opposing partnership uses **Naive**, a simple built-in agent. One episode is a complete hand, from bidding through trick 13. `eval` reports the higher-is-better [team score](#scoring-and-rewards). Compare the same seeds before and after a change.
+`watch` and `eval` both put copies of your agent in both positions of your selected partnership. The opposing partnership uses **Naive**, a simple built-in agent. One episode is a complete hand, from bidding through trick 13. `eval` reports the higher-is-better [team score](#scoring-and-rewards). Compare the same seeds before and after a change.
 
 ## Scoring and rewards
 

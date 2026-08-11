@@ -1,7 +1,7 @@
 """Your agent.
 
 The template starts as a working agent: it flaps whenever the bird is below the middle of the
-screen, so it holds its height at mid-screen. Run ``python -m sandbox play`` to watch it and
+screen, so it holds its height at mid-screen. Run ``python -m sandbox watch`` to watch it and
 ``python -m sandbox test`` to check it; both work before you change anything. Your job starts at the
 ``TODO(you)`` comment inside ``act``.
 

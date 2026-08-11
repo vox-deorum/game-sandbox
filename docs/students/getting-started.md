@@ -67,12 +67,12 @@ Action numbers and observation fields mean different things in each game. In Fla
 Use these commands most often:
 
 ```console
-python -m sandbox                     # play it yourself in a browser
-python -m sandbox play                # watch your agent in a browser
+python -m sandbox play                # play it yourself in a browser (same as `python -m sandbox`)
+python -m sandbox watch               # watch your agent in a browser
 python -m sandbox eval --episodes 10  # run ten repeatable games without a browser
 ```
 
-A **seat** is one position, side, or team scored together, with one or more players. `eval` runs without a browser: your agent takes one seat, and **Naive**, a simple built-in agent, fills the opposing seats that accept student agents. Each complete game is an **episode** and starts from a repeatable condition called a **seed**. `eval` runs five episodes by default and reports your seat's average score.
+A **seat** is one position, side, or team scored together, with one or more players. `watch` and `eval` give your agent one seat and fill the opposing seats that accept student agents with **Naive**, a simple built-in agent; `eval` does it without a browser. When you play by hand, your own agent takes those seats instead, so you can play against what you built. Each complete game is an **episode** and starts from a repeatable condition called a **seed**. `eval` runs five episodes by default and reports your seat's average score.
 
 Use the same seeds before and after a change to compare your results. Local results cannot predict the official board, where your agent may face different opponents or settings.
 
@@ -105,17 +105,17 @@ Submit your repository URL through the course website. The server records one ex
 
 | Option or command | What it does |
 | --- | --- |
-| `--vs PATH` | Use a saved agent in opposing seats that accept student agents. Human controls, companions, and fixed built-in roles do not change. `PATH` may be the agent folder or its `manifest.json` file. |
-| `--seat N` | Choose seat `N`. Seats start at `0`. Without this option, human play chooses a human seat, while agent play and `eval` choose the first seat that accepts your agent. |
+| `--vs PATH` | Use a saved agent in opposing seats that accept student agents, in place of Naive or your own agent. Your controls, companions, and fixed built-in roles do not change. `PATH` may be the agent folder or its `manifest.json` file. |
+| `--seat N` | Choose seat `N`. Seats start at `0`. Without this option, `play` chooses a human seat, while `watch` and `eval` choose the first seat that accepts your agent. |
 | `--companion NAME_OR_PATH` | Let an agent control your teammates while you play. Pass a built-in name or agent folder; omit this option, or pass `self`, to control the whole team when allowed. Any required companion is chosen automatically. |
-| `season.json` | Apply the season's gameplay settings and time limits to `human`, `play`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
-| `--preset NAME` | Use one named gameplay preset for `human` or `play`. It replaces the gameplay settings from `season.json` for that command but keeps the time limits. If you also pass `--parameter`, that value takes priority. |
-| `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Change a setting or time limit from `season.json` for one `human`, `play`, or `eval` command. Repeat `--parameter` to change several settings. |
+| `season.json` | Apply the season's gameplay settings and time limits to `play`, `watch`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
+| `--preset NAME` | Use one named gameplay preset for `play` or `watch`. It replaces the gameplay settings from `season.json` for that command but keeps the time limits. If you also pass `--parameter`, that value takes priority. |
+| `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Change a setting or time limit from `season.json` for one `play`, `watch`, or `eval` command. Repeat `--parameter` to change several settings. |
 | `python -m sandbox setup` | Prepare the virtual environment without starting a game. |
-| `python -m sandbox play --seed N` | Repeat one starting condition and random generator. |
+| `python -m sandbox watch --seed N` | Repeat one starting condition and random generator. |
 | `--help` | List the options for any command. |
 
-To compare an older version, copy its project files to `rivals/v1`, then add `--vs rivals/v1` to `play`, `human`, or `eval`. An absolute path also works.
+To compare an older version, copy its project files to `rivals/v1`, then add `--vs rivals/v1` to `play`, `watch`, or `eval`. An absolute path also works.
 
 ## Optional: use the LLM API
 

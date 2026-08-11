@@ -39,14 +39,21 @@ def test_browser_commands_dispatch_their_positional_modes(monkeypatch):
     monkeypatch.setattr(dispatcher, "_run", lambda args, probe: seen.append((args, probe)) or 0)
 
     assert dispatcher.main([]) == 0
-    assert dispatcher.main(["human", "--seed", "7"]) == 0
-    assert dispatcher.main(["play", "--seed", "8"]) == 0
+    assert dispatcher.main(["play", "--seed", "7"]) == 0
+    assert dispatcher.main(["watch", "--seed", "8"]) == 0
 
     assert seen == [
         (["-m", "sandbox.play", "human"], dispatcher._RUNTIME_PROBE),
         (["-m", "sandbox.play", "human", "--seed", "7"], dispatcher._RUNTIME_PROBE),
         (["-m", "sandbox.play", "agent", "--seed", "8"], dispatcher._RUNTIME_PROBE),
     ]
+
+
+def test_retired_human_command_is_rejected(capsys):
+    assert dispatcher.main(["human"]) == 2
+    error = capsys.readouterr().err
+    assert "unknown command 'human'" in error
+    assert "play     control a player in your browser" in error
 
 
 def test_current_interpreter_without_llm_dependencies_uses_setup(tmp_path: Path, monkeypatch):

@@ -1,8 +1,9 @@
 """Run one local browser session through the same live runner used by production.
 
-``python -m sandbox.play`` opens local browser play. Commands select a resolved seat rather than one
-PettingZoo player. ``--vs`` rebinds unrestricted opposing seats to a saved rival agent. Headless
-runs bind real agents to every player, using the declared Naive baseline when no rival is supplied.
+``python -m sandbox play`` hands you a seat to play; ``python -m sandbox watch`` runs your agent in
+one instead. Commands select a resolved seat rather than one PettingZoo player. Watching and
+headless runs face the declared Naive baseline in every unrestricted opposing seat, while playing
+by hand faces your own agent there. ``--vs`` replaces those opponents with a saved rival agent.
 """
 
 from __future__ import annotations
@@ -358,9 +359,11 @@ def local_config(
 ) -> dict[str, object]:
     """Build the complete runner config and header attribution for one local launch.
 
-    With ``vs``, unrestricted seats outside the selection bind to the saved rival. Restricted seats
-    always retain their designated builtin. A wide human seat defaults to whole-seat control; an
-    explicit builtin name or repository path gives every other member a companion instance.
+    Watching your agent puts the Naive baseline in every unrestricted opposing seat, while playing
+    by hand leaves your own agent there. ``vs`` replaces those opponents with the saved rival.
+    Restricted seats always retain their designated builtin. A wide human seat defaults to
+    whole-seat control; an explicit builtin name or repository path gives every other member a
+    companion instance.
     """
     resolved_parameters = resolve_parameters(META) if parameters is None else parameters
     layout = resolved_layout(resolved_parameters)
@@ -402,9 +405,13 @@ def local_config(
             selected_companion = _companion_assignment(companion)
 
     local_assignment = _repo_assignment(REPO_ROOT, submission_id="local", label="Your agent")
-    rival_assignment = (
-        None if vs is None else _repo_assignment(vs, submission_id="local-rival", label=_rival_label(vs))
-    )
+    opposing_assignment: tuple[dict[str, str], dict[str, str]] | None = None
+    if vs is not None:
+        opposing_assignment = _repo_assignment(vs, submission_id="local-rival", label=_rival_label(vs))
+    elif mode == "agent" and _rival_player_ids(layout, seat):
+        # Watching your agent means watching it against the same Naive baseline ``eval`` reports on.
+        # Playing by hand keeps your agent opposite you, so a session can test it.
+        opposing_assignment = _builtin_assignment("naive")
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
     for seat_index, candidate_seat in enumerate(layout.seats):
@@ -416,8 +423,8 @@ def local_config(
                 assignment = selected_companion
             elif candidate_seat.restricted_builtin is not None:
                 assignment = _builtin_assignment(candidate_seat.restricted_builtin)
-            elif seat_index != seat and rival_assignment is not None:
-                assignment = rival_assignment
+            elif seat_index != seat and opposing_assignment is not None:
+                assignment = opposing_assignment
             else:
                 assignment = local_assignment
             bindings[player_id], players[player_id] = assignment
