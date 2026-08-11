@@ -20,9 +20,9 @@ Every plan has `seat_0`, the cast, and `seat_1`, the visitor.
 
 `cast_5` is declared first and is the default. Character order and player numbering share one sequence: the visitor is character 0 and `player_0`; `npc_i` is character i+1 and `player_(i+1)`. Roster order, prop contention, `possible_agents`, active-player mappings, and conformance use this sequence.
 
-Player ids stay inside the environment. Observations, helpers, and student material use only `visitor` and `npc_0` through `npc_9`. The visitor is identified by `id == "visitor"`, so no observation needs a visitor flag.
+Player ids stay inside the environment. Observations, helpers, and student material use only `visitor` and `npc_0` through `npc_9`. The visitor is identified by `id == "visitor"`. No observation carries a visitor flag.
 
-The cast seat accepts one submission and constructs a separate instance for every NPC. The visitor seat is restricted to `scripted_visitor`; a human plays its `player_0` in live sessions and the builtin plays it in automated runs. The builtins are `naive` (Naive), the cast baseline, and `scripted_visitor` (Scripted visitor), which wanders, approaches NPCs, and offers canned lines. Seat order does not change the game because the plans contain one unrestricted seat.
+The cast seat accepts one submission and constructs a separate instance for every NPC. The visitor seat is restricted to `scripted_visitor`; a human plays its `player_0` in live sessions and the builtin plays it in automated runs. The builtins are `naive` (Naive), the cast baseline, and `scripted_visitor` (Scripted visitor), which wanders, approaches NPCs, and offers canned lines. Seat order does not change the game.
 
 ## Gameplay parameters
 

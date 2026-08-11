@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This build-order step completes the student surface. It begins after step 4's generator and finishes after step 6 because the guide documents human play. Using only the published guide, a student must be able to compose the template, run its pins, and play a local day with their villagers and the scripted visitor.
+Part of [the plan](../README.md). This build-order step completes the student surface. It begins after step 4's generator and finishes after step 6. Using only the published guide, a student must be able to compose the template, run its pins, and play a local day with their villagers and the scripted visitor.
 
 ## What to build
 
@@ -17,15 +17,15 @@ Implement the [`sandbox.village` contract](../environment.md#package-and-student
 | `layout`, `geometry` | Read static village facts and provide pure movement, sight, and geometry calculations. |
 | `speech` | Build broadcasts and direct lines from character ids, and translate inbox player ids to character ids. |
 
-Except for `speech`, every helper takes observation first and is a stateless reader or pure builder. `speech.broadcast(text)`, `speech.to(character_id, text)`, and `speech.messages(inbox)` are pure and take no observation. They translate the environment's internal player ids, so student code and documentation use only `visitor` and `npc_0` through `npc_9`.
+Except for `speech`, every helper takes observation first and is a stateless reader or pure builder. `speech.broadcast(text)`, `speech.to(character_id, text)`, and `speech.messages(inbox)` are pure and take no observation. They translate the environment's internal player ids. Student code and documentation use only `visitor` and `npc_0` through `npc_9`.
 
-Provide no map object, module-global layout, controller decision, or pathfinder. Invisible caching may be keyed by layout content. `observation["village"]` provides the full map, while `walkable`, `can_step`, and `ground_at` let students build their own route graph. `reset(seed, observation)` delivers the layout before the first tick, so route construction belongs in reset and counts toward the episode budget rather than one decision. Step 8 supplies one worked routing approach.
+Provide no map object, module-global layout, controller decision, or pathfinder. Invisible caching may be keyed by layout content. `observation["village"]` provides the full map, while `walkable`, `can_step`, and `ground_at` let students build their own route graph. Build route graphs in `reset(seed, observation)`, where the layout is available before tick one and the cost counts toward the episode budget. Step 8 supplies one worked routing approach.
 
 `me.rng(observation, session_seed)` returns a character-specific `random.Random` stream derived from session seed and character id.
 
 ### Template and guide
 
-Make `template/agent.py` intentionally weak. It demonstrates walk, stand, an emote, and use through the helpers. It heads for its doorway while home and the well plaza afterward, waves at a villager in sight, and sits at a bench in reach. It stores no memory and does no routing, so a wall stops it.
+Make `template/agent.py` intentionally weak. It demonstrates walk, stand, an emote, and use through the helpers. It heads for its doorway while home and the well plaza afterward, waves at a villager in sight, and sits at a bench in reach. It stores no memory or route; a wall can stop it.
 
 Write `template/README.md` using the existing [Skirmish at Crane Reach template README](../../../environments/skirmish_crane/template/README.md) pattern. The canonical `environments/three_branches/environment.md` follows [docs/AGENTS.md](../../../docs/AGENTS.md) and uses this order:
 

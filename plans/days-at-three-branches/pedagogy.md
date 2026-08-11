@@ -98,5 +98,5 @@ These are leads, not requirements.
 ## Progression
 
 - Seasons 1 and 2 turn one recognizable character into a decentralized citizen template for the full cast.
-- Seasons 3 and 4 introduce the visitor, then daily life around the visitor. Week 4 is a tactical-focus week, so the RPG addition stays small.
+- Seasons 3 and 4 introduce the visitor, then daily life around the visitor. Week 4 is a tactical-focus week with a small RPG addition.
 - Seasons 5 and 6 add dialogue, then open the brief to combine every layer.

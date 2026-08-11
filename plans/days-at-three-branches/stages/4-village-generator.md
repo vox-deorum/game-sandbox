@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This step replaces the step 2 fixture behind u
 
 The generator paints cells and places rectangles over step 2 grid types. Engine, environment, recording, and renderer contracts do not change. [village.md](../village.md#generation-order-and-guarantees) and tests define the mechanical guarantees. The owner assesses whether a village looks grown rather than drafted through `npm run play -- three_branches watch --seed N` with the collision overlay enabled. Record each sign-off and its date in this file. No review tooling is added.
 
-`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. The browser receives a complete `Layout`. Padded combinations can violate guarantees, so review covers only generated content. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map.
+`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. The browser receives a complete `Layout`. Review covers only generated content; padded combinations may violate guarantees. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map.
 
 | Area | Ownership |
 | --- | --- |

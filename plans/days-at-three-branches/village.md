@@ -104,7 +104,7 @@ Every seed satisfies:
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |
 
-A value belongs here when changing it changes the village. Visual-only tuning belongs to renderer presentation configuration, so visual calibration cannot move a building.
+A value belongs here when changing it changes the village. Visual-only tuning belongs to renderer presentation configuration.
 
 ## Naming
 

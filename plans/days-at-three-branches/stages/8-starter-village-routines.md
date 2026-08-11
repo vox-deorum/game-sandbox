@@ -24,7 +24,7 @@ Keep Season 3's live visitor reactions: `greet`, `follow`, and `avoid`.
 
 ### Example package and memory
 
-Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent.py`, `routines.py`, `dialogue.py`, and `tests/test_neighbor.py` in the `marcher` and `vanguard` layout. Import modules at the top level because the harness isolates those imports per player; imports inside `act` resolve against the last-loaded player directory and become shared.
+Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent.py`, `routines.py`, `dialogue.py`, and `tests/test_neighbor.py` in the `marcher` and `vanguard` layout. Import modules at the top level. Imports inside `act` resolve against the last-loaded player directory and become shared across players.
 
 `neighbor` is a publication candidate. Keep `PUBLISHED_EXAMPLES` unchanged and record publication at Season 4 opening in the plan's Later work.
 
@@ -51,7 +51,7 @@ A routine is `decide(observation, memory, goal)`: return a helper-built action D
 | watch(goal) | Stand still facing the goal and let the village come to it | Never |
 | sleep_at(goal) | Inside the goal building, stand still with the sleep emote | Not inside the goal building |
 
-`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. At reset it assigns roles through `me.rng`, maps each role to places and props by phase, and recomputes at phase boundaries and when the visitor enters hearing range. Spread roles across districts so ten villagers do not funnel onto a prop and exercise `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and fallback `wander`. The remaining routines support student schedules.
+`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. At reset it assigns roles through `me.rng`, maps each role to places and props by phase, and recomputes at phase boundaries and when the visitor enters hearing range. Spread roles across districts, avoid funneling ten villagers onto one prop, and exercise `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and fallback `wander`. The remaining routines support student schedules.
 
 ### Dialogue layer
 
