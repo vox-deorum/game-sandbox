@@ -4,6 +4,7 @@
  * to any recorded state and receive the same scene every time.
  */
 import type { StepState } from '@game-sandbox/schema'
+import { degreesToRadians } from '@renderers/base/math.js'
 
 import tileTypes from '../tile_types.json'
 
@@ -448,7 +449,7 @@ function geometry(side: number): { radius: number; centerFor: (q: number, r: num
 
 function hexCorners(center: Point, radius: number): Point[] {
   return Array.from({ length: 6 }, (_, index) => {
-    const angle = (-90 + index * 60) * (Math.PI / 180)
+    const angle = degreesToRadians(-90 + index * 60)
     return { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius }
   })
 }

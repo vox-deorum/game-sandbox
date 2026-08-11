@@ -10,11 +10,12 @@
  * chosen tile's number stays readable over the piece standing on it. Only the parts that actually
  * move, the strike preview and the draining perimeter, are redrawn every frame.
  */
+import { clamp, stableHash } from '@renderers/base/math.js'
 import type { MoveClockReading } from '@renderers/base/move-clock.js'
+import { flattenPoints } from '@renderers/base/pixi-helpers.js'
 import { type Container, Graphics, Polygon } from 'pixi.js'
 
 import type { CraneAssetName } from './assets.js'
-import { hash } from './board.js'
 import { MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { Perspective } from './fog.js'
 import type { OrderComposition, StrikePreview } from './orders.js'
@@ -64,7 +65,7 @@ export interface OrderPlan {
  */
 export function clockArc(fraction: number): { start: number; end: number } {
   const top = -Math.PI / 2
-  const remaining = Math.PI * 2 * Math.min(1, Math.max(0, fraction))
+  const remaining = Math.PI * 2 * clamp(fraction, 0, 1)
   return { start: top + Math.PI * 2 - remaining, end: top + Math.PI * 2 }
 }
 
@@ -97,7 +98,7 @@ export function drawFogVeil(
   for (const tile of scene.tiles) {
     if (perspective.tiles.has(tile.key)) continue
     const glaze = sprite(
-      ['washHexA', 'washHexB', 'washHexC'][hash(tile.key) % 3] as CraneAssetName,
+      ['washHexA', 'washHexB', 'washHexC'][stableHash(tile.key) % 3] as CraneAssetName,
       tile.center.x,
       tile.center.y,
       scene.hexRadius * 2,
@@ -106,16 +107,16 @@ export function drawFogVeil(
     if (glaze === null) continue
     glaze.tint = CRANE_STYLE.fog
     glaze.alpha = FOG_VEIL_ALPHA
-    glaze.rotation = (hash(`${tile.key}:turn`) % 6) * (Math.PI / 3)
+    glaze.rotation = (stableHash(`${tile.key}:turn`) % 6) * (Math.PI / 3)
     layer.addChild(glaze)
   }
 }
-
 /** How long a perspective switch takes to cross-dissolve, and its ease. */
 export const FOG_CROSSFADE_MS = 200
 
+/** Ease a perspective switch from the previous fog veil to the current one. */
 export function fogCrossfade(elapsedMs: number): number {
-  const t = Math.min(1, Math.max(0, elapsedMs / FOG_CROSSFADE_MS))
+  const t = clamp(elapsedMs / FOG_CROSSFADE_MS, 0, 1)
   return t * t * (3 - 2 * t)
 }
 
@@ -142,7 +143,7 @@ export function drawOrderMarks(
   for (const tileKey of plan.offered) {
     const tile = byKey.get(tileKey)
     if (tile === undefined) continue
-    marks.poly(flatten(tile.corners)).fill({ color: CRANE_STYLE.activation, alpha: 0.25 })
+    marks.poly(flattenPoints(tile.corners)).fill({ color: CRANE_STYLE.activation, alpha: 0.25 })
     marks.circle(tile.center.x, tile.center.y, radius * 0.11).fill({ color: CRANE_STYLE.grid })
   }
 
@@ -255,10 +256,10 @@ export function wireOrderHits(
   for (const tile of scene.tiles) {
     if (!clickable.has(tile.key)) continue
     const target = new Graphics()
-    target.poly(flatten(tile.corners)).fill({ color: CRANE_STYLE.activation, alpha: 0 })
+    target.poly(flattenPoints(tile.corners)).fill({ color: CRANE_STYLE.activation, alpha: 0 })
     target.eventMode = 'static'
     target.cursor = 'pointer'
-    target.hitArea = new Polygon(flatten(tile.corners))
+    target.hitArea = new Polygon(flattenPoints(tile.corners))
     target.on('pointertap', (event) => {
       event.stopPropagation()
       onPick(tile.key)
@@ -382,6 +383,3 @@ function drawOrderButton(
   }
 }
 
-function flatten(corners: ReadonlyArray<Point>): number[] {
-  return corners.flatMap((corner) => [corner.x, corner.y])
-}

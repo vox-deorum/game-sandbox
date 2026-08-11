@@ -1,4 +1,6 @@
 /** Pure interpolation between decoded overlay endpoints for ticker-driven playback. */
+import { lerp } from '@renderers/base/math.js'
+
 import type { Character, DynamicOverlay } from './overlay.js'
 import { PRESENTATION } from './presentation.js'
 
@@ -81,8 +83,4 @@ function interpolateHeading(from: number, to: number, progress: number): number 
   const delta = ((((to - from) % 360) + 540) % 360) - 180
   const heading = (from + delta * progress) % 360
   return heading < 0 ? heading + 360 : heading
-}
-
-function lerp(from: number, to: number, progress: number): number {
-  return from + (to - from) * progress
 }

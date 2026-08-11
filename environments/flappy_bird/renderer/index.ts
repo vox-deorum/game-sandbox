@@ -10,6 +10,7 @@
  * `renderers/index.ts`). See docs/contributors/environments/rendering.md for the architecture.
  */
 import type { StepState } from '@game-sandbox/schema'
+import { degreesToRadians } from '@renderers/base/math.js'
 import { type InputIntent, PixiRenderer } from '@renderers/base/PixiRenderer.js'
 
 import type { RendererDefinition } from '@renderers/types.js'
@@ -161,7 +162,7 @@ export class FlappyBirdRenderer extends PixiRenderer {
   /** The bird: a top-lit body with a flapping wing, beak, and eye, drawn around its center. */
   private drawBird(g: Graphics, bird: BirdShape): void {
     g.position.set(bird.x, bird.y)
-    g.rotation = (bird.rot * Math.PI) / 180
+    g.rotation = degreesToRadians(bird.rot)
     const r = bird.radius
     // Wing behind the body: ellipse() has no per-call rotation, so the flap is sold by lifting the
     // wing's center — high on the upstroke (wing > 0), low on the downstroke.

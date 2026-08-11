@@ -11,6 +11,7 @@
  * `art-direction.md` describes what each beat looks like. This file decides when it happens.
  */
 import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
+import { clamp } from '@renderers/base/math.js'
 
 /** The natural duration of every beat, at scale 1. Presentation tuning starts here. */
 export interface CraneTiming {
@@ -135,7 +136,7 @@ export function eventTimelineProgress(
  * target begins reacting and is gone the moment the attack ends.
  */
 export function rangedArcAlpha(attackProgress: number): number {
-  return 1 - Math.max(0, Math.min(1, attackProgress))
+  return 1 - clamp(attackProgress, 0, 1)
 }
 
 /** The share of the reaction a numeral stays fully legible for before it begins to fade. */
@@ -147,7 +148,7 @@ const NUMERAL_HOLD = 0.65
  * beat, then lift away and fade together over the tail.
  */
 export function reactionNumeralAlpha(reactionProgress: number): number {
-  const value = Math.max(0, Math.min(1, reactionProgress))
+  const value = clamp(reactionProgress, 0, 1)
   return value <= NUMERAL_HOLD ? 1 : 1 - (value - NUMERAL_HOLD) / (1 - NUMERAL_HOLD)
 }
 
@@ -189,7 +190,7 @@ function cubicCoordinate(t: number, first: number, second: number): number {
 
 /** Evaluate the host curve cubic-bezier(0.2, 0, 0, 1) at a normalized time. */
 export function hostEase(time: number): number {
-  const x = Math.max(0, Math.min(1, time))
+  const x = clamp(time, 0, 1)
   let parameter = x
   for (let iteration = 0; iteration < 8; iteration += 1) {
     const estimate = cubicCoordinate(parameter, 0.2, 0) - x
@@ -197,7 +198,7 @@ export function hostEase(time: number): number {
     const derivative =
       3 * inverse * inverse * 0.2 + 6 * inverse * parameter * (0 - 0.2) + 3 * parameter * parameter
     if (Math.abs(estimate) < 0.00001 || Math.abs(derivative) < 0.00001) break
-    parameter = Math.max(0, Math.min(1, parameter - estimate / derivative))
+    parameter = clamp(parameter - estimate / derivative, 0, 1)
   }
   return cubicCoordinate(parameter, 0, 1)
 }
@@ -210,7 +211,7 @@ export function routePositionFor(
   const first = route[0]
   if (first === undefined || route.length < 2) return first ?? { x: 0, y: 0 }
   const segments = route.length - 1
-  const scaled = Math.max(0, Math.min(1, movementProgress)) * segments
+  const scaled = clamp(movementProgress, 0, 1) * segments
   const index = Math.min(segments - 1, Math.floor(scaled))
   const start = route[index] as { x: number; y: number }
   const end = route[index + 1] as { x: number; y: number }
@@ -226,7 +227,7 @@ export function routeTrailFor(
 ): Array<{ x: number; y: number }> {
   if (route.length < 2 || movementProgress <= 0) return []
   const segments = route.length - 1
-  const scaled = Math.max(0, Math.min(1, movementProgress)) * segments
+  const scaled = clamp(movementProgress, 0, 1) * segments
   const completed = Math.min(segments, Math.floor(scaled))
   const points = route.slice(0, completed + 1).map((point) => ({ ...point }))
   if (completed < segments && scaled > completed)
@@ -243,7 +244,7 @@ function windowProgress(elapsedMs: number, window: EventWindow | null): number {
   if (window === null) return 0
   if (window.endMs <= window.startMs) return elapsedMs >= window.startMs ? 1 : 0
   const span = (elapsedMs - window.startMs) / (window.endMs - window.startMs)
-  return Math.max(0, Math.min(1, span))
+  return clamp(span, 0, 1)
 }
 
 function within(elapsedMs: number, window: EventWindow | null): boolean {

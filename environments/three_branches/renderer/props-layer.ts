@@ -1,4 +1,6 @@
 /** Retained prop stills, seek-safe active effects, and post-grade warmth. */
+import { degreesToRadians } from '@renderers/base/math.js'
+import { applyTexture, centeredSprite } from '@renderers/base/pixi-helpers.js'
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import type { ThreeBranchesAssetName } from './assets.js'
@@ -124,15 +126,18 @@ export class PropsLayer {
       .fill({ color: this.palette.timber, alpha: 0.34 })
       .stroke({ color: this.palette.ink, width: 1.5 })
     const still = centeredSprite()
+    still.visible = false
     root.position.set(prop.position.x, prop.position.y)
-    root.rotation = (prop.rotation * Math.PI) / 180
+    root.rotation = degreesToRadians(prop.rotation)
     root.addChild(base, still)
 
     const effectRoot = positionedRoot(prop)
     const effect = centeredSprite()
+    effect.visible = false
     effectRoot.addChild(effect)
     const emissiveRoot = positionedRoot(prop)
     const emissive = centeredSprite()
+    emissive.visible = false
     emissiveRoot.addChild(emissive)
 
     const node = {
@@ -163,27 +168,8 @@ export class PropsLayer {
 function positionedRoot(prop: StaticScene['props'][number]): Container {
   const root = new Container()
   root.position.set(prop.position.x, prop.position.y)
-  root.rotation = (prop.rotation * Math.PI) / 180
+  root.rotation = degreesToRadians(prop.rotation)
   return root
-}
-
-function centeredSprite(): Sprite {
-  const sprite = new Sprite(Texture.EMPTY)
-  sprite.anchor.set(0.5)
-  sprite.visible = false
-  return sprite
-}
-
-function applyTexture(
-  sprite: Sprite,
-  texture: Texture | null,
-  width: number,
-  height: number,
-): void {
-  sprite.texture = texture ?? Texture.EMPTY
-  sprite.width = width
-  sprite.height = height
-  sprite.visible = texture !== null
 }
 
 function resetEffect(sprite: Sprite): void {

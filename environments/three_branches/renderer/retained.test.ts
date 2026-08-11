@@ -1,11 +1,13 @@
 import { Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
+import { stableHash } from '@renderers/base/math.js'
+
 import { CharactersLayer } from './characters.js'
 import { CraneLayer, cranePresentationFor } from './cranes.js'
 import { WORLD_SCALE, WORLD_SIZE_METERS } from './geometry.js'
 import { PhaseGradeLayer } from './phase-grade.js'
-import { handsFrameFor, PRESENTATION, stableHash } from './presentation.js'
+import { handsFrameFor, PRESENTATION } from './presentation.js'
 import { PropsLayer } from './props-layer.js'
 import { computeScene, type DynamicScene, PALETTE, staticScene } from './scene.js'
 import { firstDynamic, staticOverlay } from './test-helpers.js'
@@ -16,6 +18,19 @@ const baseDynamic = computeScene(firstDynamic, staticOverlay).dynamic
 const textureFor = () => Texture.WHITE
 
 describe('Hearthside retained scene', () => {
+  it('keeps prop artwork hidden until the first state is reconciled', () => {
+    const layer = new PropsLayer(staticPresentation, PALETTE, textureFor)
+    expect(
+      layer
+        .snapshot()
+        .every(
+          ({ still, effect, emissive }) =>
+            !still.visible && !effect.visible && !emissive.visible,
+        ),
+    ).toBe(true)
+    layer.destroy()
+  })
+
   it('seeks all five sustained prop treatments back to the same retained node state', () => {
     const target = dynamicWithPropStates(137, 'night', true)
     const away = dynamicWithPropStates(811, 'evening', false)

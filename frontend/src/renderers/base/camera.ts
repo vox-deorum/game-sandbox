@@ -4,6 +4,7 @@
  * Future renderers compose these reducers the way Hearts and Spades compose the shared card table:
  * the renderer owns its layers and feeds the resulting transform to its world container.
  */
+import { clamp } from './math.js'
 
 /** A point in either world or logical view coordinates, as named by the calling function. */
 export interface CameraPoint {
@@ -220,7 +221,7 @@ function anchoredZoom(
 }
 
 function clampZoom(zoom: number, limits: CameraLimits): number {
-  return Math.min(limits.maxZoom, Math.max(limits.minZoom, zoom))
+  return clamp(zoom, limits.minZoom, limits.maxZoom)
 }
 
 function worldPoint(camera: CameraView, view: CameraSize, point: CameraPoint): CameraPoint {
@@ -233,5 +234,5 @@ function worldPoint(camera: CameraView, view: CameraSize, point: CameraPoint): C
 function clampCenter(value: number, min: number, max: number, halfView: number): number {
   const center = (min + max) / 2
   if (halfView >= (max - min) / 2) return center
-  return Math.min(max - halfView, Math.max(min + halfView, value))
+  return clamp(value, min + halfView, max - halfView)
 }

@@ -1,4 +1,6 @@
 /** Validated visual tuning for Hearthside Ink, kept separate from village generation. */
+import { stableHash } from '@renderers/base/math.js'
+
 import propsData from '../props.json'
 import { THREE_BRANCHES_ASSET_MANIFEST, type ThreeBranchesAssetName } from './assets.js'
 import rawPresentation from './presentation.json'
@@ -215,15 +217,6 @@ export function presentationFor(bodyCssWidth: number): PresentationLevel {
   if (bodyCssWidth < PRESENTATION.characters.simpleCssWidth) return 'compact'
   if (bodyCssWidth < PRESENTATION.characters.detailedCssWidth) return 'simple'
   return 'detailed'
-}
-
-export function stableHash(value: string): number {
-  let hash = 0x811c9dc5
-  for (const character of value) {
-    hash ^= character.charCodeAt(0)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return hash >>> 0
 }
 
 export function variantFor(layoutKey: string, code: string, column: number, row: number): number {

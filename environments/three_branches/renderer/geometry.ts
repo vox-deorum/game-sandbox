@@ -1,4 +1,6 @@
 /** Closed-form village geometry used by the placeholder and collision scenes. */
+import { clamp, degreesToRadians } from '@renderers/base/math.js'
+
 import rulesData from '../rules.json'
 import type { Bridge, Building, Point, Polyline, Village } from './overlay.js'
 import { PRESENTATION } from './presentation.js'
@@ -33,7 +35,7 @@ export function worldLength(meters: number): number {
 
 /** Return the unit vector for an east-zero, clockwise-on-screen heading. */
 export function headingVector(heading: number): Point {
-  const angle = (wrapHeading(heading) * Math.PI) / 180
+  const angle = degreesToRadians(wrapHeading(heading))
   return { x: Math.cos(angle), y: Math.sin(angle) }
 }
 
@@ -217,7 +219,7 @@ function distanceToSegment(point: Point, start: Point, end: Point): number {
   const segment = subtract(end, start)
   const lengthSquared = dot(segment, segment)
   if (lengthSquared <= 1e-9) return distance(point, start)
-  const fraction = Math.max(0, Math.min(1, dot(subtract(point, start), segment) / lengthSquared))
+  const fraction = clamp(dot(subtract(point, start), segment) / lengthSquared, 0, 1)
   return distance(point, add(start, segment, fraction))
 }
 

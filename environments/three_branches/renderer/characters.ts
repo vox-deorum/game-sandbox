@@ -1,4 +1,6 @@
 /** Retained Hearthside people reconciled by stable character id. */
+import { degreesToRadians } from '@renderers/base/math.js'
+import { applyTexture, centeredSprite } from '@renderers/base/pixi-helpers.js'
 import { Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js'
 
 import type { ThreeBranchesAssetName } from './assets.js'
@@ -185,23 +187,5 @@ export class CharactersLayer {
 
 /** Convert east-zero overlay headings to sprites authored facing north. */
 export function spriteRotationForHeading(heading: number): number {
-  return ((heading + 90) * Math.PI) / 180
-}
-
-function centeredSprite(): Sprite {
-  const sprite = new Sprite(Texture.EMPTY)
-  sprite.anchor.set(0.5)
-  return sprite
-}
-
-function applyTexture(
-  sprite: Sprite,
-  texture: Texture | null,
-  width: number,
-  height: number,
-): void {
-  sprite.texture = texture ?? Texture.EMPTY
-  sprite.width = width
-  sprite.height = height
-  sprite.visible = texture !== null
+  return degreesToRadians(heading + 90)
 }

@@ -1,9 +1,11 @@
 /** Deterministic white-crane dressing with no gameplay footprint. */
+import { stableHash } from '@renderers/base/math.js'
+import { applyTexture, centeredSprite } from '@renderers/base/pixi-helpers.js'
 import { Container, Sprite, Texture } from 'pixi.js'
 
 import type { ThreeBranchesAssetName } from './assets.js'
 import { WORLD_SCALE, WORLD_SIZE_METERS } from './geometry.js'
-import { PRESENTATION, stableHash } from './presentation.js'
+import { PRESENTATION } from './presentation.js'
 import type { Palette } from './scene.js'
 
 export interface CranePresentation {
@@ -121,8 +123,7 @@ export function cranePresentationFor(
 }
 
 function craneSprite(tint: string): Sprite {
-  const sprite = new Sprite(Texture.EMPTY)
-  sprite.anchor.set(0.5)
+  const sprite = centeredSprite()
   sprite.tint = tint
   return sprite
 }
@@ -133,10 +134,14 @@ function applyPose(
   alpha: number,
   textureFor: TextureFor,
 ): void {
-  sprite.texture = textureFor(asset) ?? Texture.EMPTY
+  const texture = textureFor(asset)
+  applyTexture(
+    sprite,
+    texture,
+    PRESENTATION.cranes.spriteWidthMeters * WORLD_SCALE,
+    PRESENTATION.cranes.spriteHeightMeters * WORLD_SCALE,
+  )
   sprite.label = asset
-  sprite.width = PRESENTATION.cranes.spriteWidthMeters * WORLD_SCALE
-  sprite.height = PRESENTATION.cranes.spriteHeightMeters * WORLD_SCALE
   sprite.alpha = alpha * 0.76
-  sprite.visible = sprite.texture !== Texture.EMPTY && alpha > 0
+  sprite.visible = texture !== null && alpha > 0
 }

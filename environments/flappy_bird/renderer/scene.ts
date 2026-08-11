@@ -15,6 +15,7 @@
  * clock's.
  */
 import type { StepState } from '@game-sandbox/schema'
+import { clamp } from '@renderers/base/math.js'
 
 /** The bird sprite's logical size; (x, y) in the overlay is its top-left, so the body centers here. */
 export const PLAYER_WIDTH = 34
@@ -199,10 +200,6 @@ const DIRT_GRADIENT: GradientFill = {
 
 function num(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value
 }
 
 /** Normalize the open-typed overlay into a safe, fully-defaulted shape. */

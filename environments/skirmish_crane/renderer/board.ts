@@ -7,6 +7,8 @@
  * key and comes back identical on a rebuild. The zone, activation, and range functions redraw per
  * frame instead, because what they mark changes with the state.
  */
+import { stableHash } from '@renderers/base/math.js'
+import { flattenPoints } from '@renderers/base/pixi-helpers.js'
 import { clear } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics } from 'pixi.js'
 
@@ -45,10 +47,12 @@ export function drawBattlefield(
   board.rect(0, 0, scene.width, scene.height).fill(CRANE_STYLE.backdrop)
   const outer = scene.tiles.filter((tile) => tile.terrain !== 'void')
   const field = bleedPolygon(convexHull(outer.flatMap((tile) => tile.corners)), scene.hexRadius, 5)
-  board.poly(points(field)).fill(CRANE_STYLE.board)
+  board.poly(flattenPoints(field)).fill(CRANE_STYLE.board)
   for (const tile of outer) {
-    board.poly(points(tile.corners)).fill(CRANE_STYLE.terrain[tile.terrain])
-    board.poly(points(tile.corners)).stroke({ color: CRANE_STYLE.grid, width: 1.5, alpha: 0.55 })
+    board.poly(flattenPoints(tile.corners)).fill(CRANE_STYLE.terrain[tile.terrain])
+    board
+      .poly(flattenPoints(tile.corners))
+      .stroke({ color: CRANE_STYLE.grid, width: 1.5, alpha: 0.55 })
   }
   layer.addChild(board)
 
@@ -56,7 +60,7 @@ export function drawBattlefield(
   if (paper !== null) {
     paper.alpha = 0.26
     paper.blendMode = 'multiply'
-    const mask = new Graphics().poly(points(field)).fill('#ffffff')
+    const mask = new Graphics().poly(flattenPoints(field)).fill('#ffffff')
     paper.mask = mask
     layer.addChild(mask)
     layer.addChild(paper)
@@ -74,7 +78,7 @@ function drawTerrainMark(
   radius: number,
 ): void {
   const wash = sprite(
-    ['washHexA', 'washHexB', 'washHexC'][hash(tile.key) % 3] as CraneAssetName,
+    ['washHexA', 'washHexB', 'washHexC'][stableHash(tile.key) % 3] as CraneAssetName,
     tile.center.x,
     tile.center.y,
     radius * 2,
@@ -83,7 +87,7 @@ function drawTerrainMark(
   if (wash !== null) {
     wash.tint = CRANE_STYLE.terrain[tile.terrain]
     wash.alpha = tile.terrain === 'grass' ? 0.3 : 0.5
-    wash.rotation = (hash(`${tile.key}:turn`) % 6) * (Math.PI / 3)
+    wash.rotation = (stableHash(`${tile.key}:turn`) % 6) * (Math.PI / 3)
     layer.addChild(wash)
   }
   // Terrain draws first so a feature sitting on a hill reads over its contours. Grass and
@@ -103,7 +107,7 @@ function drawMark(
   radius: number,
 ): void {
   const alternate = spec.alternate
-  const flipped = alternate !== undefined && hash(tile.key) % 2 !== 0
+  const flipped = alternate !== undefined && stableHash(tile.key) % 2 !== 0
   const width =
     spec.shape === 'canopy'
       ? Math.sqrt(3) * radius * 0.75
@@ -123,7 +127,7 @@ function drawMark(
     mark.alpha = spec.alpha
     layer.addChild(mark)
   }
-  if (alternate === undefined || hash(`${tile.key}:second-sedge`) % 2 !== 0) return
+  if (alternate === undefined || stableHash(`${tile.key}:second-sedge`) % 2 !== 0) return
   const second = sprite(
     flipped ? spec.asset : alternate,
     tile.center.x + radius * 0.2,
@@ -164,7 +168,7 @@ function drawBoundaryAndMist(
   }
   // Six mist bands, chosen by hash so they scatter around the sheet and stay put across rebuilds.
   for (const [index, edge] of [...edges]
-    .sort((left, right) => hash(edgeKey(left)) - hash(edgeKey(right)))
+    .sort((left, right) => stableHash(edgeKey(left)) - stableHash(edgeKey(right)))
     .slice(0, 6)
     .entries()) {
     const midpoint = {
@@ -201,7 +205,7 @@ function drawZones(layer: Container, sprite: SpriteFactory, scene: CraneReachSce
     for (const key of zone.tileKeys) {
       const tile = tilesByKey.get(key)
       if (tile !== undefined)
-        wash.poly(points(tile.corners)).fill({ color: CRANE_STYLE.zone, alpha: 0.2 })
+        wash.poly(flattenPoints(tile.corners)).fill({ color: CRANE_STYLE.zone, alpha: 0.2 })
     }
     wash
       .circle(zone.center.x, zone.center.y, scene.hexRadius * 0.18)
@@ -295,7 +299,7 @@ export function drawRangeWash(
   const range = new Graphics()
   const reachableTiles = scene.tiles.filter((tile) => reachable.has(tile.key))
   for (const tile of reachableTiles) {
-    range.poly(points(tile.corners)).fill({ color, alpha: presentation.alpha })
+    range.poly(flattenPoints(tile.corners)).fill({ color, alpha: presentation.alpha })
   }
   for (const edge of boundaryEdges(reachableTiles, (key) => reachable.has(key))) {
     drawRangeEdge(range, edge.current, edge.next, outlineColor, presentation.outline === 'dashed')
@@ -370,18 +374,6 @@ function boundaryEdges(
 /** A stable identity for one edge, so the hash-driven choices along it survive a rebuild. */
 function edgeKey(edge: BoundaryEdge): string {
   return `${edge.tile.key}:${edge.index}`
-}
-
-/** Flatten hex corners into the flat coordinate list Pixi's polygon calls expect. */
-function points(corners: ReadonlyArray<{ x: number; y: number }>): number[] {
-  return corners.flatMap((corner) => [corner.x, corner.y])
-}
-
-/** A stable hash over a tile key, so every random-looking choice survives a rebuild unchanged. */
-export function hash(value: string): number {
-  let total = 2166136261
-  for (const char of value) total = Math.imul(total ^ char.charCodeAt(0), 16777619)
-  return total >>> 0
 }
 
 /** The outline of the played area, which the parchment sheet is cut from. */

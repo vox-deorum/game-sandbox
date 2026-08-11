@@ -1,4 +1,6 @@
 /** Pure, seek-safe drawables for the initial Three Branches village renderer. */
+import { stableHash } from '@renderers/base/math.js'
+
 import propsData from '../props.json'
 import rulesData from '../rules.json'
 import {
@@ -10,7 +12,7 @@ import {
   worldPoint,
 } from './geometry.js'
 import type { DynamicOverlay, Point, StaticOverlay } from './overlay.js'
-import { HEARTHSIDE_STYLE, type HearthsideStyle, PRESENTATION, stableHash } from './presentation.js'
+import { HEARTHSIDE_STYLE, type HearthsideStyle, PRESENTATION } from './presentation.js'
 
 export interface Palette extends HearthsideStyle {
   ground: Record<string, string>

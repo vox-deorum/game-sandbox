@@ -1,10 +1,12 @@
 /** Mount-once Hearthside village geometry split below and above dynamic occupants. */
+import { degreesToRadians, stableHash } from '@renderers/base/math.js'
+import { centeredSprite } from '@renderers/base/pixi-helpers.js'
 import { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js'
 
 import type { ThreeBranchesAssetName } from './assets.js'
 import { offsetPolyline, WORLD_SCALE } from './geometry.js'
 import type { Point } from './overlay.js'
-import { PRESENTATION, stableHash } from './presentation.js'
+import { PRESENTATION } from './presentation.js'
 import type { Palette, StaticScene, WorldLine } from './scene.js'
 
 interface TextureBinding {
@@ -77,7 +79,7 @@ export function createVillage(scene: StaticScene, palette: Palette): VillageArt 
       .fill(building.type === 'inn' ? palette.silt : palette.parchment)
       .stroke({ color: palette.ink, width: 1 })
     floor.position.set(building.center.x, building.center.y)
-    floor.rotation = radians(building.rotation)
+    floor.rotation = degreesToRadians(building.rotation)
     lower.addChild(floor)
     addSprite(
       lower,
@@ -87,7 +89,7 @@ export function createVillage(scene: StaticScene, palette: Palette): VillageArt 
       building.center.y,
       building.width,
       building.depth,
-      radians(building.rotation),
+      degreesToRadians(building.rotation),
       palette.timber,
       0.32,
     )
@@ -100,7 +102,7 @@ export function createVillage(scene: StaticScene, palette: Palette): VillageArt 
       .fill(palette.timber)
       .stroke({ color: palette.ink, width: 2 })
     deck.position.set(bridge.position.x, bridge.position.y)
-    deck.rotation = radians(bridge.heading)
+    deck.rotation = degreesToRadians(bridge.heading)
     lower.addChild(deck)
     addSprite(
       lower,
@@ -110,7 +112,7 @@ export function createVillage(scene: StaticScene, palette: Palette): VillageArt 
       bridge.position.y,
       bridge.span,
       bridge.width,
-      radians(bridge.heading),
+      degreesToRadians(bridge.heading),
       palette.bone,
       0.42,
     )
@@ -132,7 +134,7 @@ export function createVillage(scene: StaticScene, palette: Palette): VillageArt 
       item.position.y,
       item.radius * 2.3,
       item.radius * 2.3,
-      radians(stableHash(item.id) % 360),
+      degreesToRadians(stableHash(item.id) % 360),
       item.type === 'pine' ? palette.pine : palette.timber,
       0.94,
     )
@@ -295,9 +297,8 @@ function addSprite(
   tint: string,
   alpha: number,
 ): void {
-  const sprite = new Sprite(Texture.EMPTY)
+  const sprite = centeredSprite()
   sprite.label = name
-  sprite.anchor.set(0.5)
   sprite.position.set(x, y)
   sprite.width = width
   sprite.height = height
@@ -306,8 +307,4 @@ function addSprite(
   sprite.alpha = alpha
   layer.addChild(sprite)
   bindings.push({ name, sprite, width, height })
-}
-
-function radians(degrees: number): number {
-  return (degrees * Math.PI) / 180
 }

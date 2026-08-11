@@ -19,6 +19,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 
 import { formatPlayer, formatSeat } from '../../lib/format.js'
+import { clamp } from '../base/math.js'
 
 // --- Card encoding (mirrors environments/local_play/card_utils.py) ---
 // A card OBJECT is `{suit, rank}`: suits 0=clubs, 1=diamonds, 2=spades, 3=hearts; rank is the FACE
@@ -780,7 +781,7 @@ export function detectSweep(
 
 /** Clamp `t` to [0,1] and apply the classic smoothstep ease. */
 export function smoothstep(t: number): number {
-  const c = t < 0 ? 0 : t > 1 ? 1 : t
+  const c = clamp(t, 0, 1)
   return c * c * (3 - 2 * c)
 }
 
