@@ -1,6 +1,6 @@
 # Step 5.1: Art style
 
-Status: planned. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating sheet per character rather than a set of per-direction sheets.
+Status: in progress. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating sheet per character rather than a set of per-direction sheets. On 2026-08-12, implementation began with a request to move the presentation closer to top-down-shooter conventions where that simplifies the art assets. The exact conventions are still being selected.
 
 Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
@@ -11,6 +11,16 @@ Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, 
 Tiles are high-resolution flat shapes, not pixel art. The approval fixes palette, material, value grouping, and readability, but not a canonical layout, building placement, or scenery placement. Every seed remains a valid [village.md](../village.md) layout.
 
 ![Hearthside Ink approval mockup](../art/hearthside-ink-approval.png)
+
+### Decision record
+
+This record preserves owner decisions made during implementation, including choices that are later superseded. The rest of this stage describes the current approved result.
+
+| Date | State | Decision |
+| --- | --- | --- |
+| 2026-08-09 | Current | Use Hearthside Ink for the palette, material treatment, value grouping, and overall readability. |
+| 2026-08-11 | Under review | Use flat, non-pixel tiles, autotiled terrain, cutaway roofs, and one rotating sheet per character. |
+| 2026-08-12 | Open | Move closer to top-down-shooter presentation conventions where doing so reduces the number or complexity of art assets. Select the exact conventions with the owner before implementing them. |
 
 ### Palette
 
