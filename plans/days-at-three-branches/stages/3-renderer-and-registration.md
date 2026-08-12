@@ -44,9 +44,9 @@ Presentation defaults are named in one configuration: a 1200 by 1000 logical can
 
 One layered-ground call paints a configured fill base, a landscape overlay, and a structure overlay. Classification uses ground properties and semantic names, not a fixed code alphabet. Ground already records floors, walls, and doorways, so the renderer does not reconstruct building walls.
 
-Static display objects are built once. Props and characters reconcile by stable id, so a replay seek depends only on the delivered header and state. `worldRoot` contains the map, buildings, props, characters, and collision. Fixed chrome remains outside the camera transform.
+Static display objects are built once. Props and characters reconcile by stable id, so a replay seek depends only on the delivered header and state. Delivered character positions and headings interpolate across the host's actual tick cadence. Replay scrubs and explicit seeks still snap, and this state motion does not honor reduced-motion preferences. `worldRoot` contains the map, buildings, props, characters, and collision. Fixed chrome remains outside the camera transform.
 
-The collision overlay is on by default and available in watch, replay, and play. It derives impassable cells from ground passability, object shapes from the catalog, boundaries from the configured frame, and character circles from the configured body radius. Prop facing may add a visual direction marker, but collision remains axis-aligned because the environment physics does not rotate those shapes. The toggle never resets the camera.
+The ordinary world art carries no text labels. The collision overlay is on by default and supplies diagnostic object, state, character, and expression labels for watch, replay, and play. Its text resolution follows camera zoom. It derives impassable cells from ground passability, object shapes from the catalog, boundaries from the configured frame, and character circles from the configured body radius. Prop facing may add a visual direction marker, but collision remains axis-aligned because the environment physics does not rotate those shapes. The toggle never resets the camera.
 
 Environment-specific data probes expose readiness, opening state, tick, phase, visitor position, collision state, camera state, and terminal state. Tests and browser journeys assert state changes without pinning exact initial values.
 
@@ -66,7 +66,7 @@ Step 5.2 may tune zoom limits and add an explicit follow affordance, but it pres
 
 `scripts/gen_three_branches_fixture.py` uses the real harness, seed 0, and current environment defaults. It records until the configured terminal condition and uses fresh builtin entropy with bounded retries. Semantic checks require useful movement, visitor behavior, delivered speech, a terminal frame, and strict finite JSON. They do not require byte identity, exact ticks, or exact text.
 
-The fixture exposed a Pymunk body-type transition invariant. When a stopped kinematic character becomes dynamic, its configured mass and moment must be restored before contact solving. The physics regression keeps resulting positions and movement finite.
+The fixture exposed two Pymunk invariants. When a stopped kinematic character becomes dynamic, its configured mass and moment must be restored before contact solving. Collision bias remains Pymunk's one-second correction rate, with zero collision slop, so repeated movement into a wall cannot accumulate penetration and expel the body to the wrong side. Regressions keep positions finite, prevent wall crossing, and confirm a character can immediately move away from contact.
 
 ## Browser journey
 
@@ -75,8 +75,8 @@ The fixture exposed a Pymunk body-type transition invariant. When a stopped kine
 ## Focused verification
 
 - Shared tiled-ground tests cover compatibility, layer ordering, empty cells, neighbour masks, validation, and target repaint.
-- Renderer tests cover header and opening parsing, configuration-derived bounds, scene and collision geometry, static reference reuse, seek determinism, and camera follow, suspension, and reset.
-- Python tests cover restricted builtin filling, fixture semantics, strict JSON, and finite physics after a stop.
+- Renderer tests cover header and opening parsing, configuration-derived bounds, scene and collision geometry, tick interpolation, static reference reuse, seek determinism, and camera follow, suspension, and reset.
+- Python tests cover restricted builtin filling, fixture semantics, strict JSON, finite physics after a stop, and repeated wall contact.
 - Frontend type checking covers the retained Pixi integration, and the Three Branches browser group covers its live and replay journey.
 
 This step adds no exact session-duration regression, literal fixture length, wall-clock threshold, or mandatory full browser-suite run.
