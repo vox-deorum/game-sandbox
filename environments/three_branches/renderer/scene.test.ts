@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { expectedCharacterIds, readStatic, RULES } from './overlay.js'
+import { expectedCharacterIds, RULES, readStatic } from './overlay.js'
 import { THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import {
   buildStaticScene,
@@ -16,8 +16,10 @@ describe('Three Branches pure scene', () => {
     const village = readStatic(fixtureRecording().header)
     const scene = buildStaticScene(village)
     expect(scene.world).toEqual({
-      width: village.size.cellsX * village.size.cellSize * THREE_BRANCHES_PRESENTATION.unitsPerMetre,
-      height: village.size.cellsY * village.size.cellSize * THREE_BRANCHES_PRESENTATION.unitsPerMetre,
+      width:
+        village.size.cellsX * village.size.cellSize * THREE_BRANCHES_PRESENTATION.unitsPerMetre,
+      height:
+        village.size.cellsY * village.size.cellSize * THREE_BRANCHES_PRESENTATION.unitsPerMetre,
     })
     expect(pointToWorld(village, 2, 3)).toEqual({
       x: 2 * THREE_BRANCHES_PRESENTATION.unitsPerMetre,

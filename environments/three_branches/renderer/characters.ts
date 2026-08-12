@@ -49,7 +49,16 @@ function createNode(): CharacterNode {
 
 function drawCharacter(node: CharacterNode, character: CharacterDrawable): void {
   node.body.clear()
-  node.body.circle(character.point.x, character.point.y, character.radius).fill(character.fill).stroke({ color: PALETTE.backdrop, width: 2 })
+  node.body
+    .circle(character.point.x, character.point.y, character.radius)
+    .fill(character.fill)
+    .stroke({ color: PALETTE.backdrop, width: 2 })
   const heading = degreesToRadians(character.heading)
-  node.body.moveTo(character.point.x, character.point.y).lineTo(character.point.x + Math.cos(heading) * character.radius * 1.8, character.point.y - Math.sin(heading) * character.radius * 1.8).stroke({ color: PALETTE.backdrop, width: 2 })
+  node.body
+    .moveTo(character.point.x, character.point.y)
+    .lineTo(
+      character.point.x + Math.cos(heading) * character.radius * 1.8,
+      character.point.y - Math.sin(heading) * character.radius * 1.8,
+    )
+    .stroke({ color: PALETTE.backdrop, width: 2 })
 }

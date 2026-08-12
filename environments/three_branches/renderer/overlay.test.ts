@@ -11,9 +11,7 @@ describe('Three Branches recording overlay', () => {
     expect(village.ground.every((row) => row.length === village.size.cellsX)).toBe(true)
     expect(village.spawn.x).toBeGreaterThanOrEqual(0)
     expect(expectedCharacterIds(header)).toEqual(
-      Object.keys(header.players).map((_, index) =>
-        index === 0 ? 'visitor' : `npc_${index - 1}`,
-      ),
+      Object.keys(header.players).map((_, index) => (index === 0 ? 'visitor' : `npc_${index - 1}`)),
     )
   })
 

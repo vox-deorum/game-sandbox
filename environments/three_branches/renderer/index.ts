@@ -17,7 +17,7 @@ import {
   transitionScaleOf,
 } from '@renderers/types.js'
 import { Container, Graphics } from 'pixi.js'
-
+import { drawBuildings } from './buildings.js'
 import {
   initialVisitorCamera,
   resetVisitorCamera,
@@ -25,22 +25,22 @@ import {
   updateVisitorCamera,
   type VisitorCameraState,
 } from './camera.js'
-import { drawBuildings } from './buildings.js'
-import { createCharacterLayer, type CharacterLayer } from './characters.js'
-import { createChrome, type ChromeLayer, COLLISION_TOGGLE_RECT } from './chrome.js'
+import { type CharacterLayer, createCharacterLayer } from './characters.js'
+import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome } from './chrome.js'
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
-import { createCollisionLayer, type CollisionLayer } from './collision-layer.js'
+import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
 import { drawMap } from './map-layer.js'
 import { expectedCharacterIds, readStatic } from './overlay.js'
 import { PALETTE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
-import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 import thumbnail from './thumbnail.svg'
+import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
 const CONTENT_SIZE = {
   width: THREE_BRANCHES_PRESENTATION.internalSize.width,
-  height: THREE_BRANCHES_PRESENTATION.internalSize.height - THREE_BRANCHES_PRESENTATION.chromeHeight,
+  height:
+    THREE_BRANCHES_PRESENTATION.internalSize.height - THREE_BRANCHES_PRESENTATION.chromeHeight,
 }
 
 interface MovementTransition {
@@ -89,8 +89,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   protected setup(root: Container): void {
-    const backdrop = new Graphics().rect(0, 0, this.internalSize.width, this.internalSize.height).fill(PALETTE.backdrop)
-    const contentMask = new Graphics().rect(0, THREE_BRANCHES_PRESENTATION.chromeHeight, CONTENT_SIZE.width, CONTENT_SIZE.height).fill('#ffffff')
+    const backdrop = new Graphics()
+      .rect(0, 0, this.internalSize.width, this.internalSize.height)
+      .fill(PALETTE.backdrop)
+    const contentMask = new Graphics()
+      .rect(0, THREE_BRANCHES_PRESENTATION.chromeHeight, CONTENT_SIZE.width, CONTENT_SIZE.height)
+      .fill('#ffffff')
     const gradedWorld = new Container()
     const mapLayer = new Container()
     const buildingLayer = new Container()
@@ -275,7 +279,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.collisionVisible = !this.collisionVisible
     this.collision.setVisible(this.collisionVisible)
     if (this.currentScene !== null) {
-      this.chrome.update(this.currentScene, this.currentScene.dynamic?.tick ?? 0, this.collisionVisible, this.textResolution())
+      this.chrome.update(
+        this.currentScene,
+        this.currentScene.dynamic?.tick ?? 0,
+        this.collisionVisible,
+        this.textResolution(),
+      )
     }
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
   }
@@ -319,13 +328,17 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private updateProbes(state: StepState, scene: FrameScene): void {
     const dynamic = scene.dynamic
-    this.ctx.container.dataset.threeBranchesOpening = Object.keys(state.agents).length === 0 ? 'received' : 'complete'
+    this.ctx.container.dataset.threeBranchesOpening =
+      Object.keys(state.agents).length === 0 ? 'received' : 'complete'
     this.ctx.container.dataset.threeBranchesTick = String(dynamic?.tick ?? state.tick)
     this.ctx.container.dataset.threeBranchesPhase = dynamic?.phase ?? 'opening'
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
     this.ctx.container.dataset.threeBranchesTerminal = String(dynamic?.terminal ?? false)
     const visitor = dynamic?.characters.find((character) => character.id === 'visitor')
-    this.ctx.container.dataset.threeBranchesVisitor = visitor === undefined ? 'pending' : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
+    this.ctx.container.dataset.threeBranchesVisitor =
+      visitor === undefined
+        ? 'pending'
+        : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
   }
 }
 

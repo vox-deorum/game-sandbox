@@ -37,7 +37,12 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
     name: source.name,
     color: groundColor(source.name),
     passable: source.passable,
-    layer: source.code === RULES.fill ? ('base' as const) : STRUCTURE_GROUND.has(source.name) ? ('structure' as const) : ('landscape' as const),
+    layer:
+      source.code === RULES.fill
+        ? ('base' as const)
+        : STRUCTURE_GROUND.has(source.name)
+          ? ('structure' as const)
+          : ('landscape' as const),
   }))
   const groundByCode = Object.fromEntries(ground.map((item) => [item.code, item]))
   const buildingByType = Object.fromEntries(CATALOG.buildings.map((item) => [item.token, item]))
@@ -51,7 +56,13 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
       type: item.type,
       label: labelFor(item.type),
       shape: 'box' as const,
-      rect: rectToWorld(village, item.cell.x * village.size.cellSize, item.cell.y * village.size.cellSize, kind.width * village.size.cellSize, kind.height * village.size.cellSize),
+      rect: rectToWorld(
+        village,
+        item.cell.x * village.size.cellSize,
+        item.cell.y * village.size.cellSize,
+        kind.width * village.size.cellSize,
+        kind.height * village.size.cellSize,
+      ),
     }
   })
   const props = village.props.map((item) => {
@@ -62,7 +73,13 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
       type: item.type,
       label: labelFor(kind.activity),
       shape: shapeOf(kind.shape),
-      rect: rectToWorld(village, item.cell.x * village.size.cellSize, item.cell.y * village.size.cellSize, kind.width * village.size.cellSize, kind.height * village.size.cellSize),
+      rect: rectToWorld(
+        village,
+        item.cell.x * village.size.cellSize,
+        item.cell.y * village.size.cellSize,
+        kind.width * village.size.cellSize,
+        kind.height * village.size.cellSize,
+      ),
       facing: item.facing,
     }
   })
@@ -74,7 +91,13 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
       type: item.type,
       label: labelFor(item.type),
       shape: shapeOf(kind.shape),
-      rect: rectToWorld(village, item.cell.x * village.size.cellSize, item.cell.y * village.size.cellSize, kind.width * village.size.cellSize, kind.height * village.size.cellSize),
+      rect: rectToWorld(
+        village,
+        item.cell.x * village.size.cellSize,
+        item.cell.y * village.size.cellSize,
+        kind.width * village.size.cellSize,
+        kind.height * village.size.cellSize,
+      ),
     }
   })
   return {
@@ -107,7 +130,10 @@ export function computeScene(
     point: pointToWorld(staticScene.village, character.x, character.y),
     radius,
     fill: character.id === 'visitor' ? PALETTE.visitor : PALETTE.npc,
-    label: character.expression.type === 'none' ? character.id : `${character.id}: ${labelFor(character.expression.type)}`,
+    label:
+      character.expression.type === 'none'
+        ? character.id
+        : `${character.id}: ${labelFor(character.expression.type)}`,
   }))
   return { static: staticScene, dynamic, characters }
 }

@@ -33,7 +33,11 @@ export function initialVisitorCamera(
     limits,
     view,
   )
-  return { camera: centerCamera(focused, limits, view, spawn), following: humanControlled, target: spawn }
+  return {
+    camera: centerCamera(focused, limits, view, spawn),
+    following: humanControlled,
+    target: spawn,
+  }
 }
 
 /** Follow a new visitor position only while live human control still owns camera focus. */
@@ -45,7 +49,8 @@ export function updateVisitorCamera(
   force = false,
 ): VisitorCameraState {
   return {
-    camera: state.following || force ? centerCamera(state.camera, limits, view, target) : state.camera,
+    camera:
+      state.following || force ? centerCamera(state.camera, limits, view, target) : state.camera,
     following: state.following,
     target,
   }

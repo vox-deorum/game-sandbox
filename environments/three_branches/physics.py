@@ -24,10 +24,9 @@ class Physics:
         self.layout = layout
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
-        # Pymunk's default bias assumes a 1/60 second step. This space takes far coarser substeps,
-        # so state the correction rate for the substep actually used. Without it a body caught in a
-        # contact can be pushed further in one tick than any command could move it.
-        self.space.collision_bias = (1 - 0.1) ** RULES.physics_substeps
+        # Pymunk applies collision bias over one simulated second, independent of the substep count.
+        # Its standard rate prevents a commanded body from accumulating penetration across ticks.
+        self.space.collision_slop = 0.0
         self._bodies: dict[str, pymunk.Body] = {}
         shapes: list[pymunk.Shape] = []
         for rect in layout.blocked:

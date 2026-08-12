@@ -69,7 +69,11 @@ function colorFor(group: CollisionShape['group']): string {
 }
 
 function addLabel(layer: Container, value: string, x: number, y: number, resolution: number): void {
-  const label = new Text({ text: value, style: { fill: PALETTE.text, fontSize: 9, fontFamily: 'ui-monospace, monospace' }, resolution })
+  const label = new Text({
+    text: value,
+    style: { fill: PALETTE.text, fontSize: 9, fontFamily: 'ui-monospace, monospace' },
+    resolution,
+  })
   label.position.set(x + 2, y + 2)
   layer.addChild(label)
 }

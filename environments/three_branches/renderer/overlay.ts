@@ -75,8 +75,14 @@ export function readStatic(header: RecordingHeader): VillageStatic {
       cell: readCell(value.cell, `overlay_static.scenery[${index}].cell`, size),
     }
   })
-  assertUnique(buildings.map((item) => item.id), 'building')
-  assertUnique(props.map((item) => item.id), 'prop')
+  assertUnique(
+    buildings.map((item) => item.id),
+    'building',
+  )
+  assertUnique(
+    props.map((item) => item.id),
+    'prop',
+  )
   const spawnSource = record(source.spawn, 'overlay_static.spawn')
   const spawn = {
     x: finiteNumber(spawnSource.x, 'overlay_static.spawn.x'),
@@ -87,12 +93,15 @@ export function readStatic(header: RecordingHeader): VillageStatic {
 
 /** Map recording player ids to the environment's stable character ids. */
 export function expectedCharacterIds(header: RecordingHeader): readonly string[] {
-  const players = Object.keys(header.players).sort((left, right) => playerNumber(left) - playerNumber(right))
+  const players = Object.keys(header.players).sort(
+    (left, right) => playerNumber(left) - playerNumber(right),
+  )
   if (players.length === 0 || players[0] !== 'player_0') {
     throw new Error('Three Branches recording header is missing player_0.')
   }
   players.forEach((player, index) => {
-    if (playerNumber(player) !== index) throw new Error('Three Branches players must be contiguous.')
+    if (playerNumber(player) !== index)
+      throw new Error('Three Branches players must be contiguous.')
   })
   return players.map((_, index) => (index === 0 ? 'visitor' : `npc_${index - 1}`))
 }
@@ -145,13 +154,18 @@ export function readDynamic(
 
 function readCell(value: unknown, name: string, size: VillageSize): Cell {
   const source = record(value, name)
-  const cell = { x: nonnegativeInteger(source.x, `${name}.x`), y: nonnegativeInteger(source.y, `${name}.y`) }
-  if (cell.x >= size.cellsX || cell.y >= size.cellsY) throw new Error(`${name} is outside the village.`)
+  const cell = {
+    x: nonnegativeInteger(source.x, `${name}.x`),
+    y: nonnegativeInteger(source.y, `${name}.y`),
+  }
+  if (cell.x >= size.cellsX || cell.y >= size.cellsY)
+    throw new Error(`${name} is outside the village.`)
   return cell
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${name} must be an object.`)
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error(`${name} must be an object.`)
   return value as Record<string, unknown>
 }
 
@@ -161,12 +175,14 @@ function array(value: unknown, name: string): unknown[] {
 }
 
 function text(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} must be non-empty text.`)
+  if (typeof value !== 'string' || value.length === 0)
+    throw new Error(`${name} must be non-empty text.`)
   return value
 }
 
 function finiteNumber(value: unknown, name: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${name} must be finite.`)
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    throw new Error(`${name} must be finite.`)
   return value
 }
 
@@ -178,13 +194,15 @@ function positiveNumber(value: unknown, name: string): number {
 
 function positiveInteger(value: unknown, name: string): number {
   const result = finiteNumber(value, name)
-  if (!Number.isInteger(result) || result <= 0) throw new Error(`${name} must be a positive integer.`)
+  if (!Number.isInteger(result) || result <= 0)
+    throw new Error(`${name} must be a positive integer.`)
   return result
 }
 
 function nonnegativeInteger(value: unknown, name: string): number {
   const result = finiteNumber(value, name)
-  if (!Number.isInteger(result) || result < 0) throw new Error(`${name} must be a non-negative integer.`)
+  if (!Number.isInteger(result) || result < 0)
+    throw new Error(`${name} must be a non-negative integer.`)
   return result
 }
 

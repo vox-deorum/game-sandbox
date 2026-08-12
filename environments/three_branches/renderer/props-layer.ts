@@ -18,7 +18,10 @@ export interface PropLayer {
 export function createPropLayer(layer: Container, scene: StaticScene): PropLayer {
   const nodes = new Map<string, PropNode>()
   for (const item of [...scene.scenery, ...scene.props]) {
-    const node = createNode(item, scene.props.some((prop) => prop.id === item.id))
+    const node = createNode(
+      item,
+      scene.props.some((prop) => prop.id === item.id),
+    )
     nodes.set(item.id, node)
     layer.addChild(node.root)
   }
@@ -40,7 +43,13 @@ function createNode(item: StaticDrawable, interactive: boolean): PropNode {
   const shape = new Graphics()
   const color = interactive ? PALETTE.prop : PALETTE.scenery
   if (item.shape === 'circle') {
-    shape.circle(item.rect.x + item.rect.width / 2, item.rect.y + item.rect.height / 2, Math.min(item.rect.width, item.rect.height) / 2).fill(color)
+    shape
+      .circle(
+        item.rect.x + item.rect.width / 2,
+        item.rect.y + item.rect.height / 2,
+        Math.min(item.rect.width, item.rect.height) / 2,
+      )
+      .fill(color)
   } else {
     shape.rect(item.rect.x, item.rect.y, item.rect.width, item.rect.height).fill(color)
   }
@@ -50,7 +59,10 @@ function createNode(item: StaticDrawable, interactive: boolean): PropNode {
     const direction = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] }[item.facing]
     if (direction !== undefined) {
       const [dx = 0, dy = 0] = direction
-      shape.moveTo(centerX, centerY).lineTo(centerX + dx * 8, centerY + dy * 8).stroke({ color: PALETTE.text, width: 2 })
+      shape
+        .moveTo(centerX, centerY)
+        .lineTo(centerX + dx * 8, centerY + dy * 8)
+        .stroke({ color: PALETTE.text, width: 2 })
     }
   }
   root.addChild(shape)

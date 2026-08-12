@@ -44,4 +44,3 @@ describe('Three Branches visitor camera', () => {
     expect(resetVisitorCamera(suspended, limits, view, false).following).toBe(false)
   })
 })
-

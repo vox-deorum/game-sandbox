@@ -151,3 +151,19 @@ def test_physics_restores_finite_dynamic_bodies_after_a_stop() -> None:
         )
         values = (*physics.position("visitor"), *physics.position("npc_0"), *moved.values())
         assert all(isfinite(value) for value in values)
+
+
+def test_physics_does_not_accumulate_penetration_through_a_wall() -> None:
+    layout = build_village(0)
+    physics = Physics(layout)
+    physics.add("visitor", (6.5, 61.4))
+
+    # Repeatedly press into home_0's south wall. A weak contact correction used to move the center
+    # through the wall after several ticks, leaving the body trapped inside the building wall ring.
+    for _ in range(12):
+        physics.move({"visitor": 1.0}, {"visitor": 90.0})
+        assert physics.position("visitor")[1] < 62.0
+
+    against_wall = physics.position("visitor")[1]
+    physics.move({"visitor": 1.0}, {"visitor": 270.0})
+    assert physics.position("visitor")[1] < against_wall - 0.9

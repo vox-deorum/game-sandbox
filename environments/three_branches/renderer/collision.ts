@@ -27,7 +27,13 @@ export function staticCollision(scene: StaticScene): readonly CollisionShape[] {
   for (const item of [...scene.props, ...scene.scenery]) {
     // Facing is presentation metadata. Engine solids remain axis-aligned catalog shapes.
     if (item.shape === 'box') {
-      shapes.push({ id: item.id, kind: 'rect', rect: item.rect, label: item.label, group: 'object' })
+      shapes.push({
+        id: item.id,
+        kind: 'rect',
+        rect: item.rect,
+        label: item.label,
+        group: 'object',
+      })
     } else {
       shapes.push({
         id: item.id,
@@ -41,10 +47,34 @@ export function staticCollision(scene: StaticScene): readonly CollisionShape[] {
   }
   const edge = 2
   shapes.push(
-    { id: 'boundary:north', kind: 'rect', rect: { x: 0, y: 0, width: scene.world.width, height: edge }, label: 'boundary', group: 'boundary' },
-    { id: 'boundary:east', kind: 'rect', rect: { x: scene.world.width - edge, y: 0, width: edge, height: scene.world.height }, label: 'boundary', group: 'boundary' },
-    { id: 'boundary:south', kind: 'rect', rect: { x: 0, y: scene.world.height - edge, width: scene.world.width, height: edge }, label: 'boundary', group: 'boundary' },
-    { id: 'boundary:west', kind: 'rect', rect: { x: 0, y: 0, width: edge, height: scene.world.height }, label: 'boundary', group: 'boundary' },
+    {
+      id: 'boundary:north',
+      kind: 'rect',
+      rect: { x: 0, y: 0, width: scene.world.width, height: edge },
+      label: 'boundary',
+      group: 'boundary',
+    },
+    {
+      id: 'boundary:east',
+      kind: 'rect',
+      rect: { x: scene.world.width - edge, y: 0, width: edge, height: scene.world.height },
+      label: 'boundary',
+      group: 'boundary',
+    },
+    {
+      id: 'boundary:south',
+      kind: 'rect',
+      rect: { x: 0, y: scene.world.height - edge, width: scene.world.width, height: edge },
+      label: 'boundary',
+      group: 'boundary',
+    },
+    {
+      id: 'boundary:west',
+      kind: 'rect',
+      rect: { x: 0, y: 0, width: edge, height: scene.world.height },
+      label: 'boundary',
+      group: 'boundary',
+    },
   )
   return shapes
 }
