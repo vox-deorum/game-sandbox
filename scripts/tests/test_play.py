@@ -220,6 +220,34 @@ def test_builtin_agent_path_resolves_inside_this_checkout():
     assert (path / "manifest.json").is_file()
 
 
+def test_watch_mode_honors_a_seat_restricted_builtin(tmp_path: Path):
+    entry = load_environment("three_branches")
+
+    config = play.local_config(
+        entry,
+        mode="watch",
+        seat=0,
+        seed=0,
+        max_steps=None,
+        recording_dir=tmp_path,
+    )
+
+    bindings = config["player_bindings"]
+    players = config["players"]
+    assert bindings["player_0"] == {  # type: ignore[index]
+        "kind": "builtin-agent",
+        "path": play.builtin_agent_path("three_branches", "scripted_visitor"),
+        "name": "scripted_visitor",
+    }
+    assert players["player_0"] == {  # type: ignore[index]
+        "kind": "agent",
+        "builtin_name": "scripted_visitor",
+        "label": "Scripted visitor",
+    }
+    assert bindings["player_1"]["name"] == "naive"  # type: ignore[index]
+    assert players["player_1"]["builtin_name"] == "naive"  # type: ignore[index]
+
+
 def test_agent_repo_rejects_an_explicit_conflicting_mode(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(play, "load_environment", lambda _env_id: _entry())
 

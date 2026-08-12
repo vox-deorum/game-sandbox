@@ -22,7 +22,7 @@ The approved layer also settles the collision overlay's shipped default for watc
 
 The approved step 6 specification covers locomotion affordances, the expression palette with nine emotes plus use, and an informational use-preview highlight. The preview applies the environment's reach-plus-unblocked-line selection rule.
 
-The step 3 camera retains a fitted reset below the fixed HUD. Its final zoom limits must show the whole village and still make expressions and speech bubbles readable.
+The step 3 camera retains its visitor-focused reset below the fixed HUD. Pan, wheel zoom, and pinch suspend human follow. Reset recenters at the focus zoom and resumes follow only while `player_0` is controlled. Watch and replay reset to the current visitor without following it automatically. This step may tune the focus and zoom limits or add an explicit follow affordance, but must preserve that control-policy seam. The final limits must allow whole-village inspection and make expressions and speech bubbles readable at the focused view.
 
 ## Tests
 

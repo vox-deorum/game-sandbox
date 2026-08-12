@@ -8,36 +8,61 @@ import { createMap, TiledMap } from 'pixi-tiledmap'
 
 /** A row-major grid of one-character ground codes. */
 export interface TileGrid {
+  /** Number of cells in each row. */
   columns: number
+  /** Row-major strings of one-character tile codes. */
   rows: readonly string[]
 }
 
 /** The source textures for each ground code. Texture arrays are ordered variant choices. */
 export interface GroundTileset {
+  /** Source texture edge length in pixels. */
   tileSize: number
+  /** One texture or ordered variant textures for each non-empty code. */
   textures: Readonly<Record<string, Texture | readonly Texture[]>>
 }
 
-/** A callback that chooses a zero-based texture variant for one grid cell. */
-export type GroundVariant = (code: string, column: number, row: number) => number
+/** The reserved empty code for optional layers. The base grid may not use it. */
+export const EMPTY_TILE_CODE = ' '
+
+/**
+ * A callback that chooses a zero-based texture variant for one grid cell. The final argument is an
+ * eight-bit mask of same-code neighbours: N 1, NE 2, E 4, SE 8, S 16, SW 32, W 64, NW 128.
+ */
+export type GroundVariant = (
+  code: string,
+  column: number,
+  row: number,
+  neighbourMask: number,
+) => number
 
 /** The dimensions of a ground layer in world units. */
 export interface GroundSpan {
+  /** Drawn width in renderer world units. */
   width: number
+  /** Drawn height in renderer world units. */
   height: number
 }
 
 /** How large each cell is drawn, and which texture variant a cell takes. */
 export interface TiledGroundOptions {
+  /** Drawn edge length of one cell in renderer world units. */
   cellSize: number
+  /** Optional deterministic texture-variant selector. */
   variant?: GroundVariant
+  /** Ordered grids painted over the base. A space leaves an overlay cell transparent. */
+  layers?: readonly TileGrid[]
 }
 
 /** The public, project-owned ground layer. */
 export interface TiledGround {
+  /** Container holding the single packed tiled map. */
   view: Container
+  /** Drawn base-grid extent. */
   span: GroundSpan
+  /** Repaint one base-grid cell. */
   setTile(column: number, row: number, code: string): void
+  /** Release the packed map and its container. */
   destroy(): void
 }
 
@@ -62,6 +87,9 @@ export function validateGroundTileset(tileset: GroundTileset): void {
     throw new Error('GroundTileset tileSize must be a positive number.')
   }
   for (const [code, source] of Object.entries(tileset.textures)) {
+    if (code === EMPTY_TILE_CODE) {
+      throw new Error('GroundTileset code " " is reserved for empty overlay cells.')
+    }
     if (code.length !== 1) {
       throw new Error(`GroundTileset code "${code}" must be one character.`)
     }
@@ -77,11 +105,56 @@ export function validateGroundGrid(grid: TileGrid, tileset: GroundTileset): void
   validateGroundTileset(tileset)
   for (const [row, codes] of grid.rows.entries()) {
     for (const [column, code] of [...codes].entries()) {
-      if (!(code in tileset.textures)) {
+      if (code === EMPTY_TILE_CODE || !(code in tileset.textures)) {
         throw new Error(`TileGrid code "${code}" at ${column}, ${row} is not in the GroundTileset.`)
       }
     }
   }
+}
+
+/** Validate optional grids that share the base dimensions and may use the reserved empty code. */
+export function validateGroundLayers(
+  grid: TileGrid,
+  layers: readonly TileGrid[],
+  tileset: GroundTileset,
+): void {
+  validateGroundGrid(grid, tileset)
+  for (const [index, layer] of layers.entries()) {
+    validateTileGrid(layer)
+    if (layer.columns !== grid.columns || layer.rows.length !== grid.rows.length) {
+      throw new Error(`Ground layer ${index} must match the base grid dimensions.`)
+    }
+    for (const [row, codes] of layer.rows.entries()) {
+      for (const [column, code] of [...codes].entries()) {
+        if (code !== EMPTY_TILE_CODE && !(code in tileset.textures)) {
+          throw new Error(
+            `Ground layer ${index} code "${code}" at ${column}, ${row} is not in the GroundTileset.`,
+          )
+        }
+      }
+    }
+  }
+}
+
+/** Return the clockwise, north-first mask of neighbours that share one cell's code. */
+export function groundNeighbourMask(grid: TileGrid, column: number, row: number): number {
+  const code = grid.rows[row]?.[column]
+  if (code === undefined || code === EMPTY_TILE_CODE) return 0
+  const neighbours = [
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1],
+  ] as const
+  return neighbours.reduce(
+    (mask, [dx, dy], bit) =>
+      grid.rows[row + dy]?.[column + dx] === code ? mask | (1 << bit) : mask,
+    0,
+  )
 }
 
 /** Return the layer span after checking the grid and requested cell size. */
@@ -98,6 +171,7 @@ export function selectGroundTexture(
   column: number,
   row: number,
   variant?: GroundVariant,
+  neighbourMask = 0,
 ): Texture {
   validateGroundTileset(tileset)
   const source = tileset.textures[code]
@@ -105,7 +179,7 @@ export function selectGroundTexture(
     throw new Error(`Unknown ground code "${code}".`)
   }
   const textures = Array.isArray(source) ? source : [source]
-  const index = variant?.(code, column, row) ?? 0
+  const index = variant?.(code, column, row, neighbourMask) ?? 0
   if (!Number.isInteger(index) || index < 0 || index >= textures.length) {
     throw new Error(
       `Ground variant for "${code}" at ${column}, ${row} is outside its texture range.`,
@@ -143,13 +217,22 @@ export function solidColorTileset(colors: Readonly<Record<string, string>>): Gro
 export function createTiledGround(
   grid: TileGrid,
   tileset: GroundTileset,
-  { cellSize, variant }: TiledGroundOptions,
+  { cellSize, variant, layers = [] }: TiledGroundOptions,
 ): TiledGround {
-  validateGroundGrid(grid, tileset)
+  validateGroundLayers(grid, layers, tileset)
   const span = tileGridSpan(grid, cellSize)
   const view = new Container()
-  const textureAt = (code: string, column: number, row: number): Texture =>
-    selectGroundTexture(tileset, code, column, row, variant)
+  const baseRows = [...grid.rows]
+  const baseGrid = (): TileGrid => ({ columns: grid.columns, rows: baseRows })
+  const textureAt = (source: TileGrid, code: string, column: number, row: number): Texture =>
+    selectGroundTexture(
+      tileset,
+      code,
+      column,
+      row,
+      variant,
+      groundNeighbourMask(source, column, row),
+    )
   const ids = new Map<Texture, number>()
   const images = new Map<string, Texture>()
   const tiles: { id: number; image: string; imagewidth: number; imageheight: number }[] = []
@@ -164,8 +247,8 @@ export function createTiledGround(
     tiles.push({ id, image, imagewidth: tileset.tileSize, imageheight: tileset.tileSize })
     return id
   }
-  const tileIdAt = (code: string, column: number, row: number): number =>
-    tileIdFor(textureAt(code, column, row))
+  const tileIdAt = (source: TileGrid, code: string, column: number, row: number): number =>
+    tileIdFor(textureAt(source, code, column, row))
   for (const source of Object.values(tileset.textures)) {
     for (const texture of Array.isArray(source) ? source : [source]) {
       tileIdFor(texture)
@@ -186,18 +269,10 @@ export function createTiledGround(
           tiles,
         },
       ],
+      // One TiledMap keeps the base and its ordered overlays on the same packed drawing path.
       layers: [
-        {
-          name: 'ground',
-          width: grid.columns,
-          height: grid.rows.length,
-          tiles: grid.rows.flatMap((codes, row) =>
-            [...codes].map((code, column) => ({
-              tileset: 'ground',
-              tileId: tileIdAt(code, column, row),
-            })),
-          ),
-        },
+        tileLayer('ground', baseGrid(), false, tileIdAt),
+        ...layers.map((layer, index) => tileLayer(`layer-${index}`, layer, true, tileIdAt)),
       ],
     }),
     { tileImageTextures: images, tileSpritePadding: 0 },
@@ -205,8 +280,45 @@ export function createTiledGround(
   map.scale.set(cellSize / tileset.tileSize)
   view.addChild(map)
   return groundLifecycle(view, grid, span, (column, row, code) => {
-    map.setTile('ground', column, row, { tileset: 'ground', tileId: tileIdAt(code, column, row) })
+    // The public mutator belongs to the base only. Its new code changes the target's autotile mask.
+    if (code === EMPTY_TILE_CODE || !(code in tileset.textures)) {
+      throw new Error(`Unknown ground code "${code}".`)
+    }
+    const rowCodes = baseRows[row]
+    if (rowCodes === undefined)
+      throw new Error(`Tile position ${column}, ${row} is outside the ground.`)
+    baseRows[row] = `${rowCodes.slice(0, column)}${code}${rowCodes.slice(column + 1)}`
+    const source = baseGrid()
+    map.setTile('ground', column, row, {
+      tileset: 'ground',
+      tileId: tileIdAt(source, code, column, row),
+    })
   })
+}
+
+function tileLayer(
+  name: string,
+  grid: TileGrid,
+  allowsEmpty: boolean,
+  tileIdAt: (grid: TileGrid, code: string, column: number, row: number) => number,
+): {
+  name: string
+  width: number
+  height: number
+  tiles: ({ tileset: string; tileId: number } | null)[]
+} {
+  return {
+    name,
+    width: grid.columns,
+    height: grid.rows.length,
+    tiles: grid.rows.flatMap((codes, row) =>
+      [...codes].map((code, column) =>
+        allowsEmpty && code === EMPTY_TILE_CODE
+          ? null
+          : { tileset: 'ground', tileId: tileIdAt(grid, code, column, row) },
+      ),
+    ),
+  }
 }
 
 function groundLifecycle(

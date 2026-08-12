@@ -1,7 +1,13 @@
 import { Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
-import { clamp, degreesToRadians, lerp, stableHash } from '../src/renderers/base/math.js'
+import {
+  clamp,
+  degreesToRadians,
+  interpolateDegrees,
+  lerp,
+  stableHash,
+} from '../src/renderers/base/math.js'
 import { applyTexture, centeredSprite, flattenPoints } from '../src/renderers/base/pixi-helpers.js'
 
 describe('renderer math', () => {
@@ -13,6 +19,8 @@ describe('renderer math', () => {
 
   it('interpolates numbers and converts degrees', () => {
     expect(lerp(10, 20, 0.25)).toBe(12.5)
+    expect(interpolateDegrees(350, 10, 0.5)).toBe(0)
+    expect(interpolateDegrees(10, 350, 0.5)).toBe(0)
     expect(degreesToRadians(180)).toBe(Math.PI)
   })
 

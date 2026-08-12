@@ -13,6 +13,9 @@ from .rules import PROFILE, RULES
 if TYPE_CHECKING:
     from .layout import Layout
 
+_BODY_MASS = 1.0
+_BODY_MOMENT = inf
+
 
 class Physics:
     """Keep one Pymunk space for a day and move its characters together."""
@@ -49,7 +52,8 @@ class Physics:
         self.space.add(*shapes)
 
     def add(self, character_id: str, position: tuple[float, float]) -> None:
-        body = pymunk.Body(1.0, inf)
+        """Add one configured character body at a north-up world position."""
+        body = pymunk.Body(_BODY_MASS, _BODY_MOMENT)
         body.position = position
         shape = pymunk.Circle(body, PROFILE.body_radius)
         shape.friction = 0
@@ -58,6 +62,7 @@ class Physics:
         self._bodies[character_id] = body
 
     def position(self, character_id: str) -> tuple[float, float]:
+        """Return one character body's current north-up world position."""
         point = self._bodies[character_id].position
         return float(point.x), float(point.y)
 
@@ -74,7 +79,12 @@ class Physics:
                 body.body_type = pymunk.Body.KINEMATIC
                 body.velocity = (0, 0)
             else:
-                body.body_type = pymunk.Body.DYNAMIC
+                if body.body_type != pymunk.Body.DYNAMIC:
+                    body.body_type = pymunk.Body.DYNAMIC
+                    # Pymunk clears mass and moment when a kinematic body becomes dynamic. Restore
+                    # the character body before solving contacts, since zero mass produces NaNs.
+                    body.mass = _BODY_MASS
+                    body.moment = _BODY_MOMENT
                 angle = headings[character_id] * pi / 180
                 body.velocity = (speed * cos(angle), speed * sin(angle))
         for _ in range(RULES.physics_substeps):

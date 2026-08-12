@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createTiledGround,
+  EMPTY_TILE_CODE,
   type GroundTileset,
+  groundNeighbourMask,
   selectGroundTexture,
   tileGridSpan,
   validateGroundGrid,
+  validateGroundLayers,
   validateGroundTileset,
   validateTileGrid,
 } from '../src/renderers/base/tiled-ground.js'
@@ -33,10 +36,27 @@ describe('tiled ground validation', () => {
     expect(() => validateGroundTileset({ tileSize: 1, textures: { a: [] } })).toThrow(
       'at least one texture',
     )
+    expect(() => validateGroundTileset({ tileSize: 1, textures: { ' ': textureA } })).toThrow(
+      'reserved',
+    )
   })
 
   it('rejects grid codes that have no tileset texture', () => {
     expect(() => validateGroundGrid({ columns: 2, rows: ['az'] }, tileset)).toThrow('"z"')
+  })
+
+  it('requires overlay layers to match the base and reserves space as their empty code', () => {
+    const base = { columns: 2, rows: ['aa'] }
+    expect(() => validateGroundGrid({ columns: 1, rows: [EMPTY_TILE_CODE] }, tileset)).toThrow(
+      '" "',
+    )
+    expect(() => validateGroundLayers(base, [{ columns: 1, rows: ['a'] }], tileset)).toThrow(
+      'match the base',
+    )
+    expect(() => validateGroundLayers(base, [{ columns: 2, rows: [' z'] }], tileset)).toThrow('"z"')
+    expect(() =>
+      validateGroundLayers(base, [{ columns: 2, rows: [`a${EMPTY_TILE_CODE}`] }], tileset),
+    ).not.toThrow()
   })
 })
 
@@ -53,6 +73,27 @@ describe('tiled ground selection', () => {
     const checkerboard = (_code: string, column: number, row: number) => (column + row) % 2
     expect(selectGroundTexture(tileset, 'b', 2, 2, checkerboard)).toBe(textureA)
     expect(selectGroundTexture(tileset, 'b', 2, 3, checkerboard)).toBe(textureB)
+  })
+
+  it('passes the clockwise north-first same-code neighbour mask to variants', () => {
+    const grid = { columns: 3, rows: ['aaa', 'aba', 'aaa'] }
+    expect(groundNeighbourMask(grid, 1, 1)).toBe(0)
+    expect(groundNeighbourMask(grid, 0, 0)).toBe(4 | 16)
+    expect(groundNeighbourMask({ columns: 3, rows: ['aaa', 'aaa', 'aaa'] }, 1, 1)).toBe(255)
+
+    let received = -1
+    selectGroundTexture(
+      tileset,
+      'b',
+      1,
+      1,
+      (_code, _column, _row, mask) => {
+        received = mask
+        return 0
+      },
+      groundNeighbourMask(grid, 1, 1),
+    )
+    expect(received).toBe(0)
   })
 
   it('rejects unknown codes and invalid variant indexes', () => {
@@ -76,10 +117,31 @@ describe('tiled ground lifecycle', () => {
     expect(() => ground.setTile(2, 0, 'a')).toThrow('outside the ground')
     expect(() => ground.setTile(0, 1, 'a')).toThrow('outside the ground')
     expect(() => ground.setTile(0, 0, 'z')).toThrow('Unknown ground code')
+    expect(() => ground.setTile(0, 0, EMPTY_TILE_CODE)).toThrow('Unknown ground code')
 
     ground.destroy()
     ground.destroy()
     expect(ground.view.destroyed).toBe(true)
     expect(() => ground.setTile(0, 0, 'a')).toThrow('destroyed tiled ground')
+  })
+
+  it('packs ordered optional layers and repaints only the base with its updated mask', () => {
+    const variants: [string, number, number, number][] = []
+    const ground = createTiledGround(
+      { columns: 3, rows: ['aba'] },
+      { tileSize: 1, textures: { a: Texture.EMPTY, b: Texture.WHITE } },
+      {
+        cellSize: 16,
+        layers: [{ columns: 3, rows: [`${EMPTY_TILE_CODE}b${EMPTY_TILE_CODE}`] }],
+        variant: (code, column, row, mask) => {
+          variants.push([code, column, row, mask])
+          return 0
+        },
+      },
+    )
+
+    expect(ground.view.children).toHaveLength(1)
+    ground.setTile(1, 0, 'a')
+    expect(variants.at(-1)).toEqual(['a', 1, 0, 4 | 64])
   })
 })

@@ -167,6 +167,11 @@ def local_config(
             companion_path = str(repo)
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
+    # Seat restrictions describe automatic population. Explicit human companions and submitted
+    # agents remain the caller's choice, while watch mode must honor role-specific builtins.
+    automatic_builtins = {
+        player: seat.restricted_builtin or "naive" for seat in layout.seats for player in seat.players
+    }
     for player_id in player_ids:
         if player_id in externally_controlled:
             bindings[player_id] = {"kind": "external"}
@@ -185,12 +190,14 @@ def local_config(
             path, label = str(agent_repo), "Selected agent"
             attribution = {"kind": "agent", "submission_id": "local", "label": label}
         else:
-            path, label = builtin_agent_path(entry.meta.env_id, "naive"), builtin_agent_label(entry, "naive")
-            attribution = {"kind": "agent", "builtin_name": "naive", "label": label}
+            builtin_name = automatic_builtins[player_id]
+            path = builtin_agent_path(entry.meta.env_id, builtin_name)
+            label = builtin_agent_label(entry, builtin_name)
+            attribution = {"kind": "agent", "builtin_name": builtin_name, "label": label}
         assert path is not None
         binding = {"kind": "builtin-agent", "path": path}
         if "builtin_name" in attribution:
-            binding["name"] = "naive"
+            binding["name"] = attribution["builtin_name"]
         bindings[player_id] = binding
         players[player_id] = attribution
     config: dict[str, object] = {

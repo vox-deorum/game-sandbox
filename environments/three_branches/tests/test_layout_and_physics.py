@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from math import isfinite
+
 from three_branches.catalog import CATALOG
 from three_branches.engine import Day, step
 from three_branches.generation import build_village
 from three_branches.geometry import Circle, Rect, distance, nearest_point
+from three_branches.physics import Physics
 from three_branches.rules import GROUND_BY_CODE, PROFILE
 
 
@@ -94,7 +97,6 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
     day.place("visitor", (24.0, 45.5))
     step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
-
     # Two full-speed characters cannot pass through one another between solver samples.
     day = Day(layout, 5, False)
     day.place("visitor", (10.0, 50.5))
@@ -133,3 +135,19 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
     day.place("visitor", (24.1, 42.5))
     step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
+
+
+def test_physics_restores_finite_dynamic_bodies_after_a_stop() -> None:
+    physics = Physics(build_village(0))
+    physics.add("visitor", (10.0, 50.5))
+    physics.add("npc_0", (10.75, 50.5))
+
+    # This contact reproduces the visitor policy's stop, greet, and angled departure sequence.
+    physics.move({"visitor": 0.0, "npc_0": 0.0}, {"visitor": 0.0, "npc_0": 0.0})
+    for _ in range(24):
+        moved = physics.move(
+            {"visitor": 0.75, "npc_0": 0.65},
+            {"visitor": 251.5, "npc_0": 270.0},
+        )
+        values = (*physics.position("visitor"), *physics.position("npc_0"), *moved.values())
+        assert all(isfinite(value) for value in values)

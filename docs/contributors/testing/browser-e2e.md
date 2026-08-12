@@ -45,6 +45,7 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey, human seat play, and replay attribution. | `environments/hearts/renderer/` |
 | `spades` | Chat filtering and replay, seat-ranked results on both seat plans, and the partnership matchup. | `environments/spades/renderer/` |
 | `crane-reach` | A skirmish watched to game over with exact replay seeking, an army season built from the Season 5 preset with a submitted example agent, and an order composed by clicking the board. | `environments/skirmish_crane/renderer/` |
+| `three-branches` | A seeded village watch session with camera and collision interaction, followed by repeatable replay seeking. | `environments/three_branches/renderer/` |
 
 A change to something shared, such as `src/renderers/base/`, `components/ui/`, `styles/tokens.css`, or `api/client.ts`, needs the whole suite. A change to `src/renderers/cards/` needs `hearts` and `spades`.
 

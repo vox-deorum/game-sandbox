@@ -10,6 +10,12 @@ export function lerp(from: number, to: number, progress: number): number {
   return from + (to - from) * progress
 }
 
+/** Interpolate degrees along the shortest turn and normalize the result to the range [0, 360). */
+export function interpolateDegrees(from: number, to: number, progress: number): number {
+  const turn = ((to - from + 540) % 360) - 180
+  return (from + turn * progress + 360) % 360
+}
+
 /** Convert degrees to radians for Pixi rotations and trigonometry. */
 export function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180
