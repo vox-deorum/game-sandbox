@@ -9,14 +9,16 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo.utils.env import ParallelEnv
 
+from .catalog import CATALOG
 from .engine import Day, phase_at, step
 from .generation import build_village
 from .perception import can_hear, observe
-from .rules import EMOTES, FRAME, RULES
+from .rules import EMOTES, FRAME, GROUND_BY_CODE, RULES
 
 SEAT_PLANS = {"cast_5": 5, "cast_10": 10}
 _TEXT = "abcdefghijklmnopqrstuvwxyz0123456789_"
-_GROUND = "rpbgidf ewx".replace(" ", "")
+_GROUND = "".join(sorted(GROUND_BY_CODE))
+_BUILDINGS = sum(kind.count for kind in CATALOG.buildings)
 
 
 def make_env(parameters: Mapping[str, object]) -> ThreeBranchesEnv:
@@ -36,7 +38,9 @@ def default_action(env: ThreeBranchesEnv, player_id: str) -> dict[str, object]:
     """Return the ruleset's safe late-action fallback."""
     if player_id not in env.possible_agents:
         raise ValueError(f"unknown player {player_id!r}")
-    heading = 0.0 if not hasattr(env, "day") else env.day.characters[env.character_for(player_id)].heading
+    # A conformance caller may ask for the fallback before the first reset, when there is no day.
+    day = env._day
+    heading = 0.0 if day is None else day.characters[env.character_for(player_id)].heading
     return {
         "heading": np.array(heading, dtype=np.float32),
         "speed": np.array(0.0, dtype=np.float32),
@@ -59,7 +63,7 @@ class ThreeBranchesEnv(ParallelEnv):
         self.cast_size = SEAT_PLANS[seat_plan]
         self.possible_agents = [f"player_{index}" for index in range(self.cast_size + 1)]
         self.agents: list[str] = []
-        self.day: Day
+        self._day: Day | None = None
         self._roster = ({"id": "visitor", "home": "none"},) + tuple(
             {"id": f"npc_{index}", "home": f"home_{index % 5}"} for index in range(self.cast_size)
         )
@@ -100,7 +104,7 @@ class ThreeBranchesEnv(ParallelEnv):
                     * FRAME.cells_y
                 ),
                 "buildings": spaces.Tuple(
-                    [spaces.Dict({"id": _text(16), "type": _text(16), "cell": cell})] * 7
+                    [spaces.Dict({"id": _text(16), "type": _text(16), "cell": cell})] * _BUILDINGS
                 ),
                 "props": spaces.Sequence(
                     spaces.Dict({"id": _text(16), "type": _text(12), "cell": cell, "facing": _text(5)})
@@ -134,6 +138,13 @@ class ThreeBranchesEnv(ParallelEnv):
         self.observation_spaces = {agent: observation for agent in self.possible_agents}
         self.action_spaces = {agent: action for agent in self.possible_agents}
 
+    @property
+    def day(self) -> Day:
+        """The day in progress. Reading it before the first reset is a programming error."""
+        if self._day is None:
+            raise RuntimeError("three_branches has no day until reset runs")
+        return self._day
+
     def observation_space(self, agent: str) -> spaces.Space:
         return self.observation_spaces[agent]
 
@@ -155,13 +166,16 @@ class ThreeBranchesEnv(ParallelEnv):
         self, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[dict[str, dict[str, object]], dict[str, dict[str, object]]]:
         del options
-        self.day = Day(build_village(seed), self.cast_size, self.daynight)
+        self._day = Day(build_village(seed), self.cast_size, self.daynight)
         self.agents = list(self.possible_agents)
         observations = {agent: self._observation(agent) for agent in self.agents}
         return observations, {agent: {} for agent in self.agents}
 
     def _observation(self, player_id: str) -> dict[str, object]:
-        state = observe(self.day, self.character_for(player_id))
+        return self._complete(observe(self.day, self.character_for(player_id)))
+
+    def _complete(self, state: dict[str, object]) -> dict[str, object]:
+        """Add the standing knowledge to one character's perception and fix its leaf types."""
         state.update(
             {
                 # Observations label the next action. Overlays deliberately retain the completed
@@ -197,9 +211,13 @@ class ThreeBranchesEnv(ParallelEnv):
         character_actions = {
             self.character_for(agent): _plain_action(action) for agent, action in actions.items()
         }
-        step(self.day, character_actions)
+        # The engine perceives every character as the last act of the tick, so the environment
+        # dresses those perceptions rather than computing them a second time.
+        perceptions = step(self.day, character_actions)
         terminal = self.day.terminal
-        observations = {agent: self._observation(agent) for agent in self.agents}
+        observations = {
+            agent: self._complete(perceptions[self.character_for(agent)]) for agent in self.agents
+        }
         rewards = {agent: 100.0 if terminal else 0.0 for agent in self.agents}
         terminations = {agent: terminal for agent in self.agents}
         truncations = {agent: False for agent in self.agents}
@@ -209,6 +227,13 @@ class ThreeBranchesEnv(ParallelEnv):
         return observations, rewards, terminations, truncations, infos
 
     def chat_policy(self, sender: str) -> dict[str, object]:
+        """List who the sender can address from the state it is speaking in.
+
+        This and ``broadcast_recipients`` measure the same audience. The difference between a
+        direct line and a broadcast is entirely when the harness asks: a direct line fixes its
+        addressees before the tick moves anyone, so it still arrives when its addressee walks
+        away, while a broadcast is asked again once everyone has moved.
+        """
         character = self.character_for(sender)
         recipients = tuple(
             self.player_for(other)
@@ -218,6 +243,7 @@ class ThreeBranchesEnv(ParallelEnv):
         return {"target_recipients": recipients, "default_recipient": None}
 
     def broadcast_recipients(self, sender: str) -> tuple[str, ...]:
+        """Resolve a broadcast's audience, which the harness asks for after the tick has moved."""
         return cast(tuple[str, ...], self.chat_policy(sender)["target_recipients"])
 
     def render(self) -> None:

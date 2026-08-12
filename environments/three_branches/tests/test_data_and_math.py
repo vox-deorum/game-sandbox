@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from importlib import resources
 
 import pytest
 
 from three_branches.catalog import CATALOG
 from three_branches.catalog import load as load_catalog
-from three_branches.geometry import Circle, Rect, distance, heading_to, nearest_point, point_in_cone, wrap
+from three_branches.geometry import Circle, Rect, distance, nearest_point, point_in_cone, wrap
 from three_branches.grid import Grid
 from three_branches.rules import FRAME, RULES
 from three_branches.rules import load as load_rules
@@ -82,10 +84,28 @@ def test_loaders_reject_unknown_and_invalid_contract_data() -> None:
     bad_rules["grounds"][1]["code"] = "g"
     with pytest.raises(ValueError):
         load_rules(bad_rules)
+    # Layout geometry reads a cell index as a metre coordinate, so any other scale is refused.
+    bad_rules = deepcopy(rules)
+    bad_rules["frame"]["cell_size"] = 2
+    with pytest.raises(ValueError):
+        load_rules(bad_rules)
 
     catalog = {"buildings": [], "props": [], "scenery": []}
     with pytest.raises(ValueError):
         load_catalog(catalog)
+    # A transition needs exactly two states, which is what makes `active_state` the other one.
+    shipped = json.loads(
+        resources.files("three_branches").joinpath("catalog.json").read_text(encoding="utf-8")
+    )
+    bad_catalog = deepcopy(shipped)
+    bad_catalog["props"][0]["states"] = [bad_catalog["props"][0]["start"]]
+    with pytest.raises(ValueError):
+        load_catalog(bad_catalog)
+
+
+def test_the_grid_refuses_a_ground_code_the_rules_do_not_define() -> None:
+    with pytest.raises(ValueError):
+        Grid(FRAME, [["q"] * FRAME.cells_x for _ in range(FRAME.cells_y)])
 
 
 def test_grid_conversion_flood_and_supercover() -> None:
@@ -111,7 +131,6 @@ def test_grid_conversion_flood_and_supercover() -> None:
 
 def test_geometry_boundaries_and_nearest_shapes() -> None:
     assert wrap(360.0) == 0.0
-    assert heading_to((0.0, 0.0), (0.0, 1.0)) == 90.0
     assert distance((0.0, 0.0), (3.0, 4.0)) == 5.0
     assert point_in_cone((0.0, 0.0), 0.0, (1.0, 1.7320508075688772), 120.0, 2.0)
     assert not point_in_cone((0.0, 0.0), 0.0, (-0.01, 0.0), 120.0, 2.0)

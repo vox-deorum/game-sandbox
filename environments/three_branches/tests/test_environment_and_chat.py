@@ -102,10 +102,8 @@ def test_parallel_environment_rejects_missing_and_outside_actions() -> None:
 def test_direct_policy_is_pre_step_but_broadcast_audience_is_post_step() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset()
-    env.day.characters["visitor"].position = (15.0, 50.5)
-    env.day.physics._bodies["visitor"].position = (15.0, 50.5)
-    env.day.characters["npc_0"].position = (20.9, 50.5)
-    env.day.physics._bodies["npc_0"].position = (20.9, 50.5)
+    env.day.place("visitor", (15.0, 50.5))
+    env.day.place("npc_0", (20.9, 50.5))
     assert "player_1" in env.chat_policy("player_0")["target_recipients"]
 
     actions = {agent: default_action(env, agent) for agent in env.agents}

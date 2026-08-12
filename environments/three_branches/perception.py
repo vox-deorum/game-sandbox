@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .catalog import PROP_BY_TOKEN
 from .geometry import distance, nearest_point, point_in_cone
 from .rules import PROFILE
+
+_BELL = "bell"
 
 if TYPE_CHECKING:
     from .engine import Character, Day
@@ -55,8 +58,19 @@ def observe(day: Day, character_id: str) -> dict[str, object]:
         for prop in day.layout.props
         if _visible(day, observer, nearest_point(observer.position, day.layout.shape_for(prop)))
     )
-    bell = int(day.prop_states.get("bell", "silent") == "ringing")
-    return {"self": character_record(observer), "seen": seen, "nearby": nearby, "props": props, "bell": bell}
+    return {
+        "self": character_record(observer),
+        "seen": seen,
+        "nearby": nearby,
+        "props": props,
+        "bell": int(bell_rings(day)),
+    }
+
+
+def bell_rings(day: Day) -> bool:
+    """Report the village-wide signal, which every character hears at any distance."""
+    ringing = PROP_BY_TOKEN[_BELL].active_state
+    return any(day.prop_states[prop.id] == ringing for prop in day.layout.props if prop.type == _BELL)
 
 
 def can_hear(day: Day, sender_id: str, recipient_id: str) -> bool:

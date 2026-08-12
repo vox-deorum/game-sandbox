@@ -21,6 +21,10 @@ class Physics:
         self.layout = layout
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
+        # Pymunk's default bias assumes a 1/60 second step. This space takes far coarser substeps,
+        # so state the correction rate for the substep actually used. Without it a body caught in a
+        # contact can be pushed further in one tick than any command could move it.
+        self.space.collision_bias = (1 - 0.1) ** RULES.physics_substeps
         self._bodies: dict[str, pymunk.Body] = {}
         shapes: list[pymunk.Shape] = []
         for rect in layout.blocked:
@@ -57,6 +61,10 @@ class Physics:
         point = self._bodies[character_id].position
         return float(point.x), float(point.y)
 
+    def place(self, character_id: str, position: tuple[float, float]) -> None:
+        """Set a body outright, outside the tick's solved movement."""
+        self._bodies[character_id].position = position
+
     def move(self, speeds: dict[str, float], headings: dict[str, float]) -> dict[str, float]:
         """Advance every body by one rules tick and report actual distances."""
         before = {character_id: self.position(character_id) for character_id in self._bodies}
@@ -86,7 +94,10 @@ class Physics:
                 ),
             )
             position = self.position(character_id)
-            moved[character_id] = distance(before[character_id], position)
+            # A tick simulates one second, so a commanded body covers at most its full speed of 1.
+            # Contact separation can add to that, and the reported distance is a rules value with a
+            # declared range, so hold it inside the range the observation promises.
+            moved[character_id] = min(distance(before[character_id], position), 1.0)
             body.velocity = (0, 0)
         return moved
 

@@ -24,7 +24,7 @@ def test_fixture_is_fresh_complete_and_has_required_topology() -> None:
     assert {item.type for item in first.props} == {item.token for item in CATALOG.props}
     assert {item.type for item in first.scenery} == {item.token for item in CATALOG.scenery}
     assert sum(first.grid.value_at((channel, 50)) == "b" for channel in (25, 50, 75)) == 3
-    assert first.ground_code_at(first.spawn) == "r"
+    assert first.ground_at(first.spawn).code == "r"
     assert first.body_clear(first.spawn)
 
 
@@ -43,16 +43,15 @@ def test_layout_paints_doorways_and_exposes_clear_home_poses() -> None:
         )
 
 
-def test_layout_shapes_occupancy_and_static_projection_are_distinct() -> None:
+def test_layout_shapes_and_static_projection_are_distinct() -> None:
     layout = build_village(0)
     assert len(layout.solids) == len(layout.props) + len(layout.scenery)
-    assert len(layout.occupancy) == len(layout.props)
     assert layout.blocked
     assert any(GROUND_BY_CODE[layout.grid.value_at((50, y))].passable is False for y in range(66, 100))
     first = layout.village()
     second = layout.village()
     assert first == second and first is not second
-    assert first["ground"] == tuple("".join(row) for row in layout.grid.rows)
+    assert first["ground"] == layout.grid.rows
     for item in (*layout.props, *layout.scenery):
         shape = layout.shape_for(item)
         assert isinstance(shape, Rect | Circle)
@@ -75,12 +74,9 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
     visitor = day.characters["visitor"]
     start = visitor.position
     # A dynamic neighbour cannot push a speed-zero body, which remains kinematic for this tick.
-    visitor.position = layout.residence_pose("home_0").position
-    day.physics._bodies["visitor"].position = visitor.position
+    day.place("visitor", layout.residence_pose("home_0").position)
     still_position = visitor.position
-    neighbour = day.characters["npc_0"]
-    neighbour.position = (visitor.position[0] - 1, visitor.position[1])
-    day.physics._bodies["npc_0"].position = neighbour.position
+    day.place("npc_0", (visitor.position[0] - 1, visitor.position[1]))
     step(
         day,
         {
@@ -92,21 +88,17 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
 
     # Fast commands cannot cross the outer frame or an impassable cell in one tick.
     day = Day(layout, 5, False)
-    day.characters["visitor"].position = (0.41, 50.5)
-    day.physics._bodies["visitor"].position = (0.41, 50.5)
+    day.place("visitor", (0.41, 50.5))
     step(day, {"visitor": {"heading": 180.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] >= 0.4
-    day.characters["visitor"].position = (24.0, 45.5)
-    day.physics._bodies["visitor"].position = (24.0, 45.5)
+    day.place("visitor", (24.0, 45.5))
     step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
 
     # Two full-speed characters cannot pass through one another between solver samples.
     day = Day(layout, 5, False)
-    day.characters["visitor"].position = (10.0, 50.5)
-    day.physics._bodies["visitor"].position = (10.0, 50.5)
-    day.characters["npc_0"].position = (11.8, 50.5)
-    day.physics._bodies["npc_0"].position = (11.8, 50.5)
+    day.place("visitor", (10.0, 50.5))
+    day.place("npc_0", (11.8, 50.5))
     step(
         day,
         {
@@ -118,18 +110,15 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
     assert start != day.characters["visitor"].position
 
     # An angled command keeps its free component when a water bank blocks the other one.
-    day.characters["visitor"].position = (24.2, 42.5)
-    day.physics._bodies["visitor"].position = (24.2, 42.5)
+    day.place("visitor", (24.2, 42.5))
     step(day, {"visitor": {"heading": 45.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
     assert day.characters["visitor"].position[1] > 42.5
 
     # Equal-mass moving bodies push one another; only a commanded stop becomes immovable.
     day = Day(layout, 5, False)
-    day.characters["visitor"].position = (10.0, 50.5)
-    day.physics._bodies["visitor"].position = (10.0, 50.5)
-    day.characters["npc_0"].position = (11.0, 50.5)
-    day.physics._bodies["npc_0"].position = (11.0, 50.5)
+    day.place("visitor", (10.0, 50.5))
+    day.place("npc_0", (11.0, 50.5))
     step(
         day,
         {
@@ -141,7 +130,6 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
 
     # The fastest command cannot tunnel through the one-cell bank in one tick.
     day = Day(layout, 5, False)
-    day.characters["visitor"].position = (24.1, 42.5)
-    day.physics._bodies["visitor"].position = (24.1, 42.5)
+    day.place("visitor", (24.1, 42.5))
     step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
     assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9

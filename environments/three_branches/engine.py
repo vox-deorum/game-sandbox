@@ -57,6 +57,11 @@ class Day:
         for character in self.characters.values():
             self.physics.add(character.id, character.position)
 
+    def place(self, character_id: str, position: tuple[float, float]) -> None:
+        """Move a character outright, keeping its record and its physics body together."""
+        self.characters[character_id].position = position
+        self.physics.place(character_id, position)
+
     @property
     def phase(self) -> str:
         return phase_at(self.tick, self.daynight)
@@ -85,21 +90,23 @@ def normalise(action: Mapping[str, object], heading: float) -> Order:
     return Order(turn, min(1.0, max(0.0, speed)), expression if 0 <= expression <= len(EMOTES) + 1 else 0)
 
 
-def _expression(day: Day, character_id: str, order: Order) -> tuple[str, str, str | None]:
+def _expression(day: Day, character_id: str, order: Order) -> tuple[str, str]:
+    """Name the expression an order produces, as a type and the prop it names."""
     if order.action == 0:
-        return "none", "none", None
+        return "none", "none"
     if order.action > 1:
-        return EMOTES[order.action - 2], "none", None
+        return EMOTES[order.action - 2], "none"
     # Emotes accompany movement, but using a prop represents stopping to interact with it.
     if order.speed != 0:
-        return "none", "none", None
+        return "none", "none"
     target = select(day.layout, day.characters[character_id].position)
     if target is None:
-        return "none", "none", None
+        return "none", "none"
+    # A prop stays with the character who held it on the previous tick.
     held_by = day.holders[target.id]
     if held_by is not None and held_by != character_id:
-        return "none", "none", None
-    return "use", target.id, target.id
+        return "none", "none"
+    return "use", target.id
 
 
 def step(day: Day, actions: Mapping[str, Mapping[str, object]]) -> dict[str, dict[str, object]]:
@@ -107,27 +114,27 @@ def step(day: Day, actions: Mapping[str, Mapping[str, object]]) -> dict[str, dic
     if day.terminal:
         return {character_id: observe(day, character_id) for character_id in day.characters}
     orders = {
+        # A missing action is the ruleset's late-action default: heading unchanged, speed 0,
+        # expression none. The environment always supplies every action, so this serves the
+        # engine's own callers.
         character_id: normalise(actions.get(character_id, {}), character.heading)
         for character_id, character in day.characters.items()
     }
-    choices: dict[str, str | None] = {}
+    # A prop takes one user per tick, and `users` is the only record of who won it. Selection runs
+    # before physics so every contender reads the same pre-tick state, and roster order puts the
+    # visitor first. A contender who loses simply expresses nothing.
+    users: dict[str, str] = {}
     for character_id, order in orders.items():
         character = day.characters[character_id]
         character.heading = order.heading
-        kind, target, choice = _expression(day, character_id, order)
+        kind, target = _expression(day, character_id, order)
+        if kind == "use":
+            if target in users:
+                kind, target = "none", "none"
+            else:
+                users[target] = character_id
         character.expression_type = kind
         character.expression_target = target
-        choices[character_id] = choice
-    # A prop can have one user. The roster-order pass is deliberately before physics: all
-    # contenders selected from the same starting state, and an unsuccessful use is simply none.
-    claimed: set[str] = set()
-    for character_id, choice in choices.items():
-        if choice is not None and choice in claimed:
-            choices[character_id] = None
-            day.characters[character_id].expression_type = "none"
-            day.characters[character_id].expression_target = "none"
-        elif choice is not None:
-            claimed.add(choice)
     speeds = {}
     for character_id, order in orders.items():
         ground = day.layout.ground_at(day.characters[character_id].position)
@@ -136,6 +143,6 @@ def step(day: Day, actions: Mapping[str, Mapping[str, object]]) -> dict[str, dic
     for character_id, character in day.characters.items():
         character.position = day.physics.position(character_id)
         character.moved = moved[character_id]
-    apply(day.prop_states, day.holders, day.last_held, day.layout, choices, day.tick + 1)
+    apply(day.prop_states, day.holders, day.last_held, day.layout, users, day.tick + 1)
     day.tick += 1
     return {character_id: observe(day, character_id) for character_id in day.characters}

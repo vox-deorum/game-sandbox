@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .catalog import BUILDING_BY_TOKEN, PROP_BY_TOKEN, SCENERY_BY_TOKEN
 from .geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect
@@ -40,6 +40,19 @@ class Pose:
     heading: float
 
 
+def doorway_cells(building: Building) -> tuple[Cell, ...]:
+    """Return the door run on a building's facing side, from the catalog alone."""
+    kind = BUILDING_BY_TOKEN[building.type]
+    x, y = building.cell
+    if building.facing in {"north", "south"}:
+        start = x + (kind.width - kind.door_width) // 2
+        row = y + kind.height - 1 if building.facing == "north" else y
+        return tuple((column, row) for column in range(start, start + kind.door_width))
+    start = y + (kind.height - kind.door_width) // 2
+    column = x + kind.width - 1 if building.facing == "east" else x
+    return tuple((column, row) for row in range(start, start + kind.door_width))
+
+
 def _rectangles(cells: set[Cell]) -> tuple[Rect, ...]:
     """Coalesce cells deterministically, producing non-overlapping maximal row runs."""
     rectangles: list[Rect] = []
@@ -66,6 +79,9 @@ class Layout:
     props: tuple[PlacedProp, ...]
     scenery: tuple[Scenery, ...]
     spawn: Point
+    # Static collision geometry, derived once the placements above are known to be valid.
+    blocked: tuple[Rect, ...] = field(init=False, compare=False, repr=False)
+    solids: tuple[Rect | Circle, ...] = field(init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.grid.frame != FRAME:
@@ -87,33 +103,26 @@ class Layout:
         for item in (*self.props, *self.scenery):
             if not self.grid.in_bounds(item.cell):
                 raise ValueError("object placement is outside the grid")
-
-    @property
-    def blocked(self) -> tuple[Rect, ...]:
-        return _rectangles(
-            {
-                (x, y)
-                for y, row in enumerate(self.grid.rows)
-                for x, code in enumerate(row)
-                if not GROUND_BY_CODE[code].passable
-            }
+        # Both tables read the placements the checks above just accepted, so they are built last.
+        object.__setattr__(
+            self,
+            "blocked",
+            _rectangles(
+                {
+                    (x, y)
+                    for y, row in enumerate(self.grid.rows)
+                    for x, code in enumerate(row)
+                    if not GROUND_BY_CODE[code].passable
+                }
+            ),
         )
-
-    @property
-    def solids(self) -> tuple[Rect | Circle, ...]:
-        return tuple(self.shape_for(item) for item in (*self.props, *self.scenery))
-
-    @property
-    def occupancy(self) -> tuple[Rect | Circle, ...]:
-        return tuple(self.shape_for(prop) for prop in self.props)
+        object.__setattr__(
+            self, "solids", tuple(self.shape_for(item) for item in (*self.props, *self.scenery))
+        )
 
     def ground_at(self, point: Point) -> Ground | None:
         cell = self.grid.cell_at(point)
         return GROUND_BY_CODE[self.grid.value_at(cell)] if cell is not None else None
-
-    def ground_code_at(self, point: Point) -> str | None:
-        cell = self.grid.cell_at(point)
-        return self.grid.value_at(cell) if cell is not None else None
 
     def shape_for(self, item: PlacedProp | Scenery) -> Rect | Circle:
         source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
@@ -126,22 +135,13 @@ class Layout:
         building = next((item for item in self.buildings if item.id == building_id), None)
         if building is None:
             raise KeyError(building_id)
-        kind = BUILDING_BY_TOKEN[building.type]
-        x, y = building.cell
-        if building.facing == "north":
-            start = x + (kind.width - kind.door_width) // 2
-            return tuple((column, y + kind.height - 1) for column in range(start, start + kind.door_width))
-        if building.facing == "south":
-            start = x + (kind.width - kind.door_width) // 2
-            return tuple((column, y) for column in range(start, start + kind.door_width))
-        if building.facing == "east":
-            start = y + (kind.height - kind.door_width) // 2
-            return tuple((x + kind.width - 1, row) for row in range(start, start + kind.door_width))
-        start = y + (kind.height - kind.door_width) // 2
-        return tuple((x, row) for row in range(start, start + kind.door_width))
+        return doorway_cells(building)
 
     def body_clear(self, point: Point, radius: float = PROFILE.body_radius) -> bool:
-        if radius <= 0 or not (
+        """Report whether a body of this radius fits at a point, clear of every solid."""
+        if radius <= 0:
+            raise ValueError("a body clearance check needs a positive radius")
+        if not (
             radius <= point[0] <= self.grid.frame.width - radius
             and radius <= point[1] <= self.grid.frame.height - radius
         ):
@@ -177,7 +177,11 @@ class Layout:
         return Pose(position, headings[home.facing])
 
     def village(self) -> dict[str, object]:
-        """Produce a fresh public static projection, safe for one observation only."""
+        """Produce a public static projection with fresh mappings for one observation.
+
+        Every mapping is new so one player cannot reach another's observation, while the ground
+        rows are shared: they are immutable strings, which the observation contract allows.
+        """
         return {
             "size": {
                 "cells_x": self.grid.frame.cells_x,
@@ -185,7 +189,7 @@ class Layout:
                 "cell_size": self.grid.frame.cell_size,
             },
             # The observation contract exposes each south-first row as one Text value.
-            "ground": tuple("".join(row) for row in self.grid.rows),
+            "ground": self.grid.rows,
             "buildings": tuple(
                 {"id": item.id, "type": item.type, "cell": {"x": item.cell[0], "y": item.cell[1]}}
                 for item in self.buildings
@@ -217,6 +221,5 @@ def paint_site(rows: list[list[str]], building: Building) -> None:
             rows[row][column] = (
                 "x" if column in {x, x + kind.width - 1} or row in {y, y + kind.height - 1} else "i"
             )
-    temporary = Layout(Grid(FRAME, rows), (building,), (), (), (1.5, 1.5))
-    for column, row in temporary.doorway(building.id):
+    for column, row in doorway_cells(building):
         rows[row][column] = "d"

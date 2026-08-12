@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 
 def extract_overlay_static(env: Any) -> dict[str, object]:
     """Return the immutable village once for the recording header."""
     # Observations use tuples because their Gymnasium spaces do. A recording crosses a JSON
-    # boundary, so normalize those sequences once in the header instead of in every dynamic frame.
-    return json.loads(json.dumps(env.day.layout.village()))
+    # boundary, so the header states those sequences as lists instead of leaving every reader
+    # to normalize them.
+    village = env.day.layout.village()
+    for key in ("ground", "buildings", "props", "scenery"):
+        village[key] = list(village[key])
+    return village
 
 
 def extract_overlay(env: Any) -> dict[str, object]:

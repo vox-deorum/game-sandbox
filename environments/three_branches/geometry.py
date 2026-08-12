@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import atan2, cos, degrees, hypot, radians, sin
+from math import cos, hypot, radians, sin
 
 Point = tuple[float, float]
 
@@ -38,10 +38,6 @@ def wrap(heading: float) -> float:
 def heading_vector(heading: float) -> Point:
     angle = radians(wrap(heading))
     return cos(angle), sin(angle)
-
-
-def heading_to(start: Point, end: Point) -> float:
-    return wrap(degrees(atan2(end[1] - start[1], end[0] - start[0])))
 
 
 def distance(first: Point, second: Point) -> float:

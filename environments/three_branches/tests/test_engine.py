@@ -27,11 +27,6 @@ def _use_point(day: Day, prop_id: str, side: int = 0) -> tuple[float, float]:
     return clear[side]
 
 
-def _place(day: Day, character_id: str, point: tuple[float, float]) -> None:
-    day.characters[character_id].position = point
-    day.physics._bodies[character_id].position = point
-
-
 def test_each_prop_transition_follows_begin_hold_and_release_rules() -> None:
     cases = (
         ("stall_0", "open"),
@@ -44,7 +39,7 @@ def test_each_prop_transition_follows_begin_hold_and_release_rules() -> None:
         prop = next(item for item in day.layout.props if item.id == prop_id)
         kind = prop.type
         start = day.prop_states[prop_id]
-        _place(day, "visitor", _use_point(day, prop_id))
+        day.place("visitor", _use_point(day, prop_id))
 
         step(day, {"visitor": {"heading": 0.0, "speed": 0.0, "action": 1}})
         assert day.prop_states[prop_id] == expected, prop.type
@@ -67,8 +62,8 @@ def test_each_prop_transition_follows_begin_hold_and_release_rules() -> None:
 
 def test_prop_contention_is_visitor_first_and_the_bell_is_global() -> None:
     day = Day(build_village(0), 5, False)
-    _place(day, "visitor", _use_point(day, "bell", 0))
-    _place(day, "npc_0", _use_point(day, "bell", 1))
+    day.place("visitor", _use_point(day, "bell", 0))
+    day.place("npc_0", _use_point(day, "bell", 1))
     step(
         day,
         {
@@ -97,8 +92,8 @@ def test_perception_passes_doors_but_not_walls_and_reports_post_tick_motion() ->
     wall_view = observe(day, "visitor")
     assert wall_view["seen"] == () and wall_view["nearby"] == ()
 
-    _place(day, "visitor", (10.0, 50.5))
-    _place(day, "npc_0", (13.0, 50.5))
+    day.place("visitor", (10.0, 50.5))
+    day.place("npc_0", (13.0, 50.5))
     day.characters["npc_0"].heading = 180.0
     post = step(day, {"visitor": {"heading": 0.0, "speed": 0.5, "action": 2}})
     visitor_seen = next(person for person in post["npc_0"]["seen"] if person["id"] == "visitor")

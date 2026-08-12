@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Iterable
 
-from .rules import Frame
+from .rules import GROUND_BY_CODE, Frame
 
 Cell = tuple[int, int]
 Point = tuple[float, float]
@@ -15,13 +15,18 @@ class Grid:
     """Immutable ground rows indexed south first as ``rows[y][x]``.
 
     The southwest cell is (0, 0), so increasing y follows the map north rather
-    than the usual screen-coordinate convention.
+    than the usual screen-coordinate convention. Each row is one string, which is
+    also the shape the observation contract publishes, so it is shared rather than
+    rebuilt for every reader.
     """
 
     def __init__(self, frame: Frame, rows: Iterable[Iterable[str]]) -> None:
-        frozen = tuple(tuple(row) for row in rows)
+        frozen = tuple("".join(row) for row in rows)
         if len(frozen) != frame.cells_y or any(len(row) != frame.cells_x for row in frozen):
             raise ValueError("grid rows do not fit the frame")
+        unknown = sorted({code for row in frozen for code in row} - set(GROUND_BY_CODE))
+        if unknown:
+            raise ValueError(f"grid rows use ground codes the rules do not define: {unknown}")
         self.frame = frame
         self.rows = frozen
 
