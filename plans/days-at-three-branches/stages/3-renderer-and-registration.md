@@ -19,7 +19,7 @@ The permanent collision overlay shows collision truth. This step ships it with t
 
 ### Renderer package
 
-`environments/three_branches/renderer/` replaces the stub under the existing automatic discovery glob. The thumbnail remains the step 2 placeholder until step 5.1. Pure logic has no Pixi imports and is unit-tested under jsdom; Pixi modules draw only.
+`environments/three_branches/renderer/` replaces the registered step 2 neutral title-and-tick renderer under the existing automatic discovery glob. The thumbnail remains the step 2 placeholder until step 5.1. Pure logic has no Pixi imports and is unit-tested under jsdom; Pixi modules draw only.
 
 | Module | Responsibility |
 | --- | --- |
@@ -83,7 +83,7 @@ The unit suite exercises the full fixture replay. No e2e journey waits out the d
 - `renderer/collision.test.ts` checks impassable cells, open doors, catalog shapes and facings, boundaries, character geometry, stable ids, and labels.
 - `renderer/camera.test.ts` and `renderer/chrome.test.ts` cover the camera contract and toggle hit rectangle.
 - `frontend/test/tiled-ground.test.ts` covers layer stack, empty code, edge and corner neighbour masks, deterministic variants, and repaint.
-- `scripts/tests/test_gen_three_branches_fixture.py` regenerates a byte-identical temporary fixture; the backend test pins the duration regression; and the two journeys above cover browser behavior, including watcher visibility for broadcasts and direct lines.
+- The generator checks its fixture properties after recording. The backend test pins the duration regression, and the two journeys cover browser behavior, including watcher visibility for broadcasts and direct lines. Fixture regeneration is not required to be byte-identical because shipped builtin production behavior uses fresh entropy.
 
 Run the `three-branches` e2e group while iterating and the bare full browser suite before handoff.
 

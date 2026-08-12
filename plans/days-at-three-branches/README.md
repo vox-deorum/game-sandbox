@@ -1,6 +1,6 @@
 # Days at Three Branches: Implementation Plan
 
-Status: in progress. Step 1 has shipped, and steps 2 through 8 remain.
+Status: in progress. Steps 1 and 2 have shipped, and steps 3 through 8 remain.
 
 ## Goal
 
@@ -58,7 +58,7 @@ Non-goals:
 Cast size and day length stay fixed throughout: `cast_5` in Season 1, `cast_10` from Season 2 onward, five homes in every village, and 1200 ticks at a 250 millisecond cadence, about five minutes for a full day.
 
 1. **[Platform contract expansions](stages/1-platform-expansions.md).** Add mask-free `Dict` actions in simultaneous environments, bounded messaging, live watcher visibility, reset setup observations, and live-session lifetime rules. Outcome: a fixture passes conformance with bounded messaging, public delivery, and setup-observation precomputation.
-2. **[Simulation engine and PettingZoo environment](stages/2-engine-and-environment.md).** Build the Python engine, physics, fixture village, spaces, seat plans, recording overlay, `naive`, `scripted_visitor`, `rules.json`, and `catalog.json`. Outcome: full cast_5 and cast_10 days record to JSONL and replay identically.
+2. **[Simulation engine and PettingZoo environment](stages/2-engine-and-environment.md).** Complete: the Python engine, physics, fixture village, spaces, seat plans, recording overlay, builtins, and registered temporary surface are in place. Fixed layouts and captured action streams replay identically.
 3. **[Renderer, collision overlay, watch and replay](stages/3-renderer-and-registration.md).** Replace the stub with the tiled renderer, permanent collision overlay, camera, watch surface, replay, and e2e group. Outcome: live watch, exact replay scrubbing, and a local watch-mode day.
 4. **[Village generator](stages/4-village-generator.md).** Generate the seeded village in two owner-reviewed halves, then validate the pinned seed batch. Outcome: a signed-off village and a green guarantee suite.
 5. **Realistic rendering:** [5.1 art style](stages/5-1-art-style.md) adds visual identity, prop animation, and phase lighting; [5.2 HUD and interaction design](stages/5-2-hud-interaction-and-camera.md) adds the information layer, input design, and zoom limits. Each part merges after owner sign-off. Outcome: the pinned fixture replays in final style and supports close exploration.

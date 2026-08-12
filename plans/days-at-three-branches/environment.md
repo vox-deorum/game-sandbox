@@ -48,9 +48,9 @@ Each row is a declared `META.presets` entry, available in web dialogs and throug
 
 ## Match flow
 
-`reset(seed)` generates the village from the session seed. The environment draws no further randomness. Every agent receives that seed and its first observation through `reset(seed, observation)`. The scripted visitor uses the seed directly. A cast agent that needs a character-specific stream uses `me.rng(observation, session_seed)` during reset and performs layout work there rather than inside a decision.
+`reset(seed)` supplies the session seed and first observation through `reset(seed, observation)`. The fixture generator currently accepts the seed but returns its fixed mechanics layout. The engine draws no randomness. Shipped production builtins use fresh entropy, so repeated live builtin sessions with the same seed need not match. A cast agent that needs a character-specific stream may use `me.rng(observation, session_seed)` during reset and perform layout work there rather than inside a decision.
 
-Characters begin in the [ruleset's initial poses](ruleset.md#characters). Props begin unheld in their start state. The same seed and action sequence replay identically.
+Characters begin in the [ruleset's initial poses](ruleset.md#characters). Props begin unheld in their start state. A fixed layout and action sequence replay identically on the same build.
 
 One ruleset tick is one parallel `env.step()` with a complete player-keyed action map. Characters choose from the same pre-tick state. The engine resolves movement together, then resolves prop contention in character order. Chat hooks run after actions have been collected, as [Speech](#speech) specifies.
 
@@ -207,7 +207,7 @@ No helper selects a destination, companion, or prop. There is no pathfinder. `ob
 
 `me.rng` seeds `random.Random` from session seed and character id. The same pair yields the same stream, different ids yield different streams, and streams are stable across runs.
 
-Helpers are pin-tested against the engine or data contract, including isolation between agents and the internal snapshot. Environment tests cover rules, seeded scripted rollouts, both plans, replay determinism, use selection, speech limits and delivery, and [village guarantees](village.md#generation-order-and-guarantees). Renderer tests cover direct seeks and human controls. Course materials link students to public platform documentation, not internal specifications.
+Helpers are pin-tested against the engine or data contract, including isolation between agents and the internal snapshot. The Stage 2 suite uses six contract-focused modules for data and math, layout and physics, engine behavior, environment and chat, overlays and builtins, and complete-day replay. Renderer tests cover direct seeks and human controls once the production renderer lands. Course materials link students to public platform documentation, not internal specifications.
 
 ## Conformance notes
 

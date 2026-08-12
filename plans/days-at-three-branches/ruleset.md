@@ -16,7 +16,7 @@ There is one environment variant, `daynight`. Seasons select it and cast size. T
 - Ranges measure position to position. Interactive-prop use and perception instead measure to the nearest point on the prop collision shape.
 - A character is a 0.4 m circle. The frame boundary is impassable.
 - Character order is visitor, then `npc_0` upward. It sets roster order, same-tick prop contention, and platform player numbering.
-- A day has 1200 ticks. The match seed generates the village, and `scripted_visitor` derives its choices from it. The same seed and action sequence replay identically on the same platform build.
+- A day has 1200 ticks. The match seed identifies the layout input. Shipped production builtins use fresh entropy, so two live builtin sessions with the same seed need not make the same choices. A fixed layout and fixed action sequence replay identically on the same platform build.
 - Step 4 blesses one course default seed. Later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
 ## Ticks
