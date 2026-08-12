@@ -19,6 +19,7 @@ describe('renderer math', () => {
 
   it('interpolates numbers and converts degrees', () => {
     expect(lerp(10, 20, 0.25)).toBe(12.5)
+    expect(interpolateDegrees(10, 50, 0.25)).toBe(20)
     expect(interpolateDegrees(350, 10, 0.5)).toBe(0)
     expect(interpolateDegrees(10, 350, 0.5)).toBe(0)
     expect(degreesToRadians(180)).toBe(Math.PI)

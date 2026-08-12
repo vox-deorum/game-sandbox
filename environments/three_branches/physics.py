@@ -26,6 +26,7 @@ class Physics:
         self.space.gravity = (0, 0)
         # Pymunk applies collision bias over one simulated second, independent of the substep count.
         # Its standard rate prevents a commanded body from accumulating penetration across ticks.
+        # Zero slop is stable here because the village has no gravity, stacking, or resting contacts.
         self.space.collision_slop = 0.0
         self._bodies: dict[str, pymunk.Body] = {}
         shapes: list[pymunk.Shape] = []

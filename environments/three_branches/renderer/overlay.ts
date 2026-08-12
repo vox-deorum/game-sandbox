@@ -4,21 +4,10 @@ import catalogDocument from '../catalog.json'
 import rulesDocument from '../rules.json'
 import type { Cell, VillageDynamic, VillageSize, VillageStatic } from './types.js'
 
-type RuleGround = (typeof rulesDocument.grounds)[number]
-type CatalogBuilding = (typeof catalogDocument.buildings)[number]
-type CatalogProp = (typeof catalogDocument.props)[number]
-type CatalogScenery = (typeof catalogDocument.scenery)[number]
-
 /** Validated rules document used as the renderer's semantic source of truth. */
-export const RULES = rulesDocument as typeof rulesDocument & {
-  grounds: RuleGround[]
-}
+export const RULES = rulesDocument
 /** Validated catalog document used for footprints, shapes, states, and labels. */
-export const CATALOG = catalogDocument as typeof catalogDocument & {
-  buildings: CatalogBuilding[]
-  props: CatalogProp[]
-  scenery: CatalogScenery[]
-}
+export const CATALOG = catalogDocument
 
 const FACING = new Set(['north', 'east', 'south', 'west'])
 

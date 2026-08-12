@@ -1,15 +1,11 @@
-import {
-  createTiledGround,
-  solidColorTileset,
-  type TiledGround,
-} from '@renderers/base/tiled-ground.js'
+import { createTiledGround, solidColorTileset } from '@renderers/base/tiled-ground.js'
 import type { Container } from 'pixi.js'
 
 import { THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import type { StaticScene } from './types.js'
 
 /** Draw the configured ground as one packed base, landscape, and structure map. */
-export function drawMap(layer: Container, scene: StaticScene): TiledGround {
+export function drawMap(layer: Container, scene: StaticScene): void {
   const baseCode = scene.ground.find((item) => item.layer === 'base')?.code
   if (baseCode === undefined) throw new Error('Three Branches rules do not define a fill ground.')
   const rowsFor = (wanted: 'landscape' | 'structure'): string[] =>
@@ -31,5 +27,4 @@ export function drawMap(layer: Container, scene: StaticScene): TiledGround {
     },
   )
   layer.addChild(ground.view)
-  return ground
 }

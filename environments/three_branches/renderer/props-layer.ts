@@ -1,12 +1,8 @@
-import { Container, Graphics } from 'pixi.js'
+import { type Container, Graphics } from 'pixi.js'
 
 import { CATALOG } from './overlay.js'
 import { PALETTE } from './presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
-
-interface PropNode {
-  root: Container
-}
 
 /** Operations exposed by the retained prop display layer. */
 export interface PropLayer {
@@ -16,30 +12,33 @@ export interface PropLayer {
 
 /** Build stable prop and scenery nodes whose states are exposed by diagnostic collision mode. */
 export function createPropLayer(layer: Container, scene: StaticScene): PropLayer {
-  const nodes = new Map<string, PropNode>()
-  for (const item of [...scene.scenery, ...scene.props]) {
-    const node = createNode(
-      item,
-      scene.props.some((prop) => prop.id === item.id),
-    )
+  const nodes = new Map<string, Graphics>()
+  const startById = new Map<string, string>()
+  for (const item of scene.scenery) {
+    layer.addChild(createNode(item, false))
+  }
+  for (const item of scene.props) {
+    const node = createNode(item, true)
+    const start = CATALOG.props.find((kind) => kind.token === item.type)?.start
+    if (start === undefined) throw new Error(`Unknown prop type ${item.type}.`)
     nodes.set(item.id, node)
-    layer.addChild(node.root)
+    startById.set(item.id, start)
+    layer.addChild(node)
   }
   return {
     reconcile(frame) {
       for (const prop of scene.props) {
         const node = nodes.get(prop.id)
-        const catalog = CATALOG.props.find((item) => item.token === prop.type)
-        if (node === undefined || catalog === undefined) continue
-        const state = frame.dynamic?.props[prop.id] ?? catalog.start
-        node.root.alpha = state === catalog.start ? 0.72 : 1
+        const start = startById.get(prop.id)
+        if (node === undefined || start === undefined) continue
+        const state = frame.dynamic?.props[prop.id] ?? start
+        node.alpha = state === start ? 0.72 : 1
       }
     },
   }
 }
 
-function createNode(item: StaticDrawable, interactive: boolean): PropNode {
-  const root = new Container()
+function createNode(item: StaticDrawable, interactive: boolean): Graphics {
   const shape = new Graphics()
   const color = interactive ? PALETTE.prop : PALETTE.scenery
   if (item.shape === 'circle') {
@@ -65,6 +64,5 @@ function createNode(item: StaticDrawable, interactive: boolean): PropNode {
         .stroke({ color: PALETTE.text, width: 2 })
     }
   }
-  root.addChild(shape)
-  return { root }
+  return shape
 }

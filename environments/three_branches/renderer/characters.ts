@@ -1,13 +1,8 @@
 import { degreesToRadians } from '@renderers/base/math.js'
-import { Container, Graphics } from 'pixi.js'
+import { type Container, Graphics } from 'pixi.js'
 
 import { PALETTE } from './presentation.js'
 import type { CharacterDrawable, FrameScene } from './types.js'
-
-interface CharacterNode {
-  root: Container
-  body: Graphics
-}
 
 /** Operations exposed by the retained character display layer. */
 export interface CharacterLayer {
@@ -17,44 +12,37 @@ export interface CharacterLayer {
 
 /** Reconcile characters by stable environment id so arbitrary replay seeks never depend on arrival order. */
 export function createCharacterLayer(layer: Container): CharacterLayer {
-  const nodes = new Map<string, CharacterNode>()
+  const nodes = new Map<string, Graphics>()
   return {
     reconcile(scene) {
       const active = new Set(scene.characters.map((character) => character.id))
-      for (const [id, node] of nodes) {
+      for (const [id, body] of nodes) {
         if (!active.has(id)) {
-          node.root.destroy({ children: true })
+          body.destroy()
           nodes.delete(id)
         }
       }
       for (const character of scene.characters) {
-        let node = nodes.get(character.id)
-        if (node === undefined) {
-          node = createNode()
-          nodes.set(character.id, node)
-          layer.addChild(node.root)
+        let body = nodes.get(character.id)
+        if (body === undefined) {
+          body = new Graphics()
+          nodes.set(character.id, body)
+          layer.addChild(body)
         }
-        drawCharacter(node, character)
+        drawCharacter(body, character)
       }
     },
   }
 }
 
-function createNode(): CharacterNode {
-  const root = new Container()
-  const body = new Graphics()
-  root.addChild(body)
-  return { root, body }
-}
-
-function drawCharacter(node: CharacterNode, character: CharacterDrawable): void {
-  node.body.clear()
-  node.body
+function drawCharacter(body: Graphics, character: CharacterDrawable): void {
+  body.clear()
+  body
     .circle(character.point.x, character.point.y, character.radius)
     .fill(character.fill)
     .stroke({ color: PALETTE.backdrop, width: 2 })
   const heading = degreesToRadians(character.heading)
-  node.body
+  body
     .moveTo(character.point.x, character.point.y)
     .lineTo(
       character.point.x + Math.cos(heading) * character.radius * 1.8,

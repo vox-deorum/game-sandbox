@@ -3,7 +3,15 @@ import { clamp, interpolateDegrees, lerp } from '@renderers/base/math.js'
 
 import { CATALOG, RULES, readDynamic } from './overlay.js'
 import { groundColor, PALETTE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
-import type { FrameScene, StaticScene, VillageStatic, WorldPoint, WorldRect } from './types.js'
+import type {
+  Cell,
+  FrameScene,
+  StaticDrawable,
+  StaticScene,
+  VillageStatic,
+  WorldPoint,
+  WorldRect,
+} from './types.js'
 
 const STRUCTURE_GROUND = new Set(['interior', 'doorway', 'wall'])
 
@@ -48,58 +56,24 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
   const buildingByType = Object.fromEntries(CATALOG.buildings.map((item) => [item.token, item]))
   const propByType = Object.fromEntries(CATALOG.props.map((item) => [item.token, item]))
   const sceneryByType = Object.fromEntries(CATALOG.scenery.map((item) => [item.token, item]))
-  const buildings = village.buildings.map((item) => {
-    const kind = buildingByType[item.type]
-    if (kind === undefined) throw new Error(`Unknown building type ${item.type}.`)
-    return {
-      id: item.id,
-      type: item.type,
+  const buildings = village.buildings.map((item) =>
+    drawableFor(village, buildingByType, item, () => ({
       label: labelFor(item.type),
-      shape: 'box' as const,
-      rect: rectToWorld(
-        village,
-        item.cell.x * village.size.cellSize,
-        item.cell.y * village.size.cellSize,
-        kind.width * village.size.cellSize,
-        kind.height * village.size.cellSize,
-      ),
-    }
-  })
-  const props = village.props.map((item) => {
-    const kind = propByType[item.type]
-    if (kind === undefined) throw new Error(`Unknown prop type ${item.type}.`)
-    return {
-      id: item.id,
-      type: item.type,
+      shape: 'box',
+    })),
+  )
+  const props = village.props.map((item) =>
+    drawableFor(village, propByType, item, (kind) => ({
       label: labelFor(kind.activity),
       shape: shapeOf(kind.shape),
-      rect: rectToWorld(
-        village,
-        item.cell.x * village.size.cellSize,
-        item.cell.y * village.size.cellSize,
-        kind.width * village.size.cellSize,
-        kind.height * village.size.cellSize,
-      ),
-      facing: item.facing,
-    }
-  })
-  const scenery = village.scenery.map((item, index) => {
-    const kind = sceneryByType[item.type]
-    if (kind === undefined) throw new Error(`Unknown scenery type ${item.type}.`)
-    return {
-      id: `scenery:${index}`,
-      type: item.type,
+    })),
+  )
+  const scenery = village.scenery.map((item, index) =>
+    drawableFor(village, sceneryByType, { ...item, id: `scenery:${index}` }, (kind) => ({
       label: labelFor(item.type),
       shape: shapeOf(kind.shape),
-      rect: rectToWorld(
-        village,
-        item.cell.x * village.size.cellSize,
-        item.cell.y * village.size.cellSize,
-        kind.width * village.size.cellSize,
-        kind.height * village.size.cellSize,
-      ),
-    }
-  })
+    })),
+  )
   return {
     village,
     world: {
@@ -169,4 +143,39 @@ export function labelFor(token: string): string {
 function shapeOf(value: string): 'box' | 'circle' {
   if (value === 'box' || value === 'circle') return value
   throw new Error(`Unknown catalog shape ${value}.`)
+}
+
+interface CatalogFootprint {
+  width: number
+  height: number
+}
+
+interface DrawablePlacement {
+  id: string
+  type: string
+  cell: Cell
+  facing?: string
+}
+
+function drawableFor<TKind extends CatalogFootprint>(
+  village: VillageStatic,
+  catalog: Readonly<Record<string, TKind>>,
+  placement: DrawablePlacement,
+  describe: (kind: TKind) => Pick<StaticDrawable, 'label' | 'shape'>,
+): StaticDrawable {
+  const kind = catalog[placement.type]
+  if (kind === undefined) throw new Error(`Unknown catalog type ${placement.type}.`)
+  return {
+    id: placement.id,
+    type: placement.type,
+    ...describe(kind),
+    rect: rectToWorld(
+      village,
+      placement.cell.x * village.size.cellSize,
+      placement.cell.y * village.size.cellSize,
+      kind.width * village.size.cellSize,
+      kind.height * village.size.cellSize,
+    ),
+    facing: placement.facing,
+  }
 }

@@ -135,12 +135,14 @@ def local_config(
     resolved_parameters = resolve_parameters(entry.meta) if parameters is None else dict(parameters)
     layout = default_layout(entry, resolved_parameters)
     player_ids = possible_players(entry, resolved_parameters)
-    selected_players = layout.seats[seat].players
+    selected_seat = layout.seats[seat]
+    selected_players = selected_seat.players
     human_player = player_for_seat(entry, seat, resolved_parameters) if mode == "human" else None
-    # Match template human play: an omitted companion still gives the rest of a wide seat a normal
-    # agent controller. The maintainer launcher uses the environment's built-in naive agent.
-    if mode == "human" and len(selected_players) > 1 and companion is None:
-        companion = "naive"
+    defaulted_companion = mode == "human" and len(selected_players) > 1 and companion is None
+    # Match template human play: an omitted companion uses the seat's role-specific builtin when one
+    # is declared, and otherwise gives the rest of a wide seat the normal naive controller.
+    if defaulted_companion:
+        companion = selected_seat.restricted_builtin or "naive"
     if companion is not None and (mode != "human" or len(selected_players) == 1):
         raise RuntimeError("--companion is only valid for a wide human seat")
     # `self` plays the whole seat by hand, so every member is externally controlled and no companion
@@ -154,11 +156,11 @@ def local_config(
         selected_players if self_played else [] if human_player is None else [human_player]
     )
     companion_path: str | None = None
-    companion_builtin = False
+    companion_builtin: str | None = None
     if companion is not None and not self_played:
-        if companion == "naive":
-            companion_path = builtin_agent_path(entry.meta.env_id, "naive")
-            companion_builtin = True
+        if companion == "naive" or defaulted_companion:
+            companion_path = builtin_agent_path(entry.meta.env_id, companion)
+            companion_builtin = companion
         else:
             supplied = Path(companion)
             repo = supplied.parent if supplied.name == "manifest.json" else supplied
@@ -180,9 +182,9 @@ def local_config(
         is_companion = mode == "human" and player_id in selected_players
         if is_companion:
             path = companion_path
-            label = builtin_agent_label(entry, "naive") if companion_builtin else "Companion"
+            label = builtin_agent_label(entry, companion_builtin) if companion_builtin else "Companion"
             attribution = (
-                {"kind": "agent", "builtin_name": "naive", "label": label}
+                {"kind": "agent", "builtin_name": companion_builtin, "label": label}
                 if companion_builtin
                 else {"kind": "agent", "submission_id": "local", "label": label}
             )

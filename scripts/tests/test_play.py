@@ -62,7 +62,11 @@ def _entry() -> EnvironmentEntry:
     )
 
 
-def _wide_entry(*, human_players: tuple[str, ...] = ("player_0", "player_1", "player_2", "player_3")):
+def _wide_entry(
+    *,
+    human_players: tuple[str, ...] = ("player_0", "player_1", "player_2", "player_3"),
+    restricted_builtin: str | None = None,
+):
     entry = _entry()
     return EnvironmentEntry(
         meta=EnvironmentMeta(
@@ -70,13 +74,19 @@ def _wide_entry(*, human_players: tuple[str, ...] = ("player_0", "player_1", "pl
             display_name="Fixture",
             description="fixture",
             stepping="sequential",
-            builtin_agents=(BuiltinAgent("naive", "Naive agent"),),
+            builtin_agents=(
+                BuiltinAgent("naive", "Naive agent"),
+                BuiltinAgent("role_agent", "Role agent"),
+            ),
             layout=SeatPlans(
                 (
                     SeatPlan(
                         "partnership",
                         "Partnership",
-                        (SeatDeclaration((0, 2)), SeatDeclaration((1, 3))),
+                        (
+                            SeatDeclaration((0, 2), restricted_builtin),
+                            SeatDeclaration((1, 3)),
+                        ),
                     ),
                     SeatPlan(
                         "solo",
@@ -220,12 +230,20 @@ def test_builtin_agent_path_resolves_inside_this_checkout():
     assert (path / "manifest.json").is_file()
 
 
-def test_watch_mode_honors_a_seat_restricted_builtin(tmp_path: Path):
-    entry = load_environment("three_branches")
+@pytest.mark.parametrize("mode", ["watch", "human"])
+def test_automatic_fill_honors_a_seat_restricted_builtin(
+    mode: str,
+    monkeypatch,
+    tmp_path: Path,
+):
+    entry = _wide_entry(restricted_builtin="role_agent")
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
+    for name in ("naive", "role_agent"):
+        (play.BUILTIN_AGENT_ROOT / "fixture" / name).mkdir(parents=True)
 
     config = play.local_config(
         entry,
-        mode="watch",
+        mode=mode,
         seat=0,
         seed=0,
         max_steps=None,
@@ -234,15 +252,15 @@ def test_watch_mode_honors_a_seat_restricted_builtin(tmp_path: Path):
 
     bindings = config["player_bindings"]
     players = config["players"]
-    assert bindings["player_0"] == {  # type: ignore[index]
-        "kind": "builtin-agent",
-        "path": play.builtin_agent_path("three_branches", "scripted_visitor"),
-        "name": "scripted_visitor",
-    }
-    assert players["player_0"] == {  # type: ignore[index]
+    if mode == "human":
+        assert bindings["player_0"] == {"kind": "external"}  # type: ignore[index]
+    else:
+        assert bindings["player_0"]["name"] == "role_agent"  # type: ignore[index]
+    assert bindings["player_2"]["name"] == "role_agent"  # type: ignore[index]
+    assert players["player_2"] == {  # type: ignore[index]
         "kind": "agent",
-        "builtin_name": "scripted_visitor",
-        "label": "Scripted visitor",
+        "builtin_name": "role_agent",
+        "label": "Role agent",
     }
     assert bindings["player_1"]["name"] == "naive"  # type: ignore[index]
     assert players["player_1"]["builtin_name"] == "naive"  # type: ignore[index]

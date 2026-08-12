@@ -1,4 +1,3 @@
-import { RULES } from './overlay.js'
 import { metresToWorld } from './scene.js'
 import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
@@ -85,7 +84,7 @@ export function frameCollision(scene: FrameScene): readonly CollisionShape[] {
     id: character.id,
     kind: 'circle' as const,
     center: character.point,
-    radius: metresToWorld(RULES.profile.body_radius),
+    radius: character.radius,
     label: character.label,
     group: 'character' as const,
   }))
@@ -96,11 +95,12 @@ export function collisionWithPropStates(
   shapes: readonly CollisionShape[],
   scene: FrameScene | null,
 ): readonly CollisionShape[] {
-  if (scene?.dynamic === null || scene === null) return shapes
+  if (scene === null || scene.dynamic === null) return shapes
+  const dynamic = scene.dynamic
   const labels = new Map(
     scene.static.props.map((prop) => [
       prop.id,
-      `${prop.label}: ${scene.dynamic?.props[prop.id] ?? 'unknown'}`,
+      `${prop.label}: ${dynamic.props[prop.id] ?? 'unknown'}`,
     ]),
   )
   return shapes.map((shape) => {

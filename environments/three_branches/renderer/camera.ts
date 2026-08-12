@@ -68,6 +68,5 @@ export function resetVisitorCamera(
   view: CameraSize,
   humanControlled: boolean,
 ): VisitorCameraState {
-  const reset = initialVisitorCamera(limits, view, state.target, humanControlled)
-  return { ...reset, following: humanControlled }
+  return initialVisitorCamera(limits, view, state.target, humanControlled)
 }

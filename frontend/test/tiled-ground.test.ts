@@ -141,7 +141,8 @@ describe('tiled ground lifecycle', () => {
     )
 
     expect(ground.view.children).toHaveLength(1)
+    const beforeRepaint = variants.length
     ground.setTile(1, 0, 'a')
-    expect(variants.at(-1)).toEqual(['a', 1, 0, 4 | 64])
+    expect(variants.slice(beforeRepaint)).toEqual([['a', 1, 0, 4 | 64]])
   })
 })

@@ -1,6 +1,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import {
   type CameraLimits,
+  type CameraView,
   cameraLimits,
   cameraProbeValue,
   panCamera,
@@ -213,40 +214,25 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         view.y >= THREE_BRANCHES_PRESENTATION.chromeHeight &&
         view.y <= this.internalSize.height,
       zoomAt: (factor, anchor) => {
-        this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
-        this.visitorCamera = {
-          ...this.visitorCamera,
-          camera: zoomCamera(
-            this.visitorCamera.camera,
-            this.cameraLimits,
-            CONTENT_SIZE,
-            factor,
-            this.contentPoint(anchor),
-          ),
-        }
-        this.applyCamera()
+        this.applyManualCamera((camera) =>
+          zoomCamera(camera, this.cameraLimits, CONTENT_SIZE, factor, this.contentPoint(anchor)),
+        )
       },
       panBy: (dx, dy) => {
-        this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
-        this.visitorCamera = {
-          ...this.visitorCamera,
-          camera: panCamera(this.visitorCamera.camera, this.cameraLimits, CONTENT_SIZE, dx, dy),
-        }
-        this.applyCamera()
+        this.applyManualCamera((camera) =>
+          panCamera(camera, this.cameraLimits, CONTENT_SIZE, dx, dy),
+        )
       },
       pinch: (before, after) => {
-        this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
-        this.visitorCamera = {
-          ...this.visitorCamera,
-          camera: pinchCamera(
-            this.visitorCamera.camera,
+        this.applyManualCamera((camera) =>
+          pinchCamera(
+            camera,
             this.cameraLimits,
             CONTENT_SIZE,
             { midpoint: this.contentPoint(before.midpoint), distance: before.distance },
             { midpoint: this.contentPoint(after.midpoint), distance: after.distance },
           ),
-        }
-        this.applyCamera()
+        )
       },
       reset: () => {
         this.visitorCamera = resetVisitorCamera(
@@ -262,6 +248,16 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private contentPoint(point: { x: number; y: number }): { x: number; y: number } {
     return { x: point.x, y: point.y - THREE_BRANCHES_PRESENTATION.chromeHeight }
+  }
+
+  private applyManualCamera(reduce: (camera: CameraView) => CameraView): void {
+    // Any deliberate inspection gesture suspends live visitor follow until the explicit reset.
+    this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
+    this.visitorCamera = {
+      ...this.visitorCamera,
+      camera: reduce(this.visitorCamera.camera),
+    }
+    this.applyCamera()
   }
 
   private applyCamera(): void {
@@ -310,7 +306,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   private redrawAllCollision(): void {
-    if (this.collision === undefined) return
     const scene = this.presentedScene
     this.collision.drawStatic(
       collisionWithPropStates(this.staticCollisionShapes, scene),
