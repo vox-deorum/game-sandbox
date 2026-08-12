@@ -2,7 +2,7 @@
 
 This document owns the seeded layout, placement, spawn, and generation guarantees for Three Branches. [Ruleset](ruleset.md) owns game rules, including NPC home assignment. [Worldview](worldview.md) supplies the setting.
 
-There is no canonical map. The match seed generates a valid village. Stage 4 blesses one course default seed; later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
+There is no canonical map. The match seed generates a valid village. Step 4 blesses one course default seed; later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
 Construction order is terrain fields, water, ground classes, road and spawn, building sites, footpaths, then accessories. The generator records cell ownership and an interaction witness for each prop. Tests use those records to check guarantees.
 

@@ -19,7 +19,7 @@ The permanent collision overlay shows collision truth. This step ships it with t
 
 ### Renderer package
 
-`environments/three_branches/renderer/` replaces the stub under the existing automatic discovery glob. The thumbnail remains the stage 2 placeholder until step 5.1. Pure logic has no Pixi imports and is unit-tested under jsdom; Pixi modules draw only.
+`environments/three_branches/renderer/` replaces the stub under the existing automatic discovery glob. The thumbnail remains the step 2 placeholder until step 5.1. Pure logic has no Pixi imports and is unit-tested under jsdom; Pixi modules draw only.
 
 | Module | Responsibility |
 | --- | --- |
@@ -55,13 +55,13 @@ The toggleable collision overlay is above the map and depicts:
 - all four world boundaries; and
 - every character body circle, heading tick, id, and expression.
 
-It is on by default in this step, is view-only, and works for spectators and replay viewers. Keyboard access arrives with step 5.2.
+It is on by default in this step so collision truth stays visible while the art is provisional, is view-only, and works for spectators and replay viewers. Step 5.2 settles the shipped default and adds keyboard access.
 
 ### Speech, duration, and fixture
 
-Speech remains host chrome through `StepState.messages`; the renderer draws no bubbles until step 5.2. Messages are range-limited broadcasts or direct lines naming one addressee, and both require hearing range and an unblocked line. Watchers and replay see every delivered line. A visitor controller sees broadcasts delivered to `player_0` and direct lines sent to or received by `player_0`. Stage 5.2 specifies the host controls, and stage 6 implements them.
+Speech remains host chrome through `StepState.messages`; the renderer draws no bubbles until step 5.2. Messages are range-limited broadcasts or direct lines naming one addressee, and both require hearing range and an unblocked line. Watchers and replay see every delivered line. A visitor controller sees broadcasts delivered to `player_0` and direct lines sent to or received by `player_0`. Step 5.2 specifies the host controls, and step 6 implements them.
 
-Stage 1's live-duration contract is pinned in `backend/src/session/session-duration.ts`. A `resolveSessionMaxDurationMs` regression case pins the Three Branches default at 18 minutes: 1200 paced 250-millisecond ticks, six 120-second agent budgets, and the 60-second allowance. The roughly five-minute scripted watch day fits this derived limit.
+Step 1's live-duration contract is pinned in `backend/src/session/session-duration.ts`. A `resolveSessionMaxDurationMs` regression case pins the Three Branches default at 18 minutes: 1200 paced 250-millisecond ticks, six 120-second agent budgets, and the 60-second allowance. The roughly five-minute scripted watch day fits this derived limit.
 
 `scripts/gen_three_branches_fixture.py` records an unpaced Season 1 cast_5 fixture day, with naive cast, scripted visitor, daynight off, and a pinned seed. It writes `frontend/test/fixtures/three-branches-recording.jsonl` with one header and 1200 post-step states. The live tick 1 opening is not a recording requirement. Step 4 regenerates the fixture at each gate.
 
@@ -72,7 +72,7 @@ The generator asserts fixture properties rather than fixed lines or ticks: every
 `frontend/e2e/three-branches/three-branches.spec.ts` creates the `three-branches` group. Add it to the [groups table](../../../docs/contributors/testing/browser-e2e.md#groups).
 
 - The watch journey starts a pinned-seed scripted watch, checks its fitted live opening and ready canvas, observes increasing ticks, drives clamped zoom and pan, toggles collision, stops the session, then opens replay. Repeating a seek returns identical tick and visitor probes, and replay frame 1 is the first recorded post-step state at fit.
-- The watcher journey uses the spades visibility pattern. Read-only spectators see delivered broadcasts and direct visitor lines live; a mid-session reload has at most one best-effort catch-up copy because only latest state is retained; replay and the reopened ended session show the recorded lines. It carries produced lines forward without pinning text or tick. Visitor-controller visibility of delivered broadcasts and direct lines sent to or from `player_0` stays in the shared host coverage until stages 5.2 and 6 add Three Branches controls.
+- The watcher journey uses the spades visibility pattern. Read-only spectators see delivered broadcasts and direct visitor lines live; a mid-session reload has at most one best-effort catch-up copy because only latest state is retained; replay and the reopened ended session show the recorded lines. It carries produced lines forward without pinning text or tick. Visitor-controller visibility of delivered broadcasts and direct lines sent to or from `player_0` stays in the shared host coverage until steps 5.2 and 6 add Three Branches controls.
 
 The unit suite exercises the full fixture replay. No e2e journey waits out the day.
 

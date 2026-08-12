@@ -14,9 +14,11 @@ Step 6 implements only the owner-approved input design. The final art and fixed 
 2. Get owner approval before input implementation begins.
 3. Implement or refine the viewer HUD from the approved mockups.
 4. Tune and test the step 3 camera against the fixture and final art.
-5. Record the approved step 6 input specification in this file.
+5. Record the approved step 6 input specification and the collision overlay's shipped default in this file.
 
 The approved information layer refines or replaces step 3's tick, phase, and bell chrome. It adds character identification, speech bubbles, and a chat transcript. Its chat mockup shows a recipient selector with Broadcast and the currently permitted character-id addressees. Broadcasts and direct lines both require hearing range and an unblocked line. Watchers and replay viewers see every delivered line. The playing visitor sees broadcasts delivered to it and direct lines sent to or from it. [The environment speech contract](../environment.md#speech) is authoritative.
+
+The approved layer also settles the collision overlay's shipped default for watch, replay, and play, which [step 3](3-renderer-and-registration.md) leaves on while the art is provisional. The toggle itself is permanent either way, and this part adds its keyboard access.
 
 The approved step 6 specification covers locomotion affordances, the expression palette with nine emotes plus use, and an informational use-preview highlight. The preview applies the environment's reach-plus-unblocked-line selection rule.
 
@@ -24,7 +26,7 @@ The step 3 camera retains a fitted reset below the fixed HUD. Its final zoom lim
 
 ## Tests
 
-- Renderer unit tests cover HUD elements, broadcast and direct recipient-selector states, visitor and viewer transcript visibility, and tuned fixture zoom limits.
+- Renderer unit tests cover HUD elements, broadcast and direct recipient-selector states, visitor and viewer transcript visibility, the collision overlay's default and keyboard toggle, and tuned fixture zoom limits.
 - Update locators whenever markup moves.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
 

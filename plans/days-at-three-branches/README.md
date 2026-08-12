@@ -1,6 +1,6 @@
 # Days at Three Branches: Implementation Plan
 
-Status: planned.
+Status: in progress. Step 1 has shipped, and steps 2 through 8 remain.
 
 ## Goal
 
@@ -8,7 +8,7 @@ Ship Days at Three Branches as a complete Game Sandbox environment. A student cl
 
 ## Contributor build path
 
-Read the design contracts first: [rules](ruleset.md), [village](village.md), [environment interface](environment.md), [teaching arc](pedagogy.md), and [setting](worldview.md). Then follow the numbered [stage plans](stages/) in dependency order. Step 1 lands the required platform support, including the first simultaneous mask-free `Dict` action space. Nothing here depends on Skirmish at Crane Reach, which continues in parallel.
+Read the design contracts first: [rules](ruleset.md), [village](village.md), [environment interface](environment.md), [teaching arc](pedagogy.md), and [setting](worldview.md). Then follow the numbered [step plans](stages/) in dependency order. Step 1 landed the required platform support, including the first simultaneous mask-free `Dict` action space. Nothing here depends on Skirmish at Crane Reach, which has shipped.
 
 Steps 1 through 4 form a chain. Step 2 registers a real stub with the engine and a fixture village. Step 3 replaces the stub with the browser renderer and watch surface, and step 4 replaces the fixture with the generator. Generation then iterates in the real viewer. Step 5.1 follows step 4. Step 5.2 follows step 5.1 and defines the input UI before step 6 builds it. Step 7 can begin after step 4 and completes after step 6. Step 8 closes the plan.
 

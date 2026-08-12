@@ -1,6 +1,6 @@
 # Step 5.1: Art style
 
-Status: planned. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating character sheet.
+Status: planned. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating sheet per character rather than a set of per-direction sheets.
 
 Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
@@ -120,7 +120,7 @@ The separate 320 by 180 thumbnail is a final Hearthside Ink image, not a screens
 
 [ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. Art and collision-overlay drawings must match it exactly. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. Non-solid shadows, glow, smoke, and other effects may extend outside a shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
 
-Review the fixture and generated seeds at fitted, mid, and close fixed scales. Step 5.2 verifies the same result through interactive zoom. This stage does not choose camera limits, pan behaviour, HUD typography, speech-bubble layout, use preview, or input controls. Retain step 3's collision toggle on watch, replay, and play.
+Review the fixture and generated seeds at fitted, mid, and close fixed scales. Step 5.2 verifies the same result through interactive zoom. This step does not choose camera limits, pan behaviour, HUD typography, speech-bubble layout, use preview, or input controls. Retain step 3's collision toggle on watch, replay, and play.
 
 ## Tests
 

@@ -17,7 +17,7 @@ There is one environment variant, `daynight`. Seasons select it and cast size. T
 - A character is a 0.4 m circle. The frame boundary is impassable.
 - Character order is visitor, then `npc_0` upward. It sets roster order, same-tick prop contention, and platform player numbering.
 - A day has 1200 ticks. The match seed generates the village, and `scripted_visitor` derives its choices from it. The same seed and action sequence replay identically on the same platform build.
-- Stage 4 blesses one course default seed. Later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
+- Step 4 blesses one course default seed. Later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
 ## Ticks
 
@@ -34,13 +34,13 @@ Every match generates Three Branches from the match seed under the [village layo
 
 Every cell has a ground class. `rules.json` holds its speed limit, passability, and sight behavior.
 
-| Ground | Speed limit | Sight |
-| --- | --- | --- |
-| Road, footpaths, and crossings | 1.0 m per tick | carries |
+| Ground                                     | Speed limit     | Sight   |
+| ------------------------------------------ | --------------- | ------- |
+| Road, footpaths, and crossings             | 1.0 m per tick  | carries |
 | Open ground, building floors, and doorways | 0.75 m per tick | carries |
-| Fields and reed banks | 0.5 m per tick | carries |
-| Water | impassable | carries |
-| Building walls | impassable | blocks |
+| Fields and reed banks                      | 0.5 m per tick  | carries |
+| Water                                      | impassable      | carries |
+| Building walls                             | impassable      | blocks  |
 
 The complete static layout is standing knowledge: ground, crossings, walls, doorways, floors, semantic buildings, scenery, and interactive-prop locations. Characters and interactive-prop states must still be perceived.
 
@@ -84,14 +84,14 @@ Props and scenery are solid but never block sight. Only interactive props partic
 
 NPCs and the visitor share this profile.
 
-| Property | Value |
-| --- | --- |
-| Body radius | 0.4 m |
-| Speed | commanded as a fraction, 0 to 1 of the ground's limit |
-| Running | above 0.5 m per tick reads as running, at or below as walking |
-| Vision | 120 degree cone on the heading, out to 12 m |
-| Hearing | 6 m, all around, and the range a spoken line carries |
-| Prop reach | 1.5 m |
+| Property    | Value                                                         |
+| ----------- | ------------------------------------------------------------- |
+| Body radius | 0.4 m                                                         |
+| Speed       | commanded as a fraction, 0 to 1 of the ground's limit         |
+| Running     | above 0.5 m per tick reads as running, at or below as walking |
+| Vision      | 120 degree cone on the heading, out to 12 m                   |
+| Hearing     | 6 m, all around, and the range a spoken line carries          |
+| Prop reach  | 1.5 m                                                         |
 
 A cast of N has `npc_0` through `npc_N-1` for the full match. The visitor id is `visitor`. Each NPC begins on its home's floor facing the doorway, with housemates at least one body diameter apart. The visitor begins at the road spawn facing along the road into the village. Everyone begins still with expression none. The engine assigns ids and homes; the submission authors roles, personalities, and relationships.
 
@@ -104,17 +104,17 @@ Each tick has locomotion and expression, so a character can walk and wave togeth
 
 All emotes are available from Season 1.
 
-| Emote | Reads as |
-| --- | --- |
-| wave | greeting |
-| nod | agreement |
-| shake_head | refusal |
-| point | directing attention |
-| laugh | amusement |
-| shrug | uncertainty |
-| startle | surprise, a routine interrupted |
-| sleep | off duty |
-| sweep | a chore |
+| Emote      | Reads as                        |
+| ---------- | ------------------------------- |
+| wave       | greeting                        |
+| nod        | agreement                       |
+| shake_head | refusal                         |
+| point      | directing attention             |
+| laugh      | amusement                       |
+| shrug      | uncertainty                     |
+| startle    | surprise, a routine interrupted |
+| sleep      | off duty                        |
+| sweep      | a chore                         |
 
 A prop use selects the nearest interactive prop whose nearest collision-shape point is within reach and visible by an unblocked line. Ties use canonical prop order. Facing does not matter. Selection uses the tick's starting pose. Commanded speed above 0 resolves use to none. A character holds use by selecting it each tick and releases it by choosing another expression, moving, or leaving reach.
 
@@ -130,7 +130,9 @@ A prop type can remain data-only when it uses existing transition, placement, an
 
 Speech runs beside the tick action. A message is a broadcast or names one addressee. Broadcast remains available. Both require hearing range and an unblocked line. The beacon bell is the village-wide signal.
 
-Each message has at most 200 code points. A message sent on tick T reaches its recipients during T+1 after action choice. The earliest reaction is T+2.
+On one tick a character may send one broadcast and one direct message to each character it can address at that moment. Each message has at most 200 code points. A message sent on tick T reaches its recipients during T+1 after action choice. The earliest reaction is T+2.
+
+The two kinds check range at different moments. A character's permitted addressees are fixed from the state it spoke in, so a direct line still arrives when its addressee walks out of range or behind a wall during that tick. A broadcast's audience is resolved once everyone has moved, so it reaches whoever is in range at the end of the tick.
 
 Visitor speech is freeform human text or canned scripted-visitor text. NPCs use ordinary speech. [Environment speech](environment.md#speech) defines recipient policy and viewer visibility.
 
@@ -144,13 +146,13 @@ Only walls block lines. Doorways carry sight and hearing; props and scenery do n
 
 ## The daynight variant (Season 4 onward)
 
-| Phase | Ticks |
-| --- | --- |
-| Dawn | 1 to 120 |
-| Morning | 121 to 480 |
-| Midday | 481 to 720 |
-| Evening | 721 to 960 |
-| Night | 961 to 1200 |
+| Phase   | Ticks       |
+| ------- | ----------- |
+| Dawn    | 1 to 120    |
+| Morning | 121 to 480  |
+| Midday  | 481 to 720  |
+| Evening | 721 to 960  |
+| Night   | 961 to 1200 |
 
 Phases name the time and set screen lighting. Movement and perception rules do not change.
 
@@ -161,12 +163,12 @@ A match ends at tick 1200. The cast health check is 100 when every NPC instance 
 ## Seasons
 
 | Season | Cast | daynight |
-| --- | --- | --- |
-| 1 | 5 | off |
-| 2 | 10 | off |
-| 3 | 10 | off |
-| 4 | 10 | on |
-| 5 | 10 | on |
-| 6 | 10 | on |
+| ------ | ---- | -------- |
+| 1      | 5    | off      |
+| 2      | 10   | off      |
+| 3      | 10   | off      |
+| 4      | 10   | on       |
+| 5      | 10   | on       |
+| 6      | 10   | on       |
 
 Seasons sharing a row differ in course design rather than game parameters. See [pedagogy.md](pedagogy.md).

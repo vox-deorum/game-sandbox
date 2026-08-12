@@ -2,7 +2,7 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This step replaces the step 2 fixture behind unchanged `build_village(seed)` with a seeded Three Branches village under [village.md](../village.md). It has two owner-reviewed gates: land and routes, then settlement and dressing. The stage ends with the guarantee suite across a pinned seed batch and one owner-blessed course default seed.
+Part of [the plan](../README.md). This step replaces the step 2 fixture behind unchanged `build_village(seed)` with a seeded Three Branches village under [village.md](../village.md). It has two owner-reviewed gates: land and routes, then settlement and dressing. The step ends with the guarantee suite across a pinned seed batch and one owner-blessed course default seed.
 
 ## Correctness, review, and configuration
 
@@ -22,7 +22,7 @@ The labelled stream remains separate from the scripted visitor's `random.Random(
 
 ## Construction and redraws
 
-The committed order is terrain fields, water, ground classes, road with crossings and spawn, building sites and painting, footpaths, then accessories. Each stage reads the committed output of earlier stages. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+The committed order is terrain fields, water, ground classes, road with crossings and spawn, building sites and painting, footpaths, then accessories. Each construction stage reads the committed output of the ones before it. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
 
 Reset timing includes generation and validation. The batch summary records it for every seed, including reset-default seed 0 and conformance seed 17. It is reported only, with no timing limit or pass/fail assertion.
 
@@ -55,7 +55,7 @@ This gate implements [buildings and interiors](../village.md#buildings-and-inter
 
 Gate B tests cover stable features and five homes, clusters, site margins and painting, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and strict connectivity across the full batch.
 
-The owner signs off the dressed village, opening stage close.
+The owner signs off the dressed village, opening step close.
 
 ## Gate close and seed blessing
 
@@ -63,7 +63,7 @@ During a gate, tuning consists of local code and configuration work plus browser
 
 The pinned full-fidelity batch is `0, 1, 2, 3, 5, 7, 11, 17`; 0 is the reset default and 17 the conformance seed. The owner browses it in local watch sessions and blesses one course default seed. Mechanical close work may use a provisional batch seed and re-runs once blessing occurs. The blessed seed is `test_budget`'s seed and the fixture script's `SEED`, and is recorded here. Later season configuration pins that same blessed seed for each season.
 
-At stage close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence. Revalidate the scripted visitor across the batch for a full unstalled day and per-game reset budget. Rerun the fixture script at the blessed seed, name it in step 3, run the full browser suite, and report every batch seed's generation-and-validation reset time.
+At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence. Revalidate the scripted visitor across the batch for a full unstalled day and per-game reset budget. Rerun the fixture script at the blessed seed, name it in step 3, run the full browser suite, and report every batch seed's generation-and-validation reset time.
 
 ## Tests
 
@@ -80,7 +80,7 @@ Per gate close, regenerate the fixture. At final close, re-measure `test_budget`
 
 1. Gate A: stream, redraw loop, fields, walker, padding assembly, water, grounds, road, crossings, spawn, tests and conformance, review, sign-off, and close procedure.
 2. Gate B: sites, painting, footpaths, accessories, witnesses, validation, full-batch suite, review, sign-off, and close procedure.
-3. Bless and close: provisional fallback if necessary, fixture regeneration at blessed seed, budget measurement, stage 3 revision, full browser suite, and handoff sweep.
+3. Bless and close: provisional fallback if necessary, fixture regeneration at blessed seed, budget measurement, step 3 revision, full browser suite, and handoff sweep.
 
 ## Done when
 

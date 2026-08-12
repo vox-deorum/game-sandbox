@@ -6,17 +6,17 @@ This document defines the PettingZoo representation of the [ruleset](ruleset.md)
 
 Every plan has `seat_0`, the cast, and `seat_1`, the visitor.
 
-| Plan | Title | Players |
-| --- | --- | --- |
-| cast_5 | Five villagers | 6 |
-| cast_10 | Ten villagers | 11 |
+| Plan    | Title          | Players |
+| ------- | -------------- | ------- |
+| cast_5  | Five villagers | 6       |
+| cast_10 | Ten villagers  | 11      |
 
-| Plan | Seat | Ordered players |
-| --- | --- | --- |
-| cast_5 | seat_0, the cast | player_1 through player_5 |
-| cast_5 | seat_1, the visitor | player_0 |
-| cast_10 | seat_0, the cast | player_1 through player_10 |
-| cast_10 | seat_1, the visitor | player_0 |
+| Plan    | Seat                | Ordered players            |
+| ------- | ------------------- | -------------------------- |
+| cast_5  | seat_0, the cast    | player_1 through player_5  |
+| cast_5  | seat_1, the visitor | player_0                   |
+| cast_10 | seat_0, the cast    | player_1 through player_10 |
+| cast_10 | seat_1, the visitor | player_0                   |
 
 `cast_5` is declared first and is the default. Character order and player numbering share one sequence: the visitor is character 0 and `player_0`; `npc_i` is character i+1 and `player_(i+1)`. Roster order, prop contention, `possible_agents`, active-player mappings, and conformance use this sequence.
 
@@ -36,13 +36,13 @@ The day is 1200 ticks. There is no prop-density or day-length parameter.
 Defaults reproduce Season 1. The schedule resolves as follows.
 
 | Season | seat_plan | daynight | LLM API |
-| --- | --- | --- | --- |
-| 1 | cast_5 | false | off |
-| 2 | cast_10 | false | off |
-| 3 | cast_10 | false | off |
-| 4 | cast_10 | true | off |
-| 5 | cast_10 | true | on |
-| 6 | cast_10 | true | on |
+| ------ | --------- | -------- | ------- |
+| 1      | cast_5    | false    | off     |
+| 2      | cast_10   | false    | off     |
+| 3      | cast_10   | false    | off     |
+| 4      | cast_10   | true     | off     |
+| 5      | cast_10   | true     | on      |
+| 6      | cast_10   | true     | on      |
 
 Each row is a declared `META.presets` entry, available in web dialogs and through `--preset season_1` to `--preset season_6`. Tests pin this table. Messaging is always on. LLM API availability is season metadata, not a gameplay parameter. Seasons 2 and 3 share parameters, as do Seasons 5 and 6; their differences are in pedagogy and season configuration.
 
@@ -167,6 +167,7 @@ The recording is plain JSON and uses ruleset vocabulary. The renderer reads it t
 | Builtin agents, in order | naive (Naive), scripted_visitor (Scripted visitor) |
 | Gameplay parameters | Gameplay parameter declarations; seat_plan is synthesized from layout |
 | Human-capable players | player_0, the visitor in every plan |
+| Human move clock | none; a simultaneous environment paces instead |
 | Stepping | simultaneous |
 | Pace interval | 250 milliseconds |
 | Viewing cadence | 250 milliseconds per recorded transition |
