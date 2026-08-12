@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import atan2, cos, degrees, hypot, sin
+
 import numpy as np
 import pytest
 
@@ -7,6 +9,8 @@ from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.session import AgentPlayer, Episode
 from three_branches import ENTRY
 from three_branches.env import default_action, make_env
+from three_branches.layout import Layout
+from three_branches.rules import GROUND_BY_CODE, PROFILE
 
 
 class _StillAgent:
@@ -99,16 +103,55 @@ def test_parallel_environment_rejects_missing_and_outside_actions() -> None:
         env.step(actions)
 
 
+def _hearing_range_points(layout: Layout) -> tuple[tuple[float, float], tuple[float, float], float]:
+    """Find a start point and a target point on the road, just under hearing range apart.
+
+    The start point is the layout's spawn, which is already known to be body-clear. This scans
+    the walkable cells for a target that is body-clear, keeps a clear line to the start, and sits
+    within hearing range, preferring the target closest to the range's edge. It also checks that
+    the start can walk one more metre directly away from the target and land past hearing range,
+    since that is what a later "moved out of range" step relies on. Returns the start point, the
+    target point, and the heading in degrees that walks the start directly away from the target.
+    """
+    start = layout.spawn
+    best_target: tuple[float, float] | None = None
+    best_heading = 0.0
+    best_gap = PROFILE.hearing_range
+    for y in range(layout.grid.frame.cells_y):
+        for x in range(layout.grid.frame.cells_x):
+            if not GROUND_BY_CODE[layout.grid.value_at((x, y))].passable:
+                continue
+            target = layout.grid.center((x, y))
+            separation = hypot(start[0] - target[0], start[1] - target[1])
+            if not (0.0 < separation < PROFILE.hearing_range):
+                continue
+            if not (layout.body_clear(target) and layout.line_clear(start, target)):
+                continue
+            heading = atan2(start[1] - target[1], start[0] - target[0])
+            beyond = (start[0] + cos(heading), start[1] + sin(heading))
+            if not layout.body_clear(beyond):
+                continue
+            if hypot(beyond[0] - target[0], beyond[1] - target[1]) <= PROFILE.hearing_range:
+                continue
+            gap = PROFILE.hearing_range - separation
+            if gap < best_gap:
+                best_target, best_heading, best_gap = target, degrees(heading) % 360.0, gap
+    if best_target is None:
+        raise AssertionError("no pair on this layout starts within hearing range")
+    return start, best_target, best_heading
+
+
 def test_direct_policy_is_pre_step_but_broadcast_audience_is_post_step() -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset()
-    env.day.place("visitor", (15.0, 50.5))
-    env.day.place("npc_0", (20.9, 50.5))
+    start, target, walk_away_heading = _hearing_range_points(env.day.layout)
+    env.day.place("visitor", start)
+    env.day.place("npc_0", target)
     assert "player_1" in env.chat_policy("player_0")["target_recipients"]
 
     actions = {agent: default_action(env, agent) for agent in env.agents}
     actions["player_0"] = {
-        "heading": np.array(180, dtype=np.float32),
+        "heading": np.array(walk_away_heading, dtype=np.float32),
         "speed": np.array(1, dtype=np.float32),
         "action": 0,
     }

@@ -48,7 +48,7 @@ Each row is a declared `META.presets` entry, available in web dialogs and throug
 
 ## Match flow
 
-`reset(seed)` supplies the session seed and first observation through `reset(seed, observation)`. The fixture generator currently accepts the seed but returns its fixed mechanics layout. The engine draws no randomness. Shipped production builtins use fresh entropy, so repeated live builtin sessions with the same seed need not match. A cast agent that needs a character-specific stream may use `me.rng(observation, session_seed)` during reset and perform layout work there rather than inside a decision.
+`reset(seed)` supplies the session seed and first observation through `reset(seed, observation)`. The seed generates the village, and a reset with no seed builds the default village. The engine draws no randomness. Shipped production builtins use fresh entropy, so repeated live builtin sessions with the same seed need not match. A cast agent that needs a character-specific stream may use `me.rng(observation, session_seed)` during reset and perform layout work there rather than inside a decision.
 
 Characters begin in the [ruleset's initial poses](ruleset.md#characters). Props begin unheld in their start state. A fixed layout and action sequence replay identically on the same build.
 

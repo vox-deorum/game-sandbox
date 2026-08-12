@@ -1,0 +1,56 @@
+{
+  "fields": {
+    "elevation_octaves": [
+      {"spacing": 34, "amplitude": 1.0},
+      {"spacing": 17, "amplitude": 0.45},
+      {"spacing": 8, "amplitude": 0.2}
+    ],
+    "moisture_octaves": [
+      {"spacing": 26, "amplitude": 1.0},
+      {"spacing": 13, "amplitude": 0.5},
+      {"spacing": 7, "amplitude": 0.35}
+    ],
+    "south_bias": 0.45
+  },
+  "water": {
+    "entry_band": [34, 66],
+    "fork_band": [16, 28],
+    "trunk_width": [5, 7],
+    "channel_width": [3, 5],
+    "mouth_separation": 16,
+    "mouth_slack": 5,
+    "edge_straight": 5,
+    "edge_margin": 9,
+    "fork_radius": 7.0,
+    "fork_steps": 12,
+    "fan_degrees": 55.0,
+    "clearance": 4.0,
+    "mouth_budget": 40,
+    "walker": {
+      "step": 1.5,
+      "step_budget": 400,
+      "self_ignore": 12,
+      "reroute_attempts": 7,
+      "reroute_degrees": 20.0,
+      "momentum": [0.55, 0.7],
+      "downhill": [0.15, 0.3],
+      "pull": [0.45, 0.6],
+      "wobble": 0.14,
+      "edge_push": 0.8,
+      "separation": 1.6,
+      "look_ahead": 6.0,
+      "meander": 0.4,
+      "meander_wavelength": [16, 30]
+    }
+  },
+  "grounds": {
+    "reed_distance": 3,
+    "reed_moisture": 0.5,
+    "mouth_reed_depth": 5,
+    "field_elevation": 0.45,
+    "field_moisture": 0.5,
+    "field_slope": 0.02,
+    "smoothing_passes": 2
+  },
+  "redraw": {"cap": 24}
+}

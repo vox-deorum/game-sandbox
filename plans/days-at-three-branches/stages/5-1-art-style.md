@@ -1,12 +1,12 @@
 # Step 5.1: Art style
 
-Status: in progress. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11: flat tiles with no pixel grid, autotiled terrain, cutaway roofs, and one rotating sheet per character rather than a set of per-direction sheets. On 2026-08-12, implementation began with a request to move the presentation closer to top-down-shooter conventions where that simplifies the art assets. The exact conventions are still being selected.
+Status: in progress. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11. On 2026-08-12, implementation moved the presentation closer to top-down-shooter conventions: directly overhead characters rotate continuously, simple roofs fade on entry, and shared tintable masks replace individually painted variants wherever silhouette does not carry state.
 
 Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
 ## The design: Hearthside Ink
 
-Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, flatter woodblock value grouping, parchment ground, quiet water and reeds, warm timber, and deliberate small marks. The game uses an exact 90 degree top-down RPG plan view. Each tile is one village cell, with no perspective, isometric face, or separate interiors.
+Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, flatter woodblock value grouping, parchment ground, quiet water and reeds, warm timber, and deliberate small marks. The game uses an exact 90 degree top-down-shooter plan view. Each tile is one village cell, with no perspective, isometric face, or separate interiors.
 
 Tiles are high-resolution flat shapes, not pixel art. The approval fixes palette, material, value grouping, and readability, but not a canonical layout, building placement, or scenery placement. Every seed remains a valid [village.md](../village.md) layout.
 
@@ -19,8 +19,12 @@ This record preserves owner decisions made during implementation, including choi
 | Date | State | Decision |
 | --- | --- | --- |
 | 2026-08-09 | Current | Use Hearthside Ink for the palette, material treatment, value grouping, and overall readability. |
-| 2026-08-11 | Under review | Use flat, non-pixel tiles, autotiled terrain, cutaway roofs, and one rotating sheet per character. |
-| 2026-08-12 | Open | Move closer to top-down-shooter presentation conventions where doing so reduces the number or complexity of art assets. Select the exact conventions with the owner before implementing them. |
+| 2026-08-11 | Current | Use flat, non-pixel tiles, autotiled terrain, and cutaway roofs. |
+| 2026-08-12 | Current | Keep simple roofs and fade them when a character enters the building. |
+| 2026-08-12 | Current | Reuse tintable masks for characters and terrain edges. Give a prop a bespoke state still only when the state changes its silhouette. |
+| 2026-08-12 | Current, visual pending | **Character projection:** Author one north-facing base sprite in the stacked true-overhead projection of a conventional top-down shooter, then rotate the complete assembled sprite around its centre for exact heading. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. Use peaceful forward arms or another body cue in place of a weapon. [Direction v1](../art/top-down-shooter-direction-v1.png) was rejected because its hats and robes read as round villager tokens. [Direction v2](../art/top-down-shooter-direction-v2.png) was rejected because it still showed an oblique full body. [Direction v3](../art/top-down-shooter-direction-v3.png) is the current projection candidate. |
+
+![Top-down shooter direction v3](../art/top-down-shooter-direction-v3.png)
 
 ### Palette
 
@@ -53,11 +57,11 @@ Paint the engine-authored `overlay_static` grid through step 3's shared tile bas
 1. **Fill:** Each ground class has several interior variants, selected deterministically by cell.
 2. **Edges:** A pure ground-grid pass derives a code wherever classes meet and paints banks, path shoulders, reed fringes, and furrow ends over fills.
 
-Both layers use the shared base's neighbour-mask `variant` hook, the tileset's only renderer seam. Bridge cells paint planks over water. Do not draw marks smaller than a cell.
+Both layers use the shared base's neighbour-mask `variant` hook, the tileset's only renderer seam. Reuse tintable grayscale-alpha edge masks across compatible ground boundaries instead of painting each palette pairing. Bridge cells paint planks over water. Do not draw marks smaller than a cell.
 
 Floor, wall, and doorway are ground classes. Paint each building from the grid: floor within, wall around its perimeter, and a two-cell opening on one side. A building record remains semantic only: id, type, and origin cell. It owns no collision, use selection, or prop-state observation. Hearths and repair benches are separate props on floor ground. Repeat wall tiles in the upper terrain layer as shallow dark eave and wall bands above occupants.
 
-Each semantic building has a roof container aligned to its rect. A roof is opaque when empty and clears when anyone occupies its semantic rect. Occupancy fixes target alpha; the between-tick clock eases to it. Seeking, repeating a frame, mounting, or resizing snaps to it, so no forward-only roof history exists. Homes contain only floor treatment, the inn contains its hearth, and the repair shed contains its repair bench.
+Each semantic building has a simple roof container aligned to its rect. A roof is opaque when empty and clears when anyone occupies its semantic rect. Occupancy fixes target alpha; the between-tick clock eases to it. Seeking, repeating a frame, mounting, or resizing snaps to it, so no forward-only roof history exists. Homes contain only floor treatment, the inn contains its hearth, and the repair shed contains its repair bench.
 
 ### Scene and motion
 
@@ -82,9 +86,9 @@ HUD and interaction are step 5.2 work and are never colour-graded.
 
 ### Characters, props, and dressing
 
-Use one north-facing character sheet and rotate it to the exact recorded heading. A rest frame and short walk cycle advance from character id, tick, and movement state. Render a readable fitted-view shadow and direction mark. Select villager sheets with a stable character-id hash. Give the visitor a small cinnabar hood tie and retain the villagers' warm materials.
+Build characters from shared north-facing grayscale-alpha masks in a conventional top-down-shooter projection. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. A peaceful forward-arm pose makes north readable without a weapon. Rotate the complete assembled sprite around its centre to the exact recorded heading. A rest frame and short walk cycle advance from character id, tick, and movement state without changing that projection. Render a readable fitted-view shadow and direction mark. Select tint combinations and optional shared clothing details with a stable character-id hash. Give the visitor a small cinnabar hood tie and retain the villagers' warm materials.
 
-Every catalog state has a distinct readable still across the prop's reserved cells, turned to its facing. Drive it only from prop id, type, state, facing, and tick.
+Every catalog state has a distinct readable treatment across the prop's reserved cells, turned to its facing. Reuse one tintable base and state overlays when the silhouette stays fixed. Use a bespoke still only when a state changes the prop's silhouette. Drive the result only from prop id, type, state, facing, and tick.
 
 | Prop | Still treatment |
 | --- | --- |
@@ -117,11 +121,11 @@ The future `renderer/assets.ts` manifest records each source and runtime file, d
 
 | Group | Runtime dimensions | Contents |
 | --- | --- | --- |
-| Terrain | 64 px cells on one atlas page | For each ground class, including wall and doorway, a few interior fill variants and its edge and corner set, the wall tiles' upper-layer repaint, and the bridge plank tiles |
+| Terrain | 64 px cells on one atlas page | A few fill variants for each ground class, shared tintable edge and corner masks for compatible boundaries, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
-| Props | cell-sized stills up to 3 by 2 cells | One still for every catalog state, including the notice board's single state |
+| Props | cell-sized treatments up to 3 by 2 cells | One tintable base per prop type, state overlays where the silhouette stays fixed, and bespoke stills only for silhouette-changing states |
 | Scenery | 64 px cells | Three red pine variants and the market crate |
-| Characters | 192 by 192 frames | One rotatable sheet per villager variant and one for the visitor, each with a rest frame and its walk cycle, plus shadow and direction marks |
+| Characters | 192 by 192 frames | Shared rotatable directly overhead masks for body, clothing, and details, with rest and walk frames, plus shadow and direction marks |
 | Effects and dressing | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses |
 
 The separate 320 by 180 thumbnail is a final Hearthside Ink image, not a screenshot requirement or map claim. It shows night ink around a parchment fragment: a slack-water branch, low crossing, one home and garden, warm lantern light, and a cinnabar visitor.
@@ -139,7 +143,7 @@ Review the fixture and generated seeds at fitted, mid, and close fixed scales. S
 - Building tests cover ground painting from semantic rects, upper walls above occupants, and roof alpha from occupancy alone, including direct and replayed seeks.
 - Prop tests cover each still, facing, exterior-footprint cap, and every catalog treatment: stall, bench, board, plot, repair bench, lantern, hearth, shrine, pump, and bell.
 - Shape tests cover circular props and pine within catalog extents and box props filling theirs.
-- Character tests cover exact heading rotation, walk-frame determinism, and hash-selected villager sheets.
+- Character tests cover exact heading rotation, walk-frame determinism, stable mask assembly, and hash-selected tint combinations.
 - Seek and interpolation tests cover sustained animation, grade, walk frame, roof state, crane, endpoints, midpoints, cadence scaling, unpaced measured gaps, shortest heading turns, offscreen crane wrapping, and retained-pose equality after a per-frame motion pass.
 - Phase tests cover one world-only grade, post-grade emissives, neutral non-daynight day, and ungraded collision overlay and HUD boundary.
 - Asset tests cover the local manifest, dimensions, originals, runtime files, declared masks, and thumbnail.

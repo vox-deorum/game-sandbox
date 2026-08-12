@@ -4,15 +4,15 @@ from math import isfinite
 
 from three_branches.catalog import CATALOG
 from three_branches.engine import Day, step
-from three_branches.generation import build_village
+from three_branches.fixture import build_fixture
 from three_branches.geometry import Circle, Rect, distance, nearest_point
 from three_branches.physics import Physics
 from three_branches.rules import GROUND_BY_CODE, PROFILE
 
 
-def test_fixture_is_fresh_complete_and_has_required_topology() -> None:
-    first = build_village(1)
-    second = build_village(2)
+def test_fixture_is_fresh_deterministic_and_has_required_topology() -> None:
+    first = build_fixture()
+    second = build_fixture()
     assert first is not second
     assert first.grid.rows == second.grid.rows
     assert {building.id for building in first.buildings} == {
@@ -32,7 +32,7 @@ def test_fixture_is_fresh_complete_and_has_required_topology() -> None:
 
 
 def test_layout_paints_doorways_and_exposes_clear_home_poses() -> None:
-    layout = build_village(0)
+    layout = build_fixture()
     for home_index in range(5):
         doorway = layout.doorway(f"home_{home_index}")
         assert len(doorway) == 2
@@ -47,7 +47,7 @@ def test_layout_paints_doorways_and_exposes_clear_home_poses() -> None:
 
 
 def test_layout_shapes_and_static_projection_are_distinct() -> None:
-    layout = build_village(0)
+    layout = build_fixture()
     assert len(layout.solids) == len(layout.props) + len(layout.scenery)
     assert layout.blocked
     assert any(GROUND_BY_CODE[layout.grid.value_at((50, y))].passable is False for y in range(66, 100))
@@ -62,7 +62,8 @@ def test_layout_shapes_and_static_projection_are_distinct() -> None:
         shape = layout.shape_for(item)
         assert any(
             layout.body_clear(layout.grid.center((x, y)))
-            and distance(layout.grid.center((x, y)), nearest_point(layout.grid.center((x, y)), shape)) <= 1.5
+            and distance(layout.grid.center((x, y)), nearest_point(layout.grid.center((x, y)), shape))
+            <= PROFILE.prop_reach
             and layout.line_clear(
                 layout.grid.center((x, y)), nearest_point(layout.grid.center((x, y)), shape)
             )
@@ -72,7 +73,7 @@ def test_layout_shapes_and_static_projection_are_distinct() -> None:
 
 
 def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> None:
-    layout = build_village(0)
+    layout = build_fixture()
     day = Day(layout, 5, False)
     visitor = day.characters["visitor"]
     start = visitor.position
@@ -138,7 +139,7 @@ def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> N
 
 
 def test_physics_restores_finite_dynamic_bodies_after_a_stop() -> None:
-    physics = Physics(build_village(0))
+    physics = Physics(build_fixture())
     physics.add("visitor", (10.0, 50.5))
     physics.add("npc_0", (10.75, 50.5))
 
@@ -154,7 +155,7 @@ def test_physics_restores_finite_dynamic_bodies_after_a_stop() -> None:
 
 
 def test_physics_does_not_accumulate_penetration_through_a_wall() -> None:
-    layout = build_village(0)
+    layout = build_fixture()
     physics = Physics(layout)
     physics.add("visitor", (6.5, 61.4))
 

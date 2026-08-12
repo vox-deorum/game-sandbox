@@ -1,59 +1,65 @@
 # Step 4: The village generator
 
-Status: planned.
+Status: in progress. Gate A is implemented and awaiting owner review.
 
-Part of [the plan](../README.md). This step replaces the step 2 fixture behind unchanged `build_village(seed)` with a seeded Three Branches village under [village.md](../village.md). It has two owner-reviewed gates: land and routes, then settlement and dressing. The step ends with the guarantee suite across a pinned seed batch and one owner-blessed course default seed.
+Part of [the plan](../README.md). This step replaces the step 2 fixture behind unchanged `build_village(seed)` with a seeded Three Branches village under [village.md](../village.md). It has two owner-reviewed gates: land and water, then settlement, routes, and dressing. The step ends with the guarantee suite across a pinned seed batch and one owner-blessed course default seed.
 
 ## Correctness, review, and configuration
 
 The generator paints cells and places rectangles over step 2 grid types. Engine, environment, recording, and renderer contracts do not change. [village.md](../village.md#generation-order-and-guarantees) and tests define the mechanical guarantees. The owner assesses whether a village looks grown rather than drafted through `npm run play -- three_branches watch --seed N` with the collision overlay enabled. Record each sign-off and its date in this file. No review tooling is added.
 
-`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. The browser receives a complete `Layout`. Review covers only generated content; padded combinations may violate guarantees. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map.
+`generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. At Gate A, `build_village(seed)` switches to generation and pads ungenerated objects with fixture content. Each padded building slides to the nearest origin whose site and margin miss generated water, so padding never covers the land under review. The padded visitor stands on the widest stretch of open ground, clear of every padded footprint, because there is no road to spawn on until Gate B and a full day still has to run. The browser receives a complete `Layout`. Review covers only generated content; padded combinations may violate guarantees. Gate B removes padding from the generation package; `fixture.py` remains the engine-test map and the input for the engine, physics, and perception tests, which no longer build through `build_village`.
 
 | Area | Ownership |
 | --- | --- |
-| Stream and output | `random.Random(f"{seed}:village")`; `generate(seed)` returns `Layout` and internal report, while `build_village(seed)` returns only the layout |
-| Modules | `fields`, `water`, `grounds`, `network`, `sites`, `accessories`, `validate`; `carve` paints brushes and `paths` performs weighted search |
+| Stream and output | `random.Random(f"{seed}:village")`; `generate(seed)` returns `Layout` and internal report, while `build_village(seed)` returns only the layout. A reset with no seed builds seed 0 |
+| Modules | `config`, `fields`, `water`, `grounds`, `network`, `sites`, `accessories`, `validate`; `carve` paints brushes and `paths` performs weighted search. `network` and `paths` arrive with Gate B, since the road and the footpath search both land there |
 | Inputs | `random`, `math`, `grid.py`, and `geometry.py`; `env.py` remains the only numpy importer |
-| Internal report | Trunk and channel masks, prop witness cells, redraw count, and reset timing. Only the guarantee suite and batch summary consume it |
-| Stable output | Homes are `home_0` through `home_4` in placement order. Props use catalog type order, placement order within type, and contiguous ids |
+| Internal report | Trunk and channel masks, the shared fork area and the fork itself, prop witness cells, redraw count, and reset timing as one number, since generation and validation are both what a reset spends. Only the guarantee suite and batch summary consume it |
+| Stable output | Homes are `home_0` through `home_4` in placement order. Props use catalog type order, placement order within type, and contiguous ids, including the single `bell_0` |
+
+`config.py` owns loading and validating `generation.json` and holds the shared `Retry`, which keeps every stage module free of the others. Each stage checks its own output as it commits rather than deferring to a separate pass, so `validate.py` arrives at gate B for the whole-village assembly, ledger, and connectivity flood. `generation.json` grows a group when its stage lands, so every shipped number has a consumer. Gate B brings back the `network` group along with the road's crossing and apron checks and the spawn.
 
 The labelled stream remains separate from the scripted visitor's `random.Random(seed)`. Draw order is fixed per code version. Same-build output is exact; committed recordings replay rather than re-simulate.
 
 ## Construction and redraws
 
-The committed order is terrain fields, water, ground classes, road with crossings and spawn, building sites and painting, footpaths, then accessories. Each construction stage reads the committed output of the ones before it. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+The committed order is terrain fields, water, ground classes, district anchors with building sites and painting, the road with its crossings and spawn, footpaths, then accessories. Each construction stage reads the committed output of the ones before it. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
 
-Reset timing includes generation and validation. The batch summary records it for every seed, including reset-default seed 0 and conformance seed 17. It is reported only, with no timing limit or pass/fail assertion.
+Reset timing includes generation and validation, reported as the one number a reset spends. The batch summary records it for every seed, including reset-default seed 0 and conformance seed 17. It is reported only, with no timing limit or pass/fail assertion. `pytest` records it as a property and prints it, so a `-s` run of the timing test is the batch summary and no other machinery is needed.
 
-Two pure-Python fractal value-noise fields, elevation and moisture, are sampled once per cell before construction. A lattice covering the frame plus one ring of nodes uses stream draws, configured octaves, smoothstep-faded bilinear interpolation, and unit normalization. Elevation also takes the configured southward slope bias. Spacing, octave amplitudes, and bias remain `fields` tuning. Fields are generation-only artifacts.
+Two pure-Python fractal value-noise fields, elevation and moisture, are sampled once per cell before construction. A lattice covering the frame plus one ring of nodes uses stream draws, configured octaves, smoothstep-faded bilinear interpolation, and unit normalization. Elevation also takes the configured southward slope bias, which is why the road reads moisture rather than elevation for its dry ground: the bias runs one way across the road band, so elevation would only pin the road to a band edge. Spacing, octave amplitudes, and bias remain `fields` tuning. Fields are generation-only artifacts.
 
-## Gate A: land and routes
+## Gate A: land and water
 
-This gate implements [waterways](../village.md#waterways) and the road, crossings, and spawn guarantees in [the road and paths](../village.md#the-road-and-paths). It pads fixture buildings, props, and scenery, with no footpaths.
+This gate implements only the [waterways](../village.md#waterways) guarantees, and it pads fixture buildings, props, scenery, and the spawn.
 
 | Construction | Implementation |
 | --- | --- |
-| Water | A cell walker starts in `water.entry_band`, paints a round brush at configured step length, blends momentum, elevation gradient, and fork pull, and applies edge repulsion. An explicit fork and confluence mask in `water.fork_band` creates the channels. Outside it, width-aware clearance rejects or reroutes self and sibling contact. Per-seed widths and blends stay within configured ranges. |
+| Water | A cell walker starts in `water.entry_band`, paints a round brush at configured step length, and blends momentum, elevation gradient, pull toward where it is going, a per-course meander, edge repulsion, and repulsion from courses already carved. Courses are carved one at a time from west to east, so each channel only avoids what is already there. An explicit fork and confluence mask in `water.fork_band` creates the channels: the mask is the pool at the fork plus each channel's opening `water.fork_steps` reaches, which fan apart by `water.fan_degrees`. Outside it, width-aware clearance rejects or reroutes self and sibling contact, and steering senses `water.walker.look_ahead` further than the check blocks so a course turns away before it is stopped. A course runs straight for `water.edge_straight` where it meets a frame edge, so its entry and mouth runs come out at the width it was carved with. Per-seed widths and blends stay within configured ranges; brush widths are odd, which is what a cell-centred round brush carves exactly. Once carving is done, land the water ringed is flooded and joins the course holding most of its edge, because such a cell is river rather than somewhere to stand, and the courses as they finally stand are checked for contact. The carver cannot see that on its own: the shared area grows while the channels are carved, and flooding moves cells between courses. |
 | Grounds | Moisture-near-water reeds, including all mouths, and flat low dry lower-bank fields use `grounds` thresholds and configured majority smoothing. |
-| Road and spawn | Weighted search from west entry south of the fork to east exit uses `network.road` ground, turn, and crossing-angle costs. Width-aware centreline masks and water intersections create continuous roads, bridge decks, and `network.road.apron` banks. The spawn is the configured west inset road cell with configured clearance. |
 
-Gate A tests cover the configured water geometry, three south-edge runs, fork-only contact and clearance, road span and crossing rules, bridge and widened-mask continuity, configured search costs, smoothed in-frame grounds, deterministic equal builds and differing batch seeds, and observation `village` equality with the layout. Bounds come from `generation.json`.
+Gate A tests cover the configured water geometry, three south-edge runs, fork-only contact and clearance, the fork depth, smoothed in-frame grounds and reeds at every mouth, a padded visitor that can stand and walk, deterministic equal builds and differing batch seeds, and observation `village` equality with the layout. Bounds come from `generation.json`.
 
-The owner signs off land, water, and road.
+The owner signs off land and water.
 
-## Gate B: settlement and dressing
+### Gate A sign-off
+
+Pending. The owner browses `npm run play -- three_branches watch --seed N` across the pinned batch and records the date here.
+
+## Gate B: settlement, routes, and dressing
 
 This gate implements [buildings and interiors](../village.md#buildings-and-interiors) and the remaining route, prop, scenery, and connectivity guarantees in [generation order and guarantees](../village.md#generation-order-and-guarantees).
 
 | Construction | Implementation |
 | --- | --- |
-| Sites and buildings | Score committed terrain and road. Place the well plaza in a clear fork crook; put shed and bell west, market and five catalog stalls with board in the middle, and inn east. Seed `sites.cluster_count` home clusters by configured bank proximity, flatness, dryness, and separation, then place inn and shed before five homes. Candidates reserve their rectangle and `sites.margin`, choose a doorway with viable road route, preview site painting, and leave home floors empty. |
+| Sites and buildings | Score committed terrain. Place the well plaza in a clear fork crook; the shed and bell anchor the west third, the market and five catalog stalls with board anchor the middle, and the inn anchors the east, so the west-to-middle-to-east arrangement holds by construction before the road is walked. Seed `sites.cluster_count` home clusters by configured bank proximity, flatness, dryness, and separation, then place inn and shed before five homes. Candidates reserve their rectangle and `sites.margin`, choose a doorway with viable road route, preview site painting, and leave home floors empty. |
+| Road, crossings and spawn | Each channel is crossed once, at the band row where a straight east cut is shortest and both banks carry `network.road.apron` of dry ground, preferring the row nearest the crossing before it so the road does not zigzag between channels. District anchors and those crossings form one west to east target list. A walker then carries the road across the frame on a continuous heading that blends momentum, pull toward its next target, a climb toward drier ground, repulsion from water, a push away from the band edges, a per road meander, and wobble, the same way a water course is carved. It runs straight for `network.road.edge_straight` at each frame edge and locks straight through every crossing, so the entry, the exit, and every bridge deck come out at the carved width. It never paints water outside a crossing and never runs back over its own trail, which is what makes one deck per channel and one connected road follow from the walk rather than from a check. The spawn is the configured west inset road cell with configured clearance. |
 | Footpaths | Use the same weighted search from road cells to plaza, selected doorways, and shrines. `network.path.width` and merge discount favor shared routes. Water crossings stay within the specified bounds. Doorways open onto walkable path cells and face their nearest path. |
-| Accessories | A road-arc helper supplies positions and facings. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell. Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall. One or two crates sit by each stall; shrines use generator-selected road bends. Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets. |
+| Accessories | A road-arc helper supplies positions and facings. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell. Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall. One or two crates sit by each stall; shrines use the sharpest turns of the road centreline. Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets. |
 | Witnesses and validation | Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance. The final prop ledger has every prop and scenery cell without overlap. Flood from spawn uses the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witnesses to join the region. Failure redraws. |
 
-Gate B tests cover stable features and five homes, clusters, site margins and painting, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and strict connectivity across the full batch.
+Gate B tests cover stable features and five homes, clusters, site margins and painting, road span and crossing rules, bridge deck shape and aprons, spawn clearance, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and strict connectivity across the full batch.
 
 The owner signs off the dressed village, opening step close.
 
@@ -67,9 +73,11 @@ At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines
 
 ## Tests
 
-`environments/three_branches/tests/test_generation.py` is the full-batch guarantee suite. It tests structure, not aesthetics: no bend-radius, corridor, monotonicity, curvature, bend inventory, or variety assertions. Shrine assertions cover placement and witnesses. Configuration bounds are read at test time.
+`environments/three_branches/tests/test_generation.py` is the full-batch guarantee suite. It tests structure, not aesthetics: no bend-radius, corridor, monotonicity, curvature, bend inventory, or variety assertions. Shrine assertions cover placement and witnesses. Configuration bounds are read at test time. A module-scoped fixture builds each batch seed once, so a suite run is one build per seed.
 
-- Verify fixed feature counts, home and canonical prop identities, all waterways and road and bridge guarantees, spawn clearance, and configuration-derived search and mask behavior.
+`test_layout_and_physics.py` and `test_engine.py` build through `build_fixture` rather than `build_village`, because their assertions describe the fixture map. `test_environment_and_chat.py` derives its chat positions from the layout it reset rather than naming road cells.
+
+- Verify fixed feature counts, home and canonical prop identities, all waterways guarantees, road and bridge guarantees, spawn clearance, and configuration-derived mask behavior.
 - Verify reserved sites, margins, painting, floor props and open doorways, paths, non-overlapping final ledger, independently found prop witnesses, and spawn connectivity.
 - Verify same-seed equality, batch-seed divergence, redraw-cap non-exhaustion, `village` observation equality, and frame-derived conversion, margin, and width arithmetic. Lantern and pine skips do not redraw land, road, or buildings.
 - Report reset time for every batch seed. Do not assert a timing threshold.
@@ -78,8 +86,8 @@ Per gate close, regenerate the fixture. At final close, re-measure `test_budget`
 
 ## Build order
 
-1. Gate A: stream, redraw loop, fields, walker, padding assembly, water, grounds, road, crossings, spawn, tests and conformance, review, sign-off, and close procedure.
-2. Gate B: sites, painting, footpaths, accessories, witnesses, validation, full-batch suite, review, sign-off, and close procedure.
+1. Gate A: stream, redraw loop, fields, the water walker, grounds, padding assembly with its spawn, tests and conformance, review, sign-off, and close procedure.
+2. Gate B: sites and district anchors, painting, crossing selection, the road walker with its crossings and spawn, footpaths, accessories, witnesses, validation, full-batch suite, review, sign-off, and close procedure.
 3. Bless and close: provisional fallback if necessary, fixture regeneration at blessed seed, budget measurement, step 3 revision, full browser suite, and handoff sweep.
 
 ## Done when

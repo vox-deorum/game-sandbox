@@ -4,7 +4,7 @@ This document owns the seeded layout, placement, spawn, and generation guarantee
 
 There is no canonical map. The match seed generates a valid village. Step 4 blesses one course default seed; later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
-Construction order is terrain fields, water, ground classes, road and spawn, building sites, footpaths, then accessories. The generator records cell ownership and an interaction witness for each prop. Tests use those records to check guarantees.
+Construction order is terrain fields, water, ground classes, district anchors and building sites, the road and spawn, footpaths, then accessories. Anchors are chosen on the terrain, and the road is the thread that connects them. The generator records cell ownership and an interaction witness for each prop. Tests use those records to check guarantees.
 
 `generation.json` holds every generator number. [Generation tuning](#generation-tuning) names the keys and groups; code and tests read values from the file.
 
@@ -33,20 +33,20 @@ Water and wall are impassable. Wall alone blocks sight. Door ground carries sigh
 
 ## The road and paths
 
-- The raised road enters from the west, winds across the village, exits east, and uses width `network.road.width`.
-- It runs south of the fork, crosses each channel exactly once, never crosses the trunk, and paints bridge ground over water with `network.road.apron` of bank on each side.
+- The raised road enters from the west, winds across the village past each district anchor, exits east, and uses width `network.road.width`.
+- It runs south of the fork, crosses each channel exactly once at a straight cut no longer than `network.road.crossing_run`, never crosses the trunk, and paints bridge ground over water with `network.road.apron` of bank on each side.
 - Footpaths curve from the road to the well plaza, each home cluster, and each shrine at width `network.path.width`. Routes do not run straight for long.
 - The connectivity flood fill uses the same body clearance as physics.
 - The visitor spawns on a road cell `network.spawn.edge_inset` from the west edge, with `network.spawn.clearance` free of every footprint.
 
 ## Districts
 
-Districts are seed-placed anchors along the road and channels.
+Districts are anchors placed on the terrain before the road exists. Each stands on dry, flat ground inside the road band, one to the west, one in the middle, and one to the east, and the road is routed to pass beside them.
 
 - The well plaza occupies the fork crook, holds the well pump, and connects to the road by a footpath.
-- The market occupies the road's middle stretch, with loosely scattered stalls and the notice board.
-- The inn faces the east road stretch.
-- The repair shed and beacon bell stand at the west road stretch.
+- The market anchors the middle stretch of the road band, with loosely scattered stalls and the notice board, and the road passes through it.
+- The inn anchors the east stretch and faces the road that reaches it.
+- The repair shed and beacon bell anchor the west stretch, beside the road.
 - Homes form `sites.cluster_count` loose bank-side clusters. Each has a footpath and, when necessary, a crossing.
 - Fields terrace between home clusters and the south edge, following channel curves.
 
@@ -64,7 +64,7 @@ Building types and dimensions are in the [canonical catalog](ruleset.md#canonica
 
 The [canonical catalog](ruleset.md#canonical-catalog) owns interactive types, activities, and states. This document owns placement.
 
-- Stalls sit on both market-road sides. Lanterns use road stations, denser at market. Benches go at the well plaza, market, and inn front. Shrines occupy road bends, and the notice board is in the market.
+- Stalls sit on both market-road sides. Lanterns use road stations, denser at market. Benches go at the well plaza, market, and inn front. Shrines stand where the road turns most sharply, and the notice board is in the market.
 - Garden plots use the home-doorway rule. The hearth and repair bench use their interior placements. The pump is in the well plaza and the bell beside the west road.
 - An interactive prop reserves its catalog rectangle, uses its catalog collision shape, faces a cardinal direction, and is never angled. Its underlying ground remains unchanged.
 - Every interactive prop has a connected, body-clear standing cell within ruleset reach of its collision shape and an unblocked line to it.
@@ -88,7 +88,7 @@ Every seed satisfies:
 - Building sites do not overlap sites, water, road, boundary, or placed props. Each keeps `sites.margin` clear cells. Interior props stay on floor, leave doorway runs open, and do not overlap props.
 - Visitor spawn is on the road at `network.spawn.edge_inset`, clear of every footprint.
 - Water enters north inside `water.entry_band` and exits south in exactly three runs at least `water.mouth_separation` apart. Beyond the shared fork and confluence, branches neither self-contact nor contact siblings.
-- The road spans west to east, crosses every channel once and the trunk never. Road and path crossings use bridge ground. A channel has at most one footpath crossing.
+- The road spans west to east, passes within reach of every district anchor, crosses every channel once and the trunk never. Road and path crossings use bridge ground. A channel has at most one footpath crossing.
 
 ## Generation tuning
 
@@ -99,7 +99,7 @@ Every seed satisfies:
 | `fields` | Elevation and moisture noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. |
 | `water` | `entry_band`, `fork_band`, `trunk_width`, `channel_width`, `mouth_separation`, `edge_margin`, walker step and brush, and momentum, downhill, and fork-pull weights. |
 | `grounds` | Moisture and elevation thresholds for reed and field, plus majority-smoothing passes. |
-| `network` | `road` width, search costs, turn cost, crossing-angle cost, apron; `path` width and merge discount; `spawn` `edge_inset` and `clearance`. |
+| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width and merge discount; `spawn` `edge_inset` and `clearance`. |
 | `sites` | `margin`, `cluster_count`, and bank scores for proximity, flatness, dryness, and separation. |
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |

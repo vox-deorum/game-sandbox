@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from three_branches.engine import Day, phase_at, step
-from three_branches.generation import build_village
+from three_branches.fixture import build_fixture
 from three_branches.geometry import Rect
 from three_branches.perception import observe
 
@@ -35,7 +35,7 @@ def test_each_prop_transition_follows_begin_hold_and_release_rules() -> None:
         ("board_0", "none"),
     )
     for prop_id, expected in cases:
-        day = Day(build_village(0), 5, True)
+        day = Day(build_fixture(), 5, True)
         prop = next(item for item in day.layout.props if item.id == prop_id)
         kind = prop.type
         start = day.prop_states[prop_id]
@@ -61,7 +61,7 @@ def test_each_prop_transition_follows_begin_hold_and_release_rules() -> None:
 
 
 def test_prop_contention_is_visitor_first_and_the_bell_is_global() -> None:
-    day = Day(build_village(0), 5, False)
+    day = Day(build_fixture(), 5, False)
     day.place("visitor", _use_point(day, "bell", 0))
     day.place("npc_0", _use_point(day, "bell", 1))
     step(
@@ -78,7 +78,7 @@ def test_prop_contention_is_visitor_first_and_the_bell_is_global() -> None:
 
 
 def test_perception_passes_doors_but_not_walls_and_reports_post_tick_motion() -> None:
-    day = Day(build_village(0), 5, False)
+    day = Day(build_fixture(), 5, False)
     visitor = day.characters["visitor"]
     npc = day.characters["npc_0"]
     visitor.position, visitor.heading = (7.5, 61.5), 90.0
