@@ -77,9 +77,6 @@ class Fields:
     elevation_octaves: tuple[Octave, ...]
     # Shapes where reeds and fields grow, and which ground the road will prefer.
     moisture_octaves: tuple[Octave, ...]
-    # The small-scale texture a footpath threads through. Its spacings are the finest of the three,
-    # because a route only bends where the going changes over a few cells rather than over tens.
-    going_octaves: tuple[Octave, ...]
     # How much elevation is lifted toward the north, which is what sends the water south. Zero
     # leaves the noise alone and one flattens it into a pure slope.
     south_bias: float
@@ -235,19 +232,43 @@ class Roadway:
 
 
 @dataclass(frozen=True, slots=True)
+class PathWalker:
+    """How a footpath is walked, once the search has decided what it joins.
+
+    The pull toward where the walk is going counts as one, so every weight here is read against it.
+    The two drawn ranges are sampled once per path, so no two paths bend alike.
+    """
+
+    # Cells the walk travels each step. Shorter steps trace a smoother line and cost more time.
+    step: float
+    # Most steps one leg may take. A leg that runs out of them is painted along the searched route
+    # instead, which is what keeps a doorway the search could reach joined either way.
+    step_budget: int
+    # When a step is blocked, how many turns to try and how far each one turns, alternating sides.
+    reroute_attempts: int
+    reroute_degrees: float
+    # Weight on the heading it already had. High momentum makes a long, lazy curve.
+    momentum: tuple[float, float]
+    # Strength of the random nudge each step, which keeps the line from looking drawn.
+    wobble: float
+    # Strength of the sideways swing across the line to the target, and the cells travelled per full
+    # swing. This is what keeps a path from running at its door in a line.
+    meander: float
+    meander_wavelength: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True)
 class Path:
-    """Footpaths, which are searched rather than walked."""
+    """Footpaths: what the search decides one joins, and how the walk wears it."""
 
     width: int
     # How much cheaper an existing path cell is to reuse, which is what makes spurs share a route.
     merge_discount: float
-    # How much harder wet, uneven going is than the shortest line. Ground cost alone is the same
-    # everywhere open, which walks a route dead straight; this is what bends it round the terrain.
-    wander: float
     # Longest straight run a footpath may take across a channel.
     crossing_run: int
     # What one cell of that crossing costs the search, keeping a bridge a last resort.
     crossing_cost: float
+    walker: PathWalker
 
 
 @dataclass(frozen=True, slots=True)
@@ -451,6 +472,21 @@ def _road_walker(value: Any) -> RoadWalker:
     )
 
 
+def _path_walker(value: Any) -> PathWalker:
+    data = mapping(value, "network.path.walker", set(PathWalker.__dataclass_fields__))
+    name = "network.path.walker"
+    return PathWalker(
+        positive_number(data["step"], f"{name}.step"),
+        positive_int(data["step_budget"], f"{name}.step_budget"),
+        positive_int(data["reroute_attempts"], f"{name}.reroute_attempts"),
+        positive_number(data["reroute_degrees"], f"{name}.reroute_degrees"),
+        _number_range(data["momentum"], f"{name}.momentum"),
+        nonnegative_number(data["wobble"], f"{name}.wobble"),
+        nonnegative_number(data["meander"], f"{name}.meander"),
+        _int_range(data["meander_wavelength"], f"{name}.meander_wavelength"),
+    )
+
+
 def _network(value: Any) -> Network:
     data = mapping(value, "generation.network", set(Network.__dataclass_fields__))
     road_data = mapping(data["road"], "network.road", set(Roadway.__dataclass_fields__))
@@ -471,9 +507,9 @@ def _network(value: Any) -> Network:
         Path(
             positive_int(path_data["width"], "network.path.width"),
             _fraction(path_data["merge_discount"], "network.path.merge_discount"),
-            nonnegative_number(path_data["wander"], "network.path.wander"),
             positive_int(path_data["crossing_run"], "network.path.crossing_run"),
             positive_number(path_data["crossing_cost"], "network.path.crossing_cost"),
+            _path_walker(path_data["walker"]),
         ),
         Spawn(
             positive_int(spawn_data["edge_inset"], "network.spawn.edge_inset"),
@@ -566,7 +602,6 @@ def load(data: Any) -> Generation:
     field_tuning = Fields(
         _octaves(fields_data["elevation_octaves"], "fields.elevation_octaves"),
         _octaves(fields_data["moisture_octaves"], "fields.moisture_octaves"),
-        _octaves(fields_data["going_octaves"], "fields.going_octaves"),
         _fraction(fields_data["south_bias"], "fields.south_bias"),
     )
     water_data = mapping(root["water"], "generation.water", set(Water.__dataclass_fields__))

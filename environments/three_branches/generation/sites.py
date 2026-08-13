@@ -73,7 +73,6 @@ def settle(
     rows: list[list[str]],
     elevation: list[list[float]],
     moisture: list[list[float]],
-    going: list[list[float]],
     courses: Water,
     tuning: Sites,
     network: Network,
@@ -86,7 +85,6 @@ def settle(
     joinable = paths.joinable(
         rows,
         courses,
-        going,
         ((x, y) for y in range(band[0], band[1] + 1) for x in range(FRAME.cells_x)),
         network.path,
     )

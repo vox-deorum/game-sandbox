@@ -19,13 +19,14 @@ southward bias that runs one way across the band, so climbing it would only pin 
 from __future__ import annotations
 
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass
-from math import cos, dist, hypot, pi, sin
+from math import dist, pi
 
 from ..geometry import Point
 from ..grid import Cell
 from ..rules import FRAME
-from . import carve, sites
+from . import carve, sites, walk
 from .config import Network, Retry
 from .sites import Settlement
 from .water import Water
@@ -222,9 +223,9 @@ class _Walk:
             elif 0.0 <= target[0] - position[0] <= walker.look_ahead:
                 # The last stretch before a stop aims square at it, so the road arrives at the
                 # bridge it proved and passes beside the anchor rather than sliding by either.
-                heading = _unit((target[0] - position[0], target[1] - position[1]))
+                heading = walk.unit((target[0] - position[0], target[1] - position[1]))
             else:
-                sway = sin(step * walker.step / wavelength * 2.0 * pi + phase)
+                sway = walk.sway(step, walker.step, wavelength, phase)
                 heading = self._steer(stream, position, heading, target, momentum, dry, pull, sway)
             position, heading = self._advance(position, heading, step, locked)
             centreline.append(position)
@@ -258,15 +259,20 @@ class _Walk:
         self, position: Point, heading: Point, step: int, locked: Crossing | None
     ) -> tuple[Point, Point]:
         walker = self.tuning.road.walker
-        for attempt in range(walker.reroute_attempts + 1):
-            swing = _sway(attempt) * walker.reroute_degrees
-            turned = heading if locked is not None else _rotate(heading, swing)
-            candidate = (position[0] + turned[0] * walker.step, position[1] + turned[1] * walker.step)
-            if locked is None and self._blocked(candidate, step):
-                continue
-            self._paint(candidate, locked, step)
-            return candidate, turned
-        raise Retry(f"the road ran out of room to steer at {position}")
+        # A locked road is running through a bridge it already proved, so it holds its heading and
+        # paints the deck rather than testing the water under it.
+        moved = walk.advance(
+            position,
+            heading,
+            walker.step,
+            walker.reroute_attempts,
+            walker.reroute_degrees,
+            lambda candidate: locked is not None or not self._blocked(candidate, step),
+        )
+        if moved is None:
+            raise Retry(f"the road ran out of room to steer at {position}")
+        self._paint(moved[0], locked, step)
+        return moved
 
     def _straight(self, position: Point) -> bool:
         straight = self.tuning.road.edge_straight
@@ -319,38 +325,21 @@ class _Walk:
         sway: float,
     ) -> Point:
         walker = self.tuning.road.walker
-        toward = _unit((target[0] - position[0], target[1] - position[1]))
-        climb = self._drier(position)
-        band = self._band_push(position)
-        away = self._water_push(position)
-        meander = (-toward[1] * sway * walker.meander, toward[0] * sway * walker.meander)
-        angle = stream.uniform(0.0, 2.0 * pi)
-        wobble = (walker.wobble * cos(angle), walker.wobble * sin(angle))
-        return _unit(
+        toward = walk.unit((target[0] - position[0], target[1] - position[1]))
+        return walk.steer(
+            stream,
             (
-                momentum * heading[0]
-                + pull * toward[0]
-                + dry * climb[0]
-                + walker.band_push * band[0]
-                + walker.water_push * away[0]
-                + meander[0]
-                + wobble[0],
-                momentum * heading[1]
-                + pull * toward[1]
-                + dry * climb[1]
-                + walker.band_push * band[1]
-                + walker.water_push * away[1]
-                + meander[1]
-                + wobble[1],
-            )
+                (momentum, heading),
+                (pull, toward),
+                (dry, walk.downhill(self.moisture, position)),
+                (walker.band_push, self._band_push(position)),
+                (walker.water_push, self._water_push(position)),
+            ),
+            toward,
+            walker.meander,
+            sway,
+            walker.wobble,
         )
-
-    def _drier(self, position: Point) -> Point:
-        x = min(max(int(position[0]), 1), FRAME.cells_x - 2)
-        y = min(max(int(position[1]), 1), FRAME.cells_y - 2)
-        rise_x = self.moisture[y][x + 1] - self.moisture[y][x - 1]
-        rise_y = self.moisture[y + 1][x] - self.moisture[y - 1][x]
-        return _unit((-rise_x, -rise_y))
 
     def _band_push(self, position: Point) -> Point:
         band = self.tuning.road.band
@@ -365,47 +354,14 @@ class _Walk:
         """Turn away from water before the hard clearance check has to stop the road."""
         road = self.tuning.road
         span = road.width / 2 + road.water_clearance + road.walker.look_ahead
+        return walk.push_away(position, self._water_near(position, span), span)
+
+    def _water_near(self, position: Point, span: float) -> Iterable[Cell]:
         cell = (int(position[0]), int(position[1]))
-        away = (0.0, 0.0)
-        closest = span
-        for spot in carve.brush(cell, carve.disc_offsets(span)):
-            if self.rows[spot[1]][spot[0]] != "w":
-                continue
-            gap = (position[0] - (spot[0] + 0.5), position[1] - (spot[1] + 0.5))
-            length = hypot(*gap)
-            if 0.0 < length < span:
-                weight = 1.0 - length / span
-                away = (away[0] + weight * gap[0] / length, away[1] + weight * gap[1] / length)
-                closest = min(closest, length)
-        if away == (0.0, 0.0):
-            return away
-        strength = 1.0 - closest / span
-        direction = _unit(away)
-        return direction[0] * strength, direction[1] * strength
+        return (
+            spot for spot in carve.brush(cell, carve.disc_offsets(span)) if self.rows[spot[1]][spot[0]] == "w"
+        )
 
     def _measure(self, position: Point) -> None:
         for index, anchor in enumerate(self.anchors):
             self.closest[index] = min(self.closest[index], dist(position, anchor))
-
-
-def _sway(attempt: int) -> int:
-    """Reroute alternately to each side, one notch further out every second try."""
-    return ((attempt + 1) // 2) * (1 if attempt % 2 else -1)
-
-
-def _rotate(vector: Point, degrees: float) -> Point:
-    if degrees == 0.0:
-        return vector
-    angle = degrees * pi / 180.0
-    turn_cos, turn_sin = cos(angle), sin(angle)
-    return (
-        vector[0] * turn_cos - vector[1] * turn_sin,
-        vector[0] * turn_sin + vector[1] * turn_cos,
-    )
-
-
-def _unit(vector: Point) -> Point:
-    length = hypot(*vector)
-    if length == 0.0:
-        return (1.0, 0.0)
-    return vector[0] / length, vector[1] / length

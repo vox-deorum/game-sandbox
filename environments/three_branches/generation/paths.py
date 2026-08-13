@@ -1,45 +1,45 @@
-"""Footpaths, which are searched rather than walked.
+"""Footpaths. Where one goes is searched; how it gets there is walked.
 
-The road is carved by a walker because its shape is the village's spine. A footpath is the opposite:
-somebody wore it in going somewhere, so it takes the cheapest way there. One weighted search over
-cells answers both questions this module is asked. ``reachable`` asks whether somewhere could ever
-be joined to the road, which is what lets a building site reject a doorway before it is painted.
-``lay_footpaths`` asks for the route itself and paints it.
+A footpath is somebody's way to a door, so the search is asked one question only: what this route
+has to join, and where it may cross water to get there. It prices a cell by how fast a body moves
+over it and discounts a path already worn, which is what makes a new route meet an old one rather
+than run beside it. Every road and bridge cell is a source at no cost, so a route is a spur off the
+nearest way that already carries people rather than a line from one chosen point.
 
-Every road and bridge cell is a source at no cost, so a route is a spur off the nearest useful part
-of the road rather than a line from one chosen point. Ground speed is the cost, which sends paths
-around reed and field rather than through them, and an existing path is discounted, which is what
-makes two spurs share a stretch instead of running side by side.
+What comes back is a plan and not a shape. An ant walks it from the doorstep, pulled toward where it
+is going, swinging across that line on a meander of its own, and nudged by a wobble every step. It
+stops the moment it meets a way that already carries people, whatever the plan still had in mind,
+which is what makes paths run together instead of side by side. Water it crosses only on the
+straight run the search proved. When it runs out of room to turn, or out of steps, the rest of its
+leg is painted along the plan, so a doorway the search could reach is always joined.
 
-Ground class alone is the same everywhere open, and the cheapest way across ground that costs the
-same everywhere is a straight line. So the terrain counts too: wet, uneven going costs more, and a
-route bends around it the way a worn path does.
+``joinable`` answers the other question this module is asked: whether somewhere could ever be joined
+to the road at all, which is what lets a building site reject a doorway before it is painted.
 
-Nothing here draws from the stream. The search is deterministic, and ties break on the cell.
+One walk draws its gait per route and its wobble per step. Everything else here is deterministic,
+and ties break on the cell.
 """
 
 from __future__ import annotations
 
 import heapq
+import random
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from math import sqrt
+from math import pi, sqrt
 
-from ..grid import Cell
+from ..grid import Cell, Point
 from ..rules import FRAME, GROUND_BY_CODE
-from . import carve
+from . import carve, walk
 from .config import Path, Retry
 from .water import Water
-
-# How hard the going is per cell, in the unit range the noise fields are normalised to.
-Terrain = list[list[float]]
 
 # Ground a footpath may run over. Interiors, walls, and doorways are not routes: a path stops at the
 # approach cell outside a door, and the door run itself is painted with the site.
 _WALKABLE = frozenset({"r", "p", "b", "g", "f", "e"})
 # Ground a footpath may paint itself over. Everything else already carries people.
 _PAINTABLE = frozenset({"g", "f", "e"})
-# Ground that already carries people, which is where every committed search starts.
+# Ground that already carries people, which is where every search starts and every walk ends.
 _JOINABLE = frozenset({"r", "b", "p"})
 # Steps a route may take, with what each costs in cell lengths. A footpath only repaints ground
 # that already carries a body, so it may cut a corner; water is only ever crossed square on.
@@ -73,8 +73,19 @@ class Footpaths:
     crossings: tuple[Crossing, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _Leg:
+    """One dry stretch of a planned route, and the water it ends at.
+
+    Every leg but the last one ends at a bank, because a crossing is what splits the plan in two.
+    """
+
+    cells: tuple[Cell, ...]
+    crossing: Crossing | None
+
+
 def _sources(rows: list[list[str]]) -> tuple[Cell, ...]:
-    """Every cell a committed footpath may leave from: the road, and any path already worn.
+    """Every cell a footpath may leave from: the road, and any path already worn.
 
     A route joins the nearest way that already goes somewhere rather than always running its own
     line back to the road, which is what makes the footpaths a branching network instead of a set
@@ -83,9 +94,7 @@ def _sources(rows: list[list[str]]) -> tuple[Cell, ...]:
     return tuple((x, y) for y, row in enumerate(rows) for x, code in enumerate(row) if code in _JOINABLE)
 
 
-def joinable(
-    rows: list[list[str]], courses: Water, effort: Terrain, starts: Iterable[Cell], tuning: Path
-) -> frozenset[Cell]:
+def joinable(rows: list[list[str]], courses: Water, starts: Iterable[Cell], tuning: Path) -> frozenset[Cell]:
     """Return every cell a footpath could ever reach from the given ground.
 
     Settlement asks this once, before it stands anything, and then a candidate doorway only has to
@@ -98,7 +107,7 @@ def joinable(
     pending = list(seen)
     while pending:
         cell = pending.pop()
-        for spot, _, _, _ in _moves(rows, courses, effort, channels, cell, frozenset(), frozenset(), tuning):
+        for spot, _, _, _ in _moves(rows, courses, channels, cell, frozenset(), frozenset(), tuning):
             if spot not in seen:
                 seen.add(spot)
                 pending.append(spot)
@@ -106,18 +115,18 @@ def joinable(
 
 
 def lay_footpaths(
+    stream: random.Random,
     rows: list[list[str]],
     courses: Water,
-    effort: Terrain,
     targets: tuple[tuple[Cell, ...], ...],
     forbidden: frozenset[Cell],
     tuning: Path,
 ) -> Footpaths:
-    """Route and paint one footpath to each target group, in the order given.
+    """Plan and walk one footpath to each target group, in the order given.
 
-    Each route is committed before the next is searched, so later routes see the paths already
-    painted and reuse them. A channel one route bridged is closed to the rest, which is what holds
-    every channel to at most one footpath crossing.
+    Each route is worn before the next is planned, so later routes see the paths already there and
+    join them. A channel one route bridged is closed to the rest, which is what holds every channel
+    to at most one footpath crossing.
     """
     painted: set[Cell] = set()
     crossings: list[Crossing] = []
@@ -128,7 +137,6 @@ def lay_footpaths(
         found = _search(
             rows,
             courses,
-            effort,
             _sources(rows),
             wanted.__contains__,
             forbidden,
@@ -137,8 +145,8 @@ def lay_footpaths(
         )
         if found is None:
             raise Retry("a footpath target could not be reached from the road")
-        cells, crossed = _commit(rows, found, tuning)
-        painted.update(cells)
+        worn, crossed = _wear(stream, rows, _plan(rows, found), forbidden, tuning)
+        painted.update(worn)
         crossings.extend(crossed)
         # A route arrives at one cell of a doorway's approach. The rest of it is the same doorstep,
         # so it is worn too, and the whole run opens onto path rather than half of it.
@@ -156,7 +164,6 @@ _Trail = dict[Cell, tuple[Cell, tuple[Cell, ...], int]]
 def _search(
     rows: list[list[str]],
     courses: Water,
-    effort: Terrain,
     starts: tuple[Cell, ...],
     is_target: Callable[[Cell], bool],
     forbidden: frozenset[Cell],
@@ -179,7 +186,7 @@ def _search(
         if is_target(cell):
             return cell, came
         for spot, water_cells, channel, price in _moves(
-            rows, courses, effort, channels, cell, forbidden, banned, tuning
+            rows, courses, channels, cell, forbidden, banned, tuning
         ):
             through = cost + price
             if through < best.get(spot, through + 1.0):
@@ -189,10 +196,171 @@ def _search(
     return None
 
 
+def _plan(rows: list[list[str]], found: tuple[Cell, _Trail]) -> tuple[_Leg, ...]:
+    """Read the trail that reached a target as the legs of a route and the water between them.
+
+    The trail is read from the target back to whichever way cell the search started from, which is
+    the direction somebody leaving that door walks it.
+    """
+    target, came = found
+    legs: list[_Leg] = []
+    cells: list[Cell] = [target]
+    cell = target
+    while cell in came:
+        previous, water_cells, channel = came[cell]
+        if water_cells:
+            legs.append(_Leg(tuple(cells), Crossing(channel, water_cells)))
+            cells = []
+        elif previous[0] != cell[0] and previous[1] != cell[1]:
+            # A corner step touches only at the corner, which would leave the route a dotted line of
+            # separate cells. Filling one side of the corner keeps it a way somebody could walk.
+            corner = _corner(rows, previous, (cell[0] - previous[0], cell[1] - previous[1]), frozenset())
+            if corner is not None:
+                cells.append(corner)
+        cells.append(previous)
+        cell = previous
+    legs.append(_Leg(tuple(cells), None))
+    return tuple(legs)
+
+
+def _wear(
+    stream: random.Random,
+    rows: list[list[str]],
+    legs: tuple[_Leg, ...],
+    forbidden: frozenset[Cell],
+    tuning: Path,
+) -> tuple[frozenset[Cell], tuple[Crossing, ...]]:
+    """Walk a plan and paint what the walk wore, leg by leg.
+
+    A walk that meets a way already carrying people has arrived, and the rest of the plan is not
+    needed. A walk with nowhere left to turn, or one that has spent its steps, hands what is left
+    back to the plan, which is what makes a reachable doorway always end up joined.
+    """
+    walker = tuning.walker
+    # One walk has one gait, so a path bends its own way for the whole of its length.
+    wavelength = float(stream.randint(*walker.meander_wavelength))
+    phase = stream.uniform(0.0, 2.0 * pi)
+    momentum = stream.uniform(*walker.momentum)
+    painted: set[Cell] = set()
+    crossings: list[Crossing] = []
+    for index, leg in enumerate(legs):
+        start = leg.cells[0]
+        if rows[start[1]][start[0]] in _JOINABLE:
+            break
+        worn = _wander(stream, rows, start, leg.cells[-1], forbidden, (momentum, wavelength, phase), tuning)
+        if worn is None:
+            for rest in legs[index:]:
+                painted |= _paint(rows, rest.cells, tuning)
+                if rest.crossing is not None:
+                    painted |= _paint(rows, rest.crossing.cells, tuning)
+                    crossings.append(rest.crossing)
+            break
+        cells, joined = worn
+        painted |= _paint(rows, cells, tuning)
+        if joined:
+            break
+        if leg.crossing is not None:
+            painted |= _paint(rows, leg.crossing.cells, tuning)
+            crossings.append(leg.crossing)
+    return frozenset(painted), tuple(crossings)
+
+
+def _wander(
+    stream: random.Random,
+    rows: list[list[str]],
+    start: Cell,
+    goal: Cell,
+    forbidden: frozenset[Cell],
+    gait: tuple[float, float, float],
+    tuning: Path,
+) -> tuple[tuple[Cell, ...], bool] | None:
+    """Walk one leg, reporting the cells it wore and whether it met a way already worn.
+
+    Nothing when the walk ran out of room to turn or out of steps, which hands the leg back to the
+    plan. The pull toward the goal counts as one, so the gait's weights are read against it.
+    """
+    walker = tuning.walker
+    momentum, wavelength, phase = gait
+    position = (start[0] + 0.5, start[1] + 0.5)
+    aim = (goal[0] + 0.5, goal[1] + 0.5)
+    heading = walk.unit((aim[0] - position[0], aim[1] - position[1]))
+    worn = [start]
+    cell = start
+    for step in range(walker.step_budget):
+        toward = walk.unit((aim[0] - position[0], aim[1] - position[1]), heading)
+        heading = walk.steer(
+            stream,
+            ((momentum, heading), (1.0, toward)),
+            toward,
+            walker.meander,
+            walk.sway(step, walker.step, wavelength, phase),
+            walker.wobble,
+            heading,
+        )
+        moved = walk.advance(
+            position,
+            heading,
+            walker.step,
+            walker.reroute_attempts,
+            walker.reroute_degrees,
+            lambda candidate, behind=cell: _free(rows, candidate, behind, forbidden, tuning),
+        )
+        if moved is None:
+            return None
+        position, heading = moved
+        spot = (int(position[0]), int(position[1]))
+        if spot == cell:
+            continue
+        if spot[0] != cell[0] and spot[1] != cell[1]:
+            corner = _corner(rows, cell, (spot[0] - cell[0], spot[1] - cell[1]), forbidden)
+            if corner is not None:
+                worn.append(corner)
+        code = rows[spot[1]][spot[0]]
+        worn.append(spot)
+        cell = spot
+        if code in _JOINABLE:
+            return tuple(worn), True
+        if spot == goal:
+            return tuple(worn), False
+    return None
+
+
+def _free(
+    rows: list[list[str]], candidate: Point, behind: Cell, forbidden: frozenset[Cell], tuning: Path
+) -> bool:
+    """Whether a step lands where a body could walk without breaking the line behind it."""
+    cell = (int(candidate[0]), int(candidate[1]))
+    if not _inside(cell):
+        return False
+    if any(
+        spot in forbidden or rows[spot[1]][spot[0]] not in _WALKABLE
+        for spot in carve.stamp(cell, tuning.width)
+    ):
+        return False
+    if cell[0] != behind[0] and cell[1] != behind[1]:
+        return _corner(rows, behind, (cell[0] - behind[0], cell[1] - behind[1]), forbidden) is not None
+    return True
+
+
+def _paint(rows: list[list[str]], cells: Iterable[Cell], tuning: Path) -> frozenset[Cell]:
+    """Wear a run of cells into path, and any water among them into bridge."""
+    painted: set[Cell] = set()
+    for spot in cells:
+        for column, row in carve.stamp(spot, tuning.width):
+            code = rows[row][column]
+            if code == "w":
+                rows[row][column] = "b"
+            elif code in _PAINTABLE:
+                rows[row][column] = "p"
+            else:
+                continue
+            painted.add((column, row))
+    return frozenset(painted)
+
+
 def _moves(
     rows: list[list[str]],
     courses: Water,
-    effort: Terrain,
     channels: dict[Cell, int],
     cell: Cell,
     forbidden: frozenset[Cell],
@@ -211,9 +379,9 @@ def _moves(
             continue
         code = rows[spot[1]][spot[0]]
         if code in _WALKABLE:
-            yield spot, (), _NO_CHANNEL, _price(code, spot, effort, tuning) * length
+            yield spot, (), _NO_CHANNEL, _price(code, tuning) * length
         elif code == "w" and length == 1.0:
-            crossing = _crossing(rows, courses, effort, channels, cell, (dx, dy), forbidden, banned, tuning)
+            crossing = _crossing(rows, courses, channels, cell, (dx, dy), forbidden, banned, tuning)
             if crossing is not None:
                 yield crossing
 
@@ -221,7 +389,6 @@ def _moves(
 def _crossing(
     rows: list[list[str]],
     courses: Water,
-    effort: Terrain,
     channels: dict[Cell, int],
     cell: Cell,
     step: tuple[int, int],
@@ -250,44 +417,9 @@ def _crossing(
         if code not in _WALKABLE or not run:
             return None
         # A crossing is priced by the water it spans, so the search bridges only where it must.
-        price = len(run) * tuning.crossing_cost + _price(code, over, effort, tuning)
+        price = len(run) * tuning.crossing_cost + _price(code, tuning)
         return over, tuple(run), channels[run[0]], price
     return None
-
-
-def _commit(
-    rows: list[list[str]], found: tuple[Cell, _Trail], tuning: Path
-) -> tuple[frozenset[Cell], tuple[Crossing, ...]]:
-    """Paint the trail that reached a target, back to whichever road cell it started from."""
-    target, came = found
-    centre: list[Cell] = [target]
-    crossings: list[Crossing] = []
-    cell = target
-    while cell in came:
-        previous, water_cells, channel = came[cell]
-        if water_cells:
-            crossings.append(Crossing(channel, water_cells))
-            centre.extend(water_cells)
-        # A corner step touches only at the corner, which would leave the path as a dotted line of
-        # separate cells. Filling one side of the corner keeps it a path somebody could have worn.
-        if previous[0] != cell[0] and previous[1] != cell[1]:
-            corner = _corner(rows, previous, (cell[0] - previous[0], cell[1] - previous[1]), frozenset())
-            if corner is not None:
-                centre.append(corner)
-        cell = previous
-        centre.append(cell)
-    painted: set[Cell] = set()
-    for spot in centre:
-        for column, row in carve.stamp(spot, tuning.width):
-            code = rows[row][column]
-            if code == "w":
-                rows[row][column] = "b"
-            elif code in _PAINTABLE:
-                rows[row][column] = "p"
-            else:
-                continue
-            painted.add((column, row))
-    return frozenset(painted), tuple(crossings)
 
 
 def _corner(
@@ -302,10 +434,9 @@ def _corner(
     return None
 
 
-def _price(code: str, cell: Cell, effort: Terrain, tuning: Path) -> float:
-    """What entering a cell costs: its ground, how hard the going is, less any path already worn."""
+def _price(code: str, tuning: Path) -> float:
+    """What entering a cell costs: how fast a body crosses it, less any path already worn."""
     cost = FRAME.cell_size / GROUND_BY_CODE[code].speed
-    cost *= 1.0 + tuning.wander * effort[cell[1]][cell[0]]
     return cost * (1.0 - tuning.merge_discount) if code == "p" else cost
 
 

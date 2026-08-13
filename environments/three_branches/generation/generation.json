@@ -10,11 +10,6 @@
       {"spacing": 13, "amplitude": 0.5},
       {"spacing": 7, "amplitude": 0.35}
     ],
-    "going_octaves": [
-      {"spacing": 9, "amplitude": 1.0},
-      {"spacing": 4, "amplitude": 0.55},
-      {"spacing": 1, "amplitude": 0.5}
-    ],
     "south_bias": 0.45
   },
   "water": {
@@ -87,9 +82,18 @@
     "path": {
       "width": 1,
       "merge_discount": 0.4,
-      "wander": 2.5,
       "crossing_run": 9,
-      "crossing_cost": 6.0
+      "crossing_cost": 6.0,
+      "walker": {
+        "step": 0.75,
+        "step_budget": 200,
+        "reroute_attempts": 7,
+        "reroute_degrees": 15.0,
+        "momentum": [0.5, 0.7],
+        "wobble": 0.15,
+        "meander": 0.5,
+        "meander_wavelength": [12, 24]
+      }
     },
     "spawn": {"edge_inset": 3, "clearance": 2.5}
   },

@@ -4,10 +4,7 @@ Every field is pure-Python fractal value noise: a lattice of stream draws coveri
 one ring of nodes, read back through smoothstep-faded bilinear interpolation and normalised to the
 unit range. Elevation then takes the southward slope bias, so water has somewhere to flow.
 
-Elevation shapes the land and moisture shapes what grows on it. Going is the small-scale texture of
-the ground, and its octaves are deliberately the finest of the three, because it is read by the
-footpath search. Ground that costs the same everywhere is crossed in a straight line, so a route
-only bends if the going changes under its feet.
+Elevation shapes the land and moisture shapes what grows on it.
 
 The fields are generation-only artifacts and never reach the layout.
 """
@@ -22,11 +19,10 @@ from .config import Fields, Octave
 Field = list[list[float]]
 
 
-def build_fields(stream: random.Random, tuning: Fields) -> tuple[Field, Field, Field]:
-    """Return elevation, moisture, and going as ``[y][x]`` rows in the unit range."""
+def build_fields(stream: random.Random, tuning: Fields) -> tuple[Field, Field]:
+    """Return elevation and moisture as ``[y][x]`` rows in the unit range."""
     elevation = _normalise(_noise(stream, tuning.elevation_octaves))
     moisture = _normalise(_noise(stream, tuning.moisture_octaves))
-    going = _normalise(_noise(stream, tuning.going_octaves))
     bias = tuning.south_bias
     if bias > 0.0:
         last = FRAME.cells_y - 1
@@ -34,7 +30,7 @@ def build_fields(stream: random.Random, tuning: Fields) -> tuple[Field, Field, F
             lift = bias * y / last
             for x, value in enumerate(row):
                 row[x] = value * (1.0 - bias) + lift
-    return elevation, moisture, going
+    return elevation, moisture
 
 
 def _noise(stream: random.Random, octaves: tuple[Octave, ...]) -> Field:

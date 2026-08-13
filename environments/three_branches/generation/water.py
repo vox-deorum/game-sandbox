@@ -13,17 +13,19 @@ trail, steers away, and gives up on the whole layout when steering runs out of r
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from math import ceil, cos, hypot, pi, radians, sin
+from math import ceil, pi
 
 from ..grid import Cell, Point
 from ..rules import FRAME
-from . import carve
+from . import carve, walk
 from .config import Retry
 from .config import Water as WaterTuning
 
 TRUNK = -1
+# Water runs down the map, so that is the way a course faces when its urges cancel out.
+_SOUTH: Point = (0.0, -1.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,8 +79,8 @@ def carve_water(
             stream,
             index,
             fork,
-            _rotate(
-                _unit((target[0] - fork[0], target[1] - fork[1])),
+            walk.rotate(
+                walk.unit((target[0] - fork[0], target[1] - fork[1]), _SOUTH),
                 (index - middle) * tuning.fan_degrees,
             ),
             width / 2.0,
@@ -257,9 +259,9 @@ class _Course:
             if self._at_edge(position, owner):
                 # A course runs straight where it meets a frame edge, so the run it paints there
                 # comes out at exactly the width it was carved with.
-                heading = (0.0, -1.0)
+                heading = _SOUTH
             else:
-                sway = sin(step * walker.step / wavelength * 2.0 * pi + phase)
+                sway = walk.sway(step, walker.step, wavelength, phase)
                 heading = self._steer(stream, position, heading, target, sense, span, owner, sway)
             position, heading = self._advance(position, heading, offsets, reach, owner, step)
             step += 1
@@ -277,18 +279,22 @@ class _Course:
         walker = self.tuning.walker
         # A channel's opening reach belongs to the shared fork area, so it carves without checking.
         sharing = owner != TRUNK and step < self.tuning.fork_steps
-        for attempt in range(walker.reroute_attempts + 1):
-            turned = _rotate(heading, _sway(attempt) * walker.reroute_degrees)
-            candidate = (position[0] + turned[0] * walker.step, position[1] + turned[1] * walker.step)
-            cell = (int(candidate[0]), int(candidate[1]))
-            painted = carve.brush(cell, offsets)
-            if not sharing and self._blocked(cell, painted, reach, owner, step):
-                continue
-            if sharing:
-                self.fork_mask |= frozenset(painted)
-            self._paint(painted, owner, step)
-            return candidate, turned
-        raise Retry(f"water course {owner} ran out of room to steer at {position}")
+        moved = walk.advance(
+            position,
+            heading,
+            walker.step,
+            walker.reroute_attempts,
+            walker.reroute_degrees,
+            lambda candidate: sharing or not self._blocked(candidate, offsets, reach, owner, step),
+        )
+        if moved is None:
+            raise Retry(f"water course {owner} ran out of room to steer at {position}")
+        candidate, turned = moved
+        painted = carve.brush((int(candidate[0]), int(candidate[1])), offsets)
+        if sharing:
+            self.fork_mask |= frozenset(painted)
+        self._paint(painted, owner, step)
+        return candidate, turned
 
     def _at_edge(self, position: Point, owner: int) -> bool:
         straight = self.tuning.edge_straight
@@ -304,9 +310,11 @@ class _Course:
             trail[spot] = step
 
     def _blocked(
-        self, cell: Cell, painted: tuple[Cell, ...], reach: tuple[Cell, ...], owner: int, step: int
+        self, candidate: Point, offsets: tuple[Cell, ...], reach: tuple[Cell, ...], owner: int, step: int
     ) -> bool:
         margin = self.tuning.edge_margin
+        cell = (int(candidate[0]), int(candidate[1]))
+        painted = carve.brush(cell, offsets)
         # The brush is clipped at the frame, so the centre is bounded too. Without that a course
         # could wander off the map, where nothing is painted and nothing ever blocks it.
         if not margin <= cell[0] < FRAME.cells_x - margin or not -1 <= cell[1] < FRAME.cells_y:
@@ -337,40 +345,22 @@ class _Course:
         sway: float,
     ) -> Point:
         walker = self.tuning.walker
-        pull = _unit((target[0] - position[0], target[1] - position[1]))
-        slope = self._downhill(position)
-        edge = self._edge_push(position)
-        apart = self._separation(position, reach, span, owner)
-        # The meander swings across the line to the target, so it bends the course without ever
-        # turning it around.
-        meander = (-pull[1] * sway * walker.meander, pull[0] * sway * walker.meander)
-        angle = stream.uniform(0.0, 2.0 * pi)
-        wobble = (walker.wobble * cos(angle), walker.wobble * sin(angle))
-        return _unit(
+        pull = walk.unit((target[0] - position[0], target[1] - position[1]), _SOUTH)
+        return walk.steer(
+            stream,
             (
-                self.momentum * heading[0]
-                + self.downhill * slope[0]
-                + self.pull * pull[0]
-                + walker.edge_push * edge[0]
-                + walker.separation * apart[0]
-                + meander[0]
-                + wobble[0],
-                self.momentum * heading[1]
-                + self.downhill * slope[1]
-                + self.pull * pull[1]
-                + walker.edge_push * edge[1]
-                + walker.separation * apart[1]
-                + meander[1]
-                + wobble[1],
-            )
+                (self.momentum, heading),
+                (self.downhill, walk.downhill(self.elevation, position, _SOUTH)),
+                (self.pull, pull),
+                (walker.edge_push, self._edge_push(position)),
+                (walker.separation, self._separation(position, reach, span, owner)),
+            ),
+            pull,
+            walker.meander,
+            sway,
+            walker.wobble,
+            _SOUTH,
         )
-
-    def _downhill(self, position: Point) -> Point:
-        x = min(max(int(position[0]), 1), FRAME.cells_x - 2)
-        y = min(max(int(position[1]), 1), FRAME.cells_y - 2)
-        rise_x = self.elevation[y][x + 1] - self.elevation[y][x - 1]
-        rise_y = self.elevation[y + 1][x] - self.elevation[y - 1][x]
-        return _unit((-rise_x, -rise_y))
 
     def _edge_push(self, position: Point) -> Point:
         soft = self.tuning.edge_margin + 4
@@ -388,43 +378,12 @@ class _Course:
         never pushes away from its own trail: its trail is right behind it, so that would only make
         it oscillate, and self-contact is what the hard check with its own memory is for.
         """
+        return walk.push_away(position, self._others_near(position, reach, owner), span)
+
+    def _others_near(self, position: Point, reach: tuple[Cell, ...], owner: int) -> Iterable[Cell]:
         cell = (int(position[0]), int(position[1]))
-        away = (0.0, 0.0)
-        closest = span
-        for spot in carve.brush(cell, reach):
-            if spot in self.fork_mask or self.owner.get(spot, owner) == owner:
-                continue
-            gap = (position[0] - (spot[0] + 0.5), position[1] - (spot[1] + 0.5))
-            length = hypot(*gap)
-            if 0.0 < length < span:
-                weight = 1.0 - length / span
-                away = (away[0] + weight * gap[0] / length, away[1] + weight * gap[1] / length)
-                closest = min(closest, length)
-        if away == (0.0, 0.0):
-            return away
-        strength = 1.0 - closest / span
-        direction = _unit(away)
-        return direction[0] * strength, direction[1] * strength
-
-
-def _sway(attempt: int) -> int:
-    """Reroute alternately to each side, one notch further out every second try."""
-    return ((attempt + 1) // 2) * (1 if attempt % 2 else -1)
-
-
-def _rotate(vector: Point, degrees: float) -> Point:
-    if degrees == 0.0:
-        return vector
-    angle = radians(degrees)
-    turn_cos, turn_sin = cos(angle), sin(angle)
-    return (
-        vector[0] * turn_cos - vector[1] * turn_sin,
-        vector[0] * turn_sin + vector[1] * turn_cos,
-    )
-
-
-def _unit(vector: Point) -> Point:
-    length = hypot(*vector)
-    if length == 0.0:
-        return (0.0, -1.0)
-    return vector[0] / length, vector[1] / length
+        return (
+            spot
+            for spot in carve.brush(cell, reach)
+            if spot not in self.fork_mask and self.owner.get(spot, owner) != owner
+        )

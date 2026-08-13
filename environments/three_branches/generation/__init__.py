@@ -67,14 +67,14 @@ def _draw(
 ) -> tuple[Layout, water.Water, tuple[tuple[str, Cell], ...]]:
     """Draw one whole village. Any mandatory stage that runs out of room raises ``Retry``."""
     rows = [[RULES.fill] * FRAME.cells_x for _ in range(FRAME.cells_y)]
-    elevation, moisture, going = fields.build_fields(stream, tuning.fields)
+    elevation, moisture = fields.build_fields(stream, tuning.fields)
     courses = water.carve_water(stream, rows, elevation, tuning.water)
     grounds.paint_grounds(rows, elevation, moisture, grounds.water_distance(rows), tuning.grounds)
-    settlement = sites.settle(stream, rows, elevation, moisture, going, courses, tuning.sites, tuning.network)
+    settlement = sites.settle(stream, rows, elevation, moisture, courses, tuning.sites, tuning.network)
     road = network.lay_road(stream, rows, moisture, courses, settlement, tuning.network)
     shrines = accessories.shrine_spots(road, tuning.accessories)
     footpaths = paths.lay_footpaths(
-        rows, courses, going, _targets(settlement, shrines), settlement.keep_clear, tuning.network.path
+        stream, rows, courses, _targets(settlement, shrines), settlement.keep_clear, tuning.network.path
     )
     dressing = accessories.dress(
         stream,
