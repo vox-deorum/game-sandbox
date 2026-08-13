@@ -1,8 +1,8 @@
 # Step 5.1: Art style
 
-Status: in progress. The owner approved Hearthside Ink on 2026-08-09 and its tiled presentation on 2026-08-11. On 2026-08-12, implementation moved the presentation closer to top-down-shooter conventions: directly overhead characters rotate continuously, simple roofs fade on entry, and shared tintable masks replace individually painted variants wherever silhouette does not carry state. On 2026-08-13, the owner moved the loose-frame atlas pipeline into [step 5.0](5-0-atlas.md) and fixed the build path in [Implementation](#implementation): visuals first with core tests, the remaining test categories after.
+Status: in progress. The owner approved Hearthside Ink on 2026-08-09, its flat tiled presentation on 2026-08-11, and the top-down-shooter character projection on 2026-08-12. Implementation lands through the owner-reviewed steps in this file.
 
-Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Its atlas art flows through the [step 5.0](5-0-atlas.md) pipeline, which lands first. Review the pinned fixture in Hearthside Ink with the collision overlay toggle. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
+Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Its atlas art flows through the [step 5.0](5-0-atlas.md) pipeline. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
 ## The design: Hearthside Ink
 
@@ -11,21 +11,6 @@ Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, 
 Tiles are high-resolution flat shapes, not pixel art. The approval fixes palette, material, value grouping, and readability, but not a canonical layout, building placement, or scenery placement. Every seed remains a valid [village.md](../village.md) layout.
 
 ![Hearthside Ink approval mockup](../art/hearthside-ink-approval.png)
-
-### Decision record
-
-This record preserves owner decisions made during implementation, including choices that are later superseded. The rest of this stage describes the current approved result.
-
-| Date | State | Decision |
-| --- | --- | --- |
-| 2026-08-09 | Current | Use Hearthside Ink for the palette, material treatment, value grouping, and overall readability. |
-| 2026-08-11 | Current | Use flat, non-pixel tiles, autotiled terrain, and cutaway roofs. |
-| 2026-08-12 | Current | Keep simple roofs and fade them when a character enters the building. |
-| 2026-08-12 | Current | Reuse tintable masks for characters and terrain edges. Give a prop a bespoke state still only when the state changes its silhouette. |
-| 2026-08-12 | Approved | **Character projection:** Author one north-facing base sprite in the stacked true-overhead projection of a conventional top-down shooter, then rotate the complete assembled sprite around its centre for exact heading. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. Use peaceful forward arms or another body cue in place of a weapon. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png). |
-| 2026-08-13 | Current | Loose per-frame files are the editable art truth, compiled into atlas pages by the [step 5.0](5-0-atlas.md) pipeline. Implement the renderer visuals first with core tests, then the remaining test categories. |
-
-![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
 ### Palette
 
@@ -87,7 +72,9 @@ HUD and interaction are step 5.2 work and are never colour-graded.
 
 ### Characters, props, and dressing
 
-Build characters from shared north-facing grayscale-alpha masks in a conventional top-down-shooter projection. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. A peaceful forward-arm pose makes north readable without a weapon. Rotate the complete assembled sprite around its centre to the exact recorded heading. A rest frame and short walk cycle advance from character id, tick, and movement state without changing that projection. Render a readable fitted-view shadow and direction mark. Select tint combinations and optional shared clothing details with a stable character-id hash. Give the visitor a small cinnabar hood tie and retain the villagers' warm materials.
+Build characters from shared north-facing grayscale-alpha masks in a conventional top-down-shooter projection. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. A peaceful forward-arm pose makes north readable without a weapon. Rotate the complete assembled sprite around its centre to the exact recorded heading. A rest frame and short walk cycle advance from character id, tick, and movement state without changing that projection. Render a readable fitted-view shadow and direction mark. Select tint combinations and optional shared clothing details with a stable character-id hash. Give the visitor a small cinnabar hood tie and retain the villagers' warm materials. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
+
+![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
 Every catalog state has a distinct readable treatment across the prop's reserved cells, turned to its facing. Reuse one tintable base and state overlays when the silhouette stays fixed. Use a bespoke still only when a state changes the prop's silhouette. Drive the result only from prop id, type, state, facing, and tick.
 
@@ -131,90 +118,95 @@ The local manifest is the only runtime loading contract. Keep only the high-reso
 
 The separate 320 by 180 thumbnail is a final Hearthside Ink image, not a screenshot requirement or map claim. It shows night ink around a parchment fragment: a slack-water branch, low crossing, one home and garden, warm lantern light, and a cinnabar visitor.
 
-### Collision truth and review
+### Collision truth
 
 [ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. Art and collision-overlay drawings must match it exactly. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. Non-solid shadows, glow, smoke, and other effects may extend outside a shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
 
-Review the fixture and generated seeds at fitted, mid, and close fixed scales. Step 5.2 verifies the same result through interactive zoom. This step does not choose camera limits, pan behaviour, HUD typography, speech-bubble layout, use preview, or input controls. Retain step 3's collision toggle on watch, replay, and play.
+## Correctness, review, and configuration
 
-## Implementation
+The owner judges the rendered result through `npm run play -- three_branches watch --seed N` with the collision overlay, over the fixture and generated seeds at fitted, mid, and close fixed scales. Each visual step below ends with that review, and its sign-off and date are recorded in place. No review tooling is added.
 
-This section fixes the renderer build path for the approved design. [Step 5.0](5-0-atlas.md) lands first and restores `props-atlas.png`, which texturing depends on. This pass implements the visuals with the core tests below; the remaining categories in [Tests](#tests) follow in a later pass.
+## Foundation
 
-### Module map
+The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
-New renderer-local modules, all pure except `tint.ts` and the configuration file:
+- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, edges with layers and pairings, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
+- `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
+- `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
+- `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
+- `loadArt()` runs after setup: it resolves manifest URLs, loads the atlases, slices frames, bakes the tinted tileset, swaps the textured layers in, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
 
-| Module | Responsibility |
-| --- | --- |
-| `presentation.json` | The visual configuration this stage owns: palette, transition timing, terrain fills and edges, roof fade, phase grades, character styling pools, prop effects, emissives, and crane dressing. |
-| `edges.ts` | Derives the edge overlay plan from the ground rows: per-cell pairing masks, corner bits, layer assignment, and shape indices. |
-| `terrain-art.ts` | Fill-variant selection, the combined variant-hook dispatcher, and the tint plan naming every mask and palette tint the tileset bakes. |
-| `characters-art.ts` | Id-hashed tint and detail selection, walk-cycle pose, and heading rotation. |
-| `props-art.ts` | The treatment table from catalog type and state to frame stack, and facing rotation. |
-| `effects.ts` | The five sustained animations and the emissive specs, each a pure function of fractional tick, prop id, state, and a stable hash phase. |
-| `cranes.ts` | Crane count, routes, and per-tick states from the static-layout key. |
-| `tint.ts` | Frame rectangles from the manifest grids, and the browser-only canvas baking of tinted grayscale masks for the tiled ground, cached per atlas, frame, and tint. Sprites elsewhere tint directly. |
+`overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
 
-Existing modules evolve in place. `presentation.ts` validates `presentation.json` in the `overlay.ts` style, exports `HEARTHSIDE_STYLE`, keeps the step 3 canvas and camera numbers in TypeScript, and renames the provisional palette to a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback. `map-layer.ts` paints the per-cell base grid, the edge overlay layers, planks, and a separate upper-wall tiled ground. `buildings.ts` replaces outline rectangles with roof tile plans, occupancy targets, and the easing clock. `characters.ts` assembles shadow, tinted mask rotor, and direction mark per character. `props-layer.ts` splits scenery and static bases from dynamic stills and drives the animated accents. `index.ts` owns the reshuffled scene graph, the asset lifecycle, fractional tick, and the unpaced gap measurement. `types.ts` documents the new contracts. `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change.
+## Terrain
 
-### Scene graph and asset lifecycle
-
-`worldRoot` holds `gradedWorld { map, scenery, props, characters, upper }`, then the emissive layer, then the collision layer, with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade; emissives and collision sit beside it, so post-grade and ungraded are structural.
-
-`loadArt()` runs after setup: it resolves manifest URLs, loads the atlases, slices frames, bakes the tinted tileset, swaps the textured layers in, sets a `threeBranchesAssets` probe to ready, and re-renders. The step 3 solid-colour drawing remains the pre-load and failure fallback, so every existing probe and journey keeps its meaning.
-
-### Mechanisms
+`edges.ts`, `terrain-art.ts`, and `map-layer.ts` land the tiled ground: fills, edge overlays, planks, and the upper wall bands.
 
 - Fills: the variant is a stable hash of code, column, and row, modulo the frame count, through the shared variant hook.
-- Edges: the shared same-code mask cannot name which side faces the other class, so `edges.ts` computes per-cell four-bit cardinal masks and corner bits per configured pairing from the ground grid, assigns marks to the lowest free overlay layer (three layers, deterministic drop on overflow), and the variant hook returns the precomputed index into a pre-tinted family: `edge00` through `edge15` indexed by the cardinal mask, then corners, then accents. Planks emit on exactly bridge cells. Upper wall bands are a second small tiled ground above characters.
-- Roofs: a tile plan of corners, edges, ridge, and hash-picked fills builds once per building. Occupancy of the semantic rect at the recorded target tick fixes target alpha, `onFrame` eases toward it, and seek, mount, frame repeat, and resize snap.
-- Characters: north-authored masks assemble as a shadow plus a rotor of body, clothing, arms, and detail with a direction mark. Rotation is 90 degrees minus heading, in radians. The walk cycle leftForward, pass, rightForward, pass advances from id, fractional tick, and movement. Tints hash from the allowed palette pool, and the visitor wears `visitorTie` in cinnabar.
-- Props: the treatment table resolves every catalog type and state to a base plus overlays where the silhouette holds, or a bespoke still where it changes. The node's container rotation applies facing. Treatments re-resolve only when the recorded state changes.
+- Edges: the shared same-code mask cannot name which side faces the other class, so `edges.ts` computes per-cell four-bit cardinal masks and corner bits per configured pairing from the ground grid, assigns marks to the lowest free overlay layer (three layers, deterministic drop on overflow), and the variant hook returns the precomputed index into a pre-tinted family: `edge00` through `edge15` by cardinal mask, then corners, then accents. Planks emit on exactly bridge cells. Upper wall bands are a second small tiled ground above characters.
+- Pin the edge-frame ordering with step 5.0 before this step lands, and smoke-check tile performance: the pre-tinted tileset bakes roughly 150 to 250 small textures.
+
+Tests cover fill and edge determinism and planks on exactly bridge cells. Run the Three Branches e2e group here, since the scene-graph reshuffle and the first textured layer land together.
+
+The owner reviews the terrain: parchment ground, water and banks, reeds, fields, paths, building floors, walls, doorways, and bridges.
+
+### Terrain sign-off
+
+Pending. The owner reviews terrain in watch sessions and records the date here.
+
+## Characters
+
+`characters-art.ts` selects id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. The visitor wears `visitorTie` in cinnabar.
+
+Tests cover style, walk, and rotation determinism. The owner reviews the cast at rest, walking, and turning.
+
+### Character sign-off
+
+Pending. The owner reviews the cast in watch sessions and records the date here.
+
+## Props, scenery, and effects
+
+`props-art.ts` resolves every catalog type and state to a base plus overlays where the silhouette holds, or a bespoke still where it changes. The node's container rotation applies facing, and treatments re-resolve only when the recorded state changes. `effects.ts` holds the five sustained animations and the emissive specs, each a pure function of fractional tick, prop id, state, and a stable hash phase. `props-layer.ts` splits scenery and static prop bases from dynamic stills and drives the animated accents.
+
+Tests cover that every catalog state resolves and that animation is pure at equal inputs. The owner reviews every state in [the treatment table](#characters-props-and-dressing), the pines and crates, and the emissives.
+
+### Prop sign-off
+
+Pending. The owner reviews props, scenery, and effects in watch sessions and records the date here.
+
+## Roofs
+
+`buildings.ts` replaces the outline rectangles with roof tile plans of corners, edges, ridge, and hash-picked fills, built once per building. Occupancy of the semantic rect at the recorded target tick fixes target alpha, `onFrame` eases toward it, and seek, mount, frame repeat, and resize snap. Roofs land after characters so the fade is reviewed over visible occupants. Roof occupancy reads recorded positions, so a character interpolating across a rect boundary can briefly clip an opaque roof; that is a known limit of recorded occupancy.
+
+Tests cover occupancy targets, easing, and snap semantics. The owner reviews the home, inn, and shed roofs fading on entry.
+
+### Roof sign-off
+
+Pending. The owner reviews the roofs in watch sessions and records the date here.
+
+## Phase, cranes, and cadence
+
 - Day phase: per-phase wash, contrast, brightness, and saturation compose one colour matrix; `day` and missing entries yield no filter.
+- `cranes.ts` derives count, routes, and per-tick states from the static-layout key, drawn north-facing and rotated to the route tangent.
 - Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over the gap capped at the natural duration. The frame loop stays alive for a short grace after settling.
+- The 320 by 180 thumbnail lands here.
 
-### Configuration keys
+Tests cover crane determinism and the cadence rules. The owner reviews each phase grade over the finished village, the cranes, and the fixture and generated seeds at fitted, mid, and close scales. The bare full browser suite runs before handoff.
 
-`presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, edges with layers, pairings, and planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`. Validation cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`.
+### Final sign-off
 
-### Core tests in this pass
-
-| Test file | Coverage |
-| --- | --- |
-| `presentation.test.ts` | Configuration validation, the 13 fixed hexes, day-grade neutrality, paced and unpaced duration rules. |
-| `edges.test.ts` | Cardinal masks, corners, each pairing, planks on exactly bridge cells, a quiet frame border, deterministic overflow, plan determinism. |
-| `terrain-art.test.ts` | Fill-variant determinism and range, dispatcher routing, tint-plan integrity. |
-| `characters-art.test.ts` | Style and walk determinism, allowed tints, the rotation convention. |
-| `props-art.test.ts` | Every catalog state resolves, the overlay against bespoke split, animation purity at equal inputs. |
-| `buildings.test.ts` | Roof targets, easing, snap semantics, tile plans for the home, the inn, and the shed. |
-| `cranes.test.ts` | Route determinism, wrapping, tangent rotation, pose alternation. |
-| `scene.test.ts` | Existing cases plus fractional tick across a transition. |
-
-### Build order
-
-Presentation configuration first, then the pure art modules with their tests, then the asset lifecycle. Terrain and the scene-graph reshuffle follow, with the Three Branches e2e group run there. Then characters, props and emissives, roofs, and finally grade, cranes, and the unpaced gap. Close with review at fitted, mid, and close scales and the bare full browser suite.
-
-### Known risks
-
-- The edge-frame ordering is an authoring contract. Pin it with step 5.0 before terrain lands.
-- Roof occupancy reads recorded positions, so a character interpolating across a rect boundary can briefly clip an opaque roof.
-- The pre-tinted tileset bakes roughly 150 to 250 small textures. Smoke-check tile performance when terrain lands.
+Pending. The owner reviews the finished style across phases and seeds and records the date here.
 
 ## Tests
 
-- Scene tests prove static terrain and building containers build once per static-layout key, dynamic nodes reconcile by id, and no tick rebuilds static tiles.
-- Tile tests cover deterministic fill variants, derived edges at every boundary, frame edge, and corner, and planks on exactly bridge cells.
-- Building tests cover ground painting from semantic rects, upper walls above occupants, and roof alpha from occupancy alone, including direct and replayed seeks.
-- Prop tests cover each still, facing, exterior-footprint cap, and every catalog treatment: stall, bench, board, plot, repair bench, lantern, hearth, shrine, pump, and bell.
-- Shape tests cover circular props and pine within catalog extents and box props filling theirs.
-- Character tests cover exact heading rotation, walk-frame determinism, stable mask assembly, and hash-selected tint combinations.
-- Seek and interpolation tests cover sustained animation, grade, walk frame, roof state, crane, endpoints, midpoints, cadence scaling, unpaced measured gaps, shortest heading turns, offscreen crane wrapping, and retained-pose equality after a per-frame motion pass.
-- Phase tests cover one world-only grade, post-grade emissives, neutral non-daynight day, and ungraded collision overlay and HUD boundary.
-- Asset tests cover the local manifest, dimensions, originals, runtime files, declared masks, and thumbnail.
-- Collision tests prove overlay solids match wall ground, doorways stay passable, and prop and scenery sprites sit on their catalog shapes.
-- Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
+The suite tests structure, not aesthetics: no test measures whether the village reads well, since that is the owner's call at each sign-off. Keep the mechanical coverage to:
+
+- Configuration: `presentation.json` validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
+- Determinism: equal inputs give equal fills, edges, tints, walk frames, prop treatments, and crane routes, and sustained animations are pure at equal inputs.
+- Scene lifecycle: statics build once per static-layout key, dynamic nodes reconcile by id, no tick rebuilds statics, and seek, frame repeat, and resize snap.
+- Collision truth: overlay solids match wall ground, doorways stay passable, and prop and scenery sprites sit on their catalog shapes.
+- Run the Three Branches browser e2e group while iterating and the bare full browser e2e suite before handoff.
 
 ## Done when
 
-The fixture and generated villages replay in approved Hearthside Ink with autotiled terrain, cutaway roofs, deterministic state treatments, phase grading, and a toggleable collision overlay that matches collision truth. Manifest assets and the thumbnail load in production, the Three Branches and full browser e2e suites pass, and this file retains the approved direction and presentation dates.
+The fixture and generated villages replay in approved Hearthside Ink with autotiled terrain, cutaway roofs, deterministic state treatments, phase grading, and a toggleable collision overlay that matches collision truth. Every step sign-off above is dated, manifest assets and the thumbnail load in production, and the Three Branches and full browser e2e suites pass.
