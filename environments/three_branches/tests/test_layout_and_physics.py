@@ -9,7 +9,7 @@ from three_branches.fixture import build_fixture
 from three_branches.geometry import Circle, Rect, distance, nearest_point
 from three_branches.layout import PlacedProp, Scenery, footprint, footprint_cells
 from three_branches.physics import Physics
-from three_branches.rules import GROUND_BY_CODE, PROFILE
+from three_branches.rules import FRAME, GROUND_BY_CODE, PROFILE
 
 
 def test_fixture_is_fresh_deterministic_and_has_required_topology() -> None:
@@ -52,7 +52,9 @@ def test_layout_shapes_and_static_projection_are_distinct() -> None:
     layout = build_fixture()
     assert len(layout.solids) == len(layout.props) + len(layout.scenery)
     assert layout.blocked
-    assert any(GROUND_BY_CODE[layout.grid.value_at((50, y))].passable is False for y in range(66, 100))
+    assert any(
+        GROUND_BY_CODE[layout.grid.value_at((50, y))].passable is False for y in range(66, FRAME.cells_y)
+    )
     first = layout.village()
     second = layout.village()
     assert first == second and first is not second
@@ -69,8 +71,8 @@ def test_layout_shapes_and_static_projection_are_distinct() -> None:
             and layout.line_clear(
                 layout.grid.center((x, y)), nearest_point(layout.grid.center((x, y)), shape)
             )
-            for x in range(max(0, item.cell[0] - 2), min(100, item.cell[0] + 4))
-            for y in range(max(0, item.cell[1] - 2), min(100, item.cell[1] + 4))
+            for x in range(max(0, item.cell[0] - 2), min(FRAME.cells_x, item.cell[0] + 4))
+            for y in range(max(0, item.cell[1] - 2), min(FRAME.cells_y, item.cell[1] + 4))
         )
 
 

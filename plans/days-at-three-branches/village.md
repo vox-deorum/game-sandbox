@@ -10,7 +10,7 @@ Construction order is terrain fields, water, ground classes, district anchors an
 
 ## Frame and scale
 
-`rules.json` fixes `cells_x`, `cells_y`, and `cell_size`: the shipped frame is 100 by 100 cells at 1 metre each. Code reads those values.
+`rules.json` fixes `cells_x`, `cells_y`, and `cell_size`: the shipped frame is 120 by 120 cells at 1 metre each. Code reads those values.
 
 The origin is the southwest corner. x runs east and y north. Zero-indexed cell `(cx, cy)` covers `cx * cell_size` to `(cx + 1) * cell_size` metres east and `cy * cell_size` to `(cy + 1) * cell_size` metres north. Its centre is `((cx + 0.5) * cell_size, (cy + 0.5) * cell_size)`.
 
@@ -26,10 +26,10 @@ Water and wall are impassable. Wall alone blocks sight. Door ground carries sigh
 
 ## Waterways
 
-- The trunk enters the north edge inside `water.entry_band`, at a width from `water.trunk_width`, and meanders south along seed-shaped terrain.
-- Within `water.fork_band` below the north edge, it forks into three channels at widths from `water.channel_width`. They fan to the south edge, with mouths at least `water.mouth_separation` apart.
+- The trunk enters the north edge inside `water.entry_band_percent`, at a width from `water.trunk_width`, and meanders south along seed-shaped terrain.
+- Within `water.fork_band_percent` below the north edge, it forks into three channels at widths from `water.channel_width`. They fan to the south edge, with mouths at least `water.mouth_separation_percent` apart.
 - Outside the shared fork and confluence area, a channel rejects or reroutes self-contact and sibling contact. Water is impassable.
-- Courses stay beyond `water.edge_margin` and collect reed flats on wet banks and at channel mouths.
+- Courses stay beyond `water.edge_margin_percent` and collect reed flats on wet banks and at channel mouths.
 
 ## The road and paths
 
@@ -87,20 +87,20 @@ Every seed satisfies:
 - Every interactive prop has a connected, body-clear standing cell in reach of its collision shape with an unblocked line.
 - Building sites do not overlap sites, water, road, boundary, or placed props. Each keeps `sites.margin` clear cells. Interior props stay on floor, leave doorway runs open, and do not overlap props.
 - Visitor spawn is on the road at `network.spawn.edge_inset`, clear of every footprint.
-- Water enters north inside `water.entry_band` and exits south in exactly three runs at least `water.mouth_separation` apart. Beyond the shared fork and confluence, branches neither self-contact nor contact siblings.
+- Water enters north inside `water.entry_band_percent` and exits south in exactly three runs at least `water.mouth_separation_percent` apart. Beyond the shared fork and confluence, branches neither self-contact nor contact siblings.
 - The road spans west to east, passes within reach of every district anchor, crosses every channel once and the trunk never. Road and path crossings use bridge ground. A channel has at most one footpath crossing.
 
 ## Generation tuning
 
-`generation.json` contains all generator tuning and is validated when the generation package imports. Its groups follow construction order.
+`generation.json` contains all generator tuning and is validated when the generation package imports. Its groups follow construction order. Fields ending in `_percent` are frame-relative and resolve to integer cells when the package loads. They keep districts, waterways, terrain scale, and walker travel proportional to the frame. Metre-scale widths, collision clearances, building footprints, and fixed prop counts remain absolute.
 
 | Group | What it holds |
 | --- | --- |
-| `fields` | Elevation and moisture noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. |
-| `water` | `entry_band`, `fork_band`, `trunk_width`, `channel_width`, `mouth_separation`, `edge_margin`, walker step and brush, and momentum, downhill, and fork-pull weights. |
+| `fields` | Elevation and moisture noise: lattice spacing percentages, octave count, per-octave amplitude, and southward slope bias. |
+| `water` | Frame-relative entry and fork bands, mouth spacing, margins, fork size, walker travel budget, and meander wavelengths. Channel and trunk widths, clearances, brush step, and steering weights remain metre-scale. |
 | `grounds` | Moisture and elevation thresholds for reed and field, plus majority-smoothing passes. |
-| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width, merge discount, crossing run and cost, and its walker step, budget, reroute, momentum, meander and wobble; `spawn` `edge_inset` and `clearance`. |
-| `sites` | `margin`, `plaza_radius`, `reach`, candidate `budget`, and home scores for bank proximity, flatness, dryness, and separation. |
+| `network` | Frame-relative road band, anchor swing and reach, plus road and path walker travel budgets and wavelengths. Road and path widths, crossings, clearances, and spawn placement remain metre-scale. |
+| `sites` | `margin`, `plaza_radius`, frame-relative `reach_percent`, candidate `budget`, and home scores for bank proximity, flatness, dryness, and separation. |
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |
 

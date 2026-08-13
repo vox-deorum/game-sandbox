@@ -1,5 +1,5 @@
 {
-  "frame": {"cells_x": 100, "cells_y": 100, "cell_size": 1.0},
+  "frame": {"cells_x": 120, "cells_y": 120, "cell_size": 1.0},
   "grounds": [
     {"code": "r", "name": "road", "speed": 1.0, "passable": true, "blocks_sight": false},
     {"code": "p", "name": "path", "speed": 1.0, "passable": true, "blocks_sight": false},

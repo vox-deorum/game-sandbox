@@ -37,7 +37,7 @@ HOMES = ("home_0", "home_1", "home_2", "home_3", "home_4")
 TUNING = json.loads(
     resources.files("three_branches.generation").joinpath("generation.json").read_text(encoding="utf-8")
 )
-WATER = TUNING["water"]
+WATER = GENERATION.water
 ACCESSORIES = TUNING["accessories"]
 _ORDER = {kind.token: index for index, kind in enumerate(CATALOG.props)}
 
@@ -224,21 +224,21 @@ def test_water_enters_north_and_leaves_south_in_three_separated_runs(
 
         entry = _runs({x for x, y in report.water.trunk if y == FRAME.cells_y - 1})
         assert len(entry) == 1, seed
-        assert WATER["entry_band"][0] <= entry[0][0] and entry[0][-1] <= WATER["entry_band"][1], seed
-        assert WATER["trunk_width"][0] <= len(entry[0]) <= WATER["trunk_width"][1], seed
+        assert WATER.entry_band[0] <= entry[0][0] and entry[0][-1] <= WATER.entry_band[1], seed
+        assert WATER.trunk_width[0] <= len(entry[0]) <= WATER.trunk_width[1], seed
 
         mouths: list[tuple[int, ...]] = []
         for index, channel in enumerate(report.water.channels):
             runs = _runs({x for x, y in channel if y == 0})
             assert len(runs) == 1, (seed, index)
-            assert WATER["channel_width"][0] <= len(runs[0]) <= WATER["channel_width"][1] + 1, seed
+            assert WATER.channel_width[0] <= len(runs[0]) <= WATER.channel_width[1] + 1, seed
             mouths.append(runs[0])
         assert len(_runs({x for x, y in water if y == 0})) == len(report.water.channels), seed
         centres = sorted(sum(run) // len(run) for run in mouths)
         gaps = [right - left for left, right in zip(centres, centres[1:], strict=False)]
-        assert min(gaps) >= WATER["mouth_separation"], (seed, gaps)
+        assert min(gaps) >= WATER.mouth_separation, (seed, gaps)
 
-        assert all(WATER["edge_margin"] <= x < FRAME.cells_x - WATER["edge_margin"] for x, _ in water), seed
+        assert all(WATER.edge_margin <= x < FRAME.cells_x - WATER.edge_margin for x, _ in water), seed
 
 
 def test_courses_only_meet_inside_the_shared_fork_area(
@@ -259,14 +259,14 @@ def test_courses_only_meet_inside_the_shared_fork_area(
         # The walk stops on the step that crosses its line, so the fork lands in the band within
         # one step of it. The road band is sized against that same overshoot.
         depth = FRAME.cells_y - 1 - report.water.fork[1]
-        overshoot = math.ceil(WATER["walker"]["step"])
-        assert WATER["fork_band"][0] <= depth <= WATER["fork_band"][1] + overshoot, (seed, depth)
+        overshoot = math.ceil(WATER.walker.step)
+        assert WATER.fork_band[0] <= depth <= WATER.fork_band[1] + overshoot, (seed, depth)
 
 
 def test_grounds_collect_reeds_at_every_mouth(batch: dict[int, tuple[Layout, Report]]) -> None:
     for seed, (layout, report) in batch.items():
         for index, channel in enumerate(report.water.channels):
-            mouth = {(x, y) for x, y in channel if y < WATER["edge_straight"]}
+            mouth = {(x, y) for x, y in channel if y < WATER.edge_straight}
             assert any(
                 layout.grid.value_at((x + dx, y + dy)) == "e"
                 for x, y in mouth
@@ -278,7 +278,7 @@ def test_grounds_collect_reeds_at_every_mouth(batch: dict[int, tuple[Layout, Rep
 
 
 def test_reeds_only_grow_near_water(batch: dict[int, tuple[Layout, Report]]) -> None:
-    span = WATER["channel_width"][1] + TUNING["grounds"]["reed_distance"]
+    span = WATER.channel_width[1] + TUNING["grounds"]["reed_distance"]
     for seed, (layout, _) in batch.items():
         water = _cells(layout, "w")
         for x, y in _cells(layout, "e"):
@@ -434,7 +434,7 @@ def test_no_two_placements_share_a_cell(batch: dict[int, tuple[Layout, Report]])
 def test_the_road_spans_the_frame_and_bridges_every_channel_once(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:
-    band = TUNING["network"]["road"]["band"]
+    band = GENERATION.network.road.band
     third = FRAME.cells_x // 3
     for seed, (layout, report) in batch.items():
         road = _road_cells(layout, report)
@@ -533,7 +533,13 @@ def test_lantern_and_pine_skips_do_not_move_the_land_road_or_buildings(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:
     """Optional dressing is skipped where it will not fit, and nothing before it is drawn again."""
-    seed = BATCH[0]
+    seed = next(
+        seed
+        for seed, (normal, report) in batch.items()
+        if report.redraws == 0
+        and any(item.type == "lantern" for item in normal.props)
+        and any(item.type == "pine" for item in normal.scenery)
+    )
     far = FRAME.cells_x * 2
     accessories = GENERATION.accessories
     starved = replace(
@@ -603,7 +609,7 @@ def test_reset_publishes_the_generated_village(batch: dict[int, tuple[Layout, Re
 
 def test_frame_derived_conversion_and_brush_arithmetic() -> None:
     """Pin the conversions the rest of the suite reads, on the shipped one metre frame."""
-    assert (FRAME.cells_x, FRAME.cells_y, FRAME.cell_size) == (100, 100, 1.0)
+    assert (FRAME.cells_x, FRAME.cells_y, FRAME.cell_size) == (120, 120, 1.0)
     layout = build_village(BATCH[0])
     assert layout.grid.center((7, 12)) == (7.5, 12.5)
     # An odd brush centres on its cell, and an even one puts the extra cell on the lower index.

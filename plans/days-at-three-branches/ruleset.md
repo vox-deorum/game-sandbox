@@ -8,7 +8,7 @@ There is one environment variant, `daynight`. Seasons select it and cast size. T
 
 ## Conventions
 
-- Characters move continuously in metres. `rules.json` fixes the shipped grid at 100 by 100 square 1 metre cells. Grid and overlay code read these values.
+- Characters move continuously in metres. `rules.json` fixes the shipped grid at 120 by 120 square 1 metre cells. Grid and overlay code read these values.
 - Character state is position, heading, and metres moved on the latest tick. Facing is heading.
 - The grid carries ground. Its class sets speed limit, passability, and sight blocking. Interactive props and solid scenery stand on it, reserve cells, and use catalog collision shapes turned to their facing. The ground beneath a prop retains its class. Placed props do not share cells.
 - Water and building walls are impassable. Only walls block sight. An unblocked line crosses no wall cell, and doorways carry sight, hearing, and speech.

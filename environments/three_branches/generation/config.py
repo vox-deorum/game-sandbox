@@ -51,6 +51,38 @@ def _number_range(value: Any, name: str) -> tuple[float, float]:
     return low, high
 
 
+def _percent(value: Any, name: str) -> float:
+    """Accept a frame share, written as a percentage for readable tuning."""
+    number = nonnegative_number(value, name)
+    if number > 100.0:
+        raise ValueError(f"{name} must fall between zero and 100")
+    return number
+
+
+def _scaled_cells(percent: float, name: str, axis: int) -> int:
+    """Resolve one configured frame percentage to the nearest whole cell."""
+    cells = round(percent * axis / 100.0)
+    if cells < 1:
+        raise ValueError(f"{name} must resolve to at least one cell")
+    return cells
+
+
+def _percent_range(value: Any, name: str, axis: int) -> tuple[int, int]:
+    """Resolve inclusive percentage bounds to the whole cells consumers use."""
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError(f"{name} must be a two-element array")
+    low_percent, high_percent = (_percent(item, name) for item in value)
+    if low_percent > high_percent:
+        raise ValueError(f"{name} must run from low to high")
+    low, high = (_scaled_cells(percent, name, axis) for percent in (low_percent, high_percent))
+    return low, high
+
+
+def _travel_budget(value: Any, name: str) -> int:
+    """Resolve a per-frame-cell travel allowance so a walker crosses the whole map."""
+    return ceil(positive_number(value, name) * max(FRAME.cells_x, FRAME.cells_y))
+
+
 def _fraction(value: Any, name: str) -> float:
     """Accept a share of the unit range, which is the scale the noise fields are normalised to."""
     number = nonnegative_number(value, name)
@@ -63,7 +95,8 @@ def _fraction(value: Any, name: str) -> float:
 class Octave:
     """One layer of a noise field. Layering a few builds detail on top of broad shape."""
 
-    # Cells between lattice nodes. Wide spacing gives broad country, narrow spacing gives texture.
+    # Cells between lattice nodes, resolved from frame-relative JSON tuning at load time. Wide
+    # spacing gives broad country, narrow spacing gives texture.
     spacing: int
     # How much this layer counts against the others before the field is normalised.
     amplitude: float
@@ -93,7 +126,8 @@ class Walker:
 
     # Cells the brush travels each step. Shorter steps trace a smoother line and cost more time.
     step: float
-    # Most steps one course may take. A walk that never reaches its stop line abandons the layout.
+    # Most steps one course may take, resolved from a per-frame-cell allowance at load time. A walk
+    # that never reaches its stop line abandons the layout.
     step_budget: int
     # Recent steps of its own trail a course ignores when testing contact. Its trail is directly
     # behind it, so without this a course would block on the ground it just covered.
@@ -126,7 +160,8 @@ class Walker:
 class Water:
     """The trunk, the fork, and the three channels that give the village its name."""
 
-    # Columns the trunk may enter the north edge in. The run it paints stays inside the band, not
+    # Frame-relative JSON bounds resolved to cells at load time. Columns the trunk may enter the
+    # north edge in. The run it paints stays inside the band, not
     # just the point it starts from.
     entry_band: tuple[int, int]
     # Rows below the north edge where the trunk ends and the three channels take over. A deep fork
@@ -189,6 +224,7 @@ class RoadWalker:
     """
 
     step: float
+    # Resolved from a per-frame-cell allowance at load time.
     step_budget: int
     self_ignore: int
     reroute_attempts: int
@@ -214,7 +250,8 @@ class Roadway:
 
     # Cells across the road. Odd, for the same reason a water course is.
     width: int
-    # Rows the road may occupy. It is a hard wall: the road is turned back before it reaches one.
+    # Frame-relative JSON bounds resolved to cells at load time. They are a hard wall: the road is
+    # turned back before it reaches one.
     band: tuple[int, int]
     # Cells of dry bank a bridge lands on at each end.
     apron: int
@@ -241,7 +278,8 @@ class PathWalker:
 
     # Cells the walk travels each step. Shorter steps trace a smoother line and cost more time.
     step: float
-    # Most steps one leg may take. A leg that runs out of them is painted along the searched route
+    # Most steps one leg may take, resolved from a per-frame-cell allowance at load time. A leg
+    # that runs out of them is painted along the searched route
     # instead, which is what keeps a doorway the search could reach joined either way.
     step_budget: int
     # When a step is blocked, how many turns to try and how far each one turns, alternating sides.
@@ -306,7 +344,8 @@ class Sites:
     margin: int
     # How far the well plaza reaches around its centre.
     plaza_radius: float
-    # How far from what a search is aimed at it may look: the plaza from the fork, and the inn and
+    # Frame-relative JSON distance resolved to cells at load time. How far from what a search is
+    # aimed at it may look: the plaza from the fork, and the inn and
     # the shed from their anchors. A home is not aimed at anything, so it looks everywhere it may.
     reach: int
     # Candidates drawn for one anchor or one building. Running out discards the layout and draws
@@ -421,18 +460,27 @@ def _octaves(value: Any, name: str) -> tuple[Octave, ...]:
         raise ValueError(f"{name} must be a non-empty array")
     return tuple(
         Octave(
-            positive_int(entry["spacing"], f"{name}.spacing"),
+            _scaled_cells(
+                _percent(entry["spacing_percent"], f"{name}.spacing_percent"),
+                f"{name}.spacing_percent",
+                max(FRAME.cells_x, FRAME.cells_y),
+            ),
             positive_number(entry["amplitude"], f"{name}.amplitude"),
         )
-        for entry in (mapping(item, name, {"spacing", "amplitude"}) for item in value)
+        for entry in (mapping(item, name, {"spacing_percent", "amplitude"}) for item in value)
     )
 
 
 def _walker(value: Any) -> Walker:
-    data = mapping(value, "water.walker", set(Walker.__dataclass_fields__))
+    data = mapping(
+        value,
+        "water.walker",
+        set(Walker.__dataclass_fields__) - {"step_budget", "meander_wavelength"}
+        | {"step_budget_per_frame_cell", "meander_wavelength_percent"},
+    )
     return Walker(
         positive_number(data["step"], "water.walker.step"),
-        positive_int(data["step_budget"], "water.walker.step_budget"),
+        _travel_budget(data["step_budget_per_frame_cell"], "water.walker.step_budget_per_frame_cell"),
         positive_int(data["self_ignore"], "water.walker.self_ignore"),
         positive_int(data["reroute_attempts"], "water.walker.reroute_attempts"),
         positive_number(data["reroute_degrees"], "water.walker.reroute_degrees"),
@@ -444,16 +492,25 @@ def _walker(value: Any) -> Walker:
         nonnegative_number(data["separation"], "water.walker.separation"),
         positive_number(data["look_ahead"], "water.walker.look_ahead"),
         nonnegative_number(data["meander"], "water.walker.meander"),
-        _int_range(data["meander_wavelength"], "water.walker.meander_wavelength"),
+        _percent_range(
+            data["meander_wavelength_percent"],
+            "water.walker.meander_wavelength_percent",
+            max(FRAME.cells_x, FRAME.cells_y),
+        ),
     )
 
 
 def _road_walker(value: Any) -> RoadWalker:
-    data = mapping(value, "network.road.walker", set(RoadWalker.__dataclass_fields__))
+    data = mapping(
+        value,
+        "network.road.walker",
+        set(RoadWalker.__dataclass_fields__) - {"step_budget", "meander_wavelength"}
+        | {"step_budget_per_frame_cell", "meander_wavelength_percent"},
+    )
     name = "network.road.walker"
     return RoadWalker(
         positive_number(data["step"], f"{name}.step"),
-        positive_int(data["step_budget"], f"{name}.step_budget"),
+        _travel_budget(data["step_budget_per_frame_cell"], f"{name}.step_budget_per_frame_cell"),
         positive_int(data["self_ignore"], f"{name}.self_ignore"),
         positive_int(data["reroute_attempts"], f"{name}.reroute_attempts"),
         positive_number(data["reroute_degrees"], f"{name}.reroute_degrees"),
@@ -465,40 +522,70 @@ def _road_walker(value: Any) -> RoadWalker:
         nonnegative_number(data["water_push"], f"{name}.water_push"),
         positive_number(data["look_ahead"], f"{name}.look_ahead"),
         nonnegative_number(data["meander"], f"{name}.meander"),
-        _int_range(data["meander_wavelength"], f"{name}.meander_wavelength"),
+        _percent_range(
+            data["meander_wavelength_percent"],
+            f"{name}.meander_wavelength_percent",
+            max(FRAME.cells_x, FRAME.cells_y),
+        ),
     )
 
 
 def _path_walker(value: Any) -> PathWalker:
-    data = mapping(value, "network.path.walker", set(PathWalker.__dataclass_fields__))
+    data = mapping(
+        value,
+        "network.path.walker",
+        set(PathWalker.__dataclass_fields__) - {"step_budget", "meander_wavelength"}
+        | {"step_budget_per_frame_cell", "meander_wavelength_percent"},
+    )
     name = "network.path.walker"
     return PathWalker(
         positive_number(data["step"], f"{name}.step"),
-        positive_int(data["step_budget"], f"{name}.step_budget"),
+        _travel_budget(data["step_budget_per_frame_cell"], f"{name}.step_budget_per_frame_cell"),
         positive_int(data["reroute_attempts"], f"{name}.reroute_attempts"),
         positive_number(data["reroute_degrees"], f"{name}.reroute_degrees"),
         _number_range(data["momentum"], f"{name}.momentum"),
         nonnegative_number(data["wobble"], f"{name}.wobble"),
         nonnegative_number(data["meander"], f"{name}.meander"),
-        _int_range(data["meander_wavelength"], f"{name}.meander_wavelength"),
+        _percent_range(
+            data["meander_wavelength_percent"],
+            f"{name}.meander_wavelength_percent",
+            max(FRAME.cells_x, FRAME.cells_y),
+        ),
     )
 
 
 def _network(value: Any) -> Network:
     data = mapping(value, "generation.network", set(Network.__dataclass_fields__))
-    road_data = mapping(data["road"], "network.road", set(Roadway.__dataclass_fields__))
+    road_data = mapping(
+        data["road"],
+        "network.road",
+        set(Roadway.__dataclass_fields__) - {"band", "anchor_swing", "anchor_reach", "edge_straight"}
+        | {"band_percent", "anchor_swing_percent", "anchor_reach_percent", "edge_straight_percent"},
+    )
     path_data = mapping(data["path"], "network.path", set(Path.__dataclass_fields__))
     spawn_data = mapping(data["spawn"], "network.spawn", set(Spawn.__dataclass_fields__))
     return Network(
         Roadway(
             positive_int(road_data["width"], "network.road.width"),
-            _int_range(road_data["band"], "network.road.band"),
+            _percent_range(road_data["band_percent"], "network.road.band_percent", FRAME.cells_y),
             positive_int(road_data["apron"], "network.road.apron"),
             positive_int(road_data["crossing_run"], "network.road.crossing_run"),
             positive_number(road_data["water_clearance"], "network.road.water_clearance"),
-            positive_int(road_data["anchor_swing"], "network.road.anchor_swing"),
-            positive_number(road_data["anchor_reach"], "network.road.anchor_reach"),
-            positive_int(road_data["edge_straight"], "network.road.edge_straight"),
+            _scaled_cells(
+                _percent(road_data["anchor_swing_percent"], "network.road.anchor_swing_percent"),
+                "network.road.anchor_swing_percent",
+                FRAME.cells_y,
+            ),
+            _scaled_cells(
+                _percent(road_data["anchor_reach_percent"], "network.road.anchor_reach_percent"),
+                "network.road.anchor_reach_percent",
+                FRAME.cells_x,
+            ),
+            _scaled_cells(
+                _percent(road_data["edge_straight_percent"], "network.road.edge_straight_percent"),
+                "network.road.edge_straight_percent",
+                FRAME.cells_y,
+            ),
             _road_walker(road_data["walker"]),
         ),
         Path(
@@ -516,12 +603,16 @@ def _network(value: Any) -> Network:
 
 
 def _sites(value: Any) -> Sites:
-    data = mapping(value, "generation.sites", set(Sites.__dataclass_fields__))
+    data = mapping(value, "generation.sites", set(Sites.__dataclass_fields__) - {"reach"} | {"reach_percent"})
     scores = mapping(data["scores"], "sites.scores", set(Scores.__dataclass_fields__))
     return Sites(
         positive_int(data["margin"], "sites.margin"),
         positive_number(data["plaza_radius"], "sites.plaza_radius"),
-        positive_int(data["reach"], "sites.reach"),
+        _scaled_cells(
+            _percent(data["reach_percent"], "sites.reach_percent"),
+            "sites.reach_percent",
+            max(FRAME.cells_x, FRAME.cells_y),
+        ),
         positive_int(data["budget"], "sites.budget"),
         Scores(
             nonnegative_number(scores["bank"], "sites.scores.bank"),
@@ -598,28 +689,81 @@ def load(data: Any) -> Generation:
         _octaves(fields_data["moisture_octaves"], "fields.moisture_octaves"),
         _fraction(fields_data["south_bias"], "fields.south_bias"),
     )
-    water_data = mapping(root["water"], "generation.water", set(Water.__dataclass_fields__))
+    water_data = mapping(
+        root["water"],
+        "generation.water",
+        set(Water.__dataclass_fields__)
+        - {
+            "entry_band",
+            "fork_band",
+            "mouth_separation",
+            "mouth_slack",
+            "edge_margin",
+            "fork_radius",
+            "fork_steps",
+            "edge_straight",
+        }
+        | {
+            "entry_band_percent",
+            "fork_band_percent",
+            "mouth_separation_percent",
+            "mouth_slack_percent",
+            "edge_margin_percent",
+            "fork_radius_percent",
+            "fork_steps_percent",
+            "edge_straight_percent",
+        },
+    )
     water_tuning = Water(
-        _int_range(water_data["entry_band"], "water.entry_band"),
-        _int_range(water_data["fork_band"], "water.fork_band"),
+        _percent_range(water_data["entry_band_percent"], "water.entry_band_percent", FRAME.cells_x),
+        _percent_range(water_data["fork_band_percent"], "water.fork_band_percent", FRAME.cells_y),
         _int_range(water_data["trunk_width"], "water.trunk_width"),
         _int_range(water_data["channel_width"], "water.channel_width"),
-        positive_int(water_data["mouth_separation"], "water.mouth_separation"),
-        positive_int(water_data["mouth_slack"], "water.mouth_slack"),
-        positive_int(water_data["edge_straight"], "water.edge_straight"),
-        positive_int(water_data["edge_margin"], "water.edge_margin"),
-        positive_number(water_data["fork_radius"], "water.fork_radius"),
-        positive_int(water_data["fork_steps"], "water.fork_steps"),
+        _scaled_cells(
+            _percent(water_data["mouth_separation_percent"], "water.mouth_separation_percent"),
+            "water.mouth_separation_percent",
+            FRAME.cells_x,
+        ),
+        _scaled_cells(
+            _percent(water_data["mouth_slack_percent"], "water.mouth_slack_percent"),
+            "water.mouth_slack_percent",
+            FRAME.cells_x,
+        ),
+        _scaled_cells(
+            _percent(water_data["edge_straight_percent"], "water.edge_straight_percent"),
+            "water.edge_straight_percent",
+            FRAME.cells_y,
+        ),
+        _scaled_cells(
+            _percent(water_data["edge_margin_percent"], "water.edge_margin_percent"),
+            "water.edge_margin_percent",
+            FRAME.cells_x,
+        ),
+        _scaled_cells(
+            _percent(water_data["fork_radius_percent"], "water.fork_radius_percent"),
+            "water.fork_radius_percent",
+            max(FRAME.cells_x, FRAME.cells_y),
+        ),
+        _scaled_cells(
+            _percent(water_data["fork_steps_percent"], "water.fork_steps_percent"),
+            "water.fork_steps_percent",
+            FRAME.cells_y,
+        ),
         positive_number(water_data["fan_degrees"], "water.fan_degrees"),
         positive_number(water_data["clearance"], "water.clearance"),
         positive_int(water_data["mouth_budget"], "water.mouth_budget"),
         _walker(water_data["walker"]),
     )
-    grounds_data = mapping(root["grounds"], "generation.grounds", set(Grounds.__dataclass_fields__))
+    grounds_keys = set(Grounds.__dataclass_fields__) - {"mouth_reed_depth"} | {"mouth_reed_depth_percent"}
+    grounds_data = mapping(root["grounds"], "generation.grounds", grounds_keys)
     grounds_tuning = Grounds(
         positive_int(grounds_data["reed_distance"], "grounds.reed_distance"),
         _fraction(grounds_data["reed_moisture"], "grounds.reed_moisture"),
-        positive_int(grounds_data["mouth_reed_depth"], "grounds.mouth_reed_depth"),
+        _scaled_cells(
+            _percent(grounds_data["mouth_reed_depth_percent"], "grounds.mouth_reed_depth_percent"),
+            "grounds.mouth_reed_depth_percent",
+            FRAME.cells_y,
+        ),
         _fraction(grounds_data["field_elevation"], "grounds.field_elevation"),
         _fraction(grounds_data["field_moisture"], "grounds.field_moisture"),
         positive_number(grounds_data["field_slope"], "grounds.field_slope"),
@@ -642,8 +786,12 @@ def load(data: Any) -> Generation:
 def _check_frame_arithmetic(tuning: Generation) -> None:
     """Reject tuning the shipped frame cannot satisfy, before any village is drawn."""
     water = tuning.water
-    if any(bound % 2 == 0 for bound in (*water.trunk_width, *water.channel_width)):
-        raise ValueError("water course widths must be odd, which is what a cell-centred brush carves")
+    for name, bounds in (
+        ("water.trunk_width", water.trunk_width),
+        ("water.channel_width", water.channel_width),
+    ):
+        if not any(width % 2 for width in range(bounds[0], bounds[1] + 1)):
+            raise ValueError(f"{name} must contain an odd width, which is what a cell-centred brush carves")
     if water.fork_band[1] >= FRAME.cells_y or water.entry_band[1] >= FRAME.cells_x:
         raise ValueError("water.fork_band and water.entry_band must fall inside the frame")
     trunk_reach = ceil(water.trunk_width[1] / 2)

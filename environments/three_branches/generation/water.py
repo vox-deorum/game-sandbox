@@ -96,7 +96,8 @@ def carve_water(
 
 def _odd_width(stream: random.Random, bounds: tuple[int, int]) -> int:
     """Draw an odd brush width, the only kind a cell-centred round brush can carve exactly."""
-    return stream.randrange(bounds[0], bounds[1] + 1, 2)
+    first = bounds[0] if bounds[0] % 2 else bounds[0] + 1
+    return stream.randrange(first, bounds[1] + 1, 2)
 
 
 def _draw_mouths(stream: random.Random, tuning: WaterTuning, widest: int) -> tuple[int, ...]:

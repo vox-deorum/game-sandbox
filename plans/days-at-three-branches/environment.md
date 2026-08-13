@@ -138,7 +138,7 @@ On the visitor seat, pointer and keyboard input compose locomotion. The expressi
 
 ## Recording
 
-A recording is one JSONL file: one header line followed by one line per recorded transition. The header writes `overlay_static` once, in exactly the observation's `village` shape. It contains `size`, `ground`, `buildings`, `props`, `scenery`, and `spawn`. At the shipped frame it is about 10 KB.
+A recording is one JSONL file: one header line followed by one line per recorded transition. The header writes `overlay_static` once, in exactly the observation's `village` shape. It contains `size`, `ground`, `buildings`, `props`, `scenery`, and `spawn`. At the shipped 120 by 120 frame it is about 20 KB.
 
 Each transition writes a dynamic overlay with `tick`, `phase`, `characters`, `props`, and `terminal`. `characters` is in character order, visitor first, with `id`, `x`, `y`, `heading`, `moved`, and `expression`. `props` maps every interactive prop id to its state, including the bell. No dynamic state carries `village`.
 

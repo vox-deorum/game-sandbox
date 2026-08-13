@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from copy import deepcopy
 from importlib import resources
 
@@ -8,6 +9,8 @@ import pytest
 
 from three_branches.catalog import CATALOG
 from three_branches.catalog import load as load_catalog
+from three_branches.generation.config import load as load_generation
+from three_branches.generation.water import _odd_width
 from three_branches.geometry import Circle, Rect, distance, nearest_point, point_in_cone, wrap
 from three_branches.grid import Grid
 from three_branches.rules import FRAME, RULES
@@ -15,7 +18,7 @@ from three_branches.rules import load as load_rules
 
 
 def test_shipped_static_tables_match_the_ruleset() -> None:
-    assert (FRAME.cells_x, FRAME.cells_y, FRAME.cell_size) == (100, 100, 1.0)
+    assert (FRAME.cells_x, FRAME.cells_y, FRAME.cell_size) == (120, 120, 1.0)
     assert tuple(ground.code for ground in RULES.grounds) == (
         "r",
         "p",
@@ -90,6 +93,34 @@ def test_loaders_reject_unknown_and_invalid_contract_data() -> None:
     with pytest.raises(ValueError):
         load_rules(bad_rules)
 
+
+def test_generation_loader_resolves_relative_tuning_and_odd_width_choices() -> None:
+    generation = json.loads(
+        resources.files("three_branches.generation").joinpath("generation.json").read_text(encoding="utf-8")
+    )
+    loaded = load_generation(generation)
+    assert loaded.water.entry_band == (41, 79)
+    assert loaded.water.fork_band == (19, 34)
+    assert loaded.network.road.band == (53, 67)
+    assert loaded.water.walker.step_budget == 480
+    assert loaded.water.walker.meander_wavelength == (19, 36)
+    assert {_odd_width(random.Random(seed), loaded.water.channel_width) for seed in range(10)} == {3}
+
+    invalid = deepcopy(generation)
+    invalid["water"]["entry_band_percent"] = [0, 66]
+    with pytest.raises(ValueError, match="water.entry_band_percent must resolve to at least one cell"):
+        load_generation(invalid)
+
+    invalid = deepcopy(generation)
+    invalid["network"]["road"]["band_percent"] = [57, 44]
+    with pytest.raises(ValueError, match="network.road.band_percent must run from low to high"):
+        load_generation(invalid)
+
+    invalid = deepcopy(generation)
+    invalid["water"]["fork_band_percent"] = [1.2, 1.1]
+    with pytest.raises(ValueError, match="water.fork_band_percent must run from low to high"):
+        load_generation(invalid)
+
     catalog = {"buildings": [], "props": [], "scenery": []}
     with pytest.raises(ValueError):
         load_catalog(catalog)
@@ -111,8 +142,8 @@ def test_the_grid_refuses_a_ground_code_the_rules_do_not_define() -> None:
 def test_grid_conversion_flood_and_supercover() -> None:
     grid = Grid(FRAME, (("g",) * FRAME.cells_x for _ in range(FRAME.cells_y)))
     assert grid.cell_at((0.0, 0.0)) == (0, 0)
-    assert grid.cell_at((99.999, 99.999)) == (99, 99)
-    assert grid.cell_at((100.0, 2.0)) is None
+    assert grid.cell_at((FRAME.width - 0.001, FRAME.height - 0.001)) == (FRAME.cells_x - 1, FRAME.cells_y - 1)
+    assert grid.cell_at((FRAME.width, 2.0)) is None
     assert grid.center((4, 7)) == (4.5, 7.5)
     assert grid.flood((0, 0), lambda cell: cell[0] < 2 and cell[1] < 2) == {(0, 0), (1, 0), (0, 1), (1, 1)}
     assert grid.supercover((0.5, 0.5), (2.5, 2.5)) == (
