@@ -1,3 +1,5 @@
+import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
+
 /** A regular frame grid within one renderer-local atlas. */
 interface ThreeBranchesFrameGrid {
   width: number
@@ -130,8 +132,8 @@ export const PROPS_ATLAS_FRAME_NAMES = [
   'lanternBase',
   'benchBase',
   'shrineBase',
-  'noticeBoardBase',
-  'gardenPlotBase',
+  'boardBase',
+  'plotBase',
   'hearthBase',
   'repairBenchBase',
   'pumpBase',
@@ -146,10 +148,10 @@ export const PROPS_ATLAS_FRAME_NAMES = [
   'benchEmpty',
   'shrineTended',
   'shrineUntended',
-  'noticePosted',
-  'gardenTended',
-  'gardenOvergrown',
-  'gardenFence',
+  'boardPosted',
+  'plotTended',
+  'plotOvergrown',
+  'plotFence',
   'hearthLit',
   'hearthUnlit',
   'repairBenchBusy',
@@ -364,6 +366,58 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     },
   },
 ] as const satisfies readonly ThreeBranchesAtlasDraft[]
+
+function flatFramePaths(names: readonly string[]): readonly string[] {
+  return names.map((name) => `${name}.png`)
+}
+
+function propsFramePath(name: string): string {
+  const words = name.split(/(?=[A-Z])/)
+  const state = words.pop()
+  if (state === undefined) throw new Error(`Three Branches prop frame has no state: ${name}`)
+  return `${words.map((word) => word.toLowerCase()).join('_')}/${state.toLowerCase()}.png`
+}
+
+function atlasPage(
+  group: ThreeBranchesAtlasName,
+  format: ThreeBranchesSingleAtlasDraft['format'],
+  raster: ThreeBranchesRasterDraft,
+  framesPath: string,
+  framePaths: readonly string[],
+): AtlasPageSpec {
+  return {
+    group,
+    pagePath: raster.path,
+    framesPath,
+    format,
+    width: raster.width,
+    height: raster.height,
+    columns: raster.frames.columns,
+    rows: raster.frames.rows,
+    framePaths,
+  }
+}
+
+/** The loose-frame manifests for the nine compiled Three Branches atlas pages. */
+export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
+  if ('layers' in atlas) {
+    return atlas.layers.map((layer) =>
+      atlasPage(
+        atlas.name,
+        atlas.format,
+        layer,
+        `./assets/characters/${layer.name}`,
+        flatFramePaths(layer.frames.names),
+      ),
+    )
+  }
+
+  const framePaths =
+    atlas.name === 'props'
+      ? atlas.frames.names.map(propsFramePath)
+      : flatFramePaths(atlas.frames.names)
+  return [atlasPage(atlas.name, atlas.format, atlas, `./assets/${atlas.name}`, framePaths)]
+}) satisfies readonly AtlasPageSpec[]
 
 /** The separate illustrative image used by the environment card. */
 export const THREE_BRANCHES_THUMBNAIL_ASSET = {

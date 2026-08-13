@@ -1,6 +1,6 @@
 # Step 5.0: Atlas pipeline
 
-Status: planned.
+Status: complete.
 
 Part of [the plan](../README.md). This stage is independent infrastructure: it adds a shared split and merge pipeline for atlas art to the base renderer and reorganizes the committed Three Branches art around it, without changing any runtime behavior. It precedes the other parts of build-order step 5, and [step 5.1](5-1-art-style.md) iterates its art through this pipeline.
 

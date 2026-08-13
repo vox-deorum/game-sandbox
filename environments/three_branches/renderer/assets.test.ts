@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-
+import { frameName } from '@renderers/base/atlas/atlas.js'
 import { describe, expect, it } from 'vitest'
 
 import {
+  ATLAS_PAGES,
   loadThreeBranchesAssets,
   THREE_BRANCHES_ASSET_CATALOG,
   THREE_BRANCHES_THUMBNAIL_ASSET,
@@ -72,6 +73,33 @@ describe('Three Branches asset catalog', () => {
     expect(
       characters && 'layers' in characters ? characters.layers.map((layer) => layer.name) : [],
     ).toEqual(['body', 'clothing', 'arms', 'details'])
+  })
+
+  it('maps each catalog group to its atlas pages and declared loose frame names', () => {
+    expect(new Set(ATLAS_PAGES.map((page) => page.group))).toEqual(
+      new Set(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)),
+    )
+    expect(ATLAS_PAGES).toHaveLength(9)
+
+    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
+      const pages = ATLAS_PAGES.filter((page) => page.group === atlas.name)
+      const rasters = rastersFor(atlas)
+      expect(pages).toHaveLength(rasters.length)
+
+      for (const raster of rasters) {
+        const page = pages.find((candidate) => candidate.pagePath === raster.path)
+        expect(page).toBeDefined()
+        if (page === undefined) throw new Error(`Atlas page is missing: ${raster.path}`)
+        expect(page).toMatchObject({
+          format: atlas.format,
+          width: raster.width,
+          height: raster.height,
+          columns: raster.frames.columns,
+          rows: raster.frames.rows,
+        })
+        expect(page.framePaths.map(frameName)).toEqual(raster.frames.names)
+      }
+    }
   })
 
   it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
