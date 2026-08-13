@@ -22,9 +22,9 @@ This record preserves owner decisions made during implementation, including choi
 | 2026-08-11 | Current | Use flat, non-pixel tiles, autotiled terrain, and cutaway roofs. |
 | 2026-08-12 | Current | Keep simple roofs and fade them when a character enters the building. |
 | 2026-08-12 | Current | Reuse tintable masks for characters and terrain edges. Give a prop a bespoke state still only when the state changes its silhouette. |
-| 2026-08-12 | Approved | **Character projection:** Author one north-facing base sprite in the stacked true-overhead projection of a conventional top-down shooter, then rotate the complete assembled sprite around its centre for exact heading. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. Use peaceful forward arms or another body cue in place of a weapon. [Direction v1](../art/top-down-shooter-direction-v1.png) was rejected because its hats and robes read as round villager tokens. [Direction v2](../art/top-down-shooter-direction-v2.png) was rejected because it still showed an oblique full body. The owner approved [direction v3](../art/top-down-shooter-direction-v3.png). |
+| 2026-08-12 | Approved | **Character projection:** Author one north-facing base sprite in the stacked true-overhead projection of a conventional top-down shooter, then rotate the complete assembled sprite around its centre for exact heading. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. Use peaceful forward arms or another body cue in place of a weapon. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png). |
 
-![Top-down shooter direction v3](../art/top-down-shooter-direction-v3.png)
+![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
 ### Palette
 
@@ -113,7 +113,7 @@ With `daynight`, the overlay's dawn, morning, midday, evening, or night phase se
 
 ### Assets and thumbnail
 
-The local manifest is the only runtime loading contract. Keep high-resolution originals, including superseded variants, in `environments/three_branches/renderer/source-art/`. Keep optimised runtime files in `environments/three_branches/renderer/assets/`. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
+The local manifest is the only runtime loading contract. Keep only the high-resolution originals used by the approved runtime assets in `environments/three_branches/renderer/source-art/`. Keep optimised runtime files in `environments/three_branches/renderer/assets/`. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
 
 `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants and edges, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 

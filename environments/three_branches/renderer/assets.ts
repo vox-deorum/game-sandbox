@@ -1,0 +1,433 @@
+/** A regular frame grid within one renderer-local atlas. */
+interface ThreeBranchesFrameGrid {
+  width: number
+  height: number
+  columns: number
+  rows: number
+  names: readonly string[]
+}
+
+/** One generated source atlas and its optimized runtime counterpart. */
+interface ThreeBranchesRasterDraft {
+  source: `./source-art/${string}.png`
+  sourceWidth: number
+  sourceHeight: number
+  path: `./assets/${string}.png`
+  width: number
+  height: number
+  frames: ThreeBranchesFrameGrid
+}
+
+interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft {
+  name: string
+  tintable: boolean
+  format: 'grayscale-alpha' | 'full-color'
+  consumer: string
+}
+
+interface ThreeBranchesLayerDraft extends ThreeBranchesRasterDraft {
+  name: string
+}
+
+interface ThreeBranchesLayeredAtlasDraft {
+  name: string
+  tintable: boolean
+  format: 'grayscale-alpha' | 'full-color'
+  consumer: string
+  layers: readonly ThreeBranchesLayerDraft[]
+}
+
+type ThreeBranchesAtlasDraft = ThreeBranchesSingleAtlasDraft | ThreeBranchesLayeredAtlasDraft
+
+export const TERRAIN_ATLAS_FRAME_NAMES = [
+  'washA',
+  'washB',
+  'washC',
+  'washD',
+  'roadA',
+  'roadB',
+  'roadC',
+  'roadD',
+  'furrowA',
+  'furrowB',
+  'furrowC',
+  'furrowD',
+  'reedsA',
+  'reedsB',
+  'reedsC',
+  'reedsD',
+  'rippleA',
+  'rippleB',
+  'rippleC',
+  'rippleD',
+  'floorA',
+  'floorB',
+  'floorC',
+  'floorD',
+  'wallA',
+  'wallB',
+  'wallC',
+  'wallD',
+  'doorway',
+  'bridgeA',
+  'bridgeB',
+  'bridgeC',
+  'edge00',
+  'edge01',
+  'edge02',
+  'edge03',
+  'edge04',
+  'edge05',
+  'edge06',
+  'edge07',
+  'edge08',
+  'edge09',
+  'edge10',
+  'edge11',
+  'edge12',
+  'edge13',
+  'edge14',
+  'edge15',
+  'cornerA',
+  'cornerB',
+  'cornerC',
+  'cornerD',
+  'cornerE',
+  'cornerF',
+  'cornerG',
+  'cornerH',
+  'bankShoulder',
+  'reedShoulderA',
+  'reedShoulderB',
+  'reedShoulderC',
+  'furrowEndA',
+  'furrowEndB',
+  'furrowEndC',
+  'bankStones',
+] as const
+
+export const BUILDINGS_ATLAS_FRAME_NAMES = [
+  'homeFill',
+  'homeEdge',
+  'homeCorner',
+  'homeRidge',
+  'innFill',
+  'innEdge',
+  'innCorner',
+  'innRidge',
+  'shedFill',
+  'shedEdge',
+  'shedCorner',
+  'shedRidge',
+  'homeFillAlt',
+  'innFillAlt',
+  'shedFillAlt',
+  'eaveShadow',
+] as const
+
+export const PROPS_ATLAS_FRAME_NAMES = [
+  'stallBase',
+  'lanternBase',
+  'benchBase',
+  'shrineBase',
+  'noticeBoardBase',
+  'gardenPlotBase',
+  'hearthBase',
+  'repairBenchBase',
+  'pumpBase',
+  'bellBase',
+  'stallGoods',
+  'stallShutter',
+  'stallOpen',
+  'stallClosed',
+  'lanternLit',
+  'lanternUnlit',
+  'benchOccupied',
+  'benchEmpty',
+  'shrineTended',
+  'shrineUntended',
+  'noticePosted',
+  'gardenTended',
+  'gardenOvergrown',
+  'gardenFence',
+  'hearthLit',
+  'hearthUnlit',
+  'repairBenchBusy',
+  'repairBenchIdle',
+  'pumpFlowing',
+  'pumpIdle',
+  'bellRinging',
+  'bellSilent',
+  'lanternCore',
+  'benchCushion',
+  'shrineOffering',
+  'bellClapper',
+] as const
+
+export const SCENERY_ATLAS_FRAME_NAMES = ['pineA', 'pineB', 'pineC', 'marketCrate'] as const
+
+export const CHARACTER_POSE_FRAME_NAMES = ['rest', 'leftForward', 'pass', 'rightForward'] as const
+
+export const CHARACTER_DETAIL_FRAME_NAMES = [
+  'hairKnot',
+  'reedCap',
+  'headscarf',
+  'visitorTie',
+] as const
+
+export const EFFECTS_ATLAS_FRAME_NAMES = [
+  'characterShadow',
+  'directionMark',
+  'glow',
+  'glowFlicker',
+  'flameA',
+  'flameB',
+  'flameC',
+  'flameD',
+  'smokeA',
+  'smokeB',
+  'waterA',
+  'waterB',
+  'bellLinesA',
+  'bellLinesB',
+  'craneA',
+  'craneB',
+] as const
+
+/** The six generated atlases that make up the Hearthside Ink runtime art. */
+export const THREE_BRANCHES_ASSET_CATALOG = [
+  {
+    name: 'terrain',
+    source: './source-art/terrain-atlas-source.png',
+    sourceWidth: 1254,
+    sourceHeight: 1254,
+    path: './assets/terrain-atlas.png',
+    width: 512,
+    height: 512,
+    tintable: true,
+    format: 'grayscale-alpha',
+    consumer: 'terrain fills, transitions, bridge planks, and the upper-wall repaint',
+    frames: {
+      width: 64,
+      height: 64,
+      columns: 8,
+      rows: 8,
+      names: TERRAIN_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'buildings',
+    source: './source-art/buildings-atlas-source.png',
+    sourceWidth: 1254,
+    sourceHeight: 1254,
+    path: './assets/buildings-atlas.png',
+    width: 256,
+    height: 256,
+    tintable: false,
+    format: 'full-color',
+    consumer: 'home, inn, and repair-shed roof tiles',
+    frames: {
+      width: 64,
+      height: 64,
+      columns: 4,
+      rows: 4,
+      names: BUILDINGS_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'props',
+    source: './source-art/props-atlas-source.png',
+    sourceWidth: 1536,
+    sourceHeight: 1024,
+    path: './assets/props-atlas.png',
+    width: 576,
+    height: 384,
+    tintable: false,
+    format: 'full-color',
+    consumer: 'interactive prop bases, state overlays, and silhouette-changing stills',
+    frames: {
+      width: 96,
+      height: 64,
+      columns: 6,
+      rows: 6,
+      names: PROPS_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'scenery',
+    source: './source-art/scenery-atlas-source.png',
+    sourceWidth: 1254,
+    sourceHeight: 1254,
+    path: './assets/scenery-atlas.png',
+    width: 128,
+    height: 128,
+    tintable: true,
+    format: 'grayscale-alpha',
+    consumer: 'three red-pine variants and the market crate',
+    frames: {
+      width: 64,
+      height: 64,
+      columns: 2,
+      rows: 2,
+      names: SCENERY_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'characters',
+    tintable: true,
+    format: 'grayscale-alpha',
+    consumer: 'independently registered overhead body, clothing, arm, and detail masks',
+    layers: [
+      {
+        name: 'body',
+        source: './source-art/characters-body-atlas-source.png',
+        sourceWidth: 2172,
+        sourceHeight: 724,
+        path: './assets/characters-body-atlas.png',
+        width: 768,
+        height: 192,
+        frames: {
+          width: 192,
+          height: 192,
+          columns: 4,
+          rows: 1,
+          names: CHARACTER_POSE_FRAME_NAMES,
+        },
+      },
+      {
+        name: 'clothing',
+        source: './source-art/characters-clothing-atlas-source.png',
+        sourceWidth: 2022,
+        sourceHeight: 778,
+        path: './assets/characters-clothing-atlas.png',
+        width: 768,
+        height: 192,
+        frames: {
+          width: 192,
+          height: 192,
+          columns: 4,
+          rows: 1,
+          names: CHARACTER_POSE_FRAME_NAMES,
+        },
+      },
+      {
+        name: 'arms',
+        source: './source-art/characters-arms-atlas-source.png',
+        sourceWidth: 2137,
+        sourceHeight: 736,
+        path: './assets/characters-arms-atlas.png',
+        width: 768,
+        height: 192,
+        frames: {
+          width: 192,
+          height: 192,
+          columns: 4,
+          rows: 1,
+          names: CHARACTER_POSE_FRAME_NAMES,
+        },
+      },
+      {
+        name: 'details',
+        source: './source-art/characters-details-atlas-source.png',
+        sourceWidth: 2103,
+        sourceHeight: 748,
+        path: './assets/characters-details-atlas.png',
+        width: 768,
+        height: 192,
+        frames: {
+          width: 192,
+          height: 192,
+          columns: 4,
+          rows: 1,
+          names: CHARACTER_DETAIL_FRAME_NAMES,
+        },
+      },
+    ],
+  },
+  {
+    name: 'effects',
+    source: './source-art/effects-atlas-source.png',
+    sourceWidth: 1448,
+    sourceHeight: 1086,
+    path: './assets/effects-atlas.png',
+    width: 768,
+    height: 512,
+    tintable: true,
+    format: 'grayscale-alpha',
+    consumer: 'character marks, prop effects, and white-crane dressing',
+    frames: {
+      width: 192,
+      height: 128,
+      columns: 4,
+      rows: 4,
+      names: EFFECTS_ATLAS_FRAME_NAMES,
+    },
+  },
+] as const satisfies readonly ThreeBranchesAtlasDraft[]
+
+/** The separate illustrative image used by the environment card. */
+export const THREE_BRANCHES_THUMBNAIL_ASSET = {
+  source: './source-art/thumbnail-source.png',
+  sourceWidth: 1672,
+  sourceHeight: 941,
+  path: './thumbnail.png',
+  width: 320,
+  height: 180,
+  format: 'full-color',
+} as const
+
+export type ThreeBranchesAtlasName = (typeof THREE_BRANCHES_ASSET_CATALOG)[number]['name']
+export type ThreeBranchesLoadedAssets<T> = Record<ThreeBranchesAtlasName, T | Record<string, T>>
+
+/** Resolve each catalog raster through an injected loader. */
+export async function loadThreeBranchesAssets<T>(
+  load: (raster: ThreeBranchesRasterDraft) => Promise<T> | T,
+): Promise<ThreeBranchesLoadedAssets<T>> {
+  const loaded = await Promise.all(
+    THREE_BRANCHES_ASSET_CATALOG.map(async (atlas) => {
+      if ('layers' in atlas) {
+        const layers = await Promise.all(
+          atlas.layers.map(async (layer) => [layer.name, await load(layer)] as const),
+        )
+        return [atlas.name, Object.fromEntries(layers)] as const
+      }
+      return [atlas.name, await load(atlas)] as const
+    }),
+  )
+  return Object.fromEntries(loaded) as ThreeBranchesLoadedAssets<T>
+}
+
+/** Ask Vite for the production URL of every optimized atlas. */
+function threeBranchesAssetUrls(): Record<string, string> {
+  return import.meta.glob('./assets/*.png', {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  }) as Record<string, string>
+}
+
+/** Match every catalog path to one bundled URL and reject a missing runtime atlas. */
+export function threeBranchesAssetSources(
+  urls: Record<string, string> = threeBranchesAssetUrls(),
+): ThreeBranchesLoadedAssets<string> {
+  return Object.fromEntries(
+    THREE_BRANCHES_ASSET_CATALOG.map((atlas) => {
+      if ('layers' in atlas) {
+        return [
+          atlas.name,
+          Object.fromEntries(
+            atlas.layers.map((layer) => {
+              const url = urls[layer.path]
+              if (url === undefined)
+                throw new Error(`Three Branches atlas is missing: ${layer.path}`)
+              return [layer.name, url]
+            }),
+          ),
+        ]
+      }
+      const url = urls[atlas.path]
+      if (url === undefined) throw new Error(`Three Branches atlas is missing: ${atlas.path}`)
+      return [atlas.name, url]
+    }),
+  ) as ThreeBranchesLoadedAssets<string>
+}

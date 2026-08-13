@@ -1,0 +1,143 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  loadThreeBranchesAssets,
+  THREE_BRANCHES_ASSET_CATALOG,
+  THREE_BRANCHES_THUMBNAIL_ASSET,
+  threeBranchesAssetSources,
+} from './assets.js'
+
+interface PngHeader {
+  width: number
+  height: number
+  colorType: number
+}
+
+interface RasterAsset {
+  source: string
+  sourceWidth: number
+  sourceHeight: number
+  path: string
+  width: number
+  height: number
+  frames: {
+    width: number
+    height: number
+    columns: number
+    rows: number
+    names: readonly string[]
+  }
+}
+
+function rastersFor(atlas: (typeof THREE_BRANCHES_ASSET_CATALOG)[number]): readonly RasterAsset[] {
+  return 'layers' in atlas ? atlas.layers : [atlas]
+}
+
+function readPngHeader(relativePath: string): PngHeader {
+  const path = fileURLToPath(new URL(relativePath, import.meta.url))
+  const bytes = readFileSync(path)
+  expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG')
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+    colorType: bytes[25] ?? -1,
+  }
+}
+
+describe('Three Branches asset catalog', () => {
+  it('catalogs the six approved atlas groups with complete frame grids', () => {
+    expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
+      'terrain',
+      'buildings',
+      'props',
+      'scenery',
+      'characters',
+      'effects',
+    ])
+
+    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
+      expect(atlas.tintable).toBe(atlas.format === 'grayscale-alpha')
+      for (const raster of rastersFor(atlas)) {
+        expect(raster.frames.names).toHaveLength(raster.frames.columns * raster.frames.rows)
+        expect(new Set(raster.frames.names).size).toBe(raster.frames.names.length)
+        expect(raster.frames.width * raster.frames.columns).toBe(raster.width)
+        expect(raster.frames.height * raster.frames.rows).toBe(raster.height)
+      }
+    }
+
+    const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
+    expect(
+      characters && 'layers' in characters ? characters.layers.map((layer) => layer.name) : [],
+    ).toEqual(['body', 'clothing', 'arms', 'details'])
+  })
+
+  it('keeps every generated source and optimized runtime image at its declared dimensions', () => {
+    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
+      for (const raster of rastersFor(atlas)) {
+        const source = readPngHeader(raster.source)
+        const runtime = readPngHeader(raster.path)
+
+        expect(source).toMatchObject({ width: raster.sourceWidth, height: raster.sourceHeight })
+        expect(runtime).toEqual({
+          width: raster.width,
+          height: raster.height,
+          colorType: atlas.format === 'grayscale-alpha' ? 4 : 6,
+        })
+      }
+    }
+  })
+
+  it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
+    const source = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.source)
+    const runtime = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.path)
+
+    expect(source).toMatchObject({
+      width: THREE_BRANCHES_THUMBNAIL_ASSET.sourceWidth,
+      height: THREE_BRANCHES_THUMBNAIL_ASSET.sourceHeight,
+    })
+    expect(runtime).toEqual({
+      width: THREE_BRANCHES_THUMBNAIL_ASSET.width,
+      height: THREE_BRANCHES_THUMBNAIL_ASSET.height,
+      colorType: 2,
+    })
+  })
+
+  it('loads entries by stable atlas name', async () => {
+    const loaded = await loadThreeBranchesAssets((raster) => raster.path)
+    expect(loaded.characters).toEqual({
+      body: './assets/characters-body-atlas.png',
+      clothing: './assets/characters-clothing-atlas.png',
+      arms: './assets/characters-arms-atlas.png',
+      details: './assets/characters-details-atlas.png',
+    })
+    expect(loaded.terrain).toBe('./assets/terrain-atlas.png')
+  })
+
+  it('resolves bundled URLs and rejects a missing atlas', () => {
+    const urls = Object.fromEntries(
+      THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) =>
+        rastersFor(atlas).map((raster) => [
+          raster.path,
+          `/bundled/${raster.path.split('/').at(-1)}`,
+        ]),
+      ),
+    )
+    const sources = threeBranchesAssetSources(urls)
+    expect(sources.characters).toEqual({
+      body: '/bundled/characters-body-atlas.png',
+      clothing: '/bundled/characters-clothing-atlas.png',
+      arms: '/bundled/characters-arms-atlas.png',
+      details: '/bundled/characters-details-atlas.png',
+    })
+    expect(sources.effects).toBe('/bundled/effects-atlas.png')
+
+    const missing = { ...urls }
+    delete missing['./assets/characters-clothing-atlas.png']
+    expect(() => threeBranchesAssetSources(missing)).toThrow(
+      'Three Branches atlas is missing: ./assets/characters-clothing-atlas.png',
+    )
+  })
+})
