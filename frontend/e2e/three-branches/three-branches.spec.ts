@@ -54,6 +54,7 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     const host = page.locator('.renderer-host')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
     await expect(host).toHaveAttribute('data-three-branches-ground', 'ready')
+    await expect(host).toHaveAttribute('data-three-branches-assets', 'ready')
     await expect(host).toHaveAttribute('data-three-branches-visitor', /^-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-camera', /^\d+(?:\.\d+)?@-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-collision', 'on')
@@ -112,6 +113,7 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     const replayHost = page.locator('.renderer-host')
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
     await expect(replayHost).toHaveAttribute('data-three-branches-ground', 'ready')
+    await expect(replayHost).toHaveAttribute('data-three-branches-assets', 'ready')
     await expect(replayHost).toHaveAttribute('data-three-branches-visitor', /^-?\d+,-?\d+$/)
     await expect(replayHost).toHaveAttribute(
       'data-three-branches-camera',

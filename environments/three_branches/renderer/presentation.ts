@@ -1,3 +1,16 @@
+import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
+
+import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
+import { RULES } from './overlay.js'
+import presentationDocument from './presentation.json'
+import {
+  array,
+  finiteNumber,
+  nonnegativeInteger,
+  positiveInteger,
+  positiveNumber,
+} from './validation.js'
+
 /** Logical dimensions exposed to the renderer host. */
 export interface RendererSize {
   /** Logical canvas width. */
@@ -6,7 +19,7 @@ export interface RendererSize {
   height: number
 }
 
-/** Tunable presentation values that are not part of the environment rules. */
+/** Canvas and camera values that remain TypeScript-owned renderer mechanics. */
 export interface ThreeBranchesPresentation {
   /** Fixed logical surface advertised to the host. */
   internalSize: RendererSize
@@ -20,11 +33,9 @@ export interface ThreeBranchesPresentation {
   maxZoomFactor: number
   /** Visitor-focused opening zoom expressed as a multiple of fitted zoom. */
   focusZoomFactor: number
-  /** Natural wall-clock duration used to interpolate one environment tick. */
-  movementDurationMs: number
 }
 
-/** Provisional renderer choices kept separate from rules and recorded game state. */
+/** Fixed renderer mechanics that are not Hearthside Ink art calibration. */
 export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   internalSize: { width: 1200, height: 1000 },
   chromeHeight: 54,
@@ -32,10 +43,9 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   cameraPadding: 20,
   maxZoomFactor: 4,
   focusZoomFactor: 2,
-  movementDurationMs: 1000,
 } as const
 
-/** Semantic provisional colors consumed by the renderer drawing modules. */
+/** Semantic diagnostic colors used by chrome, collision, and the pre-art fallback. */
 export interface ThreeBranchesPalette {
   /** Canvas backdrop. */
   backdrop: string
@@ -85,7 +95,7 @@ export interface ThreeBranchesPalette {
   boundaryCollision: string
 }
 
-/** Diagnostic colors used until the signed art stage replaces the provisional drawing. */
+/** Diagnostic palette retained when artwork is unavailable and for ungraded renderer chrome. */
 export const PALETTE: ThreeBranchesPalette = {
   backdrop: '#17211f',
   chrome: '#202b29',
@@ -112,7 +122,433 @@ export const PALETTE: ThreeBranchesPalette = {
   boundaryCollision: '#ff4fd8',
 } as const
 
-/** Resolve configured ground semantics to provisional paint without making codes authoritative. */
+export const HEARTHSIDE_PALETTE_KEYS = [
+  'backdrop',
+  'parchment',
+  'bone',
+  'ink',
+  'reed',
+  'silt',
+  'water',
+  'pine',
+  'indigo',
+  'cinnabar',
+  'gilt',
+  'violet',
+  'timber',
+] as const
+
+export type HearthsidePaletteKey = (typeof HEARTHSIDE_PALETTE_KEYS)[number]
+export type HearthsidePalette = Readonly<Record<HearthsidePaletteKey, string>>
+
+export interface FrameTreatment {
+  frames: readonly string[]
+  tint: HearthsidePaletteKey
+}
+
+export interface PhaseGrade {
+  brightness: number
+  contrast: number
+  saturation: number
+  tint: HearthsidePaletteKey
+}
+
+/** Validated art and motion calibration owned by presentation.json. */
+export interface HearthsideStyle {
+  palette: HearthsidePalette
+  transition: { naturalMs: number; settleGraceMs: number }
+  terrain: {
+    fills: Readonly<Record<string, FrameTreatment>>
+    edges: {
+      layers: number
+      pairings: readonly (FrameTreatment & { from: string; to: string })[]
+    }
+    planks: FrameTreatment
+    upperWall: FrameTreatment
+  }
+  roofs: {
+    clearAlpha: number
+    fadeMs: number
+    frames: Readonly<Record<string, readonly string[]>>
+  }
+  phaseGrades: Readonly<Record<string, PhaseGrade>>
+  characters: {
+    clothingTints: readonly HearthsidePaletteKey[]
+    details: readonly string[]
+    walk: { frames: readonly string[]; frameMs: number }
+    visitor: { detail: string; tint: HearthsidePaletteKey }
+  }
+  propEffects: Readonly<Record<string, readonly string[]>>
+  emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
+  cranes: {
+    frames: readonly string[]
+    tint: HearthsidePaletteKey
+    count: readonly [number, number]
+    frameMs: number
+  }
+}
+
+/** The single validated Hearthside Ink configuration used by artwork and tests. */
+export const HEARTHSIDE_STYLE = readHearthsideStyle(presentationDocument)
+
+/** Resolve configured ground semantics to diagnostic paint without making codes authoritative. */
 export function groundColor(name: string): string {
   return PALETTE[name as keyof typeof PALETTE] ?? PALETTE.ground
+}
+
+/** Resolve one transition duration from transport timing and the natural presentation duration. */
+export function transitionDurationMs(
+  options?: RenderOptions,
+  deliveryGapMs?: number,
+  style: Pick<HearthsideStyle, 'transition'> = HEARTHSIDE_STYLE,
+): number {
+  if (options?.snap === true) return 0
+  if (options?.transitionScale !== undefined) {
+    return style.transition.naturalMs * transitionScaleOf(options)
+  }
+  return deliveryGapMs !== undefined && Number.isFinite(deliveryGapMs) && deliveryGapMs >= 0
+    ? Math.min(deliveryGapMs, style.transition.naturalMs)
+    : style.transition.naturalMs
+}
+
+/** Measure only consecutive unpaced deliveries, resetting the clock across snaps and paced hosts. */
+export function measureDeliveryGap(
+  previousMs: number | null,
+  deliveredAtMs: number,
+  options?: RenderOptions,
+): { gapMs: number | undefined; nextMs: number | null } {
+  if (options?.snap === true || options?.transitionScale !== undefined) {
+    return { gapMs: undefined, nextMs: null }
+  }
+  return {
+    gapMs: previousMs === null ? undefined : deliveredAtMs - previousMs,
+    nextMs: deliveredAtMs,
+  }
+}
+
+/** Day and unknown phases are deliberately neutral. */
+export function phaseGrade(phase: string): PhaseGrade | null {
+  return HEARTHSIDE_STYLE.phaseGrades[phase] ?? null
+}
+
+/** Validate an injected document for tests and future configuration edits. */
+export function readHearthsideStyle(value: unknown): HearthsideStyle {
+  const source = exactRecord(value, 'presentation', [
+    'palette',
+    'transition',
+    'terrain',
+    'roofs',
+    'phaseGrades',
+    'characters',
+    'propEffects',
+    'emissives',
+    'cranes',
+  ])
+  const paletteSource = exactRecord(source.palette, 'presentation.palette', HEARTHSIDE_PALETTE_KEYS)
+  const palette = Object.fromEntries(
+    HEARTHSIDE_PALETTE_KEYS.map((key) => [
+      key,
+      hex(paletteSource[key], `presentation.palette.${key}`),
+    ]),
+  ) as Record<HearthsidePaletteKey, string>
+  const paletteNames = new Set<string>(HEARTHSIDE_PALETTE_KEYS)
+
+  const transitionSource = exactRecord(source.transition, 'presentation.transition', [
+    'naturalMs',
+    'settleGraceMs',
+  ])
+  const transition = {
+    naturalMs: positiveNumber(transitionSource.naturalMs, 'presentation.transition.naturalMs'),
+    settleGraceMs: nonnegativeNumber(
+      transitionSource.settleGraceMs,
+      'presentation.transition.settleGraceMs',
+    ),
+  }
+
+  const terrainFrames = framesFor('terrain')
+  const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
+    'fills',
+    'edges',
+    'planks',
+    'upperWall',
+  ])
+  const groundNames = RULES.grounds.map((ground) => ground.name)
+  const fillsSource = exactRecord(terrainSource.fills, 'presentation.terrain.fills', groundNames)
+  const fills = Object.fromEntries(
+    groundNames.map((name) => [
+      name,
+      frameTreatment(
+        fillsSource[name],
+        `presentation.terrain.fills.${name}`,
+        terrainFrames,
+        paletteNames,
+      ),
+    ]),
+  )
+  const edgesSource = exactRecord(terrainSource.edges, 'presentation.terrain.edges', [
+    'layers',
+    'pairings',
+  ])
+  const knownGround = new Set(groundNames)
+  const pairings = array(edgesSource.pairings, 'presentation.terrain.edges.pairings').map(
+    (item, index) => {
+      const name = `presentation.terrain.edges.pairings[${index}]`
+      const pairing = exactRecord(item, name, ['from', 'to', 'frames', 'tint'])
+      return {
+        from: knownText(pairing.from, knownGround, `${name}.from`),
+        to: knownText(pairing.to, knownGround, `${name}.to`),
+        ...frameTreatment(
+          { frames: pairing.frames, tint: pairing.tint },
+          name,
+          terrainFrames,
+          paletteNames,
+        ),
+      }
+    },
+  )
+  const terrain = {
+    fills,
+    edges: {
+      layers: positiveInteger(edgesSource.layers, 'presentation.terrain.edges.layers'),
+      pairings,
+    },
+    planks: frameTreatment(
+      terrainSource.planks,
+      'presentation.terrain.planks',
+      terrainFrames,
+      paletteNames,
+    ),
+    upperWall: frameTreatment(
+      terrainSource.upperWall,
+      'presentation.terrain.upperWall',
+      terrainFrames,
+      paletteNames,
+    ),
+  }
+
+  const roofsSource = exactRecord(source.roofs, 'presentation.roofs', [
+    'clearAlpha',
+    'fadeMs',
+    'frames',
+  ])
+  const roofFramesSource = exactRecord(roofsSource.frames, 'presentation.roofs.frames', [
+    'home',
+    'inn',
+    'shed',
+  ])
+  const buildingFrames = framesFor('buildings')
+  const roofs = {
+    clearAlpha: unitNumber(roofsSource.clearAlpha, 'presentation.roofs.clearAlpha'),
+    fadeMs: positiveNumber(roofsSource.fadeMs, 'presentation.roofs.fadeMs'),
+    frames: Object.fromEntries(
+      Object.entries(roofFramesSource).map(([name, frameValue]) => [
+        name,
+        frameNames(frameValue, `presentation.roofs.frames.${name}`, buildingFrames),
+      ]),
+    ),
+  }
+
+  const configuredPhases = RULES.phases.map((phase) => phase.name)
+  const gradesSource = exactRecord(source.phaseGrades, 'presentation.phaseGrades', configuredPhases)
+  const phaseGrades = Object.fromEntries(
+    configuredPhases.map((name) => {
+      const path = `presentation.phaseGrades.${name}`
+      const grade = exactRecord(gradesSource[name], path, [
+        'brightness',
+        'contrast',
+        'saturation',
+        'tint',
+      ])
+      return [
+        name,
+        {
+          brightness: positiveNumber(grade.brightness, `${path}.brightness`),
+          contrast: positiveNumber(grade.contrast, `${path}.contrast`),
+          saturation: nonnegativeNumber(grade.saturation, `${path}.saturation`),
+          tint: paletteKey(grade.tint, paletteNames, `${path}.tint`),
+        },
+      ]
+    }),
+  )
+
+  const charactersSource = exactRecord(source.characters, 'presentation.characters', [
+    'clothingTints',
+    'details',
+    'walk',
+    'visitor',
+  ])
+  const detailFrames = framesFor('characters', 'details')
+  const poseFrames = framesFor('characters', 'body')
+  const walkSource = exactRecord(charactersSource.walk, 'presentation.characters.walk', [
+    'frames',
+    'frameMs',
+  ])
+  const visitorSource = exactRecord(charactersSource.visitor, 'presentation.characters.visitor', [
+    'detail',
+    'tint',
+  ])
+  const characters = {
+    clothingTints: array(
+      charactersSource.clothingTints,
+      'presentation.characters.clothingTints',
+    ).map((item, index) =>
+      paletteKey(item, paletteNames, `presentation.characters.clothingTints[${index}]`),
+    ),
+    details: frameNames(charactersSource.details, 'presentation.characters.details', detailFrames),
+    walk: {
+      frames: frameNames(walkSource.frames, 'presentation.characters.walk.frames', poseFrames),
+      frameMs: positiveNumber(walkSource.frameMs, 'presentation.characters.walk.frameMs'),
+    },
+    visitor: {
+      detail: knownText(
+        visitorSource.detail,
+        detailFrames,
+        'presentation.characters.visitor.detail',
+      ),
+      tint: paletteKey(visitorSource.tint, paletteNames, 'presentation.characters.visitor.tint'),
+    },
+  }
+
+  const effectsFrames = framesFor('effects')
+  const propEffectsSource = exactRecord(source.propEffects, 'presentation.propEffects', [
+    'lantern',
+    'hearth',
+    'shrine',
+    'pump',
+    'bell',
+  ])
+  const propEffects = Object.fromEntries(
+    Object.entries(propEffectsSource).map(([name, frameValue]) => [
+      name,
+      frameNames(frameValue, `presentation.propEffects.${name}`, effectsFrames),
+    ]),
+  )
+  const emissivesSource = exactRecord(source.emissives, 'presentation.emissives', [
+    'lantern',
+    'hearth',
+    'frame',
+  ])
+  const emissives = {
+    lantern: paletteKey(emissivesSource.lantern, paletteNames, 'presentation.emissives.lantern'),
+    hearth: paletteKey(emissivesSource.hearth, paletteNames, 'presentation.emissives.hearth'),
+    frame: knownText(emissivesSource.frame, effectsFrames, 'presentation.emissives.frame'),
+  }
+  const cranesSource = exactRecord(source.cranes, 'presentation.cranes', [
+    'frames',
+    'tint',
+    'count',
+    'frameMs',
+  ])
+  const count = array(cranesSource.count, 'presentation.cranes.count')
+  if (count.length !== 2) throw new Error('presentation.cranes.count must contain two values.')
+  const cranes = {
+    frames: frameNames(cranesSource.frames, 'presentation.cranes.frames', effectsFrames),
+    tint: paletteKey(cranesSource.tint, paletteNames, 'presentation.cranes.tint'),
+    count: [
+      nonnegativeInteger(count[0], 'presentation.cranes.count[0]'),
+      nonnegativeInteger(count[1], 'presentation.cranes.count[1]'),
+    ] as const,
+    frameMs: positiveNumber(cranesSource.frameMs, 'presentation.cranes.frameMs'),
+  }
+  if (cranes.count[0] > cranes.count[1]) {
+    throw new Error('presentation.cranes.count must be ordered from minimum to maximum.')
+  }
+
+  return {
+    palette,
+    transition,
+    terrain,
+    roofs,
+    phaseGrades,
+    characters,
+    propEffects,
+    emissives,
+    cranes,
+  }
+}
+
+function framesFor(group: string, layer?: string): ReadonlySet<string> {
+  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
+  if (atlas === undefined) throw new Error(`Three Branches manifest has no ${group} atlas.`)
+  if ('layers' in atlas) {
+    const raster = atlas.layers.find((item) => item.name === layer)
+    if (raster === undefined) {
+      throw new Error(`Three Branches manifest has no ${group}.${layer} layer.`)
+    }
+    return new Set(raster.frames.names)
+  }
+  if (layer !== undefined) throw new Error(`Three Branches manifest atlas ${group} has no layers.`)
+  return new Set(atlas.frames.names)
+}
+
+function frameTreatment(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+  palette: ReadonlySet<string>,
+): FrameTreatment {
+  const source = exactRecord(value, name, ['frames', 'tint'])
+  return {
+    frames: frameNames(source.frames, `${name}.frames`, knownFrames),
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
+  }
+}
+
+function frameNames(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
+  const result = array(value, name).map((item, index) =>
+    knownText(item, known, `${name}[${index}]`),
+  )
+  if (result.length === 0) throw new Error(`${name} must contain at least one frame.`)
+  return result
+}
+
+function exactRecord(
+  value: unknown,
+  name: string,
+  keys: readonly string[],
+): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`)
+  }
+  const result = value as Record<string, unknown>
+  const expected = new Set(keys)
+  if (
+    keys.some((key) => !(key in result)) ||
+    Object.keys(result).some((key) => !expected.has(key))
+  ) {
+    throw new Error(`${name} keys do not match its contract.`)
+  }
+  return result
+}
+
+function knownText(value: unknown, known: ReadonlySet<string>, name: string): string {
+  if (typeof value !== 'string' || !known.has(value)) throw new Error(`${name} is unknown.`)
+  return value
+}
+
+function paletteKey(
+  value: unknown,
+  known: ReadonlySet<string>,
+  name: string,
+): HearthsidePaletteKey {
+  return knownText(value, known, name) as HearthsidePaletteKey
+}
+
+function hex(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/.test(value)) {
+    throw new Error(`${name} must be a lowercase six-digit hex color.`)
+  }
+  return value
+}
+
+function nonnegativeNumber(value: unknown, name: string): number {
+  const result = finiteNumber(value, name)
+  if (result < 0) throw new Error(`${name} must be non-negative.`)
+  return result
+}
+
+function unitNumber(value: unknown, name: string): number {
+  const result = nonnegativeNumber(value, name)
+  if (result > 1) throw new Error(`${name} must be at most one.`)
+  return result
 }

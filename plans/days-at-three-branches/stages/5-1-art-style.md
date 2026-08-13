@@ -128,6 +128,8 @@ The owner judges the rendered result through `npm run play -- three_branches wat
 
 ## Foundation
 
+Status: complete.
+
 The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
 - `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, edges with layers and pairings, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
@@ -137,6 +139,8 @@ The common layer under every visual step. It has no owner gate: the step 3 solid
 - `loadArt()` runs after setup: it resolves manifest URLs, loads the atlases, slices frames, bakes the tinted tileset, swaps the textured layers in, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
 
 `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
+
+The foundation's successful art load swaps in the configured tinted terrain fills. The Terrain step owns fill variation, edge composition, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
 
 ## Terrain
 

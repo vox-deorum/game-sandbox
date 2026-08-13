@@ -1,0 +1,105 @@
+{
+  "palette": {
+    "backdrop": "#101816",
+    "parchment": "#cfc5a9",
+    "bone": "#efe7d3",
+    "ink": "#6f6757",
+    "reed": "#a9ae8a",
+    "silt": "#bfa072",
+    "water": "#5a7680",
+    "pine": "#4f6a4b",
+    "indigo": "#27436b",
+    "cinnabar": "#b0402e",
+    "gilt": "#d9a441",
+    "violet": "#6b5d72",
+    "timber": "#8a6246"
+  },
+  "transition": { "naturalMs": 1000, "settleGraceMs": 100 },
+  "terrain": {
+    "fills": {
+      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed" },
+      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "silt" },
+      "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment" },
+      "bridge": { "frames": ["bridgeA", "bridgeB", "bridgeC"], "tint": "timber" },
+      "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment" },
+      "doorway": { "frames": ["doorway"], "tint": "bone" },
+      "field": { "frames": ["furrowA", "furrowB", "furrowC", "furrowD"], "tint": "silt" },
+      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "pine" },
+      "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
+      "wall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
+    },
+    "edges": {
+      "layers": 3,
+      "pairings": [
+        {
+          "from": "water",
+          "to": "ground",
+          "frames": [
+            "edge00",
+            "edge01",
+            "edge02",
+            "edge03",
+            "edge04",
+            "edge05",
+            "edge06",
+            "edge07",
+            "edge08",
+            "edge09",
+            "edge10",
+            "edge11",
+            "edge12",
+            "edge13",
+            "edge14",
+            "edge15"
+          ],
+          "tint": "silt"
+        },
+        {
+          "from": "reeds",
+          "to": "ground",
+          "frames": ["reedShoulderA", "reedShoulderB", "reedShoulderC"],
+          "tint": "reed"
+        },
+        {
+          "from": "field",
+          "to": "ground",
+          "frames": ["furrowEndA", "furrowEndB", "furrowEndC"],
+          "tint": "silt"
+        }
+      ]
+    },
+    "planks": { "frames": ["bridgeA", "bridgeB", "bridgeC"], "tint": "timber" },
+    "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
+  },
+  "roofs": {
+    "clearAlpha": 0.18,
+    "fadeMs": 220,
+    "frames": {
+      "home": ["homeFill", "homeEdge", "homeCorner", "homeRidge"],
+      "inn": ["innFill", "innEdge", "innCorner", "innRidge"],
+      "shed": ["shedFill", "shedEdge", "shedCorner", "shedRidge"]
+    }
+  },
+  "phaseGrades": {
+    "dawn": { "brightness": 0.96, "contrast": 0.98, "saturation": 0.9, "tint": "violet" },
+    "morning": { "brightness": 1, "contrast": 1, "saturation": 1, "tint": "parchment" },
+    "midday": { "brightness": 1.04, "contrast": 1.02, "saturation": 1.04, "tint": "bone" },
+    "evening": { "brightness": 0.92, "contrast": 1.03, "saturation": 0.9, "tint": "silt" },
+    "night": { "brightness": 0.7, "contrast": 1.08, "saturation": 0.7, "tint": "indigo" }
+  },
+  "characters": {
+    "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],
+    "details": ["hairKnot", "reedCap", "headscarf"],
+    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameMs": 170 },
+    "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
+  },
+  "propEffects": {
+    "lantern": ["glow", "glowFlicker"],
+    "hearth": ["flameA", "flameB", "flameC", "flameD"],
+    "shrine": ["smokeA", "smokeB"],
+    "pump": ["waterA", "waterB"],
+    "bell": ["bellLinesA", "bellLinesB"]
+  },
+  "emissives": { "lantern": "gilt", "hearth": "cinnabar", "frame": "glow" },
+  "cranes": { "frames": ["craneA", "craneB"], "tint": "bone", "count": [1, 3], "frameMs": 260 }
+}

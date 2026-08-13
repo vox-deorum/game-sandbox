@@ -1,13 +1,6 @@
 import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
 
-/** A regular frame grid within one renderer-local atlas. */
-interface ThreeBranchesFrameGrid {
-  width: number
-  height: number
-  columns: number
-  rows: number
-  names: readonly string[]
-}
+import type { FrameGrid } from './tint.js'
 
 /** One generated source atlas and its optimized runtime counterpart. */
 interface ThreeBranchesRasterDraft {
@@ -17,7 +10,7 @@ interface ThreeBranchesRasterDraft {
   path: `./assets/${string}.png`
   width: number
   height: number
-  frames: ThreeBranchesFrameGrid
+  frames: FrameGrid
 }
 
 interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft {
@@ -449,6 +442,18 @@ export async function loadThreeBranchesAssets<T>(
     }),
   )
   return Object.fromEntries(loaded) as ThreeBranchesLoadedAssets<T>
+}
+
+/** Resolve and load every optimized runtime atlas through an injected URL loader. */
+export async function loadThreeBranchesRuntimeAssets<T>(
+  load: (source: string) => Promise<T> | T,
+): Promise<ThreeBranchesLoadedAssets<T>> {
+  const urls = threeBranchesAssetUrls()
+  return loadThreeBranchesAssets((raster) => {
+    const source = urls[raster.path]
+    if (source === undefined) throw new Error(`Three Branches atlas is missing: ${raster.path}`)
+    return load(source)
+  })
 }
 
 /** Ask Vite for the production URL of every optimized atlas. */

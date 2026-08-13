@@ -11,11 +11,15 @@ export interface PropLayer {
 }
 
 /** Build stable prop and scenery nodes whose states are exposed by diagnostic collision mode. */
-export function createPropLayer(layer: Container, scene: StaticScene): PropLayer {
+export function createPropLayer(
+  sceneryLayer: Container,
+  propLayer: Container,
+  scene: StaticScene,
+): PropLayer {
   const nodes = new Map<string, Graphics>()
   const startById = new Map<string, string>()
   for (const item of scene.scenery) {
-    layer.addChild(createNode(item, false))
+    sceneryLayer.addChild(createNode(item, false))
   }
   for (const item of scene.props) {
     const node = createNode(item, true)
@@ -23,7 +27,7 @@ export function createPropLayer(layer: Container, scene: StaticScene): PropLayer
     if (start === undefined) throw new Error(`Unknown prop type ${item.type}.`)
     nodes.set(item.id, node)
     startById.set(item.id, start)
-    layer.addChild(node)
+    propLayer.addChild(node)
   }
   return {
     reconcile(frame) {

@@ -11,13 +11,11 @@ import {
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
-import {
-  type RendererContext,
-  type RendererDefinition,
-  type RenderOptions,
-  transitionScaleOf,
-} from '@renderers/types.js'
-import { Container, Graphics } from 'pixi.js'
+import type { GroundTileset, TiledGround } from '@renderers/base/tiled-ground.js'
+import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
+import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
+import { replaceFallback, runArtLoad } from './art-loading.js'
+import { loadThreeBranchesRuntimeAssets, THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { drawBuildings } from './buildings.js'
 import {
   initialVisitorCamera,
@@ -32,10 +30,16 @@ import { collisionWithPropStates, frameCollision, staticCollision } from './coll
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
 import { drawMap } from './map-layer.js'
 import { expectedCharacterIds, readStatic } from './overlay.js'
-import { PALETTE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
+import {
+  HEARTHSIDE_STYLE,
+  measureDeliveryGap,
+  THREE_BRANCHES_PRESENTATION,
+  transitionDurationMs,
+} from './presentation.js'
 import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
 import thumbnail from './thumbnail.png'
+import { tintedMaskFrame } from './tint.js'
 import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
 const CONTENT_SIZE = {
@@ -63,6 +67,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly staticCollisionShapes: readonly CollisionShape[]
   private readonly visitorIsHumanControlled: boolean
   private worldRoot!: Container
+  private mapLayer!: Container
+  private mapGround!: TiledGround
   private collision!: CollisionLayer
   private props!: PropLayer
   private characters!: CharacterLayer
@@ -75,7 +81,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private currentScene: FrameScene | null = null
   private presentedScene: FrameScene | null = null
   private movement: MovementTransition | null = null
+  private settleRemainingMs = 0
   private collisionTextZoom = Number.NaN
+  private lastDeliveryAtMs: number | null = null
 
   /** Parse immutable renderer inputs before Pixi builds the retained scene. */
   constructor(ctx: RendererContext) {
@@ -92,26 +100,29 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   protected setup(root: Container): void {
     const backdrop = new Graphics()
       .rect(0, 0, this.internalSize.width, this.internalSize.height)
-      .fill(PALETTE.backdrop)
+      .fill(HEARTHSIDE_STYLE.palette.backdrop)
     const contentMask = new Graphics()
       .rect(0, THREE_BRANCHES_PRESENTATION.chromeHeight, CONTENT_SIZE.width, CONTENT_SIZE.height)
       .fill('#ffffff')
     const gradedWorld = new Container()
-    const mapLayer = new Container()
-    const buildingLayer = new Container()
+    this.mapLayer = new Container()
+    const sceneryLayer = new Container()
     const propLayer = new Container()
     const characterLayer = new Container()
+    const upperLayer = new Container()
+    const emissiveLayer = new Container()
     const collisionLayer = new Container()
     const chromeLayer = new Container()
-    gradedWorld.addChild(mapLayer, buildingLayer, propLayer, characterLayer)
+    gradedWorld.filters = [new ColorMatrixFilter()]
+    gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, upperLayer)
     this.worldRoot = new Container()
-    this.worldRoot.addChild(gradedWorld, collisionLayer)
+    this.worldRoot.addChild(gradedWorld, emissiveLayer, collisionLayer)
     this.worldRoot.mask = contentMask
     root.addChild(backdrop, contentMask, this.worldRoot, chromeLayer)
 
-    drawMap(mapLayer, this.staticScene)
-    drawBuildings(buildingLayer, this.staticScene)
-    this.props = createPropLayer(propLayer, this.staticScene)
+    this.mapGround = drawMap(this.mapLayer, this.staticScene)
+    drawBuildings(upperLayer, this.staticScene)
+    this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
     this.characters = createCharacterLayer(characterLayer)
     this.collision = createCollisionLayer(collisionLayer)
     this.chrome = createChrome(chromeLayer)
@@ -133,10 +144,15 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.applyCamera()
     this.wireCamera(root)
     this.ctx.container.dataset.threeBranchesGround = 'ready'
+    this.ctx.container.dataset.threeBranchesAssets = 'loading'
     this.ctx.container.dataset.threeBranchesCollisionToggle = `${COLLISION_TOGGLE_RECT.x},${COLLISION_TOGGLE_RECT.y},${COLLISION_TOGGLE_RECT.width},${COLLISION_TOGGLE_RECT.height}`
+    void this.loadArt()
   }
 
   protected update(state: StepState, options?: RenderOptions): void {
+    const delivery = measureDeliveryGap(this.lastDeliveryAtMs, performance.now(), options)
+    const deliveryGapMs = delivery.gapMs
+    this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
     this.props.reconcile(scene)
@@ -145,12 +161,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.worldTextResolution(),
     )
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
-    const scale = transitionScaleOf(options)
+    const durationMs = transitionDurationMs(options, deliveryGapMs)
     const shouldAnimate =
-      options?.snap !== true &&
-      scale > 0 &&
-      this.presentedScene !== null &&
-      charactersMoved(this.presentedScene, scene)
+      durationMs > 0 && this.presentedScene !== null && charactersMoved(this.presentedScene, scene)
+    this.settleRemainingMs = 0
     if (shouldAnimate && this.presentedScene !== null) {
       // Movement always follows the renderer transport. It deliberately does not inspect the
       // reduced-motion media query, since continuous character movement is core game state here.
@@ -158,7 +172,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         from: this.presentedScene,
         to: scene,
         elapsedMs: 0,
-        durationMs: THREE_BRANCHES_PRESENTATION.movementDurationMs * scale,
+        durationMs,
       }
       this.presentScene(interpolateScene(this.presentedScene, scene, 0))
     } else {
@@ -171,12 +185,18 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   /** Advance character interpolation and its human-controlled visitor camera. */
   protected override onFrame(dtMs: number): boolean {
     const movement = this.movement
-    if (movement === null) return false
-    movement.elapsedMs += dtMs
-    const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
-    this.presentScene(interpolateScene(movement.from, movement.to, progress))
-    if (progress >= 1) this.movement = null
-    return this.movement !== null
+    if (movement !== null) {
+      movement.elapsedMs += dtMs
+      const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
+      this.presentScene(interpolateScene(movement.from, movement.to, progress))
+      if (progress >= 1) {
+        this.movement = null
+        this.settleRemainingMs = HEARTHSIDE_STYLE.transition.settleGraceMs
+      }
+      return this.movement !== null || this.settleRemainingMs > 0
+    }
+    this.settleRemainingMs = Math.max(0, this.settleRemainingMs - dtMs)
+    return this.settleRemainingMs > 0
   }
 
   /** Report only the finite state-to-state character transition to the host. */
@@ -191,6 +211,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.cameraGestures = null
     this.ctx.container.removeEventListener('click', this.onChromeClick)
     this.movement = null
+    this.settleRemainingMs = 0
     super.destroy()
   }
 
@@ -337,6 +358,35 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     return this.textResolution() * this.visitorCamera.camera.zoom
   }
 
+  private async loadArt(): Promise<void> {
+    await runArtLoad({
+      load: () => loadThreeBranchesRuntimeAssets<Texture>((source) => Assets.load<Texture>(source)),
+      active: () => !this.isDestroyed,
+      install: (atlases) => {
+        const terrainAtlas = atlases.terrain
+        if (!(terrainAtlas instanceof Texture)) {
+          throw new Error('Three Branches terrain atlas must be one texture.')
+        }
+        this.mapGround = replaceFallback(
+          this.mapGround,
+          () =>
+            drawMap(
+              this.mapLayer,
+              this.staticScene,
+              terrainTileset(terrainAtlas, this.staticScene),
+            ),
+          () => this.redrawCurrentFrame(),
+        )
+      },
+      status: (status) => {
+        this.ctx.container.dataset.threeBranchesAssets = status
+      },
+      report: (error) => {
+        console.error('Three Branches could not load its artwork.', error)
+      },
+    })
+  }
+
   private updateProbes(state: StepState, scene: FrameScene): void {
     const dynamic = scene.dynamic
     this.ctx.container.dataset.threeBranchesOpening =
@@ -351,6 +401,25 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         ? 'pending'
         : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
   }
+}
+
+function terrainTileset(atlas: Texture, scene: StaticScene): GroundTileset {
+  const terrain = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'terrain')
+  if (terrain === undefined || 'layers' in terrain) {
+    throw new Error('Three Branches manifest is missing its terrain atlas.')
+  }
+  const textures: Record<string, readonly Texture[]> = {}
+  for (const ground of scene.ground) {
+    const treatment = HEARTHSIDE_STYLE.terrain.fills[ground.name]
+    if (treatment === undefined) {
+      throw new Error(`Three Branches presentation has no ${ground.name} terrain fill.`)
+    }
+    const tint = HEARTHSIDE_STYLE.palette[treatment.tint]
+    textures[ground.code] = treatment.frames.map((frame) =>
+      tintedMaskFrame(atlas, terrain.frames, frame, tint),
+    )
+  }
+  return { tileSize: terrain.frames.width, textures }
 }
 
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {

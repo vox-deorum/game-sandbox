@@ -3,6 +3,13 @@ import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import catalogDocument from '../catalog.json'
 import rulesDocument from '../rules.json'
 import type { Cell, VillageDynamic, VillageSize, VillageStatic } from './types.js'
+import {
+  array,
+  finiteNumber,
+  nonnegativeInteger,
+  positiveInteger,
+  positiveNumber,
+} from './validation.js'
 
 /** Validated rules document used as the renderer's semantic source of truth. */
 export const RULES = rulesDocument
@@ -158,41 +165,10 @@ function record(value: unknown, name: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function array(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`${name} must be an array.`)
-  return value
-}
-
 function text(value: unknown, name: string): string {
   if (typeof value !== 'string' || value.length === 0)
     throw new Error(`${name} must be non-empty text.`)
   return value
-}
-
-function finiteNumber(value: unknown, name: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value))
-    throw new Error(`${name} must be finite.`)
-  return value
-}
-
-function positiveNumber(value: unknown, name: string): number {
-  const result = finiteNumber(value, name)
-  if (result <= 0) throw new Error(`${name} must be positive.`)
-  return result
-}
-
-function positiveInteger(value: unknown, name: string): number {
-  const result = finiteNumber(value, name)
-  if (!Number.isInteger(result) || result <= 0)
-    throw new Error(`${name} must be a positive integer.`)
-  return result
-}
-
-function nonnegativeInteger(value: unknown, name: string): number {
-  const result = finiteNumber(value, name)
-  if (!Number.isInteger(result) || result < 0)
-    throw new Error(`${name} must be a non-negative integer.`)
-  return result
 }
 
 function boolean(value: unknown, name: string): boolean {

@@ -190,6 +190,11 @@ export abstract class PixiRenderer implements RendererInstance {
    */
   protected readonly animated: boolean = false
 
+  /** Whether teardown has begun, for guarding asynchronous subclass work. */
+  protected get isDestroyed(): boolean {
+    return this.destroyed
+  }
+
   /** Build the persistent display objects once, parented to `root`. Called after the app is ready. */
   protected abstract setup(root: Container): void
 
