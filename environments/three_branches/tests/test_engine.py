@@ -81,8 +81,8 @@ def test_perception_passes_doors_but_not_walls_and_reports_post_tick_motion() ->
     day = Day(build_fixture(), 5, False)
     visitor = day.characters["visitor"]
     npc = day.characters["npc_0"]
-    visitor.position, visitor.heading = (7.5, 61.5), 90.0
-    npc.position = (7.5, 63.5)
+    visitor.position, visitor.heading = (8.5, 61.5), 90.0
+    npc.position = (8.5, 63.5)
     doorway_view = observe(day, "visitor")
     assert [person["id"] for person in doorway_view["seen"]] == ["npc_0"]
     assert [person["id"] for person in doorway_view["nearby"]] == ["npc_0"]

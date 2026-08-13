@@ -504,6 +504,21 @@ def test_footpaths_join_the_road_to_the_plaza_the_homes_and_the_shrines(
         assert any(math.dist(pump, spot) <= plaza + 2 for spot in ways), (seed, pump)
 
 
+def test_a_footpath_that_cannot_be_walked_is_still_laid_along_its_route() -> None:
+    """A walk out of steps hands its leg back to the search, which is what joins every doorway."""
+    network = GENERATION.network
+    path = network.path
+    stranded = replace(
+        GENERATION,
+        network=replace(network, path=replace(path, walker=replace(path.walker, step_budget=0))),
+    )
+    layout, _ = generate(BATCH[0], stranded)
+    assert len(_pieces(_cells(layout, "rpb"))) == 1
+    for building in layout.buildings:
+        for cell in layout.doorway(building.id):
+            assert any(spot in _cells(layout, "rpb") for spot in _around(cell)), (building.id, cell)
+
+
 def test_each_channel_carries_at_most_one_footpath_crossing(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:

@@ -1,8 +1,8 @@
 {
   "buildings": [
-    {"token": "home", "width": 6, "height": 5, "count": 5, "door_width": 2, "interior_props": []},
-    {"token": "inn", "width": 10, "height": 8, "count": 1, "door_width": 2, "interior_props": ["hearth"]},
-    {"token": "shed", "width": 6, "height": 6, "count": 1, "door_width": 2, "interior_props": ["repair_bench"]}
+    {"token": "home", "width": 8, "height": 7, "count": 5, "door_width": 2, "interior_props": []},
+    {"token": "inn", "width": 12, "height": 10, "count": 1, "door_width": 2, "interior_props": ["hearth"]},
+    {"token": "shed", "width": 8, "height": 8, "count": 1, "door_width": 2, "interior_props": ["repair_bench"]}
   ],
   "props": [
     {"token": "stall", "width": 2, "height": 2, "shape": "box", "activity": "tending_stall", "states": ["open", "closed"], "start": "closed", "transition": "toggle", "duration": null},

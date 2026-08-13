@@ -5,12 +5,14 @@ going before it can be walked. Each is a point inside the road band: the shed an
 the market in the middle, the inn to the east. The well plaza is not a road anchor; it sits in the
 crook below the fork and is reached by a footpath.
 
-Buildings then stand beside those anchors, never inside the band. Keeping every site and its margin
-out of the band is what leaves the road a clear run across the frame, so the road walker never has
-to squeeze past a wall it cannot move.
+The inn and the shed then stand beside their anchors. A home stands wherever the ground suits it
+best: bank side among the channels, level, dry, and clear of the homes already up. Nothing stands
+inside the band. Keeping every site and its margin out of it is what leaves the road a clear run
+across the frame, so the road walker never has to squeeze past a wall it cannot move.
 
 A site is accepted only once its rectangle, its margin, its garden, and a doorway with a route to
-the band all hold together. Running out of candidates for any of them discards the whole layout.
+the band all hold together, and a door never opens away from the road. Running out of candidates
+discards the whole layout.
 """
 
 from __future__ import annotations
@@ -55,7 +57,6 @@ class Settlement:
     plaza: Cell
     # West, middle, and east road targets: the shed, the market, and the inn.
     anchors: tuple[Cell, Cell, Cell]
-    clusters: tuple[Cell, ...]
     sites: tuple[Site, ...]
     reserved: frozenset[Cell]
     keep_clear: frozenset[Cell]
@@ -91,22 +92,38 @@ def settle(
     plaza = _plaza(stream, rows, elevation, moisture, courses, tuning, band, joinable)
     reserved = set(_disc(plaza, tuning.plaza_radius))
     anchors = _anchors(stream, rows, elevation, moisture, tuning, inner_band(network))
-    clusters = _clusters(stream, rows, elevation, moisture, distance, courses, tuning, band, joinable)
+    anchored = {"inn": anchors[2], "shed": anchors[0]}
     sites: dict[str, Site] = {}
-    wanted = {
-        "inn": anchors[2],
-        "shed": anchors[0],
-        **{f"home_{index}": clusters[index % len(clusters)] for index in range(5)},
-    }
+    # Where the homes already up are, which is what keeps the next one from crowding them.
+    homes: list[Cell] = []
     for building_id in _PLACEMENT:
-        kind = BUILDING_BY_TOKEN["home" if building_id.startswith("home") else building_id]
-        site = _stand(stream, rows, building_id, kind, wanted[building_id], reserved, joinable, tuning, band)
+        kind = BUILDING_BY_TOKEN[_type_of(building_id)]
+        if building_id in anchored:
+            site = _stand(
+                stream, rows, building_id, kind, anchored[building_id], reserved, joinable, tuning, band
+            )
+        else:
+            site = _homestead(
+                stream,
+                rows,
+                building_id,
+                kind,
+                elevation,
+                moisture,
+                distance,
+                courses,
+                reserved,
+                joinable,
+                tuning,
+                band,
+                homes,
+            )
         paint_site(rows, site.building)
         reserved.update(site.reserved)
         sites[building_id] = site
     placed = tuple(sites[building_id] for building_id in _LAYOUT)
     gardens = frozenset(cell for site in placed for cell in site.garden)
-    return Settlement(plaza, anchors, clusters, placed, frozenset(reserved), gardens)
+    return Settlement(plaza, anchors, placed, frozenset(reserved), gardens)
 
 
 def inner_band(network: Network) -> tuple[int, int]:
@@ -134,8 +151,8 @@ def _plaza(
     best: tuple[float, Cell] | None = None
     for _ in range(tuning.budget):
         candidate = (
-            fork_x + stream.randint(-tuning.plaza_reach, tuning.plaza_reach),
-            fork_y - stream.randint(0, tuning.plaza_reach),
+            fork_x + stream.randint(-tuning.reach, tuning.reach),
+            fork_y - stream.randint(0, tuning.reach),
         )
         if candidate[1] <= band[1] or candidate not in joinable:
             continue
@@ -183,50 +200,50 @@ def _anchors(
     return (found[0], found[1], found[2])
 
 
-def _clusters(
+def _homestead(
     stream: random.Random,
     rows: list[list[str]],
+    building_id: str,
+    kind: BuildingType,
     elevation: list[list[float]],
     moisture: list[list[float]],
     distance: list[list[int]],
     courses: Water,
+    reserved: set[Cell],
+    joinable: frozenset[Cell],
     tuning: Sites,
     band: tuple[int, int],
-    joinable: frozenset[Cell],
-) -> tuple[Cell, ...]:
-    """Seed loose bank-side groups for the homes, spread apart from one another.
+    others: list[Cell],
+) -> Site:
+    """Stand one home on the best ground it can find, and remember where it went.
 
     Homes live among the channels, south of the fork. Above it the trunk is too wide to bridge, so
-    ground up there is somewhere a footpath could never carry anyone home from.
+    ground up there is somewhere a footpath could never carry anyone home from. Every candidate is
+    a whole site rather than a point, so the ground a home is scored on is ground it really stands
+    on, and the best of them wins rather than the first.
     """
-    # What a home and its margin need around a centre before a home can stand on it at all.
-    home = BUILDING_BY_TOKEN["home"]
-    reach = max(home.width, home.height) // 2 + tuning.margin
-    found: list[Cell] = []
-    for _ in range(tuning.cluster_count):
-        best: tuple[float, Cell] | None = None
-        for _ in range(tuning.cluster_budget):
-            candidate = (
-                stream.randrange(1, FRAME.cells_x - 1),
-                stream.randrange(1, courses.fork[1]),
-            )
-            if band[0] <= candidate[1] <= band[1] or candidate not in joinable:
-                continue
-            if not _open(rows, _disc(candidate, float(reach))):
-                continue
-            apart = min((dist(candidate, other) for other in found), default=float(FRAME.cells_x))
-            score = (
-                _bank(distance, candidate, reach) * tuning.scores.bank
-                + _flat(elevation, candidate) * tuning.scores.flat
-                + _dry(moisture, candidate) * tuning.scores.dry
-                + min(apart / FRAME.cells_x, 1.0) * tuning.scores.apart
-            )
-            if best is None or score > best[0]:
-                best = (score, candidate)
-        if best is None:
-            raise Retry("a home cluster found no bank to gather on")
-        found.append(best[1])
-    return tuple(found)
+    # As near the water as this home and its margin can stand, which is what bank side means to it.
+    reach = max(kind.width, kind.height) // 2 + tuning.margin
+    best: tuple[float, Site, Cell] | None = None
+    for _ in range(tuning.budget):
+        origin = (stream.randrange(1, FRAME.cells_x - 1), stream.randrange(1, courses.fork[1]))
+        site = _candidate(stream, rows, building_id, kind, origin, reserved, joinable, tuning, band)
+        if site is None:
+            continue
+        centre = (origin[0] + kind.width // 2, origin[1] + kind.height // 2)
+        apart = min((dist(centre, other) for other in others), default=float(FRAME.cells_x))
+        score = (
+            _bank(distance, centre, reach) * tuning.scores.bank
+            + _flat(elevation, centre) * tuning.scores.flat
+            + _dry(moisture, centre) * tuning.scores.dry
+            + min(apart / FRAME.cells_x, 1.0) * tuning.scores.apart
+        )
+        if best is None or score > best[0]:
+            best = (score, site, centre)
+    if best is None:
+        raise Retry(f"nowhere to stand {building_id}")
+    others.append(best[2])
+    return best[1]
 
 
 def _stand(
@@ -241,22 +258,54 @@ def _stand(
     band: tuple[int, int],
 ) -> Site:
     """Stand one building near where it belongs, taking the first candidate that holds together."""
-    spread = tuning.cluster_radius + max(kind.width, kind.height)
+    spread = tuning.reach + max(kind.width, kind.height)
     for _ in range(tuning.budget):
         origin = (
             wanted[0] + stream.randint(-spread, spread),
             wanted[1] + stream.randint(-spread, spread),
         )
-        start = stream.randrange(len(_FACINGS))
-        for turn in range(len(_FACINGS)):
-            facing = _FACINGS[(start + turn) % len(_FACINGS)]
-            site = _site(building_id, kind, origin, facing, tuning)
-            if site is None or not _clear(rows, site, reserved, band):
-                continue
-            # The doorway has to open toward ground a footpath can carry back to the road.
-            if any(cell in joinable for cell in site.approaches):
-                return site
+        site = _candidate(stream, rows, building_id, kind, origin, reserved, joinable, tuning, band)
+        if site is not None:
+            return site
     raise Retry(f"nowhere to stand {building_id}")
+
+
+def _candidate(
+    stream: random.Random,
+    rows: list[list[str]],
+    building_id: str,
+    kind: BuildingType,
+    origin: Cell,
+    reserved: set[Cell],
+    joinable: frozenset[Cell],
+    tuning: Sites,
+    band: tuple[int, int],
+) -> Site | None:
+    """Try the ways a door may face from here, and take the first site that holds together."""
+    facings = _facings(origin[1], band)
+    start = stream.randrange(len(facings))
+    for turn in range(len(facings)):
+        site = _site(building_id, kind, origin, facings[(start + turn) % len(facings)], tuning)
+        if site is None or not _clear(rows, site, reserved, band):
+            continue
+        # The doorway has to open toward ground a footpath can carry back to the road.
+        if any(cell in joinable for cell in site.approaches):
+            return site
+    return None
+
+
+def _facings(row: int, band: tuple[int, int]) -> tuple[str, ...]:
+    """The ways a door may face from a row. A door never opens away from the road.
+
+    A site and its margin stand clear of the band, so a building is either north of the road or
+    south of it, and the way that turns its back on the road is the one it may not face. A
+    candidate straddling the band keeps all four, and is turned down for standing there at all.
+    """
+    if row > band[1]:
+        return tuple(facing for facing in _FACINGS if facing != "north")
+    if row < band[0]:
+        return tuple(facing for facing in _FACINGS if facing != "south")
+    return _FACINGS
 
 
 def _site(building_id: str, kind: BuildingType, origin: Cell, facing: str, tuning: Sites) -> Site | None:

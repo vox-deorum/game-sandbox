@@ -16,7 +16,7 @@
     "entry_band": [34, 66],
     "fork_band": [16, 28],
     "trunk_width": [5, 7],
-    "channel_width": [3, 5],
+    "channel_width": [2, 4s],
     "mouth_separation": 16,
     "mouth_slack": 5,
     "edge_straight": 5,
@@ -24,7 +24,7 @@
     "fork_radius": 7.0,
     "fork_steps": 12,
     "fan_degrees": 55.0,
-    "clearance": 4.0,
+    "clearance": 3.0,
     "mouth_budget": 40,
     "walker": {
       "step": 1.5,
@@ -38,7 +38,7 @@
       "wobble": 0.14,
       "edge_push": 0.8,
       "separation": 1.6,
-      "look_ahead": 6.0,
+      "look_ahead": 5.0,
       "meander": 0.4,
       "meander_wavelength": [16, 30]
     }
@@ -99,12 +99,9 @@
   },
   "sites": {
     "margin": 2,
-    "cluster_count": 3,
-    "cluster_radius": 6,
     "plaza_radius": 3.5,
-    "plaza_reach": 14,
+    "reach": 14,
     "budget": 120,
-    "cluster_budget": 40,
     "scores": {"bank": 1.0, "flat": 0.8, "dry": 0.6, "apart": 1.2}
   },
   "accessories": {

@@ -35,7 +35,7 @@ Water and wall are impassable. Wall alone blocks sight. Door ground carries sigh
 
 - The raised road enters from the west, winds across the village past each district anchor, exits east, and uses width `network.road.width`.
 - It runs south of the fork, crosses each channel exactly once at a straight cut no longer than `network.road.crossing_run`, never crosses the trunk, and paints bridge ground over water with `network.road.apron` of bank on each side.
-- Footpaths curve from the road to the well plaza, each home cluster, and each shrine at width `network.path.width`. Routes do not run straight for long.
+- Footpaths curve from the road to the well plaza, each home, and each shrine at width `network.path.width`. Routes do not run straight for long. The farthest is worn first, so the nearer ones join it rather than running their own line back to the road.
 - The connectivity flood fill uses the same body clearance as physics.
 - The visitor spawns on a road cell `network.spawn.edge_inset` from the west edge, with `network.spawn.clearance` free of every footprint.
 
@@ -47,15 +47,15 @@ Districts are anchors placed on the terrain before the road exists. Each stands 
 - The market anchors the middle stretch of the road band, with loosely scattered stalls and the notice board, and the road passes through it.
 - The inn anchors the east stretch and faces the road that reaches it.
 - The repair shed and beacon bell anchor the west stretch, beside the road.
-- Homes form `sites.cluster_count` loose bank-side clusters. Each has a footpath and, when necessary, a crossing.
-- Fields terrace between home clusters and the south edge, following channel curves.
+- Homes stand on bank-side ground among the channels, south of the fork, level, dry, and clear of one another. Each has a footpath and, when necessary, a crossing.
+- Fields terrace between the homes and the south edge, following channel curves.
 
 ## Buildings and interiors
 
 Building types and dimensions are in the [canonical catalog](ruleset.md#canonical-catalog). An instance is a semantic group: homes provide ids, while inn and shed identify interior prop placement.
 
 - A site is an unrotated axis-aligned rectangle. Its selected doorway side paints floor inside, wall around the perimeter, and a 2-cell door run through that side.
-- Doorways face their planned footpath approach and open to walkable cells, never water, another footprint, or the boundary.
+- Doorways face their planned footpath approach and open to walkable cells, never water, another footprint, or the boundary. A door never opens away from the road: a building north of the road band may not face north, and one south of it may not face south.
 - Walls block movement, sight, presence, and speech. Doorways carry all four.
 - The inn hearth and repair bench sit inside against the wall opposite the doorway. Homes have no interior props. Each home has an outside garden plot flush with the exterior wall opposite its doorway. When centering an odd-size difference, use the lower-index position.
 - Homes are numbered `home_0` through `home_4` in placement order. [Ruleset home assignment](ruleset.md#the-village) maps NPCs to them. Cast size does not change the layout.
@@ -96,11 +96,11 @@ Every seed satisfies:
 
 | Group | What it holds |
 | --- | --- |
-| `fields` | Elevation, moisture, and going noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. Going is the small-scale texture the footpath search reads. |
+| `fields` | Elevation and moisture noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. |
 | `water` | `entry_band`, `fork_band`, `trunk_width`, `channel_width`, `mouth_separation`, `edge_margin`, walker step and brush, and momentum, downhill, and fork-pull weights. |
 | `grounds` | Moisture and elevation thresholds for reed and field, plus majority-smoothing passes. |
-| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width, merge discount, wander, and crossing run and cost; `spawn` `edge_inset` and `clearance`. |
-| `sites` | `margin`, `cluster_count`, and bank scores for proximity, flatness, dryness, and separation. |
+| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width, merge discount, crossing run and cost, and its walker step, budget, reroute, momentum, meander and wobble; `spawn` `edge_inset` and `clearance`. |
+| `sites` | `margin`, `plaza_radius`, `reach`, candidate `budget`, and home scores for bank proximity, flatness, dryness, and separation. |
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |
 

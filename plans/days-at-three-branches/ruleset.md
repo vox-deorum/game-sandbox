@@ -52,9 +52,11 @@ The complete static layout is standing knowledge: ground, crossings, walls, door
 
 | Token | Site cells | Count | Site painting | Interior props |
 | --- | --- | --- | --- | --- |
-| home | 6 by 5 | 5 | floor inside, wall around the perimeter, a 2-cell doorway run through one side | none |
-| inn | 10 by 8 | 1 | the same | the hearth |
-| shed | 6 by 6 | 1 | the same | the repair bench |
+| home | 8 by 7 | 5 | floor inside, wall around the perimeter, a 2-cell doorway run through one side | none |
+| inn | 12 by 10 | 1 | the same | the hearth |
+| shed | 8 by 8 | 1 | the same | the repair bench |
+
+The wall ring takes a cell off each side, so a site's floor is its cells less two in each direction.
 
 ### Interactive prop types
 

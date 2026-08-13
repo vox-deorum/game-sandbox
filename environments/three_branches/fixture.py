@@ -55,15 +55,18 @@ def build_fixture() -> Layout:
     )
     for building in buildings:
         paint_site(rows, building)
-    # Footpaths terminate on a doorway cell and originate from the road or a connected path.
+    # Footpaths terminate on a doorway or its approach, and originate from the road or a path
+    # already painted. Each leg keeps clear of the building rectangles, which paint first.
     for start, end in (
         ((12, 51), (8, 61)),
-        ((12, 61), (8, 77)),
+        ((8, 61), (4, 77)),
+        ((4, 77), (8, 77)),
         ((68, 51), (66, 61)),
         ((88, 51), (87, 69)),
-        ((10, 51), (10, 39)),
-        ((68, 51), (67, 28)),
-        ((10, 51), (11, 22)),
+        ((10, 51), (10, 42)),
+        ((68, 51), (67, 30)),
+        ((10, 51), (5, 30)),
+        ((5, 30), (11, 22)),
         ((43, 51), (45, 60)),
     ):
         _path(rows, start, end)
@@ -89,11 +92,11 @@ def build_fixture() -> Layout:
         PlacedProp("shrine_0", "shrine", (20, 57)),
         PlacedProp("shrine_1", "shrine", (80, 57)),
         PlacedProp("board_0", "board", (48, 44)),
-        PlacedProp("plot_0", "plot", (6, 68)),
-        PlacedProp("plot_1", "plot", (6, 84)),
-        PlacedProp("plot_2", "plot", (64, 68)),
-        PlacedProp("plot_3", "plot", (84, 76)),
-        PlacedProp("plot_4", "plot", (7, 32)),
+        PlacedProp("plot_0", "plot", (7, 69)),
+        PlacedProp("plot_1", "plot", (7, 85)),
+        PlacedProp("plot_2", "plot", (65, 69)),
+        PlacedProp("plot_3", "plot", (86, 77)),
+        PlacedProp("plot_4", "plot", (9, 33)),
         PlacedProp("hearth_0", "hearth", (70, 21)),
         PlacedProp("repair_bench_0", "repair_bench", (10, 16)),
         PlacedProp("pump_0", "pump", (45, 60)),

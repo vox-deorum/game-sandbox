@@ -51,13 +51,17 @@ describe('Three Branches pure scene', () => {
     const village = readStatic(fixtureRecording().header)
     const bench = village.props.find((item) => item.type === 'bench')
     if (bench === undefined) throw new Error('the fixture has no bench to turn.')
-    const upright = buildStaticScene(village).props.find((item) => item.id === bench.id)
-    const turned = buildStaticScene({
-      ...village,
-      props: village.props.map((item) =>
-        item.id === bench.id ? { ...item, facing: 'east' } : item,
-      ),
-    }).props.find((item) => item.id === bench.id)
+    // Both facings are set here rather than read off the fixture, so regenerating the recording
+    // cannot quietly hand this the bench already turned and leave it asserting nothing.
+    const facing = (direction: typeof bench.facing) =>
+      buildStaticScene({
+        ...village,
+        props: village.props.map((item) =>
+          item.id === bench.id ? { ...item, facing: direction } : item,
+        ),
+      }).props.find((item) => item.id === bench.id)
+    const upright = facing('north')
+    const turned = facing('east')
     expect(upright?.rect.width).not.toBe(upright?.rect.height)
     expect(turned?.rect.width).toBe(upright?.rect.height)
     expect(turned?.rect.height).toBe(upright?.rect.width)

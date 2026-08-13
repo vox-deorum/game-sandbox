@@ -26,7 +26,7 @@ import heapq
 import random
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from math import pi, sqrt
+from math import inf, pi, sqrt
 
 from ..grid import Cell, Point
 from ..rules import FRAME, GROUND_BY_CODE
@@ -122,19 +122,20 @@ def lay_footpaths(
     forbidden: frozenset[Cell],
     tuning: Path,
 ) -> Footpaths:
-    """Plan and walk one footpath to each target group, in the order given.
+    """Plan and walk one footpath to each target group, the farthest from the road first.
 
-    Each route is worn before the next is planned, so later routes see the paths already there and
-    join them. A channel one route bridged is closed to the rest, which is what holds every channel
-    to at most one footpath crossing.
+    Each route is worn before the next is planned, so whichever goes first lays the way the rest
+    join. Starting at the far end grows one path with spurs off it, where starting at the near end
+    grows a bundle of separate lines that happen to run alongside each other. A channel one route
+    bridged is closed to the rest, which is what holds every channel to at most one crossing.
     """
     painted: set[Cell] = set()
     crossings: list[Crossing] = []
-    for group in targets:
+    for group in _farthest_first(rows, courses, targets, forbidden, tuning):
         wanted = frozenset(group)
         if not wanted:
             continue
-        found = _search(
+        target, _, came = _relax(
             rows,
             courses,
             _sources(rows),
@@ -143,9 +144,9 @@ def lay_footpaths(
             frozenset(crossing.channel for crossing in crossings),
             tuning,
         )
-        if found is None:
+        if target is None:
             raise Retry("a footpath target could not be reached from the road")
-        worn, crossed = _wear(stream, rows, _plan(rows, found), forbidden, tuning)
+        worn, crossed = _wear(stream, rows, _plan(rows, (target, came)), forbidden, tuning)
         painted.update(worn)
         crossings.extend(crossed)
         # A route arrives at one cell of a doorway's approach. The rest of it is the same doorstep,
@@ -161,7 +162,7 @@ def lay_footpaths(
 _Trail = dict[Cell, tuple[Cell, tuple[Cell, ...], int]]
 
 
-def _search(
+def _relax(
     rows: list[list[str]],
     courses: Water,
     starts: tuple[Cell, ...],
@@ -169,8 +170,12 @@ def _search(
     forbidden: frozenset[Cell],
     banned: frozenset[int],
     tuning: Path,
-) -> tuple[Cell, _Trail] | None:
-    """Run the weighted search, returning the target reached and the trail that reached it."""
+) -> tuple[Cell | None, dict[Cell, float], _Trail]:
+    """Spread cost out from the ways that already carry people, stopping at the first target.
+
+    Asked for a target it can never reach, it settles every cell instead, which is how the routes
+    are put in order before any of them is worn.
+    """
     channels = {cell: index for index, channel in enumerate(courses.channels) for cell in channel}
     best: dict[Cell, float] = {}
     came: _Trail = {}
@@ -184,7 +189,7 @@ def _search(
         if cost > best.get(cell, cost):
             continue
         if is_target(cell):
-            return cell, came
+            return cell, best, came
         for spot, water_cells, channel, price in _moves(
             rows, courses, channels, cell, forbidden, banned, tuning
         ):
@@ -193,7 +198,29 @@ def _search(
                 best[spot] = through
                 came[spot] = (cell, water_cells, channel)
                 heapq.heappush(queue, (through, spot))
-    return None
+    return None, best, came
+
+
+def _farthest_first(
+    rows: list[list[str]],
+    courses: Water,
+    targets: tuple[tuple[Cell, ...], ...],
+    forbidden: frozenset[Cell],
+    tuning: Path,
+) -> tuple[tuple[Cell, ...], ...]:
+    """Put the target the road is furthest from first, and the one under its feet last."""
+    _, costs, _ = _relax(rows, courses, _sources(rows), _unreachable, forbidden, frozenset(), tuning)
+    return tuple(sorted(targets, key=lambda group: (-_nearest(costs, group), group)))
+
+
+def _nearest(costs: dict[Cell, float], group: tuple[Cell, ...]) -> float:
+    """What the cheapest way into a target group costs, or infinity when there is none."""
+    return min((costs[cell] for cell in group if cell in costs), default=inf)
+
+
+def _unreachable(cell: Cell) -> bool:
+    """A target the search can never arrive at, which is what makes it settle the whole map."""
+    return False
 
 
 def _plan(rows: list[list[str]], found: tuple[Cell, _Trail]) -> tuple[_Leg, ...]:

@@ -290,7 +290,7 @@ class Network:
 
 @dataclass(frozen=True, slots=True)
 class Scores:
-    """What a home cluster is looking for. Higher weight means the term counts for more."""
+    """What a home is looking for. Higher weight means the term counts for more."""
 
     bank: float
     flat: float
@@ -304,17 +304,14 @@ class Sites:
 
     # Clear cells kept around every site, which is also the room a garden grows in.
     margin: int
-    # Loose bank-side groups the five homes are shared between.
-    cluster_count: int
-    # Cells from a cluster centre a home of that cluster may stand.
-    cluster_radius: int
-    # The well plaza: how far it reaches around its centre, and how far from the fork it is sought.
+    # How far the well plaza reaches around its centre.
     plaza_radius: float
-    plaza_reach: int
-    # Candidates drawn for one anchor or one building, and for one cluster centre. Running out of
-    # either discards the layout and draws it again.
+    # How far from what a search is aimed at it may look: the plaza from the fork, and the inn and
+    # the shed from their anchors. A home is not aimed at anything, so it looks everywhere it may.
+    reach: int
+    # Candidates drawn for one anchor or one building. Running out discards the layout and draws
+    # it again.
     budget: int
-    cluster_budget: int
     scores: Scores
 
 
@@ -523,12 +520,9 @@ def _sites(value: Any) -> Sites:
     scores = mapping(data["scores"], "sites.scores", set(Scores.__dataclass_fields__))
     return Sites(
         positive_int(data["margin"], "sites.margin"),
-        positive_int(data["cluster_count"], "sites.cluster_count"),
-        positive_int(data["cluster_radius"], "sites.cluster_radius"),
         positive_number(data["plaza_radius"], "sites.plaza_radius"),
-        positive_int(data["plaza_reach"], "sites.plaza_reach"),
+        positive_int(data["reach"], "sites.reach"),
         positive_int(data["budget"], "sites.budget"),
-        positive_int(data["cluster_budget"], "sites.cluster_budget"),
         Scores(
             nonnegative_number(scores["bank"], "sites.scores.bank"),
             nonnegative_number(scores["flat"], "sites.scores.flat"),

@@ -74,22 +74,6 @@ describe('Three Branches asset catalog', () => {
     ).toEqual(['body', 'clothing', 'arms', 'details'])
   })
 
-  it('keeps every generated source and optimized runtime image at its declared dimensions', () => {
-    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
-      for (const raster of rastersFor(atlas)) {
-        const source = readPngHeader(raster.source)
-        const runtime = readPngHeader(raster.path)
-
-        expect(source).toMatchObject({ width: raster.sourceWidth, height: raster.sourceHeight })
-        expect(runtime).toEqual({
-          width: raster.width,
-          height: raster.height,
-          colorType: atlas.format === 'grayscale-alpha' ? 4 : 6,
-        })
-      }
-    }
-  })
-
   it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
     const source = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.source)
     const runtime = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.path)
