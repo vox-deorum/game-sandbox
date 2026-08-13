@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from math import isfinite
 
-from three_branches.catalog import CATALOG
+from three_branches.catalog import CATALOG, PROP_BY_TOKEN
 from three_branches.engine import Day, step
 from three_branches.fixture import build_fixture
 from three_branches.geometry import Circle, Rect, distance, nearest_point
+from three_branches.layout import PlacedProp, Scenery, footprint, footprint_cells
 from three_branches.physics import Physics
 from three_branches.rules import GROUND_BY_CODE, PROFILE
 
@@ -70,6 +72,28 @@ def test_layout_shapes_and_static_projection_are_distinct() -> None:
             for x in range(max(0, item.cell[0] - 2), min(100, item.cell[0] + 4))
             for y in range(max(0, item.cell[1] - 2), min(100, item.cell[1] + 4))
         )
+
+
+def test_a_prop_footprint_turns_with_an_east_or_west_facing() -> None:
+    layout = build_fixture()
+    bench = PlacedProp("bench_turned", "bench", (10, 10))
+    kind = PROP_BY_TOKEN["bench"]
+    assert kind.width != kind.height
+    for facing, expected in (
+        ("north", (kind.width, kind.height)),
+        ("south", (kind.width, kind.height)),
+        ("east", (kind.height, kind.width)),
+        ("west", (kind.height, kind.width)),
+    ):
+        turned = replace(bench, facing=facing)
+        assert footprint(turned) == expected
+        assert len(set(footprint_cells(turned))) == kind.width * kind.height
+        shape = layout.shape_for(turned)
+        assert isinstance(shape, Rect)
+        assert (shape.width, shape.height) == expected
+    # A circle prop measures the same either way, and scenery has no facing to turn with.
+    assert footprint(PlacedProp("pump_turned", "pump", (10, 10), "east")) == (1, 1)
+    assert footprint(Scenery("crate", (10, 10))) == (1, 1)
 
 
 def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> None:

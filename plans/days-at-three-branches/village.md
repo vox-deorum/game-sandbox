@@ -66,7 +66,7 @@ The [canonical catalog](ruleset.md#canonical-catalog) owns interactive types, ac
 
 - Stalls sit on both market-road sides. Lanterns use road stations, denser at market. Benches go at the well plaza, market, and inn front. Shrines stand where the road turns most sharply, and the notice board is in the market.
 - Garden plots use the home-doorway rule. The hearth and repair bench use their interior placements. The pump is in the well plaza and the bell beside the west road.
-- An interactive prop reserves its catalog rectangle, uses its catalog collision shape, faces a cardinal direction, and is never angled. Its underlying ground remains unchanged.
+- An interactive prop faces a cardinal direction and reserves its catalog rectangle turned to that facing, so facing east or west trades the rectangle's width and height. It uses its catalog collision shape, stays axis-aligned, and is never angled. Its underlying ground remains unchanged.
 - Every interactive prop has a connected, body-clear standing cell within ruleset reach of its collision shape and an unblocked line to it.
 
 ## Scenery
@@ -96,10 +96,10 @@ Every seed satisfies:
 
 | Group | What it holds |
 | --- | --- |
-| `fields` | Elevation and moisture noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. |
+| `fields` | Elevation, moisture, and going noise: lattice spacing, octave count, per-octave spacing and amplitude, and southward slope bias. Going is the small-scale texture the footpath search reads. |
 | `water` | `entry_band`, `fork_band`, `trunk_width`, `channel_width`, `mouth_separation`, `edge_margin`, walker step and brush, and momentum, downhill, and fork-pull weights. |
 | `grounds` | Moisture and elevation thresholds for reed and field, plus majority-smoothing passes. |
-| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width and merge discount; `spawn` `edge_inset` and `clearance`. |
+| `network` | `road` width, band, apron, crossing run, water clearance, anchor swing and reach, and its walker step, budget, blends, meander and wobble; `path` width, merge discount, wander, and crossing run and cost; `spawn` `edge_inset` and `clearance`. |
 | `sites` | `margin`, `cluster_count`, and bank scores for proximity, flatness, dryness, and separation. |
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |

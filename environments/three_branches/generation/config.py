@@ -6,8 +6,12 @@ generation package imports, and the cross-group checks at the end of ``load`` ar
 keeps the guarantees reachable: three mouths fit the south edge, and the widest trunk enters inside
 its band. They bound what tuning allows, and each stage still checks the village it actually drew.
 
-A group lands when its stage lands, so every number shipped here has a consumer. The road, its
-crossings, and the spawn arrive with the settlement work, and bring the ``network`` group with them.
+A group lands when its stage lands, so every number shipped here has a consumer.
+
+A ``budget`` is a candidate budget: how many placements a mandatory stage may draw and test before
+it gives up, discards the layout, and draws again. ``step_budget`` is not one of those; it counts a
+walker's steps. Lantern and pine placement carries no budget at all, because an invalid spot there
+is skipped rather than redrawn.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from importlib import resources
 from math import ceil
 from typing import Any
 
+from ..catalog import PROP_BY_TOKEN
 from ..rules import FRAME
 from ..validation import mapping, nonnegative_number, positive_int, positive_number
 
@@ -72,6 +77,9 @@ class Fields:
     elevation_octaves: tuple[Octave, ...]
     # Shapes where reeds and fields grow, and which ground the road will prefer.
     moisture_octaves: tuple[Octave, ...]
+    # The small-scale texture a footpath threads through. Its spacings are the finest of the three,
+    # because a route only bends where the going changes over a few cells rather than over tens.
+    going_octaves: tuple[Octave, ...]
     # How much elevation is lifted toward the north, which is what sends the water south. Zero
     # leaves the noise alone and one flattens it into a pure slope.
     south_bias: float
@@ -176,10 +184,215 @@ class Grounds:
 
 
 @dataclass(frozen=True, slots=True)
+class RoadWalker:
+    """How the road steers. It carries a brush the way ``Walker`` describes, with its own terms.
+
+    The road climbs toward drier ground rather than running downhill, and it is fenced by its band
+    and by the water instead of by the frame edges.
+    """
+
+    step: float
+    step_budget: int
+    self_ignore: int
+    reroute_attempts: int
+    reroute_degrees: float
+    momentum: tuple[float, float]
+    # Weight on the climb toward drier ground. The road reads moisture and not elevation, because
+    # the southward elevation bias runs one way across the band and would pin the road to its edge.
+    dry: tuple[float, float]
+    pull: tuple[float, float]
+    wobble: float
+    # Strength of the turn back toward the middle of the road band.
+    band_push: float
+    # Strength of the turn away from water the road is not crossing.
+    water_push: float
+    look_ahead: float
+    meander: float
+    meander_wavelength: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class Roadway:
+    """The raised road, its bridges, and the band it winds inside."""
+
+    # Cells across the road. Odd, for the same reason a water course is.
+    width: int
+    # Rows the road may occupy. It is a hard wall: the road is turned back before it reaches one.
+    band: tuple[int, int]
+    # Cells of dry bank a bridge lands on at each end.
+    apron: int
+    # Longest straight cut a bridge may take across a channel, aprons included.
+    crossing_run: int
+    # Cells of land the road keeps between itself and water it is not crossing.
+    water_clearance: float
+    # Rows a district anchor's road target may be drawn away from the anchor, so the road passes
+    # beside it differently each seed, and how close counts as passing it.
+    anchor_swing: int
+    anchor_reach: float
+    # Cells at each frame edge over which the road runs straight, so its ends come out square.
+    edge_straight: int
+    walker: RoadWalker
+
+
+@dataclass(frozen=True, slots=True)
+class Path:
+    """Footpaths, which are searched rather than walked."""
+
+    width: int
+    # How much cheaper an existing path cell is to reuse, which is what makes spurs share a route.
+    merge_discount: float
+    # How much harder wet, uneven going is than the shortest line. Ground cost alone is the same
+    # everywhere open, which walks a route dead straight; this is what bends it round the terrain.
+    wander: float
+    # Longest straight run a footpath may take across a channel.
+    crossing_run: int
+    # What one cell of that crossing costs the search, keeping a bridge a last resort.
+    crossing_cost: float
+
+
+@dataclass(frozen=True, slots=True)
+class Spawn:
+    """Where the visitor opens the day."""
+
+    # Cells east of the west frame edge, along the road's straight entry run.
+    edge_inset: int
+    # Radius around the spawn that no footprint may enter.
+    clearance: float
+
+
+@dataclass(frozen=True, slots=True)
+class Network:
+    road: Roadway
+    path: Path
+    spawn: Spawn
+
+
+@dataclass(frozen=True, slots=True)
+class Scores:
+    """What a home cluster is looking for. Higher weight means the term counts for more."""
+
+    bank: float
+    flat: float
+    dry: float
+    apart: float
+
+
+@dataclass(frozen=True, slots=True)
+class Sites:
+    """District anchors and the building sites placed against them."""
+
+    # Clear cells kept around every site, which is also the room a garden grows in.
+    margin: int
+    # Loose bank-side groups the five homes are shared between.
+    cluster_count: int
+    # Cells from a cluster centre a home of that cluster may stand.
+    cluster_radius: int
+    # The well plaza: how far it reaches around its centre, and how far from the fork it is sought.
+    plaza_radius: float
+    plaza_reach: int
+    # Candidates drawn for one anchor or one building, and for one cluster centre. Running out of
+    # either discards the layout and draws it again.
+    budget: int
+    cluster_budget: int
+    scores: Scores
+
+
+@dataclass(frozen=True, slots=True)
+class Spot:
+    """A lone prop placed beside something already committed: the board, the bell, the pump."""
+
+    budget: int
+
+
+@dataclass(frozen=True, slots=True)
+class Stall:
+    """Market stalls, scattered along both sides of the road through the market."""
+
+    count: int
+    # Cells of road between stall stations, and the road either side of the market they spread over.
+    spacing: int
+    span: int
+    budget: int
+
+
+@dataclass(frozen=True, slots=True)
+class Bench:
+    """Benches, split between the three places people wait."""
+
+    plaza: int
+    market: int
+    inn: int
+    budget: int
+
+
+@dataclass(frozen=True, slots=True)
+class Shrine:
+    """Roadside shrines, which stand where the road turns hardest."""
+
+    count: int
+    # Cells of road kept between two shrines, and the road either side of a turn its sharpness is
+    # measured over. A wide window reads the shape of a bend rather than one step's wobble.
+    separation: int
+    window: int
+    budget: int
+
+
+@dataclass(frozen=True, slots=True)
+class Lantern:
+    """Lantern posts along the road, closer together where the market is. Optional: a blocked
+    station is skipped rather than redrawn."""
+
+    spacing: int
+    market_spacing: int
+
+
+@dataclass(frozen=True, slots=True)
+class Crate:
+    """Market crates. Each stall gets one, and sometimes a second."""
+
+    second_chance: float
+    budget: int
+
+
+@dataclass(frozen=True, slots=True)
+class Pine:
+    """Red pines, placed last. Optional, like lanterns."""
+
+    # Cells of road between pine stations, and open cells tried away from the road.
+    spacing: int
+    scatter: int
+    # Cells kept between two pines, so a stand reads as trees rather than a hedge.
+    gap: int
+    # How often a pine brings neighbours, and how many it may bring.
+    companion_chance: float
+    companions: int
+
+
+@dataclass(frozen=True, slots=True)
+class Accessories:
+    """Everything placed once the ground, the buildings, and the routes are committed."""
+
+    # Cells between the road edge and anything standing beside it.
+    setback: int
+    stall: Stall
+    board: Spot
+    bench: Bench
+    shrine: Shrine
+    lantern: Lantern
+    bell: Spot
+    pump: Spot
+    crate: Crate
+    pine: Pine
+
+
+@dataclass(frozen=True, slots=True)
 class Generation:
     fields: Fields
     water: Water
     grounds: Grounds
+    network: Network
+    sites: Sites
+    accessories: Accessories
     # Whole layouts one seed may draw before generation gives up and raises. A draw is discarded
     # when a mandatory stage runs out of room, and the next one continues on the same stream.
     redraw_cap: int
@@ -217,13 +430,143 @@ def _walker(value: Any) -> Walker:
     )
 
 
+def _road_walker(value: Any) -> RoadWalker:
+    data = mapping(value, "network.road.walker", set(RoadWalker.__dataclass_fields__))
+    name = "network.road.walker"
+    return RoadWalker(
+        positive_number(data["step"], f"{name}.step"),
+        positive_int(data["step_budget"], f"{name}.step_budget"),
+        positive_int(data["self_ignore"], f"{name}.self_ignore"),
+        positive_int(data["reroute_attempts"], f"{name}.reroute_attempts"),
+        positive_number(data["reroute_degrees"], f"{name}.reroute_degrees"),
+        _number_range(data["momentum"], f"{name}.momentum"),
+        _number_range(data["dry"], f"{name}.dry"),
+        _number_range(data["pull"], f"{name}.pull"),
+        nonnegative_number(data["wobble"], f"{name}.wobble"),
+        nonnegative_number(data["band_push"], f"{name}.band_push"),
+        nonnegative_number(data["water_push"], f"{name}.water_push"),
+        positive_number(data["look_ahead"], f"{name}.look_ahead"),
+        nonnegative_number(data["meander"], f"{name}.meander"),
+        _int_range(data["meander_wavelength"], f"{name}.meander_wavelength"),
+    )
+
+
+def _network(value: Any) -> Network:
+    data = mapping(value, "generation.network", set(Network.__dataclass_fields__))
+    road_data = mapping(data["road"], "network.road", set(Roadway.__dataclass_fields__))
+    path_data = mapping(data["path"], "network.path", set(Path.__dataclass_fields__))
+    spawn_data = mapping(data["spawn"], "network.spawn", set(Spawn.__dataclass_fields__))
+    return Network(
+        Roadway(
+            positive_int(road_data["width"], "network.road.width"),
+            _int_range(road_data["band"], "network.road.band"),
+            positive_int(road_data["apron"], "network.road.apron"),
+            positive_int(road_data["crossing_run"], "network.road.crossing_run"),
+            positive_number(road_data["water_clearance"], "network.road.water_clearance"),
+            positive_int(road_data["anchor_swing"], "network.road.anchor_swing"),
+            positive_number(road_data["anchor_reach"], "network.road.anchor_reach"),
+            positive_int(road_data["edge_straight"], "network.road.edge_straight"),
+            _road_walker(road_data["walker"]),
+        ),
+        Path(
+            positive_int(path_data["width"], "network.path.width"),
+            _fraction(path_data["merge_discount"], "network.path.merge_discount"),
+            nonnegative_number(path_data["wander"], "network.path.wander"),
+            positive_int(path_data["crossing_run"], "network.path.crossing_run"),
+            positive_number(path_data["crossing_cost"], "network.path.crossing_cost"),
+        ),
+        Spawn(
+            positive_int(spawn_data["edge_inset"], "network.spawn.edge_inset"),
+            positive_number(spawn_data["clearance"], "network.spawn.clearance"),
+        ),
+    )
+
+
+def _sites(value: Any) -> Sites:
+    data = mapping(value, "generation.sites", set(Sites.__dataclass_fields__))
+    scores = mapping(data["scores"], "sites.scores", set(Scores.__dataclass_fields__))
+    return Sites(
+        positive_int(data["margin"], "sites.margin"),
+        positive_int(data["cluster_count"], "sites.cluster_count"),
+        positive_int(data["cluster_radius"], "sites.cluster_radius"),
+        positive_number(data["plaza_radius"], "sites.plaza_radius"),
+        positive_int(data["plaza_reach"], "sites.plaza_reach"),
+        positive_int(data["budget"], "sites.budget"),
+        positive_int(data["cluster_budget"], "sites.cluster_budget"),
+        Scores(
+            nonnegative_number(scores["bank"], "sites.scores.bank"),
+            nonnegative_number(scores["flat"], "sites.scores.flat"),
+            nonnegative_number(scores["dry"], "sites.scores.dry"),
+            nonnegative_number(scores["apart"], "sites.scores.apart"),
+        ),
+    )
+
+
+def _spot(value: Any, name: str) -> Spot:
+    return Spot(positive_int(mapping(value, name, {"budget"})["budget"], f"{name}.budget"))
+
+
+def _accessories(value: Any) -> Accessories:
+    data = mapping(value, "generation.accessories", set(Accessories.__dataclass_fields__))
+    stall = mapping(data["stall"], "accessories.stall", set(Stall.__dataclass_fields__))
+    bench = mapping(data["bench"], "accessories.bench", set(Bench.__dataclass_fields__))
+    shrine = mapping(data["shrine"], "accessories.shrine", set(Shrine.__dataclass_fields__))
+    lantern = mapping(data["lantern"], "accessories.lantern", set(Lantern.__dataclass_fields__))
+    crate = mapping(data["crate"], "accessories.crate", set(Crate.__dataclass_fields__))
+    pine = mapping(data["pine"], "accessories.pine", set(Pine.__dataclass_fields__))
+    return Accessories(
+        positive_int(data["setback"], "accessories.setback"),
+        Stall(
+            positive_int(stall["count"], "accessories.stall.count"),
+            positive_int(stall["spacing"], "accessories.stall.spacing"),
+            positive_int(stall["span"], "accessories.stall.span"),
+            positive_int(stall["budget"], "accessories.stall.budget"),
+        ),
+        _spot(data["board"], "accessories.board"),
+        Bench(
+            positive_int(bench["plaza"], "accessories.bench.plaza"),
+            positive_int(bench["market"], "accessories.bench.market"),
+            positive_int(bench["inn"], "accessories.bench.inn"),
+            positive_int(bench["budget"], "accessories.bench.budget"),
+        ),
+        Shrine(
+            positive_int(shrine["count"], "accessories.shrine.count"),
+            positive_int(shrine["separation"], "accessories.shrine.separation"),
+            positive_int(shrine["window"], "accessories.shrine.window"),
+            positive_int(shrine["budget"], "accessories.shrine.budget"),
+        ),
+        Lantern(
+            positive_int(lantern["spacing"], "accessories.lantern.spacing"),
+            positive_int(lantern["market_spacing"], "accessories.lantern.market_spacing"),
+        ),
+        _spot(data["bell"], "accessories.bell"),
+        _spot(data["pump"], "accessories.pump"),
+        Crate(
+            _fraction(crate["second_chance"], "accessories.crate.second_chance"),
+            positive_int(crate["budget"], "accessories.crate.budget"),
+        ),
+        Pine(
+            positive_int(pine["spacing"], "accessories.pine.spacing"),
+            positive_int(pine["scatter"], "accessories.pine.scatter"),
+            positive_int(pine["gap"], "accessories.pine.gap"),
+            _fraction(pine["companion_chance"], "accessories.pine.companion_chance"),
+            positive_int(pine["companions"], "accessories.pine.companions"),
+        ),
+    )
+
+
 def load(data: Any) -> Generation:
     """Validate a decoded generation document without accepting unrecognised data."""
-    root = mapping(data, "generation", {"fields", "water", "grounds", "redraw"})
+    root = mapping(
+        data,
+        "generation",
+        {"fields", "water", "grounds", "network", "sites", "accessories", "redraw"},
+    )
     fields_data = mapping(root["fields"], "generation.fields", set(Fields.__dataclass_fields__))
     field_tuning = Fields(
         _octaves(fields_data["elevation_octaves"], "fields.elevation_octaves"),
         _octaves(fields_data["moisture_octaves"], "fields.moisture_octaves"),
+        _octaves(fields_data["going_octaves"], "fields.going_octaves"),
         _fraction(fields_data["south_bias"], "fields.south_bias"),
     )
     water_data = mapping(root["water"], "generation.water", set(Water.__dataclass_fields__))
@@ -258,6 +601,9 @@ def load(data: Any) -> Generation:
         field_tuning,
         water_tuning,
         grounds_tuning,
+        _network(root["network"]),
+        _sites(root["sites"]),
+        _accessories(root["accessories"]),
         positive_int(redraw_data["cap"], "redraw.cap"),
     )
     _check_frame_arithmetic(tuning)
@@ -282,6 +628,27 @@ def _check_frame_arithmetic(tuning: Generation) -> None:
         raise ValueError("water.entry_band must keep the widest trunk inside water.edge_margin")
     if water.entry_band[1] + trunk_reach > FRAME.cells_x - 1 - water.edge_margin:
         raise ValueError("water.entry_band must keep the widest trunk inside water.edge_margin")
+    road = tuning.network.road
+    if road.width % 2 == 0:
+        raise ValueError("network.road.width must be odd, which is what a cell-centred brush paints")
+    if road.band[0] < 1 or road.band[1] >= FRAME.cells_y - 1:
+        raise ValueError("network.road.band must fall inside the frame")
+    if road.band[1] - road.band[0] + 1 < road.width + 4:
+        raise ValueError("network.road.band must be deep enough for the road to wind inside it")
+    if road.band[1] >= FRAME.cells_y - 1 - water.fork_band[1]:
+        raise ValueError("network.road.band must stay south of the deepest fork it may meet")
+    if road.crossing_run < water.channel_width[1] + 2 * road.apron:
+        raise ValueError("network.road.crossing_run must span the widest channel and both aprons")
+    path = tuning.network.path
+    if path.crossing_run < water.channel_width[1]:
+        raise ValueError("network.path.crossing_run must span the widest channel")
+    if tuning.network.spawn.edge_inset > road.edge_straight:
+        raise ValueError("network.spawn.edge_inset must land on the road's straight entry run")
+    if tuning.sites.margin < PROP_BY_TOKEN["plot"].height:
+        raise ValueError("sites.margin must leave room for a garden against a home wall")
+    stall = tuning.accessories.stall
+    if 2 * (stall.span // stall.spacing) + 1 < stall.count:
+        raise ValueError("accessories.stall.span and spacing leave too few stations for the stalls")
 
 
 GENERATION = load(

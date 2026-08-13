@@ -47,6 +47,23 @@ describe('Three Branches pure scene', () => {
     )
   })
 
+  it('turns a prop rectangle a quarter turn when it faces east or west', () => {
+    const village = readStatic(fixtureRecording().header)
+    const bench = village.props.find((item) => item.type === 'bench')
+    if (bench === undefined) throw new Error('the fixture has no bench to turn.')
+    const upright = buildStaticScene(village).props.find((item) => item.id === bench.id)
+    const turned = buildStaticScene({
+      ...village,
+      props: village.props.map((item) =>
+        item.id === bench.id ? { ...item, facing: 'east' } : item,
+      ),
+    }).props.find((item) => item.id === bench.id)
+    expect(upright?.rect.width).not.toBe(upright?.rect.height)
+    expect(turned?.rect.width).toBe(upright?.rect.height)
+    expect(turned?.rect.height).toBe(upright?.rect.width)
+    expect(turned?.rect.x).toBe(upright?.rect.x)
+  })
+
   it('is deterministic across seeks and reuses one static reference', () => {
     const { header, states } = fixtureRecording()
     const scene = buildStaticScene(readStatic(header))

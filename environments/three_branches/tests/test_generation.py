@@ -6,39 +6,160 @@ call in the browser. Bounds are read from ``generation.json`` rather than restat
 does not need a test edit. The one exception is the arithmetic test, which deliberately owns its
 numbers because it pins the conversions everything else relies on.
 
-Gate A covers the land: terrain, water, and ground classes. Buildings, props, scenery, and the
-spawn are still padded fixture content, so nothing here asserts anything about them beyond the one
-thing a day depends on, which is that the padded visitor can stand and walk.
+Guarantees are re-derived here rather than read back from the generator. The connected region is
+flooded again from the layout, and every prop's standing cell is found again from the catalog shape
+and the ruleset reach, so a test passes because the village holds up and not because the generator
+said so. The one reported record these tests read is the water masks, which no layout publishes.
 """
 
 from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from importlib import resources
 
 import pytest
 
+from three_branches.catalog import BUILDING_BY_TOKEN, CATALOG
 from three_branches.env import make_env
 from three_branches.generation import Report, build_village, carve, generate, grounds
 from three_branches.generation.config import GENERATION
+from three_branches.geometry import Circle, Rect, distance, nearest_point
 from three_branches.grid import Cell
-from three_branches.layout import Layout
-from three_branches.rules import FRAME
+from three_branches.layout import Building, Layout, footprint, footprint_cells
+from three_branches.rules import FRAME, PROFILE
 
 # Seed 0 is the reset default and seed 17 is the one the shared conformance suite rolls out.
 BATCH = (0, 1, 2, 3, 5, 7, 11, 17)
+HOMES = ("home_0", "home_1", "home_2", "home_3", "home_4")
 
 TUNING = json.loads(
     resources.files("three_branches.generation").joinpath("generation.json").read_text(encoding="utf-8")
 )
 WATER = TUNING["water"]
+ACCESSORIES = TUNING["accessories"]
+_ORDER = {kind.token: index for index, kind in enumerate(CATALOG.props)}
 
 
 @pytest.fixture(scope="module")
 def batch() -> dict[int, tuple[Layout, Report]]:
     """Build every pinned seed once and share it, so one suite run is one build per seed."""
     return {seed: generate(seed) for seed in BATCH}
+
+
+@pytest.fixture(scope="module")
+def connected(batch: dict[int, tuple[Layout, Report]]) -> dict[int, frozenset[Cell]]:
+    """Flood each village from its spawn, using the clearance physics uses.
+
+    This is derived here rather than taken from the generator, so the connectivity guarantee is
+    established from the layout the browser receives.
+    """
+    return {seed: _flood(layout) for seed, (layout, _) in batch.items()}
+
+
+def _flood(layout: Layout) -> frozenset[Cell]:
+    start = layout.grid.cell_at(layout.spawn)
+    if start is None or not layout.body_clear(layout.spawn):
+        return frozenset()
+    reached = {start}
+    pending = [start]
+    while pending:
+        cell = pending.pop()
+        here = layout.grid.center(cell)
+        for spot in layout.grid.neighbours(cell):
+            if spot in reached or not layout.body_clear(layout.grid.center(spot)):
+                continue
+            there = layout.grid.center(spot)
+            if not layout.body_clear(((here[0] + there[0]) / 2, (here[1] + there[1]) / 2)):
+                continue
+            reached.add(spot)
+            pending.append(spot)
+    return frozenset(reached)
+
+
+def _all_cells() -> tuple[Cell, ...]:
+    return tuple((x, y) for y in range(FRAME.cells_y) for x in range(FRAME.cells_x))
+
+
+def _around(cell: Cell) -> tuple[Cell, ...]:
+    x, y = cell
+    return ((x, y - 1), (x - 1, y), (x + 1, y), (x, y + 1))
+
+
+def _window(cell: Cell, width: int, height: int, reach: int) -> tuple[Cell, ...]:
+    x, y = cell
+    return tuple(
+        (column, row)
+        for row in range(y - reach, y + height + reach)
+        for column in range(x - reach, x + width + reach)
+        if 0 <= column < FRAME.cells_x and 0 <= row < FRAME.cells_y
+    )
+
+
+def _in_reach(layout: Layout, cell: Cell, shape: Rect | Circle) -> bool:
+    """The ruleset's own use rule: stand clear, within reach, with an unblocked line to the prop."""
+    centre = layout.grid.center(cell)
+    spot = nearest_point(centre, shape)
+    return (
+        layout.body_clear(centre)
+        and distance(centre, spot) <= PROFILE.prop_reach
+        and layout.line_clear(centre, spot)
+    )
+
+
+def _rectangle(building: Building) -> frozenset[Cell]:
+    kind = BUILDING_BY_TOKEN[building.type]
+    x, y = building.cell
+    return frozenset(
+        (column, row) for row in range(y, y + kind.height) for column in range(x, x + kind.width)
+    )
+
+
+def _grown(rectangle: frozenset[Cell], margin: int) -> frozenset[Cell]:
+    return (
+        frozenset(
+            (x + dx, y + dy)
+            for x, y in rectangle
+            for dx in range(-margin, margin + 1)
+            for dy in range(-margin, margin + 1)
+        )
+        - rectangle
+    )
+
+
+def _beside(item: object, building: Building) -> bool:
+    """Whether a placement touches a building's rectangle, which is where a garden belongs."""
+    rectangle = _rectangle(building)
+    return any(spot in rectangle for cell in footprint_cells(item) for spot in _around(cell))
+
+
+def _decks(layout: Layout, channel: frozenset[Cell]) -> tuple[frozenset[Cell], frozenset[Cell]]:
+    """Split a channel's bridge ground into the road's deck and any footpath's.
+
+    Both are bridge ground, so they are told apart by shape: the road decks a channel at its own
+    width, and a footpath decks it at a narrower one.
+    """
+    width = TUNING["network"]["road"]["width"]
+    road: set[Cell] = set()
+    walked: set[Cell] = set()
+    for piece in _pieces({cell for cell in _cells(layout, "b") if cell in channel}):
+        rows = {y for _, y in piece}
+        columns = {x for x, _ in piece}
+        (road if min(len(rows), len(columns)) >= width else walked).update(piece)
+    return frozenset(road), frozenset(walked)
+
+
+def _road_cells(layout: Layout, report: Report) -> set[Cell]:
+    """The road itself: its paved ground plus the decks it carries over the channels."""
+    road = _cells(layout, "r")
+    for channel in report.water.channels:
+        road |= _decks(layout, channel)[0]
+    return road
+
+
+def _without(layout: Layout, token: str) -> tuple[tuple[str, str, Cell, str], ...]:
+    return tuple((item.id, item.type, item.cell, item.facing) for item in layout.props if item.type != token)
 
 
 def _cells(layout: Layout, codes: str) -> set[Cell]:
@@ -95,7 +216,11 @@ def test_water_enters_north_and_leaves_south_in_three_separated_runs(
 ) -> None:
     for seed, (layout, report) in batch.items():
         water = _cells(layout, "w")
-        assert water == report.water.trunk.union(*report.water.channels), seed
+        courses = report.water.trunk.union(*report.water.channels)
+        # Every open water cell belongs to a course, and the only course cells that are not open
+        # water are the ones a bridge was decked over.
+        assert water <= courses, seed
+        assert courses - water <= _cells(layout, "b"), seed
 
         entry = _runs({x for x, y in report.water.trunk if y == FRAME.cells_y - 1})
         assert len(entry) == 1, seed
@@ -160,14 +285,261 @@ def test_reeds_only_grow_near_water(batch: dict[int, tuple[Layout, Report]]) -> 
             assert any(math.dist((x, y), spot) <= span for spot in water), (seed, (x, y))
 
 
-def test_the_padded_visitor_can_stand_and_walk(batch: dict[int, tuple[Layout, Report]]) -> None:
-    """Padding is out of review scope, but a day still has to run on it until the road arrives."""
+def test_stable_features_appear_once_and_prop_ids_run_without_a_gap(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    for seed, (layout, _) in batch.items():
+        assert {building.id for building in layout.buildings} == {*HOMES, "inn", "shed"}, seed
+        held: dict[str, list[str]] = {}
+        for item in layout.props:
+            held.setdefault(item.type, []).append(item.id)
+        for token in ("pump", "board", "hearth", "repair_bench", "bell"):
+            assert held[token] == [f"{token}_0"], (seed, token)
+        assert len(held["stall"]) == ACCESSORIES["stall"]["count"], seed
+        assert len(held["plot"]) == len(HOMES), seed
+        assert len(held["shrine"]) == ACCESSORIES["shrine"]["count"], seed
+        for token, ids in held.items():
+            numbers = sorted(int(name.rsplit("_", 1)[1]) for name in ids)
+            assert numbers == list(range(len(ids))), (seed, token)
+        # Catalog type order, then placement order within a type, is the published prop order.
+        order = [_ORDER[item.type] for item in layout.props]
+        assert order == sorted(order), seed
+
+
+def test_walkable_ground_forms_one_body_clear_region(
+    batch: dict[int, tuple[Layout, Report]], connected: dict[int, frozenset[Cell]]
+) -> None:
+    """The village's own ground is one region: no road, path, deck, doorway, or floor is cut off.
+
+    Open country beyond a channel is not the village and is not claimed to be reachable, so this
+    asks the question of the ground the village actually built.
+    """
+    for seed, (layout, _) in batch.items():
+        village = {
+            cell
+            for cell in _all_cells()
+            if layout.grid.value_at(cell) in "rpbdi" and layout.body_clear(layout.grid.center(cell))
+        }
+        assert village, seed
+        assert village <= connected[seed], (seed, sorted(village - connected[seed])[:6])
+
+
+def test_every_doorway_and_start_pose_joins_the_village(
+    batch: dict[int, tuple[Layout, Report]], connected: dict[int, frozenset[Cell]]
+) -> None:
+    for seed, (layout, _) in batch.items():
+        for building in layout.buildings:
+            doorway = layout.doorway(building.id)
+            assert len(doorway) == BUILDING_BY_TOKEN[building.type].door_width, (seed, building.id)
+            for cell in doorway:
+                assert layout.grid.value_at(cell) == "d", (seed, building.id)
+                assert cell in connected[seed], (seed, building.id, cell)
+            if building.type != "home":
+                continue
+            for resident in (0, 1):
+                pose = layout.residence_pose(building.id, resident)
+                assert layout.body_clear(pose.position), (seed, building.id, resident)
+                assert layout.grid.cell_at(pose.position) in connected[seed], (seed, building.id)
+
+
+def test_every_prop_has_an_independently_found_reachable_witness(
+    batch: dict[int, tuple[Layout, Report]], connected: dict[int, frozenset[Cell]]
+) -> None:
+    """Find a standing cell for each prop from the catalog and the ruleset, not from the report."""
+    for seed, (layout, report) in batch.items():
+        banked = dict(report.witnesses)
+        for item in layout.props:
+            shape = layout.shape_for(item)
+            width, height = footprint(item)
+            reach = math.ceil(PROFILE.prop_reach) + 1
+            found = [
+                cell
+                for cell in _window(item.cell, width, height, reach)
+                if cell in connected[seed] and _in_reach(layout, cell, shape)
+            ]
+            assert found, (seed, item.id)
+            # The generator's own record is checked against the same rule, but never relied on.
+            assert banked[item.id] in connected[seed], (seed, item.id)
+            assert _in_reach(layout, banked[item.id], shape), (seed, item.id)
+
+
+def test_sites_keep_their_margin_and_are_painted_from_the_catalog(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    margin = TUNING["sites"]["margin"]
+    for seed, (layout, _) in batch.items():
+        rectangles = {building.id: _rectangle(building) for building in layout.buildings}
+        for building in layout.buildings:
+            rectangle = rectangles[building.id]
+            doors = set(layout.doorway(building.id))
+            for cell in rectangle:
+                wall = any(spot not in rectangle for spot in _around(cell))
+                wanted = "d" if cell in doors else "x" if wall else "i"
+                assert layout.grid.value_at(cell) == wanted, (seed, building.id, cell)
+            for cell in _grown(rectangle, margin):
+                if not layout.grid.in_bounds(cell):
+                    continue
+                assert layout.grid.value_at(cell) not in {"w", "r", "b"}, (seed, building.id, cell)
+                assert all(cell not in other for name, other in rectangles.items() if name != building.id), (
+                    seed,
+                    building.id,
+                    cell,
+                )
+
+
+def test_gardens_sit_flush_against_the_wall_opposite_the_doorway(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """The plot is centred on the far wall, taking the lower index when the difference is odd."""
+    for seed, (layout, _) in batch.items():
+        plots = {item.cell: item for item in layout.props if item.type == "plot"}
+        for building in layout.buildings:
+            if building.type != "home":
+                continue
+            kind = BUILDING_BY_TOKEN[building.type]
+            x, y = building.cell
+            plot = next(
+                item for item in plots.values() if item.facing == building.facing and _beside(item, building)
+            )
+            width, height = footprint(plot)
+            if building.facing in {"north", "south"}:
+                assert plot.cell[0] == x + (kind.width - width) // 2, (seed, building.id)
+                wanted = y - height if building.facing == "north" else y + kind.height
+                assert plot.cell[1] == wanted, (seed, building.id)
+            else:
+                assert plot.cell[1] == y + (kind.height - height) // 2, (seed, building.id)
+                wanted = x - width if building.facing == "east" else x + kind.width
+                assert plot.cell[0] == wanted, (seed, building.id)
+
+
+def test_interior_props_stay_on_floor_and_leave_the_doorway_open(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    for seed, (layout, _) in batch.items():
+        for building_id, token in (("inn", "hearth"), ("shed", "repair_bench")):
+            item = next(prop for prop in layout.props if prop.type == token)
+            doors = set(layout.doorway(building_id))
+            for cell in footprint_cells(item):
+                assert layout.grid.value_at(cell) == "i", (seed, token, cell)
+                assert cell not in doors, (seed, token)
+
+
+def test_no_two_placements_share_a_cell(batch: dict[int, tuple[Layout, Report]]) -> None:
+    for seed, (layout, _) in batch.items():
+        placed = [cell for item in (*layout.props, *layout.scenery) for cell in footprint_cells(item)]
+        assert len(placed) == len(set(placed)), seed
+        assert all(layout.grid.in_bounds(cell) for cell in placed), seed
+
+
+def test_the_road_spans_the_frame_and_bridges_every_channel_once(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    band = TUNING["network"]["road"]["band"]
+    third = FRAME.cells_x // 3
+    for seed, (layout, report) in batch.items():
+        road = _road_cells(layout, report)
+        assert len(_pieces(road)) == 1, seed
+        assert any(x == 0 for x, _ in road) and any(x == FRAME.cells_x - 1 for x, _ in road), seed
+        assert all(band[0] <= y <= band[1] for _, y in road), seed
+        # The road belongs to every third of the frame, which is what carries it past the districts.
+        for low, high in ((0, third), (third, 2 * third), (2 * third, FRAME.cells_x)):
+            assert any(low <= x < high for x, _ in road), (seed, low)
+        # The trunk is the water the road stays south of, so nothing ever decks it.
+        assert not _cells(layout, "b") & report.water.trunk, seed
+        for index, channel in enumerate(report.water.channels):
+            deck, _ = _decks(layout, channel)
+            assert deck, (seed, index)
+            assert len(_pieces(deck)) == 1, (seed, index)
+
+
+def test_bridge_decks_carry_the_road_width_and_land_on_dry_aprons(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    road_tuning = TUNING["network"]["road"]
+    for seed, (layout, report) in batch.items():
+        for index, channel in enumerate(report.water.channels):
+            deck, _ = _decks(layout, channel)
+            rows = {y for _, y in deck}
+            columns = {x for x, _ in deck}
+            assert len(rows) == road_tuning["width"], (seed, index)
+            assert len(columns) <= road_tuning["crossing_run"] - 2 * road_tuning["apron"], (seed, index)
+            for row in rows:
+                span = sorted(x for x, y in deck if y == row)
+                for step in range(1, road_tuning["apron"] + 1):
+                    for column in (span[0] - step, span[-1] + step):
+                        assert layout.grid.value_at((column, row)) in {"r", "b"}, (seed, index)
+
+
+def test_the_visitor_spawns_on_the_road_at_the_configured_inset(
+    batch: dict[int, tuple[Layout, Report]], connected: dict[int, frozenset[Cell]]
+) -> None:
+    spawn_tuning = TUNING["network"]["spawn"]
     for seed, (layout, _) in batch.items():
         cell = layout.grid.cell_at(layout.spawn)
-        assert cell is not None, seed
-        assert layout.spawn == layout.grid.center(cell), seed
-        assert layout.body_clear(layout.spawn), seed
-        assert any(layout.body_clear(layout.grid.center(spot)) for spot in layout.grid.neighbours(cell)), seed
+        assert cell is not None and layout.spawn == layout.grid.center(cell), seed
+        assert layout.grid.value_at(cell) == "r", seed
+        assert cell[0] == spawn_tuning["edge_inset"], seed
+        assert layout.body_clear(layout.spawn, spawn_tuning["clearance"]), seed
+        assert cell in connected[seed], seed
+
+
+def test_footpaths_join_the_road_to_the_plaza_the_homes_and_the_shrines(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """Every place a path is promised to reach has one, and the whole network hangs off the road."""
+    plaza = TUNING["sites"]["plaza_radius"]
+    roadside = TUNING["accessories"]["setback"] + TUNING["network"]["road"]["width"]
+    for seed, (layout, _) in batch.items():
+        ways = _cells(layout, "rpb")
+        assert len(_pieces(ways)) == 1, seed
+        for building in layout.buildings:
+            for cell in layout.doorway(building.id):
+                assert any(spot in ways for spot in _around(cell)), (seed, building.id, cell)
+        # A shrine stands one setback off the road, so the road it was placed against is its way,
+        # and the plaza's footpath is promised to the plaza rather than to the pump standing in it.
+        for item in layout.props:
+            if item.type == "shrine":
+                assert any(math.dist(item.cell, spot) <= roadside + 1 for spot in ways), (seed, item.id)
+        pump = next(item for item in layout.props if item.type == "pump").cell
+        assert any(math.dist(pump, spot) <= plaza + 2 for spot in ways), (seed, pump)
+
+
+def test_each_channel_carries_at_most_one_footpath_crossing(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """Road decks and path decks are both bridge ground, so a channel carries at most two."""
+    for seed, (layout, report) in batch.items():
+        decks = _cells(layout, "b")
+        for index, channel in enumerate(report.water.channels):
+            assert len(_pieces({cell for cell in decks if cell in channel})) <= 2, (seed, index)
+
+
+def test_lantern_and_pine_skips_do_not_move_the_land_road_or_buildings(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """Optional dressing is skipped where it will not fit, and nothing before it is drawn again."""
+    seed = BATCH[0]
+    far = FRAME.cells_x * 2
+    accessories = GENERATION.accessories
+    starved = replace(
+        GENERATION,
+        accessories=replace(
+            accessories,
+            lantern=replace(accessories.lantern, spacing=far, market_spacing=far),
+            pine=replace(accessories.pine, spacing=far, scatter=1),
+        ),
+    )
+    layout, report = generate(seed, starved)
+    normal, expected = batch[seed]
+    assert layout.grid.rows == normal.grid.rows
+    assert layout.buildings == normal.buildings
+    assert report.redraws == expected.redraws
+    for kind in (layout, normal):
+        assert any(item.type == "lantern" for item in kind.props)
+    assert _without(layout, "lantern") == _without(normal, "lantern")
+    assert sum(1 for item in layout.props if item.type == "lantern") < sum(
+        1 for item in normal.props if item.type == "lantern"
+    )
 
 
 def test_majority_smoothing_clears_a_lone_speck() -> None:

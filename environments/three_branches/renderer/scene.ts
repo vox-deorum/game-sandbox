@@ -165,6 +165,8 @@ function drawableFor<TKind extends CatalogFootprint>(
 ): StaticDrawable {
   const kind = catalog[placement.type]
   if (kind === undefined) throw new Error(`Unknown catalog type ${placement.type}.`)
+  // A placement facing east or west carries its catalog rectangle a quarter turn, as the engine does.
+  const turned = placement.facing === 'east' || placement.facing === 'west'
   return {
     id: placement.id,
     type: placement.type,
@@ -173,8 +175,8 @@ function drawableFor<TKind extends CatalogFootprint>(
       village,
       placement.cell.x * village.size.cellSize,
       placement.cell.y * village.size.cellSize,
-      kind.width * village.size.cellSize,
-      kind.height * village.size.cellSize,
+      (turned ? kind.height : kind.width) * village.size.cellSize,
+      (turned ? kind.width : kind.height) * village.size.cellSize,
     ),
     facing: placement.facing,
   }

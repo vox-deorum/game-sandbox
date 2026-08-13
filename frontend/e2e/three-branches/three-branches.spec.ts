@@ -89,10 +89,11 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
       throw new Error('Three Branches collision toggle probe is invalid')
     }
     const [toggleX, toggleY, toggleWidth, toggleHeight] = toggle
-    await page.mouse.click(
-      canvasBox.x + ((toggleX + toggleWidth / 2) / INTERNAL_SIZE.width) * canvasBox.width,
-      canvasBox.y + ((toggleY + toggleHeight / 2) / INTERNAL_SIZE.height) * canvasBox.height,
-    )
+    const clickAt = {
+      x: canvasBox.x + ((toggleX + toggleWidth / 2) / INTERNAL_SIZE.width) * canvasBox.width,
+      y: canvasBox.y + ((toggleY + toggleHeight / 2) / INTERNAL_SIZE.height) * canvasBox.height,
+    }
+    await page.mouse.click(clickAt.x, clickAt.y)
     await expect(host).toHaveAttribute('data-three-branches-collision', 'off')
     await expect(host).toHaveAttribute('data-three-branches-camera', inspectedCamera as string)
 

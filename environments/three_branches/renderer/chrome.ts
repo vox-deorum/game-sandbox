@@ -15,12 +15,16 @@ export interface ChromeLayer {
     collisionVisible: boolean,
     resolution: number,
   ): void
-  /** Detach interaction owned by the chrome module. */
-  destroy(): void
 }
 
-/** Build the fixed diagnostic strip and its permanent collision toggle. */
-export function createChrome(layer: Container, onToggle: () => void): ChromeLayer {
+/**
+ * Build the fixed diagnostic strip and its permanent collision toggle.
+ *
+ * The plate is drawn here and clicked in the browser's own coordinates by the renderer, which is
+ * how every other gesture in this environment is answered. {@link COLLISION_TOGGLE_RECT} is the
+ * one statement of where it is, shared by the drawing, the hit band, and the probe.
+ */
+export function createChrome(layer: Container): ChromeLayer {
   layer.addChild(
     new Graphics()
       .rect(
@@ -43,9 +47,6 @@ export function createChrome(layer: Container, onToggle: () => void): ChromeLaye
     )
     .fill(PALETTE.backdrop)
     .stroke({ color: PALETTE.muted, width: 1 })
-  button.eventMode = 'static'
-  button.cursor = 'pointer'
-  button.on('pointertap', onToggle)
   layer.addChild(button)
   const toggle = textAt(
     layer,
@@ -70,10 +71,6 @@ export function createChrome(layer: Container, onToggle: () => void): ChromeLaye
       status.resolution = resolution
       bell.resolution = resolution
       toggle.resolution = resolution
-    },
-    destroy() {
-      // Pixi destroys listeners with the hit node, but detach explicitly while this module owns it.
-      button.off('pointertap', onToggle)
     },
   }
 }

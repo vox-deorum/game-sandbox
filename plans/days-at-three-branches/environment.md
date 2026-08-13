@@ -108,7 +108,7 @@ The observation is a plain `Dict` with fixed Gymnasium shapes after parameter re
 
 Ground codes come from `rules.json`, so `ground[cy][cx]` is the class at `(cx, cy)`. That grid contains water, building walls, doorways, and floors. Water and walls are impassable, and only walls block sight. The doorway helper reads doorway cells from the building perimeter.
 
-Building ids are `home_0` through `home_4`, `inn`, and `shed`. Props are in catalog order by type and generation order within type, with ids such as `stall_0`. `facing` is north, east, south, or west. Scenery types are `pine` and `crate`. Catalog types define reservation, extent, collision, and interactive behavior. Rules that measure to an interactive prop use its catalog collision shape.
+Building ids are `home_0` through `home_4`, `inn`, and `shed`. Props are in catalog order by type and generation order within type, with ids such as `stall_0`. `facing` is north, east, south, or west. Scenery types are `pine` and `crate`. Catalog types define reservation, extent, collision, and interactive behavior. A prop carries its catalog rectangle turned to its facing, so facing east or west trades its width and height, and the shape stays axis-aligned. Rules that measure to an interactive prop use its catalog collision shape.
 
 Nothing in `village` changes during an episode. The environment retains one immutable snapshot and projects isolated plain mappings for every player and episode. It may share immutable tuples and strings, never a mutable village mapping.
 

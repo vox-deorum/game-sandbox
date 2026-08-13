@@ -53,6 +53,27 @@ def doorway_cells(building: Building) -> tuple[Cell, ...]:
     return tuple((column, row) for row in range(start, start + kind.door_width))
 
 
+def footprint(item: PlacedProp | Scenery) -> tuple[int, int]:
+    """Return the cells a placement covers, turned to its facing.
+
+    A placement carries its catalog rectangle a quarter turn when it faces east or west, which is
+    what lets a garden lie flush along a home wall whichever way the home opens. The rectangle
+    stays axis-aligned; only its width and height trade places. Scenery has no facing and never
+    turns.
+    """
+    source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
+    if isinstance(item, PlacedProp) and item.facing in {"east", "west"}:
+        return source.height, source.width
+    return source.width, source.height
+
+
+def footprint_cells(item: PlacedProp | Scenery) -> tuple[Cell, ...]:
+    """Return every cell a placement reserves, anchored at its cell."""
+    width, height = footprint(item)
+    x, y = item.cell
+    return tuple((x + column, y + row) for row in range(height) for column in range(width))
+
+
 def _rectangles(cells: set[Cell]) -> tuple[Rect, ...]:
     """Coalesce cells deterministically, producing non-overlapping maximal row runs."""
     rectangles: list[Rect] = []
@@ -126,10 +147,11 @@ class Layout:
 
     def shape_for(self, item: PlacedProp | Scenery) -> Rect | Circle:
         source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
+        width, height = footprint(item)
         x, y = item.cell
         if source.shape == "box":
-            return Rect(float(x), float(y), float(source.width), float(source.height))
-        return Circle(x + source.width / 2, y + source.height / 2, min(source.width, source.height) / 2)
+            return Rect(float(x), float(y), float(width), float(height))
+        return Circle(x + width / 2, y + height / 2, min(width, height) / 2)
 
     def doorway(self, building_id: str) -> tuple[Cell, ...]:
         building = next((item for item in self.buildings if item.id == building_id), None)

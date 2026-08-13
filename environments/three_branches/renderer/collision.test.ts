@@ -23,14 +23,29 @@ describe('Three Branches collision scene', () => {
     expect(shapes.filter((shape) => shape.group === 'boundary')).toHaveLength(4)
   })
 
-  it('uses catalog shapes without rotating prop collision by facing', () => {
-    const scene = buildStaticScene(readStatic(fixtureRecording().header))
+  it('keeps catalog shapes axis-aligned while following a turned prop footprint', () => {
+    const village = readStatic(fixtureRecording().header)
+    const scene = buildStaticScene(village)
     const shapes = staticCollision(scene)
     for (const prop of scene.props) {
       const catalog = CATALOG.props.find((item) => item.token === prop.type)
       const shape = shapes.find((item) => item.id === prop.id)
       expect(shape?.kind).toBe(catalog?.shape === 'circle' ? 'circle' : 'rect')
     }
+    const bench = village.props.find((item) => item.type === 'bench')
+    if (bench === undefined) throw new Error('the fixture has no bench to turn.')
+    const upright = shapes.find((shape) => shape.id === bench.id)
+    const turned = staticCollision(
+      buildStaticScene({
+        ...village,
+        props: village.props.map((item) =>
+          item.id === bench.id ? { ...item, facing: 'east' } : item,
+        ),
+      }),
+    ).find((shape) => shape.id === bench.id)
+    if (upright?.kind !== 'rect' || turned?.kind !== 'rect') throw new Error('a bench is a box.')
+    expect(turned.rect.width).toBe(upright.rect.height)
+    expect(turned.rect.height).toBe(upright.rect.width)
   })
 
   it('uses the configured character radius for the dynamic bodies', () => {

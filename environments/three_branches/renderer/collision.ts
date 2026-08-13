@@ -24,7 +24,7 @@ export function staticCollision(scene: StaticScene): readonly CollisionShape[] {
     }
   }
   for (const item of [...scene.props, ...scene.scenery]) {
-    // Facing is presentation metadata. Engine solids remain axis-aligned catalog shapes.
+    // The scene already turned the rectangle to its facing. Engine solids stay axis-aligned.
     if (item.shape === 'box') {
       shapes.push({
         id: item.id,

@@ -35,7 +35,7 @@ import { expectedCharacterIds, readStatic } from './overlay.js'
 import { PALETTE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
-import thumbnail from './thumbnail.svg'
+import thumbnail from './thumbnail.png'
 import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
 const CONTENT_SIZE = {
@@ -114,7 +114,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.props = createPropLayer(propLayer, this.staticScene)
     this.characters = createCharacterLayer(characterLayer)
     this.collision = createCollisionLayer(collisionLayer)
-    this.chrome = createChrome(chromeLayer, this.toggleCollision)
+    this.chrome = createChrome(chromeLayer)
 
     this.cameraLimits = cameraLimits(
       { minX: 0, minY: 0, maxX: this.staticScene.world.width, maxY: this.staticScene.world.height },
@@ -189,25 +189,41 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // Browser listeners outlive Pixi nodes unless the renderer releases their shared gesture owner.
     this.cameraGestures?.detach()
     this.cameraGestures = null
+    this.ctx.container.removeEventListener('click', this.onChromeClick)
     this.movement = null
-    this.chrome?.destroy()
     super.destroy()
+  }
+
+  /** Map a browser point into the renderer's own logical coordinates. */
+  private viewPoint(clientPoint: { x: number; y: number }): { x: number; y: number } {
+    const bounds = this.ctx.container.getBoundingClientRect()
+    const scale = this.displayScale()
+    return { x: (clientPoint.x - bounds.left) / scale, y: (clientPoint.y - bounds.top) / scale }
+  }
+
+  /**
+   * The chrome strip owns clicks in its own band, which is the half of the split the camera
+   * gestures leave alone: they accept only the content below it. Both halves are answered in the
+   * browser's own coordinates rather than through display-object hit testing.
+   */
+  private readonly onChromeClick = (event: MouseEvent): void => {
+    const view = this.viewPoint({ x: event.clientX, y: event.clientY })
+    if (
+      view.x >= COLLISION_TOGGLE_RECT.x &&
+      view.x <= COLLISION_TOGGLE_RECT.x + COLLISION_TOGGLE_RECT.width &&
+      view.y >= COLLISION_TOGGLE_RECT.y &&
+      view.y <= COLLISION_TOGGLE_RECT.y + COLLISION_TOGGLE_RECT.height
+    ) {
+      this.toggleCollision()
+    }
   }
 
   private wireCamera(root: Container): void {
     root.eventMode = 'passive'
     root.interactiveChildren = true
-    const stage = root.parent
-    if (stage !== null) {
-      stage.eventMode = 'static'
-      stage.interactiveChildren = true
-    }
+    this.ctx.container.addEventListener('click', this.onChromeClick)
     this.cameraGestures = wireCameraGestures(this.ctx.container, {
-      toView: (clientPoint) => {
-        const bounds = this.ctx.container.getBoundingClientRect()
-        const scale = this.displayScale()
-        return { x: (clientPoint.x - bounds.left) / scale, y: (clientPoint.y - bounds.top) / scale }
-      },
+      toView: (clientPoint) => this.viewPoint(clientPoint),
       accepts: (view) =>
         view.x >= 0 &&
         view.x <= CONTENT_SIZE.width &&

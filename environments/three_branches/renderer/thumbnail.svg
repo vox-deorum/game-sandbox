@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Days at Three Branches placeholder">
-  <rect width="640" height="360" fill="#263238"/>
-  <path d="M0 238C96 214 150 275 245 250S397 203 485 231s97 10 155-10v139H0Z" fill="#3b5452"/>
-  <text x="320" y="168" fill="#f5f3ea" font-family="system-ui, sans-serif" font-size="32" font-weight="700" text-anchor="middle">Days at Three Branches</text>
-  <text x="320" y="204" fill="#b8c7c4" font-family="system-ui, sans-serif" font-size="18" text-anchor="middle">Village day</text>
-</svg>

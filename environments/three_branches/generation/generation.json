@@ -10,6 +10,11 @@
       {"spacing": 13, "amplitude": 0.5},
       {"spacing": 7, "amplitude": 0.35}
     ],
+    "going_octaves": [
+      {"spacing": 9, "amplitude": 1.0},
+      {"spacing": 4, "amplitude": 0.55},
+      {"spacing": 1, "amplitude": 0.5}
+    ],
     "south_bias": 0.45
   },
   "water": {
@@ -52,5 +57,63 @@
     "field_slope": 0.02,
     "smoothing_passes": 2
   },
-  "redraw": {"cap": 24}
+  "network": {
+    "road": {
+      "width": 3,
+      "band": [44, 56],
+      "apron": 2,
+      "crossing_run": 11,
+      "water_clearance": 2.0,
+      "anchor_swing": 3,
+      "anchor_reach": 6.0,
+      "edge_straight": 5,
+      "walker": {
+        "step": 1.25,
+        "step_budget": 400,
+        "self_ignore": 10,
+        "reroute_attempts": 7,
+        "reroute_degrees": 15.0,
+        "momentum": [0.6, 0.75],
+        "dry": [0.1, 0.25],
+        "pull": [0.5, 0.65],
+        "wobble": 0.1,
+        "band_push": 0.9,
+        "water_push": 1.4,
+        "look_ahead": 5.0,
+        "meander": 0.3,
+        "meander_wavelength": [18, 32]
+      }
+    },
+    "path": {
+      "width": 1,
+      "merge_discount": 0.4,
+      "wander": 2.5,
+      "crossing_run": 9,
+      "crossing_cost": 6.0
+    },
+    "spawn": {"edge_inset": 3, "clearance": 2.5}
+  },
+  "sites": {
+    "margin": 2,
+    "cluster_count": 3,
+    "cluster_radius": 6,
+    "plaza_radius": 3.5,
+    "plaza_reach": 14,
+    "budget": 120,
+    "cluster_budget": 40,
+    "scores": {"bank": 1.0, "flat": 0.8, "dry": 0.6, "apart": 1.2}
+  },
+  "accessories": {
+    "setback": 1,
+    "stall": {"count": 5, "spacing": 4, "span": 18, "budget": 30},
+    "board": {"budget": 20},
+    "bench": {"plaza": 2, "market": 2, "inn": 1, "budget": 20},
+    "shrine": {"count": 2, "separation": 18, "window": 4, "budget": 10},
+    "lantern": {"spacing": 9, "market_spacing": 5},
+    "bell": {"budget": 20},
+    "pump": {"budget": 12},
+    "crate": {"second_chance": 0.5, "budget": 8},
+    "pine": {"spacing": 14, "scatter": 24, "gap": 3, "companion_chance": 0.45, "companions": 2}
+  },
+  "redraw": {"cap": 64}
 }
