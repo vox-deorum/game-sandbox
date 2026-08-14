@@ -162,9 +162,9 @@ Pending. Manual owner sign-off after terrain watch-session review remains requir
 
 ## Characters
 
-`characters-art.ts` selects id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. The visitor wears `visitorTie` in cinnabar.
+`characters-art.ts` selects id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. The visitor wears `visitorTie` in cinnabar. Below the far-view readability threshold shared with [step 5.2](5-2-hud-interaction-and-camera.md)'s nameplates, a character draws as a Hearthside-styled overhead mark, a tinted circle with a direction tick, in place of the unreadable sprite.
 
-Tests cover style, walk, and rotation determinism. The owner reviews the cast at rest, walking, and turning.
+Tests cover style, walk, and rotation determinism. The owner reviews the cast at rest, walking, and turning, and the far-view marks.
 
 ### Character sign-off
 
