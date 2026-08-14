@@ -146,6 +146,47 @@ export interface FrameTreatment {
   tint: HearthsidePaletteKey
 }
 
+export const EDGE_CORNER_DIRECTIONS = ['northEast', 'southEast', 'southWest', 'northWest'] as const
+export type EdgeCornerDirection = (typeof EDGE_CORNER_DIRECTIONS)[number]
+/** The water-bank frame order indexed directly by the planner's four-bit cardinal mask. */
+export const WATER_BANK_CARDINAL_FRAMES = [
+  'edge00',
+  'edge01',
+  'edge02',
+  'edge03',
+  'edge04',
+  'edge05',
+  'edge06',
+  'edge07',
+  'edge08',
+  'edge09',
+  'edge10',
+  'edge11',
+  'edge12',
+  'edge13',
+  'edge14',
+  'edge15',
+] as const
+
+/** A class boundary that needs only its cardinal frame family. */
+export interface CardinalEdgeTreatment extends FrameTreatment {
+  from: string
+  to: string
+  corners?: never
+  accents?: never
+}
+
+/** The configured water bank, which owns its corner and accent families. */
+export interface WaterBankEdgeTreatment extends FrameTreatment {
+  from: 'water'
+  to: 'ground'
+  corners: Readonly<Record<EdgeCornerDirection, readonly string[]>>
+  accents: readonly string[]
+}
+
+/** Only water-to-ground may configure corners and bank accents. */
+export type EdgeTreatment = CardinalEdgeTreatment | WaterBankEdgeTreatment
+
 export interface PhaseGrade {
   brightness: number
   contrast: number
@@ -161,7 +202,7 @@ export interface HearthsideStyle {
     fills: Readonly<Record<string, FrameTreatment>>
     edges: {
       layers: number
-      pairings: readonly (FrameTreatment & { from: string; to: string })[]
+      pairings: readonly EdgeTreatment[]
     }
     planks: FrameTreatment
     upperWall: FrameTreatment
@@ -291,20 +332,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   ])
   const knownGround = new Set(groundNames)
   const pairings = array(edgesSource.pairings, 'presentation.terrain.edges.pairings').map(
-    (item, index) => {
-      const name = `presentation.terrain.edges.pairings[${index}]`
-      const pairing = exactRecord(item, name, ['from', 'to', 'frames', 'tint'])
-      return {
-        from: knownText(pairing.from, knownGround, `${name}.from`),
-        to: knownText(pairing.to, knownGround, `${name}.to`),
-        ...frameTreatment(
-          { frames: pairing.frames, tint: pairing.tint },
-          name,
-          terrainFrames,
-          paletteNames,
-        ),
-      }
-    },
+    (item, index) => edgeTreatment(item, index, knownGround, terrainFrames, paletteNames),
   )
   const terrain = {
     fills,
@@ -467,6 +495,70 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 }
 
+function edgeTreatment(
+  value: unknown,
+  index: number,
+  knownGround: ReadonlySet<string>,
+  knownFrames: ReadonlySet<string>,
+  palette: ReadonlySet<string>,
+): EdgeTreatment {
+  const name = `presentation.terrain.edges.pairings[${index}]`
+  const raw = record(value, name)
+  const from = knownText(raw.from, knownGround, `${name}.from`)
+  const to = knownText(raw.to, knownGround, `${name}.to`)
+  const waterBank = from === 'water' && to === 'ground'
+  const pairing = exactRecord(
+    raw,
+    name,
+    waterBank ? ['from', 'to', 'frames', 'tint', 'corners', 'accents'] : ['from', 'to', 'frames', 'tint'],
+  )
+  const corners = waterBank ? cornerFrames(pairing.corners, `${name}.corners`, knownFrames) : undefined
+  const accents = waterBank
+    ? frameNames(pairing.accents, `${name}.accents`, knownFrames)
+    : undefined
+  const treatment = waterBank
+    ? {
+        frames: waterBankCardinalFrames(pairing.frames, `${name}.frames`, knownFrames),
+        tint: paletteKey(pairing.tint, palette, `${name}.tint`),
+      }
+    : frameTreatment({ frames: pairing.frames, tint: pairing.tint }, name, knownFrames, palette)
+  if (waterBank) {
+    return { from: 'water', to: 'ground', ...treatment, corners: corners!, accents: accents! }
+  }
+  return { from, to, ...treatment }
+}
+function waterBankCardinalFrames(
+  value: unknown,
+  name: string,
+  known: ReadonlySet<string>,
+): readonly string[] {
+  const frames = frameNames(value, name, known)
+  if (
+    frames.length !== WATER_BANK_CARDINAL_FRAMES.length ||
+    frames.some((frame, index) => frame !== WATER_BANK_CARDINAL_FRAMES[index])
+  ) {
+    throw new Error(`${name} must equal the water-bank cardinal order edge00 through edge15.`)
+  }
+  return frames
+}
+function cornerFrames(
+  value: unknown,
+  name: string,
+  known: ReadonlySet<string>,
+): Record<EdgeCornerDirection, readonly string[]> {
+  const source = exactRecord(value, name, EDGE_CORNER_DIRECTIONS)
+  return Object.fromEntries(
+    EDGE_CORNER_DIRECTIONS.map((direction) => [
+      direction,
+      twoFrameNames(source[direction], `${name}.${direction}`, known),
+    ]),
+  ) as Record<EdgeCornerDirection, readonly string[]>
+}
+function twoFrameNames(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
+  const frames = frameNames(value, name, known)
+  if (frames.length !== 2) throw new Error(`${name} must contain exactly two frames.`)
+  return frames
+}
 function framesFor(group: string, layer?: string): ReadonlySet<string> {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
   if (atlas === undefined) throw new Error(`Three Branches manifest has no ${group} atlas.`)
@@ -500,6 +592,13 @@ function frameNames(value: unknown, name: string, known: ReadonlySet<string>): r
   )
   if (result.length === 0) throw new Error(`${name} must contain at least one frame.`)
   return result
+}
+
+function record(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`)
+  }
+  return value as Record<string, unknown>
 }
 
 function exactRecord(

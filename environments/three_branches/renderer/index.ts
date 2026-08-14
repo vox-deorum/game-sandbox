@@ -11,7 +11,7 @@ import {
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
-import type { GroundTileset, TiledGround } from '@renderers/base/tiled-ground.js'
+import type { TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
 import { replaceFallback, runArtLoad } from './art-loading.js'
@@ -28,7 +28,7 @@ import { type CharacterLayer, createCharacterLayer } from './characters.js'
 import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome } from './chrome.js'
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
-import { drawMap } from './map-layer.js'
+import { drawMap, drawUpperWalls } from './map-layer.js'
 import { expectedCharacterIds, readStatic } from './overlay.js'
 import {
   HEARTHSIDE_STYLE,
@@ -39,7 +39,7 @@ import {
 import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
 import thumbnail from './thumbnail.png'
-import { tintedMaskFrame } from './tint.js'
+import { createTerrainArt } from './terrain-art.js'
 import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
 const CONTENT_SIZE = {
@@ -68,7 +68,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly visitorIsHumanControlled: boolean
   private worldRoot!: Container
   private mapLayer!: Container
+  private upperLayer!: Container
   private mapGround!: TiledGround
+  private upperGround: TiledGround | null = null
+  private buildingOutlines!: Container
   private collision!: CollisionLayer
   private props!: PropLayer
   private characters!: CharacterLayer
@@ -109,19 +112,19 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const sceneryLayer = new Container()
     const propLayer = new Container()
     const characterLayer = new Container()
-    const upperLayer = new Container()
+    this.upperLayer = new Container()
     const emissiveLayer = new Container()
     const collisionLayer = new Container()
     const chromeLayer = new Container()
     gradedWorld.filters = [new ColorMatrixFilter()]
-    gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, upperLayer)
+    gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, this.upperLayer)
     this.worldRoot = new Container()
     this.worldRoot.addChild(gradedWorld, emissiveLayer, collisionLayer)
     this.worldRoot.mask = contentMask
     root.addChild(backdrop, contentMask, this.worldRoot, chromeLayer)
 
     this.mapGround = drawMap(this.mapLayer, this.staticScene)
-    drawBuildings(upperLayer, this.staticScene)
+    this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
     this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
     this.characters = createCharacterLayer(characterLayer)
     this.collision = createCollisionLayer(collisionLayer)
@@ -272,6 +275,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         )
       },
       reset: () => {
+        const previous = cameraProbeValue(this.visitorCamera.camera)
         this.visitorCamera = resetVisitorCamera(
           this.visitorCamera,
           this.cameraLimits,
@@ -279,6 +283,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           this.visitorIsHumanControlled,
         )
         this.applyCamera()
+        this.redrawCameraIfChanged(previous)
       },
     })
   }
@@ -288,6 +293,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   private applyManualCamera(reduce: (camera: CameraView) => CameraView): void {
+    const previous = cameraProbeValue(this.visitorCamera.camera)
     // Any deliberate inspection gesture suspends live visitor follow until the explicit reset.
     this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
     this.visitorCamera = {
@@ -295,6 +301,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       camera: reduce(this.visitorCamera.camera),
     }
     this.applyCamera()
+    this.redrawCameraIfChanged(previous)
+  }
+
+  /** Present an inspection-camera transform immediately, but never redraw an unchanged camera. */
+  private redrawCameraIfChanged(previous: string): void {
+    if (previous !== cameraProbeValue(this.visitorCamera.camera)) this.redrawCurrentFrame()
   }
 
   private applyCamera(): void {
@@ -367,16 +379,15 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         if (!(terrainAtlas instanceof Texture)) {
           throw new Error('Three Branches terrain atlas must be one texture.')
         }
+        const terrain = createTerrainArt(terrainAtlas, this.staticScene)
         this.mapGround = replaceFallback(
           this.mapGround,
-          () =>
-            drawMap(
-              this.mapLayer,
-              this.staticScene,
-              terrainTileset(terrainAtlas, this.staticScene),
-            ),
+          () => drawMap(this.mapLayer, this.staticScene, terrain),
           () => this.redrawCurrentFrame(),
         )
+        this.upperGround?.destroy()
+        this.upperGround = drawUpperWalls(this.upperLayer, this.staticScene, terrain)
+        this.buildingOutlines.destroy({ children: true })
       },
       status: (status) => {
         this.ctx.container.dataset.threeBranchesAssets = status
@@ -401,25 +412,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         ? 'pending'
         : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
   }
-}
-
-function terrainTileset(atlas: Texture, scene: StaticScene): GroundTileset {
-  const terrain = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'terrain')
-  if (terrain === undefined || 'layers' in terrain) {
-    throw new Error('Three Branches manifest is missing its terrain atlas.')
-  }
-  const textures: Record<string, readonly Texture[]> = {}
-  for (const ground of scene.ground) {
-    const treatment = HEARTHSIDE_STYLE.terrain.fills[ground.name]
-    if (treatment === undefined) {
-      throw new Error(`Three Branches presentation has no ${ground.name} terrain fill.`)
-    }
-    const tint = HEARTHSIDE_STYLE.palette[treatment.tint]
-    textures[ground.code] = treatment.frames.map((frame) =>
-      tintedMaskFrame(atlas, terrain.frames, frame, tint),
-    )
-  }
-  return { tileSize: terrain.frames.width, textures }
 }
 
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {

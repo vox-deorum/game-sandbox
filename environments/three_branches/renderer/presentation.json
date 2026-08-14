@@ -52,7 +52,14 @@
             "edge14",
             "edge15"
           ],
-          "tint": "silt"
+          "tint": "silt",
+          "corners": {
+            "northEast": ["cornerA", "cornerB"],
+            "southEast": ["cornerC", "cornerD"],
+            "southWest": ["cornerE", "cornerF"],
+            "northWest": ["cornerG", "cornerH"]
+          },
+          "accents": ["bankShoulder", "bankStones"]
         },
         {
           "from": "reeds",

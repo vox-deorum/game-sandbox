@@ -27,8 +27,10 @@ export function sliceAtlasFrame(atlas: Texture, grid: FrameGrid, name: string): 
 }
 
 /** Stable cache key for a tint baked from one atlas frame. */
-export function tintedMaskCacheKey(frame: string, tint: string): string {
-  return `${frame}:${tint.toLowerCase()}`
+export function tintedMaskCacheKey(frame: string, tint: string, opacity = 1): string {
+  const normalized = maskOpacity(opacity)
+  const base = `${frame}:${tint.toLowerCase()}`
+  return normalized === 1 ? base : `${base}:${normalized}`
 }
 
 const tintedMasks = new WeakMap<Texture, Map<string, Texture>>()
@@ -39,8 +41,9 @@ export function tintedMaskFrame(
   grid: FrameGrid,
   name: string,
   tint: string,
+  opacity = 1,
 ): Texture {
-  const key = tintedMaskCacheKey(name, tint)
+  const key = tintedMaskCacheKey(name, tint, opacity)
   let cached = tintedMasks.get(atlas)
   if (cached === undefined) {
     cached = new Map()
@@ -68,18 +71,107 @@ export function tintedMaskFrame(
     frame.width,
     frame.height,
   )
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(tint)
-  if (match === null) throw new Error(`Invalid atlas tint: ${tint}`)
-  const [red, green, blue] = match.slice(1).map((channel) => Number.parseInt(channel ?? '0', 16))
   const pixels = context.getImageData(0, 0, frame.width, frame.height)
-  for (let index = 0; index < pixels.data.length; index += 4) {
-    const grayscale = (pixels.data[index] ?? 0) / 255
-    pixels.data[index] = Math.round((red ?? 0) * grayscale)
-    pixels.data[index + 1] = Math.round((green ?? 0) * grayscale)
-    pixels.data[index + 2] = Math.round((blue ?? 0) * grayscale)
-  }
+  tintedMaskPixels(pixels.data, tint, opacity)
   context.putImageData(pixels, 0, 0)
   const baked = Texture.from(canvas)
   cached.set(key, baked)
   return baked
+}
+
+/** Tint grayscale-alpha mask pixels and scale their opacity without changing their value shape. */
+export function tintedMaskPixels(pixels: Uint8ClampedArray, tint: string, opacity = 1): void {
+  const [red, green, blue] = tintChannels(tint)
+  const amount = maskOpacity(opacity)
+  for (let index = 0; index < pixels.length; index += 4) {
+    const grayscale = (pixels[index] ?? 0) / 255
+    pixels[index] = Math.round(red * grayscale)
+    pixels[index + 1] = Math.round(green * grayscale)
+    pixels[index + 2] = Math.round(blue * grayscale)
+    pixels[index + 3] = Math.round((pixels[index + 3] ?? 0) * amount)
+  }
+}
+/** Opacity for quiet corner and accent edge marks, below full-strength cardinal banks. */
+export const TERRAIN_EDGE_DETAIL_ALPHA = 0.22
+
+/** Stable cache key for an opaque terrain fill baked from one atlas frame. */
+export function opaqueFillCacheKey(frame: string, tint: string): string {
+  return `fill:${tintedMaskCacheKey(frame, tint)}`
+}
+
+/** Maximum same-hue value shift retained from a terrain fill mask. */
+export const TERRAIN_FILL_DETAIL_STRENGTH = 0.14
+
+const opaqueFills = new WeakMap<Texture, Map<string, Texture>>()
+
+/**
+ * Bake an opaque terrain base from a grayscale-alpha mask. Transparent mask pixels become the
+ * configured tint, while visible mask pixels shift that tint's value by a restrained 14 percent.
+ */
+export function opaqueTintedFillFrame(
+  atlas: Texture,
+  grid: FrameGrid,
+  name: string,
+  tint: string,
+): Texture {
+  const key = opaqueFillCacheKey(name, tint)
+  let cached = opaqueFills.get(atlas)
+  if (cached === undefined) {
+    cached = new Map()
+    opaqueFills.set(atlas, cached)
+  }
+  const existing = cached.get(key)
+  if (existing !== undefined) return existing
+
+  const frame = frameRectangle(grid, name)
+  const canvas = document.createElement('canvas')
+  canvas.width = frame.width
+  canvas.height = frame.height
+  const context = canvas.getContext('2d')
+  if (context === null) throw new Error('A 2D canvas is required to tint Three Branches artwork.')
+  const resource = atlas.source.resource
+  if (resource === null) throw new Error(`Atlas texture has no image source for frame ${name}.`)
+  context.drawImage(
+    resource as CanvasImageSource,
+    frame.x,
+    frame.y,
+    frame.width,
+    frame.height,
+    0,
+    0,
+    frame.width,
+    frame.height,
+  )
+  const pixels = context.getImageData(0, 0, frame.width, frame.height)
+  opaqueFillPixels(pixels.data, tint)
+  context.putImageData(pixels, 0, 0)
+  const baked = Texture.from(canvas)
+  cached.set(key, baked)
+  return baked
+}
+
+/** Apply the opaque base and restrained same-hue value variation to RGBA terrain pixels. */
+export function opaqueFillPixels(pixels: Uint8ClampedArray, tint: string): void {
+  const [red, green, blue] = tintChannels(tint)
+  for (let index = 0; index < pixels.length; index += 4) {
+    const grayscale = (pixels[index] ?? 0) / 255
+    const alpha = (pixels[index + 3] ?? 0) / 255
+    const value = 1 + TERRAIN_FILL_DETAIL_STRENGTH * alpha * (grayscale * 2 - 1)
+    pixels[index] = Math.round(red * value)
+    pixels[index + 1] = Math.round(green * value)
+    pixels[index + 2] = Math.round(blue * value)
+    pixels[index + 3] = 255
+  }
+}
+
+function maskOpacity(value: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error('Terrain mask opacity must be between zero and one.')
+  }
+  return value
+}
+function tintChannels(tint: string): [number, number, number] {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(tint)
+  if (match === null) throw new Error(`Invalid atlas tint: ${tint}`)
+  return match.slice(1).map((channel) => Number.parseInt(channel ?? '0', 16)) as [number, number, number]
 }

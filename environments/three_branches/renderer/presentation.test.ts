@@ -4,6 +4,7 @@ import {
   type FrameTreatment,
   HEARTHSIDE_PALETTE_KEYS,
   HEARTHSIDE_STYLE,
+  WATER_BANK_CARDINAL_FRAMES,
   measureDeliveryGap,
   type PhaseGrade,
   phaseGrade,
@@ -69,6 +70,55 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
+  it('validates the explicit water-bank corner order and accents against terrain frames', () => {
+    const waterBank = HEARTHSIDE_STYLE.terrain.edges.pairings[0]
+    expect(waterBank?.corners).toEqual({
+      northEast: ['cornerA', 'cornerB'],
+      southEast: ['cornerC', 'cornerD'],
+      southWest: ['cornerE', 'cornerF'],
+      northWest: ['cornerG', 'cornerH'],
+    })
+    expect(waterBank?.frames).toEqual(WATER_BANK_CARDINAL_FRAMES)
+    expect(waterBank?.accents).toEqual(['bankShoulder', 'bankStones'])
+
+    const badCorner = structuredClone(HEARTHSIDE_STYLE)
+    const cornerPairing = badCorner.terrain.edges.pairings[0] as unknown as {
+      corners: Record<string, string[]>
+    }
+    cornerPairing.corners.northEast = ['cornerA']
+    expect(() => readHearthsideStyle(badCorner)).toThrow('northEast must contain exactly two frames')
+
+    const badAccent = structuredClone(HEARTHSIDE_STYLE)
+    const accentPairing = badAccent.terrain.edges.pairings[0] as unknown as { accents: string[] }
+    accentPairing.accents = ['missingFrame']
+    expect(() => readHearthsideStyle(badAccent)).toThrow('accents[0] is unknown')
+    const reordered = structuredClone(HEARTHSIDE_STYLE)
+    const reorderedFrames = reordered.terrain.edges.pairings[0] as unknown as { frames: string[] }
+    ;[reorderedFrames.frames[0], reorderedFrames.frames[1]] = [
+      reorderedFrames.frames[1]!,
+      reorderedFrames.frames[0]!,
+    ]
+    expect(() => readHearthsideStyle(reordered)).toThrow('water-bank cardinal order')
+
+    const duplicate = structuredClone(HEARTHSIDE_STYLE)
+    const duplicateFrames = duplicate.terrain.edges.pairings[0] as unknown as { frames: string[] }
+    duplicateFrames.frames[1] = duplicateFrames.frames[0]!
+    expect(() => readHearthsideStyle(duplicate)).toThrow('water-bank cardinal order')
+
+    const shortened = structuredClone(HEARTHSIDE_STYLE)
+    const shortenedFrames = shortened.terrain.edges.pairings[0] as unknown as { frames: string[] }
+    shortenedFrames.frames.pop()
+    expect(() => readHearthsideStyle(shortened)).toThrow('water-bank cardinal order')
+    const badReedCorners = structuredClone(HEARTHSIDE_STYLE)
+    const reedWithCorners = badReedCorners.terrain.edges.pairings[1] as unknown as Record<string, unknown>
+    reedWithCorners.corners = {}
+    expect(() => readHearthsideStyle(badReedCorners)).toThrow('pairings[1] keys do not match')
+
+    const badReedAccents = structuredClone(HEARTHSIDE_STYLE)
+    const reedWithAccents = badReedAccents.terrain.edges.pairings[1] as unknown as Record<string, unknown>
+    reedWithAccents.accents = ['bankShoulder']
+    expect(() => readHearthsideStyle(badReedAccents)).toThrow('pairings[1] keys do not match')
+  })
   it('rejects unknown manifest frames, palette tints, and phase keys', () => {
     const badFrame = structuredClone(HEARTHSIDE_STYLE)
     const fills = badFrame.terrain.fills as Record<string, FrameTreatment>
