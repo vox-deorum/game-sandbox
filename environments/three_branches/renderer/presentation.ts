@@ -41,7 +41,7 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   chromeHeight: 54,
   unitsPerMetre: 16,
   cameraPadding: 20,
-  maxZoomFactor: 4,
+  maxZoomFactor: 16,
   focusZoomFactor: 2,
 } as const
 
@@ -148,8 +148,8 @@ export interface FrameTreatment {
 
 export const EDGE_CORNER_DIRECTIONS = ['northEast', 'southEast', 'southWest', 'northWest'] as const
 export type EdgeCornerDirection = (typeof EDGE_CORNER_DIRECTIONS)[number]
-/** The water-bank frame order indexed directly by the planner's four-bit cardinal mask. */
-export const WATER_BANK_CARDINAL_FRAMES = [
+/** The edge-frame order indexed directly by the planner's four-bit cardinal mask. */
+export const CARDINAL_EDGE_FRAMES = [
   'edge00',
   'edge01',
   'edge02',
@@ -168,24 +168,17 @@ export const WATER_BANK_CARDINAL_FRAMES = [
   'edge15',
 ] as const
 
-/** A class boundary that needs only its cardinal frame family. */
-export interface CardinalEdgeTreatment extends FrameTreatment {
+/** One composite boundary treatment for a source terrain class. */
+export interface EdgeTreatment extends FrameTreatment {
   from: string
-  to: string
-  corners?: never
-  accents?: never
+  to: readonly string[]
+  opacity: number
+  corners?: {
+    frames: Readonly<Record<EdgeCornerDirection, readonly string[]>>
+    opacity: number
+  }
+  accents?: { frames: readonly string[]; density: number; opacity: number }
 }
-
-/** The configured water bank, which owns its corner and accent families. */
-export interface WaterBankEdgeTreatment extends FrameTreatment {
-  from: 'water'
-  to: 'ground'
-  corners: Readonly<Record<EdgeCornerDirection, readonly string[]>>
-  accents: readonly string[]
-}
-
-/** Only water-to-ground may configure corners and bank accents. */
-export type EdgeTreatment = CardinalEdgeTreatment | WaterBankEdgeTreatment
 
 export interface PhaseGrade {
   brightness: number
@@ -334,6 +327,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const pairings = array(edgesSource.pairings, 'presentation.terrain.edges.pairings').map(
     (item, index) => edgeTreatment(item, index, knownGround, terrainFrames, paletteNames),
   )
+  if (new Set(pairings.map((pairing) => pairing.from)).size !== pairings.length) {
+    throw new Error('presentation.terrain.edges.pairings must configure each source once.')
+  }
   const terrain = {
     fills,
     edges: {
@@ -505,39 +501,53 @@ function edgeTreatment(
   const name = `presentation.terrain.edges.pairings[${index}]`
   const raw = record(value, name)
   const from = knownText(raw.from, knownGround, `${name}.from`)
-  const to = knownText(raw.to, knownGround, `${name}.to`)
-  const waterBank = from === 'water' && to === 'ground'
-  const pairing = exactRecord(
-    raw,
-    name,
-    waterBank ? ['from', 'to', 'frames', 'tint', 'corners', 'accents'] : ['from', 'to', 'frames', 'tint'],
-  )
-  const corners = waterBank ? cornerFrames(pairing.corners, `${name}.corners`, knownFrames) : undefined
-  const accents = waterBank
-    ? frameNames(pairing.accents, `${name}.accents`, knownFrames)
-    : undefined
-  const treatment = waterBank
-    ? {
-        frames: waterBankCardinalFrames(pairing.frames, `${name}.frames`, knownFrames),
-        tint: paletteKey(pairing.tint, palette, `${name}.tint`),
-      }
-    : frameTreatment({ frames: pairing.frames, tint: pairing.tint }, name, knownFrames, palette)
-  if (waterBank) {
-    return { from: 'water', to: 'ground', ...treatment, corners: corners!, accents: accents! }
+  const to = edgeTargets(raw.to, `${name}.to`, knownGround)
+  const waterBank = from === 'water'
+  if (!waterBank && raw.corners !== undefined) {
+    throw new Error(`${name}.corners are only supported for water.`)
   }
-  return { from, to, ...treatment }
+  const pairing = exactRecord(raw, name, [
+    'from',
+    'to',
+    'frames',
+    'tint',
+    'opacity',
+    ...(raw.corners === undefined ? [] : ['corners']),
+    ...(raw.accents === undefined ? [] : ['accents']),
+  ])
+  const treatment = {
+    frames: cardinalEdgeFrames(pairing.frames, `${name}.frames`, knownFrames),
+    tint: paletteKey(pairing.tint, palette, `${name}.tint`),
+    opacity: unitNumber(pairing.opacity, `${name}.opacity`),
+  }
+  const corners = waterBank
+    ? {
+        frames: cornerFrames(pairing.corners, `${name}.corners`, knownFrames),
+        opacity: cornerOpacity(pairing.corners, `${name}.corners`),
+      }
+    : undefined
+  const accents = pairing.accents === undefined
+    ? undefined
+    : accentTreatment(pairing.accents, `${name}.accents`, knownFrames)
+  return {
+    from,
+    to,
+    ...treatment,
+    ...(corners === undefined ? {} : { corners }),
+    ...(accents === undefined ? {} : { accents }),
+  }
 }
-function waterBankCardinalFrames(
+function cardinalEdgeFrames(
   value: unknown,
   name: string,
   known: ReadonlySet<string>,
 ): readonly string[] {
   const frames = frameNames(value, name, known)
   if (
-    frames.length !== WATER_BANK_CARDINAL_FRAMES.length ||
-    frames.some((frame, index) => frame !== WATER_BANK_CARDINAL_FRAMES[index])
+    frames.length !== CARDINAL_EDGE_FRAMES.length ||
+    frames.some((frame, index) => frame !== CARDINAL_EDGE_FRAMES[index])
   ) {
-    throw new Error(`${name} must equal the water-bank cardinal order edge00 through edge15.`)
+    throw new Error(`${name} must equal the cardinal order edge00 through edge15.`)
   }
   return frames
 }
@@ -546,18 +556,41 @@ function cornerFrames(
   name: string,
   known: ReadonlySet<string>,
 ): Record<EdgeCornerDirection, readonly string[]> {
-  const source = exactRecord(value, name, EDGE_CORNER_DIRECTIONS)
+  const source = exactRecord(value, name, ['frames', 'opacity'])
+  const frames = exactRecord(source.frames, `${name}.frames`, EDGE_CORNER_DIRECTIONS)
   return Object.fromEntries(
     EDGE_CORNER_DIRECTIONS.map((direction) => [
       direction,
-      twoFrameNames(source[direction], `${name}.${direction}`, known),
+      twoFrameNames(frames[direction], `${name}.frames.${direction}`, known),
     ]),
   ) as Record<EdgeCornerDirection, readonly string[]>
+}
+function cornerOpacity(value: unknown, name: string): number {
+  const source = exactRecord(value, name, ['frames', 'opacity'])
+  return unitNumber(source.opacity, `${name}.opacity`)
 }
 function twoFrameNames(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
   const frames = frameNames(value, name, known)
   if (frames.length !== 2) throw new Error(`${name} must contain exactly two frames.`)
   return frames
+}
+function accentTreatment(
+  value: unknown,
+  name: string,
+  known: ReadonlySet<string>,
+): { frames: readonly string[]; density: number; opacity: number } {
+  const source = exactRecord(value, name, ['frames', 'density', 'opacity'])
+  return {
+    frames: frameNames(source.frames, `${name}.frames`, known),
+    density: unitNumber(source.density, `${name}.density`),
+    opacity: unitNumber(source.opacity, `${name}.opacity`),
+  }
+}
+function edgeTargets(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
+  const targets = array(value, name).map((item, index) => knownText(item, known, `${name}[${index}]`))
+  if (targets.length === 0) throw new Error(`${name} must contain at least one target.`)
+  if (new Set(targets).size !== targets.length) throw new Error(`${name} must not contain duplicate targets.`)
+  return targets
 }
 function framesFor(group: string, layer?: string): ReadonlySet<string> {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)

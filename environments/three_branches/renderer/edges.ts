@@ -9,8 +9,10 @@ export type EdgeMarkKind = 'cardinal' | 'corner' | 'accent'
 export interface EdgeFamily extends FrameTreatment {
   code: string
   from: string
-  to: string
+  to: readonly string[]
   kind: EdgeMarkKind
+  opacity: number
+  density?: number
   direction?: EdgeCornerDirection
 }
 
@@ -30,46 +32,48 @@ const CORNERS: Readonly<Record<EdgeCornerDirection, readonly [number, number, nu
 }
 const EDGE_CODES = '0123456789ABCDEFGHIJKLMNOQRSTVWXYZ!#$%&()*+,-/:;<=>?@[]^_{|}~'
 
-/**
- * Expand configured pairings into ordered packed-map marks: cardinal boundary, north-east,
- * south-east, south-west, north-west corners, then a bank accent.
- */
+/** Expand all cardinal families, then corners, then sparse accents for deterministic packing. */
 export function edgeMarkFamilies(pairings: readonly EdgePairing[]): readonly EdgeFamily[] {
-  let index = 0
-  const code = (): string => {
-    const value = EDGE_CODES[index]
-    index += 1
-    if (value === undefined) throw new Error('Three Branches presentation has too many edge marks.')
-    return value
-  }
-  return pairings.flatMap((pairing) => {
-    const families: EdgeFamily[] = [
-      { code: code(), from: pairing.from, to: pairing.to, frames: pairing.frames, tint: pairing.tint, kind: 'cardinal' },
-    ]
-    if (pairing.corners !== undefined) {
-      for (const direction of Object.keys(CORNERS) as EdgeCornerDirection[]) {
-        families.push({
-          code: code(),
-          from: pairing.from,
-          to: pairing.to,
-          frames: pairing.corners[direction],
-          tint: pairing.tint,
-          kind: 'corner',
-          direction,
-        })
-      }
-    }
-    if (pairing.accents !== undefined) {
-      families.push({
-        code: code(),
-        from: pairing.from,
-        to: pairing.to,
-        frames: pairing.accents,
-        tint: pairing.tint,
-        kind: 'accent',
-      })
-    }
-    return families
+  const unnumbered = [
+    ...pairings.map((pairing) => ({
+      from: pairing.from,
+      to: pairing.to,
+      frames: pairing.frames,
+      tint: pairing.tint,
+      opacity: pairing.opacity,
+      kind: 'cardinal' as const,
+    })),
+    ...pairings.flatMap((pairing) =>
+      pairing.corners === undefined
+        ? []
+        : (Object.keys(CORNERS) as EdgeCornerDirection[]).map((direction) => ({
+            from: pairing.from,
+            to: pairing.to,
+            frames: pairing.corners!.frames[direction],
+            tint: pairing.tint,
+            opacity: pairing.corners!.opacity,
+            kind: 'corner' as const,
+            direction,
+          })),
+    ),
+    ...pairings.flatMap((pairing) =>
+      pairing.accents === undefined
+        ? []
+        : [{
+            from: pairing.from,
+            to: pairing.to,
+            frames: pairing.accents.frames,
+            tint: pairing.tint,
+            opacity: pairing.accents.opacity,
+            density: pairing.accents.density,
+            kind: 'accent' as const,
+          }],
+    ),
+  ]
+  return unnumbered.map((family, index) => {
+    const code = EDGE_CODES[index]
+    if (code === undefined) throw new Error('Three Branches presentation has too many edge marks.')
+    return { code, ...family }
   })
 }
 
@@ -118,17 +122,17 @@ export function planEdges(
   }
 }
 
-/** Return the four-bit N/E/S/W boundary mask for a named neighbouring class. */
+/** Return the four-bit N/E/S/W boundary mask for the union of configured target classes. */
 export function boundaryMask(
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,
   column: number,
   row: number,
-  to: string,
+  targets: readonly string[],
 ): number {
   return CARDINALS.reduce((mask, [dx, dy, bit]) => {
     const code = rows[row + dy]?.[column + dx]
-    return code !== undefined && groundNameForCode[code] === to ? mask | bit : mask
+    return code !== undefined && targets.includes(groundNameForCode[code] ?? '') ? mask | bit : mask
   }, 0)
 }
 
@@ -146,10 +150,19 @@ export function terrainHash(...parts: readonly (string | number)[]): number {
   return value >>> 0
 }
 
+function avalancheHash(value: number): number {
+  value ^= value >>> 16
+  value = Math.imul(value, 0x7feb352d)
+  value ^= value >>> 15
+  value = Math.imul(value, 0x846ca68b)
+  value ^= value >>> 16
+  return value >>> 0
+}
+
 /** Pick a stable frame index without relying on mount or replay history. */
 export function terrainVariant(count: number, ...parts: readonly (string | number)[]): number {
   if (!Number.isInteger(count) || count <= 0) throw new Error('Terrain frame count must be positive.')
-  return terrainHash(...parts) % count
+  return avalancheHash(terrainHash(...parts)) % count
 }
 
 function markApplies(
@@ -160,20 +173,23 @@ function markApplies(
   row: number,
   mask: number,
 ): boolean {
-  if (family.kind === 'cardinal' || family.kind === 'accent') return mask !== 0
+  if (family.kind === 'cardinal') return mask !== 0
+  if (family.kind === 'accent') {
+    return mask !== 0 && terrainHash(family.from, ...family.to, family.kind, column, row, mask) / 2 ** 32 < (family.density ?? 0)
+  }
   const direction = family.direction
   if (direction === undefined) throw new Error('A corner edge family needs a direction.')
   const [dx, dy, adjacent] = CORNERS[direction]
   const diagonal = rows[row + dy]?.[column + dx]
-  return diagonal !== undefined && groundNameForCode[diagonal] === family.to && (mask & adjacent) === 0
+  return diagonal !== undefined && family.to.includes(groundNameForCode[diagonal] ?? '') && (mask & adjacent) === 0
 }
 
 function frameIndex(family: EdgeFamily, mask: number, column: number, row: number): number {
-  if (family.kind === 'cardinal' && family.frames.length === 16) return mask
+  if (family.kind === 'cardinal') return mask
   return terrainVariant(
     family.frames.length,
     family.from,
-    family.to,
+    ...family.to,
     family.kind,
     family.direction ?? '',
     column,

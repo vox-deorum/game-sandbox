@@ -2,18 +2,18 @@
 
 Status: planned.
 
-Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and tunes the step 3 camera under the final art. Review the pinned fixture under the full HUD at fitted and close views.
+Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and may retune the art-driven camera ceiling established in [step 5.1](5-1-art-style.md) under the final HUD. Review the pinned fixture under the full HUD at fitted and close views.
 
 ## Why this is its own seam
 
-Step 6 implements only the owner-approved input design. The final art and fixed HUD set the camera's zoom limits.
+Step 6 implements only the owner-approved input design. Step 5.1 sets a close-inspection ceiling from the Terrain source resolution. The fixed HUD may refine that ceiling and the focus zoom here.
 
 ## Ordered path
 
 1. Author text mockups and control semantics for the information layer and step 6 controls.
 2. Get owner approval before input implementation begins.
 3. Implement or refine the viewer HUD from the approved mockups.
-4. Tune and test the step 3 camera against the fixture and final art.
+4. Retune and test the step 3 camera only where the fixed HUD changes close-view readability.
 5. Record the approved step 6 input specification and the collision overlay's shipped default in this file.
 
 The approved information layer refines or replaces step 3's tick, phase, and bell chrome. It adds character identification, speech bubbles, and a chat transcript. Its chat mockup shows a recipient selector with Broadcast and the currently permitted character-id addressees. Broadcasts and direct lines both require hearing range and an unblocked line. Watchers and replay viewers see every delivered line. The playing visitor sees broadcasts delivered to it and direct lines sent to or from it. [The environment speech contract](../environment.md#speech) is authoritative.

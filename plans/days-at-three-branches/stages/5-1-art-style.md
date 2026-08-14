@@ -36,7 +36,7 @@ Use broad value groups before small ink details. Cinnabar identifies the visitor
 
 ### Terrain and buildings
 
-Author art at 64 px per cell and draw it at the renderer's 16-unit cell. Map x and y directly to the renderer's world axes.
+Author Terrain art at 128 px per cell and draw it at the renderer's 16-unit cell. Other atlas groups retain their listed frame sizes. Map x and y directly to the renderer's world axes.
 
 Paint the engine-authored `overlay_static` grid through step 3's shared tile base in two layers:
 
@@ -109,7 +109,7 @@ The local manifest is the only runtime loading contract. Keep only the high-reso
 
 | Group | Runtime dimensions | Contents |
 | --- | --- | --- |
-| Terrain | 64 px cells on one atlas page | A few fill variants for each ground class, shared tintable edge and corner masks for compatible boundaries, the wall tiles' upper-layer repaint, and bridge plank tiles |
+| Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, shared tintable edge and corner masks for compatible boundaries, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
 | Props | cell-sized treatments up to 3 by 2 cells | One tintable base per prop type, state overlays where the silhouette stays fixed, and bespoke stills only for silhouette-changing states |
 | Scenery | 64 px cells | Three red pine variants and the market crate |
@@ -146,9 +146,10 @@ The foundation's successful art load swaps in the configured tinted terrain fill
 
 `edges.ts`, `terrain-art.ts`, and `map-layer.ts` land the tiled ground: fills, edge overlays, planks, and the upper wall bands.
 
-- Fills: the variant is a stable hash of code, column, and row, modulo the frame count, through the shared variant hook.
-- Edges: the shared same-code mask cannot name which side faces the other class, so `edges.ts` computes per-cell four-bit cardinal masks and corner bits per configured pairing from the ground grid, assigns marks to the lowest free overlay layer (three layers, deterministic drop on overflow), and the variant hook returns the precomputed index into a pre-tinted family: `edge00` through `edge15` by cardinal mask, then north-east, south-east, south-west, and north-west corners, then accents. Planks emit on exactly bridge cells. Upper wall bands are a second small tiled ground above characters.
-- Pin the edge-frame ordering with step 5.0 before this step lands, and smoke-check tile performance: the pre-tinted tileset bakes roughly 150 to 250 small textures.
+- Fills: full-bleed fill frames cover every cell. The variant is a stable hash of code, column, and row, modulo the frame count, through the shared variant hook. Bridge cells use the water fill beneath their timber planks.
+- Edges: structural treatments are selective. Roads keep a readable ink edge. Water banks use a quiet translucent silt treatment with water-only corners and sparse accents. Path and field boundaries use low-opacity reed-colored feathering into terrestrial neighbors, while reeds meet ground directly without a cardinal outline. These treatments blend low-contrast textures instead of forming nested contour lines. `edges.ts` computes each configured four-bit cardinal mask and diagonal corner bits from the union of its targets. It expands every cardinal family globally before water-only corners and sparse hash-selected accents, then assigns marks to the lowest free overlay layer. The three layers preserve cardinals when later corners or accents overflow, with deterministic drops. Planks emit on exactly bridge cells. Upper wall bands are a second small tiled ground above characters.
+- Camera: the maximum zoom is sixteen times the fitted view. On the 120-cell map this brings a 16-unit world cell close to the Terrain frame's native 128-pixel display size for clear material inspection.
+- Pin the edge-frame ordering with step 5.0 before this step lands, and smoke-check tile performance: the selective pre-tinted tileset bakes roughly 100 to 150 small textures.
 
 Tests cover fill and edge determinism and planks on exactly bridge cells. Run the Three Branches e2e group here, since the scene-graph reshuffle and the first textured layer land together.
 
@@ -156,7 +157,7 @@ The owner reviews the terrain: parchment ground, water and banks, reeds, fields,
 
 ### Terrain sign-off
 
-Pending. The owner reviews terrain in watch sessions and records the date here.
+Pending. Manual owner sign-off after terrain watch-session review remains required.
 
 ## Characters
 

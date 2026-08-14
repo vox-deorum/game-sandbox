@@ -16,6 +16,11 @@ const limits = cameraLimits({ minX: 0, minY: 0, maxX: 1600, maxY: 1200 }, view, 
 })
 
 describe('Three Branches visitor camera', () => {
+  it('allows native-detail inspection at sixteen times the fitted zoom', () => {
+    expect(THREE_BRANCHES_PRESENTATION.maxZoomFactor).toBe(16)
+    expect(limits.maxZoom).toBe(limits.minZoom * 16)
+  })
+
   it('opens on the visitor at the configurable focused zoom', () => {
     const state = initialVisitorCamera(limits, view, { x: 200, y: 600 }, false)
     expect(state.camera.zoom).toBe(

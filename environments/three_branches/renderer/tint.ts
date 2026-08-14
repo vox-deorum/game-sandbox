@@ -91,8 +91,6 @@ export function tintedMaskPixels(pixels: Uint8ClampedArray, tint: string, opacit
     pixels[index + 3] = Math.round((pixels[index + 3] ?? 0) * amount)
   }
 }
-/** Opacity for quiet corner and accent edge marks, below full-strength cardinal banks. */
-export const TERRAIN_EDGE_DETAIL_ALPHA = 0.22
 
 /** Stable cache key for an opaque terrain fill baked from one atlas frame. */
 export function opaqueFillCacheKey(frame: string, tint: string): string {

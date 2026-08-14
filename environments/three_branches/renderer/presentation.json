@@ -20,58 +20,54 @@
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed" },
       "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "silt" },
       "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment" },
-      "bridge": { "frames": ["bridgeA", "bridgeB", "bridgeC"], "tint": "timber" },
+      "bridge": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
       "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment" },
       "doorway": { "frames": ["doorway"], "tint": "bone" },
       "field": { "frames": ["furrowA", "furrowB", "furrowC", "furrowD"], "tint": "silt" },
-      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "pine" },
+      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "reed" },
       "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
-      "wall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
+      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo" }
     },
     "edges": {
       "layers": 3,
       "pairings": [
         {
           "from": "water",
-          "to": "ground",
-          "frames": [
-            "edge00",
-            "edge01",
-            "edge02",
-            "edge03",
-            "edge04",
-            "edge05",
-            "edge06",
-            "edge07",
-            "edge08",
-            "edge09",
-            "edge10",
-            "edge11",
-            "edge12",
-            "edge13",
-            "edge14",
-            "edge15"
-          ],
+          "to": ["ground", "reeds", "field", "road", "path"],
+          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
           "tint": "silt",
+          "opacity": 0.3,
           "corners": {
-            "northEast": ["cornerA", "cornerB"],
-            "southEast": ["cornerC", "cornerD"],
-            "southWest": ["cornerE", "cornerF"],
-            "northWest": ["cornerG", "cornerH"]
+            "frames": {
+              "northEast": ["cornerA", "cornerB"],
+              "southEast": ["cornerC", "cornerD"],
+              "southWest": ["cornerE", "cornerF"],
+              "northWest": ["cornerG", "cornerH"]
+            },
+            "opacity": 0.22
           },
-          "accents": ["bankShoulder", "bankStones"]
+          "accents": { "frames": ["bankShoulder", "bankStones"], "density": 0.18, "opacity": 0.12 }
         },
         {
-          "from": "reeds",
-          "to": "ground",
-          "frames": ["reedShoulderA", "reedShoulderB", "reedShoulderC"],
-          "tint": "reed"
+          "from": "road",
+          "to": ["ground", "reeds", "field"],
+          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
+          "tint": "ink",
+          "opacity": 0.35
+        },
+        {
+          "from": "path",
+          "to": ["ground", "reeds", "field"],
+          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
+          "tint": "reed",
+          "opacity": 0.22
         },
         {
           "from": "field",
-          "to": "ground",
-          "frames": ["furrowEndA", "furrowEndB", "furrowEndC"],
-          "tint": "silt"
+          "to": ["ground", "reeds"],
+          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
+          "tint": "reed",
+          "opacity": 0.28
         }
       ]
     },

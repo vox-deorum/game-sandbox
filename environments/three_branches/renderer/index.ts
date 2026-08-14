@@ -332,6 +332,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       )
     }
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
+    this.redrawCurrentFrame()
   }
 
   private presentScene(scene: FrameScene): void {

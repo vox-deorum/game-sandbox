@@ -17,6 +17,8 @@ Every atlas frame lives as one loose PNG beside the compiled page. The compiled 
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 16 |
 
+The Frames column counts loose files, not frame pixels. Each page's current frame dimensions live in `renderer/assets.ts` and may change with the consuming art unit while the file count and names remain stable.
+
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
 
 The props frame names in `assets.ts` change to derive from catalog tokens, so the loose files already on disk map without a hand-maintained table: `noticeBoardBase` becomes `boardBase`, `noticePosted` becomes `boardPosted`, `gardenPlotBase` becomes `plotBase`, `gardenTended` becomes `plotTended`, `gardenOvergrown` becomes `plotOvergrown`, and `gardenFence` becomes `plotFence`. Nothing outside `assets.ts` and `assets.test.ts` references these names.

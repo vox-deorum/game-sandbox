@@ -4,11 +4,7 @@ import { Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { edgeMarkFamilies, planEdges, terrainVariant } from './edges.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
-import {
-  opaqueTintedFillFrame,
-  TERRAIN_EDGE_DETAIL_ALPHA,
-  tintedMaskFrame,
-} from './tint.js'
+import { opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
 import type { StaticScene } from './types.js'
 
 const PLANK_CODE = 'P'
@@ -46,7 +42,7 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
       manifest.frames,
       family.frames,
       family.tint,
-      family.kind === 'corner' || family.kind === 'accent' ? TERRAIN_EDGE_DETAIL_ALPHA : 1,
+      family.opacity,
     )
   }
   textures[PLANK_CODE] = framesFor(atlas, manifest.frames, HEARTHSIDE_STYLE.terrain.planks.frames, HEARTHSIDE_STYLE.terrain.planks.tint)
@@ -112,7 +108,7 @@ function fillFramesFor(
     opaqueTintedFillFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]),
   )
 }
-/** Bake low-opacity masks only for the smaller water-bank corner and accent marks. */
+/** Bake one terrain mask family at its configured opacity. */
 function framesFor(
   atlas: Texture,
   grid: Parameters<typeof tintedMaskFrame>[1],

@@ -4,7 +4,6 @@ import {
   frameRectangle,
   opaqueFillCacheKey,
   opaqueFillPixels,
-  TERRAIN_EDGE_DETAIL_ALPHA,
   tintedMaskCacheKey,
   tintedMaskPixels,
 } from './tint.js'
@@ -24,21 +23,20 @@ describe('Three Branches atlas tinting', () => {
     expect(() => frameRectangle(grid, 'missing')).toThrow('Unknown atlas frame')
   })
 
-  it('keeps default and quiet mask alpha variants in separate cache entries', () => {
+  it('keeps resolved family opacity variants in separate cache entries', () => {
     expect(tintedMaskCacheKey('washA', '#A9AE8A')).toBe('washA:#a9ae8a')
-    expect(tintedMaskCacheKey('washA', '#A9AE8A', TERRAIN_EDGE_DETAIL_ALPHA)).toBe(
-      'washA:#a9ae8a:0.22',
-    )
+    expect(tintedMaskCacheKey('washA', '#A9AE8A', 0.75)).toBe('washA:#a9ae8a:0.75')
   })
 
-  it('scales tinted mask alpha while retaining the full-strength default', () => {
+  it('applies one resolved opacity without multiplying it by a global detail alpha', () => {
     const full = new Uint8ClampedArray([255, 255, 255, 200])
-    const quiet = new Uint8ClampedArray(full)
+    const resolved = new Uint8ClampedArray(full)
     tintedMaskPixels(full, '#6480a0')
-    tintedMaskPixels(quiet, '#6480a0', TERRAIN_EDGE_DETAIL_ALPHA)
+    tintedMaskPixels(resolved, '#6480a0', 0.75)
     expect([...full]).toEqual([100, 128, 160, 200])
-    expect([...quiet]).toEqual([100, 128, 160, 44])
+    expect([...resolved]).toEqual([100, 128, 160, 150])
   })
+
   it('bakes opaque fill corners from the configured tint with restrained mask variation', () => {
     const pixels = new Uint8ClampedArray([
       0, 0, 0, 0,
