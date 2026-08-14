@@ -146,51 +146,27 @@ export interface FrameTreatment {
   tint: HearthsidePaletteKey
 }
 
-export const EDGE_CORNER_DIRECTIONS = ['northEast', 'southEast', 'southWest', 'northWest'] as const
-export type EdgeCornerDirection = (typeof EDGE_CORNER_DIRECTIONS)[number]
-/** The edge-frame order indexed directly by the planner's four-bit cardinal mask. */
-export const CARDINAL_EDGE_FRAMES = [
-  'edge00',
-  'edge01',
-  'edge02',
-  'edge03',
-  'edge04',
-  'edge05',
-  'edge06',
-  'edge07',
-  'edge08',
-  'edge09',
-  'edge10',
-  'edge11',
-  'edge12',
-  'edge13',
-  'edge14',
-  'edge15',
-] as const
-
-/** One painted boundary treatment packed into the terrain overlay layers. */
-export interface OverlayEdgeTreatment extends FrameTreatment {
-  mode: 'overlay'
-  from: string
-  to: readonly string[]
+export interface ShorelineBandTreatment {
+  tint: HearthsidePaletteKey
+  widthCells: number
   opacity: number
-  corners?: {
-    frames: Readonly<Record<EdgeCornerDirection, readonly string[]>>
-    opacity: number
+}
+
+/** Deterministic subcell geometry and shoreline calibration for natural terrain. */
+export interface TerrainContourTreatment {
+  smoothingPasses: number
+  cornerWeight: number
+  sampleSpacingCells: number
+  junctionTangentCells: number
+  noiseAmplitudeCells: number
+  noiseWavelengthCells: readonly [number, number]
+  maxDeviationCells: number
+  saddleRadiusCells: number
+  shoreline: {
+    bands: readonly [ShorelineBandTreatment, ShorelineBandTreatment]
+    bridgeTaperCells: number
   }
-  accents?: { frames: readonly string[]; density: number; opacity: number }
 }
-
-/** One fill cutout whose cardinal mask feathers the source terrain into the base ground. */
-export interface CutoutEdgeTreatment {
-  mode: 'cutout'
-  from: string
-  to: readonly string[]
-  frames: readonly string[]
-}
-
-/** A source terrain class has either a painted overlay or a fill cutout boundary. */
-export type EdgeTreatment = OverlayEdgeTreatment | CutoutEdgeTreatment
 
 /** Semantic bridge deck frames selected once per connected bridge component. */
 export interface PlankTreatment {
@@ -213,10 +189,7 @@ export interface HearthsideStyle {
   transition: { naturalMs: number; settleGraceMs: number }
   terrain: {
     fills: Readonly<Record<string, FrameTreatment>>
-    edges: {
-      layers: number
-      pairings: readonly EdgeTreatment[]
-    }
+    contours: TerrainContourTreatment
     planks: PlankTreatment
     upperWall: FrameTreatment
   }
@@ -322,7 +295,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const terrainFrames = framesFor('terrain')
   const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
     'fills',
-    'edges',
+    'contours',
     'planks',
     'upperWall',
   ])
@@ -339,23 +312,13 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       ),
     ]),
   )
-  const edgesSource = exactRecord(terrainSource.edges, 'presentation.terrain.edges', [
-    'layers',
-    'pairings',
-  ])
-  const knownGround = new Set(groundNames)
-  const pairings = array(edgesSource.pairings, 'presentation.terrain.edges.pairings').map(
-    (item, index) => edgeTreatment(item, index, knownGround, terrainFrames, paletteNames),
-  )
-  if (new Set(pairings.map((pairing) => pairing.from)).size !== pairings.length) {
-    throw new Error('presentation.terrain.edges.pairings must configure each source once.')
-  }
   const terrain = {
     fills,
-    edges: {
-      layers: positiveInteger(edgesSource.layers, 'presentation.terrain.edges.layers'),
-      pairings,
-    },
+    contours: contourTreatment(
+      terrainSource.contours,
+      'presentation.terrain.contours',
+      paletteNames,
+    ),
     planks: plankTreatment(
       terrainSource.planks,
       'presentation.terrain.planks',
@@ -511,65 +474,101 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 }
 
-function edgeTreatment(
+function contourTreatment(
   value: unknown,
-  index: number,
-  knownGround: ReadonlySet<string>,
-  knownFrames: ReadonlySet<string>,
+  name: string,
   palette: ReadonlySet<string>,
-): EdgeTreatment {
-  const name = `presentation.terrain.edges.pairings[${index}]`
-  const raw = record(value, name)
-  const mode = raw.mode
-  if (mode !== 'overlay' && mode !== 'cutout') {
-    throw new Error(`${name}.mode must be overlay or cutout.`)
-  }
-  const from = knownText(raw.from, knownGround, `${name}.from`)
-  const to = edgeTargets(raw.to, `${name}.to`, knownGround)
-  if (mode === 'cutout') {
-    const pairing = exactRecord(raw, name, ['mode', 'from', 'to', 'frames'])
-    return {
-      mode,
-      from,
-      to,
-      frames: cardinalEdgeFrames(pairing.frames, `${name}.frames`, knownFrames),
-    }
-  }
-  const waterBank = from === 'water'
-  if (!waterBank && raw.corners !== undefined) {
-    throw new Error(`${name}.corners are only supported for water.`)
-  }
-  const pairing = exactRecord(raw, name, [
-    'mode',
-    'from',
-    'to',
-    'frames',
-    'tint',
-    'opacity',
-    ...(raw.corners === undefined ? [] : ['corners']),
-    ...(raw.accents === undefined ? [] : ['accents']),
+): TerrainContourTreatment {
+  const source = exactRecord(value, name, [
+    'smoothingPasses',
+    'cornerWeight',
+    'sampleSpacingCells',
+    'junctionTangentCells',
+    'noiseAmplitudeCells',
+    'noiseWavelengthCells',
+    'maxDeviationCells',
+    'saddleRadiusCells',
+    'shoreline',
   ])
-  const treatment = {
-    frames: cardinalEdgeFrames(pairing.frames, `${name}.frames`, knownFrames),
-    tint: paletteKey(pairing.tint, palette, `${name}.tint`),
-    opacity: unitNumber(pairing.opacity, `${name}.opacity`),
+  const wavelengths = array(source.noiseWavelengthCells, `${name}.noiseWavelengthCells`)
+  if (wavelengths.length !== 2) {
+    throw new Error(`${name}.noiseWavelengthCells must contain a minimum and maximum.`)
   }
-  const corners = waterBank
-    ? {
-        frames: cornerFrames(pairing.corners, `${name}.corners`, knownFrames),
-        opacity: cornerOpacity(pairing.corners, `${name}.corners`),
-      }
-    : undefined
-  const accents = pairing.accents === undefined
-    ? undefined
-    : accentTreatment(pairing.accents, `${name}.accents`, knownFrames)
+  const noiseWavelengthCells = [
+    boundedNumber(wavelengths[0], `${name}.noiseWavelengthCells[0]`, 1.5, 3, true),
+    boundedNumber(wavelengths[1], `${name}.noiseWavelengthCells[1]`, 1.5, 3, true),
+  ] as const
+  if (noiseWavelengthCells[0] > noiseWavelengthCells[1]) {
+    throw new Error(`${name}.noiseWavelengthCells must be ordered minimum to maximum.`)
+  }
+  const shorelineSource = exactRecord(source.shoreline, `${name}.shoreline`, [
+    'bands',
+    'bridgeTaperCells',
+  ])
+  const bandSources = array(shorelineSource.bands, `${name}.shoreline.bands`)
+  if (bandSources.length !== 2) {
+    throw new Error(`${name}.shoreline.bands must contain the reed wash and silt bank.`)
+  }
+  const bands = bandSources.map((band, index) => {
+    const bandName = `${name}.shoreline.bands[${index}]`
+    const bandSource = exactRecord(band, bandName, ['tint', 'widthCells', 'opacity'])
+    return {
+      tint: paletteKey(bandSource.tint, palette, `${bandName}.tint`),
+      widthCells: boundedNumber(bandSource.widthCells, `${bandName}.widthCells`, 0, 0.5),
+      opacity: unitNumber(bandSource.opacity, `${bandName}.opacity`),
+    }
+  }) as [ShorelineBandTreatment, ShorelineBandTreatment]
+  if (bands[0].tint !== 'reed' || bands[1].tint !== 'silt') {
+    throw new Error(`${name}.shoreline.bands must order the reed wash before the silt bank.`)
+  }
+  const maxDeviationCells = boundedNumber(
+    source.maxDeviationCells,
+    `${name}.maxDeviationCells`,
+    0,
+    0.15,
+  )
+  const noiseAmplitudeCells = boundedNumber(
+    source.noiseAmplitudeCells,
+    `${name}.noiseAmplitudeCells`,
+    0,
+    Math.min(0.06, maxDeviationCells),
+    true,
+  )
   return {
-    mode,
-    from,
-    to,
-    ...treatment,
-    ...(corners === undefined ? {} : { corners }),
-    ...(accents === undefined ? {} : { accents }),
+    smoothingPasses: positiveInteger(source.smoothingPasses, `${name}.smoothingPasses`),
+    cornerWeight: boundedNumber(source.cornerWeight, `${name}.cornerWeight`, 0, 0.5),
+    sampleSpacingCells: boundedNumber(
+      source.sampleSpacingCells,
+      `${name}.sampleSpacingCells`,
+      0,
+      0.5,
+    ),
+    junctionTangentCells: boundedNumber(
+      source.junctionTangentCells,
+      `${name}.junctionTangentCells`,
+      0,
+      0.5,
+      true,
+    ),
+    noiseAmplitudeCells,
+    noiseWavelengthCells,
+    maxDeviationCells,
+    saddleRadiusCells: boundedNumber(
+      source.saddleRadiusCells,
+      `${name}.saddleRadiusCells`,
+      0,
+      0.08,
+    ),
+    shoreline: {
+      bands,
+      bridgeTaperCells: boundedNumber(
+        shorelineSource.bridgeTaperCells,
+        `${name}.shoreline.bridgeTaperCells`,
+        0,
+        1,
+        true,
+      ),
+    },
   }
 }
 function plankTreatment(
@@ -585,61 +584,6 @@ function plankTreatment(
     compact: knownText(source.compact, knownFrames, `${name}.compact`),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
   }
-}
-function cardinalEdgeFrames(
-  value: unknown,
-  name: string,
-  known: ReadonlySet<string>,
-): readonly string[] {
-  const frames = frameNames(value, name, known)
-  if (
-    frames.length !== CARDINAL_EDGE_FRAMES.length ||
-    frames.some((frame, index) => frame !== CARDINAL_EDGE_FRAMES[index])
-  ) {
-    throw new Error(`${name} must equal the cardinal order edge00 through edge15.`)
-  }
-  return frames
-}
-function cornerFrames(
-  value: unknown,
-  name: string,
-  known: ReadonlySet<string>,
-): Record<EdgeCornerDirection, readonly string[]> {
-  const source = exactRecord(value, name, ['frames', 'opacity'])
-  const frames = exactRecord(source.frames, `${name}.frames`, EDGE_CORNER_DIRECTIONS)
-  return Object.fromEntries(
-    EDGE_CORNER_DIRECTIONS.map((direction) => [
-      direction,
-      twoFrameNames(frames[direction], `${name}.frames.${direction}`, known),
-    ]),
-  ) as Record<EdgeCornerDirection, readonly string[]>
-}
-function cornerOpacity(value: unknown, name: string): number {
-  const source = exactRecord(value, name, ['frames', 'opacity'])
-  return unitNumber(source.opacity, `${name}.opacity`)
-}
-function twoFrameNames(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
-  const frames = frameNames(value, name, known)
-  if (frames.length !== 2) throw new Error(`${name} must contain exactly two frames.`)
-  return frames
-}
-function accentTreatment(
-  value: unknown,
-  name: string,
-  known: ReadonlySet<string>,
-): { frames: readonly string[]; density: number; opacity: number } {
-  const source = exactRecord(value, name, ['frames', 'density', 'opacity'])
-  return {
-    frames: frameNames(source.frames, `${name}.frames`, known),
-    density: unitNumber(source.density, `${name}.density`),
-    opacity: unitNumber(source.opacity, `${name}.opacity`),
-  }
-}
-function edgeTargets(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {
-  const targets = array(value, name).map((item, index) => knownText(item, known, `${name}[${index}]`))
-  if (targets.length === 0) throw new Error(`${name} must contain at least one target.`)
-  if (new Set(targets).size !== targets.length) throw new Error(`${name} must not contain duplicate targets.`)
-  return targets
 }
 function framesFor(group: string, layer?: string): ReadonlySet<string> {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
@@ -674,13 +618,6 @@ function frameNames(value: unknown, name: string, known: ReadonlySet<string>): r
   )
   if (result.length === 0) throw new Error(`${name} must contain at least one frame.`)
   return result
-}
-
-function record(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${name} must be an object.`)
-  }
-  return value as Record<string, unknown>
 }
 
 function exactRecord(
@@ -731,5 +668,23 @@ function nonnegativeNumber(value: unknown, name: string): number {
 function unitNumber(value: unknown, name: string): number {
   const result = nonnegativeNumber(value, name)
   if (result > 1) throw new Error(`${name} must be at most one.`)
+  return result
+}
+
+function boundedNumber(
+  value: unknown,
+  name: string,
+  minimum: number,
+  maximum: number,
+  allowsMinimum = false,
+): number {
+  const result = finiteNumber(value, name)
+  if ((allowsMinimum ? result < minimum : result <= minimum) || result > maximum) {
+    throw new Error(
+      allowsMinimum
+        ? `${name} must be between ${minimum} and ${maximum}.`
+        : `${name} must be greater than ${minimum} and at most ${maximum}.`,
+    )
+  }
   return result
 }

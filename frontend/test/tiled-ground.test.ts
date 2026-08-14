@@ -1,7 +1,8 @@
 import { Texture } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createSparseTiledGround,
   createTiledGround,
   EMPTY_TILE_CODE,
   type GroundTileset,
@@ -144,5 +145,85 @@ describe('tiled ground lifecycle', () => {
     const beforeRepaint = variants.length
     ground.setTile(1, 0, 'a')
     expect(variants.slice(beforeRepaint)).toEqual([['a', 1, 0, 4 | 64]])
+  })
+})
+
+describe('sparse tiled ground', () => {
+  it('accepts empty cells, packs them as null tiles, and retains the whole grid span', () => {
+    const ground = createSparseTiledGround(
+      { columns: 3, rows: [`${EMPTY_TILE_CODE}a${EMPTY_TILE_CODE}`, `aa${EMPTY_TILE_CODE}`] },
+      { tileSize: 1, textures: { a: Texture.EMPTY } },
+      { cellSize: 16 },
+    )
+    const map = ground.view.children[0] as unknown as {
+      getTile(layer: string, column: number, row: number): unknown
+    }
+
+    expect(ground.view.children).toHaveLength(1)
+    expect(ground.span).toEqual({ width: 48, height: 32 })
+    expect(map.getTile('ground', 0, 0)).toBeNull()
+    expect(map.getTile('ground', 1, 0)).not.toBeNull()
+    expect(map.getTile('ground', 2, 1)).toBeNull()
+  })
+
+  it('validates sparse grid shape, codes, and cell size before creating its view', () => {
+    const sparseTileset = { tileSize: 1, textures: { a: Texture.EMPTY } }
+
+    expect(() =>
+      createSparseTiledGround({ columns: 2, rows: ['a'] }, sparseTileset, { cellSize: 16 }),
+    ).toThrow('expected 2')
+    expect(() =>
+      createSparseTiledGround({ columns: 1, rows: ['z'] }, sparseTileset, { cellSize: 16 }),
+    ).toThrow('z')
+    expect(() =>
+      createSparseTiledGround({ columns: 1, rows: ['a'] }, sparseTileset, { cellSize: 0 }),
+    ).toThrow('positive number')
+  })
+
+  it('uses original sparse coordinates and same-code masks for deterministic variants', () => {
+    const variants: [string, number, number, number][] = []
+    createSparseTiledGround(
+      { columns: 3, rows: [`${EMPTY_TILE_CODE}a${EMPTY_TILE_CODE}`, 'aaa'] },
+      { tileSize: 1, textures: { a: Texture.EMPTY } },
+      {
+        cellSize: 16,
+        variant: (code, column, row, mask) => {
+          variants.push([code, column, row, mask])
+          return 0
+        },
+      },
+    )
+
+    expect(variants).toEqual([
+      ['a', 1, 0, 8 | 16 | 32],
+      ['a', 0, 1, 2 | 4],
+      ['a', 1, 1, 1 | 4 | 64],
+      ['a', 2, 1, 64 | 128],
+    ])
+  })
+
+  it('keeps an all-empty grid as one empty, full-span map and releases it once', () => {
+    const variant = vi.fn(() => 0)
+    const ground = createSparseTiledGround(
+      { columns: 2, rows: [`${EMPTY_TILE_CODE}${EMPTY_TILE_CODE}`] },
+      { tileSize: 1, textures: { a: Texture.EMPTY } },
+      { cellSize: 16, variant },
+    )
+    const map = ground.view.children[0] as unknown as {
+      destroyed: boolean
+      destroy(): void
+      getTile(layer: string, column: number, row: number): unknown
+    }
+    const destroyMap = vi.spyOn(map, 'destroy')
+
+    expect(ground.span).toEqual({ width: 32, height: 16 })
+    expect(map.getTile('ground', 0, 0)).toBeNull()
+    expect(map.getTile('ground', 1, 0)).toBeNull()
+    expect(variant).not.toHaveBeenCalled()
+    ground.destroy()
+    ground.destroy()
+    expect(destroyMap).toHaveBeenCalledTimes(1)
+    expect(map.destroyed).toBe(true)
+    expect(ground.view.destroyed).toBe(true)
   })
 })

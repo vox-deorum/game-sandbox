@@ -18,7 +18,7 @@
   "terrain": {
     "fills": {
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed" },
-      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "silt" },
+      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber" },
       "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment" },
       "bridge": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
       "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment" },
@@ -28,50 +28,22 @@
       "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
       "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo" }
     },
-    "edges": {
-      "layers": 3,
-      "pairings": [
-        {
-          "mode": "overlay",
-          "from": "water",
-          "to": ["ground", "reeds", "field", "road", "path"],
-          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
-          "tint": "silt",
-          "opacity": 0.3,
-          "corners": {
-            "frames": {
-              "northEast": ["cornerA", "cornerB"],
-              "southEast": ["cornerC", "cornerD"],
-              "southWest": ["cornerE", "cornerF"],
-              "northWest": ["cornerG", "cornerH"]
-            },
-            "opacity": 0.22
-          },
-          "accents": { "frames": ["bankShoulder", "bankStones"], "density": 0.18, "opacity": 0.12 }
-        },
-        {
-          "mode": "cutout",
-          "from": "road",
-          "to": ["ground", "reeds", "field"],
-          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"]
-        },
-        {
-          "mode": "overlay",
-          "from": "path",
-          "to": ["ground", "reeds", "field"],
-          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
-          "tint": "reed",
-          "opacity": 0.22
-        },
-        {
-          "mode": "overlay",
-          "from": "field",
-          "to": ["ground", "reeds"],
-          "frames": ["edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07", "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15"],
-          "tint": "reed",
-          "opacity": 0.28
-        }
-      ]
+    "contours": {
+      "smoothingPasses": 2,
+      "cornerWeight": 0.25,
+      "sampleSpacingCells": 0.5,
+      "junctionTangentCells": 0.25,
+      "noiseAmplitudeCells": 0.06,
+      "noiseWavelengthCells": [1.5, 3],
+      "maxDeviationCells": 0.15,
+      "saddleRadiusCells": 0.08,
+      "shoreline": {
+        "bands": [
+          { "tint": "reed", "widthCells": 0.3, "opacity": 0.14 },
+          { "tint": "silt", "widthCells": 0.14, "opacity": 0.3 }
+        ],
+        "bridgeTaperCells": 0.25
+      }
     },
     "planks": { "horizontal": "bridgeA", "vertical": "bridgeB", "compact": "bridgeC", "tint": "timber" },
     "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }

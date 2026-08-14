@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  cutoutFillCacheKey,
-  cutoutFillPixels,
   frameRectangle,
   opaqueFillCacheKey,
   opaqueFillPixels,
@@ -40,51 +38,12 @@ describe('Three Branches atlas tinting', () => {
   })
 
   it('bakes opaque fill corners from the configured tint with restrained mask variation', () => {
-    const pixels = new Uint8ClampedArray([
-      0, 0, 0, 0,
-      0, 0, 0, 255,
-      255, 255, 255, 255,
-    ])
+    const pixels = new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255])
     opaqueFillPixels(pixels, '#6480a0')
-    expect([...pixels]).toEqual([
-      100, 128, 160, 255,
-      86, 110, 138, 255,
-      114, 146, 182, 255,
-    ])
+    expect([...pixels]).toEqual([100, 128, 160, 255, 86, 110, 138, 255, 114, 146, 182, 255])
   })
 
   it('keeps opaque fills separate from transparent mask cache entries', () => {
     expect(opaqueFillCacheKey('washA', '#A9AE8A')).toBe('fill:washA:#a9ae8a')
-  })
-
-  it('keeps every road detail and cardinal cutout in a separate cache entry', () => {
-    expect(cutoutFillCacheKey('roadB', 'edge03', '#BFA072')).toBe(
-      'cutout:roadB:edge03:#bfa072',
-    )
-  })
-
-  it('feathers an opaque fill with inverse mask alpha and leaves mask zero opaque', () => {
-    const fill = new Uint8ClampedArray([
-      100, 80, 60, 255,
-      100, 80, 60, 255,
-      100, 80, 60, 255,
-    ])
-    const mask = new Uint8ClampedArray([
-      255, 255, 255, 0,
-      255, 255, 255, 128,
-      255, 255, 255, 255,
-    ])
-    cutoutFillPixels(fill, mask)
-    expect([...fill]).toEqual([
-      100, 80, 60, 255,
-      100, 80, 60, 127,
-      100, 80, 60, 0,
-    ])
-  })
-
-  it('rejects mismatched road fill and cutout mask dimensions', () => {
-    expect(() =>
-      cutoutFillPixels(new Uint8ClampedArray(8), new Uint8ClampedArray(4)),
-    ).toThrow('matching RGBA dimensions')
   })
 })

@@ -11,7 +11,7 @@ import {
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
-import type { TiledGround } from '@renderers/base/tiled-ground.js'
+import type { GroundView, TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
 import { replaceFallback, runArtLoad } from './art-loading.js'
@@ -69,7 +69,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private worldRoot!: Container
   private mapLayer!: Container
   private upperLayer!: Container
-  private mapGround!: TiledGround
+  private mapGround!: GroundView
   private upperGround: TiledGround | null = null
   private buildingOutlines!: Container
   private collision!: CollisionLayer

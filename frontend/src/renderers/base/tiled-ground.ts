@@ -22,7 +22,7 @@ export interface GroundTileset {
   textures: Readonly<Record<string, Texture | readonly Texture[]>>
 }
 
-/** The reserved empty code for optional layers. The base grid may not use it. */
+/** The reserved empty code for sparse grids and optional layers. Dense base grids may not use it. */
 export const EMPTY_TILE_CODE = ' '
 
 /**
@@ -54,16 +54,20 @@ export interface TiledGroundOptions {
   layers?: readonly TileGrid[]
 }
 
-/** The public, project-owned ground layer. */
-export interface TiledGround {
-  /** Container holding the single packed tiled map. */
+/** The public, project-owned view for an immutable ground layer. */
+export interface GroundView {
+  /** Container holding the owned ground display tree. */
   view: Container
   /** Drawn base-grid extent. */
   span: GroundSpan
-  /** Repaint one base-grid cell. Neighbouring autotile variants are not recomputed. */
-  setTile(column: number, row: number, code: string): void
   /** Release the packed map and its container. */
   destroy(): void
+}
+
+/** The public, project-owned ground layer with a mutable base grid. */
+export interface TiledGround extends GroundView {
+  /** Repaint one base-grid cell. Neighbouring autotile variants are not recomputed. */
+  setTile(column: number, row: number, code: string): void
 }
 
 /** Validate grid shape without constructing Pixi display objects. */
@@ -224,6 +228,72 @@ export function createTiledGround(
   const view = new Container()
   const baseRows = [...grid.rows]
   const baseGrid: TileGrid = { columns: grid.columns, rows: baseRows }
+  const { map, tileIdAt } = createPackedGroundMap(baseGrid, layers, tileset, variant)
+  map.scale.set(cellSize / tileset.tileSize)
+  view.addChild(map)
+  const lifecycle = createGroundLifecycle(view, span)
+  return {
+    ...lifecycle.ground,
+    setTile(column, row, code) {
+      lifecycle.assertAlive()
+      if (
+        !Number.isInteger(column) ||
+        !Number.isInteger(row) ||
+        column < 0 ||
+        row < 0 ||
+        column >= grid.columns ||
+        row >= grid.rows.length
+      ) {
+        throw new Error(`Tile position ${column}, ${row} is outside the ground.`)
+      }
+      repaintDenseTile(column, row, code)
+    },
+  }
+
+  function repaintDenseTile(column: number, row: number, code: string): void {
+    // The mutator belongs to the base only. It deliberately does not repaint adjacent autotile masks.
+    const rowCodes = baseRows[row]
+    if (rowCodes === undefined)
+      throw new Error(`Tile position ${column}, ${row} is outside the ground.`)
+    groundTextures(tileset, code)
+    baseRows[row] = `${rowCodes.slice(0, column)}${code}${rowCodes.slice(column + 1)}`
+    const tileId = tileIdAt(baseGrid, code, column, row)
+    map.setTile('ground', column, row, {
+      tileset: 'ground',
+      tileId,
+    })
+  }
+}
+
+/**
+ * Draw a grid with optional cells as one packed pixi-tiledmap layer. An all-empty grid still
+ * creates an empty map, which preserves its requested span and has the same destruction lifecycle.
+ */
+export function createSparseTiledGround(
+  grid: TileGrid,
+  tileset: GroundTileset,
+  { cellSize, variant }: Pick<TiledGroundOptions, 'cellSize' | 'variant'>,
+): GroundView {
+  validateTileGrid(grid)
+  validateGroundTileset(tileset)
+  validateGridCodes(grid, tileset, 'TileGrid', true)
+  const span = tileGridSpan(grid, cellSize)
+  const view = new Container()
+  const { map } = createPackedGroundMap(grid, [], tileset, variant)
+  map.scale.set(cellSize / tileset.tileSize)
+  view.addChild(map)
+  return createGroundLifecycle(view, span).ground
+}
+
+function createPackedGroundMap(
+  grid: TileGrid,
+  layers: readonly TileGrid[],
+  tileset: GroundTileset,
+  variant: GroundVariant | undefined,
+): {
+  map: TiledMap
+  tileIdAt: (source: TileGrid, code: string, column: number, row: number) => number
+} {
   const textureAt = (source: TileGrid, code: string, column: number, row: number): Texture =>
     resolveGroundTexture(
       tileset,
@@ -236,11 +306,10 @@ export function createTiledGround(
   const ids = new Map<Texture, number>()
   const images = new Map<string, Texture>()
   const tiles: { id: number; image: string; imagewidth: number; imageheight: number }[] = []
-  let nextId = 0
   const tileIdFor = (texture: Texture): number => {
     const existing = ids.get(texture)
     if (existing !== undefined) return existing
-    const id = nextId++
+    const id = ids.size
     ids.set(texture, id)
     const image = `ground-${id}`
     images.set(image, texture)
@@ -254,44 +323,32 @@ export function createTiledGround(
       tileIdFor(texture)
     }
   }
-  const map = new TiledMap(
-    createMap({
-      width: grid.columns,
-      height: grid.rows.length,
-      tilewidth: tileset.tileSize,
-      tileheight: tileset.tileSize,
-      tilesets: [
-        {
-          name: 'ground',
-          tilewidth: tileset.tileSize,
-          tileheight: tileset.tileSize,
-          tilecount: nextId,
-          tiles,
-        },
-      ],
-      // One TiledMap keeps the base and its ordered overlays on the same packed drawing path.
-      layers: [
-        tileLayer('ground', baseGrid, tileIdAt),
-        ...layers.map((layer, index) => tileLayer(`layer-${index}`, layer, tileIdAt)),
-      ],
-    }),
-    { tileImageTextures: images, tileSpritePadding: 0 },
-  )
-  map.scale.set(cellSize / tileset.tileSize)
-  view.addChild(map)
-  return groundLifecycle(view, grid, span, (column, row, code) => {
-    // The mutator belongs to the base only. It deliberately does not repaint adjacent autotile masks.
-    const rowCodes = baseRows[row]
-    if (rowCodes === undefined)
-      throw new Error(`Tile position ${column}, ${row} is outside the ground.`)
-    groundTextures(tileset, code)
-    baseRows[row] = `${rowCodes.slice(0, column)}${code}${rowCodes.slice(column + 1)}`
-    const tileId = tileIdAt(baseGrid, code, column, row)
-    map.setTile('ground', column, row, {
-      tileset: 'ground',
-      tileId,
-    })
-  })
+  return {
+    map: new TiledMap(
+      createMap({
+        width: grid.columns,
+        height: grid.rows.length,
+        tilewidth: tileset.tileSize,
+        tileheight: tileset.tileSize,
+        tilesets: [
+          {
+            name: 'ground',
+            tilewidth: tileset.tileSize,
+            tileheight: tileset.tileSize,
+            tilecount: ids.size,
+            tiles,
+          },
+        ],
+        // One TiledMap keeps the base and its ordered overlays on the same packed drawing path.
+        layers: [
+          tileLayer('ground', grid, tileIdAt),
+          ...layers.map((layer, index) => tileLayer(`layer-${index}`, layer, tileIdAt)),
+        ],
+      }),
+      { tileImageTextures: images, tileSpritePadding: 0 },
+    ),
+    tileIdAt,
+  }
 }
 
 function tileLayer(
@@ -336,34 +393,23 @@ function validateGridCodes(
   }
 }
 
-function groundLifecycle(
+function createGroundLifecycle(
   view: Container,
-  grid: TileGrid,
   span: GroundSpan,
-  repaint: (column: number, row: number, code: string) => void,
-): TiledGround {
+): { ground: GroundView; assertAlive(): void } {
   let destroyed = false
   return {
-    view,
-    span,
-    setTile(column, row, code) {
-      if (destroyed) throw new Error('Cannot repaint a destroyed tiled ground.')
-      if (
-        !Number.isInteger(column) ||
-        !Number.isInteger(row) ||
-        column < 0 ||
-        row < 0 ||
-        column >= grid.columns ||
-        row >= grid.rows.length
-      ) {
-        throw new Error(`Tile position ${column}, ${row} is outside the ground.`)
-      }
-      repaint(column, row, code)
+    ground: {
+      view,
+      span,
+      destroy() {
+        if (destroyed) return
+        destroyed = true
+        view.destroy({ children: true })
+      },
     },
-    destroy() {
-      if (destroyed) return
-      destroyed = true
-      view.destroy({ children: true })
+    assertAlive() {
+      if (destroyed) throw new Error('Cannot repaint a destroyed tiled ground.')
     },
   }
 }

@@ -38,12 +38,11 @@ Use broad value groups before small ink details. Cinnabar identifies the visitor
 
 Author Terrain art at 128 px per cell and draw it at the renderer's 16-unit cell. Other atlas groups retain their listed frame sizes. Map x and y directly to the renderer's world axes.
 
-Paint the engine-authored `overlay_static` grid through step 3's shared tile base in two layers:
+Paint the engine-authored `overlay_static` grid as continuous material surfaces. The gameplay and collision grid stays authoritative, but natural visual boundaries may move by at most 0.15 cell so fields, reeds, water, roads, and paths read as one Civilization-style landscape instead of square parcels. Every source cell centre remains inside its semantic material.
 
-1. **Fill:** Each ground class has several interior variants, selected deterministically by cell.
-2. **Edges:** A pure ground-grid pass derives a code wherever classes meet and paints banks, path shoulders, reed fringes, and furrow ends over fills.
+Each material keeps several deterministic per-cell texture variants. A pure shared-contour pass traces every material adjacency once, smooths it in subcell space, and gives both neighboring materials the same curve in reverse. Sparse tiled layers extend one cell beyond their semantic regions and clip through retained vector masks, preserving native 128 px detail without a repeating world texture. Ground covers the complete map beneath them.
 
-Both layers use the shared base's neighbour-mask `variant` hook, the tileset's only renderer seam. Reuse tintable grayscale-alpha edge masks across compatible ground boundaries instead of painting each palette pairing. Bridge cells paint planks over water. Do not draw marks smaller than a cell.
+Road and path share a smooth unoutlined seam. The road uses the darker timber value group so it remains distinct from silt fields, while the pale path remains subordinate. Water and bridge cells share one water surface, bridge entrances remain fixed to the grid, and bridge cells paint planks above the water. A curved shoreline uses a broad translucent reed wash beneath a narrower, more legible silt bank and fades out beside bridge decks. Architectural floor, doorway, and wall boundaries stay grid-aligned for the later Roofs unit.
 
 Floor, wall, and doorway are ground classes. Paint each building from the grid: floor within, wall around its perimeter, and a two-cell opening on one side. A building record remains semantic only: id, type, and origin cell. It owns no collision, use selection, or prop-state observation. Hearths and repair benches are separate props on floor ground. Repeat wall tiles in the upper terrain layer as shallow dark eave and wall bands above occupants.
 
@@ -59,7 +58,7 @@ Resolve state treatments once per recorded tick. Between ticks, transform the ca
 
 Draw world layers in this order:
 
-1. Night-ink surround, then terrain fills and edges for all ground, including floors, doorways, and bridge planks.
+1. Night-ink surround, then continuous terrain surfaces and shoreline, followed by exact floors, doorways, walls, and bridge planks.
 2. Scenery shadows and static prop bases.
 3. Dynamic prop stills.
 4. Character shadows and characters.
@@ -103,13 +102,13 @@ With `daynight`, the overlay's dawn, morning, midday, evening, or night phase se
 
 The local manifest is the only runtime loading contract. Keep only the high-resolution originals used by the approved runtime assets in `environments/three_branches/renderer/source-art/`. Keep optimised runtime files in `environments/three_branches/renderer/assets/`. Loose per-frame files under `assets/<group>/` are the editable truth; [step 5.0](5-0-atlas.md) compiles them into the atlas pages, and both are committed. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
 
-`environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants and edges, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
+`environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants, contour geometry, shoreline bands, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 
 `renderer/assets.ts` is the only runtime asset-loading contract. Its six atlas entries record each source and runtime file, dimensions, tintability, consumer, and sprite-sheet frame grid. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
 
 | Group | Runtime dimensions | Contents |
 | --- | --- | --- |
-| Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, shared tintable edge and corner masks for compatible boundaries, the wall tiles' upper-layer repaint, and bridge plank tiles |
+| Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, retained compatibility masks, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
 | Props | cell-sized treatments up to 3 by 2 cells | One tintable base per prop type, state overlays where the silhouette stays fixed, and bespoke stills only for silhouette-changing states |
 | Scenery | 64 px cells | Three red pine variants and the market crate |
@@ -120,11 +119,11 @@ The separate 320 by 180 thumbnail is a final Hearthside Ink image, not a screens
 
 ### Collision truth
 
-[ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. Art and collision-overlay drawings must match it exactly. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. Non-solid shadows, glow, smoke, and other effects may extend outside a shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
+[ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. The collision overlay remains exact and authoritative. Natural surface contours may move by at most 0.15 cell from that grid, while walls, doorways, catalog shapes, and every cell centre remain exact. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. Non-solid shadows, glow, smoke, and other effects may extend outside a shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
 
 ## Correctness, review, and configuration
 
-The owner judges the rendered result through `npm run play -- three_branches watch --seed N` with the collision overlay, over the fixture and generated seeds at fitted, mid, and close fixed scales. Each visual step below ends with that review, and its sign-off and date are recorded in place. No review tooling is added.
+The owner judges the rendered result through `npm run play -- three_branches watch --seed N` with the collision overlay, over the fixture and generated seeds at fitted, mid, and close fixed scales. Terrain contour review uses seeds 0, 17, and 37, including collision-on views. Each visual step below ends with that review, and its sign-off and date are recorded in place. No review tooling is added.
 
 ## Foundation
 
@@ -132,7 +131,7 @@ Status: complete.
 
 The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
-- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, edges with layers and pairings, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
+- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour and shoreline calibration, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
 - `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
 - `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
@@ -140,19 +139,19 @@ The common layer under every visual step. It has no owner gate: the step 3 solid
 
 `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
 
-The foundation's successful art load swaps in the configured tinted terrain fills. The Terrain step owns fill variation, edge composition, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
+The foundation's successful art load swaps in the configured tinted terrain fills. The Terrain step owns fill variation, contour composition, shoreline, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
 
 ## Terrain
 
-`edges.ts`, `terrain-art.ts`, and `map-layer.ts` land the tiled ground: fills, cutouts, edge overlays, planks, and the upper wall bands.
+`terrain-contours.ts`, `terrain-art.ts`, and `map-layer.ts` land the retained terrain: sparse textured surfaces, shared vector masks, shoreline, planks, and upper wall bands.
 
-- Fills: the full ground base covers every cell. Other full-bleed fill frames sit above it, with variants selected by a stable hash of code, column, and row through the shared variant hook. Road is the exception: each of its four details is baked through all 16 ordered cardinal masks. The mask alpha feather-cuts road to transparency above ground, while mask zero remains opaque. The road target union includes ground, reeds, and field, but excludes path so footpaths merge into roads. Bridge cells use the water fill beneath their timber planks.
-- Edges: each treatment is explicitly either an overlay or a cutout. Cutouts do not carry tint, opacity, corners, or accents, and are excluded from overlay-family expansion and three-layer packing. Water banks use a quiet translucent silt overlay with water-only corners and sparse accents. Path and field boundaries use low-opacity reed-colored feathering into terrestrial neighbors, while reeds meet ground directly without a cardinal outline. `edges.ts` computes each configured four-bit cardinal mask and diagonal corner bits from the union of its targets. It expands every overlay cardinal family globally before water-only corners and sparse hash-selected accents, then assigns marks to the lowest free overlay layer. The three layers preserve overlay cardinals when later corners or accents overflow, with deterministic drops. Upper wall bands are a second small tiled ground above characters.
+- Surfaces: the full ground base covers every cell. Field, reeds, water, path, and road use independently maskable sparse tiled layers with one-cell texture halos. Variants remain a stable hash of code, column, and row, so contour geometry does not create a repeating macro texture. Water and bridge share one visual surface; exact structure tiles sit above the natural layers.
+- Contours: one pure half-edge graph includes the fixed map exterior, preserves every adjacency as one shared curve, and resolves ambiguous two-material saddles deterministically. It resamples at 0.5 cell, applies two quarter-weight Chaikin passes, and adds at most 0.06 cell of low-frequency displacement. The complete curve remains within 0.15 cell of collision truth, keeps every cell centre in its source material, and preserves at least 0.70 cell through one-cell corridors. Map edges, structures, junction tangents, and bridge entrances stay fixed. A reed band 0.30 cell wide at 0.14 opacity sits beneath a silt band 0.14 cell wide at 0.30 opacity, with both fading beside bridges. Upper wall bands remain a second small tiled ground above characters.
 - Bridges: the plank configuration names horizontal, vertical, and compact frames. A pure cardinal connected-component planner assigns one semantic orientation to every bridge component. Paired east and west versus north and south road or path contacts decide first, followed by contact count, component span, and a deterministic compact tie fallback. Every bridge cell receives exactly one plank mark in one overlay layer.
 - Camera: the maximum zoom is sixteen times the fitted view. On the 120-cell map this brings a 16-unit world cell close to the Terrain frame's native 128-pixel display size for clear material inspection.
-- Pin the edge-frame ordering with step 5.0 before this step lands, and smoke-check tile performance: the selective pre-tinted tileset bakes roughly 160 small textures, including the 64 road detail and cardinal-mask composites.
+- Keep the existing Terrain atlas contract and compatibility frames. The active textured set drops the 64 road cutout composites and edge overlays, retaining only fill, plank, and upper-wall bakes. Contours build once during art installation and do no tick-time work.
 
-Tests cover fill and edge determinism, road cutout composition and targeting, component-wide bridge orientation, and planks on exactly bridge cells. Run the Three Branches e2e group here, since the scene-graph reshuffle and the first textured layer land together.
+Tests cover contour topology and determinism, full partition ownership, saddle and junction routing, islands and holes, the 0.15-cell tolerance, sparse-layer lifecycle, shoreline suppression, component-wide bridge orientation, and planks on exactly bridge cells. Run the Three Branches e2e group here, since the scene-graph reshuffle and the first textured layer land together.
 
 The owner reviews the terrain: parchment ground, water and banks, reeds, fields, paths, building floors, walls, doorways, and bridges.
 
@@ -208,7 +207,7 @@ Pending. The owner reviews the finished style across phases and seeds and record
 The suite tests structure, not aesthetics: no test measures whether the village reads well, since that is the owner's call at each sign-off. Keep the mechanical coverage to:
 
 - Configuration: `presentation.json` validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
-- Determinism: equal inputs give equal fills, edges, tints, walk frames, prop treatments, and crane routes, and sustained animations are pure at equal inputs.
+- Determinism: equal inputs give equal fills, contours, tints, walk frames, prop treatments, and crane routes, and sustained animations are pure at equal inputs.
 - Scene lifecycle: statics build once per static-layout key, dynamic nodes reconcile by id, no tick rebuilds statics, and seek, frame repeat, and resize snap.
 - Collision truth: overlay solids match wall ground, doorways stay passable, and prop and scenery sprites sit on their catalog shapes.
 - Run the Three Branches browser e2e group while iterating and the bare full browser e2e suite before handoff.

@@ -97,11 +97,6 @@ export function opaqueFillCacheKey(frame: string, tint: string): string {
   return `fill:${tintedMaskCacheKey(frame, tint)}`
 }
 
-/** Stable cache key for one terrain fill feathered by a cardinal cutout mask. */
-export function cutoutFillCacheKey(frame: string, mask: string, tint: string): string {
-  return `cutout:${frame}:${mask}:${tint.toLowerCase()}`
-}
-
 /** Maximum same-hue value shift retained from a terrain fill mask. */
 export const TERRAIN_FILL_DETAIL_STRENGTH = 0.14
 
@@ -153,67 +148,6 @@ export function opaqueTintedFillFrame(
   return baked
 }
 
-const cutoutFills = new WeakMap<Texture, Map<string, Texture>>()
-
-/** Bake one opaque terrain detail through one inverse-alpha cardinal cutout mask. */
-export function cutoutTintedFillFrame(
-  atlas: Texture,
-  grid: FrameGrid,
-  fillName: string,
-  tint: string,
-  maskName: string,
-): Texture {
-  const key = cutoutFillCacheKey(fillName, maskName, tint)
-  let cached = cutoutFills.get(atlas)
-  if (cached === undefined) {
-    cached = new Map()
-    cutoutFills.set(atlas, cached)
-  }
-  const existing = cached.get(key)
-  if (existing !== undefined) return existing
-
-  const fillFrame = frameRectangle(grid, fillName)
-  const maskFrame = frameRectangle(grid, maskName)
-  const canvas = document.createElement('canvas')
-  canvas.width = fillFrame.width
-  canvas.height = fillFrame.height
-  const context = canvas.getContext('2d')
-  if (context === null) throw new Error('A 2D canvas is required to cut out Three Branches artwork.')
-  const resource = atlas.source.resource
-  if (resource === null) throw new Error(`Atlas texture has no image source for frame ${fillName}.`)
-  context.drawImage(
-    resource as CanvasImageSource,
-    fillFrame.x,
-    fillFrame.y,
-    fillFrame.width,
-    fillFrame.height,
-    0,
-    0,
-    fillFrame.width,
-    fillFrame.height,
-  )
-  const fillPixels = context.getImageData(0, 0, fillFrame.width, fillFrame.height)
-  opaqueFillPixels(fillPixels.data, tint)
-  context.clearRect(0, 0, fillFrame.width, fillFrame.height)
-  context.drawImage(
-    resource as CanvasImageSource,
-    maskFrame.x,
-    maskFrame.y,
-    maskFrame.width,
-    maskFrame.height,
-    0,
-    0,
-    maskFrame.width,
-    maskFrame.height,
-  )
-  const maskPixels = context.getImageData(0, 0, maskFrame.width, maskFrame.height)
-  cutoutFillPixels(fillPixels.data, maskPixels.data)
-  context.putImageData(fillPixels, 0, 0)
-  const baked = Texture.from(canvas)
-  cached.set(key, baked)
-  return baked
-}
-
 /** Apply the opaque base and restrained same-hue value variation to RGBA terrain pixels. */
 export function opaqueFillPixels(pixels: Uint8ClampedArray, tint: string): void {
   const [red, green, blue] = tintChannels(tint)
@@ -228,21 +162,6 @@ export function opaqueFillPixels(pixels: Uint8ClampedArray, tint: string): void 
   }
 }
 
-/** Feather an already tinted fill to transparency using the inverse alpha of a mask. */
-export function cutoutFillPixels(
-  fillPixels: Uint8ClampedArray,
-  maskPixels: Uint8ClampedArray,
-): void {
-  if (fillPixels.length !== maskPixels.length || fillPixels.length % 4 !== 0) {
-    throw new Error('Terrain cutout fill and mask pixels must have matching RGBA dimensions.')
-  }
-  for (let index = 3; index < fillPixels.length; index += 4) {
-    const fillAlpha = fillPixels[index] ?? 0
-    const maskAlpha = maskPixels[index] ?? 0
-    fillPixels[index] = Math.round(fillAlpha * (1 - maskAlpha / 255))
-  }
-}
-
 function maskOpacity(value: number): number {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new Error('Terrain mask opacity must be between zero and one.')
@@ -252,5 +171,9 @@ function maskOpacity(value: number): number {
 function tintChannels(tint: string): [number, number, number] {
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(tint)
   if (match === null) throw new Error(`Invalid atlas tint: ${tint}`)
-  return match.slice(1).map((channel) => Number.parseInt(channel ?? '0', 16)) as [number, number, number]
+  return match.slice(1).map((channel) => Number.parseInt(channel ?? '0', 16)) as [
+    number,
+    number,
+    number,
+  ]
 }

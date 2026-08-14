@@ -1,14 +1,18 @@
+import { Container, Graphics } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import {
-  boundaryMask,
-  cutoutVariant,
-  edgeMarkFamilies,
-  planEdges,
-  terrainVariant,
-  type EdgePairing,
-} from './edges.js'
-import { CARDINAL_EDGE_FRAMES, HEARTHSIDE_STYLE } from './presentation.js'
+  TERRAIN_LAYER_ORDER,
+  contourMask,
+  exactTerrainGrid,
+  materialForGroundName,
+  materialGridWithHalo,
+  ownedTerrainView,
+  shorelineStrokeRuns,
+  signedComponentPath,
+} from './map-layer.js'
+import { HEARTHSIDE_STYLE } from './presentation.js'
+import { planTerrainContours, terrainVariant, type TerrainContourPoint } from './terrain-contours.js'
 import { BRIDGE_PLANK_CODES, plankRowsFor } from './terrain-art.js'
 
 const names: Readonly<Record<string, string>> = {
@@ -19,57 +23,13 @@ const names: Readonly<Record<string, string>> = {
   r: 'road',
   p: 'path',
   b: 'bridge',
+  i: 'interior',
+  d: 'doorway',
+  x: 'wall',
 }
-const waterBank: EdgePairing = {
-  mode: 'overlay',
-  from: 'water',
-  to: ['ground', 'reeds'],
-  frames: CARDINAL_EDGE_FRAMES,
-  tint: 'silt',
-  opacity: 1,
-  corners: {
-    frames: {
-      northEast: ['cornerA', 'cornerB'],
-      southEast: ['cornerC', 'cornerD'],
-      southWest: ['cornerE', 'cornerF'],
-      northWest: ['cornerG', 'cornerH'],
-    },
-    opacity: 0.75,
-  },
-  accents: { frames: ['bankShoulder'], density: 1, opacity: 0.22 },
-}
-const reeds: EdgePairing = {
-  mode: 'overlay',
-  from: 'reeds',
-  to: ['ground', 'field'],
-  frames: CARDINAL_EDGE_FRAMES,
-  tint: 'pine',
-  opacity: 0.45,
-  accents: { frames: ['reedShoulderA'], density: 1, opacity: 0.3 },
-}
-const field: EdgePairing = {
-  mode: 'overlay',
-  from: 'field',
-  to: ['ground'],
-  frames: CARDINAL_EDGE_FRAMES,
-  tint: 'ink',
-  opacity: 0.3,
-  accents: { frames: ['furrowEndA'], density: 1, opacity: 0.28 },
-}
-const roadCutout: EdgePairing = {
-  mode: 'cutout',
-  from: 'road',
-  to: ['ground', 'reeds', 'field'],
-  frames: CARDINAL_EDGE_FRAMES,
-}
-const families = edgeMarkFamilies([waterBank, reeds, field])
 
-function family(kind: 'cardinal' | 'corner' | 'accent', from = 'water', direction?: string) {
-  const result = families.find(
-    (item) => item.kind === kind && item.from === from && item.direction === direction,
-  )
-  if (result === undefined) throw new Error(`Missing ${kind} ${from} ${direction ?? ''} edge family.`)
-  return result
+function shorelinePoint(x: number, factor: number): TerrainContourPoint {
+  return { x, y: 0, rawOffset: x, locked: false, shorelineFactor: factor }
 }
 
 describe('Three Branches terrain art planning', () => {
@@ -88,90 +48,130 @@ describe('Three Branches terrain art planning', () => {
     expect(grid.every((row) => row.slice(0, 4).join('') !== row.slice(4).join(''))).toBe(true)
   })
 
-  it('uses a north-east-south-west mask for the union of configured target classes', () => {
-    const rows = ['ggg', 'gwg', 'ggg']
-    expect(boundaryMask(rows, names, 1, 1, ['ground'])).toBe(1 | 2 | 4 | 8)
-    expect(boundaryMask(['ewg'], names, 1, 0, ['ground', 'reeds'])).toBe(2 | 8)
-    expect(boundaryMask(['w'], names, 0, 0, ['ground', 'reeds'])).toBe(0)
+  it('uses one-cell Chebyshev halos while preserving source material codes', () => {
+    const grid = materialGridWithHalo(['ggggg', 'ggbgg', 'ggggg'], names, 'water', 'w')
+    expect(materialForGroundName('bridge')).toBe('water')
+    expect(grid).toEqual({ columns: 5, rows: [' www ', ' wbw ', ' www '] })
   })
 
-  it('uses one mixed water mask and one cardinal family per source cell', () => {
-    const plan = planEdges(['ewg'], names, families, 3)
-    const cardinal = family('cardinal')
-    expect(plan.frameIndexAt(cardinal.code, 1, 0)).toBe(2 | 8)
-    expect(plan.layers.filter((layer) => layer[0]?.[1] === cardinal.code)).toHaveLength(1)
+  it('keeps architectural cells exact and out of natural sparse coverage', () => {
+    expect(exactTerrainGrid(['gidwx', 'gixdg'], names, ['interior', 'doorway', 'wall'])).toEqual({
+      columns: 5,
+      rows: [' id x', ' ixd '],
+    })
+    expect(materialGridWithHalo(['gidwx', 'gixdg'], names, 'water', 'w').rows).toEqual([
+      '  www',
+      '  www',
+    ])
   })
 
-  it('excludes cutouts from packed overlay families', () => {
-    expect(edgeMarkFamilies([waterBank, roadCutout]).every((item) => item.from !== 'road')).toBe(true)
+  it('retains the approved terrain draw order', () => {
+    expect(TERRAIN_LAYER_ORDER).toEqual([
+      'ground',
+      'field',
+      'reeds',
+      'water',
+      'shoreline',
+      'path',
+      'road',
+      'structures',
+      'planks',
+    ])
   })
 
-  it('selects road composites in mask-major order and leaves road-to-path uncut', () => {
-    const rows = ['grpg', 'gggg']
-    expect(boundaryMask(rows, names, 1, 0, roadCutout.to)).toBe(4 | 8)
-    const expectedDetail = terrainVariant(4, 'r', 1, 0)
-    expect(cutoutVariant(rows, names, roadCutout, 1, 0, 4)).toBe((4 | 8) * 4 + expectedDetail)
-    expect(cutoutVariant(rows, names, roadCutout, 1, 0, 4)).toBe(
-      cutoutVariant(rows, names, roadCutout, 1, 0, 4),
+  it('uses one signed component path for direct holes and a separate nested island', () => {
+    const plan = planTerrainContours(
+      ['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'],
+      names,
+      HEARTHSIDE_STYLE.terrain.contours,
     )
-  })
-
-  it('expands every cardinal family before water corners and all accents', () => {
-    expect(families.map((item) => `${item.kind}:${item.from}:${item.direction ?? ''}`)).toEqual([
-      'cardinal:water:',
-      'cardinal:reeds:',
-      'cardinal:field:',
-      'corner:water:northEast',
-      'corner:water:southEast',
-      'corner:water:southWest',
-      'corner:water:northWest',
-      'accent:water:',
-      'accent:reeds:',
-      'accent:field:',
-    ])
-  })
-
-  it('detects configured diagonal corners from the composite target union', () => {
-    const northEast = family('corner', 'water', 'northEast')
-    const plan = planEdges(['wwg', 'www', 'www'], names, families, 3)
-    expect(plan.layers[0]?.[1]?.[1]).toBe(northEast.code)
-    expect(plan.frameIndexAt(northEast.code, 1, 1)).toBeLessThan(2)
-  })
-
-  it('includes sparse accents by stable hash and deterministically drops optional decoration', () => {
-    const noAccent: EdgePairing = {
-      ...waterBank,
-      accents: { frames: ['bankShoulder'], density: 0, opacity: 0.22 },
+    const outer = plan.components.find(
+      (component) => component.material === 'ground' && component.holeRingIds.length === 1,
+    )
+    const island = plan.components.find(
+      (component) => component.material === 'ground' && component.nestingDepth > 0,
+    )
+    expect(outer).toBeDefined()
+    expect(island).toBeDefined()
+    expect(island?.parentComponentId).toBeDefined()
+    const rings = new Map(plan.rings.map((ring) => [ring.id, ring]))
+    const outerRing = rings.get(outer!.outerRingId)!
+    const directHole = rings.get(outer!.holeRingIds[0]!)!
+    const path = signedComponentPath(outerRing, [directHole], 16)
+    expect(path.checkForHoles).toBe(true)
+    expect(path.instructions.filter((instruction) => instruction.action === 'closePath')).toHaveLength(2)
+    const mask = contourMask(plan, 'ground', 16)
+    const fills = mask.context.instructions.filter((instruction) => instruction.action === 'fill')
+    expect(fills).toHaveLength(2)
+    const closedSubpaths: number[] = []
+    for (const instruction of fills) {
+      if (instruction.action !== 'fill') throw new Error('Contour mask emitted a non-fill instruction.')
+      const addedPath = instruction.data.path.instructions.find((path) => path.action === 'addPath')
+      if (addedPath === undefined || addedPath.action !== 'addPath') {
+        throw new Error('Contour mask did not retain its signed component path.')
+      }
+      const componentPath = addedPath.data[0] as {
+        checkForHoles: boolean
+        instructions: readonly { action: string }[]
+      }
+      expect(componentPath.checkForHoles).toBe(true)
+      closedSubpaths.push(
+        componentPath.instructions.filter((path) => path.action === 'closePath').length,
+      )
     }
-    const allAccent: EdgePairing = {
-      ...waterBank,
-      accents: { frames: ['bankShoulder'], density: 1, opacity: 0.22 },
-    }
-    const noAccentFamilies = edgeMarkFamilies([noAccent])
-    const allAccentFamilies = edgeMarkFamilies([allAccent])
-    const noAccentPlan = planEdges(['ggg', 'gwg', 'ggg'], names, noAccentFamilies, 2)
-    const allAccentPlan = planEdges(['ggg', 'gwg', 'ggg'], names, allAccentFamilies, 2)
-    expect(noAccentPlan.dropped).toBe(0)
-    expect(allAccentPlan.layers).toEqual(planEdges(['ggg', 'gwg', 'ggg'], names, allAccentFamilies, 2).layers)
-    expect(allAccentPlan.dropped).toBe(0)
-    expect(allAccentPlan.layers.flat().join('')).toContain(allAccentFamilies[5]?.code)
+    expect(closedSubpaths.sort()).toEqual([1, 2])
+    mask.destroy()
   })
 
-  it('keeps cardinals when three-layer overflow drops later corners and accents', () => {
-    const cardinal = family('cardinal')
-    const southEast = family('corner', 'water', 'southEast')
-    const accent = family('accent')
-    const rows = ['wgw', 'www', 'wwg']
-    const full = planEdges(rows, names, families, 3)
-    expect(full.layers.map((layer) => layer[1]?.[1])).toEqual([
-      cardinal.code,
-      southEast.code,
-      accent.code,
+  it('keeps full-strength shoreline sections continuous while bridge tapers split into lower-alpha runs', () => {
+    expect(
+      shorelineStrokeRuns(
+        { closed: false, points: [shorelinePoint(0, 1), shorelinePoint(1, 1), shorelinePoint(2, 1)] },
+        0.14,
+      ),
+    ).toEqual([
+      {
+        points: [shorelinePoint(0, 1), shorelinePoint(1, 1), shorelinePoint(2, 1)],
+        alpha: 0.14,
+        closed: false,
+      },
     ])
-    const overflow = planEdges(rows, names, families, 2)
-    expect(overflow.layers.map((layer) => layer[1]?.[1])).toEqual([cardinal.code, southEast.code])
-    expect(overflow.dropped).toBeGreaterThan(0)
-    expect(planEdges(rows, names, families, 2).layers).toEqual(overflow.layers)
+    const taper = shorelineStrokeRuns(
+      {
+        closed: false,
+        points: [shorelinePoint(0, 1), shorelinePoint(1, 0.5), shorelinePoint(2, 0)],
+      },
+      0.14,
+    )
+    expect(taper).toHaveLength(1)
+    expect(taper[0]).toMatchObject({ alpha: 0.07, closed: false })
+  })
+
+  it('releases each terrain child and graphic at most once', () => {
+    const owner = new Container()
+    const child = new Container()
+    const graphic = new Graphics()
+    let releases = 0
+    owner.addChild(child, graphic)
+    const terrain = ownedTerrainView(
+      owner,
+      [
+        {
+          view: child,
+          span: { width: 16, height: 16 },
+          destroy() {
+            releases += 1
+            child.destroy({ children: true })
+          },
+        },
+      ],
+      [graphic],
+      { width: 16, height: 16 },
+    )
+    terrain.destroy()
+    terrain.destroy()
+    expect(releases).toBe(1)
+    expect(graphic.destroyed).toBe(true)
   })
 
   it('orients a three-by-three bridge from paired east and west road contacts', () => {
@@ -194,40 +194,20 @@ describe('Three Branches terrain art planning', () => {
     ])
   })
 
-  it('keeps an irregular four-by-three component horizontal with one extra north contact', () => {
-    expect(plankRowsFor(['ggrggg', 'rbbbbr', 'gbbbbg', 'gbbbbg'], names)).toEqual([
-      '      ',
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
-    ])
-  })
-
-  it('plans separate components independently and uses compact as the deterministic tie fallback', () => {
+  it('uses compact as the deterministic fallback for tied bridge components', () => {
     const rows = ['ggrgggg', 'ggbgggg', 'ggrgggg', 'rbrggbg', 'ggggggg']
-    const expected = [
+    const planned = plankRowsFor(rows, names)
+    expect(planned).toEqual([
       '       ',
       `  ${BRIDGE_PLANK_CODES.vertical}    `,
       '       ',
       ` ${BRIDGE_PLANK_CODES.horizontal}   ${BRIDGE_PLANK_CODES.compact} `,
       '       ',
-    ]
-    expect(plankRowsFor(rows, names)).toEqual(expected)
-    expect(plankRowsFor(rows, names)).toEqual(plankRowsFor(rows, names))
-    for (let row = 0; row < rows.length; row += 1) {
-      for (let column = 0; column < rows[row]!.length; column += 1) {
-        expect(plankRowsFor(rows, names)[row]![column] !== ' ').toBe(
-          names[rows[row]![column]!] === 'bridge',
-        )
-      }
-    }
+    ])
+    expect(plankRowsFor(rows, names)).toEqual(planned)
   })
 
   it('keeps the approved bridge material roles exact', () => {
-    const edgeCodes = new Set(
-      edgeMarkFamilies(HEARTHSIDE_STYLE.terrain.edges.pairings).map((family) => family.code),
-    )
-    expect(Object.values(BRIDGE_PLANK_CODES).every((code) => !edgeCodes.has(code))).toBe(true)
     expect(HEARTHSIDE_STYLE.terrain.fills.bridge).toEqual({
       frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
       tint: 'water',

@@ -2,87 +2,44 @@ import type { GroundTileset, GroundVariant, TileGrid } from '@renderers/base/til
 import { Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
-import {
-  cutoutVariant,
-  edgeMarkFamilies,
-  planEdges,
-  RESERVED_TERRAIN_CODES,
-  terrainVariant,
-} from './edges.js'
-import {
-  HEARTHSIDE_STYLE,
-  type CutoutEdgeTreatment,
-} from './presentation.js'
-import { cutoutTintedFillFrame, opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
+import { HEARTHSIDE_STYLE } from './presentation.js'
+import { planTerrainContours, terrainVariant, type TerrainContourPlan } from './terrain-contours.js'
+import { opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
 import type { StaticScene } from './types.js'
 
 export const BRIDGE_PLANK_CODES = {
-  horizontal: RESERVED_TERRAIN_CODES.bridgeHorizontal,
-  vertical: RESERVED_TERRAIN_CODES.bridgeVertical,
-  compact: RESERVED_TERRAIN_CODES.bridgeCompact,
+  horizontal: 'P',
+  vertical: 'Y',
+  compact: 'Z',
 } as const
-const UPPER_WALL_CODE = RESERVED_TERRAIN_CODES.upperWall
+const UPPER_WALL_CODE = 'U'
 const TRANSPARENT_CODE = '.'
 
 /** Textured static map data resolved once from the terrain atlas and immutable village grid. */
 export interface TerrainArt {
   tileset: GroundTileset
   variant: GroundVariant
-  edgeLayers: readonly TileGrid[]
+  contours: TerrainContourPlan
   plankLayer: TileGrid
   upperWallTileset: GroundTileset
   upperWallGrid: TileGrid
   upperWallVariant: GroundVariant
-  droppedEdges: number
 }
 
-/** Bake configured terrain frames and prepare its deterministic packed grid layers. */
+/** Bake opaque terrain fills and the exact masks which remain above their vector surfaces. */
 export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt {
   const manifest = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'terrain')
-  if (manifest === undefined || 'layers' in manifest) throw new Error('Three Branches terrain atlas is missing.')
+  if (manifest === undefined || 'layers' in manifest)
+    throw new Error('Three Branches terrain atlas is missing.')
   const textures: Record<string, readonly Texture[]> = {}
   const counts = new Map<string, number>()
   const names = Object.fromEntries(scene.ground.map((ground) => [ground.code, ground.name]))
-  const cutoutsByCode = new Map<
-    string,
-    { treatment: CutoutEdgeTreatment; detailCount: number }
-  >()
   for (const ground of scene.ground) {
     const treatment = HEARTHSIDE_STYLE.terrain.fills[ground.name]
-    if (treatment === undefined) throw new Error(`Three Branches presentation has no ${ground.name} terrain fill.`)
-    const cutout = HEARTHSIDE_STYLE.terrain.edges.pairings.find(
-      (pairing): pairing is CutoutEdgeTreatment =>
-        pairing.mode === 'cutout' && pairing.from === ground.name,
-    )
-    if (cutout === undefined) {
-      textures[ground.code] = fillFramesFor(
-        atlas,
-        manifest.frames,
-        treatment.frames,
-        treatment.tint,
-      )
-      counts.set(ground.code, treatment.frames.length)
-    } else {
-      textures[ground.code] = cutoutFillFramesFor(
-        atlas,
-        manifest.frames,
-        treatment.frames,
-        treatment.tint,
-        cutout.frames,
-      )
-      counts.set(ground.code, treatment.frames.length * cutout.frames.length)
-      cutoutsByCode.set(ground.code, { treatment: cutout, detailCount: treatment.frames.length })
-    }
-  }
-  const families = edgeMarkFamilies(HEARTHSIDE_STYLE.terrain.edges.pairings)
-  for (const family of families) {
-    textures[family.code] = framesFor(
-      atlas,
-      manifest.frames,
-      family.frames,
-      family.tint,
-      family.opacity,
-    )
+    if (treatment === undefined)
+      throw new Error(`Three Branches presentation has no ${ground.name} terrain fill.`)
+    textures[ground.code] = fillFramesFor(atlas, manifest.frames, treatment.frames, treatment.tint)
+    counts.set(ground.code, treatment.frames.length)
   }
   const planks = HEARTHSIDE_STYLE.terrain.planks
   for (const [orientation, code] of Object.entries(BRIDGE_PLANK_CODES)) {
@@ -90,23 +47,9 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     textures[code] = framesFor(atlas, manifest.frames, [frame], planks.tint)
     counts.set(code, 1)
   }
-  const edgePlan = planEdges(scene.topFirstRows, names, families, HEARTHSIDE_STYLE.terrain.edges.layers)
   const columns = scene.village.size.cellsX
   const plankLayer = { columns, rows: plankRowsFor(scene.topFirstRows, names) }
   const variant: GroundVariant = (code, column, row) => {
-    const edgeFrame = edgePlan.frameIndexAt(code, column, row)
-    if (edgeFrame !== undefined) return edgeFrame
-    const cutout = cutoutsByCode.get(code)
-    if (cutout !== undefined) {
-      return cutoutVariant(
-        scene.topFirstRows,
-        names,
-        cutout.treatment,
-        column,
-        row,
-        cutout.detailCount,
-      )
-    }
     const count = counts.get(code)
     if (count === undefined) throw new Error(`Terrain has no frame count for ${code}.`)
     return terrainVariant(count, code, column, row)
@@ -115,24 +58,37 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     tileSize: manifest.frames.width,
     textures: {
       [TRANSPARENT_CODE]: Texture.EMPTY,
-      [UPPER_WALL_CODE]: framesFor(atlas, manifest.frames, HEARTHSIDE_STYLE.terrain.upperWall.frames, HEARTHSIDE_STYLE.terrain.upperWall.tint),
+      [UPPER_WALL_CODE]: framesFor(
+        atlas,
+        manifest.frames,
+        HEARTHSIDE_STYLE.terrain.upperWall.frames,
+        HEARTHSIDE_STYLE.terrain.upperWall.tint,
+      ),
     },
   }
   const upperWallGrid = {
     columns,
-    rows: scene.topFirstRows.map((row) => [...row].map((code) => (names[code] === 'wall' ? UPPER_WALL_CODE : ' ')).join('')),
+    rows: scene.topFirstRows.map((row) =>
+      [...row].map((code) => (names[code] === 'wall' ? UPPER_WALL_CODE : ' ')).join(''),
+    ),
   }
   const upperWallVariant: GroundVariant = (code, column, row) =>
-    code === UPPER_WALL_CODE ? terrainVariant(HEARTHSIDE_STYLE.terrain.upperWall.frames.length, code, column, row) : 0
+    code === UPPER_WALL_CODE
+      ? terrainVariant(HEARTHSIDE_STYLE.terrain.upperWall.frames.length, code, column, row)
+      : 0
   return {
     tileset: { tileSize: manifest.frames.width, textures },
     variant,
-    edgeLayers: edgePlan.layers.map((rows) => ({ columns, rows })),
+    contours: planTerrainContours(
+      scene.topFirstRows,
+      names,
+      HEARTHSIDE_STYLE.terrain.contours,
+      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+    ),
     plankLayer,
     upperWallTileset,
     upperWallGrid,
     upperWallVariant,
-    droppedEdges: edgePlan.dropped,
   }
 }
 
@@ -228,7 +184,8 @@ function bridgeOrientation(
   }
   const horizontalSpan = maxColumn - minColumn + 1
   const verticalSpan = maxRow - minRow + 1
-  if (horizontalSpan !== verticalSpan) return horizontalSpan > verticalSpan ? 'horizontal' : 'vertical'
+  if (horizontalSpan !== verticalSpan)
+    return horizontalSpan > verticalSpan ? 'horizontal' : 'vertical'
   return 'compact'
 }
 /** The transparent base grid under the upper wall overlay. */
@@ -236,7 +193,7 @@ export function transparentUpperGrid(columns: number, rows: number): TileGrid {
   return { columns, rows: Array.from({ length: rows }, () => TRANSPARENT_CODE.repeat(columns)) }
 }
 
-/** Bake only configured terrain fills as opaque bases. Edges, planks, and upper walls stay masks. */
+/** Bake only configured terrain fills as opaque bases. Planks and upper walls stay masks. */
 function fillFramesFor(
   atlas: Texture,
   grid: Parameters<typeof tintedMaskFrame>[1],
@@ -247,21 +204,7 @@ function fillFramesFor(
     opaqueTintedFillFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]),
   )
 }
-/** Bake each cardinal mask group with every fill detail in mask-major order. */
-function cutoutFillFramesFor(
-  atlas: Texture,
-  grid: Parameters<typeof tintedMaskFrame>[1],
-  fillFrames: readonly string[],
-  tint: keyof typeof HEARTHSIDE_STYLE.palette,
-  maskFrames: readonly string[],
-): readonly Texture[] {
-  return maskFrames.flatMap((mask) =>
-    fillFrames.map((fill) =>
-      cutoutTintedFillFrame(atlas, grid, fill, HEARTHSIDE_STYLE.palette[tint], mask),
-    ),
-  )
-}
-/** Bake one terrain mask family at its configured opacity. */
+/** Bake one semantic mask family. */
 function framesFor(
   atlas: Texture,
   grid: Parameters<typeof tintedMaskFrame>[1],

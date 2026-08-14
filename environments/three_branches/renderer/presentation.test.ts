@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  CARDINAL_EDGE_FRAMES,
   type FrameTreatment,
   HEARTHSIDE_PALETTE_KEYS,
   HEARTHSIDE_STYLE,
@@ -28,11 +27,22 @@ const APPROVED_PALETTE = {
   timber: '#8a6246',
 } as const
 
-const EDGE_TARGETS = {
-  water: ['ground', 'reeds', 'field', 'road', 'path'],
-  road: ['ground', 'reeds', 'field'],
-  path: ['ground', 'reeds', 'field'],
-  field: ['ground', 'reeds'],
+const APPROVED_CONTOURS = {
+  smoothingPasses: 2,
+  cornerWeight: 0.25,
+  sampleSpacingCells: 0.5,
+  junctionTangentCells: 0.25,
+  noiseAmplitudeCells: 0.06,
+  noiseWavelengthCells: [1.5, 3],
+  maxDeviationCells: 0.15,
+  saddleRadiusCells: 0.08,
+  shoreline: {
+    bands: [
+      { tint: 'reed', widthCells: 0.3, opacity: 0.14 },
+      { tint: 'silt', widthCells: 0.14, opacity: 0.3 },
+    ],
+    bridgeTaperCells: 0.25,
+  },
 } as const
 
 describe('Hearthside Ink presentation', () => {
@@ -77,107 +87,80 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
-  it('cuts roads into ground and overlays soft water, path, and field joins', () => {
-    const pairings = HEARTHSIDE_STYLE.terrain.edges.pairings
-    expect(pairings.map((pairing) => pairing.from)).toEqual(Object.keys(EDGE_TARGETS))
-    expect(pairings.map((pairing) => pairing.to)).toEqual(Object.values(EDGE_TARGETS))
-    expect(pairings.every((pairing) => new Set(pairing.to).size === pairing.to.length)).toBe(true)
-    expect(pairings.map((pairing) => pairing.mode)).toEqual([
-      'overlay',
-      'cutout',
-      'overlay',
-      'overlay',
-    ])
-    expect(pairings.map((pairing) => pairing.frames)).toEqual([
-      CARDINAL_EDGE_FRAMES,
-      CARDINAL_EDGE_FRAMES,
-      CARDINAL_EDGE_FRAMES,
-      CARDINAL_EDGE_FRAMES,
-    ])
-    const overlays = pairings.filter((pairing) => pairing.mode === 'overlay')
-    expect(overlays.map((pairing) => pairing.tint)).toEqual(['silt', 'reed', 'reed'])
-    expect(overlays.map((pairing) => pairing.opacity)).toEqual([0.3, 0.22, 0.28])
-    expect(pairings[1]).toEqual({
-      mode: 'cutout',
-      from: 'road',
-      to: ['ground', 'reeds', 'field'],
-      frames: CARDINAL_EDGE_FRAMES,
-    })
-    expect(overlays[0]?.corners).toEqual({
-      frames: {
-        northEast: ['cornerA', 'cornerB'],
-        southEast: ['cornerC', 'cornerD'],
-        southWest: ['cornerE', 'cornerF'],
-        northWest: ['cornerG', 'cornerH'],
-      },
-      opacity: 0.22,
-    })
-    expect(overlays.map((pairing) => pairing.accents)).toEqual([
-      { frames: ['bankShoulder', 'bankStones'], density: 0.18, opacity: 0.12 },
-      undefined,
-      undefined,
-    ])
+  it('pins the approved continuous contour and quiet shoreline calibration', () => {
+    expect(HEARTHSIDE_STYLE.terrain.contours).toEqual(APPROVED_CONTOURS)
+    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).toBe('timber')
+    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
+      HEARTHSIDE_STYLE.terrain.fills.field?.tint,
+    )
   })
 
   it('uses bridge-over-water fills, reed fills, indigo wall fills, and timber planks', () => {
     const terrain = HEARTHSIDE_STYLE.terrain
-    expect(terrain.fills.bridge).toEqual({ frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'], tint: 'water' })
-    expect(terrain.fills.reeds).toEqual({ frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'], tint: 'reed' })
-    expect(terrain.fills.wall).toEqual({ frames: ['floorA', 'floorB', 'floorC', 'floorD'], tint: 'indigo' })
+    expect(terrain.fills.bridge).toEqual({
+      frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
+      tint: 'water',
+    })
+    expect(terrain.fills.reeds).toEqual({
+      frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'],
+      tint: 'reed',
+    })
+    expect(terrain.fills.wall).toEqual({
+      frames: ['floorA', 'floorB', 'floorC', 'floorD'],
+      tint: 'indigo',
+    })
     expect(terrain.planks).toEqual({
       horizontal: 'bridgeA',
       vertical: 'bridgeB',
       compact: 'bridgeC',
       tint: 'timber',
     })
-    expect(terrain.upperWall).toEqual({ frames: ['wallA', 'wallB', 'wallC', 'wallD'], tint: 'indigo' })
+    expect(terrain.upperWall).toEqual({
+      frames: ['wallA', 'wallB', 'wallC', 'wallD'],
+      tint: 'indigo',
+    })
   })
 
-  it('rejects invalid terrain target lists, duplicated sources, and invalid detail values', () => {
-    const duplicateTarget = structuredClone(HEARTHSIDE_STYLE) as any
-    duplicateTarget.terrain.edges.pairings[0].to = ['ground', 'ground']
-    expect(() => readHearthsideStyle(duplicateTarget)).toThrow('must not contain duplicate targets')
+  it('rejects invalid contour geometry and shoreline calibration', () => {
+    const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraKey.terrain.contours.mode = 'tiles'
+    expect(() => readHearthsideStyle(extraKey)).toThrow('keys do not match')
 
-    const emptyTarget = structuredClone(HEARTHSIDE_STYLE) as any
-    emptyTarget.terrain.edges.pairings[0].to = []
-    expect(() => readHearthsideStyle(emptyTarget)).toThrow('must contain at least one target')
+    const badSpacing = structuredClone(HEARTHSIDE_STYLE) as any
+    badSpacing.terrain.contours.sampleSpacingCells = 0.51
+    expect(() => readHearthsideStyle(badSpacing)).toThrow('sampleSpacingCells')
 
-    const unknownTarget = structuredClone(HEARTHSIDE_STYLE) as any
-    unknownTarget.terrain.edges.pairings[0].to = ['missing']
-    expect(() => readHearthsideStyle(unknownTarget)).toThrow('to[0] is unknown')
+    const badWavelength = structuredClone(HEARTHSIDE_STYLE) as any
+    badWavelength.terrain.contours.noiseWavelengthCells = [1.49, 3]
+    expect(() => readHearthsideStyle(badWavelength)).toThrow('noiseWavelengthCells[0]')
 
-    const duplicateSource = structuredClone(HEARTHSIDE_STYLE) as any
-    duplicateSource.terrain.edges.pairings.push(
-      structuredClone(duplicateSource.terrain.edges.pairings[1]),
-    )
-    expect(() => readHearthsideStyle(duplicateSource)).toThrow('must configure each source once')
+    const excessiveDeviation = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveDeviation.terrain.contours.maxDeviationCells = 0.151
+    expect(() => readHearthsideStyle(excessiveDeviation)).toThrow('maxDeviationCells')
+
+    const excessiveNoise = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveNoise.terrain.contours.noiseAmplitudeCells = 0.061
+    expect(() => readHearthsideStyle(excessiveNoise)).toThrow('noiseAmplitudeCells')
+
+    const excessiveSaddle = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveSaddle.terrain.contours.saddleRadiusCells = 0.081
+    expect(() => readHearthsideStyle(excessiveSaddle)).toThrow('saddleRadiusCells')
+
+    const badBands = structuredClone(HEARTHSIDE_STYLE) as any
+    badBands.terrain.contours.shoreline.bands.pop()
+    expect(() => readHearthsideStyle(badBands)).toThrow('reed wash and silt bank')
+
+    const reversedBands = structuredClone(HEARTHSIDE_STYLE) as any
+    reversedBands.terrain.contours.shoreline.bands.reverse()
+    expect(() => readHearthsideStyle(reversedBands)).toThrow('reed wash before the silt bank')
+
+    const badTint = structuredClone(HEARTHSIDE_STYLE) as any
+    badTint.terrain.contours.shoreline.bands[0].tint = 'orange'
+    expect(() => readHearthsideStyle(badTint)).toThrow('bands[0].tint is unknown')
 
     const badOpacity = structuredClone(HEARTHSIDE_STYLE) as any
-    badOpacity.terrain.edges.pairings[0].corners.opacity = 1.1
-    expect(() => readHearthsideStyle(badOpacity)).toThrow('corners.opacity must be at most one')
-
-    const badDensity = structuredClone(HEARTHSIDE_STYLE) as any
-    badDensity.terrain.edges.pairings[0].accents.density = -0.01
-    expect(() => readHearthsideStyle(badDensity)).toThrow('accents.density must be non-negative')
-
-    const badFrame = structuredClone(HEARTHSIDE_STYLE) as any
-    badFrame.terrain.edges.pairings[0].accents.frames = ['missingFrame']
-    expect(() => readHearthsideStyle(badFrame)).toThrow('accents.frames[0] is unknown')
-
-    const meaninglessCutoutTint = structuredClone(HEARTHSIDE_STYLE) as any
-    meaninglessCutoutTint.terrain.edges.pairings[1].tint = 'ink'
-    expect(() => readHearthsideStyle(meaninglessCutoutTint)).toThrow('keys do not match')
-
-    const missingMode = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingMode.terrain.edges.pairings[1].mode
-    expect(() => readHearthsideStyle(missingMode)).toThrow('mode must be overlay or cutout')
-
-    const reordered = structuredClone(HEARTHSIDE_STYLE) as any
-    ;[reordered.terrain.edges.pairings[1].frames[0], reordered.terrain.edges.pairings[1].frames[1]] = [
-      reordered.terrain.edges.pairings[1].frames[1],
-      reordered.terrain.edges.pairings[1].frames[0],
-    ]
-    expect(() => readHearthsideStyle(reordered)).toThrow('cardinal order')
+    badOpacity.terrain.contours.shoreline.bands[1].opacity = 1.1
+    expect(() => readHearthsideStyle(badOpacity)).toThrow('bands[1].opacity must be at most one')
   })
 
   it('rejects unknown manifest frames, palette tints, and phase keys', () => {
