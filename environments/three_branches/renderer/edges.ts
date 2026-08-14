@@ -1,4 +1,10 @@
-import type { EdgeCornerDirection, EdgeTreatment, FrameTreatment } from './presentation.js'
+import type {
+  CutoutEdgeTreatment,
+  EdgeCornerDirection,
+  EdgeTreatment,
+  FrameTreatment,
+  OverlayEdgeTreatment,
+} from './presentation.js'
 
 /** A configured boundary treatment, expressed in ground-class names. */
 export type EdgePairing = EdgeTreatment
@@ -30,12 +36,26 @@ const CORNERS: Readonly<Record<EdgeCornerDirection, readonly [number, number, nu
   southWest: [-1, 1, 4 | 8],
   northWest: [-1, -1, 8 | 1],
 }
-const EDGE_CODES = '0123456789ABCDEFGHIJKLMNOQRSTVWXYZ!#$%&()*+,-/:;<=>?@[]^_{|}~'
+/** Single-cell codes reserved by terrain layers outside the edge-family allocator. */
+export const RESERVED_TERRAIN_CODES = {
+  bridgeHorizontal: 'P',
+  bridgeVertical: 'Y',
+  bridgeCompact: 'Z',
+  upperWall: 'U',
+} as const
+
+const RESERVED_CODES = new Set<string>(Object.values(RESERVED_TERRAIN_CODES))
+const EDGE_CODES = [...'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-/:;<=>?@[]^_{|}~']
+  .filter((code) => !RESERVED_CODES.has(code))
+  .join('')
 
 /** Expand all cardinal families, then corners, then sparse accents for deterministic packing. */
 export function edgeMarkFamilies(pairings: readonly EdgePairing[]): readonly EdgeFamily[] {
+  const overlays = pairings.filter(
+    (pairing): pairing is OverlayEdgeTreatment => pairing.mode === 'overlay',
+  )
   const unnumbered = [
-    ...pairings.map((pairing) => ({
+    ...overlays.map((pairing) => ({
       from: pairing.from,
       to: pairing.to,
       frames: pairing.frames,
@@ -43,7 +63,7 @@ export function edgeMarkFamilies(pairings: readonly EdgePairing[]): readonly Edg
       opacity: pairing.opacity,
       kind: 'cardinal' as const,
     })),
-    ...pairings.flatMap((pairing) =>
+    ...overlays.flatMap((pairing) =>
       pairing.corners === undefined
         ? []
         : (Object.keys(CORNERS) as EdgeCornerDirection[]).map((direction) => ({
@@ -56,7 +76,7 @@ export function edgeMarkFamilies(pairings: readonly EdgePairing[]): readonly Edg
             direction,
           })),
     ),
-    ...pairings.flatMap((pairing) =>
+    ...overlays.flatMap((pairing) =>
       pairing.accents === undefined
         ? []
         : [{
@@ -75,6 +95,23 @@ export function edgeMarkFamilies(pairings: readonly EdgePairing[]): readonly Edg
     if (code === undefined) throw new Error('Three Branches presentation has too many edge marks.')
     return { code, ...family }
   })
+}
+
+/** Select one pre-baked cutout texture from cardinal mask first, then stable fill detail. */
+export function cutoutVariant(
+  rows: readonly string[],
+  groundNameForCode: Readonly<Record<string, string>>,
+  treatment: CutoutEdgeTreatment,
+  column: number,
+  row: number,
+  detailCount: number,
+): number {
+  const code = rows[row]?.[column]
+  if (code === undefined || groundNameForCode[code] !== treatment.from) {
+    throw new Error('Cutout variants may only be selected for their configured source terrain.')
+  }
+  const mask = boundaryMask(rows, groundNameForCode, column, row, treatment.to)
+  return mask * detailCount + terrainVariant(detailCount, code, column, row)
 }
 
 /** Plan configured boundaries over a top-first ground grid. Map borders have no implicit outside class. */

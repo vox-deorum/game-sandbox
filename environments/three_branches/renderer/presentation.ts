@@ -168,8 +168,9 @@ export const CARDINAL_EDGE_FRAMES = [
   'edge15',
 ] as const
 
-/** One composite boundary treatment for a source terrain class. */
-export interface EdgeTreatment extends FrameTreatment {
+/** One painted boundary treatment packed into the terrain overlay layers. */
+export interface OverlayEdgeTreatment extends FrameTreatment {
+  mode: 'overlay'
   from: string
   to: readonly string[]
   opacity: number
@@ -178,6 +179,25 @@ export interface EdgeTreatment extends FrameTreatment {
     opacity: number
   }
   accents?: { frames: readonly string[]; density: number; opacity: number }
+}
+
+/** One fill cutout whose cardinal mask feathers the source terrain into the base ground. */
+export interface CutoutEdgeTreatment {
+  mode: 'cutout'
+  from: string
+  to: readonly string[]
+  frames: readonly string[]
+}
+
+/** A source terrain class has either a painted overlay or a fill cutout boundary. */
+export type EdgeTreatment = OverlayEdgeTreatment | CutoutEdgeTreatment
+
+/** Semantic bridge deck frames selected once per connected bridge component. */
+export interface PlankTreatment {
+  horizontal: string
+  vertical: string
+  compact: string
+  tint: HearthsidePaletteKey
 }
 
 export interface PhaseGrade {
@@ -197,7 +217,7 @@ export interface HearthsideStyle {
       layers: number
       pairings: readonly EdgeTreatment[]
     }
-    planks: FrameTreatment
+    planks: PlankTreatment
     upperWall: FrameTreatment
   }
   roofs: {
@@ -336,7 +356,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       layers: positiveInteger(edgesSource.layers, 'presentation.terrain.edges.layers'),
       pairings,
     },
-    planks: frameTreatment(
+    planks: plankTreatment(
       terrainSource.planks,
       'presentation.terrain.planks',
       terrainFrames,
@@ -500,13 +520,27 @@ function edgeTreatment(
 ): EdgeTreatment {
   const name = `presentation.terrain.edges.pairings[${index}]`
   const raw = record(value, name)
+  const mode = raw.mode
+  if (mode !== 'overlay' && mode !== 'cutout') {
+    throw new Error(`${name}.mode must be overlay or cutout.`)
+  }
   const from = knownText(raw.from, knownGround, `${name}.from`)
   const to = edgeTargets(raw.to, `${name}.to`, knownGround)
+  if (mode === 'cutout') {
+    const pairing = exactRecord(raw, name, ['mode', 'from', 'to', 'frames'])
+    return {
+      mode,
+      from,
+      to,
+      frames: cardinalEdgeFrames(pairing.frames, `${name}.frames`, knownFrames),
+    }
+  }
   const waterBank = from === 'water'
   if (!waterBank && raw.corners !== undefined) {
     throw new Error(`${name}.corners are only supported for water.`)
   }
   const pairing = exactRecord(raw, name, [
+    'mode',
     'from',
     'to',
     'frames',
@@ -530,11 +564,26 @@ function edgeTreatment(
     ? undefined
     : accentTreatment(pairing.accents, `${name}.accents`, knownFrames)
   return {
+    mode,
     from,
     to,
     ...treatment,
     ...(corners === undefined ? {} : { corners }),
     ...(accents === undefined ? {} : { accents }),
+  }
+}
+function plankTreatment(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+  palette: ReadonlySet<string>,
+): PlankTreatment {
+  const source = exactRecord(value, name, ['horizontal', 'vertical', 'compact', 'tint'])
+  return {
+    horizontal: knownText(source.horizontal, knownFrames, `${name}.horizontal`),
+    vertical: knownText(source.vertical, knownFrames, `${name}.vertical`),
+    compact: knownText(source.compact, knownFrames, `${name}.compact`),
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
   }
 }
 function cardinalEdgeFrames(

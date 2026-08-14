@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { TERRAIN_ATLAS_FRAME_NAMES } from './assets.js'
 import { boundaryMask } from './edges.js'
-import { opaqueFillPixels, tintedMaskPixels } from './tint.js'
+import { cutoutFillPixels, opaqueFillPixels, tintedMaskPixels } from './tint.js'
 
 const SIZE = 128
 const FILL_FAMILIES = [
@@ -57,6 +57,39 @@ function alphaCoverage(pixels: Uint8ClampedArray): number {
     if ((pixels[index] ?? 0) > 0) visible += 1
   }
   return visible / (SIZE * SIZE)
+}
+
+function alphaMassCoverage(pixels: Uint8ClampedArray): number {
+  let alpha = 0
+  for (let index = 3; index < pixels.length; index += 4) alpha += pixels[index] ?? 0
+  return alpha / (SIZE * SIZE * 255)
+}
+
+function transparentSeamRuns(
+  pixels: Uint8ClampedArray,
+  direction: 'columns' | 'rows',
+): number[] {
+  const seams = Array.from({ length: SIZE }, (_, primary) => {
+    let alpha = 0
+    for (let secondary = 0; secondary < SIZE; secondary += 1) {
+      const x = direction === 'columns' ? primary : secondary
+      const y = direction === 'columns' ? secondary : primary
+      alpha += channel(pixels, x, y, 3)
+    }
+    return alpha / SIZE < 160
+  })
+  const runs: number[] = []
+  for (let index = 0; index < seams.length;) {
+    if (!seams[index]) {
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (seams[end]) end += 1
+    runs.push(end - index)
+    index = end
+  }
+  return runs
 }
 
 function sideAlpha(pixels: Uint8ClampedArray, side: 'north' | 'east' | 'south' | 'west'): number {
@@ -128,12 +161,36 @@ describe('Three Branches terrain raster contract', () => {
     ] as const
     for (let mask = 0; mask < 16; mask += 1) {
       const pixels = frame(`edge${String(mask).padStart(2, '0')}`)
-      expect(alphaCoverage(pixels)).toBeLessThanOrEqual(0.55)
+      expect(alphaCoverage(pixels)).toBeLessThanOrEqual(0.63)
       for (const [side, bit] of sides) {
         if ((mask & bit) === 0) expect(sideAlpha(pixels, side)).toBe(0)
         else expect(sideAlpha(pixels, side)).toBeGreaterThan(0)
       }
     }
+  })
+
+  it('rounds a multi-side mask through a mixed-alpha inner join instead of a square L', () => {
+    const north = frame('edge01')
+    const east = frame('edge02')
+    const rounded = frame('edge03')
+    let mixed = 0
+    let differsFromSquareUnion = 0
+    const rowProfiles = new Set<string>()
+    for (let y = 8; y < 48; y += 1) {
+      let profile = ''
+      for (let x = SIZE - 48; x < SIZE - 8; x += 1) {
+        const alpha = channel(rounded, x, y, 3)
+        if (alpha > 0 && alpha < 255) mixed += 1
+        if (alpha !== Math.max(channel(north, x, y, 3), channel(east, x, y, 3))) {
+          differsFromSquareUnion += 1
+        }
+        profile += alpha > 127 ? '1' : '0'
+      }
+      rowProfiles.add(profile)
+    }
+    expect(mixed).toBeGreaterThan(40)
+    expect(differsFromSquareUnion).toBeGreaterThan(40)
+    expect(rowProfiles.size).toBeGreaterThan(3)
   })
 
   it('confines every corner mark to its configured quadrant', () => {
@@ -156,9 +213,9 @@ describe('Three Branches terrain raster contract', () => {
       expect(coverage).toBeLessThan(0.15)
     }
     for (const name of ['bridgeA', 'bridgeB', 'bridgeC']) {
-      const coverage = alphaCoverage(frame(name))
-      expect(coverage).toBeGreaterThan(0.6)
-      expect(coverage).toBeLessThan(0.8)
+      const coverage = alphaMassCoverage(frame(name))
+      expect(coverage).toBeGreaterThanOrEqual(0.88)
+      expect(coverage).toBeLessThanOrEqual(0.96)
     }
     for (const name of ['wallA', 'wallB', 'wallC', 'wallD']) {
       const pixels = frame(name)
@@ -167,6 +224,21 @@ describe('Three Branches terrain raster contract', () => {
         for (let x = 0; x < SIZE; x += 1) expect(channel(pixels, x, y, 3)).toBe(0)
       }
     }
+  })
+
+  it('uses narrow perpendicular water seams for semantic horizontal and vertical decks', () => {
+    const horizontal = frame('bridgeA')
+    const vertical = frame('bridgeB')
+    const horizontalSeams = transparentSeamRuns(horizontal, 'columns')
+    const horizontalCrossSeams = transparentSeamRuns(horizontal, 'rows')
+    const verticalSeams = transparentSeamRuns(vertical, 'rows')
+    const verticalCrossSeams = transparentSeamRuns(vertical, 'columns')
+    expect(horizontalSeams.length).toBeGreaterThanOrEqual(3)
+    expect(verticalSeams.length).toBeGreaterThanOrEqual(3)
+    expect(Math.max(...horizontalSeams)).toBeLessThanOrEqual(5)
+    expect(Math.max(...verticalSeams)).toBeLessThanOrEqual(5)
+    expect(horizontalSeams.length).toBeGreaterThan(horizontalCrossSeams.length)
+    expect(verticalSeams.length).toBeGreaterThan(verticalCrossSeams.length)
   })
 })
 
@@ -206,6 +278,17 @@ describe('Three Branches terrain pixel composition', () => {
     }
     expect(unchanged).toBeGreaterThan(0)
     expect(changed).toBeGreaterThan(0)
+  })
+
+  it('feathers a road fill through a rounded cardinal cutout while retaining its center', () => {
+    const road = frame('roadA')
+    const cutout = frame('edge03')
+    opaqueFillPixels(road, '#bfa072')
+    cutoutFillPixels(road, cutout)
+    const alphas = road.filter((_, index) => index % 4 === 3)
+    expect(alphas.some((alpha) => alpha === 0)).toBe(true)
+    expect(alphas.some((alpha) => alpha > 0 && alpha < 255)).toBe(true)
+    expect(channel(road, SIZE / 2, SIZE / 2, 3)).toBe(255)
   })
 
   it('repaints only a shallow upper-wall band', () => {

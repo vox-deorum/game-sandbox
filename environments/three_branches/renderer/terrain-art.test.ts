@@ -2,16 +2,26 @@ import { describe, expect, it } from 'vitest'
 
 import {
   boundaryMask,
+  cutoutVariant,
   edgeMarkFamilies,
   planEdges,
   terrainVariant,
   type EdgePairing,
 } from './edges.js'
 import { CARDINAL_EDGE_FRAMES, HEARTHSIDE_STYLE } from './presentation.js'
-import { plankRowsFor } from './terrain-art.js'
+import { BRIDGE_PLANK_CODES, plankRowsFor } from './terrain-art.js'
 
-const names = { w: 'water', g: 'ground', e: 'reeds', f: 'field', r: 'road', p: 'path', b: 'bridge' }
+const names: Readonly<Record<string, string>> = {
+  w: 'water',
+  g: 'ground',
+  e: 'reeds',
+  f: 'field',
+  r: 'road',
+  p: 'path',
+  b: 'bridge',
+}
 const waterBank: EdgePairing = {
+  mode: 'overlay',
   from: 'water',
   to: ['ground', 'reeds'],
   frames: CARDINAL_EDGE_FRAMES,
@@ -29,6 +39,7 @@ const waterBank: EdgePairing = {
   accents: { frames: ['bankShoulder'], density: 1, opacity: 0.22 },
 }
 const reeds: EdgePairing = {
+  mode: 'overlay',
   from: 'reeds',
   to: ['ground', 'field'],
   frames: CARDINAL_EDGE_FRAMES,
@@ -37,12 +48,19 @@ const reeds: EdgePairing = {
   accents: { frames: ['reedShoulderA'], density: 1, opacity: 0.3 },
 }
 const field: EdgePairing = {
+  mode: 'overlay',
   from: 'field',
   to: ['ground'],
   frames: CARDINAL_EDGE_FRAMES,
   tint: 'ink',
   opacity: 0.3,
   accents: { frames: ['furrowEndA'], density: 1, opacity: 0.28 },
+}
+const roadCutout: EdgePairing = {
+  mode: 'cutout',
+  from: 'road',
+  to: ['ground', 'reeds', 'field'],
+  frames: CARDINAL_EDGE_FRAMES,
 }
 const families = edgeMarkFamilies([waterBank, reeds, field])
 
@@ -82,6 +100,20 @@ describe('Three Branches terrain art planning', () => {
     const cardinal = family('cardinal')
     expect(plan.frameIndexAt(cardinal.code, 1, 0)).toBe(2 | 8)
     expect(plan.layers.filter((layer) => layer[0]?.[1] === cardinal.code)).toHaveLength(1)
+  })
+
+  it('excludes cutouts from packed overlay families', () => {
+    expect(edgeMarkFamilies([waterBank, roadCutout]).every((item) => item.from !== 'road')).toBe(true)
+  })
+
+  it('selects road composites in mask-major order and leaves road-to-path uncut', () => {
+    const rows = ['grpg', 'gggg']
+    expect(boundaryMask(rows, names, 1, 0, roadCutout.to)).toBe(4 | 8)
+    const expectedDetail = terrainVariant(4, 'r', 1, 0)
+    expect(cutoutVariant(rows, names, roadCutout, 1, 0, 4)).toBe((4 | 8) * 4 + expectedDetail)
+    expect(cutoutVariant(rows, names, roadCutout, 1, 0, 4)).toBe(
+      cutoutVariant(rows, names, roadCutout, 1, 0, 4),
+    )
   })
 
   it('expands every cardinal family before water corners and all accents', () => {
@@ -142,14 +174,68 @@ describe('Three Branches terrain art planning', () => {
     expect(planEdges(rows, names, families, 2).layers).toEqual(overflow.layers)
   })
 
-  it('places planks on bridge cells and keeps the approved bridge material roles exact', () => {
-    expect(plankRowsFor(['bgb', 'www'], names)).toEqual(['P P', '   '])
+  it('orients a three-by-three bridge from paired east and west road contacts', () => {
+    expect(plankRowsFor(['ggggg', 'gbbbg', 'rbbbr', 'gbbbg', 'ggggg'], names)).toEqual([
+      '     ',
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
+      '     ',
+    ])
+  })
+
+  it('orients a three-by-three bridge from paired north and south path contacts', () => {
+    expect(plankRowsFor(['ggpgg', 'gbbbg', 'gbbbg', 'gbbbg', 'ggpgg'], names)).toEqual([
+      '     ',
+      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
+      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
+      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
+      '     ',
+    ])
+  })
+
+  it('keeps an irregular four-by-three component horizontal with one extra north contact', () => {
+    expect(plankRowsFor(['ggrggg', 'rbbbbr', 'gbbbbg', 'gbbbbg'], names)).toEqual([
+      '      ',
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
+      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(4)} `,
+    ])
+  })
+
+  it('plans separate components independently and uses compact as the deterministic tie fallback', () => {
+    const rows = ['ggrgggg', 'ggbgggg', 'ggrgggg', 'rbrggbg', 'ggggggg']
+    const expected = [
+      '       ',
+      `  ${BRIDGE_PLANK_CODES.vertical}    `,
+      '       ',
+      ` ${BRIDGE_PLANK_CODES.horizontal}   ${BRIDGE_PLANK_CODES.compact} `,
+      '       ',
+    ]
+    expect(plankRowsFor(rows, names)).toEqual(expected)
+    expect(plankRowsFor(rows, names)).toEqual(plankRowsFor(rows, names))
+    for (let row = 0; row < rows.length; row += 1) {
+      for (let column = 0; column < rows[row]!.length; column += 1) {
+        expect(plankRowsFor(rows, names)[row]![column] !== ' ').toBe(
+          names[rows[row]![column]!] === 'bridge',
+        )
+      }
+    }
+  })
+
+  it('keeps the approved bridge material roles exact', () => {
+    const edgeCodes = new Set(
+      edgeMarkFamilies(HEARTHSIDE_STYLE.terrain.edges.pairings).map((family) => family.code),
+    )
+    expect(Object.values(BRIDGE_PLANK_CODES).every((code) => !edgeCodes.has(code))).toBe(true)
     expect(HEARTHSIDE_STYLE.terrain.fills.bridge).toEqual({
       frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
       tint: 'water',
     })
     expect(HEARTHSIDE_STYLE.terrain.planks).toEqual({
-      frames: ['bridgeA', 'bridgeB', 'bridgeC'],
+      horizontal: 'bridgeA',
+      vertical: 'bridgeB',
+      compact: 'bridgeC',
       tint: 'timber',
     })
   })

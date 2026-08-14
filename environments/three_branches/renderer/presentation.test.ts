@@ -77,20 +77,33 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
-  it('outlines roads, softly blends water, path, and field joins, and leaves reeds unoutlined', () => {
+  it('cuts roads into ground and overlays soft water, path, and field joins', () => {
     const pairings = HEARTHSIDE_STYLE.terrain.edges.pairings
     expect(pairings.map((pairing) => pairing.from)).toEqual(Object.keys(EDGE_TARGETS))
     expect(pairings.map((pairing) => pairing.to)).toEqual(Object.values(EDGE_TARGETS))
     expect(pairings.every((pairing) => new Set(pairing.to).size === pairing.to.length)).toBe(true)
+    expect(pairings.map((pairing) => pairing.mode)).toEqual([
+      'overlay',
+      'cutout',
+      'overlay',
+      'overlay',
+    ])
     expect(pairings.map((pairing) => pairing.frames)).toEqual([
       CARDINAL_EDGE_FRAMES,
       CARDINAL_EDGE_FRAMES,
       CARDINAL_EDGE_FRAMES,
       CARDINAL_EDGE_FRAMES,
     ])
-    expect(pairings.map((pairing) => pairing.tint)).toEqual(['silt', 'ink', 'reed', 'reed'])
-    expect(pairings.map((pairing) => pairing.opacity)).toEqual([0.3, 0.35, 0.22, 0.28])
-    expect(pairings[0]?.corners).toEqual({
+    const overlays = pairings.filter((pairing) => pairing.mode === 'overlay')
+    expect(overlays.map((pairing) => pairing.tint)).toEqual(['silt', 'reed', 'reed'])
+    expect(overlays.map((pairing) => pairing.opacity)).toEqual([0.3, 0.22, 0.28])
+    expect(pairings[1]).toEqual({
+      mode: 'cutout',
+      from: 'road',
+      to: ['ground', 'reeds', 'field'],
+      frames: CARDINAL_EDGE_FRAMES,
+    })
+    expect(overlays[0]?.corners).toEqual({
       frames: {
         northEast: ['cornerA', 'cornerB'],
         southEast: ['cornerC', 'cornerD'],
@@ -99,9 +112,8 @@ describe('Hearthside Ink presentation', () => {
       },
       opacity: 0.22,
     })
-    expect(pairings.map((pairing) => pairing.accents)).toEqual([
+    expect(overlays.map((pairing) => pairing.accents)).toEqual([
       { frames: ['bankShoulder', 'bankStones'], density: 0.18, opacity: 0.12 },
-      undefined,
       undefined,
       undefined,
     ])
@@ -112,7 +124,12 @@ describe('Hearthside Ink presentation', () => {
     expect(terrain.fills.bridge).toEqual({ frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'], tint: 'water' })
     expect(terrain.fills.reeds).toEqual({ frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'], tint: 'reed' })
     expect(terrain.fills.wall).toEqual({ frames: ['floorA', 'floorB', 'floorC', 'floorD'], tint: 'indigo' })
-    expect(terrain.planks).toEqual({ frames: ['bridgeA', 'bridgeB', 'bridgeC'], tint: 'timber' })
+    expect(terrain.planks).toEqual({
+      horizontal: 'bridgeA',
+      vertical: 'bridgeB',
+      compact: 'bridgeC',
+      tint: 'timber',
+    })
     expect(terrain.upperWall).toEqual({ frames: ['wallA', 'wallB', 'wallC', 'wallD'], tint: 'indigo' })
   })
 
@@ -147,6 +164,14 @@ describe('Hearthside Ink presentation', () => {
     badFrame.terrain.edges.pairings[0].accents.frames = ['missingFrame']
     expect(() => readHearthsideStyle(badFrame)).toThrow('accents.frames[0] is unknown')
 
+    const meaninglessCutoutTint = structuredClone(HEARTHSIDE_STYLE) as any
+    meaninglessCutoutTint.terrain.edges.pairings[1].tint = 'ink'
+    expect(() => readHearthsideStyle(meaninglessCutoutTint)).toThrow('keys do not match')
+
+    const missingMode = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingMode.terrain.edges.pairings[1].mode
+    expect(() => readHearthsideStyle(missingMode)).toThrow('mode must be overlay or cutout')
+
     const reordered = structuredClone(HEARTHSIDE_STYLE) as any
     ;[reordered.terrain.edges.pairings[1].frames[0], reordered.terrain.edges.pairings[1].frames[1]] = [
       reordered.terrain.edges.pairings[1].frames[1],
@@ -165,6 +190,10 @@ describe('Hearthside Ink presentation', () => {
     const tintFills = badTint.terrain.fills as Record<string, { frames: string[]; tint: string }>
     tintFills.ground = { frames: ['washA'], tint: 'orange' }
     expect(() => readHearthsideStyle(badTint)).toThrow('tint is unknown')
+
+    const badPlank = structuredClone(HEARTHSIDE_STYLE) as any
+    badPlank.terrain.planks.horizontal = 'missingFrame'
+    expect(() => readHearthsideStyle(badPlank)).toThrow('planks.horizontal is unknown')
 
     const badPhases = structuredClone(HEARTHSIDE_STYLE)
     const grades = badPhases.phaseGrades as Record<string, PhaseGrade>
