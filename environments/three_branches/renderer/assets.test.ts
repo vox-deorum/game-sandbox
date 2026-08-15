@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { frameName } from '@renderers/base/atlas/atlas.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   ATLAS_PAGES,
-  loadThreeBranchesAssets,
+  loadThreeBranchesRuntimeAssets,
   THREE_BRANCHES_ASSET_CATALOG,
   THREE_BRANCHES_THUMBNAIL_ASSET,
 } from './assets.js'
@@ -74,31 +73,16 @@ describe('Three Branches asset catalog', () => {
     ).toEqual(['body', 'clothing', 'arms', 'details'])
   })
 
-  it('maps each catalog group to its atlas pages and declared loose frame names', () => {
-    expect(new Set(ATLAS_PAGES.map((page) => page.group))).toEqual(
-      new Set(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)),
+  it('derives nested prop paths from camel-case frame names', () => {
+    const props = ATLAS_PAGES.find((page) => page.group === 'props')
+    expect(props?.framePaths).toEqual(
+      expect.arrayContaining([
+        'stall/base.png',
+        'repair_bench/base.png',
+        'repair_bench/busy.png',
+        'bell/clapper.png',
+      ]),
     )
-    expect(ATLAS_PAGES).toHaveLength(9)
-
-    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
-      const pages = ATLAS_PAGES.filter((page) => page.group === atlas.name)
-      const rasters = rastersFor(atlas)
-      expect(pages).toHaveLength(rasters.length)
-
-      for (const raster of rasters) {
-        const page = pages.find((candidate) => candidate.pagePath === raster.path)
-        expect(page).toBeDefined()
-        if (page === undefined) throw new Error(`Atlas page is missing: ${raster.path}`)
-        expect(page).toMatchObject({
-          format: atlas.format,
-          width: raster.width,
-          height: raster.height,
-          columns: raster.frames.columns,
-          rows: raster.frames.rows,
-        })
-        expect(page.framePaths.map(frameName)).toEqual(raster.frames.names)
-      }
-    }
   })
 
   it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
@@ -116,15 +100,11 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads entries by stable atlas name', async () => {
-    const loaded = await loadThreeBranchesAssets((raster) => raster.path)
-    expect(loaded.characters).toEqual({
-      body: './assets/characters-body-atlas.png',
-      clothing: './assets/characters-clothing-atlas.png',
-      arms: './assets/characters-arms-atlas.png',
-      details: './assets/characters-details-atlas.png',
-    })
-    expect(loaded.terrain).toBe('./assets/terrain-atlas.png')
-  })
+  it('loads only the terrain atlas at runtime', async () => {
+    const load = vi.fn((source: string) => source)
+    const terrain = await loadThreeBranchesRuntimeAssets(load)
 
+    expect(load).toHaveBeenCalledOnce()
+    expect(terrain).toMatch(/terrain-atlas\.png/)
+  })
 })

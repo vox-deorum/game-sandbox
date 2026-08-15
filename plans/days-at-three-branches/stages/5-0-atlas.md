@@ -2,11 +2,11 @@
 
 Status: complete.
 
-Part of [the plan](../README.md). This stage is independent infrastructure: it adds a shared split and merge pipeline for atlas art to the base renderer and reorganizes the committed Three Branches art around it, without changing any runtime behavior. It precedes the other parts of build-order step 5, and [step 5.1](5-1-art-style.md) iterates its art through this pipeline.
+Part of [the plan](../README.md). This stage is independent infrastructure: it adds a shared split and merge pipeline for atlas art to the base renderer and reorganizes the committed Three Branches art around it. It precedes the other parts of build-order step 5, and [step 5.1](5-1-art-style.md) iterates its art through this pipeline.
 
 ## Loose frames are the editable truth
 
-Every atlas frame lives as one loose PNG beside the compiled page. The compiled atlas pages remain the runtime files the bundle loads. The pipeline converts between the two forms, and both are committed.
+Every atlas frame lives as one loose PNG beside the compiled page. The compiled pages are ready for their planned consumers, but the bundle loads only the terrain page used by the current renderer. The pipeline converts between the two forms, and both are committed.
 
 | Page | Frames directory | Frames |
 | --- | --- | --- |
@@ -41,9 +41,9 @@ The commands:
 
 Freshness is pixel defined, never byte defined: checks decode both sides and compare pixels, so zlib encoder variance across platforms cannot fail CI.
 
-## Runtime contract unchanged
+## Terrain-only runtime loading
 
-`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and load functions. The only manifest changes are the six props renames and the added `ATLAS_PAGES` export. The runtime glob `import.meta.glob('./assets/*.png')` is not recursive, so loose frames never enter the bundle. `source-art/` keeps the high-resolution originals as untouched provenance. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and terrain load function. The only manifest changes are the six props renames and the added `ATLAS_PAGES` export. The runtime glob names only `terrain-atlas.png`, the one page consumed by the current renderer, so deferred pages and loose frames never enter the bundle. `source-art/` keeps the high-resolution originals as untouched provenance. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 ## Migration
 
@@ -52,11 +52,11 @@ Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` la
 ## Tests
 
 - Pure packer tests in `frontend/test/atlas.test.ts` run on small synthetic images: name derivation for flat, nested, and underscored paths, a split-then-pack pixel round trip, and one failure case each for a missing frame, a stray PNG, a mis-sized frame, a non-gray pixel on a grayscale-alpha page, and bad grid arithmetic.
-- `assets.test.ts` gains coverage that `ATLAS_PAGES` matches the six-group catalog one to one and that every declared file derives to its declared frame name.
+- `assets.test.ts` checks catalog completeness, the nontrivial nested props paths, and terrain-only runtime loading.
 - A freshness test in `environments/three_branches/renderer/atlas.test.ts` packs every page from its committed loose frames and compares pixels against the committed page, and checks each page's PNG header against its declared dimensions.
 
 All three ride the existing vitest include globs, so `scripts/ci.py` needs no change.
 
 ## Done when
 
-All nine pages have complete committed loose frame sets, `assets/props-atlas.png` is restored and matches the 36 loose props under the renamed frames, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the bundle's runtime loading is unaffected, `source-art/` is unchanged, and the plan README and step 5.1 reference this pipeline.
+All nine pages have complete committed loose frame sets, `assets/props-atlas.png` is restored and matches the 36 loose props under the renamed frames, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only the terrain page, `source-art/` is unchanged, and the plan README and step 5.1 reference this pipeline.

@@ -513,8 +513,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     await runArtLoad({
       load: () => loadThreeBranchesRuntimeAssets<Texture>((source) => Assets.load<Texture>(source)),
       active: () => !this.isDestroyed,
-      install: (atlases) => {
-        const terrainAtlas = atlases.terrain
+      install: (terrainAtlas) => {
         if (!(terrainAtlas instanceof Texture)) {
           throw new Error('Three Branches terrain atlas must be one texture.')
         }

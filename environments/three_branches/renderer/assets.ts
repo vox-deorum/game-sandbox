@@ -424,41 +424,20 @@ export const THREE_BRANCHES_THUMBNAIL_ASSET = {
 } as const
 
 export type ThreeBranchesAtlasName = (typeof THREE_BRANCHES_ASSET_CATALOG)[number]['name']
-export type ThreeBranchesLoadedAssets<T> = Record<ThreeBranchesAtlasName, T | Record<string, T>>
 
-/** Resolve each catalog raster through an injected loader. */
-export async function loadThreeBranchesAssets<T>(
-  load: (raster: ThreeBranchesRasterDraft) => Promise<T> | T,
-): Promise<ThreeBranchesLoadedAssets<T>> {
-  const loaded = await Promise.all(
-    THREE_BRANCHES_ASSET_CATALOG.map(async (atlas) => {
-      if ('layers' in atlas) {
-        const layers = await Promise.all(
-          atlas.layers.map(async (layer) => [layer.name, await load(layer)] as const),
-        )
-        return [atlas.name, Object.fromEntries(layers)] as const
-      }
-      return [atlas.name, await load(atlas)] as const
-    }),
-  )
-  return Object.fromEntries(loaded) as ThreeBranchesLoadedAssets<T>
-}
-
-/** Resolve and load every optimized runtime atlas through an injected URL loader. */
+/** Resolve and load the terrain atlas used by the current renderer. */
 export async function loadThreeBranchesRuntimeAssets<T>(
   load: (source: string) => Promise<T> | T,
-): Promise<ThreeBranchesLoadedAssets<T>> {
-  const urls = threeBranchesAssetUrls()
-  return loadThreeBranchesAssets((raster) => {
-    const source = urls[raster.path]
-    if (source === undefined) throw new Error(`Three Branches atlas is missing: ${raster.path}`)
-    return load(source)
-  })
+): Promise<T> {
+  const path = './assets/terrain-atlas.png'
+  const source = threeBranchesTerrainAssetUrls()[path]
+  if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
+  return load(source)
 }
 
-/** Ask Vite for the production URL of every optimized atlas. */
-function threeBranchesAssetUrls(): Record<string, string> {
-  return import.meta.glob('./assets/*.png', {
+/** Ask Vite for the production URL of the one atlas consumed at runtime. */
+function threeBranchesTerrainAssetUrls(): Record<string, string> {
+  return import.meta.glob('./assets/terrain-atlas.png', {
     eager: true,
     import: 'default',
     query: '?url',

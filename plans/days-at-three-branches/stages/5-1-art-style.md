@@ -100,13 +100,13 @@ With `daynight`, the overlay's dawn, morning, midday, evening, or night phase se
 
 ### Assets and thumbnail
 
-The local manifest is the only runtime loading contract. Keep only the high-resolution originals used by the approved runtime assets in `environments/three_branches/renderer/source-art/`. Keep optimised runtime files in `environments/three_branches/renderer/assets/`. Loose per-frame files under `assets/<group>/` are the editable truth; [step 5.0](5-0-atlas.md) compiles them into the atlas pages, and both are committed. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
+The local manifest is the only asset catalog. Keep only the high-resolution originals used by the approved art in `environments/three_branches/renderer/source-art/`. Keep optimised compiled files in `environments/three_branches/renderer/assets/`. Loose per-frame files under `assets/<group>/` are the editable truth; [step 5.0](5-0-atlas.md) compiles them into the atlas pages, and both are committed. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
 
 `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants, land, water, road, and path curve profiles, seam treatments (pooling, ink, water hatching), reed marks, inset route and deck geometry, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 
-`renderer/assets.ts` is the only runtime asset-loading contract. Its six atlas entries record each source and runtime file, dimensions, tintability, consumer, and sprite-sheet frame grid. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
+`renderer/assets.ts` owns the catalog and runtime loader. Its six atlas entries record each source and compiled file, dimensions, tintability, consumer, and sprite-sheet frame grid. The runtime loader resolves only terrain until the deferred consumers land. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
 
-| Group | Runtime dimensions | Contents |
+| Group | Compiled dimensions | Contents |
 | --- | --- | --- |
 | Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, retained compatibility masks, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
@@ -135,7 +135,7 @@ The common layer under every visual step. It has no owner gate: the step 3 solid
 - `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
 - `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
-- `loadArt()` runs after setup: it resolves manifest URLs, loads the atlases, slices frames, bakes the tinted tileset, swaps the textured layers in, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
+- `loadArt()` runs after setup: it resolves the terrain URL, loads that atlas, slices frames, bakes the tinted tileset, swaps the textured layers in, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
 
 `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
 
