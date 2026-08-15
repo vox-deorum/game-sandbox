@@ -103,7 +103,7 @@ export function computeScene(
     ...character,
     point: pointToWorld(staticScene.village, character.x, character.y),
     radius,
-    fill: character.id === 'visitor' ? PALETTE.visitor : PALETTE.npc,
+    fill: character.id === 'player_0' ? PALETTE.visitor : PALETTE.npc,
     label:
       character.expression.type === 'none'
         ? character.id

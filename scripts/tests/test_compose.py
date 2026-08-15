@@ -114,6 +114,17 @@ def test_three_branches_composed_launcher_defaults_player_id_to_the_visitor():
     assert 'PLAYER_ID = "player_0"' in rendered
 
 
+def test_three_branches_composition_ships_the_stdlib_village_data_files():
+    """The public helper package reads copied JSON instead of the engine package."""
+    out = compose_template("three_branches")
+    village = out / "sandbox" / "village"
+    source = Path(__file__).resolve().parents[2] / "environments" / "three_branches"
+
+    assert (village / "__init__.py").is_file()
+    assert (village / "rules.json").read_bytes() == (source / "rules.json").read_bytes()
+    assert (village / "catalog.json").read_bytes() == (source / "catalog.json").read_bytes()
+
+
 def test_env_layer_wins_over_base():
     out = compose_template("flappy_bird")
     # The env layer's README is the Flappy Bird one, not a base placeholder.

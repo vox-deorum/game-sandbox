@@ -138,6 +138,4 @@ export interface RendererDefinition {
   renderer: Renderer
   /** Static image asset URL used by environment cards. */
   thumbnail: string
-  /** Per-player display names for the host's chat surfaces, keyed by player id. Absent leaves the compact player id. */
-  playerNames?: (header: RecordingHeader) => Readonly<Record<string, string>>
 }

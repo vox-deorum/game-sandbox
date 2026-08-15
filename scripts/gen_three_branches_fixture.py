@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -27,6 +28,7 @@ from three_branches.scripted_visitor import Agent as ScriptedVisitorAgent
 
 FIXTURE_NAME = "three-branches-recording.jsonl"
 ATTEMPTS = 5
+_PLAYER_ID = re.compile(r"player_(0|[1-9][0-9]*)\Z")
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -68,48 +70,73 @@ def assert_fixture_properties(header: Mapping[str, Any], states: Sequence[Mappin
     if header.get("environment") != "three_branches":
         raise AssertionError("fixture header must name three_branches")
     players = _mapping(header.get("players"))
-    npc_ids = {f"npc_{index}" for index in range(max(0, len(players) - 1))}
-    if not npc_ids:
-        raise AssertionError("fixture needs at least one NPC")
+    player_ids = tuple(players)
+    expected_player_ids = tuple(f"player_{index}" for index in range(len(player_ids)))
+    if (
+        len(player_ids) < 2
+        or not all(_PLAYER_ID.fullmatch(player_id) for player_id in player_ids)
+        or player_ids != expected_player_ids
+    ):
+        raise AssertionError(
+            "fixture player roster must be contiguous canonical player_0 through player_n in order"
+        )
+    cast_player_ids = set(player_ids[1:])
     if not states:
         raise AssertionError("fixture needs recorded states")
 
-    moved_npcs: set[str] = set()
+    moved_players: set[str] = set()
     visitor_waved = False
     messages: list[tuple[int, Mapping[str, Any]]] = []
     for state_index, state in enumerate(states):
         overlay = _mapping(state.get("overlay"))
         characters = overlay.get("characters")
-        if isinstance(characters, Sequence) and not isinstance(characters, str | bytes):
-            for raw_character in characters:
-                character = _mapping(raw_character)
-                character_id = character.get("id")
-                moved = character.get("moved")
-                if character_id in npc_ids and isinstance(moved, int | float) and moved > 0:
-                    moved_npcs.add(str(character_id))
-                expression = _mapping(character.get("expression"))
-                if character_id == "visitor" and expression.get("type") == "wave":
-                    visitor_waved = True
-        raw_messages = state.get("messages")
-        if isinstance(raw_messages, Sequence) and not isinstance(raw_messages, str | bytes):
-            messages.extend(
-                (state_index, _mapping(message)) for message in raw_messages if isinstance(message, Mapping)
+        if not isinstance(characters, Sequence) or isinstance(characters, str | bytes):
+            raise AssertionError(f"fixture state {state_index} must carry an overlay character roster")
+        character_records = tuple(_mapping(character) for character in characters)
+        character_ids = tuple(character.get("id") for character in character_records)
+        if character_ids != player_ids:
+            raise AssertionError(
+                f"fixture state {state_index} overlay character ids must exactly match the header roster"
             )
+        for character in character_records:
+            character_id = character["id"]
+            moved = character.get("moved")
+            if character_id in cast_player_ids and isinstance(moved, int | float) and moved > 0:
+                moved_players.add(cast(str, character_id))
+            expression = _mapping(character.get("expression"))
+            if character_id == "player_0" and expression.get("type") == "wave":
+                visitor_waved = True
+        raw_messages = state.get("messages")
+        if raw_messages is None:
+            continue
+        if not isinstance(raw_messages, Sequence) or isinstance(raw_messages, str | bytes):
+            raise AssertionError(f"fixture state {state_index} messages must be a sequence")
+        for raw_message in raw_messages:
+            if not isinstance(raw_message, Mapping):
+                raise AssertionError(f"fixture state {state_index} messages must be objects")
+            message = cast("Mapping[str, Any]", raw_message)
+            if "from" not in message or message.get("from") not in players:
+                raise AssertionError(f"fixture state {state_index} message sender must be in the roster")
+            if "to" not in message or (message.get("to") is not None and message.get("to") not in players):
+                raise AssertionError(
+                    f"fixture state {state_index} message recipient must be in the roster or null"
+                )
+            messages.append((state_index, message))
 
-    missing = sorted(npc_ids - moved_npcs)
+    missing = sorted(cast_player_ids - moved_players)
     if missing:
-        raise AssertionError(f"fixture NPCs never moved: {', '.join(missing)}")
+        raise AssertionError(f"fixture cast players never moved: {', '.join(missing)}")
     if not visitor_waved:
-        raise AssertionError("fixture visitor never waved")
+        raise AssertionError("fixture player_0 never waved")
 
     recorded_speech = any(
         message.get("from") == "player_0"
-        and message.get("to") in players
+        and (message.get("to") is None or message.get("to") in players)
         and isinstance(message.get("text"), str)
         for _, message in messages
     )
     if not recorded_speech:
-        raise AssertionError("fixture needs recorded visitor speech")
+        raise AssertionError("fixture needs recorded player_0 speech")
 
     final_overlay = _mapping(states[-1].get("overlay"))
     if final_overlay.get("terminal") is not True:

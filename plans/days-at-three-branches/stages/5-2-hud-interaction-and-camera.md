@@ -40,28 +40,28 @@ The 54-unit strip keeps its step 3 layout seam and adopts a thematic Hearthside 
 ```text
                 .--------------------.
                 | Fine morning, no?  |
-                | (to npc_2)         |
+                | (to player_3)      |
                 '---.----------------'
                      v
-                 [visitor]
-                     o           o [npc_2]
+                 [player_0]
+                     o           o [player_3]
 ```
 
-Each character carries a nameplate pill with its character id above its sprite: a cinnabar accent for the visitor, ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. A plate and a bubble hold one size on screen at every zoom, so they counter-scale against the camera and their text needs no zoom-dependent resolution.
+Each character carries a nameplate pill with its raw player id above its sprite: a cinnabar accent for `player_0`, the visitor, and ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. A plate and a bubble hold one size on screen at every zoom, so they counter-scale against the camera and their text needs no zoom-dependent resolution.
 
 ### Speech bubbles
 
-A delivered line draws a parchment bubble with ink text and a tail to its speaker. A direct line carries a small `to npc_2` style tag; a broadcast is untagged. A bubble wraps to at most four lines and elides the rest; the transcript always carries the full line. A bubble holds for about four seconds and fades, and a character's newer line replaces its older bubble. Live sessions accumulate bubbles as states arrive. A replay seek clears them and shows only the landed tick's lines, preserving step 3's seek determinism.
+A delivered line draws a parchment bubble with ink text and a tail to its speaker. A direct line carries a small `to player_3` style tag; a broadcast is untagged. A bubble wraps to at most four lines and elides the rest; the transcript always carries the full line. A bubble holds for about four seconds and fades, and a character's newer line replaces its older bubble. Live sessions accumulate bubbles as states arrive. A replay seek clears them and shows only the landed tick's lines, preserving step 3's seek determinism.
 
 ### Chat transcript
 
 ```text
-visitor    Fine morning, no?     to npc_2
-npc_0      The pump sticks.      broadcast
-Recipient: [ Everyone | npc_0 | npc_2 ]   [ Send ]
+P0         Fine morning, no?     to P3
+P1         The pump sticks.      broadcast
+Recipient: [ Everyone | P1 | P3 ]   [ Send ]
 ```
 
-The shared host chat panel is the transcript on the session and replay pages. The hook is minimal and string-level: a renderer definition may supply a per-player display-name map, and the pages thread it into the panels, which apply it exactly where `formatPlayer` renders a player id today, the entry's player string, the `to` badge, and the recipient options. Markup, slots, styling, and the attribution label beside the name do not change. Three Branches maps `player_0` to `visitor` and `player_i` to `npc_(i-1)`, the order `overlay.ts` already derives. The selector offers Everyone for broadcast plus the currently permitted character-id addressees from `chat_options`. The hook is recorded in [docs/specs/interaction.md](../../../docs/specs/interaction.md).
+The shared host chat panel is the transcript on the session and replay pages. It uses the platform's standard compact `P0`, `P1`, and similar formatting for canonical player ids. Renderer definitions provide no environment-specific name map. The selector offers Everyone for broadcast plus the currently permitted player-id addressees from `chat_options`. Canvas nameplates and bubbles keep the raw `player_i` values carried by the recording.
 
 ### Camera
 

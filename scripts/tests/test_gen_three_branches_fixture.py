@@ -21,12 +21,12 @@ def _sample() -> tuple[dict[str, object], list[dict[str, object]]]:
     }
     characters = [
         {
-            "id": "visitor",
+            "id": "player_0",
             "moved": 0.0,
             "expression": {"type": "wave", "target": "none"},
         },
-        {"id": "npc_0", "moved": 0.2, "expression": {"type": "none", "target": "none"}},
-        {"id": "npc_1", "moved": 0.3, "expression": {"type": "none", "target": "none"}},
+        {"id": "player_1", "moved": 0.2, "expression": {"type": "none", "target": "none"}},
+        {"id": "player_2", "moved": 0.3, "expression": {"type": "none", "target": "none"}},
     ]
     states: list[dict[str, object]] = [
         {
@@ -45,13 +45,76 @@ def test_semantic_checker_accepts_behavior_without_pinning_ticks_or_text() -> No
     header, states = _sample()
     fixture.assert_fixture_properties(header, states)
 
+    states[0]["messages"] = [{"from": "player_0", "to": None, "text": "hello"}]
+    fixture.assert_fixture_properties(header, states)
+
+
+@pytest.mark.parametrize(
+    "player_ids",
+    [
+        ("player_1", "player_2"),
+        ("player_0", "player_2"),
+        ("player_0", "player_01"),
+        ("player_0", "visitor"),
+        ("player_1", "player_0"),
+    ],
+)
+def test_semantic_checker_rejects_noncanonical_header_rosters(player_ids: tuple[str, ...]) -> None:
+    header, states = _sample()
+    header["players"] = dict.fromkeys(player_ids, {})
+
+    with pytest.raises(AssertionError, match="contiguous canonical player_0"):
+        fixture.assert_fixture_properties(header, states)
+
+
+@pytest.mark.parametrize(
+    "character_ids",
+    [
+        ("player_0", "player_1"),
+        ("player_0", "player_1", "player_1"),
+        ("player_1", "player_0", "player_2"),
+        ("visitor", "player_1", "player_2"),
+        ("player_0", "player_01", "player_2"),
+    ],
+)
+def test_semantic_checker_rejects_overlay_roster_drift(character_ids: tuple[str, ...]) -> None:
+    header, states = _sample()
+    records = copy.deepcopy(states[0]["overlay"]["characters"])  # type: ignore[index]
+    changed = []
+    for index, character_id in enumerate(character_ids):
+        record = copy.deepcopy(records[min(index, len(records) - 1)])
+        record["id"] = character_id
+        changed.append(record)
+    states[0]["overlay"]["characters"] = changed  # type: ignore[index]
+
+    with pytest.raises(AssertionError, match="exactly match the header roster"):
+        fixture.assert_fixture_properties(header, states)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "value"),
+    [
+        ("from", None),
+        ("from", "visitor"),
+        ("from", "player_01"),
+        ("to", "npc_0"),
+        ("to", "player_3"),
+    ],
+)
+def test_semantic_checker_rejects_invalid_message_endpoints(endpoint: str, value: object) -> None:
+    header, states = _sample()
+    states[0]["messages"][0][endpoint] = value  # type: ignore[index]
+
+    with pytest.raises(AssertionError, match="message (sender|recipient)"):
+        fixture.assert_fixture_properties(header, states)
+
 
 @pytest.mark.parametrize(
     ("change", "message"),
     [
         ("movement", "never moved"),
         ("wave", "never waved"),
-        ("speech", "recorded visitor speech"),
+        ("speech", "recorded player_0 speech"),
         ("terminal", "terminal state"),
     ],
 )

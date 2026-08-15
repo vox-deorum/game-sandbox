@@ -129,13 +129,13 @@ describe('speechAlpha', () => {
 
 describe('speechTag', () => {
   it('tags a direct line with its addressee', () => {
-    expect(speechTag(speechLine({ key: 'a', speaker: 'visitor', addressee: 'npc_2' }))).toBe(
-      'to npc_2',
+    expect(speechTag(speechLine({ key: 'a', speaker: 'player_0', addressee: 'player_3' }))).toBe(
+      'to player_3',
     )
   })
 
   it('leaves a broadcast untagged', () => {
-    expect(speechTag(speechLine({ key: 'a', speaker: 'visitor', addressee: null }))).toBeNull()
+    expect(speechTag(speechLine({ key: 'a', speaker: 'player_0', addressee: null }))).toBeNull()
   })
 })
 
@@ -146,25 +146,34 @@ describe('createAnnotationLayer', () => {
     const scene = fixtureScene()
     annotations.reconcile(scene, 4, 2, 1)
     expect(layer.children).toHaveLength(scene.characters.length)
-    expect(collectText(layer)).toContain('visitor')
-    expect(collectTextNodes(layer).find((text) => text.text === 'visitor')?.style.fontSize).toBe(14)
+    expect(collectText(layer)).toContain('player_0')
+    expect(collectTextNodes(layer).find((text) => text.text === 'player_0')?.style.fontSize).toBe(14)
+
+    const firstCharacter = scene.characters[0]
+    if (firstCharacter === undefined) throw new Error('Fixture scene has no characters.')
+    const playerTen: FrameScene = {
+      ...scene,
+      characters: [...scene.characters, { ...firstCharacter, id: 'player_10' }],
+    }
+    annotations.reconcile(playerTen, 4, 2, 1)
+    expect(collectText(layer)).toContain('player_10')
 
     const trimmed: FrameScene = {
       ...scene,
-      characters: scene.characters.filter((character) => character.id !== 'visitor'),
+      characters: scene.characters.filter((character) => character.id !== 'player_0'),
     }
     annotations.reconcile(trimmed, 4, 2, 1)
     expect(layer.children).toHaveLength(trimmed.characters.length)
-    expect(collectText(layer)).not.toContain('visitor')
+    expect(collectText(layer)).not.toContain('player_0')
   })
 
   it('ignores a repeated key, so a second delivery of the same line does not restart its age', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'first line' })])
     expect(annotations.advance(3000)).toBe(true)
     // Same key again: a naive implementation that restarted the age would still be visible below.
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'first line' })])
     expect(annotations.advance(2000)).toBe(false)
   })
 
@@ -172,8 +181,8 @@ describe('createAnnotationLayer', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)
     const lines = [
-      speechLine({ key: 'a', speaker: 'visitor', text: 'broadcast' }),
-      speechLine({ key: 'b', speaker: 'visitor', text: 'direct' }),
+      speechLine({ key: 'a', speaker: 'player_0', text: 'broadcast' }),
+      speechLine({ key: 'b', speaker: 'player_0', text: 'direct' }),
     ]
     annotations.deliver(lines)
     expect(annotations.advance(speechHoldMs + speechFadeMs - 1)).toBe(true)
@@ -185,13 +194,13 @@ describe('createAnnotationLayer', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'first line' })])
     annotations.reconcile(scene, 4, 2, 1)
     expect(collectText(layer)).toContain('first line')
 
     expect(annotations.advance(speechHoldMs - 1)).toBe(true)
     // A different key from the same speaker: the age must restart, or the next advance would drop it.
-    annotations.deliver([speechLine({ key: 'b', speaker: 'visitor', text: 'second line' })])
+    annotations.deliver([speechLine({ key: 'b', speaker: 'player_0', text: 'second line' })])
     expect(annotations.advance(speechHoldMs - 1)).toBe(true)
 
     annotations.reconcile(scene, 4, 2, 1)
@@ -204,11 +213,11 @@ describe('createAnnotationLayer', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'first line' })])
     annotations.clear()
     expect(annotations.advance(1)).toBe(false)
 
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'again' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'again' })])
     annotations.reconcile(scene, 4, 2, 1)
     expect(collectText(layer)).toContain('again')
   })
@@ -216,7 +225,7 @@ describe('createAnnotationLayer', () => {
   it('returns false from advance once every retained bubble has fully faded', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'first line' })])
     expect(annotations.advance(speechHoldMs)).toBe(true)
     expect(annotations.advance(speechFadeMs)).toBe(false)
   })
@@ -236,7 +245,7 @@ describe('createAnnotationLayer', () => {
     const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     const longText = Array.from({ length: 20 }, (_, index) => `word${index}`).join(' ')
-    annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: longText })])
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: longText })])
     annotations.reconcile(scene, 4, 2, 1)
     const bubbleText = collectText(layer).find((text) => text.includes('word0'))
     expect(bubbleText?.split('\n')).toHaveLength(speechMaxLines)

@@ -258,7 +258,7 @@ function drawPlate(
   node.plateLabel.text = character.id
   node.plateLabel.resolution = resolution
   const accent =
-    character.id === 'visitor' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
+    character.id === 'player_0' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
   const width = character.id.length * PLATE_CHAR_WIDTH + PLATE_PADDING_X * 2
   const height = PLATE_LINE_HEIGHT + PLATE_PADDING_Y * 2
   node.plate.clear()

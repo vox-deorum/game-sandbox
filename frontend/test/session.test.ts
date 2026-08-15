@@ -62,9 +62,6 @@ vi.mock('../src/renderers/registry.js', () => ({
     internalSize: { width: 288, height: 512 },
     aspectRatio: 288 / 512,
   }),
-  // A vi.fn() so a test can make it return a real map: the default (no return value) keeps every
-  // existing assertion, which expects the compact player id, unchanged.
-  playerNamesFor: vi.fn(),
 }))
 
 vi.mock('../src/api/client.js', () => ({
@@ -94,7 +91,6 @@ import {
   watchAgentNumbers,
 } from '../src/api/client.js'
 import SessionPage from '../src/pages/SessionPage.vue'
-import { playerNamesFor } from '../src/renderers/registry.js'
 
 function ownerRow() {
   return {
@@ -1573,35 +1569,5 @@ describe('SessionPage', () => {
 
     expect(screen.queryByText('silenced')).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
-  })
-
-  it("shows the registry's player names in the chat panel, sourced from the environment's header", async () => {
-    vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else'))
-    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
-    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow()) // owned by dev-user; this viewer only spectates
-    const names = { player_0: 'visitor', player_1: 'npc_0' }
-    vi.mocked(playerNamesFor).mockReturnValue(names)
-    const view = await renderSession()
-    await waitForHandlers()
-    const header = spadesHeader()
-    handlers.onHeader(header)
-    handlers.onSessionStatus?.('running')
-    handlers.onState(
-      playerState(1, { messages: [{ from: 'player_0', to: 'player_1', text: 'table talk' }] }),
-    )
-    await screen.findByText('table talk')
-
-    // The compact player id ("P0") gives way to the renderer's name, and the targeted badge names its
-    // recipient the same way, proving the name reaches the DOM rather than just the mock's call record.
-    const chatPanel = view.container.querySelector('.chat-panel') as HTMLElement
-    expect(chatPanel).not.toBeNull()
-    expect(chatPanel.querySelector('.chat-player')).toHaveTextContent('visitor')
-    expect(chatPanel).toHaveTextContent('to npc_0')
-
-    // The page consulted the registry with its renderer key and the header it received, rather than
-    // hardcoding a map.
-    expect(playerNamesFor).toHaveBeenCalledWith('spades', header)
-
-    vi.mocked(playerNamesFor).mockReset()
   })
 })

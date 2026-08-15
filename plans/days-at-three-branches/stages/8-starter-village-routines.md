@@ -10,7 +10,7 @@ Routines and dialogue ship together: each villager continues its day while it ta
 
 ## The agent the library serves
 
-Season 4 uses `cast_10` with daynight on. Each villager derives a role from its id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when the visitor comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the interface that students replace with their own design.
+Season 4 uses `cast_10` with daynight on. Each villager derives a role from its player id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when `player_0`, the visitor, comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the interface that students replace with their own design.
 
 1. **Dawn:** leave home with `go_to`.
 2. **Morning:** work at stalls, pump, plots, board, and repair bench with `tend` and `wander`.
@@ -28,7 +28,7 @@ Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent
 
 `neighbor` is a publication candidate. Keep `PUBLISHED_EXAMPLES` unchanged and record publication at Season 4 opening in the plan's Later work.
 
-A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, character id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing.
+A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, player id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing.
 
 ### Routing
 
@@ -57,13 +57,13 @@ A routine is `decide(observation, memory, goal)`: return a helper-built action D
 
 `dialogue.py` wraps `templates/base`'s `sandbox.llm.BackgroundLLM`, which owns the request thread, one in-flight slot, non-blocking read, and captured error. The controller adds:
 
-- At most one waiting visitor line. A newer line replaces it, and it starts only after the current reply to `visitor` is consumed.
+- At most one waiting visitor line. A newer line replaces it, and it starts only after the current reply to `player_0` is consumed.
 - Prompt with persona and perceived world state only.
 - Whitespace normalization and a 200-code-point cap before sending a villager line.
 - A canned fallback on budget exhaustion or proxy error.
 - A latest-observation validity check before starting a waiting request or returning a reply. Discard a waiting or completed line if the visitor has left hearing range or moved behind a wall.
 
-Use the [environment speech contract](../environment.md#speech) for delivery and visibility. A valid reply is that villager's one direct line for the tick, returned through `speech.to("visitor", text)`. It is valid only while the visitor is in hearing range with an unblocked line. Routines continue every tick while a reply is in flight.
+Use the [environment speech contract](../environment.md#speech) for delivery and visibility. A valid reply is that villager's one direct line for the tick, returned through the shared raw chat interface as `{"to": "player_0", "text": text}`. It is valid only while the visitor is in hearing range with an unblocked line. Routines continue every tick while a reply is in flight.
 
 Use a non-adaptive static schedule and document its approximations.
 
@@ -79,7 +79,7 @@ Add `("three_branches", "neighbor")` to `scripts/tests/test_compose.py`'s exampl
 - A full Season 4 fuzz run keeps every action in space and verifies that every commanded use is taken by the engine.
 - Routing reaches every named place from every home over pinned seeds, uses cell helpers rather than observation-footprint geometry, and builds once in reset. Report reset and per-tick costs separately.
 - A pinned Season 4 day-arc test requires every villager to leave home, reach three districts, use a prop in each working phase, and return home by night.
-- Fake-proxy dialogue tests cover cross-tick requests, direct villager-to-visitor delivery through `speech.to`, exhaustion and error fallbacks, reply truncation, waiting-line replacement, and leaving hearing range or moving behind a wall while a request or waiting line exists.
+- Fake-proxy dialogue tests cover cross-tick requests, direct villager-to-`player_0` delivery through raw chat dictionaries, exhaustion and error fallbacks, reply truncation, waiting-line replacement, and leaving hearing range or moving behind a wall while a request or waiting line exists.
 - `neighbor` completes healthy days with LLM on and off, on both plans, within decision and episode budgets.
 
 The static role table, phase places, and follow and avoid distance bands are defaults the day-arc test may adjust.

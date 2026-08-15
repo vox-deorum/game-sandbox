@@ -88,9 +88,9 @@ describe('Three Branches pure scene', () => {
     const from = computeScene(states[0] as (typeof states)[number], scene, roster)
     const to = computeScene(states[1] as (typeof states)[number], scene, roster)
     const halfway = interpolateScene(from, to, 0.5)
-    const visitor = halfway.characters.find((character) => character.id === 'visitor')
-    const fromVisitor = from.characters.find((character) => character.id === 'visitor')
-    const toVisitor = to.characters.find((character) => character.id === 'visitor')
+    const visitor = halfway.characters.find((character) => character.id === 'player_0')
+    const fromVisitor = from.characters.find((character) => character.id === 'player_0')
+    const toVisitor = to.characters.find((character) => character.id === 'player_0')
     expect(visitor?.point.x).toBeCloseTo(
       ((fromVisitor?.point.x ?? 0) + (toVisitor?.point.x ?? 0)) / 2,
     )

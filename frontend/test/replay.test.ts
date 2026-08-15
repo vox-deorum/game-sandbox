@@ -43,9 +43,6 @@ vi.mock('../src/renderers/registry.js', () => ({
     internalSize: { width: 288, height: 512 },
     aspectRatio: 288 / 512,
   }),
-  // A vi.fn() so a test can make it return a real map: the default (no return value) keeps every
-  // existing assertion, which expects the compact player id, unchanged.
-  playerNamesFor: vi.fn(),
 }))
 
 vi.mock('../src/api/client.js', () => ({
@@ -72,8 +69,6 @@ import {
   watchAgentNumbers,
 } from '../src/api/client.js'
 import ReplayPage from '../src/pages/ReplayPage.vue'
-import { playerNamesFor } from '../src/renderers/registry.js'
-import { parseRecording } from '../src/replay/parse.js'
 
 /** A public season fixture: play-open by default, so a viewer other than an admin is blind while it
  *  matches a listed recording's season_id. */
@@ -920,38 +915,5 @@ describe('ReplayPage', () => {
     await fireEvent.keyDown(stage, { key: 'Home' })
     expect(screen.queryByText('good luck all')).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
-  })
-
-  it("shows the registry's player names in the merged game thread, sourced from the environment's header", async () => {
-    vi.mocked(getEnvironments).mockResolvedValueOnce([spadesMeta()])
-    const names = { player_0: 'visitor', player_1: 'npc_0' }
-    vi.mocked(playerNamesFor).mockReturnValue(names)
-    const states = [
-      playerState(0),
-      playerState(1, {
-        messages: [{ from: 'player_0', to: 'player_1', text: 'good luck all' }],
-      }),
-    ]
-    const recording = recordingText(states, { environment: 'spades', players: spadesPlayers() })
-    vi.mocked(getRecording).mockResolvedValue(recording)
-    const view = await renderReplay()
-    await screen.findByRole('button', { name: 'Play' })
-    const stage = view.container.querySelector('.stage') as HTMLElement
-    await fireEvent.keyDown(stage, { key: 'ArrowRight' })
-
-    // The compact player id ("P0", what the decision rows beside it still show) gives way to the
-    // renderer's name on the message row, and the targeted badge names its recipient the same way,
-    // proving the name reaches the DOM rather than just the mock's call record.
-    const messageRow = view.container.querySelector('.thread-item--message') as HTMLElement
-    expect(messageRow).not.toBeNull()
-    expect(messageRow.querySelector('.thread-msg-player')).toHaveTextContent('visitor')
-    expect(messageRow).toHaveTextContent('to npc_0')
-
-    // The page consulted the registry with its renderer key and the recording's own parsed header,
-    // rather than hardcoding a map.
-    const { header } = parseRecording(recording)
-    expect(playerNamesFor).toHaveBeenCalledWith('spades', header)
-
-    vi.mocked(playerNamesFor).mockReset()
   })
 })

@@ -170,4 +170,6 @@ def write_base_helpers(dest_sandbox: Path, spec: TemplateEnvironmentSpec) -> Non
     for name, relative in TEMPLATE_BASE_MODULES.items():
         shutil.copyfile(ENVIRONMENT_PACKAGES_DIR / relative, dest_sandbox / name)
     for name, relative in spec.env_sandbox_modules.items():
-        shutil.copyfile(ENVIRONMENT_PACKAGES_DIR / relative, dest_sandbox / name)
+        destination = dest_sandbox / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ENVIRONMENT_PACKAGES_DIR / relative, destination)

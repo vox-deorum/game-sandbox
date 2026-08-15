@@ -10,7 +10,7 @@ The renderer treats the recording header, `rules.json`, and `catalog.json` as au
 
 `overlay_static` is read once at mount. It contains the configurable size, south-first ground rows, buildings, props, scenery, and visitor spawn. The player roster remains in the recording header. Dynamic overlays contain tick, phase, ordered characters, prop states, and terminal state. A live opening with no dynamic overlay is valid before the first completed transition.
 
-The recording's player order maps `player_0` to `visitor`, then maps each later contiguous player to `npc_0` upward. Dynamic validation checks only what safe deterministic drawing needs. Public renderer data contracts live in `renderer/types.ts`, separate from parsing and Pixi code. Exported contracts and their public members have concise JSDoc.
+The recording uses one canonical identity space. `player_0` is the visitor and each later contiguous `player_i` is an NPC. Header keys must match `player_(0|[1-9][0-9]*)` and form the exact sequence `player_0` through `player_n`. Dynamic character ids must match that sequence exactly and in order. Speech endpoints must be exact roster members, except that a null recipient remains a broadcast. No renderer path normalizes ids or accepts the legacy `visitor` and `npc_i` aliases. Public renderer data contracts live in `renderer/types.ts`, separate from parsing and Pixi code. Exported contracts and their public members have concise JSDoc.
 
 Configured metres become renderer units through shared conversion helpers. South-first, north-up environment coordinates become Pixi's downward y-axis only at the rendering boundary. Comments explain this inversion where it occurs.
 

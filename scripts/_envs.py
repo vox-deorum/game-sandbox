@@ -134,6 +134,8 @@ def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
         if package_dir.name == "flappy_bird"
         else ("agent.py", "sandbox/crane/", "sandbox/observation_types.py")
         if package_dir.name == "skirmish_crane"
+        else ("agent.py", "sandbox/village/", "sandbox/observation_types.py")
+        if package_dir.name == "three_branches"
         else ()
     )
     # blocks.py belongs to the banner example alone, so it is checked where it ships instead of
@@ -153,6 +155,12 @@ def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
             "unit_stats.py": "skirmish_crane/unit_stats.py",
         }
         if package_dir.name == "skirmish_crane"
+        else {
+            "observation_types.py": "three_branches/observation_types.py",
+            "village/rules.json": "three_branches/rules.json",
+            "village/catalog.json": "three_branches/catalog.json",
+        }
+        if package_dir.name == "three_branches"
         else {}
     )
     return TemplateEnvironmentSpec(

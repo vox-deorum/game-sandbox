@@ -212,7 +212,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
-    const landedVisitor = scene.characters.find((character) => character.id === 'visitor')
+    const landedVisitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (landedVisitor !== undefined) {
       this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
     }
@@ -477,7 +477,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private presentScene(scene: FrameScene): void {
     this.presentedScene = scene
     this.characters.reconcile(scene)
-    const visitor = scene.characters.find((character) => character.id === 'visitor')
+    const visitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
       // interpolated visitor. A manual gesture suspends it until the mode-specific return policy.
@@ -545,7 +545,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.ctx.container.dataset.threeBranchesPhase = dynamic?.phase ?? 'opening'
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
     this.ctx.container.dataset.threeBranchesTerminal = String(dynamic?.terminal ?? false)
-    const visitor = dynamic?.characters.find((character) => character.id === 'visitor')
+    const visitor = dynamic?.characters.find((character) => character.id === VISITOR_PLAYER)
     this.ctx.container.dataset.threeBranchesVisitor =
       visitor === undefined
         ? 'pending'
@@ -567,8 +567,8 @@ function charactersMoved(from: FrameScene, to: FrameScene): boolean {
 }
 
 function visitorMoved(from: FrameScene, to: FrameScene): boolean {
-  const start = from.characters.find((character) => character.id === 'visitor')
-  const end = to.characters.find((character) => character.id === 'visitor')
+  const start = from.characters.find((character) => character.id === VISITOR_PLAYER)
+  const end = to.characters.find((character) => character.id === VISITOR_PLAYER)
   return (
     start !== undefined &&
     end !== undefined &&
@@ -580,12 +580,6 @@ const definition = {
   key: 'three-branches-village',
   renderer: ThreeBranchesRenderer,
   thumbnail,
-  // Students, guides, and observations speak only of the visitor and the NPCs, so the host's chat
-  // surfaces name a line's speaker and addressee the same way the village itself does.
-  playerNames: (header: RecordingHeader) =>
-    Object.fromEntries(
-      expectedCharacterIds(header).map((characterId, index) => [`player_${index}`, characterId]),
-    ),
 } satisfies RendererDefinition
 
 export default definition

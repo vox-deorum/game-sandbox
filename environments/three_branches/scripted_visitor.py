@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -26,14 +27,7 @@ def _heading_to(start: tuple[float, float], end: tuple[float, float]) -> float:
     return math.degrees(math.atan2(end[1] - start[1], end[0] - start[0])) % 360.0
 
 
-def _player_id(character_id: str) -> str | None:
-    """Translate an observed character id to the harness recipient id."""
-    if character_id == "visitor":
-        return "player_0"
-    prefix, separator, suffix = character_id.partition("_")
-    if prefix == "npc" and separator and suffix.isdigit():
-        return f"player_{int(suffix) + 1}"
-    return None
+_NPC_PLAYER_ID = re.compile(r"player_[1-9][0-9]*\Z")
 
 
 def _self_record(observation: object) -> Mapping[str, Any]:
@@ -115,25 +109,24 @@ class Agent:
 
     def chat(self, inbox: object) -> list[dict[str, str]]:
         """Offer one canned greeting, then one short reply to the same villager."""
-        recipient = _player_id(self._target) if self._target is not None else None
-        if recipient is None:
+        if self._target is None:
             return []
         if self._greeting_due:
             self._greeting_due = False
-            return [{"to": recipient, "text": "Hello. How is your day going?"}]
+            return [{"to": self._target, "text": "Hello. How is your day going?"}]
         if self._replied or not isinstance(inbox, Sequence) or isinstance(inbox, str | bytes):
             return []
         for message in inbox:
-            if isinstance(message, Mapping) and message.get("from") == recipient:
+            if isinstance(message, Mapping) and message.get("from") == self._target:
                 self._replied = True
-                return [{"to": recipient, "text": "Thank you. I am glad to be here."}]
+                return [{"to": self._target, "text": "Thank you. I am glad to be here."}]
         return []
 
     def _find_target(
         self, seen: list[Mapping[str, Any]], position: tuple[float, float]
     ) -> Mapping[str, Any] | None:
         """Keep pursuing one villager, or choose the nearest newly seen villager."""
-        candidates = [person for person in seen if str(person.get("id", "")).startswith("npc_")]
+        candidates = [person for person in seen if _NPC_PLAYER_ID.fullmatch(str(person.get("id", "")))]
         if not candidates:
             return None
         for person in candidates:

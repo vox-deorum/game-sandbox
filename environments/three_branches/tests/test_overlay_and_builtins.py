@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from three_branches import naive, scripted_visitor
 from three_branches.env import default_action, make_env
@@ -19,19 +20,27 @@ def _fixed_random() -> random.Random:
     return _RANDOM(7)
 
 
-def test_overlay_separates_static_data_and_rounds_dynamic_numbers() -> None:
-    env = make_env({"seat_plan": "cast_5", "daynight": True})
+@pytest.mark.parametrize(("seat_plan", "cast_size"), [("cast_5", 5), ("cast_10", 10)])
+def test_overlay_separates_static_data_and_rounds_dynamic_numbers(seat_plan: str, cast_size: int) -> None:
+    env = make_env({"seat_plan": seat_plan, "daynight": True})
     observations, _ = env.reset(seed=2)
     static = extract_overlay_static(env)
     assert static == json.loads(json.dumps(env.day.layout.village()))
     assert static["ground"] == list(observations["player_0"]["village"]["ground"])
 
-    env.day.characters["visitor"].position = (1.234, 5.678)
-    env.day.characters["visitor"].heading = 12.34
+    env.day.characters["player_0"].position = (1.234, 5.678)
+    env.day.characters["player_0"].heading = 12.34
     overlay = extract_overlay(env)
+    expected_ids = [f"player_{index}" for index in range(cast_size + 1)]
     assert set(overlay) == {"tick", "phase", "characters", "props", "terminal"}
     assert "ground" not in overlay
-    assert [record["id"] for record in overlay["characters"]] == list(env.day.characters)
+    assert list(env.day.characters) == expected_ids
+    assert [entry["id"] for entry in observations["player_0"]["roster"]] == expected_ids
+    assert [record["id"] for record in overlay["characters"]] == expected_ids
+    assert "visitor" not in json.dumps(overlay)
+    assert "npc_" not in json.dumps(overlay)
+    if seat_plan == "cast_10":
+        assert overlay["characters"][-1]["id"] == "player_10"
     assert overlay["characters"][0]["x"] == 1.23
     assert overlay["characters"][0]["heading"] == 12.3
     assert list(overlay["props"]) == list(env.day.prop_states)
@@ -54,11 +63,20 @@ def test_builtins_handle_real_observations_and_follow_their_small_state_machines
     monkeypatch.setattr(scripted_visitor.random, "Random", _fixed_random)
     visitor = scripted_visitor.Agent()
     visitor.reset(2, observations["player_0"])
+    malformed = {
+        "self": {"position": {"x": np.array(0, dtype=np.float32), "y": np.array(0, dtype=np.float32)}},
+        "seen": tuple(
+            {"id": character_id, "position": {"x": 1.0, "y": 0.0}}
+            for character_id in ("visitor", "npc_0", "player_01", "player_0")
+        ),
+    }
+    visitor.act(malformed)
+    assert visitor._target is None
     approach = {
         "self": {"position": {"x": np.array(0, dtype=np.float32), "y": np.array(0, dtype=np.float32)}},
         "seen": (
             {
-                "id": "npc_0",
+                "id": "player_1",
                 "position": {"x": np.array(3, dtype=np.float32), "y": np.array(0, dtype=np.float32)},
             },
         ),
@@ -68,7 +86,7 @@ def test_builtins_handle_real_observations_and_follow_their_small_state_machines
         **approach,
         "seen": (
             {
-                "id": "npc_0",
+                "id": "player_1",
                 "position": {"x": np.array(1, dtype=np.float32), "y": np.array(0, dtype=np.float32)},
             },
         ),

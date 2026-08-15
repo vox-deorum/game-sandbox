@@ -43,12 +43,13 @@ class Day:
         self.daynight = daynight
         self.tick = 0
         self.characters: dict[str, Character] = {}
-        visitor = Character("visitor", layout.spawn, 0.0)
+        visitor = Character("player_0", layout.spawn, 0.0)
         self.characters[visitor.id] = visitor
-        for index in range(cast_size):
-            home = f"home_{index % 5}"
-            pose = layout.residence_pose(home, index // 5)
-            character = Character(f"npc_{index}", pose.position, pose.heading)
+        for player_index in range(1, cast_size + 1):
+            resident_index = player_index - 1
+            home = f"home_{resident_index % 5}"
+            pose = layout.residence_pose(home, resident_index // 5)
+            character = Character(f"player_{player_index}", pose.position, pose.heading)
             self.characters[character.id] = character
         self.prop_states = {prop.id: PROP_BY_TOKEN[prop.type].start for prop in layout.props}
         self.holders: dict[str, str | None] = {prop.id: None for prop in layout.props}
@@ -122,7 +123,7 @@ def step(day: Day, actions: Mapping[str, Mapping[str, object]]) -> dict[str, dic
     }
     # A prop takes one user per tick, and `users` is the only record of who won it. Selection runs
     # before physics so every contender reads the same pre-tick state, and roster order puts the
-    # visitor first. A contender who loses simply expresses nothing.
+    # player_0 first. A contender who loses simply expresses nothing.
     users: dict[str, str] = {}
     for character_id, order in orders.items():
         character = day.characters[character_id]

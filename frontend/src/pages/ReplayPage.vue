@@ -52,7 +52,6 @@ import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
-import { playerNamesFor } from '../renderers/registry.js'
 
 const route = useRoute()
 const me = useMe()
@@ -90,14 +89,6 @@ const setupLlmCalls = computed(
 // The full message log, built once from the recording at load (recordings keep every message by
 // design). It never mutates afterward, so a shallowRef is enough.
 const chatLog = shallowRef<ChatEntry[]>([])
-// The environment's own display names for this recording's players (e.g. Days at Three Branches'
-// character names), for the merged game thread to show in place of compact player ids. Undefined until
-// the renderer's metadata and the header are both in, or when the renderer supplies none.
-const chatPlayerNames = computed(() =>
-  meta.value === null || header.value === null
-    ? undefined
-    : playerNamesFor(meta.value.renderer, header.value),
-)
 const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Agent N" the watch picker and rating panel show for the same agent.
@@ -447,7 +438,6 @@ onMounted(async () => {
           :setup-llm-calls="setupLlmCalls"
           :llm-unavailable="llmTelemetryUnavailable"
           :llm-pending="llmPending"
-          :player-names="chatPlayerNames"
         />
         <DecisionLog
           v-else
@@ -477,7 +467,6 @@ onMounted(async () => {
             :setup-llm-calls="setupLlmCalls"
             :llm-unavailable="llmTelemetryUnavailable"
             :llm-pending="llmPending"
-            :player-names="chatPlayerNames"
           />
         </details>
         <details v-else-if="!logBeside" class="stage-log-below">

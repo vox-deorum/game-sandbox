@@ -1,6 +1,6 @@
 # Days at Three Branches: Ruleset
 
-Days at Three Branches follows one village day in Crane Reach. Every NPC runs a separately constructed copy of one submitted program, distinguished only by the character id in its observation. NPCs coordinate through perception and speech, never shared memory or a shared controller.
+Days at Three Branches follows one village day in Crane Reach. Every NPC runs a separately constructed copy of one submitted program, distinguished only by the player id in its observation. NPCs coordinate through perception and speech, never shared memory or a shared controller.
 
 The visitor is outside the submission. A human plays it live and `scripted_visitor` plays it in automated runs. NPC behavior toward the visitor, including greeting, following, avoiding, and fleeing, uses ordinary locomotion and expression.
 
@@ -15,7 +15,7 @@ There is one environment variant, `daynight`. Seasons select it and cast size. T
 - A building is a semantic axis-aligned cell group. Its template paints floor inside, wall around the perimeter, and a 2-cell doorway run through one side. Its record has id, type, and origin only; it has no collision object, use selection, or prop-state observation.
 - Ranges measure position to position. Interactive-prop use and perception instead measure to the nearest point on the prop collision shape.
 - A character is a 0.4 m circle. The frame boundary is impassable.
-- Character order is visitor, then `npc_0` upward. It sets roster order, same-tick prop contention, and platform player numbering.
+- Character order is `player_0`, the visitor, then `player_1` upward for NPCs. It sets roster order and same-tick prop contention.
 - A day has 1200 ticks. The match seed identifies the layout input. Shipped production builtins use fresh entropy, so two live builtin sessions with the same seed need not make the same choices. A fixed layout and fixed action sequence replay identically on the same platform build.
 - Step 4 blesses one course default seed. Later [per-season configuration](../../docs/specs/seasons.md#per-season-configuration) pins that same seed for every season.
 
@@ -30,7 +30,7 @@ A late or missing action is heading unchanged, speed 0, expression none. In-spac
 
 ## The village
 
-Every match generates Three Branches from the match seed under the [village layout and placement guarantees](village.md#generation-order-and-guarantees). The village always has five homes, `home_0` through `home_4`, regardless of cast size. `npc_i` lives in `home_(i mod 5)`, placing two villagers in each home for cast_10. The visitor spawns on the road, `network.spawn.edge_inset` cells inside the west edge.
+Every match generates Three Branches from the match seed under the [village layout and placement guarantees](village.md#generation-order-and-guarantees). The village always has five homes, `home_0` through `home_4`, regardless of cast size. NPC `player_i` lives in `home_((i - 1) mod 5)`, placing two villagers in each home for cast_10. The visitor spawns on the road, `network.spawn.edge_inset` cells inside the west edge.
 
 Every cell has a ground class. `rules.json` holds its speed limit, passability, and sight behavior.
 
@@ -95,7 +95,7 @@ NPCs and the visitor share this profile.
 | Hearing     | 6 m, all around, and the range a spoken line carries          |
 | Prop reach  | 1.5 m                                                         |
 
-A cast of N has `npc_0` through `npc_N-1` for the full match. The visitor id is `visitor`. Each NPC begins on its home's floor facing the doorway, with housemates at least one body diameter apart. The visitor begins at the road spawn facing along the road into the village. Everyone begins still with expression none. The engine assigns ids and homes; the submission authors roles, personalities, and relationships.
+A cast of N has NPCs `player_1` through `player_N` for the full match. The visitor is `player_0`. Each NPC begins on its home's floor facing the doorway, with housemates at least one body diameter apart. The visitor begins at the road spawn facing along the road into the village. Everyone begins still with expression none. The engine assigns ids and homes; the submission authors roles, personalities, and relationships.
 
 ## Actions
 

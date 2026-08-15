@@ -48,7 +48,6 @@ vi.mock('../src/renderers/registry.js', () => ({
       }
     },
   }),
-  playerNamesFor: () => undefined,
 }))
 
 vi.mock('../src/api/client.js', () => ({

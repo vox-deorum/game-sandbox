@@ -55,11 +55,6 @@ export function formatPlayer(playerId: string): string {
   return compactId(playerId, /^player_(\d+)$/, 'P')
 }
 
-/** An environment-supplied display name for a player id, or the compact id when it supplies none. */
-export function playerName(playerId: string, names?: Readonly<Record<string, string>>): string {
-  return names?.[playerId] ?? formatPlayer(playerId)
-}
-
 /** A numbered id as its one-letter short form, or a readable title-cased fallback for any other name. */
 function compactId(id: string, pattern: RegExp, letter: string): string {
   const numbered = pattern.exec(id)

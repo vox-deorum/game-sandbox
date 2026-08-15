@@ -135,4 +135,4 @@ The panel stays available across every active player's turn. It becomes unavaila
 
 The browser sends the sender, recipient, and text without a compose tick. The browser's local state remains an interface hint rather than the authority. The harness admits each frame at an atomic pre-step queue drain and validates it against the human policy published on the preceding live state, as [Communication](communication.md#delivery-and-visibility) defines.
 
-An environment's renderer definition may supply a per-player display-name map. Where the shared panel would otherwise show a compact player id, including the recipient selector, it shows that name instead. The map is a display-only hook: it never changes what the panel sends, which stays the platform player id.
+The shared panel formats canonical player ids as compact labels such as `P0` and `P10`. It sends the unchanged canonical player id.

@@ -15,8 +15,6 @@ Read the [interaction specification](../../specs/interaction.md) for the product
 
 `environments/flappy_bird/renderer/` is the reference for a realtime draw-only renderer, and `environments/hearts/renderer/` is the reference for turn-based card input and animation.
 
-An environment whose chat should name players instead of showing a compact player id also exports an optional `playerNames` field: a function from the recording header to a per-player display-name map. The host's chat panels apply it everywhere they would otherwise show a player id, including the recipient selector.
-
 ## Rendering model
 
 ```text

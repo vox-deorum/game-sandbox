@@ -191,7 +191,7 @@ export interface CharacterDrawable extends DynamicCharacter {
 }
 
 /**
- * One delivered line, named by character id rather than by the recording's player id.
+ * One delivered line carrying canonical raw recording player ids.
  *
  * The host admits lines before they reach the renderer, so a bubble draws whatever arrives. The
  * visitor's own session therefore carries fewer lines than a watcher's, exactly as the environment's
@@ -200,9 +200,9 @@ export interface CharacterDrawable extends DynamicCharacter {
 export interface SpeechLine {
   /** Canonical presentation identity derived from the delivered message. */
   key: string
-  /** Character id of the speaker. */
+  /** Canonical recording player id of the speaker. */
   speaker: string
-  /** Character id of the single addressee, or null for a broadcast. */
+  /** Canonical recording player id of the single addressee, or null for a broadcast. */
   addressee: string | null
   /** Delivered text. */
   text: string

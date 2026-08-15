@@ -56,12 +56,19 @@ class _Recipient(_StillAgent):
 def test_parallel_environment_plans_spaces_and_chat(seat_plan: str, players: int) -> None:
     env = make_env({"seat_plan": seat_plan, "daynight": False})
     observations, _ = env.reset(seed=4)
-    assert list(observations) == env.possible_agents and len(observations) == players
-    assert [observation["self"]["id"] for observation in observations.values()] == [
-        "visitor",
-        *(f"npc_{index}" for index in range(players - 1)),
+    expected_ids = [f"player_{index}" for index in range(players)]
+    assert list(observations) == env.possible_agents == expected_ids
+    assert [observation["self"]["id"] for observation in observations.values()] == expected_ids
+    assert list(env.day.characters) == expected_ids
+    assert env.day.characters["player_0"].position == env.day.layout.spawn
+    assert [entry["id"] for entry in observations["player_0"]["roster"]] == expected_ids
+    assert [entry["home"] for entry in observations["player_0"]["roster"]] == [
+        "none",
+        *(f"home_{(index - 1) % 5}" for index in range(1, players)),
     ]
     assert all(env.observation_space(agent).contains(observations[agent]) for agent in env.agents)
+    if seat_plan == "cast_10":
+        assert env.observation_space("player_10").contains(observations["player_10"])
     actions = {agent: default_action(env, agent) for agent in env.agents}
     assert all(env.action_space(agent).contains(action) for agent, action in actions.items())
     observations, rewards, terms, truncations, _ = env.step(actions)
@@ -145,8 +152,8 @@ def test_direct_policy_is_pre_step_but_broadcast_audience_is_post_step() -> None
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     env.reset()
     start, target, walk_away_heading = _hearing_range_points(env.day.layout)
-    env.day.place("visitor", start)
-    env.day.place("npc_0", target)
+    env.day.place("player_0", start)
+    env.day.place("player_1", target)
     assert "player_1" in env.chat_policy("player_0")["target_recipients"]
 
     actions = {agent: default_action(env, agent) for agent in env.agents}

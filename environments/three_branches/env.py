@@ -19,6 +19,7 @@ SEAT_PLANS = {"cast_5": 5, "cast_10": 10}
 _TEXT = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _GROUND = "".join(sorted(GROUND_BY_CODE))
 _BUILDINGS = sum(kind.count for kind in CATALOG.buildings)
+_PLAYER_ID_LENGTH = len(f"player_{max(SEAT_PLANS.values())}")
 
 
 def make_env(parameters: Mapping[str, object]) -> ThreeBranchesEnv:
@@ -40,7 +41,7 @@ def default_action(env: ThreeBranchesEnv, player_id: str) -> dict[str, object]:
         raise ValueError(f"unknown player {player_id!r}")
     # A conformance caller may ask for the fallback before the first reset, when there is no day.
     day = env._day
-    heading = 0.0 if day is None else day.characters[env.character_for(player_id)].heading
+    heading = 0.0 if day is None else day.characters[player_id].heading
     return {
         "heading": np.array(heading, dtype=np.float32),
         "speed": np.array(0.0, dtype=np.float32),
@@ -64,8 +65,9 @@ class ThreeBranchesEnv(ParallelEnv):
         self.possible_agents = [f"player_{index}" for index in range(self.cast_size + 1)]
         self.agents: list[str] = []
         self._day: Day | None = None
-        self._roster = ({"id": "visitor", "home": "none"},) + tuple(
-            {"id": f"npc_{index}", "home": f"home_{index % 5}"} for index in range(self.cast_size)
+        self._roster = ({"id": "player_0", "home": "none"},) + tuple(
+            {"id": f"player_{index}", "home": f"home_{(index - 1) % 5}"}
+            for index in range(1, self.cast_size + 1)
         )
         self._parameters = {"seat_plan": seat_plan, "daynight": int(daynight)}
         self._build_spaces()
@@ -80,14 +82,14 @@ class ThreeBranchesEnv(ParallelEnv):
         expression = spaces.Dict({"type": _text(10), "target": _text(16)})
         person = spaces.Dict(
             {
-                "id": _text(8),
+                "id": _text(_PLAYER_ID_LENGTH),
                 "position": position,
                 "heading": spaces.Box(0.0, 360.0, shape=(), dtype=np.float32),
                 "moved": spaces.Box(0.0, 1.0, shape=(), dtype=np.float32),
                 "expression": expression,
             }
         )
-        nearby = spaces.Dict({"id": _text(8), "position": position})
+        nearby = spaces.Dict({"id": _text(_PLAYER_ID_LENGTH), "position": position})
         prop = spaces.Dict({"prop": _text(16), "state": _text(9)})
         cell = spaces.Dict({"x": spaces.Discrete(FRAME.cells_x), "y": spaces.Discrete(FRAME.cells_y)})
         village = spaces.Dict(
@@ -113,7 +115,9 @@ class ThreeBranchesEnv(ParallelEnv):
                 "spawn": position,
             }
         )
-        roster = spaces.Tuple([spaces.Dict({"id": _text(8), "home": _text(16)})] * (self.cast_size + 1))
+        roster = spaces.Tuple(
+            [spaces.Dict({"id": _text(_PLAYER_ID_LENGTH), "home": _text(16)})] * (self.cast_size + 1)
+        )
         observation = spaces.Dict(
             {
                 "self": person,
@@ -151,17 +155,6 @@ class ThreeBranchesEnv(ParallelEnv):
     def action_space(self, agent: str) -> spaces.Space:
         return self.action_spaces[agent]
 
-    def character_for(self, player_id: str) -> str:
-        index = int(player_id.removeprefix("player_"))
-        return "visitor" if index == 0 else f"npc_{index - 1}"
-
-    def player_for(self, character_id: str) -> str:
-        return (
-            "player_0"
-            if character_id == "visitor"
-            else f"player_{int(character_id.removeprefix('npc_')) + 1}"
-        )
-
     def reset(
         self, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[dict[str, dict[str, object]], dict[str, dict[str, object]]]:
@@ -172,7 +165,7 @@ class ThreeBranchesEnv(ParallelEnv):
         return observations, {agent: {} for agent in self.agents}
 
     def _observation(self, player_id: str) -> dict[str, object]:
-        return self._complete(observe(self.day, self.character_for(player_id)))
+        return self._complete(observe(self.day, player_id))
 
     def _complete(self, state: dict[str, object]) -> dict[str, object]:
         """Add the standing knowledge to one character's perception and fix its leaf types."""
@@ -208,16 +201,12 @@ class ThreeBranchesEnv(ParallelEnv):
         for agent, action in actions.items():
             if not self.action_space(agent).contains(action):
                 raise ValueError(f"{agent} supplied an action outside its action space")
-        character_actions = {
-            self.character_for(agent): _plain_action(action) for agent, action in actions.items()
-        }
+        character_actions = {agent: _plain_action(action) for agent, action in actions.items()}
         # The engine perceives every character as the last act of the tick, so the environment
         # dresses those perceptions rather than computing them a second time.
         perceptions = step(self.day, character_actions)
         terminal = self.day.terminal
-        observations = {
-            agent: self._complete(perceptions[self.character_for(agent)]) for agent in self.agents
-        }
+        observations = {agent: self._complete(perceptions[agent]) for agent in self.agents}
         rewards = {agent: 100.0 if terminal else 0.0 for agent in self.agents}
         terminations = {agent: terminal for agent in self.agents}
         truncations = {agent: False for agent in self.agents}
@@ -234,11 +223,8 @@ class ThreeBranchesEnv(ParallelEnv):
         addressees before the tick moves anyone, so it still arrives when its addressee walks
         away, while a broadcast is asked again once everyone has moved.
         """
-        character = self.character_for(sender)
         recipients = tuple(
-            self.player_for(other)
-            for other in self.day.characters
-            if other != character and can_hear(self.day, character, other)
+            other for other in self.day.characters if other != sender and can_hear(self.day, sender, other)
         )
         return {"target_recipients": recipients, "default_recipient": None}
 

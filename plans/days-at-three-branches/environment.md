@@ -18,9 +18,9 @@ Every plan has `seat_0`, the cast, and `seat_1`, the visitor.
 | cast_10 | seat_0, the cast    | player_1 through player_10 |
 | cast_10 | seat_1, the visitor | player_0                   |
 
-`cast_5` is declared first and is the default. Character order and player numbering share one sequence: the visitor is character 0 and `player_0`; `npc_i` is character i+1 and `player_(i+1)`. Roster order, prop contention, `possible_agents`, active-player mappings, and conformance use this sequence.
+`cast_5` is declared first and is the default. Every layer uses one player-id sequence: `player_0` is the visitor, and `player_1` upward are the NPCs. Roster order, prop contention, `possible_agents`, observations, chat, recordings, helpers, student material, active-player mappings, and conformance use this sequence without translation.
 
-Player ids stay inside the environment. Observations, helpers, and student material use only `visitor` and `npc_0` through `npc_9`. The visitor is identified by `id == "visitor"`. No observation carries a visitor flag.
+The visitor is identified by `id == "player_0"`. Canonical ids match `player_(0|[1-9][0-9]*)`; leading-zero and legacy aliases are invalid. No observation carries a visitor flag.
 
 The cast seat accepts one submission and constructs a separate instance for every NPC. The visitor seat is restricted to `scripted_visitor`; a human plays its `player_0` in live sessions and the builtin plays it in automated runs. The builtins are `naive` (Naive), the cast baseline, and `scripted_visitor` (Scripted visitor), which wanders, approaches NPCs, and offers canned lines. Seat order does not change the game.
 
@@ -88,12 +88,12 @@ The observation is a plain `Dict` with fixed Gymnasium shapes after parameter re
 | tick | Discrete(1200, start=1) | current tick |
 | phase | Text | day phase, or constant day when daynight is off |
 | village | Dict | static layout generated at reset |
-| roster | Tuple of Dicts | visitor, then NPCs from npc_0 upward: id, home |
+| roster | Tuple of Dicts | `player_0`, then NPCs from `player_1` upward: id, home |
 | parameters | Dict | encoded resolved gameplay parameters |
 
 `moved` is `Box(0.0, 1.0)`, the metres advanced on the latest tick. `nearby` carries presence only; speech is platform messaging. Expressions are `{"type", "target"}` Text fields, where type is none, an emote, or use and target is a prop id or `"none"`. Roster `home` is `Text(max_length=16)`; the visitor's value is `"none"`. Prop entries are `{"prop", "state"}`.
 
-`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with minimum length 1: character ids are `Text(max_length=8)`; prop and building ids 16; prop types 12; states 9; phase 7; expression type 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`. The `tick` field names the tick whose action will play: reset carries tick 1, and the terminal observation keeps tick 1200. The inbox is not an observation field.
+`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with minimum length 1: player-id capacity is derived from the largest supported cast and therefore admits `player_10`; prop and building ids have maximum length 16; prop types 12; states 9; phase 7; expression type 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`. The `tick` field names the tick whose action will play: reset carries tick 1, and the terminal observation keeps tick 1200. The inbox is not an observation field.
 
 ### The village field
 
@@ -134,19 +134,19 @@ The `three-branches-village` renderer draws from the recording overlay and admit
 
 The permanent viewer-toggleable collision overlay appears in watch, replay, and play, off by default and toggled by a chrome button or the C key. It shades impassable ground, draws catalog collision shapes for interactive props and scenery, keeps doorways visibly open, and shows characters as 0.4 m circles with heading tick, id, and expression label. Interactive props show state labels.
 
-On the visitor seat, pointer and keyboard input compose locomotion. The expression palette offers emotes and use, highlighting the prop a use would select without sending an action. The 250 millisecond cadence is the input window. The host-page chat field has a recipient selector: broadcast or one currently permitted addressee, shown by character id. Spectators and replay viewers have no input.
+On the visitor seat, pointer and keyboard input compose locomotion. The expression palette offers emotes and use, highlighting the prop a use would select without sending an action. The 250 millisecond cadence is the input window. The host-page chat field has a recipient selector: broadcast or one currently permitted addressee, carried as a canonical player id and shown with the host's standard compact label. Spectators and replay viewers have no input.
 
 ## Recording
 
 A recording is one JSONL file: one header line followed by one line per recorded transition. The header writes `overlay_static` once, in exactly the observation's `village` shape. It contains `size`, `ground`, `buildings`, `props`, `scenery`, and `spawn`. At the shipped 120 by 120 frame it is about 20 KB.
 
-Each transition writes a dynamic overlay with `tick`, `phase`, `characters`, `props`, and `terminal`. `characters` is in character order, visitor first, with `id`, `x`, `y`, `heading`, `moved`, and `expression`. `props` maps every interactive prop id to its state, including the bell. No dynamic state carries `village`.
+Each transition writes a dynamic overlay with `tick`, `phase`, `characters`, `props`, and `terminal`. `characters` must match the header's exact ordered player roster, with `id`, `x`, `y`, `heading`, `moved`, and `expression`. Message endpoints must be exact roster members, except that a null recipient is a broadcast. `props` maps every interactive prop id to its state, including the bell. No dynamic state carries `village`. Recordings with legacy `visitor` or `npc_i` ids are unsupported.
 
 ```json
 {
   "tick": 412,
   "phase": "morning",
-  "characters": [{ "id": "visitor", "x": 34.12, "y": 50.5, "heading": 90.0, "moved": 0.75, "expression": { "type": "wave", "target": "none" } }],
+  "characters": [{ "id": "player_0", "x": 34.12, "y": 50.5, "heading": 90.0, "moved": 0.75, "expression": { "type": "wave", "target": "none" } }],
   "props": { "stall_0": "open", "bell": "silent" },
   "terminal": false
 }
@@ -188,24 +188,23 @@ The pace interval is a floor, not a promise. The simultaneous harness calls `act
 
 The implementation includes the factory, default action, overlay extractor, registry entry, renderer, canonical guide, template helpers, and at least one worked example. It declares `PUBLISHED_EXAMPLES`, even when every early example is internal.
 
-`sandbox.village` follows `sandbox.crane`: students import small namespaces individually, and helpers are stateless readers or pure builders. Helpers accept the observation first except the speech helpers below. Nothing carries state between ticks.
+`sandbox.village` follows `sandbox.crane`: students import small namespaces individually, and helpers are stateless readers or pure builders. Observation readers and static-map queries accept the observation first. Action builders, geometry functions, and player-id predicates take no observation. Nothing carries state between ticks.
 
 | Namespace | Provides |
 | --- | --- |
-| `action` | `EMOTES`, `walk(heading, speed, expression)`, `stand(heading, expression)`. Both wrap heading and clamp speed; expression is `"none"`, an emote, or `"use"`. |
-| `me` | `character_id`, `position`, `heading`, `moved`, `expression`, `home`, `rng(observation, session_seed)`. |
-| `people` | `seen`, `nearby`, `visitor`, `roster`. |
+| `action` | `EMOTES`, `walk(heading, speed=1.0, expression="none")`, `stand(heading, expression="none")`. Both wrap heading and clamp speed; expression is `"none"`, an emote, or `"use"`. |
+| `me` | `player_id`, `position`, `heading`, `moved`, `expression`, `home`, `rng(observation, session_seed)`. |
+| `people` | `seen`, `nearby`, `roster`, `is_visitor(player_id)`, and `is_npc(player_id)`. |
 | `props` | `all`, `seen`, `in_reach`, `usable`, and `TYPES` from `catalog.json`. |
 | `layout` | `frame`, `cell_at`, `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `doorway`, `spawn`, and `SPEED_LIMITS`. |
-| `geometry` | `distance`, `heading_to`, `wrap`, `in_cone`, and profile ranges and body radius. |
+| `geometry` | `BODY_RADIUS`, `VISION_RANGE`, `VISION_DEGREES`, `HEARING_RANGE`, `PROP_REACH`, `distance`, `heading_to`, `wrap`, and `in_cone`. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
-| `speech` | `broadcast(text)`, `to(character_id, text)`, and `messages(inbox)`. These pure builders and readers translate character ids and platform message records. |
 
 `layout.line_of_sight` walks the ground grid and only wall cells block it. `can_step` checks a straight static-map step against impassable ground, catalog prop shapes, and the boundary, ignoring characters. `walkable` checks whether a body can stand at a point. Both use the engine's grid and catalog shapes.
 
-No helper selects a destination, companion, or prop. There is no pathfinder. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. Season 4's starter example owns routing.
+No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. Season 4's starter example owns routing.
 
-`me.rng` seeds `random.Random` from session seed and character id. The same pair yields the same stream, different ids yield different streams, and streams are stable across runs.
+`me.rng` seeds `random.Random` through a stable hash of session seed and player id. The same pair yields the same stream, different ids yield different streams, and streams are stable across runs. `people.is_visitor` accepts only `player_0`; `people.is_npc` accepts canonical positive-number player ids and does not imply current roster membership.
 
 Helpers are pin-tested against the engine or data contract, including isolation between agents and the internal snapshot. The Stage 2 suite uses six contract-focused modules for data and math, layout and physics, engine behavior, environment and chat, overlays and builtins, and complete-day replay. Renderer tests cover direct seeks and human controls once the production renderer lands. Course materials link students to public platform documentation, not internal specifications.
 

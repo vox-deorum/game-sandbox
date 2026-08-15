@@ -88,11 +88,13 @@ export function readStatic(header: RecordingHeader): VillageStatic {
   return { size, ground, buildings, props, scenery, spawn }
 }
 
-/** Map recording player ids to the environment's stable character ids. */
+const PLAYER_ID = /^player_(0|[1-9][0-9]*)$/
+
+/** Read the recording's canonical roster in numeric player order. */
 export function expectedCharacterIds(header: RecordingHeader): readonly string[] {
-  const players = Object.keys(header.players).sort(
-    (left, right) => playerNumber(left) - playerNumber(right),
-  )
+  const players = Object.keys(header.players)
+  players.forEach(assertCanonicalPlayerId)
+  players.sort((left, right) => playerNumber(left) - playerNumber(right))
   if (players.length === 0 || players[0] !== 'player_0') {
     throw new Error('Three Branches recording header is missing player_0.')
   }
@@ -100,32 +102,22 @@ export function expectedCharacterIds(header: RecordingHeader): readonly string[]
     if (playerNumber(player) !== index)
       throw new Error('Three Branches players must be contiguous.')
   })
-  return players.map((_, index) => (index === 0 ? 'visitor' : `npc_${index - 1}`))
+  return players
 }
 
-/**
- * Read the lines a state delivered, translated from recording player ids to character ids.
- *
- * The host has already filtered these for the audience, so this only renames them. A line naming a
- * player outside the roster is dropped rather than drawn under a fabricated name.
- */
+/** Read delivered lines whose endpoints are members of the recording roster. */
 export function readSpeech(
   state: StepState,
   expectedIds: readonly string[],
 ): readonly SpeechLine[] {
-  const named = (playerId: string): string | undefined => {
-    const match = /^player_(\d+)$/.exec(playerId)
-    return match === null ? undefined : expectedIds[Number(match[1])]
-  }
+  const roster = new Set(expectedIds)
   const lines: SpeechLine[] = []
   for (const message of state.messages ?? []) {
-    const speaker = named(message.from)
-    const addressee = message.to === null ? null : named(message.to)
-    if (speaker === undefined || addressee === undefined) continue
+    if (!roster.has(message.from) || (message.to !== null && !roster.has(message.to))) continue
     lines.push({
       key: messageKey({ tick: state.tick, ...message }),
-      speaker,
-      addressee,
+      speaker: message.from,
+      addressee: message.to,
       text: message.text,
     })
   }
@@ -217,7 +209,11 @@ function assertUnique(ids: readonly string[], name: string): void {
 }
 
 function playerNumber(player: string): number {
-  const match = /^player_(\d+)$/.exec(player)
+  const match = PLAYER_ID.exec(player)
   if (match === null) throw new Error(`Invalid Three Branches player id ${player}.`)
   return Number(match[1])
+}
+
+function assertCanonicalPlayerId(player: string): void {
+  if (!PLAYER_ID.test(player)) throw new Error(`Invalid Three Branches player id ${player}.`)
 }

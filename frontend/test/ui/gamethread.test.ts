@@ -126,30 +126,6 @@ describe('GameThread', () => {
     expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
   })
 
-  it('shows environment-supplied display names on message rows, not on decision rows', () => {
-    const names = { player_0: 'Mira', player_1: 'Nils', player_3: 'Odalys' }
-    const chat: ChatEntry[] = [
-      { tick: 3, from: 'player_1', to: 'player_3', text: 'cover the king' },
-    ]
-    const { container } = render(GameThread, {
-      props: { decisions: decisions(), chat, currentTick: 3, players: PLAYERS, playerNames: names },
-    })
-
-    // The message row shows the character name and badges its recipient by name too.
-    const message = container.querySelector('.thread-item--message')
-    expect(message?.querySelector('.thread-msg-player')?.textContent).toBe('Nils')
-    expect(screen.getByText('to Odalys')).toBeInTheDocument()
-
-    // Decision rows are the raw decision log: they keep the compact player id regardless.
-    const decisionRows = Array.from(container.querySelectorAll('.thread-item--decision'))
-    expect(decisionRows.map((row) => row.querySelector('.thread-player')?.textContent)).toEqual([
-      'P0',
-      'P1',
-      'P2',
-      'P3',
-    ])
-  })
-
   it('shows an empty state when there are no decisions', () => {
     render(GameThread, { props: { decisions: [], chat: [] } })
     expect(screen.getByText('No decisions yet.')).toBeInTheDocument()
@@ -221,10 +197,8 @@ describe('GameThread', () => {
 // Three Branches human play (Days at Three Branches, plan step 6): a watcher or replay viewer's
 // transport carries the complete delivered transcript, unlike the visitor's own pre-filtered feed
 // covered in chatpanel.test.ts, so an NPC-to-NPC direct line the visitor never receives still renders
-// here, named by the environment's playerNames hook (environments/three_branches/renderer/index.ts).
+// here with compact player labels.
 describe('GameThread — Three Branches human play (step 6)', () => {
-  const NAMES = { player_0: 'visitor', player_1: 'npc_0', player_2: 'npc_1', player_3: 'npc_2' }
-
   function villageDecisions(): DecisionEntry[] {
     return [
       { tick: 10, player: 'player_1', action: 'move' },
@@ -243,23 +217,23 @@ describe('GameThread — Three Branches human play (step 6)', () => {
       { tick: 13, from: 'player_1', to: 'player_3', text: 'keep an eye on the visitor' },
     ]
     const { container } = render(GameThread, {
-      props: { decisions: villageDecisions(), chat, currentTick: 13, playerNames: NAMES },
+      props: { decisions: villageDecisions(), chat, currentTick: 13 },
     })
 
     expect(screen.getByText('the well is dry')).toBeInTheDocument()
     expect(screen.getByText('have you seen the miller?')).toBeInTheDocument()
     expect(screen.getByText('try the mill')).toBeInTheDocument()
     expect(screen.getByText('keep an eye on the visitor')).toBeInTheDocument()
-    // The NPC-to-NPC line's badge and both message rows' player cells show display names, not P1/P3.
-    expect(screen.getByText('to npc_2')).toBeInTheDocument()
+    // The direct badge and every message player cell use compact player labels.
+    expect(screen.getByText('to P3')).toBeInTheDocument()
 
     const messages = Array.from(container.querySelectorAll('.thread-item--message'))
     expect(messages).toHaveLength(4)
     expect(messages.map((row) => row.querySelector('.thread-msg-player')?.textContent)).toEqual([
-      'npc_0',
-      'visitor',
-      'npc_1',
-      'npc_0',
+      'P1',
+      'P0',
+      'P2',
+      'P1',
     ])
   })
 })

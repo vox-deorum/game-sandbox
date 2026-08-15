@@ -2,7 +2,7 @@
 
 Days at Three Branches is the course's believability track. Students make a small village feel alive. Classmates judge that work on the human-rating leaderboard; the automated leaderboard is only a health check.
 
-Every season runs the same village and extends the previous season by one small capability. A submission controls separately running copies of one NPC program, distinguished by character id. NPCs coordinate through [perception and speech](ruleset.md#perception), not shared state.
+Every season runs the same village and extends the previous season by one small capability. A submission controls separately running copies of one NPC program, distinguished by player id. NPCs coordinate through [perception and speech](ruleset.md#perception), not shared state.
 
 ## Shared evaluation
 
@@ -14,7 +14,7 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 - **Believability over performance:** The question is whether a villager reads as alive, not whether it wins.
 - **One familiar village:** Familiarity accumulates and makes each new capability visible.
-- **Same code, many characters:** NPC copies share code but not memory. Id, perception, and messages support coordination.
+- **Same code, many characters:** NPC copies share code but not memory. Player id, perception, and messages support coordination.
 - **Core and optional techniques:** Core techniques are the material's expected path. Optional techniques are a stretch menu. The syllabus never requires or prohibits a technique.
 
 ## The six seasons
@@ -37,7 +37,7 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 **Design issue:** Ensemble storytelling under decentralization.
 
-**Core:** Role assignment from NPC id; interruptible routines.
+**Core:** Role assignment from player id; interruptible routines.
 
 **Optional:** None beyond the season's open technique menu.
 

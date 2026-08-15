@@ -217,51 +217,6 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
 
-  it('shows environment-supplied display names on a row and its targeted badge', () => {
-    const names = { player_0: 'Mira', player_1: 'Nils' }
-    const entries: ChatEntry[] = [
-      { tick: 1, from: 'player_0', to: 'player_1', text: 'meet at the inn' },
-    ]
-    const { container } = render(ChatPanel, {
-      props: { entries, players: PLAYERS, viewerPlayers: ['player_2'], playerNames: names },
-    })
-
-    // The player field and the targeted badge both show the character name, not the compact id.
-    expect(container.querySelector('.chat-player')?.textContent).toBe('Mira')
-    expect(screen.getByText('to Nils')).toBeInTheDocument()
-    expect(screen.queryByText('P0')).toBeNull()
-  })
-
-  it('labels recipient options by name but keeps platform player ids as their values and payload', async () => {
-    const names = { player_0: 'Mira', player_1: 'Nils', player_3: 'Odalys' }
-    const { emitted } = render(ChatPanel, {
-      props: {
-        entries: [],
-        players: PLAYERS,
-        viewerPlayers: ['player_2'],
-        playerNames: names,
-        sendable: true,
-        messageCap: 120,
-        ...LIVE_POLICY,
-      },
-    })
-    const recipient = screen.getByRole('combobox')
-    const input = screen.getByRole('textbox')
-
-    // Labelled by name, not by the compact id.
-    expect(screen.getByRole('option', { name: 'Nils' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'P1' })).toBeNull()
-
-    // Selecting the name-labelled option still sends the platform player id: the send payload must
-    // carry player_1, not the character name.
-    await fireEvent.update(recipient, 'player_1')
-    await fireEvent.update(input, 'meet at the inn')
-    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(emitted('send')?.[0]).toEqual([
-      { sender: 'player_2', to: 'player_1', text: 'meet at the inn' },
-    ])
-  })
-
   it('resets the recipient but retains the draft when the designated sender changes', async () => {
     const props = {
       entries: [] as ChatEntry[],
@@ -292,11 +247,8 @@ describe('ChatPanel', () => {
   })
 })
 
-// Three Branches human play (Days at Three Branches, plan step 6): the visitor (player_0) is the
-// designated sender, and NPCs display as npc_0, npc_1, ... by index, the environment's playerNames hook
-// (environments/three_branches/renderer/index.ts) rather than the compact player id.
+// Three Branches human play uses player_0 as the designated sender and compact player labels in chat.
 describe('ChatPanel — Three Branches human play (step 6)', () => {
-  const NAMES = { player_0: 'visitor', player_1: 'npc_0', player_2: 'npc_1', player_3: 'npc_2' }
   // The visitor with two NPCs currently in hearing range; a third (npc_2) is out of range and so is
   // never offered, matching the range-and-wall speech contract.
   const POLICY = {
@@ -305,11 +257,10 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     defaultRecipient: null,
   }
 
-  it("offers Everyone plus exactly the policy's permitted addressees, labelled by display name", () => {
+  it("offers Everyone plus exactly the policy's permitted addressees, labelled by compact player id", () => {
     render(ChatPanel, {
       props: {
         entries: [],
-        playerNames: NAMES,
         viewerPlayers: ['player_0'],
         sendable: true,
         messageCap: 200,
@@ -318,18 +269,17 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     })
 
     expect(screen.getByRole('option', { name: 'Everyone' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'npc_0' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'npc_1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P2' })).toBeInTheDocument()
     // npc_2 is out of hearing range on this state, so the policy never lists it: no such option.
-    expect(screen.queryByRole('option', { name: 'npc_2' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'P3' })).toBeNull()
     expect(screen.getAllByRole('option')).toHaveLength(3)
   })
 
-  it('sends the platform player id for a direct pick and a null recipient for a broadcast, never the display name', async () => {
+  it('sends the platform player id for a direct pick and a null recipient for a broadcast', async () => {
     const { emitted } = render(ChatPanel, {
       props: {
         entries: [],
-        playerNames: NAMES,
         viewerPlayers: ['player_0'],
         sendable: true,
         messageCap: 200,
@@ -340,7 +290,7 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     const input = screen.getByRole('textbox')
     const send = screen.getByRole('button', { name: 'Send' })
 
-    // A direct line to npc_1: the select is valued by the platform id even though it reads "npc_1".
+    // A direct line to P2: the select is valued by the platform id while its label is "P2".
     await fireEvent.update(recipient, 'player_2')
     await fireEvent.update(input, 'have you seen the miller?')
     await fireEvent.click(send)
@@ -360,7 +310,6 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
   it('resets the recipient when target_recipients narrows (an npc walks out of hearing), keeping a draft that already survived an ordinary state change', async () => {
     const props = {
       entries: [] as ChatEntry[],
-      playerNames: NAMES,
       viewerPlayers: ['player_0'],
       sendable: true,
       messageCap: 200,
@@ -392,15 +341,14 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     })
     expect(recipient).toHaveValue('')
     expect(input.value).toBe('meet me by the well')
-    expect(screen.queryByRole('option', { name: 'npc_1' })).toBeNull()
-    expect(screen.getByRole('option', { name: 'npc_0' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'P2' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
   })
 
   it("enforces the environment's 200 code point cap: 200 code points sends, 201 does not", async () => {
     render(ChatPanel, {
       props: {
         entries: [],
-        playerNames: NAMES,
         viewerPlayers: ['player_0'],
         sendable: true,
         messageCap: 200,
@@ -429,7 +377,7 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
       { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
     ]
     const { container } = render(ChatPanel, {
-      props: { entries, playerNames: NAMES, viewerPlayers: ['player_0'] },
+      props: { entries, viewerPlayers: ['player_0'] },
     })
 
     expect(container.querySelectorAll('.chat-entry')).toHaveLength(3)
@@ -447,10 +395,10 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
       { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
       { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
     ]
-    render(ChatPanel, { props: { entries, playerNames: NAMES, viewerPlayers: [] } })
+    render(ChatPanel, { props: { entries, viewerPlayers: [] } })
 
-    expect(screen.getByText('to npc_1')).toBeInTheDocument()
-    expect(screen.getByText('to visitor')).toBeInTheDocument()
+    expect(screen.getByText('to P2')).toBeInTheDocument()
+    expect(screen.getByText('to P0')).toBeInTheDocument()
     expect(screen.queryByText('to you')).toBeNull()
     expect(screen.queryByText('from you')).toBeNull()
   })

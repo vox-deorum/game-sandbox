@@ -12,7 +12,7 @@ Compose pointer and keyboard input into heading and relative speed once per inpu
 
 Use `ctx.controlledPlayers` as the ownership signal established in step 3. While `player_0` is controlled, visitor movement feeds the existing camera-follow policy. Manual camera gestures suspend follow, and camera reset resumes it. Spectators, replay viewers, and ended sessions never acquire follow through recording attribution alone.
 
-Implement the approved palette of nine emotes plus use. The use preview is informational and uses the environment's reach-plus-unblocked-line selection rule. Chat has one host-panel text field and a recipient selector. It offers Broadcast plus currently permitted character-id addressees. A broadcast or direct line reaches only characters within hearing range with an unblocked line.
+Implement the approved palette of nine emotes plus use. The use preview is informational and uses the environment's reach-plus-unblocked-line selection rule. Chat has one host-panel text field and a recipient selector. It offers Broadcast plus currently permitted player-id addressees. Chat records keep those player ids unchanged. A broadcast or direct line reaches only characters within hearing range with an unblocked line.
 
 The authoritative delivery and visibility rules are in [the environment speech contract](../environment.md#speech). The visitor sees broadcasts delivered to it and direct lines sent to or from it. Watchers and replay viewers see all delivered lines. Spectators and replay viewers have no input.
 

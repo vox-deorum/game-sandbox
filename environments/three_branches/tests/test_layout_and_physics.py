@@ -101,96 +101,96 @@ def test_a_prop_footprint_turns_with_an_east_or_west_facing() -> None:
 def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> None:
     layout = build_fixture()
     day = Day(layout, 5, False)
-    visitor = day.characters["visitor"]
+    visitor = day.characters["player_0"]
     start = visitor.position
     # A dynamic neighbour cannot push a speed-zero body, which remains kinematic for this tick.
-    day.place("visitor", layout.residence_pose("home_0").position)
+    day.place("player_0", layout.residence_pose("home_0").position)
     still_position = visitor.position
-    day.place("npc_0", (visitor.position[0] - 1, visitor.position[1]))
+    day.place("player_1", (visitor.position[0] - 1, visitor.position[1]))
     step(
         day,
         {
-            "visitor": {"heading": 0.0, "speed": 0.0, "action": 0},
-            "npc_0": {"heading": 0.0, "speed": 1.0, "action": 0},
+            "player_0": {"heading": 0.0, "speed": 0.0, "action": 0},
+            "player_1": {"heading": 0.0, "speed": 1.0, "action": 0},
         },
     )
-    assert day.characters["visitor"].position == still_position
+    assert day.characters["player_0"].position == still_position
 
     # Fast commands cannot cross the outer frame or an impassable cell in one tick.
     day = Day(layout, 5, False)
-    day.place("visitor", (0.41, 50.5))
-    step(day, {"visitor": {"heading": 180.0, "speed": 1.0, "action": 0}})
-    assert day.characters["visitor"].position[0] >= 0.4
-    day.place("visitor", (24.0, 45.5))
-    step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
-    assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
+    day.place("player_0", (0.41, 50.5))
+    step(day, {"player_0": {"heading": 180.0, "speed": 1.0, "action": 0}})
+    assert day.characters["player_0"].position[0] >= 0.4
+    day.place("player_0", (24.0, 45.5))
+    step(day, {"player_0": {"heading": 0.0, "speed": 1.0, "action": 0}})
+    assert day.characters["player_0"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
     # Two full-speed characters cannot pass through one another between solver samples.
     day = Day(layout, 5, False)
-    day.place("visitor", (10.0, 50.5))
-    day.place("npc_0", (11.8, 50.5))
+    day.place("player_0", (10.0, 50.5))
+    day.place("player_1", (11.8, 50.5))
     step(
         day,
         {
-            "visitor": {"heading": 0.0, "speed": 1.0, "action": 0},
-            "npc_0": {"heading": 180.0, "speed": 1.0, "action": 0},
+            "player_0": {"heading": 0.0, "speed": 1.0, "action": 0},
+            "player_1": {"heading": 180.0, "speed": 1.0, "action": 0},
         },
     )
-    assert day.characters["visitor"].position[0] < day.characters["npc_0"].position[0]
-    assert start != day.characters["visitor"].position
+    assert day.characters["player_0"].position[0] < day.characters["player_1"].position[0]
+    assert start != day.characters["player_0"].position
 
     # An angled command keeps its free component when a water bank blocks the other one.
-    day.place("visitor", (24.2, 42.5))
-    step(day, {"visitor": {"heading": 45.0, "speed": 1.0, "action": 0}})
-    assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
-    assert day.characters["visitor"].position[1] > 42.5
+    day.place("player_0", (24.2, 42.5))
+    step(day, {"player_0": {"heading": 45.0, "speed": 1.0, "action": 0}})
+    assert day.characters["player_0"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
+    assert day.characters["player_0"].position[1] > 42.5
 
     # Equal-mass moving bodies push one another; only a commanded stop becomes immovable.
     day = Day(layout, 5, False)
-    day.place("visitor", (10.0, 50.5))
-    day.place("npc_0", (11.0, 50.5))
+    day.place("player_0", (10.0, 50.5))
+    day.place("player_1", (11.0, 50.5))
     step(
         day,
         {
-            "visitor": {"heading": 0.0, "speed": 1.0, "action": 0},
-            "npc_0": {"heading": 0.0, "speed": 0.01, "action": 0},
+            "player_0": {"heading": 0.0, "speed": 1.0, "action": 0},
+            "player_1": {"heading": 0.0, "speed": 0.01, "action": 0},
         },
     )
-    assert day.characters["npc_0"].moved > 0.01
+    assert day.characters["player_1"].moved > 0.01
 
     # The fastest command cannot tunnel through the one-cell bank in one tick.
     day = Day(layout, 5, False)
-    day.place("visitor", (24.1, 42.5))
-    step(day, {"visitor": {"heading": 0.0, "speed": 1.0, "action": 0}})
-    assert day.characters["visitor"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
+    day.place("player_0", (24.1, 42.5))
+    step(day, {"player_0": {"heading": 0.0, "speed": 1.0, "action": 0}})
+    assert day.characters["player_0"].position[0] <= 25.0 - PROFILE.body_radius + 1e-9
 
 
 def test_physics_restores_finite_dynamic_bodies_after_a_stop() -> None:
     physics = Physics(build_fixture())
-    physics.add("visitor", (10.0, 50.5))
-    physics.add("npc_0", (10.75, 50.5))
+    physics.add("player_0", (10.0, 50.5))
+    physics.add("player_1", (10.75, 50.5))
 
     # This contact reproduces the visitor policy's stop, greet, and angled departure sequence.
-    physics.move({"visitor": 0.0, "npc_0": 0.0}, {"visitor": 0.0, "npc_0": 0.0})
+    physics.move({"player_0": 0.0, "player_1": 0.0}, {"player_0": 0.0, "player_1": 0.0})
     for _ in range(24):
         moved = physics.move(
-            {"visitor": 0.75, "npc_0": 0.65},
-            {"visitor": 251.5, "npc_0": 270.0},
+            {"player_0": 0.75, "player_1": 0.65},
+            {"player_0": 251.5, "player_1": 270.0},
         )
-        values = (*physics.position("visitor"), *physics.position("npc_0"), *moved.values())
+        values = (*physics.position("player_0"), *physics.position("player_1"), *moved.values())
         assert all(isfinite(value) for value in values)
 
 
 def test_physics_does_not_accumulate_penetration_through_a_wall() -> None:
     layout = build_fixture()
     physics = Physics(layout)
-    physics.add("visitor", (6.5, 61.4))
+    physics.add("player_0", (6.5, 61.4))
 
     # Repeatedly press into home_0's south wall. A weak contact correction used to move the center
     # through the wall after several ticks, leaving the body trapped inside the building wall ring.
     for _ in range(12):
-        physics.move({"visitor": 1.0}, {"visitor": 90.0})
-        assert physics.position("visitor")[1] < 62.0
+        physics.move({"player_0": 1.0}, {"player_0": 90.0})
+        assert physics.position("player_0")[1] < 62.0
 
-    against_wall = physics.position("visitor")[1]
-    physics.move({"visitor": 1.0}, {"visitor": 270.0})
-    assert physics.position("visitor")[1] < against_wall - 0.9
+    against_wall = physics.position("player_0")[1]
+    physics.move({"player_0": 1.0}, {"player_0": 270.0})
+    assert physics.position("player_0")[1] < against_wall - 0.9
