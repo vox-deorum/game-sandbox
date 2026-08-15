@@ -1,23 +1,19 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
 import {
-  DisjointSet,
   buildCells,
   buildComponents,
   findSaddles,
-  unionCardinalComponents,
   validateInputs,
 } from './terrain-contour-grid.js'
 import { buildChains, buildGraph } from './terrain-contour-graph.js'
 import { buildClearanceIndex, shapeChains } from './terrain-contour-shaping.js'
 import {
   assignComponentAndRingIds,
-  assignComponentNesting,
   buildRings,
 } from './terrain-contour-rings.js'
 import {
-  repairContourIntersections,
-  validateCurveGraph,
+  repairAndValidateCurveGraph,
   validatePartition,
 } from './terrain-contour-validation.js'
 import type { TerrainContourPlan, TerrainContourSettings } from './types.js'
@@ -38,10 +34,8 @@ export function planTerrainContours(
   const { width, height } = validateInputs(rows, groundNameForCode, settings, bridgeTaperCells)
   const layoutHash = stableHashParts('terrain-layout', width, height, rows.join('\n'))
   const cells = buildCells(rows, groundNameForCode, width, height)
-  const components = new DisjointSet(cells.length)
-  unionCardinalComponents(cells, width, height, components)
-  const saddles = findSaddles(cells, width, height, settings.saddleRadiusCells, components)
-  const componentRecords = buildComponents(cells, components)
+  const saddles = findSaddles(cells, width, height, settings.saddleRadiusCells)
+  const componentRecords = buildComponents(cells, saddles)
   const componentKeyForCell = new Map<number, string>()
   for (const component of componentRecords) {
     for (const cell of component.cells) componentKeyForCell.set(cell.index, component.key)
@@ -51,12 +45,10 @@ export function planTerrainContours(
   const workingChains = buildChains(graph.nodes, graph.segments)
   const clearanceIndex = buildClearanceIndex(workingChains)
   shapeChains(workingChains, settings, bridgeTaperCells, layoutHash, clearanceIndex)
-  repairContourIntersections(workingChains)
-  validateCurveGraph(workingChains, settings.maxDeviationCells)
+  repairAndValidateCurveGraph(workingChains, settings.maxDeviationCells)
 
   const workingRings = buildRings(graph.nodes, graph.segments, workingChains)
   assignComponentAndRingIds(componentRecords, workingRings)
-  assignComponentNesting(componentRecords, workingRings)
   validatePartition(workingChains, workingRings, componentRecords)
 
   return {
@@ -90,10 +82,6 @@ export function planTerrainContours(
       cellCount: component.cells.length,
       outerRingId: component.outerRingId,
       holeRingIds: component.holeRingIds,
-      ...(component.parentComponentId === undefined
-        ? {}
-        : { parentComponentId: component.parentComponentId }),
-      nestingDepth: component.nestingDepth,
     })),
     saddles: saddles.map(({ winnerCells: _winnerCells, ...saddle }) => saddle),
   }

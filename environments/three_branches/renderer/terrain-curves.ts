@@ -1,6 +1,6 @@
 /** Pure, deterministic curve shaping shared by terrain partitions and inset routes. */
 
-import { avalanche, distance, hashUnit, stableHashParts } from '@renderers/base/math.js'
+import { distance, hashUnit, stableHashParts } from '@renderers/base/math.js'
 
 import { required } from './terrain-helpers.js'
 import type {
@@ -121,7 +121,7 @@ export function shapeTerrainCurve(
       for (const [octaveIndex, octave] of profile.octaves.entries()) {
         noise +=
           smoothValueNoise(
-            avalanche(stableHashParts(seed, 'octave', octaveIndex)),
+            stableHashParts(seed, 'octave', octaveIndex),
             point.x / octave.wavelengthCells,
             point.y / octave.wavelengthCells,
           ) * octave.amplitudeCells
@@ -364,42 +364,17 @@ function arcDistancesToLocks(
   totalLength: number,
   closed: boolean,
 ): number[] {
-  const distances = samples.map((sample) => (sample.locked ? 0 : Number.POSITIVE_INFINITY))
-  if (!distances.includes(0)) return distances
-  const count = samples.length
-  const forwardGap = (fromIndex: number): number => {
-    const from = required(samples[fromIndex], 'Terrain curve gap start is missing.').sourceOffset
-    if (fromIndex + 1 < count) {
-      return (
-        required(samples[fromIndex + 1], 'Terrain curve gap end is missing.').sourceOffset - from
-      )
-    }
-    return (
-      totalLength - from + required(samples[0], 'Terrain curve gap end is missing.').sourceOffset
-    )
-  }
-  const rounds = closed ? 2 : 1
-  for (let round = 0; round < rounds; round += 1) {
-    for (let sampleIndex = 0; sampleIndex < count; sampleIndex += 1) {
-      if (!closed && sampleIndex + 1 >= count) break
-      const target = (sampleIndex + 1) % count
-      const candidate =
-        required(distances[sampleIndex], 'Lock distance is missing.') + forwardGap(sampleIndex)
-      if (candidate < required(distances[target], 'Lock distance is missing.')) {
-        distances[target] = candidate
-      }
-    }
-    for (let sampleIndex = count - 1; sampleIndex >= 0; sampleIndex -= 1) {
-      if (!closed && sampleIndex + 1 >= count) continue
-      const target = (sampleIndex + 1) % count
-      const candidate =
-        required(distances[target], 'Lock distance is missing.') + forwardGap(sampleIndex)
-      if (candidate < required(distances[sampleIndex], 'Lock distance is missing.')) {
-        distances[sampleIndex] = candidate
-      }
-    }
-  }
-  return distances
+  const locks = samples.filter((sample) => sample.locked).map((sample) => sample.sourceOffset)
+  if (locks.length === 0) return samples.map(() => Number.POSITIVE_INFINITY)
+  let nextLock = 0
+  return samples.map((sample) => {
+    while (locks[nextLock] !== undefined && locks[nextLock]! < sample.sourceOffset) nextLock += 1
+    const later = locks[nextLock] ?? (closed ? locks[0]! + totalLength : Number.POSITIVE_INFINITY)
+    const earlier =
+      locks[nextLock - 1] ??
+      (closed ? locks[locks.length - 1]! - totalLength : Number.NEGATIVE_INFINITY)
+    return Math.min(later - sample.sourceOffset, sample.sourceOffset - earlier)
+  })
 }
 
 function previousIndex(index: number, length: number, closed: boolean): number {
@@ -419,9 +394,7 @@ function smoothValueNoise(seed: number, x: number, y: number): number {
   const localY = y - row
   const fade = (value: number): number => value * value * (3 - 2 * value)
   const valueAt = (offsetX: number, offsetY: number): number =>
-    hashUnit(
-      avalanche(stableHashParts(seed, 'curve-noise', column + offsetX, row + offsetY)),
-    ) *
+    hashUnit(stableHashParts(seed, 'curve-noise', column + offsetX, row + offsetY)) *
       2 -
     1
   const blendX = fade(localX)

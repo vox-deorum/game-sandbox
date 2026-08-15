@@ -332,7 +332,7 @@ describe('continuous terrain contour planning', () => {
     expect(contourCurvature(smoothedSamples)).toBeLessThan(contourCurvature(unsmoothedSamples))
   })
 
-  it('builds direct holes while keeping a nested island as a separate component', () => {
+  it('builds direct holes while keeping an island as a separate component', () => {
     const result = plan(['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'])
     const outerGround = result.components.find(
       (candidate) => candidate.material === 'ground' && candidate.cellCount === 16,
@@ -342,9 +342,6 @@ describe('continuous terrain contour planning', () => {
     expect(outerGround.holeRingIds).toHaveLength(1)
     expect(water.holeRingIds).toHaveLength(1)
     expect(island.holeRingIds).toHaveLength(0)
-    expect([outerGround.nestingDepth, water.nestingDepth, island.nestingDepth]).toEqual([0, 1, 2])
-    expect(water.parentComponentId).toBe(outerGround.id)
-    expect(island.parentComponentId).toBe(water.id)
   })
 
   it('keeps curves in their tube and one-cell corridors wider than 0.70 cell', () => {

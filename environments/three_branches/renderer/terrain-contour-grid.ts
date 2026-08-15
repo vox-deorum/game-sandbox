@@ -1,5 +1,5 @@
 import { shapeTerrainCurve } from './terrain-curves.js'
-import { cellAt, compareCells, terrainVariant } from './terrain-helpers.js'
+import { cellAt, compareCells, connectedComponents, terrainVariant } from './terrain-helpers.js'
 import type {
   TerrainContourCell,
   TerrainContourSettings,
@@ -33,37 +33,6 @@ export interface ComponentRecord {
   id: string
   outerRingId: string
   holeRingIds: readonly string[]
-  parentComponentId?: string
-  nestingDepth: number
-}
-
-/** A union-find structure for material-component construction. */
-export class DisjointSet {
-  private readonly parent: number[]
-  private readonly rank: number[]
-
-  constructor(size: number) {
-    this.parent = Array.from({ length: size }, (_, index) => index)
-    this.rank = Array.from({ length: size }, () => 0)
-  }
-
-  find(value: number): number {
-    const parent = this.parent[value]
-    if (parent === undefined) throw new Error('Contour component index is out of range.')
-    if (parent !== value) this.parent[value] = this.find(parent)
-    return this.parent[value]!
-  }
-
-  union(first: number, second: number): void {
-    let firstRoot = this.find(first)
-    let secondRoot = this.find(second)
-    if (firstRoot === secondRoot) return
-    const firstRank = this.rank[firstRoot] ?? 0
-    const secondRank = this.rank[secondRoot] ?? 0
-    if (firstRank < secondRank) [firstRoot, secondRoot] = [secondRoot, firstRoot]
-    this.parent[secondRoot] = firstRoot
-    if (firstRank === secondRank) this.rank[firstRoot] = firstRank + 1
-  }
 }
 
 export function validateInputs(
@@ -153,26 +122,11 @@ export function buildCells(
   return cells
 }
 
-export function unionCardinalComponents(
-  cells: readonly CellRecord[],
-  width: number,
-  height: number,
-  components: DisjointSet,
-): void {
-  for (const cell of cells) {
-    const east = cellAt(cells, width, height, cell.column + 1, cell.row)
-    const south = cellAt(cells, width, height, cell.column, cell.row + 1)
-    if (east?.material === cell.material) components.union(cell.index, east.index)
-    if (south?.material === cell.material) components.union(cell.index, south.index)
-  }
-}
-
 export function findSaddles(
   cells: readonly CellRecord[],
   width: number,
   height: number,
   radius: number,
-  components: DisjointSet,
 ): SaddleRecord[] {
   const saddles: SaddleRecord[] = []
   for (let y = 1; y < height; y += 1) {
@@ -192,23 +146,22 @@ export function findSaddles(
       const winner = materials[terrainVariant(2, 'terrain-saddle', x, y, ...materials)]!
       const winnerCells =
         winner === northWest.material ? [northWest, southEast] : [northEast, southWest]
-      components.union(winnerCells[0]!.index, winnerCells[1]!.index)
       saddles.push({ x, y, materials, winner, radius, winnerCells })
     }
   }
   return saddles
 }
 
-export function buildComponents(cells: readonly CellRecord[], components: DisjointSet): ComponentRecord[] {
-  const byRoot = new Map<number, CellRecord[]>()
-  for (const cell of cells) {
-    const root = components.find(cell.index)
-    const group = byRoot.get(root) ?? []
-    group.push(cell)
-    byRoot.set(root, group)
-  }
-  const records: ComponentRecord[] = [...byRoot.values()].map((group) => {
-    const ordered = group.sort(compareCells)
+export function buildComponents(
+  cells: readonly CellRecord[],
+  saddles: readonly SaddleRecord[],
+): ComponentRecord[] {
+  const groups = connectedComponents(
+    cells,
+    (first, second) => first.material === second.material,
+    saddles.map(({ winnerCells }) => [winnerCells[0]!, winnerCells[1]!] as const),
+  )
+  const records: ComponentRecord[] = groups.map((ordered) => {
     const first = ordered[0]!
     return {
       key: `cell:${first.index}`,
@@ -218,7 +171,6 @@ export function buildComponents(cells: readonly CellRecord[], components: Disjoi
       id: '',
       outerRingId: '',
       holeRingIds: [],
-      nestingDepth: 0,
     } satisfies ComponentRecord
   })
   records.push({
@@ -229,7 +181,6 @@ export function buildComponents(cells: readonly CellRecord[], components: Disjoi
     id: '',
     outerRingId: '',
     holeRingIds: [],
-    nestingDepth: 0,
   })
   return records.sort(
     (first, second) =>

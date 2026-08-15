@@ -1,6 +1,6 @@
 import { CARDINAL_DIRECTIONS, cellCoordinate } from './terrain-route-grid.js'
 import type { CellRecord } from './terrain-route-grid.js'
-import { cellAt, compareCells, required } from './terrain-helpers.js'
+import { cellAt, connectedComponents, required } from './terrain-helpers.js'
 
 import type {
   TerrainBridgeComponent,
@@ -17,27 +17,10 @@ export function buildBridgeComponents(
   height: number,
   settings: TerrainRouteSettings,
 ): readonly TerrainBridgeComponent[] {
-  const visited = new Set<number>()
-  const result: TerrainBridgeComponent[] = []
-  for (const start of cells) {
-    if (start.material !== 'bridge' || visited.has(start.index)) continue
-    const component: CellRecord[] = []
-    const queue = [start]
-    visited.add(start.index)
-    for (let index = 0; index < queue.length; index += 1) {
-      const cell = required(queue[index], 'Bridge component queue entry is missing.')
-      component.push(cell)
-      for (const [dx, dy] of CARDINAL_DIRECTIONS) {
-        const next = cellAt(cells, width, height, cell.column + dx, cell.row + dy)
-        if (next === undefined || next.material !== 'bridge' || visited.has(next.index)) continue
-        visited.add(next.index)
-        queue.push(next)
-      }
-    }
-    component.sort(compareCells)
-    result.push(finishBridgeComponent(component, cells, width, height, settings))
-  }
-  return result
+  return connectedComponents(
+    cells.filter((cell) => cell.material === 'bridge'),
+    () => true,
+  ).map((component) => finishBridgeComponent(component, cells, width, height, settings))
 }
 
 function finishBridgeComponent(

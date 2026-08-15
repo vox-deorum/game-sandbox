@@ -1,6 +1,6 @@
-import { CARDINAL_DIRECTIONS, EIGHT_DIRECTIONS, cellCoordinate } from './terrain-route-grid.js'
+import { EIGHT_DIRECTIONS, cellCoordinate } from './terrain-route-grid.js'
 import type { CellRecord } from './terrain-route-grid.js'
-import { cellAt, compareCells, required } from './terrain-helpers.js'
+import { cellAt, compareCells, connectedComponents, required } from './terrain-helpers.js'
 
 import type { TerrainRoadSubstrateCell } from './types.js'
 
@@ -24,7 +24,7 @@ export function propagateVisualSubstrate(
   width: number,
   height: number,
 ): readonly TerrainRoadSubstrateCell[] {
-  const sources = substrateSources(cells, width, height)
+  const sources = substrateSources(cells)
   const sourceForIndex = new Map(sources.map((source) => [source.cell.index, source]))
   const routeCells = cells.filter((cell) => cell.material === 'road' || cell.material === 'path')
   const routeIndices = new Set(routeCells.map((cell) => cell.index))
@@ -91,29 +91,9 @@ export function propagateVisualSubstrate(
 
 function substrateSources(
   cells: readonly CellRecord[],
-  width: number,
-  height: number,
 ): readonly SubstrateSource[] {
-  const visited = new Set<number>()
-  const groups: CellRecord[][] = []
-  for (const start of cells) {
-    if (!SUBSTRATE_MATERIALS.has(start.material) || visited.has(start.index)) continue
-    const group: CellRecord[] = []
-    const queue = [start]
-    visited.add(start.index)
-    for (let index = 0; index < queue.length; index += 1) {
-      const cell = required(queue[index], 'Substrate component queue entry is missing.')
-      group.push(cell)
-      for (const [dx, dy] of CARDINAL_DIRECTIONS) {
-        const next = cellAt(cells, width, height, cell.column + dx, cell.row + dy)
-        if (next === undefined || next.material !== start.material || visited.has(next.index))
-          continue
-        visited.add(next.index)
-        queue.push(next)
-      }
-    }
-    groups.push(group.sort(compareCells))
-  }
+  const natural = cells.filter((cell) => SUBSTRATE_MATERIALS.has(cell.material))
+  const groups = connectedComponents(natural, (first, second) => first.material === second.material)
   groups.sort((first, second) => {
     const firstCell = required(first[0], 'Substrate component is empty.')
     const secondCell = required(second[0], 'Substrate component is empty.')

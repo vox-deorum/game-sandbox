@@ -92,29 +92,17 @@ export function buildGraph(
     const [dx, dy] = offsets[direction]
     return node(`s:${x}:${y}:${direction}`, x + dx, y + dy)
   }
-  const addSegment = (start: GraphNode, end: GraphNode, saddle: boolean): void => {
+  const addSegment = (
+    start: GraphNode,
+    end: GraphNode,
+    saddle: boolean,
+    leftCells: readonly CellRecord[],
+    rightCells: readonly CellRecord[],
+  ): void => {
     if (samePoint(start, end))
       throw new Error('Terrain contour contains a zero-length source edge.')
-    const left = sideAtSegment(
-      start,
-      end,
-      true,
-      cells,
-      width,
-      height,
-      saddleAt,
-      componentKeyForCell,
-    )
-    const right = sideAtSegment(
-      start,
-      end,
-      false,
-      cells,
-      width,
-      height,
-      saddleAt,
-      componentKeyForCell,
-    )
+    const left = sideFromCells(leftCells, componentKeyForCell)
+    const right = sideFromCells(rightCells, componentKeyForCell)
     if (left.material === right.material) {
       throw new Error('Terrain contour source edge does not separate two materials.')
     }
@@ -132,16 +120,32 @@ export function buildGraph(
 
   for (let y = 0; y <= height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      const north = cellAt(cells, width, height, x, y - 1)?.material ?? TERRAIN_EXTERIOR
-      const south = cellAt(cells, width, height, x, y)?.material ?? TERRAIN_EXTERIOR
-      if (north !== south) addSegment(endpoint(x, y, 'E'), endpoint(x + 1, y, 'W'), false)
+      const north = cellAt(cells, width, height, x, y - 1)
+      const south = cellAt(cells, width, height, x, y)
+      if ((north?.material ?? TERRAIN_EXTERIOR) !== (south?.material ?? TERRAIN_EXTERIOR)) {
+        addSegment(
+          endpoint(x, y, 'E'),
+          endpoint(x + 1, y, 'W'),
+          false,
+          south === undefined ? [] : [south],
+          north === undefined ? [] : [north],
+        )
+      }
     }
   }
   for (let x = 0; x <= width; x += 1) {
     for (let y = 0; y < height; y += 1) {
-      const west = cellAt(cells, width, height, x - 1, y)?.material ?? TERRAIN_EXTERIOR
-      const east = cellAt(cells, width, height, x, y)?.material ?? TERRAIN_EXTERIOR
-      if (west !== east) addSegment(endpoint(x, y, 'S'), endpoint(x, y + 1, 'N'), false)
+      const west = cellAt(cells, width, height, x - 1, y)
+      const east = cellAt(cells, width, height, x, y)
+      if ((west?.material ?? TERRAIN_EXTERIOR) !== (east?.material ?? TERRAIN_EXTERIOR)) {
+        addSegment(
+          endpoint(x, y, 'S'),
+          endpoint(x, y + 1, 'N'),
+          false,
+          west === undefined ? [] : [west],
+          east === undefined ? [] : [east],
+        )
+      }
     }
   }
   for (const saddle of saddles) {
@@ -149,13 +153,16 @@ export function buildGraph(
     const east = endpoint(saddle.x, saddle.y, 'E')
     const south = endpoint(saddle.x, saddle.y, 'S')
     const west = endpoint(saddle.x, saddle.y, 'W')
-    const northWestMaterial = cellAt(cells, width, height, saddle.x - 1, saddle.y - 1)!.material
-    if (saddle.winner === northWestMaterial) {
-      addSegment(north, east, true)
-      addSegment(south, west, true)
+    const northWest = cellAt(cells, width, height, saddle.x - 1, saddle.y - 1)!
+    const northEast = cellAt(cells, width, height, saddle.x, saddle.y - 1)!
+    const southEast = cellAt(cells, width, height, saddle.x, saddle.y)!
+    const southWest = cellAt(cells, width, height, saddle.x - 1, saddle.y)!
+    if (saddle.winner === northWest.material) {
+      addSegment(north, east, true, saddle.winnerCells, [northEast])
+      addSegment(south, west, true, saddle.winnerCells, [southWest])
     } else {
-      addSegment(west, north, true)
-      addSegment(east, south, true)
+      addSegment(west, north, true, saddle.winnerCells, [northWest])
+      addSegment(east, south, true, saddle.winnerCells, [southEast])
     }
   }
 
@@ -165,51 +172,12 @@ export function buildGraph(
   }
 }
 
-function sideAtSegment(
-  start: ContourCoordinate,
-  end: ContourCoordinate,
-  left: boolean,
+function sideFromCells(
   cells: readonly CellRecord[],
-  width: number,
-  height: number,
-  saddleAt: ReadonlyMap<string, SaddleRecord>,
   componentKeyForCell: ReadonlyMap<number, string>,
 ): SideRecord {
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  const length = Math.hypot(dx, dy)
-  const direction = left ? 1 : -1
-  const offset = Math.min(1e-5, length / 1000)
-  return sideAtPoint(
-    {
-      x: (start.x + end.x) / 2 + direction * (-dy / length) * offset,
-      y: (start.y + end.y) / 2 + direction * (dx / length) * offset,
-    },
-    cells,
-    width,
-    height,
-    saddleAt,
-    componentKeyForCell,
-  )
-}
-
-function sideAtPoint(
-  point: ContourCoordinate,
-  cells: readonly CellRecord[],
-  width: number,
-  height: number,
-  saddleAt: ReadonlyMap<string, SaddleRecord>,
-  componentKeyForCell: ReadonlyMap<number, string>,
-): SideRecord {
-  const saddle = saddleAt.get(`${Math.round(point.x)}:${Math.round(point.y)}`)
-  if (
-    saddle !== undefined &&
-    Math.abs(point.x - saddle.x) + Math.abs(point.y - saddle.y) < saddle.radius - EPSILON
-  ) {
-    return sideFromCells(saddle.winnerCells, componentKeyForCell)
-  }
-  const cell = cellAt(cells, width, height, Math.floor(point.x), Math.floor(point.y))
-  if (cell === undefined) {
+  const first = cells[0]
+  if (first === undefined) {
     return {
       material: TERRAIN_EXTERIOR,
       semantics: [TERRAIN_EXTERIOR],
@@ -217,15 +185,6 @@ function sideAtPoint(
       componentKey: TERRAIN_EXTERIOR,
     }
   }
-  return sideFromCells([cell], componentKeyForCell)
-}
-
-function sideFromCells(
-  cells: readonly CellRecord[],
-  componentKeyForCell: ReadonlyMap<number, string>,
-): SideRecord {
-  const first = cells[0]
-  if (first === undefined) throw new Error('Terrain contour side has no source cell.')
   const componentKey = componentKeyForCell.get(first.index)
   if (componentKey === undefined) throw new Error('Terrain contour source cell has no component.')
   if (

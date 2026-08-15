@@ -5,6 +5,13 @@ import { avalanche, distance, stableHashParts } from '@renderers/base/math.js'
 type Point = { readonly x: number; readonly y: number }
 type GridCell = { readonly column: number; readonly row: number }
 
+const CARDINAL_OFFSETS = [
+  [0, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+] as const
+
 /** Tolerance used by terrain geometry comparisons. */
 export const EPSILON = 1e-9
 
@@ -52,6 +59,48 @@ export function cellAt<Cell>(
 ): Cell | undefined {
   if (column < 0 || row < 0 || column >= width || row >= height) return undefined
   return cells[row * width + column]
+}
+
+/** Group grid cells through matching cardinal neighbors and optional extra links. */
+export function connectedComponents<Cell extends GridCell>(
+  cells: readonly Cell[],
+  connected: (first: Cell, second: Cell) => boolean,
+  extraLinks: readonly (readonly [Cell, Cell])[] = [],
+): Cell[][] {
+  const byKey = new Map(cells.map((cell) => [cellKey(cell.column, cell.row), cell]))
+  const extras = new Map<string, string[]>()
+  for (const [first, second] of extraLinks) {
+    const firstKey = cellKey(first.column, first.row)
+    const secondKey = cellKey(second.column, second.row)
+    extras.set(firstKey, [...(extras.get(firstKey) ?? []), secondKey])
+    extras.set(secondKey, [...(extras.get(secondKey) ?? []), firstKey])
+  }
+
+  const visited = new Set<string>()
+  const components: Cell[][] = []
+  for (const start of [...cells].sort(compareCells)) {
+    const startKey = cellKey(start.column, start.row)
+    if (visited.has(startKey)) continue
+    const component: Cell[] = []
+    const queue = [start]
+    visited.add(startKey)
+    for (let index = 0; index < queue.length; index += 1) {
+      const cell = queue[index]!
+      component.push(cell)
+      const keys = [
+        ...CARDINAL_OFFSETS.map(([dx, dy]) => cellKey(cell.column + dx, cell.row + dy)),
+        ...(extras.get(cellKey(cell.column, cell.row)) ?? []),
+      ]
+      for (const key of keys) {
+        const neighbor = byKey.get(key)
+        if (neighbor === undefined || visited.has(key) || !connected(cell, neighbor)) continue
+        visited.add(key)
+        queue.push(neighbor)
+      }
+    }
+    components.push(component.sort(compareCells))
+  }
+  return components
 }
 
 /** Pick a stable zero-based terrain art variant. */

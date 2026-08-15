@@ -1,9 +1,8 @@
-import { EPSILON, cellKey } from './terrain-helpers.js'
 import { coordinateKey, samePoint } from './terrain-contour-graph.js'
 import type { ComponentRecord } from './terrain-contour-grid.js'
 import type { DirectedSegment, GraphNode, GraphSegment, SideRecord, WorkingChain } from './terrain-contour-graph.js'
 import type { ContourCoordinate, TerrainContourUse } from './types.js'
-/** A contour face while its ownership and nesting are assigned. */
+/** A contour face while its ownership is assigned. */
 export interface WorkingRing {
   id: string
   readonly componentKey: string
@@ -225,110 +224,4 @@ export function assignComponentAndRingIds(
     component.outerRingId = outers[0]!.id
     component.holeRingIds = owned.filter((ring) => ring.role === 'hole').map((ring) => ring.id)
   }
-}
-
-export function assignComponentNesting(
-  components: readonly ComponentRecord[],
-  rings: readonly WorkingRing[],
-): void {
-  const ringById = new Map(rings.map((ring) => [ring.id, ring]))
-  const candidatesByCell = outerRingCandidatesByCell(components, ringById)
-  for (const component of components) {
-    if (component.exterior || component.cells.length === 0) continue
-    const sample = component.cells[0]!
-    const ownOuter = ringById.get(component.outerRingId)!
-    const containers = (candidatesByCell.get(cellKey(sample.column, sample.row)) ?? [])
-      .filter((candidate) => candidate !== component)
-      .map((candidate) => ({ candidate, ring: ringById.get(candidate.outerRingId)! }))
-      .filter(
-        ({ ring }) =>
-          Math.abs(signedArea(ring.rawPoints)) > Math.abs(signedArea(ownOuter.rawPoints)) + EPSILON,
-      )
-      .filter(({ ring }) => pointInPolygon(sample, ring.rawPoints))
-      .sort(
-        (first, second) =>
-          Math.abs(signedArea(first.ring.rawPoints)) -
-            Math.abs(signedArea(second.ring.rawPoints)) ||
-          first.candidate.id.localeCompare(second.candidate.id),
-      )
-    component.parentComponentId = containers[0]?.candidate.id
-  }
-  const byId = new Map(components.map((component) => [component.id, component]))
-  const depthFor = (component: ComponentRecord, seen = new Set<string>()): number => {
-    if (component.parentComponentId === undefined) return 0
-    if (seen.has(component.id))
-      throw new Error('Terrain contour component nesting contains a cycle.')
-    seen.add(component.id)
-    const parent = byId.get(component.parentComponentId)
-    if (parent === undefined)
-      throw new Error('Terrain contour component has a missing nesting parent.')
-    return 1 + depthFor(parent, seen)
-  }
-  for (const component of components) component.nestingDepth = depthFor(component)
-}
-
-/** Index candidate outer-ring bounds by the semantic cell centers they can contain. */
-function outerRingCandidatesByCell(
-  components: readonly ComponentRecord[],
-  ringById: ReadonlyMap<string, WorkingRing>,
-): ReadonlyMap<string, readonly ComponentRecord[]> {
-  const candidates = new Map<string, ComponentRecord[]>()
-  for (const component of components) {
-    if (component.exterior || component.cells.length === 0) continue
-    const ring = ringById.get(component.outerRingId)
-    if (ring === undefined) throw new Error('Terrain contour component has a missing outer ring.')
-    const bounds = ringBounds(ring.rawPoints)
-    for (let row = Math.floor(bounds.minimumY); row <= Math.floor(bounds.maximumY); row += 1) {
-      for (
-        let column = Math.floor(bounds.minimumX);
-        column <= Math.floor(bounds.maximumX);
-        column += 1
-      ) {
-        const key = cellKey(column, row)
-        const bucket = candidates.get(key) ?? []
-        bucket.push(component)
-        candidates.set(key, bucket)
-      }
-    }
-  }
-  return candidates
-}
-
-function ringBounds(points: readonly ContourCoordinate[]): {
-  minimumX: number
-  maximumX: number
-  minimumY: number
-  maximumY: number
-} {
-  return points.reduce(
-    (bounds, point) => ({
-      minimumX: Math.min(bounds.minimumX, point.x),
-      maximumX: Math.max(bounds.maximumX, point.x),
-      minimumY: Math.min(bounds.minimumY, point.y),
-      maximumY: Math.max(bounds.maximumY, point.y),
-    }),
-    {
-      minimumX: Number.POSITIVE_INFINITY,
-      maximumX: Number.NEGATIVE_INFINITY,
-      minimumY: Number.POSITIVE_INFINITY,
-      maximumY: Number.NEGATIVE_INFINITY,
-    },
-  )
-}
-
-function pointInPolygon(point: ContourCoordinate, polygon: readonly ContourCoordinate[]): boolean {
-  let inside = false
-  for (
-    let firstIndex = 0, secondIndex = polygon.length - 1;
-    firstIndex < polygon.length;
-    secondIndex = firstIndex++
-  ) {
-    const first = polygon[firstIndex]!
-    const second = polygon[secondIndex]!
-    const crosses =
-      first.y > point.y !== second.y > point.y &&
-      point.x < ((second.x - first.x) * (point.y - first.y)) / (second.y - first.y) + first.x
-    if (crosses) inside = !inside
-  }
-  return inside
 }

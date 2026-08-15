@@ -1,4 +1,4 @@
-import { avalanche, stableHashParts } from '@renderers/base/math.js'
+import { stableHashParts } from '@renderers/base/math.js'
 
 import { shapeTerrainCurve } from './terrain-curves.js'
 import { CARDINAL_DIRECTIONS, cellCoordinate } from './terrain-route-grid.js'
@@ -241,12 +241,9 @@ function pathContinuationAlignment(
 ): number {
   return Math.max(
     -1,
-    ...CARDINAL_DIRECTIONS.map(([dx, dy]) =>
-      cellAt(cells, width, height, path.column + dx, path.row + dy),
-    )
-      .filter((cell): cell is CellRecord => cell?.material === 'path')
-      .map((cell) => normalizedVector({ x: path.column - cell.column, y: path.row - cell.row }))
-      .map((incoming) => incoming.x * tangent.x + incoming.y * tangent.y),
+    ...incomingPathTangents(path, cells, width, height).map(
+      ({ tangent: incoming }) => incoming.x * tangent.x + incoming.y * tangent.y,
+    ),
   )
 }
 
@@ -282,18 +279,7 @@ function pathTerminalTangent(
   )
   const roadDirection =
     Math.hypot(roadVector.x, roadVector.y) <= EPSILON ? undefined : normalizedVector(roadVector)
-  const incoming = CARDINAL_DIRECTIONS.map(([dx, dy]) =>
-    cellAt(cells, width, height, path.column + dx, path.row + dy),
-  )
-    .filter((cell): cell is CellRecord => cell?.material === 'path')
-    .map((cell) => ({
-      cell,
-      tangent: normalizedVector({
-        x: path.column - cell.column,
-        y: path.row - cell.row,
-      }),
-    }))
-    .sort((first, second) => {
+  const incoming = incomingPathTangents(path, cells, width, height).sort((first, second) => {
       if (roadDirection === undefined) return compareCells(first.cell, second.cell)
       return (
         second.tangent.x * roadDirection.x +
@@ -312,6 +298,22 @@ function pathTerminalTangent(
     return best.tangent
   }
   return roadDirection ?? best?.tangent ?? { x: 1, y: 0 }
+}
+
+function incomingPathTangents(
+  path: CellRecord,
+  cells: readonly CellRecord[],
+  width: number,
+  height: number,
+): Array<{ readonly cell: CellRecord; readonly tangent: TerrainRoutePoint }> {
+  return CARDINAL_DIRECTIONS.map(([dx, dy]) =>
+    cellAt(cells, width, height, path.column + dx, path.row + dy),
+  )
+    .filter((cell): cell is CellRecord => cell?.material === 'path')
+    .map((cell) => ({
+      cell,
+      tangent: normalizedVector({ x: path.column - cell.column, y: path.row - cell.row }),
+    }))
 }
 
 function normalizedVector(vector: TerrainRoutePoint): TerrainRoutePoint {
@@ -412,82 +414,58 @@ export function buildPathGuides(
   }
 
   for (const bridge of bridges.filter((component) => component.owner === 'path')) {
-    if (bridge.deck.kind === 'axis') {
-      const axis = required(bridge.deck.axis, 'Oriented path bridge has no axis.')
-      const portalIds = [bridge.id + '-portal-0', bridge.id + '-portal-1'] as const
-      for (let index = 0; index < portalIds.length; index += 1) {
-        const id = required(portalIds[index], 'Path bridge portal id is missing.')
-        nodes.set(id, {
-          id,
-          point: required(axis[index], 'Path bridge portal is missing.'),
-          bridge: true,
-          roadContact: false,
-          neighbors: new Set(),
-        })
-      }
-      connectPathNodes(nodes, portalIds[0], portalIds[1])
-      for (const contact of bridge.contacts.filter((item) => item.owner === 'path')) {
-        const pathId = pathCellNodeId(contact.neighborCell)
-        if (!nodes.has(pathId)) continue
-        const portalIndex =
-          bridge.orientation === 'horizontal'
-            ? contact.side === 'west'
-              ? 0
-              : contact.side === 'east'
-                ? 1
-                : closestPortalIndex(nodes.get(pathId)?.point, axis)
-            : contact.side === 'north'
-              ? 0
-              : contact.side === 'south'
-                ? 1
-                : closestPortalIndex(nodes.get(pathId)?.point, axis)
-        connectPathNodes(nodes, pathId, required(portalIds[portalIndex], 'Portal id is missing.'))
-      }
-    } else {
-      const id = bridge.id + '-center'
+    const deckPoints =
+      bridge.deck.kind === 'axis'
+        ? required(bridge.deck.axis, 'Oriented path bridge has no axis.')
+        : [bridge.deck.center]
+    const deckNodes = deckPoints.map((point, index) => {
+      const id =
+        bridge.deck.kind === 'axis' ? `${bridge.id}-portal-${index}` : `${bridge.id}-center`
       nodes.set(id, {
         id,
-        point: bridge.deck.center,
+        point,
         bridge: true,
         roadContact: false,
         neighbors: new Set(),
       })
-      for (const contact of bridge.contacts.filter((item) => item.owner === 'path')) {
-        const pathId = pathCellNodeId(contact.neighborCell)
-        if (nodes.has(pathId)) connectPathNodes(nodes, pathId, id)
-      }
+      return { id, point }
+    })
+    for (let index = 1; index < deckNodes.length; index += 1) {
+      connectPathNodes(nodes, deckNodes[index - 1]!.id, deckNodes[index]!.id)
+    }
+    for (const contact of bridge.contacts.filter((item) => item.owner === 'path')) {
+      const pathId = pathCellNodeId(contact.neighborCell)
+      const pathPoint = nodes.get(pathId)?.point
+      if (pathPoint === undefined) continue
+      connectPathNodes(nodes, pathId, closestDeckNode(pathPoint, deckNodes).id)
     }
   }
 
   for (const connector of connectors) {
     const startId = pathCellNodeId(connector.pathCell)
     if (!nodes.has(startId)) continue
-    if (connector.oppositePathCell !== undefined) {
-      let previousId = startId
-      for (let viaIndex = 0; viaIndex < (connector.via?.length ?? 0); viaIndex += 1) {
-        const id = `${connector.id}-cross-${viaIndex}`
-        nodes.set(id, {
-          id,
-          point: required(connector.via?.[viaIndex], 'Path crossing point is missing.'),
-          bridge: false,
-          roadContact: true,
-          neighbors: new Set(),
-        })
-        connectPathNodes(nodes, previousId, id)
-        previousId = id
-      }
-      connectPathNodes(nodes, previousId, pathCellNodeId(connector.oppositePathCell))
-      continue
+    const through =
+      connector.oppositePathCell === undefined
+        ? [{ id: `${connector.id}-road`, point: connector.end }]
+        : (connector.via ?? []).map((point, index) => ({
+            id: `${connector.id}-cross-${index}`,
+            point,
+          }))
+    let previousId = startId
+    for (const { id, point } of through) {
+      nodes.set(id, {
+        id,
+        point,
+        bridge: false,
+        roadContact: true,
+        neighbors: new Set(),
+      })
+      connectPathNodes(nodes, previousId, id)
+      previousId = id
     }
-    const endId = connector.id + '-road'
-    nodes.set(endId, {
-      id: endId,
-      point: connector.end,
-      bridge: false,
-      roadContact: true,
-      neighbors: new Set(),
-    })
-    connectPathNodes(nodes, startId, endId)
+    if (connector.oppositePathCell !== undefined) {
+      connectPathNodes(nodes, previousId, pathCellNodeId(connector.oppositePathCell))
+    }
   }
 
   const sequences = pathGraphChains(nodes)
@@ -508,7 +486,7 @@ export function buildPathGuides(
   for (const bridge of bridges.filter((component) => component.owner === 'path')) {
     for (const cell of bridge.cells) allowedMask.add(cellKey(cell.column, cell.row))
   }
-  const layoutHash = avalanche(stableHashParts('path-routes', width, height, ...rows))
+  const layoutHash = stableHashParts('path-routes', width, height, ...rows)
   return sequences.map(({ ids, closed }, index) => ({
     id: 'path-guide-' + index,
     closed,
@@ -520,7 +498,7 @@ export function buildPathGuides(
       width,
       height,
       settings,
-      avalanche(stableHashParts(layoutHash, ids.join('|'))),
+      stableHashParts(layoutHash, ids.join('|')),
     ),
   }))
 }
@@ -542,14 +520,19 @@ function connectPathNodes(
   second.neighbors.add(firstId)
 }
 
-function closestPortalIndex(
-  point: TerrainRoutePoint | undefined,
-  portals: readonly [TerrainRoutePoint, TerrainRoutePoint],
-): 0 | 1 {
-  if (point === undefined) return 0
-  const first = (point.x - portals[0].x) ** 2 + (point.y - portals[0].y) ** 2
-  const second = (point.x - portals[1].x) ** 2 + (point.y - portals[1].y) ** 2
-  return first <= second ? 0 : 1
+function closestDeckNode<Node extends { readonly point: TerrainRoutePoint }>(
+  point: TerrainRoutePoint,
+  nodes: readonly Node[],
+): Node {
+  return required(
+    [...nodes].sort(
+      (first, second) =>
+        (point.x - first.point.x) ** 2 +
+        (point.y - first.point.y) ** 2 -
+        ((point.x - second.point.x) ** 2 + (point.y - second.point.y) ** 2),
+    )[0],
+    'Path bridge has no deck node.',
+  )
 }
 
 function pathGraphChains(

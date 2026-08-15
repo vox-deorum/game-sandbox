@@ -26,13 +26,17 @@ interface CurvePiece {
  * overshoot by half a cell or more, not a second calibration bound.
  */
 const VALIDATION_SAG_CELLS = 0.08
+const TUBE_SAMPLE_SPACING_CELLS = 0.02
 
 /** Emitted-curve pieces, closed rings including their seam chord, for sweeps and repair. */
-function curvePieces(chains: readonly WorkingChain[]): CurvePiece[] {
+function curvePieces(
+  chains: readonly WorkingChain[],
+  rawIndexes: ReadonlyMap<WorkingChain, RawPolylineIndex>,
+): CurvePiece[] {
   return chains.flatMap((chain) => {
     if (chain.points.length < 2) throw new Error('Terrain contour chain emitted too few points.')
     const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
-    const rawIndex = indexRawPolyline(chain.rawPoints)
+    const rawIndex = rawIndexes.get(chain)!
     return points.slice(0, -1).map((start, index) => ({
       chain,
       rawIndex,
@@ -73,10 +77,15 @@ function nonincidentIntersections(
  */
 const INTERSECTION_REPAIR_PASSES = 12
 
-export function repairContourIntersections(chains: readonly WorkingChain[]): void {
+export function repairAndValidateCurveGraph(
+  chains: readonly WorkingChain[],
+  maxDeviation: number,
+): void {
+  const rawIndexes = new Map(chains.map((chain) => [chain, indexRawPolyline(chain.rawPoints)]))
+  let pieces = curvePieces(chains, rawIndexes)
   for (let pass = 0; pass < INTERSECTION_REPAIR_PASSES; pass += 1) {
-    const offenders = nonincidentIntersections(curvePieces(chains))
-    if (offenders.length === 0) return
+    const offenders = nonincidentIntersections(pieces)
+    if (offenders.length === 0) break
     const indexesByChain = new Map<WorkingChain, Set<number>>()
     for (const [first, second] of offenders) {
       for (const piece of [first, second]) {
@@ -106,20 +115,17 @@ export function repairContourIntersections(chains: readonly WorkingChain[]): voi
       }
       chain.points = points
     }
+    pieces = curvePieces(chains, rawIndexes)
   }
-}
-
-export function validateCurveGraph(chains: readonly WorkingChain[], maxDeviation: number): void {
-  const pieces = curvePieces(chains)
   const allowed = maxDeviation + VALIDATION_SAG_CELLS
   for (const piece of pieces) {
-    if (!segmentStaysInTube(piece.start, piece.end, piece.rawIndex, allowed)) {
-      const worst = worstChordDistance(piece.start, piece.end, piece.rawIndex)
+    const tube = segmentTubeDeviation(piece.start, piece.end, piece.rawIndex)
+    if (tube.worst + tube.spacing / 2 > allowed + 1e-7) {
       throw new Error(
         `Terrain contour curve escaped its source tube: chain ${piece.chain.id} ` +
           `(${piece.chain.leftMaterial} against ${piece.chain.rightMaterial}) near ` +
           `(${piece.start.x.toFixed(2)}, ${piece.start.y.toFixed(2)}) deviates ` +
-          `${worst.toFixed(3)} of ${allowed.toFixed(3)} allowed cells.`,
+          `${tube.worst.toFixed(3)} of ${allowed.toFixed(3)} allowed cells.`,
       )
     }
   }
@@ -172,45 +178,24 @@ function curveBucketKeys(piece: Pick<CurvePiece, 'start' | 'end'>): readonly str
   return keys
 }
 
-/** Densely sampled worst chord deviation, reported when the tube validation fails. */
-function worstChordDistance(
+/** Sample a chord closely enough to certify its full 1-Lipschitz distance bound. */
+function segmentTubeDeviation(
   start: ContourCoordinate,
   end: ContourCoordinate,
   rawIndex: RawPolylineIndex,
-): number {
+): { readonly worst: number; readonly spacing: number } {
+  const steps = Math.max(1, Math.ceil(distance(start, end) / TUBE_SAMPLE_SPACING_CELLS))
+  const spacing = distance(start, end) / steps
   let worst = 0
-  for (let step = 0; step <= 16; step += 1) {
-    const amount = step / 16
+  for (let step = 0; step <= steps; step += 1) {
+    const amount = step / steps
     const point = {
       x: start.x + (end.x - start.x) * amount,
       y: start.y + (end.y - start.y) * amount,
     }
     worst = Math.max(worst, projectToPolyline(point, rawIndex).distance)
   }
-  return worst
-}
-
-/** Prove the full emitted segment stays in the source tube through adaptive 1-Lipschitz bounds. */
-function segmentStaysInTube(
-  start: ContourCoordinate,
-  end: ContourCoordinate,
-  rawIndex: RawPolylineIndex,
-  maxDeviation: number,
-  depth = 0,
-): boolean {
-  const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-  const maximumDistance = Math.max(
-    projectToPolyline(start, rawIndex).distance,
-    projectToPolyline(middle, rawIndex).distance,
-    projectToPolyline(end, rawIndex).distance,
-  )
-  const quarterLength = distance(start, end) / 4
-  if (maximumDistance + quarterLength <= maxDeviation + 1e-7) return true
-  if (depth >= 18) return maximumDistance <= maxDeviation + 1e-7
-  return (
-    segmentStaysInTube(start, middle, rawIndex, maxDeviation, depth + 1) &&
-    segmentStaysInTube(middle, end, rawIndex, maxDeviation, depth + 1)
-  )
+  return { worst, spacing }
 }
 
 function piecesAreAdjacent(

@@ -205,7 +205,7 @@ describe('Three Branches map layer', () => {
     withoutReeds.destroy()
   })
 
-  it('uses one signed component path for direct holes and a separate nested island', () => {
+  it('uses one signed component path for direct holes and a separate island', () => {
     const plan = planTerrainContours(
       ['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'],
       names,
@@ -220,11 +220,10 @@ describe('Three Branches map layer', () => {
     )
     const island = required(
       plan.components.find(
-        (component) => component.material === 'ground' && component.nestingDepth > 0,
+        (component) => component.material === 'ground' && component.cellCount === 1,
       ),
-      'Nested ground island is missing.',
+      'Ground island is missing.',
     )
-    expect(island.parentComponentId).toBeDefined()
     const rings = new Map(plan.rings.map((ring) => [ring.id, ring]))
     const outerRing = required(rings.get(outer.outerRingId), 'Outer ring is missing.')
     const directHole = required(

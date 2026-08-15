@@ -1,8 +1,7 @@
-import { avalanche, stableHashParts } from '@renderers/base/math.js'
+import { stableHashParts } from '@renderers/base/math.js'
 
 import { shapeTerrainCurve } from './terrain-curves.js'
-import { CARDINAL_DIRECTIONS } from './terrain-route-grid.js'
-import { cellKey, compareCells, EPSILON, required } from './terrain-helpers.js'
+import { cellKey, compareCells, connectedComponents, EPSILON, required } from './terrain-helpers.js'
 
 import type {
   TerrainBridgeComponent,
@@ -22,8 +21,12 @@ interface GuideState {
   readonly run: Run
   readonly cost: number
   readonly overlap: number
-  readonly signature: readonly number[]
   readonly previous?: GuideState
+}
+
+interface BoundaryEdge {
+  readonly start: TerrainRoutePoint
+  readonly end: TerrainRoutePoint
 }
 
 /** Build the inset road guide from the road and road-owned bridge mask. */
@@ -36,8 +39,7 @@ export function buildRoadGuide(
   settings: TerrainRouteSettings,
 ): readonly TerrainRoadGuidePoint[] {
   if (roadMaskCells.length === 0) return []
-  const fullMask = new Set(roadMaskCells.map((cell) => cellKey(cell.column, cell.row)))
-  const spanning = cardinalMaskComponents(roadMaskCells, fullMask).filter((component) =>
+  const spanning = connectedComponents(roadMaskCells, () => true).filter((component) =>
     Array.from({ length: width }, (_, column) =>
       component.some((cell) => cell.column === column),
     ).every(Boolean),
@@ -95,37 +97,6 @@ export function buildRoadGuide(
   return fairRoadGuide(raw, rows, width, height, mask, settings)
 }
 
-function cardinalMaskComponents(
-  cells: readonly TerrainRouteCell[],
-  mask: ReadonlySet<string>,
-): readonly TerrainRouteCell[][] {
-  const byKey = new Map(cells.map((cell) => [cellKey(cell.column, cell.row), cell]))
-  const visited = new Set<string>()
-  const result: TerrainRouteCell[][] = []
-  for (const start of [...cells].sort(compareCells)) {
-    const startKey = cellKey(start.column, start.row)
-    if (visited.has(startKey)) continue
-    const component: TerrainRouteCell[] = []
-    const queue = [start]
-    visited.add(startKey)
-    for (let index = 0; index < queue.length; index += 1) {
-      const cell = required(queue[index], 'Road component queue entry is missing.')
-      component.push(cell)
-      for (const [dx, dy] of CARDINAL_DIRECTIONS) {
-        const key = cellKey(cell.column + dx, cell.row + dy)
-        if (!mask.has(key) || visited.has(key)) continue
-        const neighbor = byKey.get(key)
-        if (neighbor === undefined) continue
-        visited.add(key)
-        queue.push(neighbor)
-      }
-    }
-    component.sort(compareCells)
-    result.push(component)
-  }
-  return result
-}
-
 function selectRoadRuns(
   width: number,
   height: number,
@@ -139,7 +110,6 @@ function selectRoadRuns(
       run,
       cost: 0,
       overlap: 0,
-      signature: [run.medianRow, run.minRow, run.maxRow],
     }),
   )
   for (let column = 1; column < width; column += 1) {
@@ -151,7 +121,6 @@ function selectRoadRuns(
           run,
           cost: previous.cost + (run.medianRow - previous.run.medianRow) ** 2,
           overlap: previous.overlap + runOverlap(previous.run, run),
-          signature: [...previous.signature, run.medianRow, run.minRow, run.maxRow],
           previous,
         }))
       candidates.sort(compareGuideStates)
@@ -196,18 +165,23 @@ function compareGuideStates(first: GuideState, second: GuideState): number {
   return (
     first.cost - second.cost ||
     second.overlap - first.overlap ||
-    compareNumberArrays(first.signature, second.signature)
+    compareGuideHistory(first, second)
   )
 }
 
-function compareNumberArrays(first: readonly number[], second: readonly number[]): number {
-  for (let index = 0; index < Math.min(first.length, second.length); index += 1) {
+function compareGuideHistory(first: GuideState, second: GuideState): number {
+  let firstState: GuideState | undefined = first
+  let secondState: GuideState | undefined = second
+  while (firstState !== undefined && secondState !== undefined) {
     const difference =
-      required(first[index], 'Road guide signature value is missing.') -
-      required(second[index], 'Road guide signature value is missing.')
+      firstState.run.medianRow - secondState.run.medianRow ||
+      firstState.run.minRow - secondState.run.minRow ||
+      firstState.run.maxRow - secondState.run.maxRow
     if (difference !== 0) return difference
+    firstState = firstState.previous
+    secondState = secondState.previous
   }
-  return first.length - second.length
+  return firstState === undefined ? (secondState === undefined ? 0 : -1) : 1
 }
 
 function fairRoadGuide(
@@ -218,7 +192,8 @@ function fairRoadGuide(
   mask: ReadonlySet<string>,
   settings: TerrainRouteSettings,
 ): readonly TerrainRoadGuidePoint[] {
-  const layoutHash = avalanche(stableHashParts('road-route', width, height, ...rows))
+  const layoutHash = stableHashParts('road-route', width, height, ...rows)
+  const boundaryEdges = roadBoundaryEdges(mask, width, height)
   const shaped = shapeTerrainCurve(
     raw.map((point) => ({ x: point.rawX, y: point.rawY, locked: point.locked })),
     false,
@@ -229,7 +204,7 @@ function fairRoadGuide(
     const source = roadSourceAtOffset(raw, point.sourceOffset)
     const previous = shaped[index - 1]
     const next = shaped[index + 1]
-    const candidateWidth = roadWidthAt(point, mask, width, height, settings.road.targetWidthCells)
+    const candidateWidth = roadWidthAt(point, boundaryEdges, settings.road.targetWidthCells)
     const valid =
       point.x >= 0 &&
       point.y >= 0 &&
@@ -240,7 +215,7 @@ function fairRoadGuide(
       (previous === undefined || point.x > previous.x + EPSILON) &&
       (next === undefined || point.x < next.x - EPSILON)
     const chosen = valid ? point : { x: source.rawX, y: source.rawY }
-    const availableWidth = roadWidthAt(chosen, mask, width, height, settings.road.targetWidthCells)
+    const availableWidth = roadWidthAt(chosen, boundaryEdges, settings.road.targetWidthCells)
     const widthCells = Math.max(settings.road.minimumWidthCells, availableWidth)
     const footprintFallback = availableWidth + EPSILON < settings.road.minimumWidthCells
     return valid
@@ -314,12 +289,22 @@ export function sourceAtOffset<Value extends TerrainRoutePoint>(
 
 function roadWidthAt(
   point: TerrainRoutePoint,
-  mask: ReadonlySet<string>,
-  width: number,
-  height: number,
+  boundaryEdges: readonly BoundaryEdge[],
   targetWidth: number,
 ): number {
   let clearance = Number.POSITIVE_INFINITY
+  for (const edge of boundaryEdges) {
+    clearance = Math.min(clearance, distanceToSegment(point, edge.start, edge.end))
+  }
+  return Math.min(targetWidth, clearance * 2)
+}
+
+function roadBoundaryEdges(
+  mask: ReadonlySet<string>,
+  width: number,
+  height: number,
+): BoundaryEdge[] {
+  const result: BoundaryEdge[] = []
   for (const key of mask) {
     const [columnText, rowText] = key.split(':')
     const column = Number(columnText)
@@ -348,10 +333,10 @@ function roadWidthAt(
         (edge.dy === -1 && row === 0) ||
         (edge.dy === 1 && row === height - 1)
       if (onMapPortal) continue
-      clearance = Math.min(clearance, distanceToSegment(point, edge.start, edge.end))
+      result.push(edge)
     }
   }
-  return Math.min(targetWidth, clearance * 2)
+  return result
 }
 
 function distanceToSegment(

@@ -453,10 +453,6 @@ export interface TerrainContourComponent {
   readonly outerRingId: string
   /** Identifiers of holes directly owned by the component. */
   readonly holeRingIds: readonly string[]
-  /** Identifier of the enclosing component, when nested. */
-  readonly parentComponentId?: string
-  /** Number of enclosing component boundaries. */
-  readonly nestingDepth: number
 }
 
 /** Deterministic routing choice for an ambiguous contour saddle. */
