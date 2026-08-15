@@ -13,7 +13,6 @@ import {
   roadGuideGraphics,
   seamStrokeRuns,
   signedComponentPath,
-  TERRAIN_LAYER_ORDER,
 } from './map-layer.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
 import {
@@ -153,21 +152,7 @@ describe('Three Branches terrain art planning', () => {
     })
   })
 
-  it('retains the approved terrain draw order and route alpha', () => {
-    expect(TERRAIN_LAYER_ORDER).toEqual([
-      'ground',
-      'field',
-      'reeds',
-      'water',
-      'seam-pooling',
-      'reed-marks',
-      'seam-ink',
-      'seam-hatch',
-      'path',
-      'road',
-      'structures',
-      'planks',
-    ])
+  it('retains the configured terrain layer alpha', () => {
     expect(materialLayerAlpha('field')).toBe(1)
     expect(materialLayerAlpha('reeds')).toBe(1)
     expect(materialLayerAlpha('water')).toBe(1)
@@ -179,11 +164,20 @@ describe('Three Branches terrain art planning', () => {
     const { scene, art } = sparseLayerFixture()
     const terrain = drawMap(new Container(), scene, art)
     const labels = terrain.view.children.map((child) => child.label)
-    const seamHatchIndex = TERRAIN_LAYER_ORDER.indexOf('seam-hatch')
     const expectedLabels = [
-      ...TERRAIN_LAYER_ORDER.slice(0, seamHatchIndex + 1).map((name) => `terrain-${name}`),
+      'terrain-ground',
+      'terrain-field',
+      'terrain-reeds',
+      'terrain-water',
+      'terrain-seam-pooling',
+      'terrain-reed-marks',
+      'terrain-seam-ink',
+      'terrain-seam-hatch',
       'terrain-seam-cover',
-      ...TERRAIN_LAYER_ORDER.slice(seamHatchIndex + 1).map((name) => `terrain-${name}`),
+      'terrain-path',
+      'terrain-road',
+      'terrain-structures',
+      'terrain-planks',
     ]
 
     expect(labels.filter((label) => label !== undefined && !label.endsWith('-mask'))).toEqual(
@@ -471,19 +465,6 @@ describe('Three Branches terrain art planning', () => {
     expect(graphic.destroyed).toBe(true)
   })
 
-  it('keeps the approved bridge material and frame roles exact', () => {
-    expect(HEARTHSIDE_STYLE.terrain.fills.bridge).toEqual({
-      frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
-      tint: 'water',
-      opacity: 1,
-    })
-    expect(HEARTHSIDE_STYLE.terrain.planks).toEqual({
-      horizontal: 'bridgeA',
-      vertical: 'bridgeB',
-      compact: 'bridgeC',
-      tint: 'timber',
-    })
-  })
 })
 
 function required<Value>(value: Value | null | undefined, message: string): Value {

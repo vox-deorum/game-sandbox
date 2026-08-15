@@ -8,7 +8,6 @@ import {
   loadThreeBranchesAssets,
   THREE_BRANCHES_ASSET_CATALOG,
   THREE_BRANCHES_THUMBNAIL_ASSET,
-  threeBranchesAssetSources,
 } from './assets.js'
 
 interface PngHeader {
@@ -128,28 +127,4 @@ describe('Three Branches asset catalog', () => {
     expect(loaded.terrain).toBe('./assets/terrain-atlas.png')
   })
 
-  it('resolves bundled URLs and rejects a missing atlas', () => {
-    const urls = Object.fromEntries(
-      THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) =>
-        rastersFor(atlas).map((raster) => [
-          raster.path,
-          `/bundled/${raster.path.split('/').at(-1)}`,
-        ]),
-      ),
-    )
-    const sources = threeBranchesAssetSources(urls)
-    expect(sources.characters).toEqual({
-      body: '/bundled/characters-body-atlas.png',
-      clothing: '/bundled/characters-clothing-atlas.png',
-      arms: '/bundled/characters-arms-atlas.png',
-      details: '/bundled/characters-details-atlas.png',
-    })
-    expect(sources.effects).toBe('/bundled/effects-atlas.png')
-
-    const missing = { ...urls }
-    delete missing['./assets/characters-clothing-atlas.png']
-    expect(() => threeBranchesAssetSources(missing)).toThrow(
-      'Three Branches atlas is missing: ./assets/characters-clothing-atlas.png',
-    )
-  })
 })

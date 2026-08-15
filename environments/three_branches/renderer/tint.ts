@@ -21,11 +21,6 @@ export function frameRectangle(grid: FrameGrid, name: string): Rectangle {
   )
 }
 
-/** Slice one Pixi atlas texture using its manifest grid. */
-export function sliceAtlasFrame(atlas: Texture, grid: FrameGrid, name: string): Texture {
-  return new Texture({ source: atlas.source, frame: frameRectangle(grid, name) })
-}
-
 /** Stable cache key for a tint baked from one atlas frame. */
 export function tintedMaskCacheKey(frame: string, tint: string, opacity = 1): string {
   const normalized = maskOpacity(opacity)

@@ -26,22 +26,6 @@ const NATURAL_SEAM_MATERIALS = new Set(['ground', 'field', 'reeds', 'water'])
 const OVERLAY_MATERIALS = ['field', 'reeds', 'water'] as const
 const STRUCTURE_NAMES = ['interior', 'doorway', 'wall'] as const
 
-/** The retained owner order: washes, seam treatments, routes, structures, and bridge decks. */
-export const TERRAIN_LAYER_ORDER = [
-  'ground',
-  'field',
-  'reeds',
-  'water',
-  'seam-pooling',
-  'reed-marks',
-  'seam-ink',
-  'seam-hatch',
-  'path',
-  'road',
-  'structures',
-  'planks',
-] as const
-
 type SurfaceMaterial = (typeof OVERLAY_MATERIALS)[number] | 'road' | 'path'
 
 /** One deterministic visible portion of a broken seam stroke along a contour chain. */

@@ -592,11 +592,6 @@ function visitorMoved(from: FrameScene, to: FrameScene): boolean {
   )
 }
 
-/** Build header-shaped inputs in tests without reaching into the mounted renderer. */
-export function rendererStaticFor(header: RecordingHeader): StaticScene {
-  return buildStaticScene(readStatic(header))
-}
-
 const definition = {
   key: 'three-branches-village',
   renderer: ThreeBranchesRenderer,

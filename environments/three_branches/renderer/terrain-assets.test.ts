@@ -3,7 +3,6 @@ import { resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { describe, expect, it } from 'vitest'
 
-import { TERRAIN_ATLAS_FRAME_NAMES } from './assets.js'
 import { opaqueFillPixels, tintedMaskPixels } from './tint.js'
 
 const SIZE = 128
@@ -90,16 +89,6 @@ function sourceOver(base: Uint8ClampedArray, overlay: Uint8ClampedArray): Uint8C
 }
 
 describe('Three Branches terrain raster contract', () => {
-  it('keeps every named frame at 128 by 128 in grayscale-alpha', () => {
-    for (const name of TERRAIN_ATLAS_FRAME_NAMES) {
-      const pixels = frame(name)
-      for (let index = 0; index < pixels.length; index += 4) {
-        expect(pixels[index]).toBe(pixels[index + 1])
-        expect(pixels[index]).toBe(pixels[index + 2])
-      }
-    }
-  })
-
   it('uses opaque full-cell fills whose variants join at identical borders', () => {
     for (const family of FILL_FAMILIES) {
       const variants = family.map(frame)

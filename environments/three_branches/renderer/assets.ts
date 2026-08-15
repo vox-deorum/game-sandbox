@@ -464,29 +464,3 @@ function threeBranchesAssetUrls(): Record<string, string> {
     query: '?url',
   }) as Record<string, string>
 }
-
-/** Match every catalog path to one bundled URL and reject a missing runtime atlas. */
-export function threeBranchesAssetSources(
-  urls: Record<string, string> = threeBranchesAssetUrls(),
-): ThreeBranchesLoadedAssets<string> {
-  return Object.fromEntries(
-    THREE_BRANCHES_ASSET_CATALOG.map((atlas) => {
-      if ('layers' in atlas) {
-        return [
-          atlas.name,
-          Object.fromEntries(
-            atlas.layers.map((layer) => {
-              const url = urls[layer.path]
-              if (url === undefined)
-                throw new Error(`Three Branches atlas is missing: ${layer.path}`)
-              return [layer.name, url]
-            }),
-          ),
-        ]
-      }
-      const url = urls[atlas.path]
-      if (url === undefined) throw new Error(`Three Branches atlas is missing: ${atlas.path}`)
-      return [atlas.name, url]
-    }),
-  ) as ThreeBranchesLoadedAssets<string>
-}

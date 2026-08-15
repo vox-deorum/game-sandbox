@@ -344,9 +344,6 @@ export function planTerrainContours(
   }
 }
 
-/** Concise alias for callers that already live in terrain-specific modules. */
-export const planContours = planTerrainContours
-
 function validateInputs(
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,

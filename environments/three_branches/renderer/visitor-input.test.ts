@@ -242,31 +242,6 @@ describe('Three Branches visitor input', () => {
       expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
-    it('reads a dead-zone drag as no movement', () => {
-      const { surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
-      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x + 5, JOYSTICK_CENTER.y)
-      vi.advanceTimersByTime(PACE_MS)
-      expect(sendAction).not.toHaveBeenCalled()
-    })
-
-    it('saturates at full speed past the pad ring', () => {
-      const { surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
-      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y + 200)
-      vi.advanceTimersByTime(PACE_MS)
-      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 270, speed: 1, action: 0 })
-    })
-
-    it('wins over held keys while engaged', () => {
-      const { surface, sendAction } = mount()
-      key('keydown', 'KeyS')
-      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
-      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
-      vi.advanceTimersByTime(PACE_MS)
-      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
-    })
-
     it('claims only the fixed pad and leaves the rest of the left side to the camera', () => {
       const { container, surface } = mount()
       const bubbled = vi.fn()

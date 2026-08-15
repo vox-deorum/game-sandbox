@@ -137,10 +137,7 @@ export interface TerrainRoutePlan {
   /** Road and path cells replaced by nearby natural material. Bridges retain water semantics. */
   readonly visualRows: readonly string[]
   readonly visualSubstrate: readonly TerrainRoadSubstrateCell[]
-  readonly roadSubstrate: readonly TerrainRoadSubstrateCell[]
   readonly roadGuide: readonly TerrainRoadGuidePoint[]
-  readonly roadStroke: TerrainRouteSettings['road']
-  readonly pathStroke: TerrainRouteSettings['path']
   readonly roadMaskCells: readonly TerrainRouteCell[]
   readonly pathGuides: readonly TerrainPathGuide[]
   readonly pathConnectors: readonly TerrainPathConnector[]
@@ -231,7 +228,6 @@ export function planTerrainRoutes(
   }
 
   const visualSubstrate = propagateVisualSubstrate(cells, width, height)
-  const roadSubstrate = visualSubstrate.filter((cell) => cell.replacedMaterial === 'road')
   const visualRows = replaceRouteCells(rows, visualSubstrate)
   const roadMaskCells = cells
     .filter(
@@ -264,44 +260,12 @@ export function planTerrainRoutes(
     height,
     visualRows,
     visualSubstrate,
-    roadSubstrate,
     roadGuide,
-    roadStroke: settings.road,
-    pathStroke: settings.path,
     roadMaskCells,
     pathGuides,
     pathConnectors,
     bridgeComponents,
   }
-}
-
-/** Select source cells into a sparse, top-first character grid. */
-export function sparseRows(
-  width: number,
-  height: number,
-  cells: readonly TerrainRouteCell[],
-  code: string,
-): readonly string[] {
-  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
-    throw new Error('Sparse terrain rows require positive integer dimensions.')
-  }
-  if ([...code].length !== 1)
-    throw new Error('Sparse terrain rows require a single-character code.')
-  const result = Array.from({ length: height }, () => Array(width).fill(' ') as string[])
-  for (const cell of cells) {
-    if (
-      !Number.isInteger(cell.column) ||
-      !Number.isInteger(cell.row) ||
-      cell.column < 0 ||
-      cell.row < 0 ||
-      cell.column >= width ||
-      cell.row >= height
-    ) {
-      throw new Error('Sparse terrain cell is outside the target grid.')
-    }
-    required(result[cell.row], 'Sparse terrain target row is missing.')[cell.column] = code
-  }
-  return result.map((row) => row.join(''))
 }
 
 function validateInputs(

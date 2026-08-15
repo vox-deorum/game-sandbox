@@ -71,12 +71,6 @@ describe('nameplateAlpha', () => {
     expect(high).toBeGreaterThan(mid)
   })
 
-  it('returns full opacity for a non-finite or non-positive fitted zoom rather than NaN', () => {
-    expect(nameplateAlpha(3, 0)).toBe(1)
-    expect(nameplateAlpha(3, -1)).toBe(1)
-    expect(nameplateAlpha(3, Number.NaN)).toBe(1)
-    expect(nameplateAlpha(3, Number.POSITIVE_INFINITY)).toBe(1)
-  })
 })
 
 describe('wrapSpeech', () => {

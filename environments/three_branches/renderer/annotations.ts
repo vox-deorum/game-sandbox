@@ -137,7 +137,6 @@ export function createAnnotationLayer(
 
 /** Plate opacity at one camera zoom, zero below the fade band and one at or above the full-plate zoom. */
 export function nameplateAlpha(zoom: number, fittedZoom: number): number {
-  if (!Number.isFinite(fittedZoom) || fittedZoom <= 0) return 1
   const { nameplateZoomFactor, nameplateFadeFactor } = THREE_BRANCHES_PRESENTATION
   const fullZoom = fittedZoom * nameplateZoomFactor
   const floorZoom = fittedZoom * (nameplateZoomFactor - nameplateFadeFactor)

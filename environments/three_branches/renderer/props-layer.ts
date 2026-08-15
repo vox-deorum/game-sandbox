@@ -37,9 +37,8 @@ export function createPropLayer(
   return {
     reconcile(frame) {
       for (const prop of scene.props) {
-        const node = nodes.get(prop.id)
-        const start = startById.get(prop.id)
-        if (node === undefined || start === undefined) continue
+        const node = nodes.get(prop.id)!
+        const start = startById.get(prop.id)!
         const state = frame.dynamic?.props[prop.id] ?? start
         node.alpha = state === start ? 0.72 : 1
       }
@@ -47,8 +46,7 @@ export function createPropLayer(
     highlight(propId) {
       highlightNode.clear()
       if (propId === null) return
-      const item = scene.props.find((prop) => prop.id === propId)
-      if (item === undefined) return
+      const item = scene.props.find((prop) => prop.id === propId)!
       const stroke = { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
       if (item.shape === 'circle') {
         highlightNode

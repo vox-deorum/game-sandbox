@@ -4,7 +4,6 @@ import {
   DEFAULT_TERRAIN_ROUTE_SETTINGS,
   planTerrainRoutes,
   roadMaskWidthAt,
-  sparseRows,
   type TerrainRoadGuidePoint,
   type TerrainRouteSettings,
 } from './terrain-routes.js'
@@ -49,12 +48,15 @@ const NO_NOISE_SETTINGS: TerrainRouteSettings = {
 describe('terrain route planner', () => {
   it('propagates the nearest natural substrate through road cells with canonical tie breaks', () => {
     const plan = planTerrainRoutes(['ggggg', 'rrrrr', 'fffff'], NAMES, SETTINGS)
+    const roadSubstrate = plan.visualSubstrate.filter(
+      (cell) => cell.replacedMaterial === 'road',
+    )
 
     expect(plan.visualRows).toEqual(['ggggg', 'ggggg', 'fffff'])
-    expect(plan.roadSubstrate).toHaveLength(5)
-    expect(plan.roadSubstrate.every((cell) => cell.sourceMaterial === 'ground')).toBe(true)
-    expect(plan.roadSubstrate.map((cell) => cell.distance)).toEqual([1, 1, 1, 1, 1])
-    expect(new Set(plan.roadSubstrate.map((cell) => cell.sourceComponentId))).toEqual(
+    expect(roadSubstrate).toHaveLength(5)
+    expect(roadSubstrate.every((cell) => cell.sourceMaterial === 'ground')).toBe(true)
+    expect(roadSubstrate.map((cell) => cell.distance)).toEqual([1, 1, 1, 1, 1])
+    expect(new Set(roadSubstrate.map((cell) => cell.sourceComponentId))).toEqual(
       new Set(['substrate-0-0-ground']),
     )
   })
@@ -69,8 +71,8 @@ describe('terrain route planner', () => {
     expect(plan.visualRows[1]).toBe('ggggggg')
     expect(plan.visualRows[3]).toBe('eeeeeee')
     expect(
-      plan.roadSubstrate
-        .filter((cell) => cell.row === 3)
+      plan.visualSubstrate
+        .filter((cell) => cell.replacedMaterial === 'road' && cell.row === 3)
         .every((cell) => cell.sourceMaterial === 'reeds'),
     ).toBe(true)
   })
@@ -424,19 +426,12 @@ describe('terrain route planner', () => {
   it('supports terrain with no road and emits empty route artifacts', () => {
     const plan = planTerrainRoutes(['ggg', 'gpg', 'gbg'], NAMES, SETTINGS)
 
-    expect(plan.roadSubstrate).toEqual([])
+    expect(plan.visualSubstrate.filter((cell) => cell.replacedMaterial === 'road')).toEqual([])
     expect(plan.roadGuide).toEqual([])
     expect(plan.roadMaskCells).toEqual([])
     expect(plan.pathConnectors).toEqual([])
     expect(plan.pathGuides).toHaveLength(1)
     expect(plan.visualRows).toEqual(['ggg', 'ggg', 'gbg'])
-  })
-
-  it('validates sparse helper dimensions, codes, and coordinates', () => {
-    expect(sparseRows(3, 2, [{ column: 1, row: 0 }], 'r')).toEqual([' r ', '   '])
-    expect(() => sparseRows(0, 2, [], 'r')).toThrow('positive integer dimensions')
-    expect(() => sparseRows(3, 2, [], 'road')).toThrow('single-character code')
-    expect(() => sparseRows(3, 2, [{ column: 3, row: 0 }], 'r')).toThrow('outside')
   })
 
   it('validates rectangular inputs and complete semantic mappings', () => {

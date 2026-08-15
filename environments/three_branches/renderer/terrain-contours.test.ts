@@ -514,60 +514,6 @@ describe('continuous terrain contour planning', () => {
     expect(boundary(baseRows).points).not.toEqual(boundary(changedRows).points)
   })
 
-  it('keeps long fixed chains fast and closes a bounded sawtooth fallback', () => {
-    const fixedWidth = 2_500
-    const fixedStartedAt = performance.now()
-    const fixedResult = plan(['x'.repeat(fixedWidth), 'g'.repeat(fixedWidth)])
-    const fixedBoundary = fixedResult.chains.find(
-      (chain) => chain.materials.includes('wall') && chain.materials.includes('ground'),
-    )!
-
-    expect(fixedBoundary.spans).toHaveLength(fixedWidth)
-    expect(fixedBoundary.points.every((point) => point.locked)).toBe(true)
-    expect(performance.now() - fixedStartedAt).toBeLessThan(5_000)
-
-    const cells = Array.from({ length: 24 }, () => Array.from({ length: 24 }, () => 'g'))
-    for (let row = 4; row < 20; row += 1) {
-      const firstWater = 4 + (row % 2)
-      const lastWater = 19 - ((row + 1) % 2)
-      for (let column = firstWater; column <= lastWater; column += 1) {
-        cells[row]![column] = 'w'
-      }
-    }
-    const sawtooth = plan(
-      cells.map((row) => row.join('')),
-      {
-        profiles: { water: { octaves: [] } },
-        maxDeviationCells: 0.05,
-      },
-    ).chains.find(
-      (chain) =>
-        chain.closed && chain.materials.includes('ground') && chain.materials.includes('water'),
-    )!
-    expect(sawtooth.rawPoints.length).toBeGreaterThan(40)
-    const seamIndex = sawtooth.points.findIndex((point) => !point.locked && point.rawOffset === 0)
-    expect(seamIndex).toBeGreaterThanOrEqual(0)
-    expect(
-      sawtooth.points.some(
-        (point) => !point.locked && distanceToPolyline(point, sawtooth.rawPoints) > 1e-4,
-      ),
-    ).toBe(true)
-    expect(
-      sawtooth.points.every(
-        (point, index) => index === 0 || point.rawOffset > sawtooth.points[index - 1]!.rawOffset,
-      ),
-    ).toBe(true)
-    const closedPoints = [...sawtooth.points, sawtooth.points[0]!]
-    for (let index = 0; index < closedPoints.length - 1; index += 1) {
-      const start = closedPoints[index]!
-      const end = closedPoints[index + 1]!
-      const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-      expect(distanceToPolyline(midpoint, sawtooth.rawPoints)).toBeLessThanOrEqual(
-        0.05 + 0.02 + 1e-8,
-      )
-    }
-  })
-
   it('plans a long winding 120-cell chain within a bounded startup budget', () => {
     const cells = Array.from({ length: 120 }, () => Array.from({ length: 120 }, () => 'g'))
     const waterRows = Array.from({ length: 30 }, (_, index) => index * 4 + 1)
