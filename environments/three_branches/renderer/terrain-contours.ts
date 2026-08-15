@@ -7,8 +7,12 @@ import {
   validateInputs,
 } from './terrain-contour-grid.js'
 import { buildChains, buildGraph } from './terrain-contour-graph.js'
-import { buildContourReference, referenceOf } from './terrain-contour-reference.js'
-import { buildClearanceIndex, shapeChains } from './terrain-contour-shaping.js'
+import { referenceOf } from './terrain-contour-reference.js'
+import {
+  buildClearanceIndex,
+  buildContourReferences,
+  shapeChains,
+} from './terrain-contour-shaping.js'
 import {
   assignComponentAndRingIds,
   buildRings,
@@ -44,9 +48,7 @@ export function planTerrainContours(
 
   const graph = buildGraph(cells, width, height, saddles, componentKeyForCell)
   const workingChains = buildChains(graph.nodes, graph.segments)
-  for (const chain of workingChains) {
-    chain.reference = buildContourReference(chain, settings.junctionTangentCells, layoutHash)
-  }
+  buildContourReferences(workingChains, settings, layoutHash)
   const clearanceIndex = buildClearanceIndex(workingChains)
   shapeChains(workingChains, settings, bridgeTaperCells, layoutHash, clearanceIndex)
   repairAndValidateCurveGraph(workingChains, settings.maxDeviationCells)

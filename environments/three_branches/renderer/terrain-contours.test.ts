@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE } from './presentation.js'
+import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
 import type {
   ContourCoordinate,
@@ -24,7 +25,7 @@ const names: Readonly<Record<string, string>> = {
 
 const landProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.25,
-  smoothingPasses: 16,
+  smoothingPasses: 8,
   octaves: [
     { wavelengthCells: 8, amplitudeCells: 0.28 },
     { wavelengthCells: 3, amplitudeCells: 0.12 },
@@ -34,7 +35,7 @@ const landProfile: TerrainCurveProfile = {
 
 const waterProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.2,
-  smoothingPasses: 24,
+  smoothingPasses: 10,
   octaves: [
     { wavelengthCells: 11, amplitudeCells: 0.34 },
     { wavelengthCells: 4, amplitudeCells: 0.14 },
@@ -142,8 +143,62 @@ function contourCurvature(points: readonly ContourCoordinate[]): number {
   return total
 }
 
-function sampleOpenContourAtRawOffsets(
+/** The chain's own raw polyline in the shape the raw-offset sampler expects. */
+function rawPointsWithOffsets(
   chain: TerrainContourChain,
+): (ContourCoordinate & { readonly rawOffset: number })[] {
+  let offset = 0
+  return chain.rawPoints.map((point, index) => {
+    if (index > 0) {
+      const previous = chain.rawPoints[index - 1]!
+      offset += Math.hypot(point.x - previous.x, point.y - previous.y)
+    }
+    return { x: point.x, y: point.y, rawOffset: offset }
+  })
+}
+
+/**
+ * Spread of each polyline around the best-fit line of the raw staircase. A quantized straight run
+ * spans about one cell; the line it quantizes spans nothing, so the spread is what is left of the
+ * stair rhythm.
+ */
+function stairResidual(chain: TerrainContourChain): {
+  readonly raw: number
+  readonly reference: number
+  readonly emitted: number
+} {
+  const fit = chain.rawPoints
+  const meanX = fit.reduce((sum, point) => sum + point.x, 0) / fit.length
+  const meanY = fit.reduce((sum, point) => sum + point.y, 0) / fit.length
+  let sxx = 0
+  let sxy = 0
+  let syy = 0
+  for (const point of fit) {
+    sxx += (point.x - meanX) ** 2
+    sxy += (point.x - meanX) * (point.y - meanY)
+    syy += (point.y - meanY) ** 2
+  }
+  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+  const offsetFromLine = (point: ContourCoordinate): number =>
+    (point.x - meanX) * -Math.sin(angle) + (point.y - meanY) * Math.cos(angle)
+  // Trim the locked ends, which are pinned onto the raw staircase by design.
+  const spread = (points: readonly ContourCoordinate[]): number => {
+    const middle = points
+      .slice(Math.ceil(points.length * 0.15), Math.floor(points.length * 0.85))
+      .map(offsetFromLine)
+    return Math.max(...middle) - Math.min(...middle)
+  }
+  return {
+    raw: spread(chain.rawPoints),
+    reference: spread(chain.referencePoints),
+    emitted: spread(chain.points),
+  }
+}
+
+function sampleOpenContourAtRawOffsets(
+  chain: Pick<TerrainContourChain, 'rawLength'> & {
+    readonly points: readonly (ContourCoordinate & { readonly rawOffset: number })[]
+  },
   spacing: number,
 ): readonly (ContourCoordinate & { readonly rawOffset: number })[] {
   const offsets = Array.from({ length: Math.floor(chain.rawLength / spacing) + 1 }, (_, index) =>
@@ -303,33 +358,91 @@ describe('continuous terrain contour planning', () => {
     }
   })
 
-  it('suppresses staircase cadence as smoothing passes increase', () => {
+  it('suppresses the staircase cadence carried by the raw boundary', () => {
     const size = 16
     const rows = Array.from(
       { length: size },
       (_, row) => `${'w'.repeat(row + 1)}${'g'.repeat(size - row - 1)}`,
     )
-    const stairIn = (result: TerrainContourPlan): TerrainContourChain =>
-      result.chains.find(
-        (chain) =>
-          chain.materials.includes('ground') &&
-          chain.materials.includes('water') &&
-          chain.rawPoints.length > 6,
-      )!
-    const unsmoothed = stairIn(
-      plan(rows, { profiles: { water: { smoothingPasses: 0, octaves: [] } } }),
-    )
-    const smoothed = stairIn(plan(rows, { profiles: { water: { octaves: [] } } }))
-    const ordinaryVertices = unsmoothed.rawPoints.slice(1, -1)
+    const shaped = plan(rows, { profiles: { water: { octaves: [] } } }).chains.find(
+      (chain) =>
+        chain.materials.includes('ground') &&
+        chain.materials.includes('water') &&
+        chain.rawPoints.length > 6,
+    )!
+    const ordinaryVertices = shaped.rawPoints.slice(1, -1)
     const emittedVertices = ordinaryVertices.filter((vertex) =>
-      smoothed.points.some((point) => Math.hypot(point.x - vertex.x, point.y - vertex.y) < 1e-9),
+      shaped.points.some((point) => Math.hypot(point.x - vertex.x, point.y - vertex.y) < 1e-9),
     )
-    const unsmoothedSamples = sampleOpenContourAtRawOffsets(unsmoothed, 0.5)
-    const smoothedSamples = sampleOpenContourAtRawOffsets(smoothed, 0.5)
+    const rawSamples = sampleOpenContourAtRawOffsets(
+      { ...shaped, points: rawPointsWithOffsets(shaped) },
+      0.5,
+    )
+    const shapedSamples = sampleOpenContourAtRawOffsets(shaped, 0.5)
 
     expect(emittedVertices.length).toBeLessThan(ordinaryVertices.length / 2)
-    expect(contourCadence(smoothedSamples)).toBeLessThan(contourCadence(unsmoothedSamples))
-    expect(contourCurvature(smoothedSamples)).toBeLessThan(contourCurvature(unsmoothedSamples))
+    expect(contourCadence(shapedSamples)).toBeLessThan(contourCadence(rawSamples) / 2)
+    expect(contourCurvature(shapedSamples)).toBeLessThan(contourCurvature(rawSamples) / 2)
+  })
+
+  it('flattens multi-cell stair runs onto the line they quantize', () => {
+    for (const run of [2, 3, 6]) {
+      const height = 12
+      const width = run * height + 4
+      const rows = Array.from({ length: height }, (_, row) => {
+        const water = Math.min(width, run * (row + 1))
+        return `${'w'.repeat(water)}${'g'.repeat(width - water)}`
+      })
+      const chain = plan(rows, { profiles: { water: { octaves: [] } } }).chains.find(
+        (candidate) =>
+          candidate.materials.includes('ground') &&
+          candidate.materials.includes('water') &&
+          candidate.rawPoints.length > 6,
+      )!
+      const residual = stairResidual(chain)
+
+      expect(residual.raw).toBeGreaterThan(0.7)
+      expect(residual.reference).toBeLessThan(0.25)
+      expect(residual.emitted).toBeLessThan(0.35)
+    }
+  })
+
+  it('flattens stair runs on both banks of a two-cell corridor', () => {
+    const run = 3
+    const height = 24
+    const width = Math.ceil(height / run) + 6
+    const rows = Array.from({ length: height }, (_, row) => {
+      const start = 2 + Math.floor(row / run)
+      return `${'g'.repeat(start)}ww${'g'.repeat(width - start - 2)}`
+    })
+    const banks = plan(rows, { profiles: { water: { octaves: [] } } }).chains.filter(
+      (chain) =>
+        chain.materials.includes('ground') &&
+        chain.materials.includes('water') &&
+        chain.rawPoints.length > 6,
+    )
+    expect(banks.length).toBeGreaterThan(0)
+    for (const bank of banks) {
+      // A corridor this narrow binds the drift ceiling, so its banks straighten part of the way
+      // rather than all of it: the two boundaries may never spend more than half their slack.
+      const residual = stairResidual(bank)
+      expect(residual.raw).toBeGreaterThan(0.7)
+      expect(residual.reference).toBeLessThan(residual.raw / 2)
+    }
+    const separation = Math.min(
+      ...banks.flatMap((bank, index) =>
+        banks
+          .slice(index + 1)
+          .flatMap((other) =>
+            bank.points.map((point) =>
+              Math.min(...other.points.map((far) => Math.hypot(point.x - far.x, point.y - far.y))),
+            ),
+          ),
+      ),
+    )
+    if (Number.isFinite(separation)) {
+      expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
+    }
   })
 
   it('builds direct holes while keeping an island as a separate component', () => {
@@ -478,7 +591,7 @@ describe('continuous terrain contour planning', () => {
     expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
   })
 
-  it('exposes a corner-cut reference near the raw boundary that keeps the closed seam contract', () => {
+  it('exposes a reference near the raw boundary that keeps the closed seam contract', () => {
     const pond = plan(['gggg', 'gwwg', 'gwwg', 'gggg'])
     const shore = pond.chains.find((chain) => chain.closed && chain.materials.includes('water'))!
     const corners = [
@@ -493,12 +606,9 @@ describe('continuous terrain contour planning', () => {
       ),
     ).toBe(false)
     const closedReference = [...shore.referencePoints, shore.referencePoints[0]!]
-    for (let index = 0; index < closedReference.length - 1; index += 1) {
-      const start = closedReference[index]!
-      const end = closedReference[index + 1]!
-      const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-      expect(distanceToPolyline(midpoint, shore.rawPoints)).toBeLessThanOrEqual(
-        0.48 / Math.SQRT2 + 1e-9,
+    for (const point of closedReference) {
+      expect(distanceToPolyline(point, [...shore.rawPoints])).toBeLessThanOrEqual(
+        MAX_REFERENCE_DRIFT_CELLS + 1e-9,
       )
     }
     expect(shore.points[0]!.rawOffset).toBe(0)

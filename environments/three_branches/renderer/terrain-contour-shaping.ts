@@ -1,11 +1,20 @@
 import { distance, stableHashParts } from '@renderers/base/math.js'
 
-import { cellKey, EPSILON, pointToSegmentDistance, projectToSegment } from './terrain-helpers.js'
 import {
+  cellKey,
+  EPSILON,
+  pointToSegmentDistance,
+  projectToSegment,
+  required,
+} from './terrain-helpers.js'
+import {
+  buildContourReference,
   circularDistanceToInterval,
+  MAX_REFERENCE_DRIFT_CELLS,
   nearestIntervalDistance,
   normalizedOffset,
   offsetLocked,
+  rawHeadingAt,
   rawOffsetAtReferenceOffset,
   rawPointAt,
   referenceOf,
@@ -33,20 +42,33 @@ interface ContourSpanIndex {
   readonly hasShoreline: boolean
 }
 
-/** One reference segment tagged with its owning chain and arc interval for clearance queries. */
+/** One polyline of one chain, offered to the clearance index in raw or reference form. */
+interface ClearancePolyline {
+  readonly chain: WorkingChain
+  readonly points: readonly ContourCoordinate[]
+  readonly offsets: readonly number[]
+  readonly length: number
+}
+
+/** One indexed segment tagged with its owning chain and arc interval. */
 interface ClearanceSegment {
   readonly chain: WorkingChain
   readonly start: ContourCoordinate
   readonly end: ContourCoordinate
   readonly startOffset: number
   readonly endOffset: number
+  readonly ownerLength: number
 }
 
-/** Cell-bucketed reference segments of every chain, queried while each single chain is shaped. */
+/** Cell-bucketed boundary segments of every chain, queried one chain at a time. */
 type ClearanceIndex = ReadonlyMap<string, readonly ClearanceSegment[]>
 
-/** Clearance beyond this many cells never tightens the envelope, so the query stays local. */
-const CLEARANCE_SEARCH_CELLS = 3
+/**
+ * Clearance beyond this many cells never tightens the envelope, so the query stays local. Both
+ * ceilings saturate once a competitor is more than one corridor plus twice the deviation away,
+ * which is under two cells, and a segment that far always lands in a bucket this reach covers.
+ */
+const CLEARANCE_SEARCH_CELLS = 2
 
 /** Arc reach when clamping a shaped point against its own local stretch of reference boundary. */
 const CLAMP_WINDOW_CELLS = 2.5
@@ -55,23 +77,61 @@ const CLAMP_WINDOW_CELLS = 2.5
  * A same-chain segment competes for clearance only when its arc distance is clearly larger than
  * its straight-line distance. Local continuation stays excluded so it can smooth. Facing walls of
  * an inlet or hairpin sit at ratio two and above and must count, or the two sides smooth across
- * their corridor into each other. The corner-cut reference holds ratio near one on straight and
- * diagonal runs, so this bound keeps a comfortable margin.
+ * their corridor into each other. A staircase holds ratio near 1.4, so this bound leaves it free
+ * to flatten while still catching a genuine fold.
  */
 const SELF_FOLD_ARC_RATIO = 1.6
 
+/** How closely two stretches must share a heading to count as running alongside each other. */
+const PARALLEL_HEADING_DOT = 0.7
+
+/** Index the raw boundary of every chain, before any reference geometry exists. */
+function buildRawClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
+  return buildIndex(
+    chains.map((chain) => ({
+      chain,
+      // A closed chain repeats its first raw point at the end; the index closes the ring itself.
+      points: chain.closed ? chain.rawPoints.slice(0, -1) : chain.rawPoints,
+      offsets: chain.spans.map((span) => span.startOffset),
+      length: chain.rawLength,
+    })),
+  )
+}
+
+/** Index the shaped reference of every chain. */
 export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
+  return buildIndex(
+    chains.map((chain) => {
+      const reference = referenceOf(chain)
+      return {
+        chain,
+        points: reference.points,
+        offsets: reference.offsets,
+        length: reference.length,
+      }
+    }),
+  )
+}
+
+function buildIndex(polylines: readonly ClearancePolyline[]): ClearanceIndex {
   const buckets = new Map<string, ClearanceSegment[]>()
-  for (const chain of chains) {
-    const reference = referenceOf(chain)
-    const count = referenceSegmentCount(reference, chain.closed)
+  for (const polyline of polylines) {
+    const { chain, points, offsets, length } = polyline
+    const count = chain.closed ? points.length : points.length - 1
     for (let index = 0; index < count; index += 1) {
-      const { start, end, startOffset, endOffset } = referenceSegmentAt(
-        reference,
-        chain.closed,
-        index,
+      const start = required(points[index], 'Terrain clearance segment is missing its start.')
+      const end = required(
+        points[(index + 1) % points.length],
+        'Terrain clearance segment is missing its end.',
       )
-      const segment: ClearanceSegment = { chain, start, end, startOffset, endOffset }
+      const segment: ClearanceSegment = {
+        chain,
+        start,
+        end,
+        startOffset: required(offsets[index], 'Terrain clearance segment has no offset.'),
+        endOffset: index + 1 < offsets.length ? offsets[index + 1]! : length,
+        ownerLength: length,
+      }
       const minimumX = Math.floor(Math.min(start.x, end.x))
       const maximumX = Math.floor(Math.max(start.x, end.x))
       const minimumY = Math.floor(Math.min(start.y, end.y))
@@ -90,18 +150,17 @@ export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceI
 }
 
 /**
- * Distance from one reference sample to the nearest competing reference segment. Segments of the
- * same chain count only beyond a short arc window, so a serpentine chain cannot pinch its own
- * corridor.
+ * Distance from one sample to the nearest competing segment. Segments of the same chain count only
+ * beyond a short arc window, so a serpentine chain cannot pinch its own corridor.
  */
-function clearanceAt(
+export function clearanceAt(
   index: ClearanceIndex,
   chain: WorkingChain,
   point: ContourCoordinate,
   sourceOffset: number,
   arcWindowCells: number,
+  heading?: ContourCoordinate,
 ): number {
-  const referenceLength = referenceOf(chain).length
   const column = Math.floor(point.x)
   const row = Math.floor(point.y)
   let nearest = Number.POSITIVE_INFINITY
@@ -111,20 +170,48 @@ function clearanceAt(
         const separation = pointToSegmentDistance(point, segment.start, segment.end)
         if (segment.chain === chain) {
           const arcDistance = circularDistanceToInterval(
-            normalizedOffset(sourceOffset, referenceLength, chain.closed),
+            normalizedOffset(sourceOffset, segment.ownerLength, chain.closed),
             segment.startOffset,
             segment.endOffset,
-            referenceLength,
+            segment.ownerLength,
             chain.closed,
           )
           const window = Math.max(arcWindowCells, SELF_FOLD_ARC_RATIO * separation)
           if (arcDistance <= window + EPSILON) continue
+          if (heading !== undefined && runsAlongside(heading, segment)) continue
         }
         nearest = Math.min(nearest, separation)
       }
     }
   }
   return nearest
+}
+
+/**
+ * Whether a far stretch of the same chain runs the same way as the sample rather than facing it.
+ * Successive treads of a staircase run alongside each other and shift together when the boundary
+ * straightens, so they must not throttle it; the two faces of an inlet or a peninsula face each
+ * other, and those do have to keep their corridor.
+ */
+function runsAlongside(heading: ContourCoordinate, segment: ClearanceSegment): boolean {
+  const dx = segment.end.x - segment.start.x
+  const dy = segment.end.y - segment.start.y
+  const length = Math.hypot(dx, dy)
+  if (length <= EPSILON) return false
+  return (heading.x * dx + heading.y * dy) / length > PARALLEL_HEADING_DOT
+}
+
+/**
+ * The displacement ceiling one chain may use at a sample, from the clearance to its competitors.
+ * Both sides of a corridor may spend half the slack beyond the corridor width, so measuring the
+ * ceiling against raw geometry keeps every reference at least one corridor from its neighbors.
+ */
+export function clearanceCeiling(
+  clearance: number,
+  settings: TerrainContourSettings,
+  maximum: number,
+): number {
+  return Math.max(0, Math.min(maximum, (clearance - settings.minimumCorridorCells) / 2))
 }
 
 /**
@@ -150,19 +237,18 @@ function shapeContourChain(
     y: point.y,
     locked: reference.locked[index] === true,
   }))
-  const envelope: TerrainCurveEnvelope = (rawX, rawY, sourceOffset) => {
-    const clearance = clearanceAt(
-      clearanceIndex,
-      chain,
-      { x: rawX, y: rawY },
-      sourceOffset,
-      settings.minimumCorridorCells * 2,
+  const envelope: TerrainCurveEnvelope = (rawX, rawY, sourceOffset) =>
+    clearanceCeiling(
+      clearanceAt(
+        clearanceIndex,
+        chain,
+        { x: rawX, y: rawY },
+        sourceOffset,
+        settings.minimumCorridorCells * 2,
+      ),
+      settings,
+      settings.maxDeviationCells,
     )
-    return Math.max(
-      0,
-      Math.min(settings.maxDeviationCells, (clearance - settings.minimumCorridorCells) / 2),
-    )
-  }
   const shaped = shapeTerrainCurve(
     source,
     chain.closed,
@@ -370,6 +456,39 @@ function nearbyRawSegments(
     }
   }
   return [...segments]
+}
+
+/**
+ * Build the reference of every chain, bounding how far each may leave its raw boundary by the
+ * clearance to its competitors. Measuring that bound against raw geometry, before any reference
+ * moves, is what keeps two references a corridor apart without a settling pass.
+ */
+export function buildContourReferences(
+  chains: readonly WorkingChain[],
+  settings: TerrainContourSettings,
+  layoutHash: number,
+): void {
+  const rawIndex = buildRawClearanceIndex(chains)
+  for (const chain of chains) {
+    chain.reference = buildContourReference(
+      chain,
+      settings.junctionTangentCells,
+      layoutHash,
+      (point, rawOffset) =>
+        clearanceCeiling(
+          clearanceAt(
+            rawIndex,
+            chain,
+            point,
+            rawOffset,
+            settings.minimumCorridorCells * 2,
+            rawHeadingAt(chain, rawOffset),
+          ),
+          settings,
+          MAX_REFERENCE_DRIFT_CELLS,
+        ),
+    )
+  }
 }
 
 /** Shape every chain after references and the global clearance index have been built. */

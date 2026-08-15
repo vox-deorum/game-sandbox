@@ -1,16 +1,23 @@
 /**
- * Corner-cut reference geometry for terrain contours. The raw boundary polylines trace unit cell
- * edges, so every free corner is a right angle on the integer grid. Shaping and validation measure
- * deviation against this reference instead of that staircase: each free corner is replaced by a
- * chord cut at a deterministically jittered fraction of its incident edges, which turns one-cell
- * stairs into clean diagonals before any smoothing runs. Locked geometry keeps its raw shape, so
- * chains still meet their junctions exactly.
+ * Reference geometry for terrain contours. The raw boundary polylines trace unit cell edges, so a
+ * boundary that really runs at a shallow angle arrives quantized into stair runs of whatever length
+ * that angle implies. Shaping and validation measure deviation against this reference instead, a
+ * heavily smoothed copy of the raw boundary held within a fixed drift of it: that recovers the line
+ * the stairs quantize at every run length, where corner treatment alone only reshapes the corners.
+ * Locked geometry keeps its raw shape, so chains still meet their junctions exactly.
  */
 
-import { distance, hashUnit, stableHashParts } from '@renderers/base/math.js'
+import { distance, stableHashParts } from '@renderers/base/math.js'
 
+import { shapeTerrainCurve } from './terrain-curves.js'
 import { EPSILON, required } from './terrain-helpers.js'
-import type { ContourCoordinate, ContourReference, TerrainContourSpan } from './types.js'
+import type {
+  ContourCoordinate,
+  ContourReference,
+  TerrainContourSpan,
+  TerrainCurveProfile,
+  TerrainCurveSourcePoint,
+} from './types.js'
 
 /** A closed raw-arc interval used for locks and shoreline treatment. */
 export interface OffsetInterval {
@@ -35,20 +42,22 @@ export interface ReferenceSegment {
 }
 
 /**
- * Corner cuts land between these fractions of each incident edge. The spread supplies the
- * deterministic non-uniformity that octave noise cannot add inside tight corridors, and the upper
- * bound keeps the two cuts that share one edge strictly apart.
+ * How far the reference may leave the raw boundary. A quantized straight run sits at most half a
+ * step from the line it approximates, so this never binds on a staircase; it bounds how much shape
+ * a genuinely sharp feature, such as a one-cell inlet, may lose.
  */
-const CORNER_CUT_MIN_FRACTION = 0.32
-const CORNER_CUT_MAX_FRACTION = 0.48
+export const MAX_REFERENCE_DRIFT_CELLS = 0.55
 
-/** Margin that keeps cut chords strictly clear of locked geometry and its lock vertices. */
-const CUT_PROTECTION_MARGIN = 1e-6
-
-interface ReferenceVertex {
-  readonly x: number
-  readonly y: number
-  readonly rawOffset: number
+/**
+ * Coarse samples and a wide smoothing radius, since the reference only has to carry run-scale
+ * shape: the radius is `spacing * sqrt(passes / 2)`, so 2.5 cells here, which flattens stair runs
+ * well past the longest a shallow bank produces. The reference stays a plain low-pass of the raw
+ * boundary; the organic waver belongs to the shaping octaves, which ride on top of it.
+ */
+const REFERENCE_PROFILE: TerrainCurveProfile = {
+  sampleSpacingCells: 0.5,
+  smoothingPasses: 50,
+  octaves: [],
 }
 
 /** Return the mutable reference slot of a working chain or fail loudly. */
@@ -56,134 +65,140 @@ export function referenceOf(chain: { readonly reference?: ContourReference }): C
   return required(chain.reference, 'Terrain contour chain has no reference geometry.')
 }
 
-/** Build the corner-cut reference polyline for one chain. */
+/**
+ * Build the smoothed reference polyline for one chain. The curve engine resamples by raw arc
+ * length and pins locked samples onto the raw boundary, so its own output offsets are the raw
+ * offsets this reference reports.
+ */
 export function buildContourReference(
   chain: ReferenceSourceChain,
   junctionTangentCells: number,
   layoutHash: number,
+  driftLimit: (point: ContourCoordinate, rawOffset: number) => number,
 ): ContourReference {
   const { rawPoints, spans, rawLength, closed } = chain
   const fixed = spans
     .filter((span) => span.fixed)
     .map((span) => ({ startOffset: span.startOffset, endOffset: span.endOffset }))
     .sort((first, second) => first.startOffset - second.startOffset)
-  const protectedIntervals: OffsetInterval[] = fixed.map((interval) => ({
-    startOffset: interval.startOffset - junctionTangentCells - CUT_PROTECTION_MARGIN,
-    endOffset: interval.endOffset + junctionTangentCells + CUT_PROTECTION_MARGIN,
-  }))
-  if (!closed) {
-    protectedIntervals.push(
-      { startOffset: -1, endOffset: junctionTangentCells + CUT_PROTECTION_MARGIN },
-      { startOffset: rawLength - junctionTangentCells - CUT_PROTECTION_MARGIN, endOffset: rawLength + 1 },
-    )
-  }
+  const lockedAt = (offset: number): boolean =>
+    offsetLocked(offset, fixed, rawLength, closed, junctionTangentCells)
 
-  const vertexCount = closed ? spans.length : rawPoints.length
-  const vertices: ReferenceVertex[] = []
-  for (let index = 0; index < vertexCount; index += 1) {
-    const vertex = required(rawPoints[index], 'Terrain contour reference vertex is missing.')
-    const offset = index < spans.length ? spans[index]!.startOffset : rawLength
-    if (!closed && (index === 0 || index === vertexCount - 1)) {
-      vertices.push({ x: vertex.x, y: vertex.y, rawOffset: offset })
-      continue
-    }
-    const beforeIndex = index === 0 ? vertexCount - 1 : index - 1
-    const before = required(rawPoints[beforeIndex], 'Terrain contour reference vertex is missing.')
-    const after = required(rawPoints[index + 1], 'Terrain contour reference vertex is missing.')
-    const lengthBefore =
-      index === 0 ? rawLength - spans[vertexCount - 1]!.startOffset : offset - spans[index - 1]!.startOffset
-    const lengthAfter = (index < spans.length ? spans[index]!.endOffset : rawLength) - offset
-    const cross =
-      ((vertex.x - before.x) * (after.y - vertex.y) - (vertex.y - before.y) * (after.x - vertex.x)) /
-      (lengthBefore * lengthAfter)
-    if (Math.abs(cross) <= EPSILON) {
-      vertices.push({ x: vertex.x, y: vertex.y, rawOffset: offset })
-      continue
-    }
-    const fraction =
-      CORNER_CUT_MIN_FRACTION +
-      hashUnit(stableHashParts('terrain-contour-corner-cut', layoutHash, vertex.x, vertex.y)) *
-        (CORNER_CUT_MAX_FRACTION - CORNER_CUT_MIN_FRACTION)
-    const cutStart = offset - fraction * lengthBefore
-    const cutEnd = offset + fraction * lengthAfter
-    if (overlapsProtected(cutStart, cutEnd, protectedIntervals, rawLength, closed)) {
-      vertices.push({ x: vertex.x, y: vertex.y, rawOffset: offset })
-      continue
-    }
-    const cutBefore = {
-      x: vertex.x + (before.x - vertex.x) * fraction,
-      y: vertex.y + (before.y - vertex.y) * fraction,
-    }
-    const cutAfter = {
-      x: vertex.x + (after.x - vertex.x) * fraction,
-      y: vertex.y + (after.y - vertex.y) * fraction,
-    }
-    if (closed && index === 0) {
-      // The chord across the seam corner spans raw offset zero. Emit the prorated zero point so
-      // raw offsets stay monotone from zero, which downstream seam interpolation relies on.
-      const amount = lengthBefore / (lengthBefore + lengthAfter)
-      vertices.push({
-        x: cutBefore.x + (cutAfter.x - cutBefore.x) * amount,
-        y: cutBefore.y + (cutAfter.y - cutBefore.y) * amount,
-        rawOffset: 0,
-      })
-      vertices.push({ ...cutAfter, rawOffset: cutEnd })
-      vertices.push({ ...cutBefore, rawOffset: rawLength + cutStart })
-      continue
-    }
-    vertices.push({ ...cutBefore, rawOffset: cutStart }, { ...cutAfter, rawOffset: cutEnd })
+  const sourceOffsets = new Map<string, number>()
+  const addSource = (offset: number): void => {
+    const normalized = normalizedOffset(offset, rawLength, closed)
+    sourceOffsets.set(contourOffsetKey(normalized), normalized)
   }
-
-  const present = new Set(vertices.map((vertex) => contourOffsetKey(vertex.rawOffset)))
+  // Sample on the profile's own grid rather than at every raw vertex, so the engine's resampling
+  // lands on these offsets exactly. Carrying the vertices instead would leave the smoothing kernel
+  // working on unevenly spaced points and would strand near-duplicate samples beside them.
+  const spacing = REFERENCE_PROFILE.sampleSpacingCells
+  for (let step = 0; step * spacing < rawLength; step += 1) addSource(step * spacing)
+  if (!closed) addSource(rawLength)
   for (const offset of contourLockOffsets(fixed, rawLength, closed, junctionTangentCells)) {
-    const key = contourOffsetKey(offset)
-    if (present.has(key)) continue
-    present.add(key)
-    vertices.push({ ...rawPointAt(offset, rawPoints, spans, rawLength, closed), rawOffset: offset })
+    addSource(offset)
   }
-  vertices.sort((first, second) => first.rawOffset - second.rawOffset)
+  const source: TerrainCurveSourcePoint[] = [...sourceOffsets.values()]
+    .sort((first, second) => first - second)
+    .map((offset) => ({
+      ...rawPointAt(offset, rawPoints, spans, rawLength, closed),
+      locked: lockedAt(offset),
+    }))
+  // Structures, map borders, and saddle diamonds are locked end to end, so smoothing them would
+  // only pin every sample back onto the boundary they started from. Their reference is the raw
+  // polyline itself, carrying its vertices alone rather than a sampling grid nothing can move.
+  if (source.every((point) => point.locked)) return rawReference(chain)
+
+  const smoothed = shapeTerrainCurve(
+    source,
+    closed,
+    REFERENCE_PROFILE,
+    stableHashParts('terrain-contour-reference', layoutHash),
+    (rawX, rawY, sourceOffset) => driftLimit({ x: rawX, y: rawY }, sourceOffset),
+  )
 
   const points: ContourCoordinate[] = []
   const rawOffsets: number[] = []
   const offsets: number[] = []
+  const locked: boolean[] = []
   let accumulated = 0
-  for (const [index, vertex] of vertices.entries()) {
+  for (const [index, point] of smoothed.entries()) {
+    const anchor = rawPointAt(point.sourceOffset, rawPoints, spans, rawLength, closed)
+    // A locked sample is already pinned onto the raw boundary, so it has no drift to bound.
+    const held = point.locked
+      ? { x: anchor.x, y: anchor.y }
+      : driftLimited(anchor, point, driftLimit(anchor, point.sourceOffset))
     if (index > 0) {
-      const step = distance(vertices[index - 1]!, vertex)
+      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), held)
       if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
       accumulated += step
     }
-    points.push({ x: vertex.x, y: vertex.y })
-    rawOffsets.push(vertex.rawOffset)
+    points.push(held)
+    rawOffsets.push(point.sourceOffset)
+    offsets.push(accumulated)
+    locked.push(point.locked)
+  }
+  const first = required(points[0], 'Terrain contour reference is empty.')
+  const length = closed
+    ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), first)
+    : accumulated
+  return { points, rawOffsets, offsets, length, locked }
+}
+
+/** The reference of a fully locked chain: its own raw polyline, vertex for vertex. */
+function rawReference(chain: ReferenceSourceChain): ContourReference {
+  const { rawPoints, spans, rawLength, closed } = chain
+  // A closed chain repeats its first raw point at the end, where the reference closes implicitly.
+  const points = (closed ? rawPoints.slice(0, -1) : rawPoints).map(({ x, y }) => ({ x, y }))
+  const rawOffsets = spans.map((span) => span.startOffset)
+  if (!closed) rawOffsets.push(rawLength)
+  return withReferencePoints(
+    { points, rawOffsets, offsets: [], length: 0, locked: points.map(() => true) },
+    points,
+    closed,
+  )
+}
+
+/** Rebuild a reference around moved points, keeping their raw offsets and lock flags. */
+export function withReferencePoints(
+  reference: ContourReference,
+  points: readonly ContourCoordinate[],
+  closed: boolean,
+): ContourReference {
+  const offsets: number[] = []
+  let accumulated = 0
+  for (const [index, point] of points.entries()) {
+    if (index > 0) {
+      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), point)
+      if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
+      accumulated += step
+    }
     offsets.push(accumulated)
   }
-  const length = closed
-    ? accumulated + distance(required(vertices.at(-1), 'Terrain contour reference is empty.'), vertices[0]!)
-    : accumulated
+  const first = required(points[0], 'Terrain contour reference is empty.')
   return {
-    points,
-    rawOffsets,
+    ...reference,
+    points: points.map(({ x, y }) => ({ x, y })),
     offsets,
-    length,
-    locked: rawOffsets.map((offset) =>
-      offsetLocked(offset, fixed, rawLength, closed, junctionTangentCells),
-    ),
+    length: closed
+      ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), first)
+      : accumulated,
   }
 }
 
-function overlapsProtected(
-  start: number,
-  end: number,
-  intervals: readonly OffsetInterval[],
-  rawLength: number,
-  closed: boolean,
-): boolean {
-  const overlaps = (shift: number): boolean =>
-    intervals.some(
-      (interval) => start + shift <= interval.endOffset && interval.startOffset <= end + shift,
-    )
-  if (overlaps(0)) return true
-  return closed && (overlaps(rawLength) || overlaps(-rawLength))
+/** Hold one smoothed point within its drift bound of the raw position it was sampled from. */
+function driftLimited(
+  anchor: ContourCoordinate,
+  point: ContourCoordinate,
+  bound: number,
+): ContourCoordinate {
+  const drift = distance(anchor, point)
+  if (drift <= bound) return { x: point.x, y: point.y }
+  const scale = drift <= EPSILON ? 0 : bound / drift
+  return {
+    x: anchor.x + (point.x - anchor.x) * scale,
+    y: anchor.y + (point.y - anchor.y) * scale,
+  }
 }
 
 /** Number of reference segments, including the seam segment of a closed chain. */
@@ -292,6 +307,24 @@ export function referencePointAtRawOffset(
   const start = reference.points[lower]!
   const end = reference.points[(lower + 1) % reference.points.length]!
   return { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount }
+}
+
+/** The unit heading of the raw boundary at one raw offset. */
+export function rawHeadingAt(chain: ReferenceSourceChain, offset: number): ContourCoordinate {
+  const normalized = normalizedOffset(offset, chain.rawLength, chain.closed)
+  let lower = 0
+  let upper = chain.spans.length
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (chain.spans[middle]!.endOffset > normalized + EPSILON) upper = middle
+    else lower = middle + 1
+  }
+  const index = Math.min(lower, chain.spans.length - 1)
+  const start = required(chain.rawPoints[index], 'Terrain heading segment is missing.')
+  const end = required(chain.rawPoints[index + 1], 'Terrain heading segment is missing.')
+  const length = distance(start, end)
+  if (length <= EPSILON) return { x: 0, y: 0 }
+  return { x: (end.x - start.x) / length, y: (end.y - start.y) / length }
 }
 
 /** Normalize one arc offset into a closed chain's period or clamp it to an open chain. */

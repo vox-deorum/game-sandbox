@@ -29,7 +29,7 @@ const APPROVED_PALETTE = {
 
 const LAND_CURVE = {
   sampleSpacingCells: 0.25,
-  smoothingPasses: 16,
+  smoothingPasses: 8,
   octaves: [
     { wavelengthCells: 8, amplitudeCells: 0.28 },
     { wavelengthCells: 3, amplitudeCells: 0.12 },
@@ -39,7 +39,7 @@ const LAND_CURVE = {
 
 const WATER_CURVE = {
   sampleSpacingCells: 0.2,
-  smoothingPasses: 24,
+  smoothingPasses: 10,
   octaves: [
     { wavelengthCells: 11, amplitudeCells: 0.34 },
     { wavelengthCells: 4, amplitudeCells: 0.14 },
