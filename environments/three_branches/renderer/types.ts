@@ -339,8 +339,6 @@ export interface TerrainContourSettings {
    * one-cell staircase band as a diagonal band of that natural width.
    */
   readonly minimumCorridorCells: number
-  /** Radius used to route ambiguous two-material saddles, in cells. */
-  readonly saddleRadiusCells: number
 }
 
 /** One authored cell that contributes provenance to a contour side. */
@@ -377,8 +375,6 @@ export interface TerrainContourSpan {
   readonly right: TerrainContourSide
   /** Whether the source geometry must stay fixed. */
   readonly fixed: boolean
-  /** Whether the span passes through a resolved saddle. */
-  readonly saddle: boolean
   /** Whether the span separates water from land. */
   readonly shoreline: boolean
   /** Whether a bridge suppresses seam drawing on the span. */
@@ -475,20 +471,6 @@ export interface TerrainContourComponent {
   readonly holeRingIds: readonly string[]
 }
 
-/** Deterministic routing choice for an ambiguous contour saddle. */
-export interface TerrainSaddle {
-  /** Saddle center x coordinate measured in cells. */
-  readonly x: number
-  /** Saddle center y coordinate measured in cells. */
-  readonly y: number
-  /** Materials competing at the saddle. */
-  readonly materials: readonly [string, string]
-  /** Material whose diagonal remains connected. */
-  readonly winner: string
-  /** Rounded saddle-routing radius measured in cells. */
-  readonly radius: number
-}
-
 /** Complete deterministic contour plan for one terrain grid. */
 export interface TerrainContourPlan {
   /** Grid width measured in cells. */
@@ -501,8 +483,6 @@ export interface TerrainContourPlan {
   readonly rings: readonly TerrainContourRing[]
   /** Connected material components. */
   readonly components: readonly TerrainContourComponent[]
-  /** Resolved ambiguous saddles. */
-  readonly saddles: readonly TerrainSaddle[]
 }
 
 /** Route family that owns a guide or bridge component. */

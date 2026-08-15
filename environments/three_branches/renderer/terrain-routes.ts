@@ -2,7 +2,11 @@ import { buildBridgeComponents } from './terrain-route-bridges.js'
 import { buildCells, cellCoordinate, validateInputs } from './terrain-route-grid.js'
 import { buildPathConnectors, buildPathGuides } from './terrain-route-paths.js'
 import { buildRoadGuide } from './terrain-route-road.js'
-import { propagateVisualSubstrate, replaceRouteCells } from './terrain-route-substrate.js'
+import {
+  normalizeDiagonalTouches,
+  propagateVisualSubstrate,
+  replaceRouteCells,
+} from './terrain-route-substrate.js'
 import { cellKey } from './terrain-helpers.js'
 
 import type {
@@ -49,7 +53,12 @@ export function planTerrainRoutes(
   }
 
   const visualSubstrate = propagateVisualSubstrate(cells, width, height)
-  const visualRows = replaceRouteCells(rows, visualSubstrate)
+  // The substrate records keep the provenance of the cell they replaced, so a cell the following
+  // pass rewrites no longer matches its record. Only diagnostics read that provenance.
+  const visualRows = normalizeDiagonalTouches(
+    replaceRouteCells(rows, visualSubstrate),
+    groundNameForCode,
+  )
   const roadMaskCells = cells
     .filter(
       (cell) =>

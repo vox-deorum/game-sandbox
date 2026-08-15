@@ -1,10 +1,9 @@
 import { shapeTerrainCurve } from './terrain-curves.js'
-import { cellAt, compareCells, connectedComponents, terrainVariant } from './terrain-helpers.js'
+import { connectedComponents } from './terrain-helpers.js'
 import type {
   TerrainContourCell,
   TerrainContourSettings,
   TerrainCurveSourcePoint,
-  TerrainSaddle,
 } from './types.js'
 /** The material outside the authored grid. It closes every map-edge face. */
 export const TERRAIN_EXTERIOR = '__exterior__'
@@ -17,11 +16,6 @@ export const FIXED_MATERIALS = new Set(['interior', 'doorway', 'wall', TERRAIN_E
 /** A semantic map cell with a stable grid index. */
 export interface CellRecord extends TerrainContourCell {
   readonly index: number
-}
-
-/** A deterministic resolution of an ambiguous four-cell saddle. */
-export interface SaddleRecord extends TerrainSaddle {
-  readonly winnerCells: readonly CellRecord[]
 }
 
 /** A connected material component while contour planning is in progress. */
@@ -63,9 +57,6 @@ export function validateInputs(
   }
   if (!(settings.minimumCorridorCells >= 0.7 && settings.minimumCorridorCells <= 1)) {
     throw new Error('Contour minimum corridor must be between 0.70 and one cell.')
-  }
-  if (!(settings.saddleRadiusCells > 0 && settings.saddleRadiusCells <= 0.08)) {
-    throw new Error('Contour saddle radius must be greater than zero and at most 0.08 cell.')
   }
   if (!Number.isFinite(bridgeTaperCells) || bridgeTaperCells < 0 || bridgeTaperCells > 1) {
     throw new Error('Bridge shoreline taper must be between zero and one cell.')
@@ -122,45 +113,8 @@ export function buildCells(
   return cells
 }
 
-export function findSaddles(
-  cells: readonly CellRecord[],
-  width: number,
-  height: number,
-  radius: number,
-): SaddleRecord[] {
-  const saddles: SaddleRecord[] = []
-  for (let y = 1; y < height; y += 1) {
-    for (let x = 1; x < width; x += 1) {
-      const northWest = cellAt(cells, width, height, x - 1, y - 1)!
-      const northEast = cellAt(cells, width, height, x, y - 1)!
-      const southEast = cellAt(cells, width, height, x, y)!
-      const southWest = cellAt(cells, width, height, x - 1, y)!
-      if (
-        northWest.material !== southEast.material ||
-        northEast.material !== southWest.material ||
-        northWest.material === northEast.material
-      ) {
-        continue
-      }
-      const materials = [northWest.material, northEast.material].sort() as [string, string]
-      const winner = materials[terrainVariant(2, 'terrain-saddle', x, y, ...materials)]!
-      const winnerCells =
-        winner === northWest.material ? [northWest, southEast] : [northEast, southWest]
-      saddles.push({ x, y, materials, winner, radius, winnerCells })
-    }
-  }
-  return saddles
-}
-
-export function buildComponents(
-  cells: readonly CellRecord[],
-  saddles: readonly SaddleRecord[],
-): ComponentRecord[] {
-  const groups = connectedComponents(
-    cells,
-    (first, second) => first.material === second.material,
-    saddles.map(({ winnerCells }) => [winnerCells[0]!, winnerCells[1]!] as const),
-  )
+export function buildComponents(cells: readonly CellRecord[]): ComponentRecord[] {
+  const groups = connectedComponents(cells, (first, second) => first.material === second.material)
   const records: ComponentRecord[] = groups.map((ordered) => {
     const first = ordered[0]!
     return {

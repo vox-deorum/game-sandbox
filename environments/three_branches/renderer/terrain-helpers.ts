@@ -61,21 +61,12 @@ export function cellAt<Cell>(
   return cells[row * width + column]
 }
 
-/** Group grid cells through matching cardinal neighbors and optional extra links. */
+/** Group grid cells through matching cardinal neighbors. */
 export function connectedComponents<Cell extends GridCell>(
   cells: readonly Cell[],
   connected: (first: Cell, second: Cell) => boolean,
-  extraLinks: readonly (readonly [Cell, Cell])[] = [],
 ): Cell[][] {
   const byKey = new Map(cells.map((cell) => [cellKey(cell.column, cell.row), cell]))
-  const extras = new Map<string, string[]>()
-  for (const [first, second] of extraLinks) {
-    const firstKey = cellKey(first.column, first.row)
-    const secondKey = cellKey(second.column, second.row)
-    extras.set(firstKey, [...(extras.get(firstKey) ?? []), secondKey])
-    extras.set(secondKey, [...(extras.get(secondKey) ?? []), firstKey])
-  }
-
   const visited = new Set<string>()
   const components: Cell[][] = []
   for (const start of [...cells].sort(compareCells)) {
@@ -87,11 +78,8 @@ export function connectedComponents<Cell extends GridCell>(
     for (let index = 0; index < queue.length; index += 1) {
       const cell = queue[index]!
       component.push(cell)
-      const keys = [
-        ...CARDINAL_OFFSETS.map(([dx, dy]) => cellKey(cell.column + dx, cell.row + dy)),
-        ...(extras.get(cellKey(cell.column, cell.row)) ?? []),
-      ]
-      for (const key of keys) {
+      for (const [dx, dy] of CARDINAL_OFFSETS) {
+        const key = cellKey(cell.column + dx, cell.row + dy)
         const neighbor = byKey.get(key)
         if (neighbor === undefined || visited.has(key) || !connected(cell, neighbor)) continue
         visited.add(key)

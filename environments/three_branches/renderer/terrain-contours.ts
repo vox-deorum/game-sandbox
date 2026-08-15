@@ -1,11 +1,6 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
-import {
-  buildCells,
-  buildComponents,
-  findSaddles,
-  validateInputs,
-} from './terrain-contour-grid.js'
+import { buildCells, buildComponents, validateInputs } from './terrain-contour-grid.js'
 import { buildChains, buildGraph } from './terrain-contour-graph.js'
 import { referenceOf } from './terrain-contour-reference.js'
 import {
@@ -39,14 +34,13 @@ export function planTerrainContours(
   const { width, height } = validateInputs(rows, groundNameForCode, settings, bridgeTaperCells)
   const layoutHash = stableHashParts('terrain-layout', width, height, rows.join('\n'))
   const cells = buildCells(rows, groundNameForCode, width, height)
-  const saddles = findSaddles(cells, width, height, settings.saddleRadiusCells)
-  const componentRecords = buildComponents(cells, saddles)
+  const componentRecords = buildComponents(cells)
   const componentKeyForCell = new Map<number, string>()
   for (const component of componentRecords) {
     for (const cell of component.cells) componentKeyForCell.set(cell.index, component.key)
   }
 
-  const graph = buildGraph(cells, width, height, saddles, componentKeyForCell)
+  const graph = buildGraph(cells, width, height, componentKeyForCell)
   const workingChains = buildChains(graph.nodes, graph.segments)
   buildContourReferences(workingChains, settings, layoutHash)
   const clearanceIndex = buildClearanceIndex(workingChains)
@@ -90,6 +84,5 @@ export function planTerrainContours(
       outerRingId: component.outerRingId,
       holeRingIds: component.holeRingIds,
     })),
-    saddles: saddles.map(({ winnerCells: _winnerCells, ...saddle }) => saddle),
   }
 }

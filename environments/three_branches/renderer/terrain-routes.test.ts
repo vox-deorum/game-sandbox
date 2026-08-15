@@ -4,6 +4,7 @@ import {
   DEFAULT_TERRAIN_ROUTE_SETTINGS,
   planTerrainRoutes,
 } from './terrain-routes.js'
+import { normalizeDiagonalTouches } from './terrain-route-substrate.js'
 import { roadMaskWidthAt } from './terrain-route-road.js'
 import type { TerrainRoadGuidePoint, TerrainRouteSettings } from './types.js'
 
@@ -43,6 +44,82 @@ const NO_NOISE_SETTINGS: TerrainRouteSettings = {
     curve: { ...SETTINGS.path.curve, octaves: [] },
   },
 }
+
+/** Every corner where one material touches itself only diagonally, which must be none. */
+function diagonalTouches(
+  rows: readonly string[],
+  names: Readonly<Record<string, string>> = NAMES,
+): string[] {
+  const natural = new Set(['ground', 'field', 'reeds', 'water'])
+  const materialAt = (column: number, row: number): string | undefined => {
+    const code = rows[row]?.[column]
+    return code === undefined ? undefined : names[code as keyof typeof names]
+  }
+  const found: string[] = []
+  for (let row = 1; row < rows.length; row += 1) {
+    for (let column = 1; column < (rows[row]?.length ?? 0); column += 1) {
+      const corners = [
+        materialAt(column - 1, row - 1),
+        materialAt(column, row - 1),
+        materialAt(column, row),
+        materialAt(column - 1, row),
+      ]
+      if (!corners.every((material) => material !== undefined && natural.has(material))) continue
+      const [northWest, northEast, southEast, southWest] = corners as [
+        string,
+        string,
+        string,
+        string,
+      ]
+      if (northWest === southEast && northWest !== northEast && northWest !== southWest) {
+        found.push(`${column}:${row}`)
+      }
+      if (northEast === southWest && northEast !== northWest && northEast !== southEast) {
+        found.push(`${column}:${row}`)
+      }
+    }
+  }
+  return found
+}
+
+describe('visual grid normalization', () => {
+  it('settles every diagonal-only touch, deterministically and idempotently', () => {
+    const rows = [
+      'ggggeggg',
+      'gggeeggg',
+      'ggeegggg',
+      'geegwwgg',
+      'eegwwggg',
+      'ggwwgggg',
+      'gwwggggg',
+      'wwgggggg',
+    ]
+    expect(diagonalTouches(rows).length).toBeGreaterThan(0)
+    const settled = normalizeDiagonalTouches(rows, NAMES)
+
+    expect(diagonalTouches(settled)).toEqual([])
+    expect(settled).toEqual(normalizeDiagonalTouches(rows, NAMES))
+    expect(normalizeDiagonalTouches(settled, NAMES)).toEqual(settled)
+    expect(settled.map((row) => row.length)).toEqual(rows.map((row) => row.length))
+  })
+
+  it('settles a checkerboard and both single-corner orientations', () => {
+    for (const rows of [
+      ['gwgw', 'wgwg', 'gwgw', 'wgwg'],
+      ['ggg', 'gwg', 'wgg'],
+      ['ggg', 'gwg', 'ggw'],
+    ]) {
+      expect(diagonalTouches(normalizeDiagonalTouches(rows, NAMES))).toEqual([])
+    }
+  })
+
+  it('leaves structures and bridges alone', () => {
+    const rows = ['gix', 'xgi', 'igx']
+    expect(normalizeDiagonalTouches(rows, NAMES)).toEqual(rows)
+    const bridge = ['gwb', 'wbg', 'bgw']
+    expect(normalizeDiagonalTouches(bridge, NAMES)).toEqual(bridge)
+  })
+})
 
 describe('terrain route planner', () => {
   it('propagates the nearest natural substrate through road cells with canonical tie breaks', () => {

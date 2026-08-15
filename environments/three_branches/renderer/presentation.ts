@@ -191,7 +191,6 @@ export interface TerrainContourTreatment {
   junctionTangentCells: number
   maxDeviationCells: number
   minimumCorridorCells: number
-  saddleRadiusCells: number
 }
 
 /** Watercolor pooling, broken ink lines, and water hatching drawn along natural seams. */
@@ -552,7 +551,6 @@ function contourTreatment(value: unknown, name: string): TerrainContourTreatment
     'junctionTangentCells',
     'maxDeviationCells',
     'minimumCorridorCells',
-    'saddleRadiusCells',
   ])
   const profilesSource = exactRecord(source.profiles, `${name}.profiles`, ['land', 'water'])
   return {
@@ -579,12 +577,6 @@ function contourTreatment(value: unknown, name: string): TerrainContourTreatment
       0.7,
       1,
       true,
-    ),
-    saddleRadiusCells: boundedNumber(
-      source.saddleRadiusCells,
-      `${name}.saddleRadiusCells`,
-      0,
-      0.08,
     ),
   }
 }

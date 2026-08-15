@@ -64,7 +64,6 @@ const APPROVED_CONTOURS = {
   junctionTangentCells: 0.25,
   maxDeviationCells: 0.6,
   minimumCorridorCells: 0.7,
-  saddleRadiusCells: 0.08,
 } as const
 
 const APPROVED_SEAMS = {
@@ -238,10 +237,6 @@ describe('Hearthside Ink presentation', () => {
     const unsafeCorridor = structuredClone(HEARTHSIDE_STYLE) as any
     unsafeCorridor.terrain.contours.minimumCorridorCells = 0.699
     expect(() => readHearthsideStyle(unsafeCorridor)).toThrow('minimumCorridorCells')
-
-    const excessiveSaddle = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveSaddle.terrain.contours.saddleRadiusCells = 0.081
-    expect(() => readHearthsideStyle(excessiveSaddle)).toThrow('saddleRadiusCells')
 
     const extraSeamKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraSeamKey.terrain.seams.mode = 'bands'

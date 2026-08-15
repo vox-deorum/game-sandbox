@@ -48,17 +48,16 @@ export interface ReferenceSegment {
  */
 export const MAX_REFERENCE_DRIFT_CELLS = 0.55
 
+/** Spacing of the reference samples along the raw boundary, in cells. */
+const REFERENCE_SPACING_CELLS = 1
+
 /**
- * Coarse samples and a wide smoothing radius, since the reference only has to carry run-scale
- * shape: the radius is `spacing * sqrt(passes / 2)`, so 2.5 cells here, which flattens stair runs
- * well past the longest a shallow bank produces. The reference stays a plain low-pass of the raw
- * boundary; the organic waver belongs to the shaping octaves, which ride on top of it.
+ * Half-width of the fitting window in samples, and how many times the fit runs. Repeating a
+ * modest window reaches further than one wide window without the overshoot a wide quadratic
+ * develops on a winding bank.
  */
-const REFERENCE_PROFILE: TerrainCurveProfile = {
-  sampleSpacingCells: 0.5,
-  smoothingPasses: 50,
-  octaves: [],
-}
+const SMOOTH_RADIUS_SAMPLES = 5
+const SMOOTH_ROUNDS = 4
 
 /** Return the mutable reference slot of a working chain or fail loudly. */
 export function referenceOf(chain: { readonly reference?: ContourReference }): ContourReference {
@@ -74,7 +73,6 @@ export function buildContourReference(
   chain: ReferenceSourceChain,
   junctionTangentCells: number,
   layoutHash: number,
-  driftLimit: (point: ContourCoordinate, rawOffset: number) => number,
 ): ContourReference {
   const { rawPoints, spans, rawLength, closed } = chain
   const fixed = spans
@@ -92,7 +90,7 @@ export function buildContourReference(
   // Sample on the profile's own grid rather than at every raw vertex, so the engine's resampling
   // lands on these offsets exactly. Carrying the vertices instead would leave the smoothing kernel
   // working on unevenly spaced points and would strand near-duplicate samples beside them.
-  const spacing = REFERENCE_PROFILE.sampleSpacingCells
+  const spacing = REFERENCE_SPACING_CELLS
   for (let step = 0; step * spacing < rawLength; step += 1) addSource(step * spacing)
   if (!closed) addSource(rawLength)
   for (const offset of contourLockOffsets(fixed, rawLength, closed, junctionTangentCells)) {
@@ -107,15 +105,10 @@ export function buildContourReference(
   // Structures, map borders, and saddle diamonds are locked end to end, so smoothing them would
   // only pin every sample back onto the boundary they started from. Their reference is the raw
   // polyline itself, carrying its vertices alone rather than a sampling grid nothing can move.
-  if (source.every((point) => point.locked)) return rawReference(chain)
+  const sourceOffsetList = [...sourceOffsets.values()].sort((first, second) => first - second)
+  if (source.every((point) => point.locked)) return rawReference(source, sourceOffsetList, closed)
 
-  const smoothed = shapeTerrainCurve(
-    source,
-    closed,
-    REFERENCE_PROFILE,
-    stableHashParts('terrain-contour-reference', layoutHash),
-    (rawX, rawY, sourceOffset) => driftLimit({ x: rawX, y: rawY }, sourceOffset),
-  )
+  const smoothed = smoothSamples(source, closed)
 
   const points: ContourCoordinate[] = []
   const rawOffsets: number[] = []
@@ -123,20 +116,22 @@ export function buildContourReference(
   const locked: boolean[] = []
   let accumulated = 0
   for (const [index, point] of smoothed.entries()) {
-    const anchor = rawPointAt(point.sourceOffset, rawPoints, spans, rawLength, closed)
-    // A locked sample is already pinned onto the raw boundary, so it has no drift to bound.
-    const held = point.locked
+    const rawOffset = required(sourceOffsetList[index], 'Terrain reference offset is missing.')
+    const anchor = rawPointAt(rawOffset, rawPoints, spans, rawLength, closed)
+    const isLocked = required(source[index], 'Terrain reference sample is missing.').locked
+    // A locked sample stays pinned onto the raw boundary, so it has no drift to bound.
+    const held = isLocked
       ? { x: anchor.x, y: anchor.y }
-      : driftLimited(anchor, point, driftLimit(anchor, point.sourceOffset))
+      : driftLimited(anchor, point, MAX_REFERENCE_DRIFT_CELLS)
     if (index > 0) {
       const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), held)
       if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
       accumulated += step
     }
     points.push(held)
-    rawOffsets.push(point.sourceOffset)
+    rawOffsets.push(rawOffset)
     offsets.push(accumulated)
-    locked.push(point.locked)
+    locked.push(isLocked)
   }
   const first = required(points[0], 'Terrain contour reference is empty.')
   const length = closed
@@ -145,19 +140,76 @@ export function buildContourReference(
   return { points, rawOffsets, offsets, length, locked }
 }
 
-/** The reference of a fully locked chain: its own raw polyline, vertex for vertex. */
-function rawReference(chain: ReferenceSourceChain): ContourReference {
-  const { rawPoints, spans, rawLength, closed } = chain
-  // A closed chain repeats its first raw point at the end, where the reference closes implicitly.
-  const points = (closed ? rawPoints.slice(0, -1) : rawPoints).map(({ x, y }) => ({ x, y }))
-  const rawOffsets = spans.map((span) => span.startOffset)
-  if (!closed) rawOffsets.push(rawLength)
+/**
+ * Low-pass the samples by fitting a quadratic through a window around each one.
+ *
+ * Plain averaging is the wrong tool here, however many times it runs: it pulls every bend toward
+ * its chord, so on a bank that curves it spends the whole drift allowance straightening the arc
+ * rather than the stairs, and the drift clamp then scales back the stair correction along with
+ * it. A quadratic fit reproduces a bend of that shape exactly and removes only what it cannot
+ * follow, which is the quantization rhythm. One window is too short to see past a long stair run,
+ * so the fit repeats: each round reaches further while still reproducing the bend underneath.
+ */
+function smoothSamples(
+  samples: readonly TerrainCurveSourcePoint[],
+  closed: boolean,
+): ContourCoordinate[] {
+  const count = samples.length
+  const radius = Math.min(SMOOTH_RADIUS_SAMPLES, Math.floor((count - 1) / 2))
+  if (radius < 2) return samples.map(({ x, y }) => ({ x, y }))
+  let squares = 0
+  let quads = 0
+  for (let offset = -radius; offset <= radius; offset += 1) {
+    squares += offset * offset
+    quads += offset ** 4
+  }
+  const determinant = (radius * 2 + 1) * quads - squares * squares
+  const weights = Array.from({ length: radius * 2 + 1 }, (_, index) => {
+    const offset = index - radius
+    return (quads - squares * offset * offset) / determinant
+  })
+  let positions = samples.map(({ x, y }) => ({ x, y }))
+  for (let round = 0; round < SMOOTH_ROUNDS; round += 1) {
+    const current = positions
+    positions = current.map((point, index) => {
+      if (required(samples[index], 'Terrain reference sample is missing.').locked) return point
+      let x = 0
+      let y = 0
+      for (let offset = -radius; offset <= radius; offset += 1) {
+        // An open chain reflects at its ends, which keeps the window centred instead of dragging
+        // the last samples toward whichever neighbor happens to exist.
+        const at = closed ? (index + offset + count) % count : reflectIndex(index + offset, count)
+        const neighbor = required(current[at], 'Terrain reference neighbor is missing.')
+        const weight = required(weights[offset + radius], 'Terrain reference weight is missing.')
+        x += neighbor.x * weight
+        y += neighbor.y * weight
+      }
+      return { x, y }
+    })
+  }
+  return positions
+}
+
+function reflectIndex(index: number, count: number): number {
+  if (index < 0) return Math.min(count - 1, -index)
+  if (index >= count) return Math.max(0, count * 2 - 2 - index)
+  return index
+}
+
+/** The reference of a fully locked chain: its own samples, which nothing may move. */
+function rawReference(
+  source: readonly TerrainCurveSourcePoint[],
+  rawOffsets: readonly number[],
+  closed: boolean,
+): ContourReference {
+  const points = source.map(({ x, y }) => ({ x, y }))
   return withReferencePoints(
     { points, rawOffsets, offsets: [], length: 0, locked: points.map(() => true) },
     points,
     closed,
   )
 }
+
 
 /** Rebuild a reference around moved points, keeping their raw offsets and lock flags. */
 export function withReferencePoints(
@@ -307,24 +359,6 @@ export function referencePointAtRawOffset(
   const start = reference.points[lower]!
   const end = reference.points[(lower + 1) % reference.points.length]!
   return { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount }
-}
-
-/** The unit heading of the raw boundary at one raw offset. */
-export function rawHeadingAt(chain: ReferenceSourceChain, offset: number): ContourCoordinate {
-  const normalized = normalizedOffset(offset, chain.rawLength, chain.closed)
-  let lower = 0
-  let upper = chain.spans.length
-  while (lower < upper) {
-    const middle = Math.floor((lower + upper) / 2)
-    if (chain.spans[middle]!.endOffset > normalized + EPSILON) upper = middle
-    else lower = middle + 1
-  }
-  const index = Math.min(lower, chain.spans.length - 1)
-  const start = required(chain.rawPoints[index], 'Terrain heading segment is missing.')
-  const end = required(chain.rawPoints[index + 1], 'Terrain heading segment is missing.')
-  const length = distance(start, end)
-  if (length <= EPSILON) return { x: 0, y: 0 }
-  return { x: (end.x - start.x) / length, y: (end.y - start.y) / length }
 }
 
 /** Normalize one arc offset into a closed chain's period or clamp it to an open chain. */

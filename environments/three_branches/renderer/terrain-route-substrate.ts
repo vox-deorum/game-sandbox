@@ -1,6 +1,13 @@
 import { EIGHT_DIRECTIONS, cellCoordinate } from './terrain-route-grid.js'
 import type { CellRecord } from './terrain-route-grid.js'
-import { cellAt, compareCells, connectedComponents, required } from './terrain-helpers.js'
+import {
+  cellAt,
+  cellKey,
+  compareCells,
+  connectedComponents,
+  required,
+  terrainVariant,
+} from './terrain-helpers.js'
 
 import type { TerrainRoadSubstrateCell } from './types.js'
 
@@ -142,4 +149,126 @@ export function replaceRouteCells(
       cell.sourceCode
   }
   return result.map((row) => row.join(''))
+}
+
+/** Materials whose cells the visual grid may rewrite to remove a diagonal-only touch. */
+const NORMALIZED_MATERIALS = new Set(['ground', 'field', 'reeds', 'water'])
+
+/**
+ * Rewrite the visual grid until no material touches itself only through a cell corner.
+ *
+ * A one-cell reed strip that steps diagonally is drawn as a string of separate beads: cardinal
+ * connectivity makes every fragment its own region, and the corner where two fragments meet is a
+ * junction the contour must pin exactly onto the grid. No amount of curve smoothing reaches that
+ * shape, because the shape really is disconnected. Flipping a single cell per offending corner
+ * either joins the pair edge to edge or parts it cleanly, and the boundary that follows is an
+ * ordinary staircase like any other.
+ *
+ * Each cell may be rewritten once, so the sweep always settles: an overlapping pair of corners
+ * cannot trade the same cell back and forth.
+ */
+export function normalizeDiagonalTouches(
+  rows: readonly string[],
+  groundNameForCode: Readonly<Record<string, string>>,
+): readonly string[] {
+  const grid = rows.map((row) => [...row])
+  const frozen = new Set<string>()
+  const materialAt = (column: number, row: number): string | undefined => {
+    const code = grid[row]?.[column]
+    if (code === undefined) return undefined
+    const semantic = groundNameForCode[code]
+    if (semantic === undefined) throw new Error('Visual grid cell is missing its ground name.')
+    // Bridge cells share the water surface but keep their own fixed deck geometry.
+    return semantic === 'bridge' ? 'bridge' : semantic
+  }
+  const flip = (column: number, row: number, code: string): boolean => {
+    const key = cellKey(column, row)
+    if (frozen.has(key)) return false
+    frozen.add(key)
+    required(grid[row], 'Visual grid row is missing.')[column] = code
+    return true
+  }
+
+  for (let sweep = 0; ; sweep += 1) {
+    if (sweep > rows.length * (rows[0]?.length ?? 0)) {
+      throw new Error('Visual grid normalization did not settle.')
+    }
+    let changed = false
+    for (let row = 1; row < grid.length; row += 1) {
+      for (let column = 1; column < (grid[row]?.length ?? 0); column += 1) {
+        const corners = [
+          { column: column - 1, row: row - 1 },
+          { column, row: row - 1 },
+          { column, row },
+          { column: column - 1, row },
+        ] as const
+        const materials = corners.map((corner) => materialAt(corner.column, corner.row))
+        if (materials.some((material) => material === undefined)) continue
+        if (!materials.every((material) => NORMALIZED_MATERIALS.has(material!))) continue
+        const [northWest, northEast, southEast, southWest] = materials as [
+          string,
+          string,
+          string,
+          string,
+        ]
+        const diagonals =
+          northWest === southEast && northWest !== northEast && northWest !== southWest
+            ? ([0, 2, 1, 3] as const)
+            : northEast === southWest && northEast !== northWest && northEast !== southEast
+              ? ([1, 3, 0, 2] as const)
+              : undefined
+        if (diagonals === undefined) continue
+        if (resolveTouch(grid, corners, diagonals, materials as string[], column, row, flip)) {
+          changed = true
+        }
+      }
+    }
+    if (!changed) break
+  }
+  return grid.map((row) => row.join(''))
+}
+
+/**
+ * Settle one corner touch. A checkerboard keeps the winner the saddle routing used to pick, so an
+ * ambiguous pair still resolves the same way for a given map. Otherwise the touching pair is
+ * joined, preferring to rewrite a cell that is not water so shorelines keep their footprint.
+ */
+function resolveTouch(
+  grid: string[][],
+  corners: readonly { readonly column: number; readonly row: number }[],
+  diagonals: readonly [number, number, number, number],
+  materials: readonly string[],
+  column: number,
+  row: number,
+  flip: (column: number, row: number, code: string) => boolean,
+): boolean {
+  const [firstDiagonal, secondDiagonal, firstOther, secondOther] = diagonals
+  const codeAt = (index: number): string => {
+    const corner = required(corners[index], 'Visual grid corner is missing.')
+    return required(grid[corner.row], 'Visual grid row is missing.')[corner.column]!
+  }
+  const touching = required(materials[firstDiagonal], 'Visual grid corner material is missing.')
+  const otherFirst = required(materials[firstOther], 'Visual grid corner material is missing.')
+  const otherSecond = required(materials[secondOther], 'Visual grid corner material is missing.')
+
+  if (otherFirst === otherSecond) {
+    // Both diagonals touch. Keep the pair the saddle rule used to connect and part the other.
+    const pair = [touching, otherFirst].sort() as [string, string]
+    const winner = pair[terrainVariant(2, 'terrain-saddle', column, row, ...pair)]
+    const losers = winner === touching ? [firstOther, secondOther] : [firstDiagonal, secondDiagonal]
+    const winnerCode = codeAt(winner === touching ? firstDiagonal : firstOther)
+    for (const index of losers) {
+      const corner = required(corners[index], 'Visual grid corner is missing.')
+      if (flip(corner.column, corner.row, winnerCode)) return true
+    }
+    return false
+  }
+
+  const order = otherFirst === 'water' ? [secondOther, firstOther] : [firstOther, secondOther]
+  const joinCode = codeAt(firstDiagonal)
+  for (const index of order) {
+    const corner = required(corners[index], 'Visual grid corner is missing.')
+    if (flip(corner.column, corner.row, joinCode)) return true
+  }
+  return false
 }

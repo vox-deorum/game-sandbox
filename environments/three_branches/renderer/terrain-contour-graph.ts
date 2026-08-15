@@ -11,7 +11,7 @@ import type {
   TerrainShorelineSpan,
   TerrainContourUse,
 } from './types.js'
-import type { CellRecord, SaddleRecord } from './terrain-contour-grid.js'
+import type { CellRecord } from './terrain-contour-grid.js'
 /** A shared contour-graph vertex. */
 export interface GraphNode extends ContourCoordinate {
   readonly id: string
@@ -24,7 +24,6 @@ export interface GraphSegment {
   readonly start: GraphNode
   readonly end: GraphNode
   readonly fixed: boolean
-  readonly saddle: boolean
   left: SideRecord
   right: SideRecord
 }
@@ -68,36 +67,22 @@ export function buildGraph(
   cells: readonly CellRecord[],
   width: number,
   height: number,
-  saddles: readonly SaddleRecord[],
   componentKeyForCell: ReadonlyMap<number, string>,
 ): { nodes: readonly GraphNode[]; segments: readonly GraphSegment[] } {
   const nodes = new Map<string, GraphNode>()
   const segments: GraphSegment[] = []
-  const saddleAt = new Map(saddles.map((saddle) => [`${saddle.x}:${saddle.y}`, saddle]))
 
-  const node = (id: string, x: number, y: number): GraphNode => {
+  const node = (x: number, y: number): GraphNode => {
+    const id = `v:${x}:${y}`
     const existing = nodes.get(id)
     if (existing !== undefined) return existing
     const created = { id, x, y, segments: [] }
     nodes.set(id, created)
     return created
   }
-  const endpoint = (x: number, y: number, direction: 'N' | 'E' | 'S' | 'W'): GraphNode => {
-    const saddle = saddleAt.get(`${x}:${y}`)
-    if (saddle === undefined) return node(`v:${x}:${y}`, x, y)
-    const offsets = {
-      N: [0, -saddle.radius],
-      E: [saddle.radius, 0],
-      S: [0, saddle.radius],
-      W: [-saddle.radius, 0],
-    } as const
-    const [dx, dy] = offsets[direction]
-    return node(`s:${x}:${y}:${direction}`, x + dx, y + dy)
-  }
   const addSegment = (
     start: GraphNode,
     end: GraphNode,
-    saddle: boolean,
     leftCells: readonly CellRecord[],
     rightCells: readonly CellRecord[],
   ): void => {
@@ -109,12 +94,11 @@ export function buildGraph(
       throw new Error('Terrain contour source edge does not separate two materials.')
     }
     const fixed =
-      saddle ||
       FIXED_MATERIALS.has(left.material) ||
       FIXED_MATERIALS.has(right.material) ||
       left.semantics.includes('bridge') ||
       right.semantics.includes('bridge')
-    const segment = { id: segments.length, start, end, fixed, saddle, left, right }
+    const segment = { id: segments.length, start, end, fixed, left, right }
     segments.push(segment)
     start.segments.push(segment.id)
     end.segments.push(segment.id)
@@ -126,9 +110,8 @@ export function buildGraph(
       const south = cellAt(cells, width, height, x, y)
       if ((north?.material ?? TERRAIN_EXTERIOR) !== (south?.material ?? TERRAIN_EXTERIOR)) {
         addSegment(
-          endpoint(x, y, 'E'),
-          endpoint(x + 1, y, 'W'),
-          false,
+          node(x, y),
+          node(x + 1, y),
           south === undefined ? [] : [south],
           north === undefined ? [] : [north],
         )
@@ -141,30 +124,12 @@ export function buildGraph(
       const east = cellAt(cells, width, height, x, y)
       if ((west?.material ?? TERRAIN_EXTERIOR) !== (east?.material ?? TERRAIN_EXTERIOR)) {
         addSegment(
-          endpoint(x, y, 'S'),
-          endpoint(x, y + 1, 'N'),
-          false,
+          node(x, y),
+          node(x, y + 1),
           west === undefined ? [] : [west],
           east === undefined ? [] : [east],
         )
       }
-    }
-  }
-  for (const saddle of saddles) {
-    const north = endpoint(saddle.x, saddle.y, 'N')
-    const east = endpoint(saddle.x, saddle.y, 'E')
-    const south = endpoint(saddle.x, saddle.y, 'S')
-    const west = endpoint(saddle.x, saddle.y, 'W')
-    const northWest = cellAt(cells, width, height, saddle.x - 1, saddle.y - 1)!
-    const northEast = cellAt(cells, width, height, saddle.x, saddle.y - 1)!
-    const southEast = cellAt(cells, width, height, saddle.x, saddle.y)!
-    const southWest = cellAt(cells, width, height, saddle.x - 1, saddle.y)!
-    if (saddle.winner === northWest.material) {
-      addSegment(north, east, true, saddle.winnerCells, [northEast])
-      addSegment(south, west, true, saddle.winnerCells, [southWest])
-    } else {
-      addSegment(west, north, true, saddle.winnerCells, [northWest])
-      addSegment(east, south, true, saddle.winnerCells, [southEast])
     }
   }
 
@@ -358,7 +323,6 @@ function finishChain(
       left,
       right,
       fixed: atom.segment.fixed,
-      saddle: atom.segment.saddle,
       shoreline,
       bridgeSuppressed: shoreline && (water?.semantics.includes('bridge') ?? false),
     })

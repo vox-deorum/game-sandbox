@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE } from './presentation.js'
 import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
+import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
 import type {
   ContourCoordinate,
   TerrainContourChain,
@@ -48,7 +49,6 @@ const settings: TerrainContourSettings = {
   junctionTangentCells: 0.25,
   maxDeviationCells: 0.6,
   minimumCorridorCells: 0.7,
-  saddleRadiusCells: 0.08,
 }
 
 interface ContourTestOverrides extends Omit<Partial<TerrainContourSettings>, 'profiles'> {
@@ -287,42 +287,23 @@ describe('continuous terrain contour planning', () => {
     expect(plan(rows)).toEqual(plan(rows))
   })
 
-  it('resolves both AB/BA saddle orientations through one deterministic centered diamond', () => {
+  it('plans a corner-touching grid as separate components without special routing', () => {
+    // The visual grid is normalized upstream, so a corner touch only reaches contour planning
+    // through a direct call. It stays four cardinal components and still closes cleanly.
     for (const rows of [
       ['gw', 'wg'],
       ['wg', 'gw'],
     ]) {
       const result = plan(rows)
-      const saddle = result.saddles[0]!
-      expect(result.saddles).toHaveLength(1)
-      expect(saddle.materials).toEqual(['ground', 'water'])
-      expect(['ground', 'water']).toContain(saddle.winner)
-      const portals = new Set(
-        result.chains
-          .flatMap((chain) => chain.rawPoints)
-          .filter(
-            (point) =>
-              Math.abs(Math.abs(point.x - 1) + Math.abs(point.y - 1) - settings.saddleRadiusCells) <
-              1e-9,
-          )
-          .map((point) => `${point.x}:${point.y}`),
-      )
-      expect(portals).toEqual(new Set(['1:0.92', '1.08:1', '1:1.08', '0.92:1']))
-      const saddleSpans = result.chains
-        .flatMap((chain) => chain.spans)
-        .filter((span) => span.saddle)
-      expect(saddleSpans).toHaveLength(2)
-      expect(saddleSpans.every((span) => span.fixed)).toBe(true)
+      expect(result.components.filter((candidate) => !candidate.exterior)).toHaveLength(4)
+      expect(result.chains.every((chain) => chain.rawPoints.length > 1)).toBe(true)
       expect(
-        result.components.filter(
-          (candidate) => candidate.material === saddle.winner && !candidate.exterior,
+        result.rings.every(
+          (ring) =>
+            ring.points[0]?.x === ring.points.at(-1)?.x &&
+            ring.points[0]?.y === ring.points.at(-1)?.y,
         ),
-      ).toHaveLength(1)
-      expect(
-        result.components.filter(
-          (candidate) => candidate.material !== saddle.winner && !candidate.exterior,
-        ),
-      ).toHaveLength(2)
+      ).toBe(true)
     }
   })
 
@@ -383,6 +364,51 @@ describe('continuous terrain contour planning', () => {
     expect(emittedVertices.length).toBeLessThan(ordinaryVertices.length / 2)
     expect(contourCadence(shapedSamples)).toBeLessThan(contourCadence(rawSamples) / 2)
     expect(contourCurvature(shapedSamples)).toBeLessThan(contourCurvature(rawSamples) / 2)
+  })
+
+  it('draws a diagonally stepping reed band as one unbroken ribbon', () => {
+    // A one-wide band that steps diagonally used to touch itself only at cell corners: cardinal
+    // connectivity split it into beads, and every touch corner became a pinned junction. The
+    // normalized visual grid joins it edge to edge, in both diagonal orientations.
+    for (const descending of [true, false]) {
+      const height = 18
+      const width = 26
+      const rows = Array.from({ length: height }, (_, row) => {
+        const step = descending ? row : height - 1 - row
+        return Array.from({ length: width }, (_, column) =>
+          column === 3 + step ? 'e' : column > 3 + step ? 'w' : 'g',
+        ).join('')
+      })
+      const routes = planTerrainRoutes(rows, names, DEFAULT_TERRAIN_ROUTE_SETTINGS)
+      const result = planTerrainContours(
+        routes.visualRows,
+        names,
+        settings,
+        HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
+      )
+      const reeds = result.components.filter((component) => component.material === 'reeds')
+
+      expect(reeds).toHaveLength(1)
+      expect(reeds[0]!.cellCount).toBeGreaterThan(height - 2)
+      for (const chain of result.chains) {
+        if (!chain.materials.includes('reeds')) continue
+        for (let index = 1; index < chain.points.length - 1; index += 1) {
+          const before = chain.points[index - 1]!
+          const point = chain.points[index]!
+          const after = chain.points[index + 1]!
+          if (before.locked || point.locked || after.locked) continue
+          if (
+            Math.hypot(point.x - before.x, point.y - before.y) < 0.02 ||
+            Math.hypot(after.x - point.x, after.y - point.y) < 0.02
+          ) {
+            continue
+          }
+          const firstAngle = Math.atan2(point.y - before.y, point.x - before.x)
+          const secondAngle = Math.atan2(after.y - point.y, after.x - point.x)
+          expect(Math.abs(normalizedAngle(secondAngle - firstAngle))).toBeLessThan(Math.PI / 3)
+        }
+      }
+    }
   })
 
   it('flattens multi-cell stair runs onto the line they quantize', () => {
