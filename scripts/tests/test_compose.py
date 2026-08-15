@@ -105,6 +105,15 @@ def test_composed_launchers_preserve_static_overlay_hooks(tmp_path: Path, monkey
         assert (live_local.ENTRY.overlay_static is not None) is has_overlay_static
 
 
+def test_three_branches_composed_launcher_defaults_player_id_to_the_visitor():
+    """Days at Three Branches declares only the visitor (player_0) as human-playable, so the
+    generated launcher's PLAYER_ID must follow that declaration through discovery and rendering,
+    not merely coincide with the common single-agent default."""
+    out = compose_template("three_branches")
+    rendered = (out / "sandbox" / "env" / "__init__.py").read_text(encoding="utf-8")
+    assert 'PLAYER_ID = "player_0"' in rendered
+
+
 def test_env_layer_wins_over_base():
     out = compose_template("flappy_bird")
     # The env layer's README is the Flappy Bird one, not a base placeholder.

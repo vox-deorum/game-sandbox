@@ -63,12 +63,16 @@ class AgentStep(TypedDict):
 
 
 # ``from`` is a Python keyword, so Message must use the functional TypedDict form.
+# ``recipients`` is the live-only audience annotation for a broadcast the environment bounded:
+# the players the broadcast was delivered to. It appears only on the live stream (so relays can
+# filter a controller's view), never in a recording, and every relay strips it before a browser.
 Message = TypedDict(
     "Message",
     {
         "from": str,
         "to": str | None,  # None means broadcast.
         "text": str,
+        "recipients": NotRequired[list[str]],
     },
 )
 

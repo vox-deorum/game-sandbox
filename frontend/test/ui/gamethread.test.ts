@@ -217,3 +217,49 @@ describe('GameThread', () => {
     expect(screen.getByRole('heading', { name: 'Response' })).toBeInTheDocument()
   })
 })
+
+// Three Branches human play (Days at Three Branches, plan step 6): a watcher or replay viewer's
+// transport carries the complete delivered transcript, unlike the visitor's own pre-filtered feed
+// covered in chatpanel.test.ts, so an NPC-to-NPC direct line the visitor never receives still renders
+// here, named by the environment's playerNames hook (environments/three_branches/renderer/index.ts).
+describe('GameThread — Three Branches human play (step 6)', () => {
+  const NAMES = { player_0: 'visitor', player_1: 'npc_0', player_2: 'npc_1', player_3: 'npc_2' }
+
+  function villageDecisions(): DecisionEntry[] {
+    return [
+      { tick: 10, player: 'player_1', action: 'move' },
+      { tick: 11, player: 'player_0', action: 'move' },
+      { tick: 12, player: 'player_2', action: 'move' },
+      { tick: 13, player: 'player_1', action: 'move' },
+    ]
+  }
+
+  it('renders every delivered line for a watcher or replay, including an NPC-to-NPC direct line, each named', () => {
+    const chat: ChatEntry[] = [
+      { tick: 10, from: 'player_1', to: null, text: 'the well is dry' },
+      { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
+      { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
+      // A line between two NPCs: never delivered to the visitor, but a watcher or replay sees it too.
+      { tick: 13, from: 'player_1', to: 'player_3', text: 'keep an eye on the visitor' },
+    ]
+    const { container } = render(GameThread, {
+      props: { decisions: villageDecisions(), chat, currentTick: 13, playerNames: NAMES },
+    })
+
+    expect(screen.getByText('the well is dry')).toBeInTheDocument()
+    expect(screen.getByText('have you seen the miller?')).toBeInTheDocument()
+    expect(screen.getByText('try the mill')).toBeInTheDocument()
+    expect(screen.getByText('keep an eye on the visitor')).toBeInTheDocument()
+    // The NPC-to-NPC line's badge and both message rows' player cells show display names, not P1/P3.
+    expect(screen.getByText('to npc_2')).toBeInTheDocument()
+
+    const messages = Array.from(container.querySelectorAll('.thread-item--message'))
+    expect(messages).toHaveLength(4)
+    expect(messages.map((row) => row.querySelector('.thread-msg-player')?.textContent)).toEqual([
+      'npc_0',
+      'visitor',
+      'npc_1',
+      'npc_0',
+    ])
+  })
+})

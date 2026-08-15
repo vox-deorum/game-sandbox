@@ -447,6 +447,51 @@ def test_self_companion_plays_a_real_wide_seat_whole(env_id: str, monkeypatch, t
     assert others and all(bindings[player]["kind"] == "builtin-agent" for player in others)  # type: ignore[index]
 
 
+@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
+def test_three_branches_visitor_seat_resolves_to_player_0(plan_key: str, tmp_path: Path):
+    """The visitor seat is seat index 1 in both cast sizes, and player_0 is the only player Days
+    at Three Branches declares as human-capable, so human play there must always reach player_0."""
+    entry = load_environment("three_branches")
+    parameters = play.resolve_cli_parameters(entry, [f"seat_plan={plan_key}"])
+
+    assert play.player_for_seat(entry, 1, parameters) == "player_0"
+
+    config = play.local_config(
+        entry,
+        mode="human",
+        seat=1,
+        seed=0,
+        max_steps=None,
+        parameters=parameters,
+        recording_dir=tmp_path,
+    )
+
+    assert config["player_bindings"]["player_0"] == {"kind": "external"}  # type: ignore[index]
+    assert config["players"]["player_0"] == {"kind": "human", "label": "You"}  # type: ignore[index]
+    assert config["external_chat_player"] == "player_0"
+    cast_players = [player for player in config["player_bindings"] if player != "player_0"]  # type: ignore[operator]
+    assert len(cast_players) == (5 if plan_key == "cast_5" else 10)
+    assert all(config["player_bindings"][player]["name"] == "naive" for player in cast_players)  # type: ignore[index]
+    assert all(config["players"][player]["builtin_name"] == "naive" for player in cast_players)  # type: ignore[index]
+
+
+@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
+def test_default_seat_prefers_the_restricted_visitor_seat_in_human_mode(plan_key: str):
+    """A bare `play.py three_branches` means human play on the visitor seat, matching the template
+    launcher's preference; agent and watch modes keep seat 0, as does an environment with an
+    ordinary human-capable first seat."""
+    entry = load_environment("three_branches")
+    parameters = play.resolve_cli_parameters(entry, [f"seat_plan={plan_key}"])
+    layout = play.default_layout(entry, parameters)
+
+    assert play.default_seat_index(entry, layout, "human") == 1
+    assert play.default_seat_index(entry, layout, "agent") == 0
+    assert play.default_seat_index(entry, layout, "watch") == 0
+
+    flappy = load_environment("flappy_bird")
+    assert play.default_seat_index(flappy, play.default_layout(flappy), "human") == 0
+
+
 def test_skirmish_crane_wide_preset_defaults_the_companion_to_naive(tmp_path: Path):
     entry = load_environment("skirmish_crane")
     parameters = play.resolve_cli_parameters(entry, [], preset="season_6")

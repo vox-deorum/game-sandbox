@@ -3,9 +3,7 @@ import type { Locator } from '@playwright/test'
 import { getSession, startSession, stopSessionAndAwaitFree } from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
-
-const ENV_ID = 'three_branches'
-const INTERNAL_SIZE = { width: 1_200, height: 1_000 }
+import { controlCentre, ENV_ID } from './support.js'
 
 interface CameraProbe {
   zoom: number
@@ -29,27 +27,6 @@ async function readFrameProbe(host: Locator): Promise<FrameProbe> {
   const visitor = await host.getAttribute('data-three-branches-visitor')
   if (tick === null || visitor === null) throw new Error('Three Branches frame probes are missing')
   return { tick, visitor }
-}
-
-/**
- * The browser point at the centre of a chrome control, read from the rectangle the renderer
- * publishes for it. The renderer answers the strip in its own logical coordinates, so the journey
- * converts through the canvas box rather than hunting for a DOM element that does not exist.
- */
-async function controlCentre(
-  host: Locator,
-  probe: string,
-  canvasBox: { x: number; y: number; width: number; height: number },
-): Promise<{ x: number; y: number }> {
-  const rect = (await host.getAttribute(probe))?.split(',').map(Number)
-  if (rect === undefined || rect.length !== 4 || rect.some((value) => !Number.isFinite(value))) {
-    throw new Error(`Three Branches control probe ${probe} is invalid`)
-  }
-  const [x, y, width, height] = rect
-  return {
-    x: canvasBox.x + ((x + width / 2) / INTERNAL_SIZE.width) * canvasBox.width,
-    y: canvasBox.y + ((y + height / 2) / INTERNAL_SIZE.height) * canvasBox.height,
-  }
 }
 
 test('watch Three Branches, inspect its camera and collision, then repeat a replay seek', async ({

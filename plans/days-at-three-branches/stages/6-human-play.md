@@ -1,6 +1,6 @@
 # Step 6: Human play, the visitor
 
-Status: planned.
+Status: in progress.
 
 Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands by implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review both live browser play against a running cast and local play.
 
@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This build-order step puts the visitor seat in
 
 ### Locomotion and expression
 
-Compose pointer and keyboard input into heading and relative speed once per input window. The 250 millisecond cadence is the only move clock.
+Compose pointer and keyboard input into heading and relative speed once per input window. The 250 millisecond cadence is the only move clock. A window whose composition matches the environment default sends nothing; the harness supplies the default action for a silent window, so the result is identical.
 
 Use `ctx.controlledPlayers` as the ownership signal established in step 3. While `player_0` is controlled, visitor movement feeds the existing camera-follow policy. Manual camera gestures suspend follow, and camera reset resumes it. Spectators, replay viewers, and ended sessions never acquire follow through recording attribution alone.
 

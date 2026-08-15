@@ -16,6 +16,8 @@ import type {
   TerrainContourPoint,
   TerrainContourRing,
 } from './terrain-contours.js'
+import { terrainHash } from './terrain-contours.js'
+import type { TerrainBridgeComponent, TerrainRoutePlan } from './terrain-routes.js'
 import type { StaticScene } from './types.js'
 
 const CONTOURED_MATERIALS = ['field', 'reeds', 'water', 'path', 'road'] as const
@@ -36,7 +38,7 @@ export const TERRAIN_LAYER_ORDER = [
 
 type ContouredMaterial = (typeof CONTOURED_MATERIALS)[number]
 
-/** One continuous shoreline stroke. Full-strength spans stay intact at every shared vertex. */
+/** One deterministic visible portion of a broken land-side shoreline treatment. */
 export interface ShorelineStrokeRun {
   readonly points: readonly TerrainContourPoint[]
   readonly alpha: number
@@ -45,6 +47,8 @@ export interface ShorelineStrokeRun {
 
 /** Return the configured composite alpha for one sparse natural material surface. */
 export function materialLayerAlpha(material: ContouredMaterial): number {
+  if (material === 'road') return HEARTHSIDE_STYLE.terrain.routes.road.opacity
+  if (material === 'path') return HEARTHSIDE_STYLE.terrain.routes.path.opacity
   const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
   if (treatment === undefined) {
     throw new Error(`Three Branches presentation has no ${material} terrain fill.`)
@@ -69,21 +73,22 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     art.tileset,
     { cellSize, variant: art.variant },
   )
+  base.view.label = 'terrain-ground'
   owner.addChild(base.view)
   grounds.push(base)
 
-  const addMaskedMaterial = (material: ContouredMaterial): void => {
+  const addMaskedMaterial = (
+    material: Exclude<ContouredMaterial, 'road'>,
+    rows = art.routes.visualRows,
+  ): void => {
     const ground = createSparseTiledGround(
-      materialGridWithHalo(
-        scene.topFirstRows,
-        names,
-        material,
-        sourceCodeForMaterial(scene, material),
-      ),
+      materialGridWithHalo(rows, names, material, sourceCodeForMaterial(scene, material)),
       art.tileset,
       { cellSize, variant: art.variant },
     )
     const mask = contourMask(art.contours, material, cellSize)
+    ground.view.label = `terrain-${material}`
+    mask.label = `terrain-${material}-mask`
     ground.view.alpha = materialLayerAlpha(material)
     ground.view.mask = mask
     owner.addChild(ground.view, mask)
@@ -95,16 +100,45 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   addMaskedMaterial('reeds')
   addMaskedMaterial('water')
   const shoreline = shorelineGraphics(art.contours, cellSize)
-  owner.addChild(shoreline)
-  graphics.push(shoreline)
-  addMaskedMaterial('path')
-  addMaskedMaterial('road')
+  const landMask = landContourMask(art.contours, cellSize)
+  shoreline.label = 'terrain-shoreline'
+  landMask.label = 'terrain-shoreline-land-mask'
+  shoreline.mask = landMask
+  owner.addChild(shoreline, landMask)
+  graphics.push(shoreline, landMask)
+
+  const path = createSparseTiledGround(plannedRouteTextureGrid(art.routes, 'path'), art.tileset, {
+    cellSize,
+    variant: art.variant,
+  })
+  const pathClip = pathGuideMask(art.routes, cellSize)
+  path.view.label = 'terrain-path'
+  pathClip.label = 'terrain-path-mask'
+  path.view.alpha = materialLayerAlpha('path')
+  path.view.mask = pathClip
+  owner.addChild(path.view, pathClip)
+  grounds.push(path)
+  graphics.push(pathClip)
+
+  const road = createSparseTiledGround(plannedRouteTextureGrid(art.routes, 'road'), art.tileset, {
+    cellSize,
+    variant: art.variant,
+  })
+  const roadClip = roadGuideMask(art.routes, cellSize)
+  road.view.label = 'terrain-road'
+  roadClip.label = 'terrain-road-mask'
+  road.view.alpha = art.routes.roadStroke.opacity
+  road.view.mask = roadClip
+  owner.addChild(road.view, roadClip)
+  grounds.push(road)
+  graphics.push(roadClip)
 
   const structures = createSparseTiledGround(
     exactTerrainGrid(scene.topFirstRows, names, STRUCTURE_NAMES),
     art.tileset,
     { cellSize, variant: art.variant },
   )
+  structures.view.label = 'terrain-structures'
   owner.addChild(structures.view)
   grounds.push(structures)
 
@@ -112,8 +146,13 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     cellSize,
     variant: art.variant,
   })
-  owner.addChild(planks.view)
+  const deckClip = bridgeDeckMask(art.routes.bridgeComponents, cellSize)
+  planks.view.label = 'terrain-planks'
+  deckClip.label = 'terrain-planks-mask'
+  planks.view.mask = deckClip
+  owner.addChild(planks.view, deckClip)
   grounds.push(planks)
+  graphics.push(deckClip)
 
   layer.addChild(owner)
   return ownedTerrainView(owner, grounds, graphics, base.span)
@@ -142,7 +181,8 @@ export function materialGridWithHalo(
   for (let row = 0; row < rows.length; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const code = rows[row]?.[column]
-      if (code !== undefined && isMaterial(code)) result[row]![column] = code
+      const target = result[row]
+      if (code !== undefined && target !== undefined && isMaterial(code)) target[column] = code
     }
   }
   for (let row = 0; row < rows.length; row += 1) {
@@ -151,7 +191,8 @@ export function materialGridWithHalo(
       if (code === undefined || !isMaterial(code)) continue
       for (let y = Math.max(0, row - 1); y <= Math.min(rows.length - 1, row + 1); y += 1) {
         for (let x = Math.max(0, column - 1); x <= Math.min(columns - 1, column + 1); x += 1) {
-          if (result[y]?.[x] === ' ') result[y]![x] = haloCode
+          const target = result[y]
+          if (target?.[x] === ' ') target[x] = haloCode
         }
       }
     }
@@ -201,64 +242,169 @@ export function contourMask(
   return mask
 }
 
-/** Group equal-alpha shoreline segments so full-strength bands never bead at every vertex. */
-export function shorelineStrokeRuns(
-  chain: Pick<TerrainContourChain, 'closed' | 'points'>,
-  opacity: number,
-): readonly ShorelineStrokeRun[] {
-  const pointCount = chain.points.length
-  const segmentCount = chain.closed ? pointCount : Math.max(0, pointCount - 1)
-  if (segmentCount === 0) return []
-  const alphas = Array.from({ length: segmentCount }, (_, index) => {
-    const start = chain.points[index]!
-    const end = chain.points[(index + 1) % pointCount]!
-    return opacity * Math.min(start.shorelineFactor, end.shorelineFactor)
-  })
-  const sameAlpha = (first: number, second: number): boolean => Math.abs(first - second) < 1e-9
-  if (chain.closed && alphas.every((alpha) => sameAlpha(alpha, alphas[0]!))) {
-    const alpha = alphas[0]!
-    return alpha <= 0 ? [] : [{ points: chain.points, alpha, closed: true }]
+/** Build the union mask that clips centered shoreline strokes to their land-facing half. */
+export function landContourMask(plan: TerrainContourPlan, cellSize: number): Graphics {
+  const mask = new Graphics()
+  const rings = new Map(plan.rings.map((ring) => [ring.id, ring]))
+  for (const component of plan.components) {
+    if (component.exterior || component.material === 'water') continue
+    const outer = rings.get(component.outerRingId)
+    if (outer === undefined) throw new Error(`Terrain component ${component.id} has no outer ring.`)
+    const holes = component.holeRingIds.map((holeId) => {
+      const hole = rings.get(holeId)
+      if (hole === undefined) {
+        throw new Error(`Terrain component ${component.id} has a missing hole ring.`)
+      }
+      return hole
+    })
+    mask.path(signedComponentPath(outer, holes, cellSize)).fill('#ffffff')
   }
-  const pivot = chain.closed
-    ? alphas.findIndex(
-        (alpha, index) => !sameAlpha(alpha, alphas[(index - 1 + segmentCount) % segmentCount]!),
-      )
-    : 0
-  const order = Array.from(
-    { length: segmentCount },
-    (_, index) => (index + Math.max(0, pivot)) % segmentCount,
-  )
-  const runs: ShorelineStrokeRun[] = []
-  let points: TerrainContourPoint[] | undefined
-  let alpha = 0
-  for (const index of order) {
-    const nextAlpha = alphas[index]!
-    const start = chain.points[index]!
-    const end = chain.points[(index + 1) % pointCount]!
-    if (nextAlpha <= 0) {
-      if (points !== undefined) runs.push({ points, alpha, closed: false })
-      points = undefined
+  return mask
+}
+
+/** Return a planner-owned route texture halo which always leaves bridge cells transparent. */
+export function plannedRouteTextureGrid(
+  routes: TerrainRoutePlan,
+  route: 'road' | 'path',
+): TileGrid {
+  return {
+    columns: routes.width,
+    rows: route === 'road' ? routes.roadTextureRows : routes.pathTextureRows,
+  }
+}
+
+/** Stroke every canonical path chain, including short road-contact extensions. */
+export function pathGuideMask(routes: TerrainRoutePlan, cellSize: number): Graphics {
+  const mask = new Graphics()
+  for (const guide of routes.pathGuides) {
+    const first = guide.points[0]
+    if (first === undefined) continue
+    if (guide.points.length === 1) {
+      mask
+        .circle(first.x * cellSize, first.y * cellSize, (guide.widthCells * cellSize) / 2)
+        .fill('#ffffff')
       continue
     }
-    if (points === undefined || !sameAlpha(alpha, nextAlpha)) {
-      if (points !== undefined) runs.push({ points, alpha, closed: false })
-      points = [start, end]
-      alpha = nextAlpha
-    } else {
-      points.push(end)
+    mask.moveTo(first.x * cellSize, first.y * cellSize)
+    for (const point of guide.points.slice(1)) {
+      mask.lineTo(point.x * cellSize, point.y * cellSize)
     }
+    if (guide.closed) mask.closePath()
+    mask.stroke({
+      color: '#ffffff',
+      width: guide.widthCells * cellSize,
+      cap: 'round',
+      join: 'round',
+    })
   }
-  if (points !== undefined) runs.push({ points, alpha, closed: false })
+  return mask
+}
+
+/** Stroke the inset road guide while its sparse texture grid excludes bridge cells. */
+export function roadGuideMask(routes: TerrainRoutePlan, cellSize: number): Graphics {
+  const mask = new Graphics()
+  for (let index = 1; index < routes.roadGuide.length; index += 1) {
+    const previous = routes.roadGuide[index - 1]
+    const point = routes.roadGuide[index]
+    if (previous === undefined || point === undefined) continue
+    mask
+      .moveTo(previous.x * cellSize, previous.y * cellSize)
+      .lineTo(point.x * cellSize, point.y * cellSize)
+      .stroke({
+        color: '#ffffff',
+        width: Math.min(previous.widthCells, point.widthCells) * cellSize,
+        cap: 'round',
+        join: 'round',
+      })
+  }
+  for (const point of routes.roadGuide) {
+    mask
+      .circle(point.x * cellSize, point.y * cellSize, (point.widthCells * cellSize) / 2)
+      .fill('#ffffff')
+  }
+  return mask
+}
+
+/** Clip repeated plank tiles to one route-width deck for each bridge component. */
+export function bridgeDeckMask(
+  components: readonly TerrainBridgeComponent[],
+  cellSize: number,
+): Graphics {
+  const mask = new Graphics()
+  for (const component of components) {
+    const { deck } = component
+    if (deck.kind === 'compact') {
+      if (component.cells.length > 1) {
+        for (const cell of component.cells) {
+          mask.rect(cell.column * cellSize, cell.row * cellSize, cellSize, cellSize).fill('#ffffff')
+        }
+        continue
+      }
+      const size = deck.widthCells * cellSize
+      mask
+        .roundRect(
+          deck.center.x * cellSize - size / 2,
+          deck.center.y * cellSize - size / 2,
+          size,
+          size,
+          size / 4,
+        )
+        .fill('#ffffff')
+      continue
+    }
+    const axis = deck.axis
+    if (axis === undefined) throw new Error(`Bridge component ${component.id} has no deck axis.`)
+    mask
+      .moveTo(axis[0].x * cellSize, axis[0].y * cellSize)
+      .lineTo(axis[1].x * cellSize, axis[1].y * cellSize)
+      .stroke({
+        color: '#ffffff',
+        width: deck.widthCells * cellSize,
+        cap: 'square',
+        join: 'round',
+      })
+  }
+  return mask
+}
+
+/** Split one shoreline into deterministic visible arc intervals with bridge taper alpha. */
+export function shorelineStrokeRuns(
+  chain: Pick<TerrainContourChain, 'id' | 'closed' | 'points' | 'rawLength'>,
+  band: {
+    readonly opacity: number
+    readonly density: number
+    readonly runLengthCells: readonly [number, number]
+  },
+  bandIndex = 0,
+): readonly ShorelineStrokeRun[] {
+  const runs: ShorelineStrokeRun[] = []
+  if (chain.points.length < 2 || chain.rawLength <= 0 || band.density <= 0) return runs
+  const [minimumRun, maximumRun] = band.runLengthCells
+  const averageRun = (minimumRun + maximumRun) / 2
+  const cycleLength = averageRun / Math.min(1, band.density)
+  const phase = hashUnit(terrainHash('shoreline-phase', chain.id, bandIndex)) * cycleLength
+  const firstCycle = Math.floor(phase / cycleLength) - 1
+  const lastCycle = Math.ceil((chain.rawLength + phase) / cycleLength)
+  for (let cycle = firstCycle; cycle <= lastCycle; cycle += 1) {
+    const runLength =
+      minimumRun +
+      hashUnit(terrainHash('shoreline-run', chain.id, bandIndex, cycle)) * (maximumRun - minimumRun)
+    const cycleStart = cycle * cycleLength - phase
+    const startOffset = Math.max(0, cycleStart)
+    const endOffset = Math.min(chain.rawLength, cycleStart + runLength)
+    if (endOffset - startOffset <= 1e-9) continue
+    appendTaperedShorelineRuns(runs, chain, startOffset, endOffset, band.opacity)
+  }
   return runs
 }
 
-/** Draw quiet water bands from the planner's bridge-suppressed, already-tapered contour points. */
+/** Draw broken centered water bands, later clipped to the land contour union. */
 export function shorelineGraphics(plan: TerrainContourPlan, cellSize: number): Graphics {
   const shoreline = new Graphics()
-  for (const band of HEARTHSIDE_STYLE.terrain.contours.shoreline.bands) {
+  for (const [bandIndex, band] of HEARTHSIDE_STYLE.terrain.contours.shoreline.bands.entries()) {
     for (const chain of plan.chains) {
       if (chain.shorelineSpans.length === 0) continue
-      for (const run of shorelineStrokeRuns(chain, band.opacity)) {
+      for (const run of shorelineStrokeRuns(chain, band, bandIndex)) {
         const first = run.points[0]
         if (first === undefined) continue
         shoreline.moveTo(first.x * cellSize, first.y * cellSize)
@@ -276,6 +422,84 @@ export function shorelineGraphics(plan: TerrainContourPlan, cellSize: number): G
     }
   }
   return shoreline
+}
+
+function appendTaperedShorelineRuns(
+  result: ShorelineStrokeRun[],
+  chain: Pick<TerrainContourChain, 'closed' | 'points' | 'rawLength'>,
+  startOffset: number,
+  endOffset: number,
+  opacity: number,
+): void {
+  const points = pointsForArcInterval(chain, startOffset, endOffset)
+  let active: TerrainContourPoint[] | undefined
+  let activeAlpha = 0
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1]
+    const end = points[index]
+    if (start === undefined || end === undefined) continue
+    const alpha = opacity * Math.min(start.shorelineFactor, end.shorelineFactor)
+    if (alpha <= 0) {
+      if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+      active = undefined
+      continue
+    }
+    if (active === undefined || Math.abs(activeAlpha - alpha) > 1e-9) {
+      if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+      active = [start, end]
+      activeAlpha = alpha
+    } else {
+      active.push(end)
+    }
+  }
+  if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+}
+
+function pointsForArcInterval(
+  chain: Pick<TerrainContourChain, 'closed' | 'points' | 'rawLength'>,
+  startOffset: number,
+  endOffset: number,
+): TerrainContourPoint[] {
+  const result = [pointAtRawOffset(chain, startOffset)]
+  for (const point of chain.points) {
+    if (point.rawOffset > startOffset + 1e-9 && point.rawOffset < endOffset - 1e-9) {
+      result.push(point)
+    }
+  }
+  result.push(pointAtRawOffset(chain, endOffset))
+  return result
+}
+
+function pointAtRawOffset(
+  chain: Pick<TerrainContourChain, 'closed' | 'points' | 'rawLength'>,
+  offset: number,
+): TerrainContourPoint {
+  const pointCount = chain.points.length
+  const segmentCount = chain.closed ? pointCount : pointCount - 1
+  for (let index = 0; index < segmentCount; index += 1) {
+    const start = chain.points[index]
+    const end = chain.points[(index + 1) % pointCount]
+    if (start === undefined || end === undefined) continue
+    const endOffset = chain.closed && index === pointCount - 1 ? chain.rawLength : end.rawOffset
+    if (offset < start.rawOffset - 1e-9 || offset > endOffset + 1e-9) continue
+    const span = endOffset - start.rawOffset
+    const amount = span <= 1e-9 ? 0 : (offset - start.rawOffset) / span
+    return {
+      x: start.x + (end.x - start.x) * amount,
+      y: start.y + (end.y - start.y) * amount,
+      rawOffset: offset,
+      locked: start.locked && end.locked,
+      shorelineFactor:
+        start.shorelineFactor + (end.shorelineFactor - start.shorelineFactor) * amount,
+    }
+  }
+  const fallback = chain.points.at(-1)
+  if (fallback === undefined) throw new Error('Shoreline chain has no points.')
+  return { ...fallback, rawOffset: offset }
+}
+
+function hashUnit(hash: number): number {
+  return hash / 0xffffffff
 }
 
 /** Draw the configured ground as the unchanged dense, solid-color pre-art fallback. */

@@ -87,6 +87,13 @@
           "description": "Player id of the sender.",
           "type": "string"
         },
+        "recipients": {
+          "description": "Live-stream-only delivered audience of a broadcast the environment bounded. The backend uses it to filter a controller view and strips it before any browser; a recording never contains it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "text": {
           "type": "string"
         },

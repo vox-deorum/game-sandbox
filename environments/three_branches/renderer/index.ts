@@ -10,7 +10,7 @@ import {
   zoomCamera,
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
-import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
+import { PixiRenderer, type RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import type { GroundView, TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
@@ -29,6 +29,7 @@ import { type CharacterLayer, createCharacterLayer } from './characters.js'
 import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome, RECENTER_RECT } from './chrome.js'
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
+import { isTextEntry } from './input.js'
 import { drawMap, drawUpperWalls } from './map-layer.js'
 import { expectedCharacterIds, readSpeech, readStatic } from './overlay.js'
 import {
@@ -41,7 +42,9 @@ import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
 import { createTerrainArt } from './terrain-art.js'
 import thumbnail from './thumbnail.png'
-import type { CollisionShape, FrameScene, StaticScene } from './types.js'
+import type { CollisionShape, FrameScene, StaticScene, WorldPoint } from './types.js'
+import { propUseShapes, selectUseTarget } from './use-preview.js'
+import { createVisitorInput, type VisitorInputController } from './visitor-input.js'
 
 const CONTENT_SIZE = {
   width: THREE_BRANCHES_PRESENTATION.internalSize.width,
@@ -66,6 +69,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly expectedIds: readonly string[]
   private readonly staticScene: StaticScene
   private readonly staticCollisionShapes: readonly CollisionShape[]
+  private readonly propShapes: readonly CollisionShape[]
   private worldRoot!: Container
   private mapLayer!: Container
   private upperLayer!: Container
@@ -90,6 +94,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private lastDeliveryAtMs: number | null = null
   /** Whether the previous frame drew a bubble, so the frame that retires the last one still repaints. */
   private wasSpeaking = false
+  private visitorInput: VisitorInputController | null = null
+  /** The visitor's latest landed pose. Input composition and the use preview never interpolate. */
+  private landedVisitor: { point: WorldPoint; heading: number } | null = null
 
   /** Parse immutable renderer inputs before Pixi builds the retained scene. */
   constructor(ctx: RendererContext) {
@@ -99,9 +106,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.expectedIds = expectedCharacterIds(ctx.header)
     this.staticScene = buildStaticScene(village)
     this.staticCollisionShapes = staticCollision(this.staticScene)
+    this.propShapes = propUseShapes(this.staticScene, this.staticCollisionShapes)
   }
 
   protected setup(root: Container): void {
+    const createText: RendererTextFactory = (...args) => this.text(...args)
     const backdrop = new Graphics()
       .rect(0, 0, this.internalSize.width, this.internalSize.height)
       .fill(HEARTHSIDE_STYLE.palette.backdrop)
@@ -118,6 +127,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const annotationLayer = new Container()
     const collisionLayer = new Container()
     const chromeLayer = new Container()
+    // The fixed input layer (pad and palette) sits above the world and below the chrome strip.
+    const padLayer = new Container()
+    const paletteLayer = new Container()
+    const inputLayer = new Container()
+    inputLayer.addChild(padLayer, paletteLayer)
     gradedWorld.filters = [new ColorMatrixFilter()]
     gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, this.upperLayer)
     this.worldRoot = new Container()
@@ -125,16 +139,16 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // information layer is never colour-graded and the diagnostic layer still reads on top of it.
     this.worldRoot.addChild(gradedWorld, emissiveLayer, annotationLayer, collisionLayer)
     this.worldRoot.mask = contentMask
-    root.addChild(backdrop, contentMask, this.worldRoot, chromeLayer)
+    root.addChild(backdrop, contentMask, this.worldRoot, inputLayer, chromeLayer)
 
     this.mapGround = drawMap(this.mapLayer, this.staticScene)
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
     this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
     this.characters = createCharacterLayer(characterLayer)
-    this.annotations = createAnnotationLayer(annotationLayer)
-    this.collision = createCollisionLayer(collisionLayer)
+    this.annotations = createAnnotationLayer(annotationLayer, createText)
+    this.collision = createCollisionLayer(collisionLayer, createText)
     this.collision.setVisible(this.collisionVisible)
-    this.chrome = createChrome(chromeLayer)
+    this.chrome = createChrome(chromeLayer, createText)
 
     this.cameraLimits = cameraLimits(
       { minX: 0, minY: 0, maxX: this.staticScene.world.width, maxY: this.staticScene.world.height },
@@ -156,6 +170,29 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
     this.ctx.container.dataset.threeBranchesCollisionToggle = probeRect(COLLISION_TOGGLE_RECT)
     this.ctx.container.dataset.threeBranchesRecenter = probeRect(RECENTER_RECT)
+    this.visitorInput = createVisitorInput({
+      container: this.ctx.container,
+      controlledPlayers: this.ctx.controlledPlayers,
+      sendAction: this.ctx.sendAction,
+      paceMs: this.ctx.meta.pace_interval_ms ?? 250,
+      padLayer,
+      paletteLayer,
+      createText,
+      toView: (client) => this.viewPoint(client),
+      currentHeading: () => this.landedVisitor?.heading ?? 0,
+      resolution: () => this.textResolution(),
+      previewTarget: () =>
+        selectUseTarget(
+          this.staticScene,
+          this.propShapes,
+          this.landedVisitor?.point ?? this.staticScene.spawn,
+        ),
+      onPreview: (propId) => {
+        this.props.highlight(propId)
+        this.redrawCurrentFrame()
+      },
+      redraw: () => this.redrawCurrentFrame(),
+    })
     void this.loadArt()
   }
 
@@ -165,6 +202,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
+    const landedVisitor = scene.characters.find((character) => character.id === 'visitor')
+    if (landedVisitor !== undefined) {
+      this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
+    }
+    this.visitorInput?.handleFrame(scene.dynamic?.terminal ?? false)
     // A replay-position jump shows only the tick it lands on. Animation-only snaps used for resize
     // and asset redraws retain the current bubble ages.
     if (options?.seek === true) this.annotations.clear()
@@ -230,6 +272,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // Browser listeners outlive Pixi nodes unless the renderer releases their shared gesture owner.
     this.cameraGestures?.detach()
     this.cameraGestures = null
+    this.visitorInput?.destroy()
+    this.visitorInput = null
     this.ctx.container.removeEventListener('click', this.onChromeClick)
     window.removeEventListener('keydown', this.onKeyDown)
     this.movement = null
@@ -468,17 +512,6 @@ function within(
     point.x <= rect.x + rect.width &&
     point.y >= rect.y &&
     point.y <= rect.y + rect.height
-  )
-}
-
-/** Whether a key event landed in something the person is typing into. */
-function isTextEntry(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return (
-    target.isContentEditable ||
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT'
   )
 }
 

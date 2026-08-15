@@ -116,6 +116,28 @@ def _iso_utc(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
 
 
+def _annotated_live_state(
+    state: StepState,
+    messages: list[Message],
+    audiences: Mapping[str, tuple[str, ...]] | None,
+) -> StepState | None:
+    """Build the live-stream variant of one recorded state, or ``None`` when they are identical.
+
+    A broadcast the environment bounded gains a ``recipients`` list naming its delivered audience,
+    so a relay can decide whether a controller heard it. An unbounded broadcast stays unannotated
+    and remains visible to everyone. The recorded ``state`` is never touched.
+    """
+    if audiences is None:
+        return None
+    live_messages: list[Message] = [
+        cast("Message", {**message, "recipients": list(audiences[message["from"]])})
+        if message["to"] is None and message["from"] in audiences
+        else message
+        for message in messages
+    ]
+    return cast("StepState", {**state, "messages": live_messages})
+
+
 class Episode:
     """One seeded episode's worth of step machinery, advanced one cycle at a time.
 
@@ -425,8 +447,9 @@ class Episode:
         )
         self._participant_runner.run_learning(context)
 
-        self._record_step((context,), context.started_at, context.messages, context.chat_options)
-        self._participant_runner.deliver_messages(env, context.messages)
+        audiences = self._participant_runner.bounded_broadcast_audiences(env, context.messages)
+        self._record_step((context,), context.started_at, context.messages, context.chat_options, audiences)
+        self._participant_runner.deliver_messages(env, context.messages, audiences)
         self._finish_step((context.player_id,))
 
     def step_tick(self) -> None:
@@ -482,8 +505,9 @@ class Episode:
             terminated = bool(terminations[context.player_id] or truncations[context.player_id])
             self._participant_runner.run_learning(context, terminated=terminated)
 
-        self._record_step(tuple(contexts), started_at, messages, chat_options)
-        self._participant_runner.deliver_messages(env, messages)
+        audiences = self._participant_runner.bounded_broadcast_audiences(env, messages)
+        self._record_step(tuple(contexts), started_at, messages, chat_options, audiences)
+        self._participant_runner.deliver_messages(env, messages, audiences)
         self._finish_step(active_players)
 
     def _logical_active_players(self) -> tuple[str, ...]:
@@ -503,8 +527,15 @@ class Episode:
         started_at: int,
         messages: list[Message],
         chat_options: ChatOptions | None,
+        audiences: Mapping[str, tuple[str, ...]] | None = None,
     ) -> None:
-        """Persist one completed AEC action or parallel tick before message delivery."""
+        """Persist one completed AEC action or parallel tick before message delivery.
+
+        ``audiences`` carries the environment-bounded broadcast audiences resolved for this batch.
+        When present, the live stream's copy of the state annotates each bounded broadcast with its
+        delivered ``recipients`` so relays can filter a controller's view; the persisted state stays
+        exactly ``{from, to, text}``.
+        """
         if self._writer is None:
             return
         env = contexts[0].env
@@ -527,17 +558,16 @@ class Episode:
                     agents[player_id] = build_agent_step(
                         reward=float(env.rewards[player_id]), score=self._state[player_id].score
                     )
-        self._writer.write_step(
-            build_step_state(
-                tick=self._tick,
-                agents=agents,
-                started_at=started_at,
-                duration_ms=self._clock.now_ms() - started_at,
-                overlay=overlay,
-                messages=messages or None,
-                chat_options=chat_options,
-            )
+        state = build_step_state(
+            tick=self._tick,
+            agents=agents,
+            started_at=started_at,
+            duration_ms=self._clock.now_ms() - started_at,
+            overlay=overlay,
+            messages=messages or None,
+            chat_options=chat_options,
         )
+        self._writer.write_step(state, _annotated_live_state(state, messages, audiences))
 
     def _finish_without_recorded_step(self) -> None:
         """Resolve a natural AEC ending reached while consuming a dead step."""

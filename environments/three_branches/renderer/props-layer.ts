@@ -1,13 +1,15 @@
 import { type Container, Graphics } from 'pixi.js'
 
 import { CATALOG } from './overlay.js'
-import { PALETTE } from './presentation.js'
+import { HEARTHSIDE_STYLE, PALETTE } from './presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
 /** Operations exposed by the retained prop display layer. */
 export interface PropLayer {
   /** Apply one dynamic frame to the retained prop nodes. */
   reconcile(scene: FrameScene): void
+  /** Outline one prop for the use preview, or clear the outline with null. */
+  highlight(propId: string | null): void
 }
 
 /** Build stable prop and scenery nodes whose states are exposed by diagnostic collision mode. */
@@ -29,6 +31,9 @@ export function createPropLayer(
     startById.set(item.id, start)
     propLayer.addChild(node)
   }
+  // Added last, so the preview outline draws above every prop body.
+  const highlightNode = new Graphics()
+  propLayer.addChild(highlightNode)
   return {
     reconcile(frame) {
       for (const prop of scene.props) {
@@ -37,6 +42,26 @@ export function createPropLayer(
         if (node === undefined || start === undefined) continue
         const state = frame.dynamic?.props[prop.id] ?? start
         node.alpha = state === start ? 0.72 : 1
+      }
+    },
+    highlight(propId) {
+      highlightNode.clear()
+      if (propId === null) return
+      const item = scene.props.find((prop) => prop.id === propId)
+      if (item === undefined) return
+      const stroke = { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
+      if (item.shape === 'circle') {
+        highlightNode
+          .circle(
+            item.rect.x + item.rect.width / 2,
+            item.rect.y + item.rect.height / 2,
+            Math.min(item.rect.width, item.rect.height) / 2 + 2,
+          )
+          .stroke(stroke)
+      } else {
+        highlightNode
+          .rect(item.rect.x - 2, item.rect.y - 2, item.rect.width + 4, item.rect.height + 4)
+          .stroke(stroke)
       }
     },
   }

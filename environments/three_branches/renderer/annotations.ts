@@ -1,5 +1,6 @@
 import { codePointLength } from '@game-sandbox/schema/text'
-import { Container, Graphics, Text } from 'pixi.js'
+import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { Container, Graphics, type Text } from 'pixi.js'
 
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import type { CharacterDrawable, FrameScene, SpeechLine } from './types.js'
@@ -58,7 +59,10 @@ const BUBBLE_TAIL_HEIGHT = 8
  * are retained and aged independently of the reconciled nodes, so a bubble survives its speaker
  * briefly leaving the frame and only {@link AnnotationLayer.advance} moves its clock forward.
  */
-export function createAnnotationLayer(layer: Container): AnnotationLayer {
+export function createAnnotationLayer(
+  layer: Container,
+  createText: RendererTextFactory,
+): AnnotationLayer {
   const nodes = new Map<string, CharacterNode>()
   const bubbles = new Map<string, RetainedBubble>()
   // Every key in the last delivered state, so redrawing a multi-line state never restarts the final
@@ -80,7 +84,7 @@ export function createAnnotationLayer(layer: Container): AnnotationLayer {
       for (const character of scene.characters) {
         let node = nodes.get(character.id)
         if (node === undefined) {
-          node = createCharacterNode(layer, character.id)
+          node = createCharacterNode(layer, character.id, createText)
           nodes.set(character.id, node)
         }
         node.root.position.set(character.point.x, character.point.y)
@@ -206,32 +210,33 @@ function ellipsize(line: string, charsPerLine: number): string {
   return `${points.slice(0, Math.max(0, charsPerLine - 1)).join('')}${mark}`
 }
 
-function createCharacterNode(parent: Container, id: string): CharacterNode {
+function createCharacterNode(
+  parent: Container,
+  id: string,
+  createText: RendererTextFactory,
+): CharacterNode {
   const bubble = new Container()
   const bubbleBackground = new Graphics()
-  const bubbleLabel = new Text({
-    text: '',
-    style: {
-      fill: HEARTHSIDE_STYLE.palette.ink,
-      fontFamily: 'ui-monospace, monospace',
-      fontSize: BUBBLE_FONT_SIZE,
-      align: 'center',
-    },
-  })
+  const bubbleLabel = createText(
+    '',
+    BUBBLE_FONT_SIZE,
+    HEARTHSIDE_STYLE.palette.ink,
+    'center',
+    'ui-monospace, monospace',
+  )
+  bubbleLabel.style.align = 'center'
   bubbleLabel.anchor.set(0.5, 1)
   bubble.addChild(bubbleBackground, bubbleLabel)
   bubble.visible = false
 
   const plate = new Graphics()
-  const plateLabel = new Text({
-    text: id,
-    style: {
-      fill: HEARTHSIDE_STYLE.palette.bone,
-      fontFamily: 'ui-monospace, monospace',
-      fontSize: PLATE_FONT_SIZE,
-    },
-  })
-  plateLabel.anchor.set(0.5, 0.5)
+  const plateLabel = createText(
+    id,
+    PLATE_FONT_SIZE,
+    HEARTHSIDE_STYLE.palette.bone,
+    'center',
+    'ui-monospace, monospace',
+  )
 
   const root = new Container()
   root.addChild(bubble, plate, plateLabel)

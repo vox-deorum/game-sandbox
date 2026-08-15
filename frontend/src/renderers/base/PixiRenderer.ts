@@ -48,6 +48,16 @@ export interface InputIntent {
   action: unknown
 }
 
+/** The shared constructor shape for crisp renderer-owned text. */
+export type RendererTextFactory = (
+  value: string,
+  size: number,
+  fill: string,
+  align: 'left' | 'center' | 'right',
+  fontFamily?: string,
+  stroke?: { color: string; width: number },
+) => Text
+
 /** A concrete renderer constructor: the `this` type {@link PixiRenderer.mount} binds to its caller. */
 type RendererCreator = new (ctx: RendererContext) => PixiRenderer
 

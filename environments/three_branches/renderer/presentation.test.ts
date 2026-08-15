@@ -27,22 +27,82 @@ const APPROVED_PALETTE = {
   timber: '#8a6246',
 } as const
 
-const APPROVED_CONTOURS = {
-  smoothingPasses: 2,
-  cornerWeight: 0.25,
-  sampleSpacingCells: 0.5,
-  junctionTangentCells: 0.25,
+const LAND_CURVE = {
+  sampleSpacingCells: 0.25,
+  macroWindowCells: 0,
+  fairingIterations: 4,
+  fairingRadiusCells: 1.5,
+  fairingStrength: 0.35,
+  noiseAmplitudeCells: 0.04,
+  noiseWavelengthCells: [5, 9],
+} as const
+
+const WATER_CURVE = {
+  sampleSpacingCells: 0.2,
+  macroWindowCells: 4,
+  fairingIterations: 6,
+  fairingRadiusCells: 2.5,
+  fairingStrength: 0.45,
   noiseAmplitudeCells: 0.06,
-  noiseWavelengthCells: [1.5, 3],
-  maxDeviationCells: 0.15,
+  noiseWavelengthCells: [7, 12],
+} as const
+
+const ROAD_CURVE = {
+  sampleSpacingCells: 0.25,
+  macroWindowCells: 1.5,
+  fairingIterations: 4,
+  fairingRadiusCells: 1,
+  fairingStrength: 0.35,
+  noiseAmplitudeCells: 0.05,
+  noiseWavelengthCells: [4, 8],
+} as const
+
+const PATH_CURVE = {
+  sampleSpacingCells: 0.2,
+  macroWindowCells: 3,
+  fairingIterations: 6,
+  fairingRadiusCells: 2,
+  fairingStrength: 0.45,
+  noiseAmplitudeCells: 0.04,
+  noiseWavelengthCells: [5, 10],
+} as const
+
+const APPROVED_CONTOURS = {
+  profiles: { land: LAND_CURVE, water: WATER_CURVE },
+  junctionTangentCells: 0.25,
+  maxDeviationCells: 0.35,
+  cellCenterClearanceCells: 0.15,
+  minimumCorridorCells: 0.7,
   saddleRadiusCells: 0.08,
   shoreline: {
     bands: [
-      { tint: 'reed', widthCells: 0.32, opacity: 0.16 },
-      { tint: 'silt', widthCells: 0.16, opacity: 0.36 },
+      {
+        tint: 'reed',
+        widthCells: 0.6,
+        opacity: 0.14,
+        density: 0.65,
+        runLengthCells: [1.5, 4],
+      },
+      {
+        tint: 'silt',
+        widthCells: 0.24,
+        opacity: 0.24,
+        density: 0.35,
+        runLengthCells: [0.75, 2.25],
+      },
     ],
-    bridgeTaperCells: 0.25,
+    bridgeTaperCells: 0.35,
   },
+} as const
+
+const APPROVED_ROUTES = {
+  road: {
+    curve: ROAD_CURVE,
+    targetWidthCells: 2.1,
+    minimumWidthCells: 1.6,
+    opacity: 0.82,
+  },
+  path: { curve: PATH_CURVE, widthCells: 0.7, opacity: 1 },
 } as const
 
 describe('Hearthside Ink presentation', () => {
@@ -87,8 +147,9 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
-  it('pins the approved continuous contour and quiet shoreline calibration', () => {
+  it('pins the shared land, water, road, and path curve profiles', () => {
     expect(HEARTHSIDE_STYLE.terrain.contours).toEqual(APPROVED_CONTOURS)
+    expect(HEARTHSIDE_STYLE.terrain.routes).toEqual(APPROVED_ROUTES)
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).toBe('timber')
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
       HEARTHSIDE_STYLE.terrain.fills.field?.tint,
@@ -133,20 +194,32 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(extraKey)).toThrow('keys do not match')
 
     const badSpacing = structuredClone(HEARTHSIDE_STYLE) as any
-    badSpacing.terrain.contours.sampleSpacingCells = 0.51
+    badSpacing.terrain.contours.profiles.land.sampleSpacingCells = 4.01
     expect(() => readHearthsideStyle(badSpacing)).toThrow('sampleSpacingCells')
 
     const badWavelength = structuredClone(HEARTHSIDE_STYLE) as any
-    badWavelength.terrain.contours.noiseWavelengthCells = [1.49, 3]
-    expect(() => readHearthsideStyle(badWavelength)).toThrow('noiseWavelengthCells[0]')
+    badWavelength.terrain.contours.profiles.water.noiseWavelengthCells = [12, 7]
+    expect(() => readHearthsideStyle(badWavelength)).toThrow('noiseWavelengthCells must be ordered')
+
+    const missingMacroWindow = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingMacroWindow.terrain.contours.profiles.land.macroWindowCells
+    expect(() => readHearthsideStyle(missingMacroWindow)).toThrow('profiles.land keys')
 
     const excessiveDeviation = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveDeviation.terrain.contours.maxDeviationCells = 0.151
+    excessiveDeviation.terrain.contours.maxDeviationCells = 0.351
     expect(() => readHearthsideStyle(excessiveDeviation)).toThrow('maxDeviationCells')
 
     const excessiveNoise = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveNoise.terrain.contours.noiseAmplitudeCells = 0.061
+    excessiveNoise.terrain.contours.profiles.water.noiseAmplitudeCells = 4.01
     expect(() => readHearthsideStyle(excessiveNoise)).toThrow('noiseAmplitudeCells')
+
+    const unsafeCenterClearance = structuredClone(HEARTHSIDE_STYLE) as any
+    unsafeCenterClearance.terrain.contours.cellCenterClearanceCells = 0.149
+    expect(() => readHearthsideStyle(unsafeCenterClearance)).toThrow('cellCenterClearanceCells')
+
+    const unsafeCorridor = structuredClone(HEARTHSIDE_STYLE) as any
+    unsafeCorridor.terrain.contours.minimumCorridorCells = 0.699
+    expect(() => readHearthsideStyle(unsafeCorridor)).toThrow('minimumCorridorCells')
 
     const excessiveSaddle = structuredClone(HEARTHSIDE_STYLE) as any
     excessiveSaddle.terrain.contours.saddleRadiusCells = 0.081
@@ -167,15 +240,18 @@ describe('Hearthside Ink presentation', () => {
     const badOpacity = structuredClone(HEARTHSIDE_STYLE) as any
     badOpacity.terrain.contours.shoreline.bands[1].opacity = 1.1
     expect(() => readHearthsideStyle(badOpacity)).toThrow('bands[1].opacity must be at most one')
+
+    const badRun = structuredClone(HEARTHSIDE_STYLE) as any
+    badRun.terrain.contours.shoreline.bands[0].runLengthCells = [4, 1.5]
+    expect(() => readHearthsideStyle(badRun)).toThrow('runLengthCells must be ordered')
   })
 
-  it('requires unit-range terrain fill opacity and keeps the road uniquely blended', () => {
-    expect(HEARTHSIDE_STYLE.terrain.fills.road?.opacity).toBe(0.58)
-    expect(
-      Object.entries(HEARTHSIDE_STYLE.terrain.fills)
-        .filter(([name]) => name !== 'road')
-        .map(([, fill]) => fill.opacity),
-    ).toEqual(Array(9).fill(1))
+  it('keeps terrain fills opaque and gives the inset road its own blend', () => {
+    expect(HEARTHSIDE_STYLE.terrain.fills.road?.opacity).toBe(1)
+    expect(HEARTHSIDE_STYLE.terrain.routes.road.opacity).toBe(0.82)
+    expect(Object.values(HEARTHSIDE_STYLE.terrain.fills).map((fill) => fill.opacity)).toEqual(
+      Array(10).fill(1),
+    )
 
     const missingOpacity = structuredClone(HEARTHSIDE_STYLE) as any
     delete missingOpacity.terrain.fills.road.opacity
@@ -184,6 +260,36 @@ describe('Hearthside Ink presentation', () => {
     const invalidOpacity = structuredClone(HEARTHSIDE_STYLE) as any
     invalidOpacity.terrain.fills.road.opacity = 1.01
     expect(() => readHearthsideStyle(invalidOpacity)).toThrow('fills.road.opacity')
+  })
+
+  it('rejects unknown route keys, unsafe widths, and invalid route noise', () => {
+    const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraKey.terrain.routes.mode = 'centerline'
+    expect(() => readHearthsideStyle(extraKey)).toThrow('routes keys do not match')
+
+    const duplicateDeckWidths = structuredClone(HEARTHSIDE_STYLE) as any
+    duplicateDeckWidths.terrain.routes.decks = { roadWidthCells: 2.1, pathWidthCells: 0.7 }
+    expect(() => readHearthsideStyle(duplicateDeckWidths)).toThrow('routes keys do not match')
+
+    const reversedRoadWidths = structuredClone(HEARTHSIDE_STYLE) as any
+    reversedRoadWidths.terrain.routes.road.minimumWidthCells = 2.2
+    expect(() => readHearthsideStyle(reversedRoadWidths)).toThrow('minimumWidthCells')
+
+    const excessivePathWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    excessivePathWidth.terrain.routes.path.widthCells = 2.01
+    expect(() => readHearthsideStyle(excessivePathWidth)).toThrow('path.widthCells')
+
+    const reversedNoise = structuredClone(HEARTHSIDE_STYLE) as any
+    reversedNoise.terrain.routes.path.curve.noiseWavelengthCells = [10, 5]
+    expect(() => readHearthsideStyle(reversedNoise)).toThrow('noiseWavelengthCells must be ordered')
+
+    const extraCurveKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraCurveKey.terrain.routes.road.curve.mode = 'macro'
+    expect(() => readHearthsideStyle(extraCurveKey)).toThrow('road.curve keys')
+
+    const invalidOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidOpacity.terrain.routes.road.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidOpacity)).toThrow('routes.road.opacity')
   })
 
   it('rejects unknown manifest frames, palette tints, and phase keys', () => {

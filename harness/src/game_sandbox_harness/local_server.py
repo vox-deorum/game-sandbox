@@ -75,7 +75,15 @@ class _Socket:
 
 
 class LocalServer:
-    """Serve one supplied runner command and relay its protocol over a loopback socket."""
+    """Serve one supplied runner command and relay its protocol over a loopback socket.
+
+    ``controller_players`` names the players the local viewer controls (a human-mode session's
+    external bindings). Every local socket is that one viewer, so with the set non-empty the relay
+    filters each state like the production controller view: a broadcast the environment bounded
+    (annotated with its delivered ``recipients``) is shown only when a controlled player sent it or
+    received it. An empty set is a watch-style session whose viewer sees every delivered line. The
+    live-only ``recipients`` annotation is stripped in both cases; no browser receives it.
+    """
 
     def __init__(
         self,
@@ -85,12 +93,14 @@ class LocalServer:
         static_root: Path | str,
         start_paused: bool = False,
         port: int = 0,
+        controller_players: Sequence[str] | None = None,
     ) -> None:
         self._entry = entry
         self._command = list(command)
         self._root = Path(static_root).resolve()
         self._start_paused = start_paused
         self._port = port
+        self._controller_players = frozenset(controller_players or ())
         self._server: asyncio.Server | None = None
         self._child: asyncio.subprocess.Process | None = None
         self._output_task: asyncio.Task[None] | None = None
@@ -338,8 +348,59 @@ class LocalServer:
             await self._finish(str(message.get("reason", "terminated")))
             return
         if "kind" not in message:
+            line = self._present_state(line, message)
             self._latest_state = line
             await self._broadcast(line)
+
+    def _present_state(self, line: str, state: dict[str, Any]) -> str:
+        """Return the viewer's copy of one state line, annotation-free and controller-filtered.
+
+        A state without messages passes through byte-identical, and so does a watch-style viewer's
+        (an empty ``_controller_players``): every message reaches it unchanged, annotation included
+        for the recipients case below. For the controller, a targeted message (``to`` a non-null
+        string) is kept only when ``to`` or ``from`` names a controlled player. A broadcast (``to``
+        is ``None``) carrying no ``recipients`` annotation passes through untouched; one the
+        environment bounded is kept only when a controlled player sent it or is in its delivered
+        audience, and the annotation itself never reaches the browser either way. The stashed
+        catch-up state is the returned line, so a late socket gets the same view.
+        """
+        messages = state.get("messages")
+        if not isinstance(messages, list):
+            return line
+        kept: list[Any] = []
+        changed = False
+        for message in cast(list[Any], messages):
+            if not isinstance(message, dict):
+                kept.append(message)
+                continue
+            entry = cast(dict[str, Any], message)
+            to = entry.get("to")
+            if to is not None:
+                heard = to in self._controller_players or entry.get("from") in self._controller_players
+                if self._controller_players and not heard:
+                    changed = True
+                    continue
+                kept.append(entry)
+                continue
+            recipients = entry.get("recipients")
+            if not isinstance(recipients, list):
+                kept.append(entry)
+                continue
+            changed = True
+            heard = entry.get("from") in self._controller_players or any(
+                player in self._controller_players for player in cast(list[Any], recipients)
+            )
+            if self._controller_players and not heard:
+                continue
+            kept.append({key: value for key, value in entry.items() if key != "recipients"})
+        if not changed:
+            return line
+        presented = dict(state)
+        if kept:
+            presented["messages"] = kept
+        else:
+            del presented["messages"]
+        return self._json(presented)
 
     async def _wait_for_exit(self) -> None:
         assert self._child is not None
@@ -368,4 +429,4 @@ class LocalServer:
 
     @staticmethod
     def _json(value: dict[str, Any]) -> str:
-        return json.dumps(value, separators=(",", ":"))
+        return json.dumps(value, separators=(",", ":"), sort_keys=True)

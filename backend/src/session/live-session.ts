@@ -236,8 +236,10 @@ export class LiveSession {
 
   /**
    * Broadcast a recording state line. A line with no `messages` (the common case) is sent verbatim
-   * to everyone. Message-bearing lines are only re-serialized for controllers when targeted lines
-   * must be hidden, and every unchanged audience receives the byte-identical `raw`.
+   * to everyone. A message-bearing line is forwarded byte-identical to a given audience only when
+   * nothing in it needs hiding from that audience and no live-only `recipients` annotation needs
+   * stripping from it; since that annotation, when present, is stripped for every audience, a line
+   * carrying a bounded-broadcast annotation is re-serialized for everyone, not the controller alone.
    */
   private broadcastState(raw: string, value: Record<string, unknown>): void {
     if (!Array.isArray(value.messages)) {
@@ -270,10 +272,15 @@ export class LiveSession {
 
   /**
    * Return the state line one audience may see. The **controller** is an owner socket on a human-mode
-   * session. It sees broadcasts and targeted messages where `to` or `from` is a human-bound player.
-   * The `from` case reflects the controller's own sends from the recorded line with no local echo.
-   * Every non-controller receives every well-formed delivered message, including targeted messages.
-   * A line whose visible set equals the original is returned as the byte-identical `raw`.
+   * session. It sees targeted messages where `to` or `from` is a human-bound player, and broadcasts
+   * that are unannotated (the environment did not bound the audience) or whose delivered `recipients`
+   * annotation names a human-bound player, or that a human-bound player sent. The `from` case
+   * reflects the controller's own sends from the recorded line with no local echo. Every
+   * non-controller receives every well-formed delivered message, including targeted messages. The
+   * live-only `recipients` annotation is stripped from every message before any socket, so a line
+   * carrying one is re-serialized for every audience even where nothing needed hiding. Only a line
+   * with nothing to filter and nothing to strip for this audience is returned as the byte-identical
+   * `raw`.
    */
   private filterStateForAudience(
     raw: string,
@@ -285,8 +292,18 @@ export class LiveSession {
       return raw
     }
     const isController = isOwner && this.mode === 'human'
-    const kept = messages.filter((message) => this.messageVisible(message, isController))
-    if (kept.length === messages.length) {
+    const kept: unknown[] = []
+    let changed = false
+    for (const message of messages) {
+      if (!this.messageVisible(message, isController)) {
+        changed = true
+        continue
+      }
+      const stripped = stripAudienceAnnotation(message)
+      changed = changed || stripped !== message
+      kept.push(stripped)
+    }
+    if (!changed) {
       return raw
     }
     const clone: Record<string, unknown> = { ...value }
@@ -303,9 +320,19 @@ export class LiveSession {
     if (typeof message !== 'object' || message === null) {
       return true // an unexpected shape is left in place; the harness never emits one
     }
-    const { to, from } = message as { to?: unknown; from?: unknown }
+    const { to, from, recipients } = message as {
+      to?: unknown
+      from?: unknown
+      recipients?: unknown
+    }
     if (to === null || to === undefined) {
-      return true // a broadcast is visible to everyone
+      if (!isController || !Array.isArray(recipients)) {
+        return true // an unbounded broadcast is visible to everyone
+      }
+      return (
+        (typeof from === 'string' && this.externalPlayers.has(from)) ||
+        recipients.some((player) => typeof player === 'string' && this.externalPlayers.has(player))
+      )
     }
     if (!isController) {
       return true
@@ -617,6 +644,19 @@ export class LiveSession {
       // Already closing; nothing to do.
     }
   }
+}
+
+/**
+ * Drop the live-only `recipients` audience annotation from one message. The harness stamps it on
+ * broadcasts the environment bounded so the relay can filter a controller's view; it never belongs
+ * on a browser socket. Returns the same object when there is nothing to strip.
+ */
+function stripAudienceAnnotation(message: unknown): unknown {
+  if (typeof message !== 'object' || message === null || !('recipients' in message)) {
+    return message
+  }
+  const { recipients: _recipients, ...rest } = message as Record<string, unknown>
+  return rest
 }
 
 /** Give a failed process teardown one short chance to flush output without pinning Node's event loop. */

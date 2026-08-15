@@ -293,10 +293,23 @@ class ParticipantRunner:
             "default_recipient": policy.default_recipient,
         }
 
-    def deliver_messages(self, env: Any, messages: list[Message]) -> None:
-        """Deliver a recorded batch at the end of its sending tick."""
+    def bounded_broadcast_audiences(
+        self, env: Any, messages: list[Message]
+    ) -> dict[str, tuple[str, ...]] | None:
+        """Resolve the environment-bounded broadcast audiences for one recorded batch, or ``None``."""
+        if self._chat is None or not messages:
+            return None
+        return self._chat.bounded_broadcast_audiences(env, messages)
+
+    def deliver_messages(
+        self,
+        env: Any,
+        messages: list[Message],
+        audiences: Mapping[str, tuple[str, ...]] | None = None,
+    ) -> None:
+        """Deliver a recorded batch at the end of its sending tick, reusing resolved audiences."""
         if self._chat is not None and messages:
-            self._chat.deliver(messages, tick=self._tick(), env=env)
+            self._chat.deliver(messages, tick=self._tick(), env=env, audiences=audiences)
 
     def apply_environment_step(self, context: StepContext) -> ChatOptions | None:
         """Apply one AEC action, credit all rewards, and refresh chat policy."""

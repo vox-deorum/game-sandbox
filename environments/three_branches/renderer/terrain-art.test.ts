@@ -2,13 +2,18 @@ import { Container, Graphics, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import {
+  bridgeDeckMask,
   contourMask,
   drawMap,
   exactTerrainGrid,
+  landContourMask,
   materialForGroundName,
   materialGridWithHalo,
   materialLayerAlpha,
   ownedTerrainView,
+  pathGuideMask,
+  plannedRouteTextureGrid,
+  roadGuideMask,
   shorelineStrokeRuns,
   signedComponentPath,
   TERRAIN_LAYER_ORDER,
@@ -20,6 +25,7 @@ import {
   type TerrainContourPoint,
   terrainVariant,
 } from './terrain-contours.js'
+import { planTerrainRoutes, type TerrainRoutePlan } from './terrain-routes.js'
 import type { StaticScene } from './types.js'
 
 const names: Readonly<Record<string, string>> = {
@@ -39,27 +45,34 @@ function shorelinePoint(x: number, factor: number): TerrainContourPoint {
   return { x, y: 0, rawOffset: x, locked: false, shorelineFactor: factor }
 }
 
+function routePlan(rows: readonly string[]): TerrainRoutePlan {
+  return planTerrainRoutes(rows, names, HEARTHSIDE_STYLE.terrain.routes)
+}
+
 function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
-  const rows = ['gfer', 'wpbd', 'xigp']
+  const rows = ['ggggg', 'rrbrr', 'fepdi', 'xxxxx']
   const ground = Object.entries(names).map(([code, name]) => ({
     code,
     name,
     color: '#000000',
     passable: true,
-    layer: ['interior', 'doorway', 'wall'].includes(name)
-      ? ('structure' as const)
-      : ('landscape' as const),
+    layer:
+      name === 'ground'
+        ? ('base' as const)
+        : ['interior', 'doorway', 'wall'].includes(name)
+          ? ('structure' as const)
+          : ('landscape' as const),
   }))
   const scene: StaticScene = {
     village: {
-      size: { cellsX: 4, cellsY: 3, cellSize: 1 },
+      size: { cellsX: 5, cellsY: 4, cellSize: 1 },
       ground: rows,
       buildings: [],
       props: [],
       scenery: [],
       spawn: { x: 0, y: 0 },
     },
-    world: { width: 4, height: 3 },
+    world: { width: 5, height: 4 },
     spawn: { x: 0, y: 0 },
     ground,
     groundByCode: Object.fromEntries(ground.map((item) => [item.code, item])),
@@ -74,13 +87,20 @@ function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
       Texture.EMPTY,
     ]),
   )
+  const routes = routePlan(rows)
   const art: TerrainArt = {
     tileset: { tileSize: 1, textures },
     variant: () => 0,
-    contours: planTerrainContours(rows, names, HEARTHSIDE_STYLE.terrain.contours),
-    plankLayer: { columns: 4, rows: ['    ', '    ', '    '] },
+    routes,
+    contours: planTerrainContours(
+      routes.visualRows,
+      names,
+      HEARTHSIDE_STYLE.terrain.contours,
+      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+    ),
+    plankLayer: { columns: 5, rows: plankRowsFor(routes) },
     upperWallTileset: { tileSize: 1, textures: { U: Texture.EMPTY, '.': Texture.EMPTY } },
-    upperWallGrid: { columns: 4, rows: ['    ', '    ', '    '] },
+    upperWallGrid: { columns: 5, rows: ['     ', '     ', '     ', 'UUUUU'] },
     upperWallVariant: () => 0,
   }
   return { scene, art }
@@ -102,6 +122,24 @@ describe('Three Branches terrain art planning', () => {
     expect(grid.every((row) => row.slice(0, 4).join('') !== row.slice(4).join(''))).toBe(true)
   })
 
+  it('plans contours over the natural substrate while retaining bridge water semantics', () => {
+    const rows = ['ggggg', 'rrbrr', 'ggpgg']
+    const routes = routePlan(rows)
+    const contours = planTerrainContours(
+      routes.visualRows,
+      names,
+      HEARTHSIDE_STYLE.terrain.contours,
+      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+    )
+
+    expect(routes.visualRows.join('')).not.toContain('r')
+    expect(routes.visualRows.join('')).not.toContain('p')
+    expect(routes.visualRows[1]?.[2]).toBe('b')
+    expect(contours.components.some((component) => component.material === 'road')).toBe(false)
+    expect(contours.components.some((component) => component.material === 'path')).toBe(false)
+    expect(contours.components.some((component) => component.material === 'water')).toBe(true)
+  })
+
   it('uses one-cell Chebyshev halos while preserving source material codes', () => {
     const grid = materialGridWithHalo(['ggggg', 'ggbgg', 'ggggg'], names, 'water', 'w')
     expect(materialForGroundName('bridge')).toBe('water')
@@ -119,7 +157,7 @@ describe('Three Branches terrain art planning', () => {
     ])
   })
 
-  it('retains the approved terrain draw order', () => {
+  it('retains the approved terrain draw order and route alpha', () => {
     expect(TERRAIN_LAYER_ORDER).toEqual([
       'ground',
       'field',
@@ -131,23 +169,27 @@ describe('Three Branches terrain art planning', () => {
       'structures',
       'planks',
     ])
-  })
-
-  it('applies the configured opacity to every sparse material layer', () => {
     expect(materialLayerAlpha('field')).toBe(1)
     expect(materialLayerAlpha('reeds')).toBe(1)
     expect(materialLayerAlpha('water')).toBe(1)
     expect(materialLayerAlpha('path')).toBe(1)
-    expect(materialLayerAlpha('road')).toBe(0.58)
+    expect(materialLayerAlpha('road')).toBe(0.82)
   })
 
-  it('sets the sparse road container alpha without dimming the base terrain', () => {
+  it('owns ordered named surfaces without dimming the base terrain', () => {
     const { scene, art } = sparseLayerFixture()
     const terrain = drawMap(new Container(), scene, art)
-    expect([1, 3, 5, 8, 10].map((index) => terrain.view.children[index]?.alpha)).toEqual([
-      1, 1, 1, 1, 0.58,
-    ])
-    expect((terrain.view.children[0] as Container).alpha).toBe(1)
+    const surfaces = terrain.view.children
+      .map((child) => child.label)
+      .filter((label) => label !== undefined && !label.endsWith('-mask'))
+
+    expect(surfaces).toEqual(TERRAIN_LAYER_ORDER.map((name) => `terrain-${name}`))
+    expect(
+      required(terrain.view.getChildByLabel('terrain-ground'), 'Ground layer is missing.').alpha,
+    ).toBe(1)
+    expect(
+      required(terrain.view.getChildByLabel('terrain-road'), 'Road layer is missing.').alpha,
+    ).toBe(0.82)
     terrain.destroy()
   })
 
@@ -156,19 +198,27 @@ describe('Three Branches terrain art planning', () => {
       ['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'],
       names,
       HEARTHSIDE_STYLE.terrain.contours,
+      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
     )
-    const outer = plan.components.find(
-      (component) => component.material === 'ground' && component.holeRingIds.length === 1,
+    const outer = required(
+      plan.components.find(
+        (component) => component.material === 'ground' && component.holeRingIds.length === 1,
+      ),
+      'Outer ground component is missing.',
     )
-    const island = plan.components.find(
-      (component) => component.material === 'ground' && component.nestingDepth > 0,
+    const island = required(
+      plan.components.find(
+        (component) => component.material === 'ground' && component.nestingDepth > 0,
+      ),
+      'Nested ground island is missing.',
     )
-    expect(outer).toBeDefined()
-    expect(island).toBeDefined()
-    expect(island?.parentComponentId).toBeDefined()
+    expect(island.parentComponentId).toBeDefined()
     const rings = new Map(plan.rings.map((ring) => [ring.id, ring]))
-    const outerRing = rings.get(outer!.outerRingId)!
-    const directHole = rings.get(outer!.holeRingIds[0]!)!
+    const outerRing = required(rings.get(outer.outerRingId), 'Outer ring is missing.')
+    const directHole = required(
+      rings.get(required(outer.holeRingIds[0], 'Hole id is missing.')),
+      'Direct hole ring is missing.',
+    )
     const path = signedComponentPath(outerRing, [directHole], 16)
     expect(path.checkForHoles).toBe(true)
     expect(
@@ -177,56 +227,179 @@ describe('Three Branches terrain art planning', () => {
     const mask = contourMask(plan, 'ground', 16)
     const fills = mask.context.instructions.filter((instruction) => instruction.action === 'fill')
     expect(fills).toHaveLength(2)
-    const closedSubpaths: number[] = []
-    for (const instruction of fills) {
-      if (instruction.action !== 'fill')
-        throw new Error('Contour mask emitted a non-fill instruction.')
-      const addedPath = instruction.data.path.instructions.find((path) => path.action === 'addPath')
-      if (addedPath === undefined || addedPath.action !== 'addPath') {
-        throw new Error('Contour mask did not retain its signed component path.')
-      }
-      const componentPath = addedPath.data[0] as {
-        checkForHoles: boolean
-        instructions: readonly { action: string }[]
-      }
-      expect(componentPath.checkForHoles).toBe(true)
-      closedSubpaths.push(
-        componentPath.instructions.filter((path) => path.action === 'closePath').length,
-      )
-    }
-    expect(closedSubpaths.sort()).toEqual([1, 2])
     mask.destroy()
   })
 
-  it('keeps full-strength shoreline sections continuous while bridge tapers split into lower-alpha runs', () => {
-    const bands = HEARTHSIDE_STYLE.terrain.contours.shoreline.bands
-    expect(bands.map((band) => band.tint)).toEqual(['reed', 'silt'])
-    for (const band of bands) {
-      expect(
-        shorelineStrokeRuns(
-          {
-            closed: false,
-            points: [shorelinePoint(0, 1), shorelinePoint(1, 1), shorelinePoint(2, 1)],
-          },
-          band.opacity,
-        ),
-      ).toEqual([
-        {
-          points: [shorelinePoint(0, 1), shorelinePoint(1, 1), shorelinePoint(2, 1)],
-          alpha: band.opacity,
-          closed: false,
-        },
-      ])
-      const taper = shorelineStrokeRuns(
-        {
-          closed: false,
-          points: [shorelinePoint(0, 1), shorelinePoint(1, 0.5), shorelinePoint(2, 0)],
-        },
-        band.opacity,
-      )
-      expect(taper).toHaveLength(1)
-      expect(taper[0]).toMatchObject({ alpha: band.opacity * 0.5, closed: false })
+  it('builds the shoreline land mask from every non-water component', () => {
+    const plan = planTerrainContours(
+      ['ggggg', 'gwwwg', 'gwfwg', 'gwwwg', 'ggggg'],
+      names,
+      HEARTHSIDE_STYLE.terrain.contours,
+      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+    )
+    const mask = landContourMask(plan, 16)
+    const fills = mask.context.instructions.filter((instruction) => instruction.action === 'fill')
+    const landComponents = plan.components.filter(
+      (component) => !component.exterior && component.material !== 'water',
+    )
+
+    expect(fills).toHaveLength(landComponents.length)
+    mask.destroy()
+  })
+
+  it('breaks banks deterministically by arc offset and applies point taper alpha', () => {
+    const points = Array.from({ length: 11 }, (_, x) => shorelinePoint(x, 1))
+    const chain = { id: 'bank', closed: false, rawLength: 10, points }
+    const band = HEARTHSIDE_STYLE.terrain.contours.shoreline.bands[0]
+    const first = shorelineStrokeRuns(chain, band, 0)
+    const second = shorelineStrokeRuns(chain, band, 0)
+    const visibleLength = first.reduce((total, run) => {
+      const start = run.points[0]
+      const end = run.points.at(-1)
+      return start === undefined || end === undefined
+        ? total
+        : total + end.rawOffset - start.rawOffset
+    }, 0)
+
+    expect(first).toEqual(second)
+    expect(first.length).toBeGreaterThan(1)
+    expect(visibleLength).toBeGreaterThan(0)
+    expect(visibleLength).toBeLessThan(chain.rawLength)
+
+    const taperRuns = shorelineStrokeRuns(
+      {
+        id: 'taper',
+        closed: false,
+        rawLength: 10,
+        points: [
+          shorelinePoint(0, 1),
+          shorelinePoint(4, 0.5),
+          shorelinePoint(5, 0),
+          shorelinePoint(6, 0.5),
+          shorelinePoint(10, 1),
+        ],
+      },
+      { opacity: 0.2, density: 1, runLengthCells: [2, 2] },
+    )
+    expect(taperRuns.every((run) => run.alpha > 0 && run.alpha <= 0.2)).toBe(true)
+    expect(taperRuns.some((run) => run.alpha < 0.2)).toBe(true)
+  })
+
+  it('strokes the road and path guides through repeated sparse textures', () => {
+    const { art } = sparseLayerFixture()
+    const road = roadGuideMask(art.routes, 16)
+    const path = pathGuideMask(art.routes, 16)
+    const pathGrid = plannedRouteTextureGrid(art.routes, 'path')
+
+    expect(road.context.instructions.some((instruction) => instruction.action === 'stroke')).toBe(
+      true,
+    )
+    expect(path.context.instructions.some((instruction) => instruction.action === 'stroke')).toBe(
+      true,
+    )
+    for (const connector of art.routes.pathConnectors) {
+      expect(pathGrid.rows[connector.pathCell.row]?.[connector.pathCell.column]).toBe('p')
+      expect(pathGrid.rows[connector.roadCell.row]?.[connector.roadCell.column]).toBe(' ')
     }
+    road.destroy()
+    path.destroy()
+  })
+
+  it('renders opposite path terminals as one continuous stroke beneath the road', () => {
+    const routes = routePlan(['gggpggg', 'gggpggg', 'rrrrrrr', 'rrrrrrr', 'gggpggg', 'gggpggg'])
+    const mask = pathGuideMask(routes, 16)
+    const strokes = mask.context.instructions.filter(
+      (instruction) => instruction.action === 'stroke',
+    )
+
+    expect(routes.pathConnectors).toHaveLength(1)
+    expect(routes.pathGuides).toHaveLength(1)
+    expect(strokes).toHaveLength(1)
+    expect(routes.pathTextureRows[2]?.slice(2, 5)).toBe('ppp')
+    expect(routes.pathTextureRows[3]?.slice(2, 5)).toBe('ppp')
+    mask.destroy()
+  })
+
+  it('renders an offset two-sided road crossing without a separate contact lobe', () => {
+    const routes = routePlan([
+      'ggpgggg',
+      'ggpgggg',
+      'rrprrrr',
+      'rrrrrrr',
+      'rrrrrrr',
+      'gggppgg',
+      'gggpggg',
+      'gggpggg',
+    ])
+    const mask = pathGuideMask(routes, 16)
+    const strokes = mask.context.instructions.filter(
+      (instruction) => instruction.action === 'stroke',
+    )
+
+    expect(routes.pathConnectors).toHaveLength(1)
+    expect(routes.pathConnectors[0]?.absorbedPathCells).toEqual([{ column: 4, row: 5 }])
+    expect(routes.pathGuides).toHaveLength(1)
+    expect(strokes).toHaveLength(1)
+    mask.destroy()
+  })
+
+  it('keeps bridge cells water-backed and absent from the road texture grid', () => {
+    const { scene, art } = sparseLayerFixture()
+    const road = exactTerrainGrid(scene.topFirstRows, names, ['road'])
+    const water = materialGridWithHalo(art.routes.visualRows, names, 'water', 'w')
+
+    expect(road.rows[1]).toBe('rr rr')
+    expect(water.rows[1]?.[2]).toBe('b')
+    expect(art.plankLayer.rows[1]?.[2]).toBe(BRIDGE_PLANK_CODES.horizontal)
+  })
+
+  it('clips oriented and compact plank components to their configured deck widths', () => {
+    const roadRoutes = routePlan(['ggggg', 'rrbrr', 'ggpgg'])
+    const pathRoutes = routePlan(['rrrrr', 'ggpgg', 'ggbgg', 'ggpgg'])
+    const compactRoutes = routePlan(['rrrrr', 'ggpgg', 'gpbpg', 'ggpgg'])
+    const roadBridge = required(roadRoutes.bridgeComponents[0], 'Road bridge is missing.')
+    const pathBridge = required(pathRoutes.bridgeComponents[0], 'Path bridge is missing.')
+    const compactBridge = required(compactRoutes.bridgeComponents[0], 'Compact bridge is missing.')
+
+    expect(roadBridge).toMatchObject({
+      owner: 'road',
+      orientation: 'horizontal',
+      deck: { kind: 'axis', widthCells: 2.1, cap: 'square' },
+    })
+    expect(pathBridge).toMatchObject({
+      owner: 'path',
+      orientation: 'vertical',
+      deck: { kind: 'axis', widthCells: 0.7, cap: 'square' },
+    })
+    expect(compactBridge).toMatchObject({
+      orientation: 'compact',
+      deck: { kind: 'compact', widthCells: 0.7, cap: 'round' },
+    })
+    expect(plankRowsFor(roadRoutes)[1]?.[2]).toBe(BRIDGE_PLANK_CODES.horizontal)
+    expect(plankRowsFor(pathRoutes)[2]?.[2]).toBe(BRIDGE_PLANK_CODES.vertical)
+    expect(plankRowsFor(compactRoutes)[2]?.[2]).toBe(BRIDGE_PLANK_CODES.compact)
+
+    const mask = bridgeDeckMask([roadBridge, pathBridge, compactBridge], 16)
+    expect(
+      mask.context.instructions.filter((instruction) => instruction.action === 'stroke'),
+    ).toHaveLength(2)
+    expect(
+      mask.context.instructions.filter((instruction) => instruction.action === 'fill'),
+    ).toHaveLength(1)
+    mask.destroy()
+  })
+
+  it('covers every cell of a tied multi-cell compact bridge mask', () => {
+    const routes = routePlan(['rrrrrr', 'ggppgg', 'gpbbpg', 'gpbbpg', 'ggppgg', 'gggggg'])
+    const bridge = required(routes.bridgeComponents[0], 'Tied bridge is missing.')
+    const mask = bridgeDeckMask([bridge], 16)
+    const fills = mask.context.instructions.filter((instruction) => instruction.action === 'fill')
+    const bounds = mask.getLocalBounds()
+
+    expect(bridge.orientation).toBe('compact')
+    expect(fills).toHaveLength(4)
+    expect(bounds).toMatchObject({ x: 32, y: 32, width: 32, height: 32 })
+    mask.destroy()
   })
 
   it('releases each terrain child and graphic at most once', () => {
@@ -256,40 +429,7 @@ describe('Three Branches terrain art planning', () => {
     expect(graphic.destroyed).toBe(true)
   })
 
-  it('orients a three-by-three bridge from paired east and west road contacts', () => {
-    expect(plankRowsFor(['ggggg', 'gbbbg', 'rbbbr', 'gbbbg', 'ggggg'], names)).toEqual([
-      '     ',
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
-      ` ${BRIDGE_PLANK_CODES.horizontal.repeat(3)} `,
-      '     ',
-    ])
-  })
-
-  it('orients a three-by-three bridge from paired north and south path contacts', () => {
-    expect(plankRowsFor(['ggpgg', 'gbbbg', 'gbbbg', 'gbbbg', 'ggpgg'], names)).toEqual([
-      '     ',
-      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
-      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
-      ` ${BRIDGE_PLANK_CODES.vertical.repeat(3)} `,
-      '     ',
-    ])
-  })
-
-  it('uses compact as the deterministic fallback for tied bridge components', () => {
-    const rows = ['ggrgggg', 'ggbgggg', 'ggrgggg', 'rbrggbg', 'ggggggg']
-    const planned = plankRowsFor(rows, names)
-    expect(planned).toEqual([
-      '       ',
-      `  ${BRIDGE_PLANK_CODES.vertical}    `,
-      '       ',
-      ` ${BRIDGE_PLANK_CODES.horizontal}   ${BRIDGE_PLANK_CODES.compact} `,
-      '       ',
-    ])
-    expect(plankRowsFor(rows, names)).toEqual(planned)
-  })
-
-  it('keeps the approved bridge material roles exact', () => {
+  it('keeps the approved bridge material and frame roles exact', () => {
     expect(HEARTHSIDE_STYLE.terrain.fills.bridge).toEqual({
       frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
       tint: 'water',
@@ -303,3 +443,8 @@ describe('Three Branches terrain art planning', () => {
     })
   })
 })
+
+function required<Value>(value: Value | null | undefined, message: string): Value {
+  if (value === undefined || value === null) throw new Error(message)
+  return value
+}

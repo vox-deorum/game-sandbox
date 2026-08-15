@@ -58,6 +58,10 @@ export const MessageSchema = z
       .nullable()
       .meta({ description: 'Player id of the recipient, or null for a broadcast.' }),
     text: z.string(),
+    recipients: z.array(z.string()).optional().meta({
+      description:
+        'Live-stream-only delivered audience of a broadcast the environment bounded. The backend uses it to filter a controller view and strips it before any browser; a recording never contains it.',
+    }),
   })
   .meta({ id: 'message' })
 export type Message = z.infer<typeof MessageSchema>

@@ -517,6 +517,21 @@ describe('relay (LiveSession)', () => {
       expect(process.killGraceMs).toEqual([10])
     })
 
+    it('arms idle only after the last of several owner sockets disconnects', async () => {
+      vi.useFakeTimers()
+      const { session, process } = makeSession('human', { idleTimeoutMs: 10 })
+      const first = session.attach(new FakeSocket(), true)
+      const second = session.attach(new FakeSocket(), true)
+
+      first.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([])
+
+      second.detach()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(process.killGraceMs).toEqual([10])
+    })
+
     it('does not let a spectator clear or re-arm a human session idle timeout', async () => {
       vi.useFakeTimers()
       const first = makeSession('human', { idleTimeoutMs: 10 })
@@ -639,13 +654,63 @@ describe('relay (LiveSession)', () => {
     }
 
     it('shows a broadcast to every attachment', async () => {
-      const { owner, spectator } = await attachOwnerAndSpectator(
-        stateWith([{ from: 'player_1', to: null, text: 'table' }]),
-      )
+      const line = stateWith([{ from: 'player_1', to: null, text: 'table' }])
+      const { owner, spectator } = await attachOwnerAndSpectator(line)
       expect(messagesIn(owner.received)).toEqual([{ from: 'player_1', to: null, text: 'table' }])
       expect(messagesIn(spectator.received)).toEqual([
         { from: 'player_1', to: null, text: 'table' },
       ])
+      // An unannotated line with nothing to filter or strip stays byte-identical for everyone.
+      expect(owner.received).toContain(line)
+      expect(spectator.received).toContain(line)
+    })
+
+    it('shows an annotated broadcast to the controller only when its player heard it or sent it', async () => {
+      const { owner, spectator } = await attachOwnerAndSpectator(
+        stateWith([
+          { from: 'player_1', to: null, text: 'near', recipients: ['player_0'] },
+          { from: 'player_1', to: null, text: 'far', recipients: ['player_2'] },
+          { from: 'player_0', to: null, text: 'mine', recipients: ['player_2'] },
+        ]),
+      )
+      expect(messagesIn(owner.received)).toEqual([
+        { from: 'player_1', to: null, text: 'near' },
+        { from: 'player_0', to: null, text: 'mine' },
+      ])
+      // The watcher keeps every delivered broadcast; the annotation reaches no socket at all.
+      expect(messagesIn(spectator.received)).toEqual([
+        { from: 'player_1', to: null, text: 'near' },
+        { from: 'player_1', to: null, text: 'far' },
+        { from: 'player_0', to: null, text: 'mine' },
+      ])
+      expect(owner.received.join('\n')).not.toContain('recipients')
+      expect(spectator.received.join('\n')).not.toContain('recipients')
+    })
+
+    it('applies the annotation to the stashed catch-up line and strips it for late attachers', async () => {
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
+      process.emit(HEADER)
+      process.emit(
+        stateWith([
+          { from: 'player_1', to: null, text: 'near', recipients: ['player_0'] },
+          { from: 'player_1', to: null, text: 'far', recipients: ['player_2'] },
+        ]),
+      )
+      await flush()
+
+      const lateController = new FakeSocket()
+      const lateSpectator = new FakeSocket()
+      session.attach(lateController, true)
+      session.attach(lateSpectator, false)
+      expect(messagesIn(lateController.received)).toEqual([
+        { from: 'player_1', to: null, text: 'near' },
+      ])
+      expect(messagesIn(lateSpectator.received)).toEqual([
+        { from: 'player_1', to: null, text: 'near' },
+        { from: 'player_1', to: null, text: 'far' },
+      ])
+      expect(lateController.received.join('\n')).not.toContain('recipients')
+      expect(lateSpectator.received.join('\n')).not.toContain('recipients')
     })
 
     it('shows targeted messages to a human spectator, while the controller sees its permitted line', async () => {

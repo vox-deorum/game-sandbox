@@ -97,14 +97,18 @@ export function opaqueFillCacheKey(frame: string, tint: string): string {
   return `fill:${tintedMaskCacheKey(frame, tint)}`
 }
 
+/** Contrast gain applied to the authored grayscale before the bounded terrain value shift. */
+export const TERRAIN_FILL_DETAIL_GAIN = 0.75
+
 /** Maximum same-hue value shift retained from a terrain fill mask. */
-export const TERRAIN_FILL_DETAIL_STRENGTH = 0.14
+export const TERRAIN_FILL_MAX_VALUE_SHIFT = 0.07
 
 const opaqueFills = new WeakMap<Texture, Map<string, Texture>>()
 
 /**
  * Bake an opaque terrain base from a grayscale-alpha mask. Transparent mask pixels become the
- * configured tint, while visible mask pixels shift that tint's value by a restrained 14 percent.
+ * configured tint. Visible mask pixels gain enough local contrast to survive tinting, while the
+ * final same-hue value shift stays within seven percent.
  */
 export function opaqueTintedFillFrame(
   atlas: Texture,
@@ -154,7 +158,14 @@ export function opaqueFillPixels(pixels: Uint8ClampedArray, tint: string): void 
   for (let index = 0; index < pixels.length; index += 4) {
     const grayscale = (pixels[index] ?? 0) / 255
     const alpha = (pixels[index + 3] ?? 0) / 255
-    const value = 1 + TERRAIN_FILL_DETAIL_STRENGTH * alpha * (grayscale * 2 - 1)
+    const detail = Math.max(
+      -TERRAIN_FILL_MAX_VALUE_SHIFT,
+      Math.min(
+        TERRAIN_FILL_MAX_VALUE_SHIFT,
+        TERRAIN_FILL_DETAIL_GAIN * alpha * (grayscale * 2 - 1),
+      ),
+    )
+    const value = 1 + detail
     pixels[index] = Math.round(red * value)
     pixels[index + 1] = Math.round(green * value)
     pixels[index + 2] = Math.round(blue * value)

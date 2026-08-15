@@ -2,8 +2,28 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
+import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { Text } from 'pixi.js'
 
 let cached: { header: RecordingHeader; states: StepState[] } | null = null
+
+/** Reproduce the shared renderer text contract without mounting WebGL in layer unit tests. */
+export const testText: RendererTextFactory = (
+  value,
+  size,
+  fill,
+  align,
+  fontFamily = 'system-ui, sans-serif',
+  stroke,
+) => {
+  const node = new Text({
+    text: value,
+    style: { fontFamily, fontWeight: 'bold', fontSize: size, fill, stroke },
+  })
+  node.resolution = 1
+  node.anchor.set(align === 'left' ? 0 : align === 'right' ? 1 : 0.5, align === 'center' ? 0.5 : 0)
+  return node
+}
 
 /** Read the committed recording once for renderer tests that need production-shaped data. */
 export function fixtureRecording(): { header: RecordingHeader; states: StepState[] } {

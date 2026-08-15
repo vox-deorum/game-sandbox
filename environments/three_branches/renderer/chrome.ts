@@ -1,4 +1,5 @@
-import { type Container, Graphics, Text } from 'pixi.js'
+import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { type Container, Graphics, type Text } from 'pixi.js'
 
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import type { FrameScene } from './types.js'
@@ -61,7 +62,7 @@ const TEXTURE_FLECK_COUNT = 40
  * container, so it is never colour-graded. It is clicked in the browser's own coordinates by the
  * renderer, which is how every other gesture in this environment is answered.
  */
-export function createChrome(layer: Container): ChromeLayer {
+export function createChrome(layer: Container, createText: RendererTextFactory): ChromeLayer {
   const width = THREE_BRANCHES_PRESENTATION.internalSize.width
   const height = THREE_BRANCHES_PRESENTATION.chromeHeight
 
@@ -69,16 +70,23 @@ export function createChrome(layer: Container): ChromeLayer {
   layer.addChild(textureFlecks(width, height))
   layer.addChild(new Graphics().rect(0, height - 1, width, 1).fill(PALETTE.ink))
 
-  const status = textAt(layer, 16, height / 2, 19, PALETTE.ink)
+  const status = textAt(layer, createText, 16, height / 2, 19, PALETTE.ink)
 
   const bellIcon = new Graphics()
   layer.addChild(bellIcon)
-  const bell = textAt(layer, BELL_ICON_X + BELL_ICON_SIZE + 10, height / 2, 15, PALETTE.ink)
+  const bell = textAt(
+    layer,
+    createText,
+    BELL_ICON_X + BELL_ICON_SIZE + 10,
+    height / 2,
+    15,
+    PALETTE.ink,
+  )
 
-  const recenter = plate(layer, RECENTER_RECT)
+  const recenter = plate(layer, createText, RECENTER_RECT)
   recenter.label.text = 'Recenter'
 
-  const collision = plate(layer, COLLISION_TOGGLE_RECT)
+  const collision = plate(layer, createText, COLLISION_TOGGLE_RECT)
 
   return {
     update(scene, fallbackTick, collisionVisible, resolution) {
@@ -110,15 +118,11 @@ interface Plate {
   label: Text
 }
 
-function plate(layer: Container, rect: Rect): Plate {
+function plate(layer: Container, createText: RendererTextFactory, rect: Rect): Plate {
   const panel = new Graphics()
   layer.addChild(panel)
   paintPlate(panel, rect, false)
-  const label = new Text({
-    text: '',
-    style: { fill: PALETTE.bone, fontFamily: 'system-ui, sans-serif', fontSize: 15 },
-  })
-  label.anchor.set(0.5)
+  const label = createText('', 15, PALETTE.bone, 'center')
   label.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2)
   layer.addChild(label)
   return { panel, label }
@@ -162,12 +166,16 @@ function textureFlecks(width: number, height: number): Graphics {
   return flecks
 }
 
-function textAt(layer: Container, x: number, y: number, size: number, color: string): Text {
-  const value = new Text({
-    text: '',
-    style: { fill: color, fontFamily: 'system-ui, sans-serif', fontSize: size },
-  })
-  value.anchor.set(0, 0.5)
+function textAt(
+  layer: Container,
+  createText: RendererTextFactory,
+  x: number,
+  y: number,
+  size: number,
+  color: string,
+): Text {
+  const value = createText('', size, color, 'left')
+  value.anchor.y = 0.5
   value.position.set(x, y)
   layer.addChild(value)
   return value

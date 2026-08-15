@@ -153,8 +153,8 @@ describe('Three Branches terrain pixel composition', () => {
     opaqueFillPixels(first, '#a9b98d')
     opaqueFillPixels(second, '#a9b98d')
     expect(edge(first, 'right')).toEqual(edge(second, 'left'))
-    expect(Math.min(...first.filter((_, index) => index % 4 === 0))).toBeGreaterThanOrEqual(160)
-    expect(Math.max(...first.filter((_, index) => index % 4 === 0))).toBeLessThanOrEqual(178)
+    expect(Math.min(...first.filter((_, index) => index % 4 === 0))).toBeGreaterThanOrEqual(157)
+    expect(Math.max(...first.filter((_, index) => index % 4 === 0))).toBeLessThanOrEqual(180)
   })
 
   it('leaves water visible between bridge planks', () => {

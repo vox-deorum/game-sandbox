@@ -40,9 +40,11 @@ class _FolderRecordingWriter:
     """Writes a header line then one validated state per line, flushing on every write.
 
     When ``on_line`` is given, each serialized line (header and every state) is also handed to
-    it — serialized exactly once, so a mirror destination (Stage 3's live protocol stream)
+    it, serialized exactly once, so a mirror destination (Stage 3's live protocol stream)
     cannot drift from the bytes on disk. The callback runs after the file write and flush, so a
-    streaming consumer never sees a line the recording has not yet durably captured.
+    streaming consumer never sees a line the recording has not yet durably captured. A step with
+    a ``live_state`` variant mirrors that variant instead while the recording keeps the persisted
+    state, the one divergence the seam allows (live-only broadcast-audience annotations).
     """
 
     def __init__(
@@ -58,15 +60,19 @@ class _FolderRecordingWriter:
         path.chmod(0o666)
         self._emit(dump_line(header))
 
-    def write_step(self, state: StepState) -> None:
+    def write_step(self, state: StepState, live_state: StepState | None = None) -> None:
         check_step(state, self._header["schema_version"])
-        self._emit(dump_line(state))
+        if live_state is None:
+            self._emit(dump_line(state))
+            return
+        check_step(live_state, self._header["schema_version"])
+        self._emit(dump_line(state), dump_line(live_state))
 
-    def _emit(self, line: str) -> None:
+    def _emit(self, line: str, mirror_line: str | None = None) -> None:
         self._handle.write(line)
         self._handle.flush()
         if self._on_line is not None:
-            self._on_line(line)
+            self._on_line(mirror_line if mirror_line is not None else line)
 
     def __enter__(self) -> _FolderRecordingWriter:
         return self

@@ -40,7 +40,7 @@ describe('Three Branches atlas tinting', () => {
   it('bakes opaque fill corners from the configured tint with restrained mask variation', () => {
     const pixels = new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255])
     opaqueFillPixels(pixels, '#6480a0')
-    expect([...pixels]).toEqual([100, 128, 160, 255, 86, 110, 138, 255, 114, 146, 182, 255])
+    expect([...pixels]).toEqual([100, 128, 160, 255, 93, 119, 149, 255, 107, 137, 171, 255])
   })
 
   it('keeps opaque fills separate from transparent mask cache entries', () => {

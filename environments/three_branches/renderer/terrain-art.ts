@@ -3,7 +3,8 @@ import { Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
-import { planTerrainContours, terrainVariant, type TerrainContourPlan } from './terrain-contours.js'
+import { planTerrainContours, type TerrainContourPlan, terrainVariant } from './terrain-contours.js'
+import { planTerrainRoutes, type TerrainRoutePlan } from './terrain-routes.js'
 import { opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
 import type { StaticScene } from './types.js'
 
@@ -20,6 +21,7 @@ export interface TerrainArt {
   tileset: GroundTileset
   variant: GroundVariant
   contours: TerrainContourPlan
+  routes: TerrainRoutePlan
   plankLayer: TileGrid
   upperWallTileset: GroundTileset
   upperWallGrid: TileGrid
@@ -48,7 +50,8 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     counts.set(code, 1)
   }
   const columns = scene.village.size.cellsX
-  const plankLayer = { columns, rows: plankRowsFor(scene.topFirstRows, names) }
+  const routes = planTerrainRoutes(scene.topFirstRows, names, HEARTHSIDE_STYLE.terrain.routes)
+  const plankLayer = { columns, rows: plankRowsFor(routes) }
   const variant: GroundVariant = (code, column, row) => {
     const count = counts.get(code)
     if (count === undefined) throw new Error(`Terrain has no frame count for ${code}.`)
@@ -79,8 +82,9 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
   return {
     tileset: { tileSize: manifest.frames.width, textures },
     variant,
+    routes,
     contours: planTerrainContours(
-      scene.topFirstRows,
+      routes.visualRows,
       names,
       HEARTHSIDE_STYLE.terrain.contours,
       HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
@@ -92,101 +96,21 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
   }
 }
 
-/** Plan one semantic deck orientation for every cardinally connected bridge component. */
-export function plankRowsFor(
-  rows: readonly string[],
-  groundNameForCode: Readonly<Record<string, string>>,
-): readonly string[] {
-  const columns = rows[0]?.length ?? 0
-  if (columns === 0 || rows.some((row) => row.length !== columns)) {
-    throw new Error('Bridge planning requires a non-empty rectangular ground grid.')
-  }
-  const result = Array.from({ length: rows.length }, () => Array(columns).fill(' ') as string[])
-  const visited = Array.from({ length: rows.length }, () => Array(columns).fill(false) as boolean[])
-  const directions = [
-    [0, -1, 'north'],
-    [1, 0, 'east'],
-    [0, 1, 'south'],
-    [-1, 0, 'west'],
-  ] as const
-  for (let startRow = 0; startRow < rows.length; startRow += 1) {
-    for (let startColumn = 0; startColumn < columns; startColumn += 1) {
-      const startCode = rows[startRow]?.[startColumn]
-      if (
-        startCode === undefined ||
-        groundNameForCode[startCode] !== 'bridge' ||
-        visited[startRow]?.[startColumn]
-      ) {
-        continue
-      }
-      const component: [number, number][] = []
-      const queue: [number, number][] = [[startColumn, startRow]]
-      visited[startRow]![startColumn] = true
-      for (let index = 0; index < queue.length; index += 1) {
-        const cell = queue[index]
-        if (cell === undefined) continue
-        const [column, row] = cell
-        component.push(cell)
-        for (const [dx, dy] of directions) {
-          const nextColumn = column + dx
-          const nextRow = row + dy
-          const nextCode = rows[nextRow]?.[nextColumn]
-          if (
-            nextCode === undefined ||
-            groundNameForCode[nextCode] !== 'bridge' ||
-            visited[nextRow]?.[nextColumn]
-          ) {
-            continue
-          }
-          visited[nextRow]![nextColumn] = true
-          queue.push([nextColumn, nextRow])
-        }
-      }
-      const orientation = bridgeOrientation(component, rows, groundNameForCode, directions)
-      const code = BRIDGE_PLANK_CODES[orientation]
-      for (const [column, row] of component) result[row]![column] = code
+/** Map each planned bridge component to its semantic plank frame without repainting other cells. */
+export function plankRowsFor(routes: TerrainRoutePlan): readonly string[] {
+  const result = Array.from(
+    { length: routes.height },
+    () => Array(routes.width).fill(' ') as string[],
+  )
+  for (const component of routes.bridgeComponents) {
+    const code = BRIDGE_PLANK_CODES[component.orientation]
+    for (const cell of component.cells) {
+      const row = result[cell.row]
+      if (row === undefined) throw new Error(`Bridge component ${component.id} leaves its grid.`)
+      row[cell.column] = code
     }
   }
   return result.map((row) => row.join(''))
-}
-
-type BridgeOrientation = keyof typeof BRIDGE_PLANK_CODES
-
-function bridgeOrientation(
-  component: readonly (readonly [number, number])[],
-  rows: readonly string[],
-  groundNameForCode: Readonly<Record<string, string>>,
-  directions: readonly (readonly [number, number, 'north' | 'east' | 'south' | 'west'])[],
-): BridgeOrientation {
-  const contacts = { north: 0, east: 0, south: 0, west: 0 }
-  let minColumn = Number.POSITIVE_INFINITY
-  let maxColumn = Number.NEGATIVE_INFINITY
-  let minRow = Number.POSITIVE_INFINITY
-  let maxRow = Number.NEGATIVE_INFINITY
-  for (const [column, row] of component) {
-    minColumn = Math.min(minColumn, column)
-    maxColumn = Math.max(maxColumn, column)
-    minRow = Math.min(minRow, row)
-    maxRow = Math.max(maxRow, row)
-    for (const [dx, dy, side] of directions) {
-      const neighbor = rows[row + dy]?.[column + dx]
-      const name = neighbor === undefined ? undefined : groundNameForCode[neighbor]
-      if (name === 'road' || name === 'path') contacts[side] += 1
-    }
-  }
-  const horizontalPair = contacts.east > 0 && contacts.west > 0
-  const verticalPair = contacts.north > 0 && contacts.south > 0
-  if (horizontalPair !== verticalPair) return horizontalPair ? 'horizontal' : 'vertical'
-  const horizontalContacts = contacts.east + contacts.west
-  const verticalContacts = contacts.north + contacts.south
-  if (horizontalContacts !== verticalContacts) {
-    return horizontalContacts > verticalContacts ? 'horizontal' : 'vertical'
-  }
-  const horizontalSpan = maxColumn - minColumn + 1
-  const verticalSpan = maxRow - minRow + 1
-  if (horizontalSpan !== verticalSpan)
-    return horizontalSpan > verticalSpan ? 'horizontal' : 'vertical'
-  return 'compact'
 }
 /** The transparent base grid under the upper wall overlay. */
 export function transparentUpperGrid(columns: number, rows: number): TileGrid {

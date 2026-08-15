@@ -1,4 +1,4 @@
-import { Container } from 'pixi.js'
+import { Container, Text } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -12,7 +12,7 @@ import {
 import { expectedCharacterIds, readStatic } from './overlay.js'
 import { THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import { buildStaticScene, computeScene } from './scene.js'
-import { fixtureRecording, openingState } from './test-helpers.js'
+import { fixtureRecording, openingState, testText } from './test-helpers.js'
 import type { FrameScene } from './types.js'
 
 const { header, states } = fixtureRecording()
@@ -125,10 +125,14 @@ describe('Three Branches chrome strip', () => {
 
   it('builds the retained strip and updates it across frames without throwing', () => {
     const layer = new Container()
-    const chrome = createChrome(layer)
+    const chrome = createChrome(layer, testText)
     expect(() => chrome.update(openingScene, 3, false, 1)).not.toThrow()
     expect(() => chrome.update(withBellState(frameScene, 'ringing'), 5, true, 2)).not.toThrow()
     expect(() => chrome.update(sceneWithoutBell, 6, false, 1)).not.toThrow()
     expect(() => chrome.update(terminalScene, 7, true, 1)).not.toThrow()
+    const labels = layer.children.filter((child): child is Text => child instanceof Text)
+    expect(labels).toHaveLength(4)
+    expect(labels.every((label) => label.resolution === 1)).toBe(true)
+    expect(labels.every((label) => label.style.fontWeight === 'bold')).toBe(true)
   })
 })

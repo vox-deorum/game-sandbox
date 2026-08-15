@@ -3,13 +3,8 @@ import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
-import {
-  array,
-  finiteNumber,
-  nonnegativeInteger,
-  positiveInteger,
-  positiveNumber,
-} from './validation.js'
+import type { TerrainCurveProfile } from './terrain-curves.js'
+import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
 
 /** Logical dimensions exposed to the renderer host. */
 export interface RendererSize {
@@ -170,21 +165,38 @@ export interface ShorelineBandTreatment {
   tint: HearthsidePaletteKey
   widthCells: number
   opacity: number
+  density: number
+  runLengthCells: readonly [number, number]
 }
 
 /** Deterministic subcell geometry and shoreline calibration for natural terrain. */
 export interface TerrainContourTreatment {
-  smoothingPasses: number
-  cornerWeight: number
-  sampleSpacingCells: number
+  profiles: {
+    land: TerrainCurveProfile
+    water: TerrainCurveProfile
+  }
   junctionTangentCells: number
-  noiseAmplitudeCells: number
-  noiseWavelengthCells: readonly [number, number]
   maxDeviationCells: number
+  cellCenterClearanceCells: number
+  minimumCorridorCells: number
   saddleRadiusCells: number
   shoreline: {
     bands: readonly [ShorelineBandTreatment, ShorelineBandTreatment]
     bridgeTaperCells: number
+  }
+}
+
+export interface TerrainRouteTreatment {
+  road: {
+    curve: TerrainCurveProfile
+    targetWidthCells: number
+    minimumWidthCells: number
+    opacity: number
+  }
+  path: {
+    curve: TerrainCurveProfile
+    widthCells: number
+    opacity: number
   }
 }
 
@@ -210,6 +222,7 @@ export interface HearthsideStyle {
   terrain: {
     fills: Readonly<Record<string, TerrainFillTreatment>>
     contours: TerrainContourTreatment
+    routes: TerrainRouteTreatment
     planks: PlankTreatment
     upperWall: FrameTreatment
   }
@@ -316,6 +329,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
     'fills',
     'contours',
+    'routes',
     'planks',
     'upperWall',
   ])
@@ -339,6 +353,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       'presentation.terrain.contours',
       paletteNames,
     ),
+    routes: routeTreatment(terrainSource.routes, 'presentation.terrain.routes'),
     planks: plankTreatment(
       terrainSource.planks,
       'presentation.terrain.planks',
@@ -500,27 +515,15 @@ function contourTreatment(
   palette: ReadonlySet<string>,
 ): TerrainContourTreatment {
   const source = exactRecord(value, name, [
-    'smoothingPasses',
-    'cornerWeight',
-    'sampleSpacingCells',
+    'profiles',
     'junctionTangentCells',
-    'noiseAmplitudeCells',
-    'noiseWavelengthCells',
     'maxDeviationCells',
+    'cellCenterClearanceCells',
+    'minimumCorridorCells',
     'saddleRadiusCells',
     'shoreline',
   ])
-  const wavelengths = array(source.noiseWavelengthCells, `${name}.noiseWavelengthCells`)
-  if (wavelengths.length !== 2) {
-    throw new Error(`${name}.noiseWavelengthCells must contain a minimum and maximum.`)
-  }
-  const noiseWavelengthCells = [
-    boundedNumber(wavelengths[0], `${name}.noiseWavelengthCells[0]`, 1.5, 3, true),
-    boundedNumber(wavelengths[1], `${name}.noiseWavelengthCells[1]`, 1.5, 3, true),
-  ] as const
-  if (noiseWavelengthCells[0] > noiseWavelengthCells[1]) {
-    throw new Error(`${name}.noiseWavelengthCells must be ordered minimum to maximum.`)
-  }
+  const profilesSource = exactRecord(source.profiles, `${name}.profiles`, ['land', 'water'])
   const shorelineSource = exactRecord(source.shoreline, `${name}.shoreline`, [
     'bands',
     'bridgeTaperCells',
@@ -531,11 +534,24 @@ function contourTreatment(
   }
   const bands = bandSources.map((band, index) => {
     const bandName = `${name}.shoreline.bands[${index}]`
-    const bandSource = exactRecord(band, bandName, ['tint', 'widthCells', 'opacity'])
+    const bandSource = exactRecord(band, bandName, [
+      'tint',
+      'widthCells',
+      'opacity',
+      'density',
+      'runLengthCells',
+    ])
     return {
       tint: paletteKey(bandSource.tint, palette, `${bandName}.tint`),
-      widthCells: boundedNumber(bandSource.widthCells, `${bandName}.widthCells`, 0, 0.5),
+      widthCells: boundedNumber(bandSource.widthCells, `${bandName}.widthCells`, 0, 1),
       opacity: unitNumber(bandSource.opacity, `${bandName}.opacity`),
+      density: unitNumber(bandSource.density, `${bandName}.density`),
+      runLengthCells: orderedNumberPair(
+        bandSource.runLengthCells,
+        `${bandName}.runLengthCells`,
+        0,
+        8,
+      ),
     }
   }) as [ShorelineBandTreatment, ShorelineBandTreatment]
   if (bands[0].tint !== 'reed' || bands[1].tint !== 'silt') {
@@ -545,24 +561,13 @@ function contourTreatment(
     source.maxDeviationCells,
     `${name}.maxDeviationCells`,
     0,
-    0.15,
-  )
-  const noiseAmplitudeCells = boundedNumber(
-    source.noiseAmplitudeCells,
-    `${name}.noiseAmplitudeCells`,
-    0,
-    Math.min(0.06, maxDeviationCells),
-    true,
+    0.35,
   )
   return {
-    smoothingPasses: positiveInteger(source.smoothingPasses, `${name}.smoothingPasses`),
-    cornerWeight: boundedNumber(source.cornerWeight, `${name}.cornerWeight`, 0, 0.5),
-    sampleSpacingCells: boundedNumber(
-      source.sampleSpacingCells,
-      `${name}.sampleSpacingCells`,
-      0,
-      0.5,
-    ),
+    profiles: {
+      land: curveProfile(profilesSource.land, `${name}.profiles.land`),
+      water: curveProfile(profilesSource.water, `${name}.profiles.water`),
+    },
     junctionTangentCells: boundedNumber(
       source.junctionTangentCells,
       `${name}.junctionTangentCells`,
@@ -570,9 +575,21 @@ function contourTreatment(
       0.5,
       true,
     ),
-    noiseAmplitudeCells,
-    noiseWavelengthCells,
     maxDeviationCells,
+    cellCenterClearanceCells: boundedNumber(
+      source.cellCenterClearanceCells,
+      `${name}.cellCenterClearanceCells`,
+      0.15,
+      0.5,
+      true,
+    ),
+    minimumCorridorCells: boundedNumber(
+      source.minimumCorridorCells,
+      `${name}.minimumCorridorCells`,
+      0.7,
+      1,
+      true,
+    ),
     saddleRadiusCells: boundedNumber(
       source.saddleRadiusCells,
       `${name}.saddleRadiusCells`,
@@ -591,6 +608,97 @@ function contourTreatment(
     },
   }
 }
+
+function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
+  const source = exactRecord(value, name, ['road', 'path'])
+  const roadSource = exactRecord(source.road, `${name}.road`, [
+    'curve',
+    'targetWidthCells',
+    'minimumWidthCells',
+    'opacity',
+  ])
+  const pathSource = exactRecord(source.path, `${name}.path`, ['curve', 'widthCells', 'opacity'])
+  const roadTargetWidthCells = boundedNumber(
+    roadSource.targetWidthCells,
+    `${name}.road.targetWidthCells`,
+    0,
+    8,
+  )
+  return {
+    road: {
+      curve: curveProfile(roadSource.curve, `${name}.road.curve`),
+      targetWidthCells: roadTargetWidthCells,
+      minimumWidthCells: boundedNumber(
+        roadSource.minimumWidthCells,
+        `${name}.road.minimumWidthCells`,
+        0,
+        roadTargetWidthCells,
+      ),
+      opacity: unitNumber(roadSource.opacity, `${name}.road.opacity`),
+    },
+    path: {
+      curve: curveProfile(pathSource.curve, `${name}.path.curve`),
+      widthCells: boundedNumber(pathSource.widthCells, `${name}.path.widthCells`, 0, 2),
+      opacity: unitNumber(pathSource.opacity, `${name}.path.opacity`),
+    },
+  }
+}
+
+function curveProfile(value: unknown, name: string): TerrainCurveProfile {
+  const source = exactRecord(value, name, [
+    'sampleSpacingCells',
+    'macroWindowCells',
+    'fairingIterations',
+    'fairingRadiusCells',
+    'fairingStrength',
+    'noiseAmplitudeCells',
+    'noiseWavelengthCells',
+  ])
+  const fairingIterations = nonnegativeInteger(
+    source.fairingIterations,
+    `${name}.fairingIterations`,
+  )
+  if (fairingIterations > 32) {
+    throw new Error(`${name}.fairingIterations must be at most 32.`)
+  }
+  return {
+    sampleSpacingCells: boundedNumber(
+      source.sampleSpacingCells,
+      `${name}.sampleSpacingCells`,
+      0,
+      4,
+    ),
+    macroWindowCells: boundedNumber(
+      source.macroWindowCells,
+      `${name}.macroWindowCells`,
+      0,
+      64,
+      true,
+    ),
+    fairingIterations,
+    fairingRadiusCells: boundedNumber(
+      source.fairingRadiusCells,
+      `${name}.fairingRadiusCells`,
+      0,
+      64,
+    ),
+    fairingStrength: unitNumber(source.fairingStrength, `${name}.fairingStrength`),
+    noiseAmplitudeCells: boundedNumber(
+      source.noiseAmplitudeCells,
+      `${name}.noiseAmplitudeCells`,
+      0,
+      4,
+      true,
+    ),
+    noiseWavelengthCells: orderedNumberPair(
+      source.noiseWavelengthCells,
+      `${name}.noiseWavelengthCells`,
+      0,
+      256,
+    ),
+  }
+}
+
 function plankTreatment(
   value: unknown,
   name: string,
@@ -702,6 +810,27 @@ function nonnegativeNumber(value: unknown, name: string): number {
 function unitNumber(value: unknown, name: string): number {
   const result = nonnegativeNumber(value, name)
   if (result > 1) throw new Error(`${name} must be at most one.`)
+  return result
+}
+
+function orderedNumberPair(
+  value: unknown,
+  name: string,
+  minimum: number,
+  maximum: number,
+  allowsMinimum = false,
+): readonly [number, number] {
+  const source = array(value, name)
+  if (source.length !== 2) {
+    throw new Error(`${name} must contain a minimum and maximum.`)
+  }
+  const result = [
+    boundedNumber(source[0], `${name}[0]`, minimum, maximum, allowsMinimum),
+    boundedNumber(source[1], `${name}[1]`, minimum, maximum, allowsMinimum),
+  ] as const
+  if (result[0] > result[1]) {
+    throw new Error(`${name} must be ordered minimum to maximum.`)
+  }
   return result
 }
 

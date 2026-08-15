@@ -73,7 +73,7 @@ A completed transition discards the inbox of every player that left on it, and d
 
 ### Visibility
 
-Every live watcher receives every delivered message, including targeted messages. A watcher is any socket that does not control a human player, including every socket in a scripted watch session. A human controller receives broadcasts plus targeted messages sent to or from one of its players. Every message is recorded and visible in replay. See [Recording](recording.md).
+Every live watcher receives every delivered message, including targeted messages. A watcher is any socket that does not control a human player, including every socket in a scripted watch session. A human controller receives broadcasts delivered to or sent by one of its players, plus targeted messages sent to or from one of its players. An environment that does not bound broadcasts delivers every broadcast to everyone, so without `broadcast_recipients` the controller still receives every broadcast. Every message is recorded and visible in replay. See [Recording](recording.md).
 
 Live chat history is best-effort when a client connects. A reconnecting client receives new messages and uses the recording for messages sent before it connected or while it was away. The decision log follows the same rule.
 

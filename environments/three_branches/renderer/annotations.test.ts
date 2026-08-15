@@ -11,7 +11,7 @@ import {
 import { expectedCharacterIds, readStatic } from './overlay.js'
 import { THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import { buildStaticScene, computeScene } from './scene.js'
-import { fixtureRecording } from './test-helpers.js'
+import { fixtureRecording, testText } from './test-helpers.js'
 import type { FrameScene, SpeechLine } from './types.js'
 
 const { nameplateZoomFactor, nameplateFadeFactor, speechHoldMs, speechFadeMs, speechMaxLines } =
@@ -144,7 +144,7 @@ describe('speechTag', () => {
 describe('createAnnotationLayer', () => {
   it('reconciles one node per character and removes a node whose character left the frame', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     annotations.reconcile(scene, 4, 2, 1)
     expect(layer.children).toHaveLength(scene.characters.length)
@@ -161,7 +161,7 @@ describe('createAnnotationLayer', () => {
 
   it('ignores a repeated key, so a second delivery of the same line does not restart its age', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
     expect(annotations.advance(3000)).toBe(true)
     // Same key again: a naive implementation that restarted the age would still be visible below.
@@ -171,7 +171,7 @@ describe('createAnnotationLayer', () => {
 
   it('does not restart the final bubble when a multi-line state is delivered again', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const lines = [
       speechLine({ key: 'a', speaker: 'visitor', text: 'broadcast' }),
       speechLine({ key: 'b', speaker: 'visitor', text: 'direct' }),
@@ -184,7 +184,7 @@ describe('createAnnotationLayer', () => {
 
   it('replaces a speaker’s bubble with a newer line and restarts its age', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
     annotations.reconcile(scene, 4, 2, 1)
@@ -203,7 +203,7 @@ describe('createAnnotationLayer', () => {
 
   it('drops every retained line and its remembered keys on clear, so the same key may be delivered again', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
     annotations.clear()
@@ -216,7 +216,7 @@ describe('createAnnotationLayer', () => {
 
   it('returns false from advance once every retained bubble has fully faded', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: 'first line' })])
     expect(annotations.advance(speechHoldMs)).toBe(true)
     expect(annotations.advance(speechFadeMs)).toBe(false)
@@ -224,7 +224,7 @@ describe('createAnnotationLayer', () => {
 
   it('keeps a bubble retained and aging even while its speaker is absent from the frame', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     annotations.deliver([speechLine({ key: 'a', speaker: 'a-character-not-in-the-fixture' })])
     // Nothing to draw for the unknown speaker, but reconcile must not throw over it.
@@ -234,7 +234,7 @@ describe('createAnnotationLayer', () => {
 
   it('wraps a delivered line to the configured speech line budget when drawn', () => {
     const layer = new Container()
-    const annotations = createAnnotationLayer(layer)
+    const annotations = createAnnotationLayer(layer, testText)
     const scene = fixtureScene()
     const longText = Array.from({ length: 20 }, (_, index) => `word${index}`).join(' ')
     annotations.deliver([speechLine({ key: 'a', speaker: 'visitor', text: longText })])

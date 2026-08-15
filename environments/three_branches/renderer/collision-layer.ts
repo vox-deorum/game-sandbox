@@ -1,4 +1,5 @@
-import { Container, Graphics, Text } from 'pixi.js'
+import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { Container, Graphics } from 'pixi.js'
 
 import { PALETTE } from './presentation.js'
 import type { CollisionShape } from './types.js'
@@ -14,7 +15,10 @@ export interface CollisionLayer {
 }
 
 /** Draw collision truth in an ungraded layer above every art layer. */
-export function createCollisionLayer(layer: Container): CollisionLayer {
+export function createCollisionLayer(
+  layer: Container,
+  createText: RendererTextFactory,
+): CollisionLayer {
   const staticShapes = new Graphics()
   const staticLabels = new Container()
   const dynamicShapes = new Graphics()
@@ -25,10 +29,10 @@ export function createCollisionLayer(layer: Container): CollisionLayer {
       layer.visible = visible
     },
     drawStatic(shapes, resolution) {
-      drawShapes(staticShapes, staticLabels, shapes, resolution)
+      drawShapes(staticShapes, staticLabels, shapes, resolution, createText)
     },
     drawDynamic(shapes, resolution) {
-      drawShapes(dynamicShapes, dynamicLabels, shapes, resolution)
+      drawShapes(dynamicShapes, dynamicLabels, shapes, resolution, createText)
     },
   }
 }
@@ -38,6 +42,7 @@ function drawShapes(
   labels: Container,
   collision: readonly CollisionShape[],
   resolution: number,
+  createText: RendererTextFactory,
 ): void {
   graphics.clear()
   for (const child of labels.removeChildren()) child.destroy()
@@ -49,14 +54,21 @@ function drawShapes(
         .fill({ color, alpha: 0.24 })
         .stroke({ color, width: 1 })
       if (shape.group === 'object') {
-        addLabel(labels, shape.label, shape.rect.x, shape.rect.y, resolution)
+        addLabel(labels, shape.label, shape.rect.x, shape.rect.y, resolution, createText)
       }
     } else {
       graphics
         .circle(shape.center.x, shape.center.y, shape.radius)
         .fill({ color, alpha: 0.24 })
         .stroke({ color, width: 1 })
-      addLabel(labels, shape.label, shape.center.x + shape.radius, shape.center.y, resolution)
+      addLabel(
+        labels,
+        shape.label,
+        shape.center.x + shape.radius,
+        shape.center.y,
+        resolution,
+        createText,
+      )
     }
   }
 }
@@ -68,12 +80,16 @@ function colorFor(group: CollisionShape['group']): string {
   return PALETTE.boundaryCollision
 }
 
-function addLabel(layer: Container, value: string, x: number, y: number, resolution: number): void {
-  const label = new Text({
-    text: value,
-    style: { fill: PALETTE.text, fontSize: 9, fontFamily: 'ui-monospace, monospace' },
-    resolution,
-  })
+function addLabel(
+  layer: Container,
+  value: string,
+  x: number,
+  y: number,
+  resolution: number,
+  createText: RendererTextFactory,
+): void {
+  const label = createText(value, 9, PALETTE.text, 'left', 'ui-monospace, monospace')
+  label.resolution = resolution
   label.position.set(x + 2, y + 2)
   layer.addChild(label)
 }

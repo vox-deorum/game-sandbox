@@ -31,10 +31,12 @@ class RecordingWriter(AbstractContextManager["RecordingWriter"], Protocol):
     """A live recording being written. Used as a context manager.
 
     ``write_step`` validates the state, appends exactly one JSONL line, and flushes on
-    every write, so a crashed session leaves a readable prefix.
+    every write, so a crashed session leaves a readable prefix. ``live_state``, when given,
+    is a live-presentation variant of the same step handed to the store's mirror seam in
+    place of the persisted line; it is never written to the recording.
     """
 
-    def write_step(self, state: StepState) -> None: ...
+    def write_step(self, state: StepState, live_state: StepState | None = None) -> None: ...
 
 
 class Recording(Protocol):

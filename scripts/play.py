@@ -11,6 +11,7 @@ import webbrowser
 from collections.abc import Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
 from game_sandbox_harness import canonical_player_order
@@ -51,6 +52,29 @@ def possible_players(
     layout = default_layout(entry, parameters)
     players = (player for seat in layout.seats for player in seat.players)
     return canonical_player_order(players)
+
+
+def default_seat_index(entry: EnvironmentEntry, layout: ResolvedLayout, mode: str) -> int:
+    """Choose the seat a bare command means, mirroring the template launcher's preference.
+
+    Human mode picks the environment's preferred human seat: a restricted human-capable seat when one
+    exists (for example the Three Branches visitor), else the first human-capable seat. Agent and
+    watch modes keep seat 0.
+    """
+    if mode != "human":
+        return 0
+    human_players = frozenset(entry.meta.human_players)
+    capable = [
+        (index, seat)
+        for index, seat in enumerate(layout.seats)
+        if any(player in human_players for player in seat.players)
+    ]
+    restricted = next((index for index, seat in capable if seat.restricted_builtin is not None), None)
+    if restricted is not None:
+        return restricted
+    if capable:
+        return capable[0][0]
+    raise RuntimeError(f"{entry.meta.env_id!r} has no human-playable seat")
 
 
 def player_for_seat(
@@ -244,6 +268,10 @@ def launch_browser(
         "game_sandbox_harness.live",
         json.dumps(config, separators=(",", ":")),
     ]
+    # The externally bound players are the local viewer's controlled players (empty in watch-style
+    # modes), so the relay applies the production controller view to bounded broadcasts.
+    bindings = cast("Mapping[str, Mapping[str, str]]", config.get("player_bindings") or {})
+    controller_players = [player for player, binding in bindings.items() if binding["kind"] == "external"]
 
     async def serve() -> None:
         async with LocalServer(
@@ -252,6 +280,7 @@ def launch_browser(
             static_root=static_root or ensure_local_bundle(),
             start_paused=True,
             port=port,
+            controller_players=controller_players,
         ) as server:
             print(f"local play: {server.url}", flush=True)
             if open_browser:
@@ -271,7 +300,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("env_id", help="registered environment id, for example hearts")
     parser.add_argument("mode", nargs="?", choices=MODES, default=None)
     parser.add_argument("--agent-repo", type=Path, help="manifest.json agent repository for agent mode")
-    parser.add_argument("--seat", type=int, default=0, help="human seat index")
+    parser.add_argument(
+        "--seat",
+        type=int,
+        default=None,
+        help="seat index; defaults to the environment's preferred human seat in human mode, else 0",
+    )
     parser.add_argument(
         "--companion",
         help=(
@@ -319,7 +353,14 @@ def main(argv: list[str] | None = None) -> int:
         layout = default_layout(entry, parameters)
     except ValueError as error:
         parser.error(str(error))
-    if not 0 <= args.seat < len(layout.seats):
+    if args.seat is None:
+        try:
+            seat = default_seat_index(entry, layout, mode)
+        except RuntimeError as error:
+            parser.error(str(error))
+    elif 0 <= args.seat < len(layout.seats):
+        seat = args.seat
+    else:
         parser.error(f"--seat must name one of 0..{len(layout.seats) - 1}")
 
     timeout: int | None | UnsetTimeout
@@ -334,7 +375,7 @@ def main(argv: list[str] | None = None) -> int:
             config = local_config(
                 entry,
                 mode=mode,
-                seat=args.seat,
+                seat=seat,
                 seed=args.seed,
                 max_steps=args.steps,
                 human_timeout_ms=timeout,

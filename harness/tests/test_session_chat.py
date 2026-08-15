@@ -7,6 +7,7 @@ observed on the recipient's *next* turn. All on ``ManualClock``.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -315,6 +316,70 @@ def test_broadcast_reaches_every_other_player_but_not_the_sender():
 
 
 # --- chat-less agent ----------------------------------------------------------------------------
+
+
+def test_bounded_broadcast_annotates_the_live_stream_and_keeps_the_recording_clean(tmp_path: Path):
+    # The mirror seam (what a live session streams) annotates a bounded broadcast with its delivered
+    # audience, resolved through the hook exactly once per sender and boundary. The persisted line
+    # stays {from, to, text}.
+    hook_calls: list[str] = []
+
+    def audience(_env: RoundRobinEnv, sender: str) -> tuple[str, ...]:
+        hook_calls.append(sender)
+        return ("player_1",)
+
+    streamed: list[str] = []
+    store = FolderRecordingStore(tmp_path, on_line=streamed.append)
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=3,
+        broadcast_recipients=audience,
+    )
+    naive: dict[str, Any] = {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
+    run_episode(
+        entry,
+        {
+            "player_0": AgentPlayer(ChattyAgent([[{"to": None, "text": "ring"}]])),
+            "player_1": AgentPlayer(ChattyAgent()),
+            "player_2": AgentPlayer(ChattyAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        player_attribution={player: dict(naive) for player in ("player_0", "player_1", "player_2")},
+    )
+    streamed_states = [json.loads(line) for line in streamed[1:]]  # skip the header line
+    assert streamed_states[0]["messages"] == [
+        {"from": "player_0", "to": None, "text": "ring", "recipients": ["player_1"]}
+    ]
+    recorded = list(store.open("r").steps())
+    assert recorded[0]["messages"] == [{"from": "player_0", "to": None, "text": "ring"}]
+    assert hook_calls == ["player_0"]
+
+
+def test_unbounded_broadcast_streams_the_exact_recorded_bytes(tmp_path: Path):
+    # Without the broadcast hook nothing is annotated, so the streamed lines stay byte-identical to
+    # the recording (the pre-annotation fast path).
+    streamed: list[str] = []
+    store = FolderRecordingStore(tmp_path, on_line=streamed.append)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=2)
+    naive: dict[str, Any] = {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
+    run_episode(
+        entry,
+        {
+            "player_0": AgentPlayer(ChattyAgent([[{"to": None, "text": "table"}]])),
+            "player_1": AgentPlayer(ChattyAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        player_attribution={player: dict(naive) for player in ("player_0", "player_1")},
+    )
+    on_disk = (tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8")
+    assert "".join(streamed) == on_disk
+    assert '"recipients"' not in on_disk
 
 
 def test_sequential_broadcast_hook_limits_delivery_to_its_live_audience():

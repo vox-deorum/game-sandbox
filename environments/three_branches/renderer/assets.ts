@@ -194,8 +194,8 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   {
     name: 'terrain',
     source: './source-art/terrain-atlas-source.png',
-    sourceWidth: 1254,
-    sourceHeight: 1254,
+    sourceWidth: 1536,
+    sourceHeight: 1024,
     path: './assets/terrain-atlas.png',
     width: 1024,
     height: 1024,

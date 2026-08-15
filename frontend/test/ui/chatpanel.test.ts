@@ -291,3 +291,167 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('combobox')).toHaveValue('player_1')
   })
 })
+
+// Three Branches human play (Days at Three Branches, plan step 6): the visitor (player_0) is the
+// designated sender, and NPCs display as npc_0, npc_1, ... by index, the environment's playerNames hook
+// (environments/three_branches/renderer/index.ts) rather than the compact player id.
+describe('ChatPanel — Three Branches human play (step 6)', () => {
+  const NAMES = { player_0: 'visitor', player_1: 'npc_0', player_2: 'npc_1', player_3: 'npc_2' }
+  // The visitor with two NPCs currently in hearing range; a third (npc_2) is out of range and so is
+  // never offered, matching the range-and-wall speech contract.
+  const POLICY = {
+    sender: 'player_0',
+    targetRecipients: ['player_1', 'player_2'],
+    defaultRecipient: null,
+  }
+
+  it("offers Everyone plus exactly the policy's permitted addressees, labelled by display name", () => {
+    render(ChatPanel, {
+      props: {
+        entries: [],
+        playerNames: NAMES,
+        viewerPlayers: ['player_0'],
+        sendable: true,
+        messageCap: 200,
+        policy: POLICY,
+      },
+    })
+
+    expect(screen.getByRole('option', { name: 'Everyone' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'npc_0' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'npc_1' })).toBeInTheDocument()
+    // npc_2 is out of hearing range on this state, so the policy never lists it: no such option.
+    expect(screen.queryByRole('option', { name: 'npc_2' })).toBeNull()
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+  })
+
+  it('sends the platform player id for a direct pick and a null recipient for a broadcast, never the display name', async () => {
+    const { emitted } = render(ChatPanel, {
+      props: {
+        entries: [],
+        playerNames: NAMES,
+        viewerPlayers: ['player_0'],
+        sendable: true,
+        messageCap: 200,
+        policy: POLICY,
+      },
+    })
+    const recipient = screen.getByRole('combobox')
+    const input = screen.getByRole('textbox')
+    const send = screen.getByRole('button', { name: 'Send' })
+
+    // A direct line to npc_1: the select is valued by the platform id even though it reads "npc_1".
+    await fireEvent.update(recipient, 'player_2')
+    await fireEvent.update(input, 'have you seen the miller?')
+    await fireEvent.click(send)
+    expect(emitted('send')?.[0]).toEqual([
+      { sender: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
+    ])
+
+    // "Everyone" broadcasts: a null recipient, not the compact id and not omitted from the payload.
+    await fireEvent.update(recipient, '')
+    await fireEvent.update(input, 'hello, anyone about?')
+    await fireEvent.click(send)
+    expect(emitted('send')?.[1]).toEqual([
+      { sender: 'player_0', to: null, text: 'hello, anyone about?' },
+    ])
+  })
+
+  it('resets the recipient when target_recipients narrows (an npc walks out of hearing), keeping a draft that already survived an ordinary state change', async () => {
+    const props = {
+      entries: [] as ChatEntry[],
+      playerNames: NAMES,
+      viewerPlayers: ['player_0'],
+      sendable: true,
+      messageCap: 200,
+      policy: POLICY,
+    }
+    const { rerender } = render(ChatPanel, { props })
+    const recipient = screen.getByRole('combobox')
+    const input = screen.getByRole('textbox') as HTMLInputElement
+
+    await fireEvent.update(recipient, 'player_2')
+    await fireEvent.update(input, 'meet me by the well')
+
+    // An ordinary state change (a new message arrives, nothing about the policy changes) leaves the
+    // open draft and the picked recipient alone.
+    await rerender({
+      ...props,
+      entries: [{ tick: 4, from: 'player_1', to: null, text: 'the well is dry' }],
+    })
+    expect(recipient).toHaveValue('player_2')
+    expect(input.value).toBe('meet me by the well')
+
+    // npc_1 (player_2) walks out of hearing: target_recipients narrows to just npc_0, so the picked
+    // recipient is no longer offered. The panel falls back to the (still null) default, but the draft
+    // text is untouched.
+    await rerender({
+      ...props,
+      entries: [{ tick: 4, from: 'player_1', to: null, text: 'the well is dry' }],
+      policy: { sender: 'player_0', targetRecipients: ['player_1'], defaultRecipient: null },
+    })
+    expect(recipient).toHaveValue('')
+    expect(input.value).toBe('meet me by the well')
+    expect(screen.queryByRole('option', { name: 'npc_1' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'npc_0' })).toBeInTheDocument()
+  })
+
+  it("enforces the environment's 200 code point cap: 200 code points sends, 201 does not", async () => {
+    render(ChatPanel, {
+      props: {
+        entries: [],
+        playerNames: NAMES,
+        viewerPlayers: ['player_0'],
+        sendable: true,
+        messageCap: 200,
+        policy: POLICY,
+      },
+    })
+    const input = screen.getByRole('textbox')
+    const send = screen.getByRole('button', { name: 'Send' })
+
+    await fireEvent.update(input, 'a'.repeat(200))
+    expect(screen.getByText('200/200')).toBeInTheDocument()
+    expect(send).toBeEnabled()
+
+    await fireEvent.update(input, 'a'.repeat(201))
+    expect(screen.getByText('201/200')).toHaveClass('chat-counter--over')
+    expect(send).toBeDisabled()
+  })
+
+  it("renders the visitor's own pre-filtered feed, badging its own sends and receipts as from-you/to-you", () => {
+    // The server has already filtered this list to lines the visitor session is entitled to: broadcasts,
+    // and lines to or from player_0. An npc-to-npc line is a watcher/replay-only concern and never
+    // reaches this list at all (see the GameThread coverage in gamethread.test.ts).
+    const entries: ChatEntry[] = [
+      { tick: 10, from: 'player_1', to: null, text: 'the well is dry' },
+      { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
+      { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
+    ]
+    const { container } = render(ChatPanel, {
+      props: { entries, playerNames: NAMES, viewerPlayers: ['player_0'] },
+    })
+
+    expect(container.querySelectorAll('.chat-entry')).toHaveLength(3)
+    expect(screen.getByText('broadcast')).toBeInTheDocument()
+    expect(screen.getByText('from you')).toBeInTheDocument()
+    expect(screen.getByText('to you')).toBeInTheDocument()
+    expect(screen.getByText('have you seen the miller?')).toBeInTheDocument()
+    expect(screen.getByText('try the mill')).toBeInTheDocument()
+  })
+
+  it("badges a direct line by the other party's display name for a spectator of the same pre-filtered feed", () => {
+    // A spectator watching the visitor's session controls nobody, so the from-you/to-you shortcuts never
+    // fire: the same pre-filtered entries now badge their targeted line by the addressee's display name.
+    const entries: ChatEntry[] = [
+      { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
+      { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
+    ]
+    render(ChatPanel, { props: { entries, playerNames: NAMES, viewerPlayers: [] } })
+
+    expect(screen.getByText('to npc_1')).toBeInTheDocument()
+    expect(screen.getByText('to visitor')).toBeInTheDocument()
+    expect(screen.queryByText('to you')).toBeNull()
+    expect(screen.queryByText('from you')).toBeNull()
+  })
+})

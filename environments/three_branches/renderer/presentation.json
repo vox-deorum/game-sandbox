@@ -18,34 +18,113 @@
   "terrain": {
     "fills": {
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed", "opacity": 1 },
-      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber", "opacity": 0.58 },
+      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber", "opacity": 1 },
       "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment", "opacity": 1 },
-      "bridge": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water", "opacity": 1 },
-      "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment", "opacity": 1 },
+      "bridge": {
+        "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
+        "tint": "water",
+        "opacity": 1
+      },
+      "interior": {
+        "frames": ["floorA", "floorB", "floorC", "floorD"],
+        "tint": "parchment",
+        "opacity": 1
+      },
       "doorway": { "frames": ["doorway"], "tint": "bone", "opacity": 1 },
-      "field": { "frames": ["furrowA", "furrowB", "furrowC", "furrowD"], "tint": "silt", "opacity": 1 },
+      "field": {
+        "frames": ["furrowA", "furrowB", "furrowC", "furrowD"],
+        "tint": "silt",
+        "opacity": 1
+      },
       "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "reed", "opacity": 1 },
-      "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water", "opacity": 1 },
+      "water": {
+        "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
+        "tint": "water",
+        "opacity": 1
+      },
       "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo", "opacity": 1 }
     },
     "contours": {
-      "smoothingPasses": 2,
-      "cornerWeight": 0.25,
-      "sampleSpacingCells": 0.5,
+      "profiles": {
+        "land": {
+          "sampleSpacingCells": 0.25,
+          "macroWindowCells": 0,
+          "fairingIterations": 4,
+          "fairingRadiusCells": 1.5,
+          "fairingStrength": 0.35,
+          "noiseAmplitudeCells": 0.04,
+          "noiseWavelengthCells": [5, 9]
+        },
+        "water": {
+          "sampleSpacingCells": 0.2,
+          "macroWindowCells": 4,
+          "fairingIterations": 6,
+          "fairingRadiusCells": 2.5,
+          "fairingStrength": 0.45,
+          "noiseAmplitudeCells": 0.06,
+          "noiseWavelengthCells": [7, 12]
+        }
+      },
       "junctionTangentCells": 0.25,
-      "noiseAmplitudeCells": 0.06,
-      "noiseWavelengthCells": [1.5, 3],
-      "maxDeviationCells": 0.15,
+      "maxDeviationCells": 0.35,
+      "cellCenterClearanceCells": 0.15,
+      "minimumCorridorCells": 0.7,
       "saddleRadiusCells": 0.08,
       "shoreline": {
         "bands": [
-          { "tint": "reed", "widthCells": 0.32, "opacity": 0.16 },
-          { "tint": "silt", "widthCells": 0.16, "opacity": 0.36 }
+          {
+            "tint": "reed",
+            "widthCells": 0.6,
+            "opacity": 0.14,
+            "density": 0.65,
+            "runLengthCells": [1.5, 4]
+          },
+          {
+            "tint": "silt",
+            "widthCells": 0.24,
+            "opacity": 0.24,
+            "density": 0.35,
+            "runLengthCells": [0.75, 2.25]
+          }
         ],
-        "bridgeTaperCells": 0.25
+        "bridgeTaperCells": 0.35
       }
     },
-    "planks": { "horizontal": "bridgeA", "vertical": "bridgeB", "compact": "bridgeC", "tint": "timber" },
+    "routes": {
+      "road": {
+        "curve": {
+          "sampleSpacingCells": 0.25,
+          "macroWindowCells": 1.5,
+          "fairingIterations": 4,
+          "fairingRadiusCells": 1,
+          "fairingStrength": 0.35,
+          "noiseAmplitudeCells": 0.05,
+          "noiseWavelengthCells": [4, 8]
+        },
+        "targetWidthCells": 2.1,
+        "minimumWidthCells": 1.6,
+        "opacity": 0.82
+      },
+      "path": {
+        "curve": {
+          "sampleSpacingCells": 0.2,
+          "macroWindowCells": 3,
+          "fairingIterations": 6,
+          "fairingRadiusCells": 2,
+          "fairingStrength": 0.45,
+          "noiseAmplitudeCells": 0.04,
+          "noiseWavelengthCells": [5, 10]
+        },
+        "widthCells": 0.7,
+        "opacity": 1
+      }
+    },
+    "planks": {
+      "horizontal": "bridgeA",
+      "vertical": "bridgeB",
+      "compact": "bridgeC",
+      "tint": "timber"
+    },
     "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
   },
   "roofs": {

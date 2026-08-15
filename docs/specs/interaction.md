@@ -127,7 +127,7 @@ Object-shaped overlay data works the same way for rendering. The renderer direct
 
 ## Chat
 
-When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. A watcher sees every delivered message in the panel. A human controller sees broadcasts plus targeted messages sent to or from one of its players.
+When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. A watcher sees every delivered message in the panel. A human controller sees broadcasts delivered to or sent by one of its players, plus targeted messages sent to or from one of its players. An environment that does not bound broadcasts delivers every broadcast to everyone, so without that hook the controller sees every broadcast.
 
 Every live state is self-contained for human chat while the designated human player remains active. It carries that player as the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as the broadcast choice even when the environment offers no direct recipient.
 

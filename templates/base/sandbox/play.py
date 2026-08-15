@@ -16,7 +16,7 @@ import webbrowser
 from collections.abc import Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sandbox.env import META, PLAYER_ID, default_action, extract_overlay, extract_overlay_static, make_env
 from sandbox.harness.environment import (
@@ -460,6 +460,10 @@ def launch_browser(config: dict[str, object], *, port: int, open_browser: bool) 
     """Serve the local bundle and runner until the player closes the command with Ctrl+C."""
 
     command = [sys.executable, "-m", "sandbox.live_local", json.dumps(config, separators=(",", ":"))]
+    # The externally bound players are the local viewer's controlled players (empty in watch-style
+    # modes), so the relay applies the production controller view to bounded broadcasts.
+    bindings = cast("Mapping[str, Mapping[str, str]]", config.get("player_bindings") or {})
+    controller_players = [player for player, binding in bindings.items() if binding["kind"] == "external"]
 
     async def serve() -> None:
         async with LocalServer(
@@ -468,6 +472,7 @@ def launch_browser(config: dict[str, object], *, port: int, open_browser: bool) 
             static_root=WEB_ROOT,
             start_paused=True,
             port=port,
+            controller_players=controller_players,
         ) as server:
             print(f"local play: {server.url}", flush=True)
             if open_browser:

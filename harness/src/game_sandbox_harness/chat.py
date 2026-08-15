@@ -150,6 +150,25 @@ class ChatRouter:
             return self.default_broadcast_audience(sender)
         return self.validate_broadcast_recipients(sender, declared)
 
+    def bounded_broadcast_audiences(
+        self, env: Any, messages: list[Message]
+    ) -> dict[str, tuple[str, ...]] | None:
+        """Resolve each broadcasting sender's bounded audience once for one recorded batch.
+
+        Returns ``None`` when the environment does not bound broadcasts (no hook) or the batch
+        carries no broadcast, so callers can tell "unbounded, visible to everyone" apart from an
+        explicit audience. The result feeds both the live-state annotation and :meth:`deliver`,
+        so the hook runs at most once per sender and boundary and the two views cannot disagree.
+        """
+        if not isinstance(env, BroadcastRecipientsSource):
+            return None
+        audiences: dict[str, tuple[str, ...]] = {}
+        for message in messages:
+            sender = message["from"]
+            if message["to"] is None and sender not in audiences:
+                audiences[sender] = self.broadcast_audience_from(env, sender)
+        return audiences or None
+
     def _checked_policy(
         self,
         sender: str,
@@ -256,23 +275,32 @@ class ChatRouter:
             accepted.append({"from": sender, "to": to, "text": text})
         return accepted
 
-    def deliver(self, messages: list[Message], tick: int, env: Any = None) -> None:
+    def deliver(
+        self,
+        messages: list[Message],
+        tick: int,
+        env: Any = None,
+        audiences: Mapping[str, tuple[str, ...]] | None = None,
+    ) -> None:
         """Deliver a tick's accepted messages to pending inboxes, stamping each with ``tick``.
 
         A targeted message reaches its recipient's inbox; a broadcast reaches every other active
-        player. A recipient that went inactive on this very transition is skipped, because it has no
-        later acting opportunity to read on. Called at the end of the sending tick, after the acting
-        agent's inbox was drained, so a message sent on tick T is first seen strictly after T.
+        player, or the audience the environment bounded. ``audiences`` carries audiences already
+        resolved by :meth:`bounded_broadcast_audiences` so the hook is not invoked a second time;
+        senders it does not cover are resolved here. A recipient that went inactive on this very
+        transition is skipped, because it has no later acting opportunity to read on. Called at the
+        end of the sending tick, after the acting agent's inbox was drained, so a message sent on
+        tick T is first seen strictly after T.
         """
-        audiences: dict[str, tuple[str, ...]] = {}
+        resolved: dict[str, tuple[str, ...]] = dict(audiences or {})
         for message in messages:
             sender = message["from"]
             recipient = message["to"]
             item = {**message, "tick": tick}
             if recipient is None:
-                if sender not in audiences:
-                    audiences[sender] = self.broadcast_audience_from(env, sender)
-                audience = audiences[sender]
+                if sender not in resolved:
+                    resolved[sender] = self.broadcast_audience_from(env, sender)
+                audience = resolved[sender]
                 for player_id in audience:
                     if player_id in self._active:
                         self._inboxes[player_id].append(dict(item))

@@ -92,6 +92,41 @@ def _use_restricted_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _use_three_branches_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mirror Days at Three Branches' real seat plans (environments/three_branches/__init__.py):
+    a cast seat that scales with the plan, plus one visitor seat restricted to a builtin. Only
+    the visitor (player_0) is declared human-playable. The restriction names ``naive`` rather than
+    three_branches' real ``scripted_visitor`` builtin, since this fixture composes against
+    whichever environment the template test run happens to target, and ``naive`` is the one
+    builtin every environment declares; the seat shape under test does not depend on which name
+    the restriction carries."""
+    plans = SeatPlans(
+        (
+            SeatPlan(
+                "cast_5",
+                "Five villagers",
+                (
+                    SeatDeclaration((1, 2, 3, 4, 5)),
+                    SeatDeclaration((0,), restricted_builtin="naive"),
+                ),
+            ),
+            SeatPlan(
+                "cast_10",
+                "Ten villagers",
+                (
+                    SeatDeclaration(tuple(range(1, 11))),
+                    SeatDeclaration((0,), restricted_builtin="naive"),
+                ),
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        play,
+        "META",
+        replace(play.META, layout=plans, human_players=("player_0",), presets=()),
+    )
+
+
 def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypatch, tmp_path: Path):
     _use_player_bounds(monkeypatch, 1)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
@@ -190,6 +225,40 @@ def test_restricted_human_seat_derives_its_builtin_companion(monkeypatch, tmp_pa
             step_limit=None,
             companion="self",
         )
+
+
+@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
+def test_three_branches_layouts_default_the_human_seat_to_the_visitor(
+    monkeypatch: pytest.MonkeyPatch, plan_key: str
+):
+    _use_three_branches_layout(monkeypatch)
+    layout = play.resolved_layout(resolve_parameters(play.META, {"seat_plan": plan_key}))
+
+    assert layout.seats[1].players == ("player_0",)
+    assert play.default_human_seat_index(layout) == 1
+
+
+@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
+def test_three_branches_local_config_gives_the_visitor_seat_to_the_human(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, plan_key: str
+):
+    _use_three_branches_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    parameters = resolve_parameters(play.META, {"seat_plan": plan_key})
+    seat = play.default_human_seat_index(play.resolved_layout(parameters))
+
+    config = play.local_config(
+        seed=0,
+        mode="human",
+        seat=seat,
+        recording_dir=tmp_path / "recordings",
+        step_limit=None,
+        parameters=parameters,
+    )
+
+    assert config["external_chat_player"] == "player_0"
+    assert config["player_bindings"]["player_0"] == {"kind": "external"}
+    assert config["players"]["player_0"] == {"kind": "human", "label": "You"}
 
 
 def test_launcher_rejects_a_mode_it_does_not_define():

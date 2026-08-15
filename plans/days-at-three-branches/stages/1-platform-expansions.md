@@ -16,7 +16,7 @@ A simultaneous environment may publish a `Dict` action space without an action m
 
 ### Live watcher visibility
 
-Every non-controller socket receives every delivered line, including targeted messages, in both live filtering and connection catch-up. A human controller receives broadcasts and targeted lines to or from one of its external players. This matches replay visibility.
+Every non-controller socket receives every delivered line, including targeted messages, in both live filtering and connection catch-up. A human controller receives broadcasts delivered to or sent by one of its external players, and targeted lines to or from one of its external players. An environment that does not bound broadcasts delivers every broadcast to everyone, so behavior without the hook is unchanged. This matches replay visibility.
 
 ### Setup observations
 

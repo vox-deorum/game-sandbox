@@ -229,6 +229,134 @@ def test_local_server_runs_the_injected_parallel_fixture_through_the_live_runner
     asyncio.run(exercise())
 
 
+def test_local_server_filters_annotated_broadcasts_for_the_controller_and_strips_for_watchers() -> None:
+    # A human-mode relay (controller players named) keeps a bounded broadcast only when a controlled
+    # player sent or heard it; a watch-style relay keeps every line. Both strip the live-only
+    # `recipients` annotation, and the stashed catch-up line a late socket receives is the same view.
+    header_line = '{"schema_version":1,"environment":"fake"}'
+    state = {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {},
+        "timing": {"started_at": 0, "duration_ms": 1},
+        "messages": [
+            {"from": "player_1", "to": None, "text": "near", "recipients": ["player_0"]},
+            {"from": "player_1", "to": None, "text": "far", "recipients": ["player_2"]},
+            {"from": "player_0", "to": None, "text": "mine", "recipients": ["player_2"]},
+            {"from": "player_1", "to": None, "text": "open"},
+        ],
+    }
+    state_line = json.dumps(state, separators=(",", ":"))
+    child = (
+        f"import time; print({header_line!r}, flush=True); print({state_line!r}, flush=True); time.sleep(1)"
+    )
+
+    async def state_seen(controller_players: tuple[str, ...] | None) -> dict:
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "local.html").write_text("local", encoding="utf-8")
+            async with LocalServer(
+                _entry(),
+                command=[sys.executable, "-c", child],
+                static_root=root,
+                controller_players=controller_players,
+            ) as server:
+                for _ in range(500):
+                    if server._latest_state is not None:  # noqa: SLF001 - the attach replays it
+                        break
+                    await asyncio.sleep(0.01)
+                assert server._latest_state is not None  # noqa: SLF001
+                async with websockets.connect(
+                    f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+                ) as socket:
+                    frames = [str(await socket.recv()) for _ in range(2)]
+        return json.loads(frames[1])
+
+    async def exercise() -> None:
+        controller_state = await state_seen(("player_0",))
+        assert controller_state["messages"] == [
+            {"from": "player_1", "to": None, "text": "near"},
+            {"from": "player_0", "to": None, "text": "mine"},
+            {"from": "player_1", "to": None, "text": "open"},
+        ]
+        watcher_state = await state_seen(None)
+        assert watcher_state["messages"] == [
+            {"from": "player_1", "to": None, "text": "near"},
+            {"from": "player_1", "to": None, "text": "far"},
+            {"from": "player_0", "to": None, "text": "mine"},
+            {"from": "player_1", "to": None, "text": "open"},
+        ]
+
+    asyncio.run(exercise())
+
+
+def _unstarted_server(controller_players: tuple[str, ...] | None) -> LocalServer:
+    # `_present_state` and `__init__` never touch the filesystem or spawn the child, so a server
+    # built this way is safe to exercise without starting it.
+    return LocalServer(
+        _entry(),
+        command=[sys.executable, "-c", "pass"],
+        static_root=Path("."),
+        controller_players=controller_players,
+    )
+
+
+def test_present_state_returns_the_identical_string_for_an_unfiltered_line() -> None:
+    # A line with nothing to filter and nothing to strip is handed back as the same string object,
+    # pinning the passthrough fast path the docstring promises.
+    state = {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {},
+        "timing": {"started_at": 0, "duration_ms": 1},
+        "messages": [{"from": "player_1", "to": None, "text": "open"}],
+    }
+    line = json.dumps(state, separators=(",", ":"))
+    server = _unstarted_server(("player_0",))
+    assert server._present_state(line, state) is line  # noqa: SLF001
+
+
+def test_present_state_filters_targeted_messages_for_the_controller_and_keeps_them_for_watchers() -> None:
+    # A targeted line between two players neither controlled is invisible to the human-mode
+    # controller, matching the backend's own audience rule, but stays visible to a watch-style
+    # viewer. A targeted line to or from the controller stays visible either way.
+    state = {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {},
+        "timing": {"started_at": 0, "duration_ms": 1},
+        "messages": [
+            {"from": "player_3", "to": "player_5", "text": "npc chatter"},
+            {"from": "player_0", "to": "player_5", "text": "from controller"},
+            {"from": "player_3", "to": "player_0", "text": "to controller"},
+        ],
+    }
+    line = json.dumps(state, separators=(",", ":"))
+
+    controller_view = json.loads(_unstarted_server(("player_0",))._present_state(line, state))  # noqa: SLF001
+    assert controller_view["messages"] == [
+        {"from": "player_0", "to": "player_5", "text": "from controller"},
+        {"from": "player_3", "to": "player_0", "text": "to controller"},
+    ]
+
+    assert _unstarted_server(None)._present_state(line, state) is line  # noqa: SLF001
+
+
+def test_present_state_omits_the_messages_key_when_every_message_is_filtered() -> None:
+    # Once the controller filter empties the messages list, "messages" itself must be absent rather
+    # than present as an empty list, matching the recording format and the backend's own filter.
+    state = {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {},
+        "timing": {"started_at": 0, "duration_ms": 1},
+        "messages": [{"from": "player_3", "to": "player_5", "text": "npc chatter"}],
+    }
+    line = json.dumps(state, separators=(",", ":"))
+    presented = json.loads(_unstarted_server(("player_0",))._present_state(line, state))  # noqa: SLF001
+    assert "messages" not in presented
+
+
 def test_local_server_http_routes_and_metadata_are_safe() -> None:
     async def exercise() -> None:
         with TemporaryDirectory() as raw:
@@ -365,7 +493,7 @@ def test_local_server_forwards_commands_and_orders_terminal_frames() -> None:
                     await first.send('{"kind":"stop"}')
                     terminal = [await first.recv(), await first.recv()]
                     assert terminal[0] == '{"kind":"result","reason":"stopped"}'
-                    assert terminal[1] == '{"kind":"session","status":"ended","reason":"stopped"}'
+                    assert terminal[1] == '{"kind":"session","reason":"stopped","status":"ended"}'
                 await server.wait()
 
     asyncio.run(exercise())

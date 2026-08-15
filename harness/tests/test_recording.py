@@ -57,6 +57,18 @@ def test_write_then_read_round_trip(tmp_path: Path):
     assert store.list_ids() == ["run1"]
 
 
+def test_write_step_rejects_a_malformed_live_state_even_when_the_recorded_state_is_valid(tmp_path: Path):
+    store = FolderRecordingStore(tmp_path)
+    with store.create("run1", _header()) as writer:
+        malformed_live_state = dict(_step(0))
+        del malformed_live_state["tick"]
+        with pytest.raises(SchemaValidationError):
+            writer.write_step(_step(0), live_state=malformed_live_state)  # type: ignore[arg-type]
+
+    lines = (tmp_path / "run1" / "recording.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1  # only the header: the invalid live_state never reached disk
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits only")
 def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)

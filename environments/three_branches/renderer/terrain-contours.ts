@@ -1,8 +1,12 @@
+import {
+  shapeTerrainCurve,
+  type TerrainCurveProfile,
+  type TerrainCurveSourcePoint,
+} from './terrain-curves.js'
+
 /** The material outside the authored grid. It closes every map-edge face. */
 export const TERRAIN_EXTERIOR = '__exterior__'
 
-/** Shoreline eligibility reaches full strength this far from a bridge-owned span. */
-export const BRIDGE_SHORELINE_TAPER_CELLS = 0.25
 const CURVE_BUCKET_SIZE_CELLS = 1
 
 const CONTOURED_MATERIALS = new Set(['ground', 'field', 'reeds', 'water', 'road', 'path'])
@@ -11,13 +15,14 @@ const EPSILON = 1e-9
 
 /** Numeric contour controls. The presentation configuration can satisfy this interface directly. */
 export interface TerrainContourSettings {
-  readonly smoothingPasses: number
-  readonly cornerWeight: number
-  readonly sampleSpacingCells: number
+  readonly profiles: {
+    readonly land: TerrainCurveProfile
+    readonly water: TerrainCurveProfile
+  }
   readonly junctionTangentCells: number
-  readonly noiseAmplitudeCells: number
-  readonly noiseWavelengthCells: readonly [number, number]
   readonly maxDeviationCells: number
+  readonly cellCenterClearanceCells: number
+  readonly minimumCorridorCells: number
   readonly saddleRadiusCells: number
 }
 
@@ -166,11 +171,13 @@ interface WorkingChain {
   readonly rawPoints: readonly ContourCoordinate[]
   readonly rawLength: number
   readonly spans: readonly TerrainContourSpan[]
-  readonly points: readonly TerrainContourPoint[]
+  points: readonly TerrainContourPoint[]
   readonly materials: readonly [string, string]
   readonly leftMaterial: string
   readonly rightMaterial: string
+  readonly componentKeys: readonly [string, string]
   readonly shorelineSpans: readonly TerrainShorelineSpan[]
+  readonly adaptive: AdaptiveContourState
 }
 
 interface DirectedSegment {
@@ -269,9 +276,10 @@ export function planTerrainContours(
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,
   settings: TerrainContourSettings,
-  bridgeTaperCells = BRIDGE_SHORELINE_TAPER_CELLS,
+  bridgeTaperCells: number,
 ): TerrainContourPlan {
   const { width, height } = validateInputs(rows, groundNameForCode, settings, bridgeTaperCells)
+  const layoutHash = terrainHash('terrain-layout', width, height, rows.join('\n'))
   const cells = buildCells(rows, groundNameForCode, width, height)
   const components = new DisjointSet(cells.length)
   unionCardinalComponents(cells, width, height, components)
@@ -283,7 +291,13 @@ export function planTerrainContours(
   }
 
   const graph = buildGraph(cells, width, height, saddles, componentKeyForCell)
-  const workingChains = buildChains(graph.nodes, graph.segments, settings, bridgeTaperCells)
+  const workingChains = buildChains(
+    graph.nodes,
+    graph.segments,
+    settings,
+    bridgeTaperCells,
+    layoutHash,
+  )
   validateCurveGraph(workingChains, settings.maxDeviationCells)
 
   const workingRings = buildRings(graph.nodes, graph.segments, workingChains)
@@ -353,29 +367,18 @@ function validateInputs(
       throw new Error(`Terrain ground ${JSON.stringify(semantic)} cannot be contoured.`)
     }
   }
-  if (!Number.isInteger(settings.smoothingPasses) || settings.smoothingPasses < 0) {
-    throw new Error('Contour smoothing passes must be a non-negative integer.')
-  }
-  if (!(settings.cornerWeight > 0 && settings.cornerWeight <= 0.5)) {
-    throw new Error('Contour corner weight must be greater than zero and at most 0.5.')
-  }
-  if (!(settings.sampleSpacingCells > 0 && settings.sampleSpacingCells <= 0.5)) {
-    throw new Error('Contour sample spacing must be greater than zero and at most 0.5 cell.')
-  }
+  validateCurveProfiles(settings.profiles)
   if (!(settings.junctionTangentCells >= 0 && settings.junctionTangentCells <= 0.5)) {
     throw new Error('Contour junction tangent must be between zero and 0.5 cell.')
   }
-  if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.15)) {
-    throw new Error('Contour maximum deviation must be greater than zero and at most 0.15 cell.')
+  if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.35)) {
+    throw new Error('Contour maximum deviation must be greater than zero and at most 0.35 cell.')
   }
-  if (!(settings.noiseAmplitudeCells >= 0 && settings.noiseAmplitudeCells <= 0.06)) {
-    throw new Error('Contour noise amplitude must be between zero and 0.06 cell.')
+  if (!(settings.cellCenterClearanceCells >= 0.15 && settings.cellCenterClearanceCells <= 0.5)) {
+    throw new Error('Contour cell-center clearance must be between 0.15 and 0.5 cell.')
   }
-  const [minimumWavelength, maximumWavelength] = settings.noiseWavelengthCells
-  if (
-    !(minimumWavelength >= 1.5 && maximumWavelength >= minimumWavelength && maximumWavelength <= 3)
-  ) {
-    throw new Error('Contour noise wavelength must be an ordered range within 1.5 to 3 cells.')
+  if (!(settings.minimumCorridorCells >= 0.7 && settings.minimumCorridorCells <= 1)) {
+    throw new Error('Contour minimum corridor must be between 0.70 and one cell.')
   }
   if (!(settings.saddleRadiusCells > 0 && settings.saddleRadiusCells <= 0.08)) {
     throw new Error('Contour saddle radius must be greater than zero and at most 0.08 cell.')
@@ -384,6 +387,24 @@ function validateInputs(
     throw new Error('Bridge shoreline taper must be between zero and one cell.')
   }
   return { width, height: rows.length }
+}
+
+function validateCurveProfiles(profiles: TerrainContourSettings['profiles']): void {
+  const source: readonly TerrainCurveSourcePoint[] = [
+    { x: 0, y: 0, locked: true },
+    { x: 1, y: 0, locked: true },
+  ]
+  for (const [name, profile] of [
+    ['land', profiles.land],
+    ['water', profiles.water],
+  ] as const) {
+    try {
+      shapeTerrainCurve(source, false, profile, 0)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Contour ${name} profile is invalid: ${message}`)
+    }
+  }
 }
 
 function materialForSemantic(semantic: string): string {
@@ -715,6 +736,7 @@ function buildChains(
   segments: readonly GraphSegment[],
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
+  layoutHash: number,
 ): WorkingChain[] {
   const segmentById = new Map(segments.map((segment) => [segment.id, segment]))
   const visited = new Set<number>()
@@ -766,9 +788,11 @@ function buildChains(
         atomSequenceKey(second.atoms, second.closed),
       ),
   )
-  return ordered.map((source, index) =>
-    finishChain(source, `chain-${index}`, settings, bridgeTaperCells),
+  const chains = ordered.map((source, index) =>
+    finishChain(source, `chain-${index}`, settings, bridgeTaperCells, layoutHash),
   )
+  adaptContourGraph(chains, settings)
+  return chains
 }
 
 function canonicalAtoms(atoms: readonly ChainAtom[], closed: boolean): readonly ChainAtom[] {
@@ -833,6 +857,7 @@ function finishChain(
   id: string,
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
+  layoutHash: number,
 ): WorkingChain {
   const rawPoints: ContourCoordinate[] = [atomStart(source.atoms[0]!)]
   const spans: TerrainContourSpan[] = []
@@ -886,6 +911,16 @@ function finishChain(
         suppressed: span.bridgeSuppressed,
       }
     })
+  const adaptive = prepareAdaptiveContour(
+    rawPoints,
+    spans,
+    rawLength,
+    source.closed,
+    settings,
+    bridgeTaperCells,
+    layoutHash,
+    source.pairKey,
+  )
   return {
     id,
     closed: source.closed,
@@ -894,17 +929,38 @@ function finishChain(
     rawPoints,
     rawLength,
     spans,
-    points: smoothChain(id, rawPoints, spans, rawLength, source.closed, settings, bridgeTaperCells),
+    points: renderAdaptiveContour(adaptive),
     materials,
     leftMaterial: firstSpan.left.material,
     rightMaterial: firstSpan.right.material,
+    componentKeys: [
+      (firstSpan.left as SideRecord).componentKey,
+      (firstSpan.right as SideRecord).componentKey,
+    ],
     shorelineSpans,
+    adaptive,
   }
 }
 
-interface WorkingPoint extends ContourCoordinate {
+interface AdaptiveContourSample {
+  readonly raw: ContourCoordinate
+  readonly candidate: ContourCoordinate
   readonly rawOffset: number
+  readonly locked: boolean
+  readonly shorelineFactor: number
 }
+
+interface AdaptiveContourState {
+  readonly samples: readonly AdaptiveContourSample[]
+  readonly intervalLevelIndexes: number[]
+  readonly closed: boolean
+  readonly rawIndex: RawPolylineIndex
+  readonly centerBuckets: ReadonlyMap<string, readonly ContourCoordinate[]>
+  readonly maxDeviationCells: number
+  readonly cellCenterClearanceCells: number
+}
+
+const CONTOUR_BLEND_LEVELS = [1, 0.75, 0.5, 0.25, 0] as const
 
 interface OffsetInterval {
   readonly startOffset: number
@@ -915,19 +971,19 @@ interface ContourSpanIndex {
   readonly spans: readonly TerrainContourSpan[]
   readonly fixed: readonly OffsetInterval[]
   readonly bridgeSuppressed: readonly OffsetInterval[]
-  readonly vertexOffsets: readonly number[]
   readonly hasShoreline: boolean
 }
 
-function smoothChain(
-  id: string,
+function prepareAdaptiveContour(
   rawPoints: readonly ContourCoordinate[],
   spans: readonly TerrainContourSpan[],
   rawLength: number,
   closed: boolean,
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
-): TerrainContourPoint[] {
+  layoutHash: number,
+  pairKey: string,
+): AdaptiveContourState {
   const spanIndex = indexContourSpans(spans)
   const lockOffsets = contourLockOffsets(
     spanIndex.fixed,
@@ -935,72 +991,66 @@ function smoothChain(
     closed,
     settings.junctionTangentCells,
   )
-  let points = sampleRawChain(rawPoints, spans, rawLength, settings.sampleSpacingCells, closed)
-  for (let pass = 0; pass < settings.smoothingPasses; pass += 1) {
-    points = chaikin(points, rawLength, closed, settings.cornerWeight)
-  }
-  points = insertLockedPoints(points, lockOffsets, rawPoints, spans, rawLength, closed)
-  const [minimumWavelength, maximumWavelength] = settings.noiseWavelengthCells
-  const wavelengthUnit = terrainHash('contour-wavelength', id) / 2 ** 32
-  const wavelength = minimumWavelength + wavelengthUnit * (maximumWavelength - minimumWavelength)
-  const rawIndex = indexRawPolyline(rawPoints)
-  const displaced = points.map((point, index) => {
-    const locked = offsetLocked(
-      point.rawOffset,
+  const profile = pairKey.split('\u0000').includes('water')
+    ? settings.profiles.water
+    : settings.profiles.land
+  const source = curveSourcePoints(
+    rawPoints,
+    spans,
+    rawLength,
+    closed,
+    lockOffsets,
+    spanIndex,
+    settings.junctionTangentCells,
+  )
+  const shaped = shapeTerrainCurve(
+    source,
+    closed,
+    profile,
+    terrainHash('terrain-contour-shape', layoutHash, pairKey),
+  )
+  const locked = shaped.map((point) =>
+    offsetLocked(
+      point.sourceOffset,
       spanIndex.fixed,
       rawLength,
       closed,
       settings.junctionTangentCells,
-    )
-    const raw = rawPointAt(point.rawOffset, rawPoints, spanIndex.spans, rawLength, closed)
-    if (locked)
+    ),
+  )
+  const locallyConstrained =
+    maximumGapBetweenLocks(shaped, locked, rawLength, closed) <=
+    settings.minimumCorridorCells + profile.sampleSpacingCells
+  const samples = shaped.map((point, index): AdaptiveContourSample => {
+    const raw = rawPointAt(point.sourceOffset, rawPoints, spanIndex.spans, rawLength, closed)
+    if (locked[index])
       return {
-        ...raw,
-        rawOffset: normalizedOffset(point.rawOffset, rawLength, closed),
-        locked,
+        raw,
+        candidate: raw,
+        rawOffset: normalizedOffset(point.sourceOffset, rawLength, closed),
+        locked: true,
         shorelineFactor: shorelineFactorAt(
-          point.rawOffset,
+          point.sourceOffset,
           spanIndex,
           rawLength,
           closed,
           bridgeTaperCells,
         ),
       }
-    const previous = points[(index - 1 + points.length) % points.length]!
-    const next = points[(index + 1) % points.length]!
-    const before = !closed && index === 0 ? point : previous
-    const after = !closed && index === points.length - 1 ? point : next
-    const tangentLength = Math.hypot(after.x - before.x, after.y - before.y) || 1
-    const endpointFactor = closed
-      ? 1
-      : Math.min(1, point.rawOffset / 0.5, (rawLength - point.rawOffset) / 0.5)
-    const noise =
-      settings.noiseAmplitudeCells *
-      endpointFactor *
-      smoothValueNoise(id, point.x / wavelength, point.y / wavelength)
-    const candidate = {
-      x: point.x + (-(after.y - before.y) / tangentLength) * noise,
-      y: point.y + ((after.x - before.x) / tangentLength) * noise,
-    }
-    const projection = projectToPolyline(candidate, rawIndex)
-    const deviation = distance(candidate, projection.point)
-    const limited =
-      deviation <= settings.maxDeviationCells
-        ? candidate
-        : {
-            x:
-              projection.point.x +
-              ((candidate.x - projection.point.x) / deviation) * settings.maxDeviationCells,
-            y:
-              projection.point.y +
-              ((candidate.y - projection.point.y) / deviation) * settings.maxDeviationCells,
-          }
+    const candidate = locallyConstrained
+      ? limitPointFromRawPair(
+          point,
+          raw,
+          Math.min(settings.maxDeviationCells, (1 - settings.minimumCorridorCells) / 2),
+        )
+      : point
     return {
-      ...limited,
-      rawOffset: normalizedOffset(point.rawOffset, rawLength, closed),
-      locked,
+      raw,
+      candidate,
+      rawOffset: normalizedOffset(point.sourceOffset, rawLength, closed),
+      locked: false,
       shorelineFactor: shorelineFactorAt(
-        point.rawOffset,
+        point.sourceOffset,
         spanIndex,
         rawLength,
         closed,
@@ -1008,39 +1058,114 @@ function smoothChain(
       ),
     }
   })
-  if (displaced.every((point) => point.locked)) return displaced
-  return repairCurveTube(
-    displaced,
-    rawPoints,
-    spanIndex,
-    rawLength,
+  return {
+    samples,
+    intervalLevelIndexes: Array.from(
+      { length: closed ? samples.length : Math.max(0, samples.length - 1) },
+      () => 0,
+    ),
     closed,
-    settings,
-    bridgeTaperCells,
-    rawIndex,
-  )
+    rawIndex: indexRawPolyline(rawPoints),
+    centerBuckets: indexContourCellCenters(spans),
+    maxDeviationCells: settings.maxDeviationCells,
+    cellCenterClearanceCells: settings.cellCenterClearanceCells,
+  }
 }
 
-/** Smooth deterministic lattice values avoid the repeating cadence of one sinusoid. */
-function smoothValueNoise(id: string, x: number, y: number): number {
-  const column = Math.floor(x)
-  const row = Math.floor(y)
-  const localX = x - column
-  const localY = y - row
-  const fade = (value: number): number => value * value * (3 - 2 * value)
-  const valueAt = (offsetX: number, offsetY: number): number =>
-    (avalancheHash(terrainHash('contour-noise', id, column + offsetX, row + offsetY)) / 2 ** 32) *
-      2 -
-    1
-  const blendX = fade(localX)
-  const blendY = fade(localY)
-  const northWest = valueAt(0, 0)
-  const northEast = valueAt(1, 0)
-  const southWest = valueAt(0, 1)
-  const southEast = valueAt(1, 1)
-  const north = northWest + (northEast - northWest) * blendX
-  const south = southWest + (southEast - southWest) * blendX
-  return north + (south - north) * blendY
+function curveSourcePoints(
+  rawPoints: readonly ContourCoordinate[],
+  spans: readonly TerrainContourSpan[],
+  rawLength: number,
+  closed: boolean,
+  lockOffsets: readonly number[],
+  spanIndex: ContourSpanIndex,
+  tangentLength: number,
+): TerrainCurveSourcePoint[] {
+  const offsets = new Map<string, number>()
+  for (const offset of [...spans.map((span) => span.startOffset), ...lockOffsets]) {
+    const normalized = normalizedOffset(offset, rawLength, closed)
+    offsets.set(contourOffsetKey(normalized), normalized)
+  }
+  if (!closed) offsets.set(contourOffsetKey(rawLength), rawLength)
+  return [...offsets.values()]
+    .sort((first, second) => first - second)
+    .map((offset) => ({
+      ...rawPointAt(offset, rawPoints, spans, rawLength, closed),
+      locked: offsetLocked(offset, spanIndex.fixed, rawLength, closed, tangentLength),
+    }))
+}
+
+function maximumGapBetweenLocks(
+  points: readonly { readonly sourceOffset: number }[],
+  locked: readonly boolean[],
+  rawLength: number,
+  closed: boolean,
+): number {
+  const offsets = points
+    .filter((_, index) => locked[index])
+    .map((point) => point.sourceOffset)
+    .sort((first, second) => first - second)
+  if (offsets.length === 0) return rawLength
+  let maximum = 0
+  for (let index = 1; index < offsets.length; index += 1) {
+    maximum = Math.max(maximum, offsets[index]! - offsets[index - 1]!)
+  }
+  if (closed) maximum = Math.max(maximum, offsets[0]! + rawLength - offsets.at(-1)!)
+  return maximum
+}
+
+function limitPointFromRawPair(
+  point: ContourCoordinate,
+  raw: ContourCoordinate,
+  maximumDeviation: number,
+): ContourCoordinate {
+  const deviation = distance(point, raw)
+  if (deviation <= maximumDeviation) return point
+  const scale = maximumDeviation / deviation
+  return {
+    x: raw.x + (point.x - raw.x) * scale,
+    y: raw.y + (point.y - raw.y) * scale,
+  }
+}
+
+function indexContourCellCenters(
+  spans: readonly TerrainContourSpan[],
+): ReadonlyMap<string, readonly ContourCoordinate[]> {
+  const byCoordinate = new Map<string, ContourCoordinate>()
+  for (const span of spans) {
+    for (const cell of [...span.left.cells, ...span.right.cells]) {
+      byCoordinate.set(`${cell.column}:${cell.row}`, { x: cell.x, y: cell.y })
+    }
+  }
+  const buckets = new Map<string, ContourCoordinate[]>()
+  for (const center of byCoordinate.values()) {
+    const key = cellCoordinateKey(Math.floor(center.x), Math.floor(center.y))
+    const bucket = buckets.get(key) ?? []
+    bucket.push(center)
+    buckets.set(key, bucket)
+  }
+  return buckets
+}
+
+function renderAdaptiveContour(state: AdaptiveContourState): TerrainContourPoint[] {
+  return state.samples.map((sample, index) => {
+    const blend = sample.locked ? 0 : pointBlendLevel(state, index)
+    return {
+      x: sample.raw.x + (sample.candidate.x - sample.raw.x) * blend,
+      y: sample.raw.y + (sample.candidate.y - sample.raw.y) * blend,
+      rawOffset: sample.rawOffset,
+      locked: sample.locked,
+      shorelineFactor: sample.shorelineFactor,
+    }
+  })
+}
+
+function pointBlendLevel(state: AdaptiveContourState, index: number): number {
+  const incident: number[] = []
+  if (index > 0) incident.push(state.intervalLevelIndexes[index - 1]!)
+  else if (state.closed) incident.push(state.intervalLevelIndexes.at(-1)!)
+  if (index < state.intervalLevelIndexes.length) incident.push(state.intervalLevelIndexes[index]!)
+  return Math.min(...incident.map((levelIndex) => CONTOUR_BLEND_LEVELS[levelIndex]!))
 }
 
 function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanIndex {
@@ -1050,28 +1175,8 @@ function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanInd
     spans,
     fixed: spans.filter((span) => span.fixed).sort(byStartOffset),
     bridgeSuppressed: spans.filter((span) => span.bridgeSuppressed).sort(byStartOffset),
-    vertexOffsets: spans.map((span) => span.endOffset),
     hasShoreline: spans.some((span) => span.shoreline),
   }
-}
-
-function sampleRawChain(
-  rawPoints: readonly ContourCoordinate[],
-  spans: readonly TerrainContourSpan[],
-  rawLength: number,
-  spacing: number,
-  closed: boolean,
-): WorkingPoint[] {
-  const intervalCount = Math.max(closed ? 2 : 1, Math.ceil(rawLength / spacing))
-  const interval = rawLength / intervalCount
-  const offsets = Array.from({ length: intervalCount }, (_, index) => (index + 0.5) * interval)
-  if (!closed) offsets.push(0, rawLength)
-  return offsets
-    .sort((first, second) => first - second)
-    .map((rawOffset) => ({
-      ...rawPointAt(rawOffset, rawPoints, spans, rawLength, closed),
-      rawOffset,
-    }))
 }
 
 function contourLockOffsets(
@@ -1104,91 +1209,8 @@ function contourLockOffsets(
   return offsets.sort((first, second) => first - second)
 }
 
-function insertLockedPoints(
-  points: readonly WorkingPoint[],
-  offsets: readonly number[],
-  rawPoints: readonly ContourCoordinate[],
-  spans: readonly TerrainContourSpan[],
-  rawLength: number,
-  closed: boolean,
-): WorkingPoint[] {
-  const merged = [...points]
-  const offsetKeys = new Set(merged.map((point) => contourOffsetKey(point.rawOffset)))
-  for (const rawOffset of offsets) {
-    const key = contourOffsetKey(rawOffset)
-    if (offsetKeys.has(key)) continue
-    offsetKeys.add(key)
-    merged.push({
-      ...rawPointAt(rawOffset, rawPoints, spans, rawLength, closed),
-      rawOffset,
-    })
-  }
-  return merged.sort((first, second) => first.rawOffset - second.rawOffset)
-}
-
 function contourOffsetKey(offset: number): string {
   return offset.toFixed(9)
-}
-
-function chaikin(
-  points: readonly WorkingPoint[],
-  rawLength: number,
-  closed: boolean,
-  weight: number,
-): WorkingPoint[] {
-  if (points.length < 2) return [...points]
-  const result: WorkingPoint[] = []
-  const edgeCount = closed ? points.length : points.length - 1
-  if (!closed) result.push(points[0]!)
-  for (let index = 0; index < edgeCount; index += 1) {
-    const first = points[index]!
-    const second = points[(index + 1) % points.length]!
-    let secondOffset = second.rawOffset
-    if (closed && secondOffset <= first.rawOffset) secondOffset += rawLength
-    result.push(
-      interpolateWorking(first, second, first.rawOffset, secondOffset, weight, rawLength, closed),
-    )
-    result.push(
-      interpolateWorking(
-        first,
-        second,
-        first.rawOffset,
-        secondOffset,
-        1 - weight,
-        rawLength,
-        closed,
-      ),
-    )
-  }
-  if (!closed) result.push(points[points.length - 1]!)
-  if (closed) {
-    const minimum = result.reduce(
-      (best, point, index) => (point.rawOffset < result[best]!.rawOffset ? index : best),
-      0,
-    )
-    return rotate(result, minimum)
-  }
-  return result
-}
-
-function interpolateWorking(
-  first: WorkingPoint,
-  second: WorkingPoint,
-  firstOffset: number,
-  secondOffset: number,
-  amount: number,
-  rawLength: number,
-  closed: boolean,
-): WorkingPoint {
-  return {
-    x: first.x + (second.x - first.x) * amount,
-    y: first.y + (second.y - first.y) * amount,
-    rawOffset: normalizedOffset(
-      firstOffset + (secondOffset - firstOffset) * amount,
-      rawLength,
-      closed,
-    ),
-  }
 }
 
 function normalizedOffset(offset: number, rawLength: number, closed: boolean): number {
@@ -1243,185 +1265,339 @@ function offsetLocked(
   )
 }
 
-function repairCurveTube(
-  points: readonly TerrainContourPoint[],
-  rawPoints: readonly ContourCoordinate[],
-  spanIndex: ContourSpanIndex,
-  rawLength: number,
-  closed: boolean,
-  settings: TerrainContourSettings,
-  bridgeTaperCells: number,
-  rawIndex: RawPolylineIndex,
-): TerrainContourPoint[] {
-  if (points.length < 2) return [...points]
-  const repaired: TerrainContourPoint[] = [points[0]!]
-  const edgeCount = closed ? points.length : points.length - 1
-  for (let index = 0; index < edgeCount; index += 1) {
-    const start = points[index]!
-    const end = points[(index + 1) % points.length]!
-    let endOffset = end.rawOffset
-    if (closed && endOffset <= start.rawOffset) endOffset += rawLength
-    const additions = repairCurveSegment(
-      start,
-      end,
-      start.rawOffset,
-      endOffset,
-      rawPoints,
-      spanIndex,
-      rawLength,
-      closed,
-      settings,
-      bridgeTaperCells,
-      rawIndex,
+interface AdaptiveCurvePiece {
+  readonly chain: WorkingChain
+  readonly chainIndex: number
+  readonly index: number
+  readonly count: number
+  readonly start: TerrainContourPoint
+  readonly end: TerrainContourPoint
+  readonly rawStart: ContourCoordinate
+  readonly rawEnd: ContourCoordinate
+}
+
+function adaptContourGraph(chains: WorkingChain[], settings: TerrainContourSettings): void {
+  for (const chain of chains) adaptLocalChain(chain)
+  const safeIndependentDisplacement = (1 - settings.minimumCorridorCells) / 2
+  if (
+    chains.every((chain) =>
+      chain.points.every(
+        (point, index) =>
+          distance(point, chain.adaptive.samples[index]!.raw) <= safeIndependentDisplacement + 1e-7,
+      ),
     )
-    const included = closed && index === edgeCount - 1 ? additions.slice(0, -1) : additions
-    for (const point of included) {
-      if (!samePoint(repaired[repaired.length - 1]!, point)) repaired.push(point)
+  ) {
+    return
+  }
+  const maximumPasses = CONTOUR_BLEND_LEVELS.length * 4
+  for (let pass = 0; pass < maximumPasses; pass += 1) {
+    const pieces = adaptiveCurvePieces(chains)
+    const conflicts = new Map<string, AdaptiveCurvePiece>()
+    for (const [first, second] of intersectingAdaptivePairs(pieces)) {
+      conflicts.set(adaptivePieceKey(first), first)
+      conflicts.set(adaptivePieceKey(second), second)
+    }
+    for (const [first, second] of nearbyAdaptivePairs(pieces, settings.minimumCorridorCells)) {
+      if (first.chain === second.chain && piecesAreAdjacent(first, second)) continue
+      if (
+        first.chain === second.chain &&
+        piecesAreNearAlongChain(first, second, settings.minimumCorridorCells)
+      ) {
+        continue
+      }
+      const rawDistance = segmentDistance(
+        first.rawStart,
+        first.rawEnd,
+        second.rawStart,
+        second.rawEnd,
+      )
+      const required = Math.min(settings.minimumCorridorCells, rawDistance)
+      if (required <= EPSILON) continue
+      const currentDistance = segmentDistance(first.start, first.end, second.start, second.end)
+      if (currentDistance + 1e-7 >= required) continue
+      conflicts.set(adaptivePieceKey(first), first)
+      conflicts.set(adaptivePieceKey(second), second)
+    }
+    if (conflicts.size === 0) return
+    let changed = false
+    const ordered = [...conflicts.values()].sort(
+      (first, second) =>
+        first.chain.id.localeCompare(second.chain.id) || first.index - second.index,
+    )
+    const changedChains = new Set<WorkingChain>()
+    for (const piece of ordered) {
+      if (!lowerAdaptiveInterval(piece.chain.adaptive, piece.index)) continue
+      changed = true
+      changedChains.add(piece.chain)
+    }
+    if (!changed) break
+    for (const chain of changedChains) adaptLocalChain(chain)
+  }
+  validateAdaptiveIntersections(chains)
+  validateAdaptiveCorridors(chains, settings.minimumCorridorCells)
+}
+
+function adaptLocalChain(chain: WorkingChain): void {
+  const state = chain.adaptive
+  validateMonotonicOffsets(state)
+  for (let pass = 0; pass < CONTOUR_BLEND_LEVELS.length * 4; pass += 1) {
+    chain.points = renderAdaptiveContour(state)
+    const pairedSafetyLimit = Math.min(
+      state.maxDeviationCells,
+      0.5 - state.cellCenterClearanceCells,
+    )
+    if (
+      chain.points.every(
+        (point, index) => distance(point, state.samples[index]!.raw) <= pairedSafetyLimit + 1e-7,
+      )
+    ) {
+      return
+    }
+    const failures: number[] = []
+    const edgeCount = state.intervalLevelIndexes.length
+    for (let index = 0; index < edgeCount; index += 1) {
+      const start = chain.points[index]!
+      const end = chain.points[(index + 1) % chain.points.length]!
+      if (
+        !segmentStaysInTube(start, end, state.rawIndex, state.maxDeviationCells) ||
+        !segmentClearsCellCenters(start, end, state.centerBuckets, state.cellCenterClearanceCells)
+      ) {
+        failures.push(index)
+      }
+    }
+    if (failures.length === 0) return
+    let changed = false
+    for (const index of failures) changed = lowerAdaptiveInterval(state, index) || changed
+    if (!changed) break
+  }
+  chain.points = renderAdaptiveContour(state)
+  throw new Error('Terrain contour raw fallback could not preserve its local safety bounds.')
+}
+
+function validateMonotonicOffsets(state: AdaptiveContourState): void {
+  for (let index = 1; index < state.samples.length; index += 1) {
+    if (state.samples[index]!.rawOffset <= state.samples[index - 1]!.rawOffset + EPSILON) {
+      throw new Error('Terrain contour samples lost monotonic raw-offset order.')
     }
   }
-  return repaired
 }
 
-function repairCurveSegment(
-  start: TerrainContourPoint,
-  end: TerrainContourPoint,
-  startOffset: number,
-  endOffset: number,
-  rawPoints: readonly ContourCoordinate[],
-  spanIndex: ContourSpanIndex,
-  rawLength: number,
-  closed: boolean,
-  settings: TerrainContourSettings,
-  bridgeTaperCells: number,
-  rawIndex: RawPolylineIndex,
-): TerrainContourPoint[] {
-  if (segmentStaysInTube(start, end, rawIndex, settings.maxDeviationCells)) return [end]
-  const middleOffset = localFallbackOffset(
-    startOffset,
-    endOffset,
-    spanIndex.vertexOffsets,
-    rawLength,
-    closed,
+function lowerAdaptiveInterval(state: AdaptiveContourState, intervalIndex: number): boolean {
+  const current = state.intervalLevelIndexes[intervalIndex]
+  if (current === undefined || current >= CONTOUR_BLEND_LEVELS.length - 1) return false
+  state.intervalLevelIndexes[intervalIndex] = current + 1
+  return true
+}
+
+function adaptiveCurvePieces(chains: readonly WorkingChain[]): AdaptiveCurvePiece[] {
+  return chains.flatMap((chain, chainIndex) =>
+    chain.adaptive.intervalLevelIndexes.map((_, index) => ({
+      chain,
+      chainIndex,
+      index,
+      count: chain.adaptive.intervalLevelIndexes.length,
+      start: chain.points[index]!,
+      end: chain.points[(index + 1) % chain.points.length]!,
+      rawStart: chain.adaptive.samples[index]!.raw,
+      rawEnd: chain.adaptive.samples[(index + 1) % chain.adaptive.samples.length]!.raw,
+    })),
   )
-  const normalized = normalizedOffset(middleOffset, rawLength, closed)
-  const rawMiddle = rawPointAt(normalized, rawPoints, spanIndex.spans, rawLength, closed)
-  const locked = offsetLocked(
-    normalized,
-    spanIndex.fixed,
-    rawLength,
-    closed,
-    settings.junctionTangentCells,
-  )
-  const coordinate = locked
-    ? rawMiddle
-    : continuousFallbackCoordinate(
-        start,
-        end,
-        rawMiddle,
-        startOffset,
-        middleOffset,
-        endOffset,
-        settings.maxDeviationCells,
-      )
-  const middle: TerrainContourPoint = {
-    ...coordinate,
-    rawOffset: normalized,
-    locked,
-    shorelineFactor: shorelineFactorAt(normalized, spanIndex, rawLength, closed, bridgeTaperCells),
+}
+
+function adaptivePieceKey(piece: AdaptiveCurvePiece): string {
+  return `${piece.chainIndex}:${piece.index}`
+}
+
+function piecesAreNearAlongChain(
+  first: AdaptiveCurvePiece,
+  second: AdaptiveCurvePiece,
+  minimumCorridor: number,
+): boolean {
+  const midpointOffset = (piece: AdaptiveCurvePiece): number => {
+    const start = piece.chain.adaptive.samples[piece.index]!.rawOffset
+    let end =
+      piece.chain.adaptive.samples[(piece.index + 1) % piece.chain.adaptive.samples.length]!
+        .rawOffset
+    if (piece.chain.closed && end <= start) end += piece.chain.rawLength
+    return normalizedOffset((start + end) / 2, piece.chain.rawLength, piece.chain.closed)
   }
-  return [
-    ...repairCurveSegment(
-      start,
-      middle,
-      startOffset,
-      middleOffset,
-      rawPoints,
-      spanIndex,
-      rawLength,
-      closed,
-      settings,
-      bridgeTaperCells,
-      rawIndex,
-    ),
-    ...repairCurveSegment(
-      middle,
-      end,
-      middleOffset,
-      endOffset,
-      rawPoints,
-      spanIndex,
-      rawLength,
-      closed,
-      settings,
-      bridgeTaperCells,
-      rawIndex,
-    ),
-  ]
+  const firstOffset = midpointOffset(first)
+  const secondOffset = midpointOffset(second)
+  let separation = Math.abs(firstOffset - secondOffset)
+  if (first.chain.closed) separation = Math.min(separation, first.chain.rawLength - separation)
+  return separation <= minimumCorridor * 2 + EPSILON
 }
 
-function continuousFallbackCoordinate(
+function nearbyAdaptivePairs(
+  pieces: readonly AdaptiveCurvePiece[],
+  reach: number,
+): readonly (readonly [AdaptiveCurvePiece, AdaptiveCurvePiece])[] {
+  const buckets = new Map<string, AdaptiveCurvePiece[]>()
+  const pairs: [AdaptiveCurvePiece, AdaptiveCurvePiece][] = []
+  const seen = new Set<string>()
+  for (let index = 0; index < pieces.length; index += 1) {
+    const piece = pieces[index]!
+    for (const componentKey of new Set(piece.chain.componentKeys)) {
+      if (componentKey === TERRAIN_EXTERIOR) continue
+      for (const spatialKey of expandedCurveBucketKeys(piece, reach)) {
+        const key = `${componentKey}|${spatialKey}`
+        for (const earlier of buckets.get(key) ?? []) {
+          if (!adaptivePieceMoved(earlier) && !adaptivePieceMoved(piece)) continue
+          const rawDistance = segmentDistance(
+            earlier.rawStart,
+            earlier.rawEnd,
+            piece.rawStart,
+            piece.rawEnd,
+          )
+          if (rawDistance < 1 - 1e-7) continue
+          if (
+            rawDistance - adaptivePieceDeviation(earlier) - adaptivePieceDeviation(piece) >=
+            reach - 1e-7
+          ) {
+            continue
+          }
+          const pairKey = `${adaptivePieceKey(earlier)}:${adaptivePieceKey(piece)}`
+          if (seen.has(pairKey)) continue
+          seen.add(pairKey)
+          pairs.push([earlier, piece])
+        }
+      }
+      for (const spatialKey of curveBucketKeys(piece)) {
+        const key = `${componentKey}|${spatialKey}`
+        const bucket = buckets.get(key) ?? []
+        bucket.push(piece)
+        buckets.set(key, bucket)
+      }
+    }
+  }
+  return pairs
+}
+
+function intersectingAdaptivePairs(
+  pieces: readonly AdaptiveCurvePiece[],
+): readonly (readonly [AdaptiveCurvePiece, AdaptiveCurvePiece])[] {
+  const buckets = new Map<string, AdaptiveCurvePiece[]>()
+  const pairs: [AdaptiveCurvePiece, AdaptiveCurvePiece][] = []
+  const seen = new Set<string>()
+  for (const piece of pieces) {
+    for (const key of curveBucketKeys(piece)) {
+      const bucket = buckets.get(key) ?? []
+      for (const earlier of bucket) {
+        const pairKey = `${adaptivePieceKey(earlier)}:${adaptivePieceKey(piece)}`
+        if (seen.has(pairKey)) continue
+        seen.add(pairKey)
+        if (
+          earlier.chain === piece.chain &&
+          piecesAreAdjacent(earlier, piece) &&
+          adjacentPiecesMeetOnlyAtEndpoint(earlier, piece)
+        ) {
+          continue
+        }
+        if (!segmentsIntersect(earlier.start, earlier.end, piece.start, piece.end)) continue
+        if (
+          adjacentPiecesMeetOnlyAtEndpoint(earlier, piece) ||
+          incidentIntersection(earlier, piece)
+        ) {
+          continue
+        }
+        pairs.push([earlier, piece])
+      }
+      bucket.push(piece)
+      buckets.set(key, bucket)
+    }
+  }
+  return pairs
+}
+
+function adaptivePieceMoved(piece: AdaptiveCurvePiece): boolean {
+  return !samePoint(piece.start, piece.rawStart) || !samePoint(piece.end, piece.rawEnd)
+}
+
+function adaptivePieceDeviation(piece: AdaptiveCurvePiece): number {
+  return Math.max(distance(piece.start, piece.rawStart), distance(piece.end, piece.rawEnd))
+}
+
+function expandedCurveBucketKeys(
+  piece: Pick<AdaptiveCurvePiece, 'start' | 'end'>,
+  reach: number,
+): readonly string[] {
+  const minimumX = Math.floor(Math.min(piece.start.x, piece.end.x) - reach)
+  const maximumX = Math.floor(Math.max(piece.start.x, piece.end.x) + reach)
+  const minimumY = Math.floor(Math.min(piece.start.y, piece.end.y) - reach)
+  const maximumY = Math.floor(Math.max(piece.start.y, piece.end.y) + reach)
+  const keys: string[] = []
+  for (let y = minimumY; y <= maximumY; y += 1) {
+    for (let x = minimumX; x <= maximumX; x += 1) keys.push(`${x}:${y}`)
+  }
+  return keys
+}
+
+function segmentClearsCellCenters(
   start: ContourCoordinate,
   end: ContourCoordinate,
-  raw: ContourCoordinate,
-  startOffset: number,
-  middleOffset: number,
-  endOffset: number,
-  maxDeviation: number,
-): ContourCoordinate {
-  const amount = (middleOffset - startOffset) / (endOffset - startOffset)
-  const target = {
-    x: start.x + (end.x - start.x) * amount,
-    y: start.y + (end.y - start.y) * amount,
-  }
-  const targetDistance = distance(raw, target)
-  if (targetDistance <= EPSILON) return raw
-  const scale = Math.min(1, (maxDeviation * 0.9) / targetDistance)
-  return {
-    x: raw.x + (target.x - raw.x) * scale,
-    y: raw.y + (target.y - raw.y) * scale,
-  }
-}
-
-function localFallbackOffset(
-  startOffset: number,
-  endOffset: number,
-  vertexOffsets: readonly number[],
-  rawLength: number,
-  closed: boolean,
-): number {
-  const target = (startOffset + endOffset) / 2
-  let nearest = target
-  let nearestDistance = Number.POSITIVE_INFINITY
-  const consider = (candidate: number): void => {
-    if (candidate <= startOffset + EPSILON || candidate >= endOffset - EPSILON) return
-    const candidateDistance = Math.abs(candidate - target)
-    if (
-      candidateDistance < nearestDistance ||
-      (candidateDistance === nearestDistance && candidate < nearest)
-    ) {
-      nearest = candidate
-      nearestDistance = candidateDistance
+  buckets: ReadonlyMap<string, readonly ContourCoordinate[]>,
+  clearance: number,
+): boolean {
+  const minimumX = Math.floor(Math.min(start.x, end.x) - clearance)
+  const maximumX = Math.floor(Math.max(start.x, end.x) + clearance)
+  const minimumY = Math.floor(Math.min(start.y, end.y) - clearance)
+  const maximumY = Math.floor(Math.max(start.y, end.y) + clearance)
+  for (let row = minimumY; row <= maximumY; row += 1) {
+    for (let column = minimumX; column <= maximumX; column += 1) {
+      for (const center of buckets.get(cellCoordinateKey(column, row)) ?? []) {
+        if (pointToSegmentDistance(center, start, end) < clearance - 1e-7) return false
+      }
     }
   }
-  const considerShift = (shift: number): void => {
-    const insertion = lowerBound(vertexOffsets, target - shift)
-    if (insertion > 0) consider(vertexOffsets[insertion - 1]! + shift)
-    if (insertion < vertexOffsets.length) consider(vertexOffsets[insertion]! + shift)
-  }
-  considerShift(0)
-  if (closed) considerShift(rawLength)
-  return nearest
+  return true
 }
 
-function lowerBound(values: readonly number[], target: number): number {
-  let lower = 0
-  let upper = values.length
-  while (lower < upper) {
-    const middle = Math.floor((lower + upper) / 2)
-    if (values[middle]! < target) lower = middle + 1
-    else upper = middle
+function segmentDistance(
+  firstStart: ContourCoordinate,
+  firstEnd: ContourCoordinate,
+  secondStart: ContourCoordinate,
+  secondEnd: ContourCoordinate,
+): number {
+  if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) return 0
+  return Math.min(
+    pointToSegmentDistance(firstStart, secondStart, secondEnd),
+    pointToSegmentDistance(firstEnd, secondStart, secondEnd),
+    pointToSegmentDistance(secondStart, firstStart, firstEnd),
+    pointToSegmentDistance(secondEnd, firstStart, firstEnd),
+  )
+}
+
+function pointToSegmentDistance(
+  point: ContourCoordinate,
+  start: ContourCoordinate,
+  end: ContourCoordinate,
+): number {
+  return distance(point, projectToSegment(point, start, end))
+}
+
+function validateAdaptiveCorridors(chains: readonly WorkingChain[], minimumCorridor: number): void {
+  const pieces = adaptiveCurvePieces(chains)
+  for (const [first, second] of nearbyAdaptivePairs(pieces, minimumCorridor)) {
+    if (first.chain === second.chain && piecesAreAdjacent(first, second)) continue
+    if (first.chain === second.chain && piecesAreNearAlongChain(first, second, minimumCorridor))
+      continue
+    const rawDistance = segmentDistance(
+      first.rawStart,
+      first.rawEnd,
+      second.rawStart,
+      second.rawEnd,
+    )
+    const required = Math.min(minimumCorridor, rawDistance)
+    if (segmentDistance(first.start, first.end, second.start, second.end) + 1e-7 < required) {
+      throw new Error('Terrain contour corridor narrowed below its safe source width.')
+    }
   }
-  return lower
+}
+
+function validateAdaptiveIntersections(chains: readonly WorkingChain[]): void {
+  if (intersectingAdaptivePairs(adaptiveCurvePieces(chains)).length > 0) {
+    throw new Error('Terrain contour raw fallback retained a nonincident intersection.')
+  }
 }
 
 function shorelineFactorAt(

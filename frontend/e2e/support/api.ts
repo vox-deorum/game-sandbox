@@ -324,20 +324,35 @@ export async function startSession(
     values: Record<string, boolean | number | string | string[]>
   }
   if (play.season_id === null) throw new Error(`${envId} has no play-open season`)
-  const res = await actor.post('/api/sessions', {
-    // Only send the overrides the caller set, so an omitted seed/timeout stays the backend's default
-    // rather than a literal `undefined` on the wire.
-    data: {
-      env_id: envId,
-      season_id: overrides.seasonId ?? play.season_id,
-      parameters: overrides.parameters ?? play.values,
-      seats,
-      ...(overrides.seed !== undefined ? { seed: overrides.seed } : {}),
-      ...(overrides.humanTimeoutMs !== undefined
-        ? { human_timeout_ms: overrides.humanTimeoutMs }
-        : {}),
-    },
-  })
+  // Only send the overrides the caller set, so an omitted seed/timeout stays the backend's default
+  // rather than a literal `undefined` on the wire.
+  const data = {
+    env_id: envId,
+    season_id: overrides.seasonId ?? play.season_id,
+    parameters: overrides.parameters ?? play.values,
+    seats,
+    ...(overrides.seed !== undefined ? { seed: overrides.seed } : {}),
+    ...(overrides.humanTimeoutMs !== undefined
+      ? { human_timeout_ms: overrides.humanTimeoutMs }
+      : {}),
+  }
+  let res = await actor.post('/api/sessions', { data })
+  // The suite is serial on one shared backend, and a test that fails mid-flight can strand its
+  // actor's single active session, which would 409 every later start for the same user until the
+  // orphan idles out. Free the named orphan and retry once; a retry that still fails reports the
+  // server's reason exactly as a first failure would.
+  if (res.status() === 409) {
+    let conflict: { code?: string; active_session_id?: string } = {}
+    try {
+      conflict = JSON.parse(await res.text()) as { code?: string; active_session_id?: string }
+    } catch {
+      // A non-JSON 409 falls through to the plain status assertion below.
+    }
+    if (conflict.code === 'already_active' && typeof conflict.active_session_id === 'string') {
+      await stopSessionAndAwaitFree(actor, conflict.active_session_id)
+      res = await actor.post('/api/sessions', { data })
+    }
+  }
   expect(res.status(), await res.text()).toBe(201)
   return ((await res.json()) as { id: string }).id
 }
