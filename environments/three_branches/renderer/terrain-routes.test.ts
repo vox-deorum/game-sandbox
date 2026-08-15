@@ -27,32 +27,22 @@ const RAW_SETTINGS: TerrainRouteSettings = {
   ...SETTINGS,
   road: {
     ...SETTINGS.road,
-    curve: {
-      ...SETTINGS.road.curve,
-      macroWindowCells: 0,
-      fairingIterations: 0,
-      noiseAmplitudeCells: 0,
-    },
+    curve: { ...SETTINGS.road.curve, smoothingPasses: 0, octaves: [] },
   },
   path: {
     ...SETTINGS.path,
-    curve: {
-      ...SETTINGS.path.curve,
-      macroWindowCells: 0,
-      fairingIterations: 0,
-      noiseAmplitudeCells: 0,
-    },
+    curve: { ...SETTINGS.path.curve, smoothingPasses: 0, octaves: [] },
   },
 }
 const NO_NOISE_SETTINGS: TerrainRouteSettings = {
   ...SETTINGS,
   road: {
     ...SETTINGS.road,
-    curve: { ...SETTINGS.road.curve, noiseAmplitudeCells: 0 },
+    curve: { ...SETTINGS.road.curve, octaves: [] },
   },
   path: {
     ...SETTINGS.path,
-    curve: { ...SETTINGS.path.curve, noiseAmplitudeCells: 0 },
+    curve: { ...SETTINGS.path.curve, octaves: [] },
   },
 }
 
@@ -245,21 +235,6 @@ describe('terrain route planner', () => {
     ])
   })
 
-  it('builds one-cell route texture halos while leaving bridge cells transparent', () => {
-    const rows = ['ggggg', 'rrbrr', 'ggpgg', 'ggggg']
-    const plan = planTerrainRoutes(rows, NAMES, SETTINGS)
-
-    expect(plan.roadTextureRows[0]).toBe('rrrrr')
-    expect(plan.roadTextureRows[1]?.[2]).toBe(' ')
-    expect(plan.roadTextureRows[2]?.[0]).toBe('r')
-    expect(plan.pathTextureRows[2]?.[2]).toBe('p')
-    expect(plan.pathTextureRows[1]?.[2]).toBe(' ')
-    expect(plan.pathTextureRows[3]?.[1]).toBe('p')
-    expect(plan.roadStroke).toEqual(SETTINGS.road)
-    expect(plan.pathStroke).toEqual(SETTINGS.path)
-    expect(rows).toEqual(['ggggg', 'rrbrr', 'ggpgg', 'ggggg'])
-  })
-
   it('connects every cardinal path contact to the faired road guide at path width', () => {
     const plan = planTerrainRoutes(['ggggg', 'ggpgg', 'rrrrr', 'ggggg'], NAMES, NO_NOISE_SETTINGS)
 
@@ -369,7 +344,7 @@ describe('terrain route planner', () => {
     )
   })
 
-  it('joins opposite path terminals into one straight road crossing with complete texture coverage', () => {
+  it('joins opposite path terminals into one straight road crossing', () => {
     const rows = ['gggpggg', 'gggpggg', 'rrrrrrr', 'rrrrrrr', 'gggpggg', 'gggpggg']
     const plan = planTerrainRoutes(rows, NAMES, SETTINGS)
     const connector = only(plan.pathConnectors)
@@ -384,8 +359,6 @@ describe('terrain route planner', () => {
     })
     expect(crossingPoints.length).toBeGreaterThan(2)
     expect(crossingPoints.every((point) => point.x === 3.5 && point.anchor === 'road')).toBe(true)
-    expect(plan.pathTextureRows[2]?.slice(2, 5)).toBe('ppp')
-    expect(plan.pathTextureRows[3]?.slice(2, 5)).toBe('ppp')
   })
 
   it('joins offset opposite terminals and absorbs a redundant contact lobe', () => {
@@ -422,9 +395,6 @@ describe('terrain route planner', () => {
         .filter((point) => point.y >= connector.start.y && point.y <= connector.end.y)
         .every((point) => point.anchor === 'road' && point.locked),
     ).toBe(true)
-    for (let row = 2; row <= 5; row += 1) {
-      expect(plan.pathTextureRows[row]?.slice(1, 5)).toContain('p')
-    }
   })
 
   it('keeps disconnected bridge components canonical and deterministic', () => {

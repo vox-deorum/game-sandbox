@@ -2,7 +2,7 @@ import type { GroundTileset, GroundVariant, TileGrid } from '@renderers/base/til
 import { Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
-import { HEARTHSIDE_STYLE } from './presentation.js'
+import { fillTintHex, HEARTHSIDE_STYLE } from './presentation.js'
 import { planTerrainContours, type TerrainContourPlan, terrainVariant } from './terrain-contours.js'
 import { planTerrainRoutes, type TerrainRoutePlan } from './terrain-routes.js'
 import { opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
@@ -16,10 +16,17 @@ export const BRIDGE_PLANK_CODES = {
 const UPPER_WALL_CODE = 'U'
 const TRANSPARENT_CODE = '.'
 
+/** Cell period of one repeating pattern texture composed from a material's fill frames. */
+export const PATTERN_CELLS = 4
+
+/** The materials drawn as anti-aliased vector surfaces with repeating pattern fills. */
+export const PATTERN_MATERIALS = ['ground', 'field', 'reeds', 'water', 'road', 'path'] as const
+
 /** Textured static map data resolved once from the terrain atlas and immutable village grid. */
 export interface TerrainArt {
   tileset: GroundTileset
   variant: GroundVariant
+  patterns: Readonly<Record<string, Texture>>
   contours: TerrainContourPlan
   routes: TerrainRoutePlan
   plankLayer: TileGrid
@@ -40,7 +47,13 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     const treatment = HEARTHSIDE_STYLE.terrain.fills[ground.name]
     if (treatment === undefined)
       throw new Error(`Three Branches presentation has no ${ground.name} terrain fill.`)
-    textures[ground.code] = fillFramesFor(atlas, manifest.frames, treatment.frames, treatment.tint)
+    textures[ground.code] = fillFramesFor(
+      atlas,
+      manifest.frames,
+      treatment.frames,
+      fillTintHex(treatment),
+      treatment.detailShift,
+    )
     counts.set(ground.code, treatment.frames.length)
   }
   const planks = HEARTHSIDE_STYLE.terrain.planks
@@ -49,6 +62,32 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     textures[code] = framesFor(atlas, manifest.frames, [frame], planks.tint)
     counts.set(code, 1)
   }
+  const patterns: Record<string, Texture> = {}
+  for (const material of PATTERN_MATERIALS) {
+    const ground = scene.ground.find((item) => item.name === material)
+    if (ground === undefined) {
+      throw new Error(`Three Branches rules do not define ${material} terrain.`)
+    }
+    const frames = textures[ground.code]
+    if (frames === undefined || frames.length === 0) {
+      throw new Error(`Three Branches terrain has no fill frames for ${material}.`)
+    }
+    patterns[material] = patternTexture(frames, ground.code, manifest.frames.width)
+  }
+  const groundTreatment = HEARTHSIDE_STYLE.terrain.fills.ground
+  if (groundTreatment === undefined) {
+    throw new Error('Three Branches presentation has no ground terrain fill.')
+  }
+  patterns.ink = patternTexture(
+    fillFramesFor(
+      atlas,
+      manifest.frames,
+      groundTreatment.frames,
+      HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.terrain.seams.ink.tint],
+    ),
+    'ink-seam',
+    manifest.frames.width,
+  )
   const columns = scene.village.size.cellsX
   const routes = planTerrainRoutes(scene.topFirstRows, names, HEARTHSIDE_STYLE.terrain.routes)
   const plankLayer = { columns, rows: plankRowsFor(routes) }
@@ -82,18 +121,62 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
   return {
     tileset: { tileSize: manifest.frames.width, textures },
     variant,
+    patterns,
     routes,
     contours: planTerrainContours(
       routes.visualRows,
       names,
       HEARTHSIDE_STYLE.terrain.contours,
-      HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+      HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
     ),
     plankLayer,
     upperWallTileset,
     upperWallGrid,
     upperWallVariant,
   }
+}
+
+/**
+ * Compose one repeating pattern canvas from a material's tinted fill frames. Pattern fills wrap
+ * the whole texture source, so the pattern must be a standalone canvas, never an atlas view. The
+ * variant layout repeats every PATTERN_CELLS cells and stays deterministic per material code.
+ *
+ * The frames keep calm matching borders, so one aligned layer leaves a faint blank grid on cell
+ * boundaries. A second half-cell-offset grain pass at half strength covers those strips and
+ * breaks the grid without touching the atlas art. Wrapped variant indices keep the offset pass
+ * seamless across the pattern's own repeat edges.
+ */
+function patternTexture(frames: readonly Texture[], code: string, tileSize: number): Texture {
+  const canvas = document.createElement('canvas')
+  canvas.width = tileSize * PATTERN_CELLS
+  canvas.height = tileSize * PATTERN_CELLS
+  const context = canvas.getContext('2d')
+  if (context === null) throw new Error('Terrain pattern canvas context is unavailable.')
+  const frameAt = (variantCode: string, column: number, row: number): CanvasImageSource => {
+    const frame = frames[terrainVariant(frames.length, variantCode, column, row)]
+    if (frame === undefined) throw new Error(`Terrain pattern frame for ${code} is missing.`)
+    return frame.source.resource as CanvasImageSource
+  }
+  for (let row = 0; row < PATTERN_CELLS; row += 1) {
+    for (let column = 0; column < PATTERN_CELLS; column += 1) {
+      context.drawImage(frameAt(code, column, row), column * tileSize, row * tileSize)
+    }
+  }
+  const half = tileSize / 2
+  context.globalAlpha = 0.5
+  for (let row = -1; row < PATTERN_CELLS; row += 1) {
+    for (let column = -1; column < PATTERN_CELLS; column += 1) {
+      const wrappedColumn = ((column % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
+      const wrappedRow = ((row % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
+      context.drawImage(
+        frameAt(`${code}-offset`, wrappedColumn, wrappedRow),
+        column * tileSize + half,
+        row * tileSize + half,
+      )
+    }
+  }
+  context.globalAlpha = 1
+  return Texture.from(canvas)
 }
 
 /** Map each planned bridge component to its semantic plank frame without repainting other cells. */
@@ -122,11 +205,10 @@ function fillFramesFor(
   atlas: Texture,
   grid: Parameters<typeof tintedMaskFrame>[1],
   frames: readonly string[],
-  tint: keyof typeof HEARTHSIDE_STYLE.palette,
+  tintHex: string,
+  detailShift?: number,
 ): readonly Texture[] {
-  return frames.map((frame) =>
-    opaqueTintedFillFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]),
-  )
+  return frames.map((frame) => opaqueTintedFillFrame(atlas, grid, frame, tintHex, detailShift))
 }
 /** Bake one semantic mask family. */
 function framesFor(

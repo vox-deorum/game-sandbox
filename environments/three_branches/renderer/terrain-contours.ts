@@ -1,5 +1,6 @@
 import {
   shapeTerrainCurve,
+  type TerrainCurveEnvelope,
   type TerrainCurveProfile,
   type TerrainCurveSourcePoint,
 } from './terrain-curves.js'
@@ -21,7 +22,6 @@ export interface TerrainContourSettings {
   }
   readonly junctionTangentCells: number
   readonly maxDeviationCells: number
-  readonly cellCenterClearanceCells: number
   readonly minimumCorridorCells: number
   readonly saddleRadiusCells: number
 }
@@ -177,7 +177,6 @@ interface WorkingChain {
   readonly rightMaterial: string
   readonly componentKeys: readonly [string, string]
   readonly shorelineSpans: readonly TerrainShorelineSpan[]
-  readonly adaptive: AdaptiveContourState
 }
 
 interface DirectedSegment {
@@ -371,11 +370,8 @@ function validateInputs(
   if (!(settings.junctionTangentCells >= 0 && settings.junctionTangentCells <= 0.5)) {
     throw new Error('Contour junction tangent must be between zero and 0.5 cell.')
   }
-  if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.35)) {
-    throw new Error('Contour maximum deviation must be greater than zero and at most 0.35 cell.')
-  }
-  if (!(settings.cellCenterClearanceCells >= 0.15 && settings.cellCenterClearanceCells <= 0.5)) {
-    throw new Error('Contour cell-center clearance must be between 0.15 and 0.5 cell.')
+  if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.75)) {
+    throw new Error('Contour maximum deviation must be greater than zero and at most 0.75 cell.')
   }
   if (!(settings.minimumCorridorCells >= 0.7 && settings.minimumCorridorCells <= 1)) {
     throw new Error('Contour minimum corridor must be between 0.70 and one cell.')
@@ -788,10 +784,12 @@ function buildChains(
         atomSequenceKey(second.atoms, second.closed),
       ),
   )
-  const chains = ordered.map((source, index) =>
-    finishChain(source, `chain-${index}`, settings, bridgeTaperCells, layoutHash),
-  )
-  adaptContourGraph(chains, settings)
+  const chains = ordered.map((source, index) => finishChain(source, `chain-${index}`))
+  const clearanceIndex = buildClearanceIndex(chains)
+  for (const chain of chains) {
+    chain.points = shapeContourChain(chain, settings, bridgeTaperCells, layoutHash, clearanceIndex)
+  }
+  repairContourIntersections(chains)
   return chains
 }
 
@@ -855,9 +853,6 @@ function finishChain(
     readonly atoms: readonly ChainAtom[]
   },
   id: string,
-  settings: TerrainContourSettings,
-  bridgeTaperCells: number,
-  layoutHash: number,
 ): WorkingChain {
   const rawPoints: ContourCoordinate[] = [atomStart(source.atoms[0]!)]
   const spans: TerrainContourSpan[] = []
@@ -911,16 +906,6 @@ function finishChain(
         suppressed: span.bridgeSuppressed,
       }
     })
-  const adaptive = prepareAdaptiveContour(
-    rawPoints,
-    spans,
-    rawLength,
-    source.closed,
-    settings,
-    bridgeTaperCells,
-    layoutHash,
-    source.pairKey,
-  )
   return {
     id,
     closed: source.closed,
@@ -929,7 +914,7 @@ function finishChain(
     rawPoints,
     rawLength,
     spans,
-    points: renderAdaptiveContour(adaptive),
+    points: [],
     materials,
     leftMaterial: firstSpan.left.material,
     rightMaterial: firstSpan.right.material,
@@ -938,29 +923,8 @@ function finishChain(
       (firstSpan.right as SideRecord).componentKey,
     ],
     shorelineSpans,
-    adaptive,
   }
 }
-
-interface AdaptiveContourSample {
-  readonly raw: ContourCoordinate
-  readonly candidate: ContourCoordinate
-  readonly rawOffset: number
-  readonly locked: boolean
-  readonly shorelineFactor: number
-}
-
-interface AdaptiveContourState {
-  readonly samples: readonly AdaptiveContourSample[]
-  readonly intervalLevelIndexes: number[]
-  readonly closed: boolean
-  readonly rawIndex: RawPolylineIndex
-  readonly centerBuckets: ReadonlyMap<string, readonly ContourCoordinate[]>
-  readonly maxDeviationCells: number
-  readonly cellCenterClearanceCells: number
-}
-
-const CONTOUR_BLEND_LEVELS = [1, 0.75, 0.5, 0.25, 0] as const
 
 interface OffsetInterval {
   readonly startOffset: number
@@ -974,102 +938,253 @@ interface ContourSpanIndex {
   readonly hasShoreline: boolean
 }
 
-function prepareAdaptiveContour(
-  rawPoints: readonly ContourCoordinate[],
-  spans: readonly TerrainContourSpan[],
-  rawLength: number,
-  closed: boolean,
+/** One raw source segment tagged with its owning chain and arc interval for clearance queries. */
+interface ClearanceSegment {
+  readonly chain: WorkingChain
+  readonly start: ContourCoordinate
+  readonly end: ContourCoordinate
+  readonly startOffset: number
+  readonly endOffset: number
+}
+
+/** Cell-bucketed raw segments of every chain, queried while each single chain is shaped. */
+type ClearanceIndex = ReadonlyMap<string, readonly ClearanceSegment[]>
+
+/** Clearance beyond this many cells never tightens the envelope, so the query stays local. */
+const CLEARANCE_SEARCH_CELLS = 3
+
+/** Arc reach when clamping a shaped point against its own local stretch of raw boundary. */
+const CLAMP_WINDOW_CELLS = 2.5
+
+/**
+ * A same-chain segment competes for clearance only when its arc distance is clearly larger than
+ * its straight-line distance. Local continuation stays excluded so it can smooth: a straight run
+ * holds ratio one and a diagonal staircase about 1.4. Facing walls of an inlet or hairpin sit at
+ * two and above and must count, or the two sides smooth across their corridor into each other.
+ */
+const SELF_FOLD_ARC_RATIO = 1.6
+
+function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
+  const buckets = new Map<string, ClearanceSegment[]>()
+  for (const chain of chains) {
+    for (const [index, span] of chain.spans.entries()) {
+      const start = chain.rawPoints[index]
+      const end = chain.rawPoints[index + 1]
+      if (start === undefined || end === undefined) {
+        throw new Error('Terrain contour clearance segment is missing its raw points.')
+      }
+      const segment: ClearanceSegment = {
+        chain,
+        start,
+        end,
+        startOffset: span.startOffset,
+        endOffset: span.endOffset,
+      }
+      const minimumX = Math.floor(Math.min(start.x, end.x))
+      const maximumX = Math.floor(Math.max(start.x, end.x))
+      const minimumY = Math.floor(Math.min(start.y, end.y))
+      const maximumY = Math.floor(Math.max(start.y, end.y))
+      for (let y = minimumY; y <= maximumY; y += 1) {
+        for (let x = minimumX; x <= maximumX; x += 1) {
+          const key = cellCoordinateKey(x, y)
+          const bucket = buckets.get(key) ?? []
+          bucket.push(segment)
+          buckets.set(key, bucket)
+        }
+      }
+    }
+  }
+  return buckets
+}
+
+/**
+ * Distance from one raw sample to the nearest competing raw segment. Segments of the same chain
+ * count only beyond a short arc window, so a serpentine chain cannot pinch its own corridor.
+ */
+function clearanceAt(
+  index: ClearanceIndex,
+  chain: WorkingChain,
+  point: ContourCoordinate,
+  sourceOffset: number,
+  arcWindowCells: number,
+): number {
+  const column = Math.floor(point.x)
+  const row = Math.floor(point.y)
+  let nearest = Number.POSITIVE_INFINITY
+  for (let y = row - CLEARANCE_SEARCH_CELLS; y <= row + CLEARANCE_SEARCH_CELLS; y += 1) {
+    for (let x = column - CLEARANCE_SEARCH_CELLS; x <= column + CLEARANCE_SEARCH_CELLS; x += 1) {
+      for (const segment of index.get(cellCoordinateKey(x, y)) ?? []) {
+        const separation = pointToSegmentDistance(point, segment.start, segment.end)
+        if (segment.chain === chain) {
+          const arcDistance = circularDistanceToInterval(
+            normalizedOffset(sourceOffset, chain.rawLength, chain.closed),
+            segment.startOffset,
+            segment.endOffset,
+            chain.rawLength,
+            chain.closed,
+          )
+          const window = Math.max(arcWindowCells, SELF_FOLD_ARC_RATIO * separation)
+          if (arcDistance <= window + EPSILON) continue
+        }
+        nearest = Math.min(nearest, separation)
+      }
+    }
+  }
+  return nearest
+}
+
+/**
+ * Shape one chain. Junction tangents and fixed spans stay locked, octave noise fades under the
+ * clearance envelope, and every free point is finally clamped to that envelope so smoothing can
+ * never leave the tube either.
+ */
+function shapeContourChain(
+  chain: WorkingChain,
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
   layoutHash: number,
-  pairKey: string,
-): AdaptiveContourState {
-  const spanIndex = indexContourSpans(spans)
+  clearanceIndex: ClearanceIndex,
+): readonly TerrainContourPoint[] {
+  const spanIndex = indexContourSpans(chain.spans)
   const lockOffsets = contourLockOffsets(
     spanIndex.fixed,
-    rawLength,
-    closed,
+    chain.rawLength,
+    chain.closed,
     settings.junctionTangentCells,
   )
-  const profile = pairKey.split('\u0000').includes('water')
+  const profile = chain.pairKey.split('\u0000').includes('water')
     ? settings.profiles.water
     : settings.profiles.land
   const source = curveSourcePoints(
-    rawPoints,
-    spans,
-    rawLength,
-    closed,
+    chain.rawPoints,
+    chain.spans,
+    chain.rawLength,
+    chain.closed,
     lockOffsets,
     spanIndex,
     settings.junctionTangentCells,
   )
+  const envelope: TerrainCurveEnvelope = (rawX, rawY, sourceOffset) => {
+    const clearance = clearanceAt(
+      clearanceIndex,
+      chain,
+      { x: rawX, y: rawY },
+      sourceOffset,
+      settings.minimumCorridorCells * 2,
+    )
+    return Math.max(
+      0,
+      Math.min(settings.maxDeviationCells, (clearance - settings.minimumCorridorCells) / 2),
+    )
+  }
   const shaped = shapeTerrainCurve(
     source,
-    closed,
+    chain.closed,
     profile,
-    terrainHash('terrain-contour-shape', layoutHash, pairKey),
+    terrainHash('terrain-contour-shape', layoutHash, chain.pairKey),
+    envelope,
   )
-  const locked = shaped.map((point) =>
-    offsetLocked(
+  return shaped.map((point): TerrainContourPoint => {
+    const raw = rawPointAt(
+      point.sourceOffset,
+      chain.rawPoints,
+      spanIndex.spans,
+      chain.rawLength,
+      chain.closed,
+    )
+    const rawOffset = normalizedOffset(point.sourceOffset, chain.rawLength, chain.closed)
+    const shorelineFactor = shorelineFactorAt(
+      point.sourceOffset,
+      spanIndex,
+      chain.rawLength,
+      chain.closed,
+      bridgeTaperCells,
+    )
+    const locked = offsetLocked(
       point.sourceOffset,
       spanIndex.fixed,
-      rawLength,
-      closed,
+      chain.rawLength,
+      chain.closed,
       settings.junctionTangentCells,
-    ),
-  )
-  const locallyConstrained =
-    maximumGapBetweenLocks(shaped, locked, rawLength, closed) <=
-    settings.minimumCorridorCells + profile.sampleSpacingCells
-  const samples = shaped.map((point, index): AdaptiveContourSample => {
-    const raw = rawPointAt(point.sourceOffset, rawPoints, spanIndex.spans, rawLength, closed)
-    if (locked[index])
-      return {
-        raw,
-        candidate: raw,
-        rawOffset: normalizedOffset(point.sourceOffset, rawLength, closed),
-        locked: true,
-        shorelineFactor: shorelineFactorAt(
-          point.sourceOffset,
-          spanIndex,
-          rawLength,
-          closed,
-          bridgeTaperCells,
-        ),
-      }
-    const candidate = locallyConstrained
-      ? limitPointFromRawPair(
-          point,
-          raw,
-          Math.min(settings.maxDeviationCells, (1 - settings.minimumCorridorCells) / 2),
-        )
-      : point
+    )
+    if (locked) return { x: raw.x, y: raw.y, rawOffset, locked: true, shorelineFactor }
+    const nearest = nearestOwnSegment(chain, point, rawOffset)
+    const cap = Math.min(
+      envelope(raw.x, raw.y, point.sourceOffset),
+      envelope(nearest.foot.x, nearest.foot.y, nearest.footOffset),
+    )
+    if (nearest.separation <= cap) {
+      return { x: point.x, y: point.y, rawOffset, locked: false, shorelineFactor }
+    }
+    const scale = nearest.separation <= EPSILON ? 0 : cap / nearest.separation
     return {
-      raw,
-      candidate,
-      rawOffset: normalizedOffset(point.sourceOffset, rawLength, closed),
+      x: nearest.foot.x + (point.x - nearest.foot.x) * scale,
+      y: nearest.foot.y + (point.y - nearest.foot.y) * scale,
+      rawOffset,
       locked: false,
-      shorelineFactor: shorelineFactorAt(
-        point.sourceOffset,
-        spanIndex,
-        rawLength,
-        closed,
-        bridgeTaperCells,
-      ),
+      shorelineFactor,
     }
   })
-  return {
-    samples,
-    intervalLevelIndexes: Array.from(
-      { length: closed ? samples.length : Math.max(0, samples.length - 1) },
-      () => 0,
-    ),
-    closed,
-    rawIndex: indexRawPolyline(rawPoints),
-    centerBuckets: indexContourCellCenters(spans),
-    maxDeviationCells: settings.maxDeviationCells,
-    cellCenterClearanceCells: settings.cellCenterClearanceCells,
+}
+
+/**
+ * The nearest point on the chain's own raw boundary within a local arc window of one offset.
+ * The window keeps the clamp honest at concave corners and stops a smoothed small closed chain
+ * from hiding near a far side of its own ring.
+ */
+function nearestOwnSegment(
+  chain: WorkingChain,
+  point: ContourCoordinate,
+  rawOffset: number,
+): { readonly foot: ContourCoordinate; readonly separation: number; readonly footOffset: number } {
+  const spans = chain.spans
+  const count = spans.length
+  let lower = 0
+  let upper = count - 1
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (spans[middle]!.endOffset > rawOffset + EPSILON) upper = middle
+    else lower = middle + 1
   }
+  const measure = (
+    index: number,
+  ): { foot: ContourCoordinate; separation: number; footOffset: number } => {
+    const start = chain.rawPoints[index]
+    const end = chain.rawPoints[index + 1]
+    const span = spans[index]
+    if (start === undefined || end === undefined || span === undefined) {
+      throw new Error('Terrain contour clamp segment is missing its raw points.')
+    }
+    const foot = projectToSegment(point, start, end)
+    return {
+      foot,
+      separation: distance(point, foot),
+      footOffset: span.startOffset + distance(start, foot),
+    }
+  }
+  let best = measure(lower)
+  for (const direction of [-1, 1] as const) {
+    let index = lower
+    for (let step = 0; step < count - 1; step += 1) {
+      let next = index + direction
+      if (chain.closed) next = (next + count) % count
+      else if (next < 0 || next >= count) break
+      const span = spans[next]
+      if (span === undefined) break
+      const arcDistance = circularDistanceToInterval(
+        rawOffset,
+        span.startOffset,
+        span.endOffset,
+        chain.rawLength,
+        chain.closed,
+      )
+      if (arcDistance > CLAMP_WINDOW_CELLS + EPSILON) break
+      const candidate = measure(next)
+      if (candidate.separation < best.separation) best = candidate
+      index = next
+    }
+  }
+  return best
 }
 
 function curveSourcePoints(
@@ -1093,79 +1208,6 @@ function curveSourcePoints(
       ...rawPointAt(offset, rawPoints, spans, rawLength, closed),
       locked: offsetLocked(offset, spanIndex.fixed, rawLength, closed, tangentLength),
     }))
-}
-
-function maximumGapBetweenLocks(
-  points: readonly { readonly sourceOffset: number }[],
-  locked: readonly boolean[],
-  rawLength: number,
-  closed: boolean,
-): number {
-  const offsets = points
-    .filter((_, index) => locked[index])
-    .map((point) => point.sourceOffset)
-    .sort((first, second) => first - second)
-  if (offsets.length === 0) return rawLength
-  let maximum = 0
-  for (let index = 1; index < offsets.length; index += 1) {
-    maximum = Math.max(maximum, offsets[index]! - offsets[index - 1]!)
-  }
-  if (closed) maximum = Math.max(maximum, offsets[0]! + rawLength - offsets.at(-1)!)
-  return maximum
-}
-
-function limitPointFromRawPair(
-  point: ContourCoordinate,
-  raw: ContourCoordinate,
-  maximumDeviation: number,
-): ContourCoordinate {
-  const deviation = distance(point, raw)
-  if (deviation <= maximumDeviation) return point
-  const scale = maximumDeviation / deviation
-  return {
-    x: raw.x + (point.x - raw.x) * scale,
-    y: raw.y + (point.y - raw.y) * scale,
-  }
-}
-
-function indexContourCellCenters(
-  spans: readonly TerrainContourSpan[],
-): ReadonlyMap<string, readonly ContourCoordinate[]> {
-  const byCoordinate = new Map<string, ContourCoordinate>()
-  for (const span of spans) {
-    for (const cell of [...span.left.cells, ...span.right.cells]) {
-      byCoordinate.set(`${cell.column}:${cell.row}`, { x: cell.x, y: cell.y })
-    }
-  }
-  const buckets = new Map<string, ContourCoordinate[]>()
-  for (const center of byCoordinate.values()) {
-    const key = cellCoordinateKey(Math.floor(center.x), Math.floor(center.y))
-    const bucket = buckets.get(key) ?? []
-    bucket.push(center)
-    buckets.set(key, bucket)
-  }
-  return buckets
-}
-
-function renderAdaptiveContour(state: AdaptiveContourState): TerrainContourPoint[] {
-  return state.samples.map((sample, index) => {
-    const blend = sample.locked ? 0 : pointBlendLevel(state, index)
-    return {
-      x: sample.raw.x + (sample.candidate.x - sample.raw.x) * blend,
-      y: sample.raw.y + (sample.candidate.y - sample.raw.y) * blend,
-      rawOffset: sample.rawOffset,
-      locked: sample.locked,
-      shorelineFactor: sample.shorelineFactor,
-    }
-  })
-}
-
-function pointBlendLevel(state: AdaptiveContourState, index: number): number {
-  const incident: number[] = []
-  if (index > 0) incident.push(state.intervalLevelIndexes[index - 1]!)
-  else if (state.closed) incident.push(state.intervalLevelIndexes.at(-1)!)
-  if (index < state.intervalLevelIndexes.length) incident.push(state.intervalLevelIndexes[index]!)
-  return Math.min(...incident.map((levelIndex) => CONTOUR_BLEND_LEVELS[levelIndex]!))
 }
 
 function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanIndex {
@@ -1265,339 +1307,12 @@ function offsetLocked(
   )
 }
 
-interface AdaptiveCurvePiece {
-  readonly chain: WorkingChain
-  readonly chainIndex: number
-  readonly index: number
-  readonly count: number
-  readonly start: TerrainContourPoint
-  readonly end: TerrainContourPoint
-  readonly rawStart: ContourCoordinate
-  readonly rawEnd: ContourCoordinate
-}
-
-function adaptContourGraph(chains: WorkingChain[], settings: TerrainContourSettings): void {
-  for (const chain of chains) adaptLocalChain(chain)
-  const safeIndependentDisplacement = (1 - settings.minimumCorridorCells) / 2
-  if (
-    chains.every((chain) =>
-      chain.points.every(
-        (point, index) =>
-          distance(point, chain.adaptive.samples[index]!.raw) <= safeIndependentDisplacement + 1e-7,
-      ),
-    )
-  ) {
-    return
-  }
-  const maximumPasses = CONTOUR_BLEND_LEVELS.length * 4
-  for (let pass = 0; pass < maximumPasses; pass += 1) {
-    const pieces = adaptiveCurvePieces(chains)
-    const conflicts = new Map<string, AdaptiveCurvePiece>()
-    for (const [first, second] of intersectingAdaptivePairs(pieces)) {
-      conflicts.set(adaptivePieceKey(first), first)
-      conflicts.set(adaptivePieceKey(second), second)
-    }
-    for (const [first, second] of nearbyAdaptivePairs(pieces, settings.minimumCorridorCells)) {
-      if (first.chain === second.chain && piecesAreAdjacent(first, second)) continue
-      if (
-        first.chain === second.chain &&
-        piecesAreNearAlongChain(first, second, settings.minimumCorridorCells)
-      ) {
-        continue
-      }
-      const rawDistance = segmentDistance(
-        first.rawStart,
-        first.rawEnd,
-        second.rawStart,
-        second.rawEnd,
-      )
-      const required = Math.min(settings.minimumCorridorCells, rawDistance)
-      if (required <= EPSILON) continue
-      const currentDistance = segmentDistance(first.start, first.end, second.start, second.end)
-      if (currentDistance + 1e-7 >= required) continue
-      conflicts.set(adaptivePieceKey(first), first)
-      conflicts.set(adaptivePieceKey(second), second)
-    }
-    if (conflicts.size === 0) return
-    let changed = false
-    const ordered = [...conflicts.values()].sort(
-      (first, second) =>
-        first.chain.id.localeCompare(second.chain.id) || first.index - second.index,
-    )
-    const changedChains = new Set<WorkingChain>()
-    for (const piece of ordered) {
-      if (!lowerAdaptiveInterval(piece.chain.adaptive, piece.index)) continue
-      changed = true
-      changedChains.add(piece.chain)
-    }
-    if (!changed) break
-    for (const chain of changedChains) adaptLocalChain(chain)
-  }
-  validateAdaptiveIntersections(chains)
-  validateAdaptiveCorridors(chains, settings.minimumCorridorCells)
-}
-
-function adaptLocalChain(chain: WorkingChain): void {
-  const state = chain.adaptive
-  validateMonotonicOffsets(state)
-  for (let pass = 0; pass < CONTOUR_BLEND_LEVELS.length * 4; pass += 1) {
-    chain.points = renderAdaptiveContour(state)
-    const pairedSafetyLimit = Math.min(
-      state.maxDeviationCells,
-      0.5 - state.cellCenterClearanceCells,
-    )
-    if (
-      chain.points.every(
-        (point, index) => distance(point, state.samples[index]!.raw) <= pairedSafetyLimit + 1e-7,
-      )
-    ) {
-      return
-    }
-    const failures: number[] = []
-    const edgeCount = state.intervalLevelIndexes.length
-    for (let index = 0; index < edgeCount; index += 1) {
-      const start = chain.points[index]!
-      const end = chain.points[(index + 1) % chain.points.length]!
-      if (
-        !segmentStaysInTube(start, end, state.rawIndex, state.maxDeviationCells) ||
-        !segmentClearsCellCenters(start, end, state.centerBuckets, state.cellCenterClearanceCells)
-      ) {
-        failures.push(index)
-      }
-    }
-    if (failures.length === 0) return
-    let changed = false
-    for (const index of failures) changed = lowerAdaptiveInterval(state, index) || changed
-    if (!changed) break
-  }
-  chain.points = renderAdaptiveContour(state)
-  throw new Error('Terrain contour raw fallback could not preserve its local safety bounds.')
-}
-
-function validateMonotonicOffsets(state: AdaptiveContourState): void {
-  for (let index = 1; index < state.samples.length; index += 1) {
-    if (state.samples[index]!.rawOffset <= state.samples[index - 1]!.rawOffset + EPSILON) {
-      throw new Error('Terrain contour samples lost monotonic raw-offset order.')
-    }
-  }
-}
-
-function lowerAdaptiveInterval(state: AdaptiveContourState, intervalIndex: number): boolean {
-  const current = state.intervalLevelIndexes[intervalIndex]
-  if (current === undefined || current >= CONTOUR_BLEND_LEVELS.length - 1) return false
-  state.intervalLevelIndexes[intervalIndex] = current + 1
-  return true
-}
-
-function adaptiveCurvePieces(chains: readonly WorkingChain[]): AdaptiveCurvePiece[] {
-  return chains.flatMap((chain, chainIndex) =>
-    chain.adaptive.intervalLevelIndexes.map((_, index) => ({
-      chain,
-      chainIndex,
-      index,
-      count: chain.adaptive.intervalLevelIndexes.length,
-      start: chain.points[index]!,
-      end: chain.points[(index + 1) % chain.points.length]!,
-      rawStart: chain.adaptive.samples[index]!.raw,
-      rawEnd: chain.adaptive.samples[(index + 1) % chain.adaptive.samples.length]!.raw,
-    })),
-  )
-}
-
-function adaptivePieceKey(piece: AdaptiveCurvePiece): string {
-  return `${piece.chainIndex}:${piece.index}`
-}
-
-function piecesAreNearAlongChain(
-  first: AdaptiveCurvePiece,
-  second: AdaptiveCurvePiece,
-  minimumCorridor: number,
-): boolean {
-  const midpointOffset = (piece: AdaptiveCurvePiece): number => {
-    const start = piece.chain.adaptive.samples[piece.index]!.rawOffset
-    let end =
-      piece.chain.adaptive.samples[(piece.index + 1) % piece.chain.adaptive.samples.length]!
-        .rawOffset
-    if (piece.chain.closed && end <= start) end += piece.chain.rawLength
-    return normalizedOffset((start + end) / 2, piece.chain.rawLength, piece.chain.closed)
-  }
-  const firstOffset = midpointOffset(first)
-  const secondOffset = midpointOffset(second)
-  let separation = Math.abs(firstOffset - secondOffset)
-  if (first.chain.closed) separation = Math.min(separation, first.chain.rawLength - separation)
-  return separation <= minimumCorridor * 2 + EPSILON
-}
-
-function nearbyAdaptivePairs(
-  pieces: readonly AdaptiveCurvePiece[],
-  reach: number,
-): readonly (readonly [AdaptiveCurvePiece, AdaptiveCurvePiece])[] {
-  const buckets = new Map<string, AdaptiveCurvePiece[]>()
-  const pairs: [AdaptiveCurvePiece, AdaptiveCurvePiece][] = []
-  const seen = new Set<string>()
-  for (let index = 0; index < pieces.length; index += 1) {
-    const piece = pieces[index]!
-    for (const componentKey of new Set(piece.chain.componentKeys)) {
-      if (componentKey === TERRAIN_EXTERIOR) continue
-      for (const spatialKey of expandedCurveBucketKeys(piece, reach)) {
-        const key = `${componentKey}|${spatialKey}`
-        for (const earlier of buckets.get(key) ?? []) {
-          if (!adaptivePieceMoved(earlier) && !adaptivePieceMoved(piece)) continue
-          const rawDistance = segmentDistance(
-            earlier.rawStart,
-            earlier.rawEnd,
-            piece.rawStart,
-            piece.rawEnd,
-          )
-          if (rawDistance < 1 - 1e-7) continue
-          if (
-            rawDistance - adaptivePieceDeviation(earlier) - adaptivePieceDeviation(piece) >=
-            reach - 1e-7
-          ) {
-            continue
-          }
-          const pairKey = `${adaptivePieceKey(earlier)}:${adaptivePieceKey(piece)}`
-          if (seen.has(pairKey)) continue
-          seen.add(pairKey)
-          pairs.push([earlier, piece])
-        }
-      }
-      for (const spatialKey of curveBucketKeys(piece)) {
-        const key = `${componentKey}|${spatialKey}`
-        const bucket = buckets.get(key) ?? []
-        bucket.push(piece)
-        buckets.set(key, bucket)
-      }
-    }
-  }
-  return pairs
-}
-
-function intersectingAdaptivePairs(
-  pieces: readonly AdaptiveCurvePiece[],
-): readonly (readonly [AdaptiveCurvePiece, AdaptiveCurvePiece])[] {
-  const buckets = new Map<string, AdaptiveCurvePiece[]>()
-  const pairs: [AdaptiveCurvePiece, AdaptiveCurvePiece][] = []
-  const seen = new Set<string>()
-  for (const piece of pieces) {
-    for (const key of curveBucketKeys(piece)) {
-      const bucket = buckets.get(key) ?? []
-      for (const earlier of bucket) {
-        const pairKey = `${adaptivePieceKey(earlier)}:${adaptivePieceKey(piece)}`
-        if (seen.has(pairKey)) continue
-        seen.add(pairKey)
-        if (
-          earlier.chain === piece.chain &&
-          piecesAreAdjacent(earlier, piece) &&
-          adjacentPiecesMeetOnlyAtEndpoint(earlier, piece)
-        ) {
-          continue
-        }
-        if (!segmentsIntersect(earlier.start, earlier.end, piece.start, piece.end)) continue
-        if (
-          adjacentPiecesMeetOnlyAtEndpoint(earlier, piece) ||
-          incidentIntersection(earlier, piece)
-        ) {
-          continue
-        }
-        pairs.push([earlier, piece])
-      }
-      bucket.push(piece)
-      buckets.set(key, bucket)
-    }
-  }
-  return pairs
-}
-
-function adaptivePieceMoved(piece: AdaptiveCurvePiece): boolean {
-  return !samePoint(piece.start, piece.rawStart) || !samePoint(piece.end, piece.rawEnd)
-}
-
-function adaptivePieceDeviation(piece: AdaptiveCurvePiece): number {
-  return Math.max(distance(piece.start, piece.rawStart), distance(piece.end, piece.rawEnd))
-}
-
-function expandedCurveBucketKeys(
-  piece: Pick<AdaptiveCurvePiece, 'start' | 'end'>,
-  reach: number,
-): readonly string[] {
-  const minimumX = Math.floor(Math.min(piece.start.x, piece.end.x) - reach)
-  const maximumX = Math.floor(Math.max(piece.start.x, piece.end.x) + reach)
-  const minimumY = Math.floor(Math.min(piece.start.y, piece.end.y) - reach)
-  const maximumY = Math.floor(Math.max(piece.start.y, piece.end.y) + reach)
-  const keys: string[] = []
-  for (let y = minimumY; y <= maximumY; y += 1) {
-    for (let x = minimumX; x <= maximumX; x += 1) keys.push(`${x}:${y}`)
-  }
-  return keys
-}
-
-function segmentClearsCellCenters(
-  start: ContourCoordinate,
-  end: ContourCoordinate,
-  buckets: ReadonlyMap<string, readonly ContourCoordinate[]>,
-  clearance: number,
-): boolean {
-  const minimumX = Math.floor(Math.min(start.x, end.x) - clearance)
-  const maximumX = Math.floor(Math.max(start.x, end.x) + clearance)
-  const minimumY = Math.floor(Math.min(start.y, end.y) - clearance)
-  const maximumY = Math.floor(Math.max(start.y, end.y) + clearance)
-  for (let row = minimumY; row <= maximumY; row += 1) {
-    for (let column = minimumX; column <= maximumX; column += 1) {
-      for (const center of buckets.get(cellCoordinateKey(column, row)) ?? []) {
-        if (pointToSegmentDistance(center, start, end) < clearance - 1e-7) return false
-      }
-    }
-  }
-  return true
-}
-
-function segmentDistance(
-  firstStart: ContourCoordinate,
-  firstEnd: ContourCoordinate,
-  secondStart: ContourCoordinate,
-  secondEnd: ContourCoordinate,
-): number {
-  if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) return 0
-  return Math.min(
-    pointToSegmentDistance(firstStart, secondStart, secondEnd),
-    pointToSegmentDistance(firstEnd, secondStart, secondEnd),
-    pointToSegmentDistance(secondStart, firstStart, firstEnd),
-    pointToSegmentDistance(secondEnd, firstStart, firstEnd),
-  )
-}
-
 function pointToSegmentDistance(
   point: ContourCoordinate,
   start: ContourCoordinate,
   end: ContourCoordinate,
 ): number {
   return distance(point, projectToSegment(point, start, end))
-}
-
-function validateAdaptiveCorridors(chains: readonly WorkingChain[], minimumCorridor: number): void {
-  const pieces = adaptiveCurvePieces(chains)
-  for (const [first, second] of nearbyAdaptivePairs(pieces, minimumCorridor)) {
-    if (first.chain === second.chain && piecesAreAdjacent(first, second)) continue
-    if (first.chain === second.chain && piecesAreNearAlongChain(first, second, minimumCorridor))
-      continue
-    const rawDistance = segmentDistance(
-      first.rawStart,
-      first.rawEnd,
-      second.rawStart,
-      second.rawEnd,
-    )
-    const required = Math.min(minimumCorridor, rawDistance)
-    if (segmentDistance(first.start, first.end, second.start, second.end) + 1e-7 < required) {
-      throw new Error('Terrain contour corridor narrowed below its safe source width.')
-    }
-  }
-}
-
-function validateAdaptiveIntersections(chains: readonly WorkingChain[]): void {
-  if (intersectingAdaptivePairs(adaptiveCurvePieces(chains)).length > 0) {
-    throw new Error('Terrain contour raw fallback retained a nonincident intersection.')
-  }
 }
 
 function shorelineFactorAt(
@@ -2078,8 +1793,17 @@ interface CurvePiece {
   readonly count: number
 }
 
-function validateCurveGraph(chains: readonly WorkingChain[], maxDeviation: number): void {
-  const pieces = chains.flatMap((chain) => {
+/**
+ * Shaping constrains sample points, so chords between samples may sag past the point bound,
+ * most where tangential slide and the lock blend stretch the spacing between emitted points.
+ * Validation allows that interpolation sag; it is a tripwire for construction failures, which
+ * overshoot by half a cell or more, not a second calibration bound.
+ */
+const VALIDATION_SAG_CELLS = 0.08
+
+/** Emitted-curve pieces, closed rings including their seam chord, for sweeps and repair. */
+function curvePieces(chains: readonly WorkingChain[]): CurvePiece[] {
+  return chains.flatMap((chain) => {
     if (chain.points.length < 2) throw new Error('Terrain contour chain emitted too few points.')
     const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
     const rawIndex = indexRawPolyline(chain.rawPoints)
@@ -2092,11 +1816,13 @@ function validateCurveGraph(chains: readonly WorkingChain[], maxDeviation: numbe
       count: points.length - 1,
     }))
   })
-  for (const piece of pieces) {
-    if (!segmentStaysInTube(piece.start, piece.end, piece.rawIndex, maxDeviation)) {
-      throw new Error('Terrain contour curve escaped its source tube.')
-    }
-  }
+}
+
+/** Every pair of emitted pieces that truly cross, excluding shared endpoints and junctions. */
+function nonincidentIntersections(
+  pieces: readonly CurvePiece[],
+): readonly (readonly [CurvePiece, CurvePiece])[] {
+  const found: [CurvePiece, CurvePiece][] = []
   for (const [first, second] of spatialCurvePairs(pieces)) {
     if (
       first.chain === second.chain &&
@@ -2108,7 +1834,78 @@ function validateCurveGraph(chains: readonly WorkingChain[], maxDeviation: numbe
     if (!segmentsIntersect(first.start, first.end, second.start, second.end)) continue
     if (adjacentPiecesMeetOnlyAtEndpoint(first, second) || incidentIntersection(first, second))
       continue
-    throw new Error('Terrain contour curves contain a nonincident intersection.')
+    found.push([first, second])
+  }
+  return found
+}
+
+/**
+ * Rare tip geometry can smooth two stretches of boundary across each other, and no local
+ * envelope can tell those stretches from an ordinary staircase. Repair directly instead: pull
+ * the points of every crossing piece halfway toward their raw positions and sweep again. Raw
+ * geometry is planar, so the halving always converges.
+ */
+const INTERSECTION_REPAIR_PASSES = 12
+
+function repairContourIntersections(chains: readonly WorkingChain[]): void {
+  for (let pass = 0; pass < INTERSECTION_REPAIR_PASSES; pass += 1) {
+    const offenders = nonincidentIntersections(curvePieces(chains))
+    if (offenders.length === 0) return
+    const indexesByChain = new Map<WorkingChain, Set<number>>()
+    for (const [first, second] of offenders) {
+      for (const piece of [first, second]) {
+        const indexes = indexesByChain.get(piece.chain) ?? new Set<number>()
+        indexes.add(piece.index)
+        indexes.add((piece.index + 1) % piece.chain.points.length)
+        indexesByChain.set(piece.chain, indexes)
+      }
+    }
+    for (const [chain, indexes] of indexesByChain) {
+      const points = [...chain.points]
+      for (const index of indexes) {
+        const point = points[index]
+        if (point === undefined || point.locked) continue
+        const raw = rawPointAt(
+          point.rawOffset,
+          chain.rawPoints,
+          chain.spans,
+          chain.rawLength,
+          chain.closed,
+        )
+        points[index] = {
+          ...point,
+          x: raw.x + (point.x - raw.x) * 0.5,
+          y: raw.y + (point.y - raw.y) * 0.5,
+        }
+      }
+      chain.points = points
+    }
+  }
+}
+
+function validateCurveGraph(chains: readonly WorkingChain[], maxDeviation: number): void {
+  const pieces = curvePieces(chains)
+  const allowed = maxDeviation + VALIDATION_SAG_CELLS
+  for (const piece of pieces) {
+    if (!segmentStaysInTube(piece.start, piece.end, piece.rawIndex, allowed)) {
+      const worst = worstChordDistance(piece.start, piece.end, piece.rawIndex)
+      throw new Error(
+        `Terrain contour curve escaped its source tube: chain ${piece.chain.id} ` +
+          `(${piece.chain.leftMaterial} against ${piece.chain.rightMaterial}) near ` +
+          `(${piece.start.x.toFixed(2)}, ${piece.start.y.toFixed(2)}) deviates ` +
+          `${worst.toFixed(3)} of ${allowed.toFixed(3)} allowed cells.`,
+      )
+    }
+  }
+  const offenders = nonincidentIntersections(pieces)
+  const offending = offenders[0]
+  if (offending !== undefined) {
+    const [first, second] = offending
+    throw new Error(
+      `Terrain contour curves contain a nonincident intersection: chain ${first.chain.id} ` +
+        `(${first.chain.leftMaterial} against ${first.chain.rightMaterial}) crosses chain ` +
+        `${second.chain.id} near (${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)}).`,
+    )
   }
 }
 
@@ -2147,6 +1944,24 @@ function curveBucketKeys(piece: Pick<CurvePiece, 'start' | 'end'>): readonly str
     for (let x = minimumX; x <= maximumX; x += 1) keys.push(`${x}:${y}`)
   }
   return keys
+}
+
+/** Densely sampled worst chord deviation, reported when the tube validation fails. */
+function worstChordDistance(
+  start: ContourCoordinate,
+  end: ContourCoordinate,
+  rawIndex: RawPolylineIndex,
+): number {
+  let worst = 0
+  for (let step = 0; step <= 16; step += 1) {
+    const amount = step / 16
+    const point = {
+      x: start.x + (end.x - start.x) * amount,
+      y: start.y + (end.y - start.y) * amount,
+    }
+    worst = Math.max(worst, projectToPolyline(point, rawIndex).distance)
+  }
+  return worst
 }
 
 /** Prove the full emitted segment stays in the source tube through adaptive 1-Lipschitz bounds. */

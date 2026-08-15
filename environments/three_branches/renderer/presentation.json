@@ -36,7 +36,13 @@
         "tint": "silt",
         "opacity": 1
       },
-      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "reed", "opacity": 1 },
+      "reeds": {
+        "frames": ["reedsA", "reedsB", "reedsC", "reedsD"],
+        "tint": "reed",
+        "tintMix": { "tint": "pine", "amount": 0.45 },
+        "detailShift": 0.2,
+        "opacity": 1
+      },
       "water": {
         "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
         "tint": "water",
@@ -48,58 +54,58 @@
       "profiles": {
         "land": {
           "sampleSpacingCells": 0.25,
-          "macroWindowCells": 0,
-          "fairingIterations": 4,
-          "fairingRadiusCells": 1.5,
-          "fairingStrength": 0.35,
-          "noiseAmplitudeCells": 0.04,
-          "noiseWavelengthCells": [5, 9]
+          "smoothingPasses": 72,
+          "octaves": [
+            { "wavelengthCells": 8, "amplitudeCells": 0.28 },
+            { "wavelengthCells": 3, "amplitudeCells": 0.12 },
+            { "wavelengthCells": 1.2, "amplitudeCells": 0.05 }
+          ]
         },
         "water": {
           "sampleSpacingCells": 0.2,
-          "macroWindowCells": 4,
-          "fairingIterations": 6,
-          "fairingRadiusCells": 2.5,
-          "fairingStrength": 0.45,
-          "noiseAmplitudeCells": 0.06,
-          "noiseWavelengthCells": [7, 12]
+          "smoothingPasses": 160,
+          "octaves": [
+            { "wavelengthCells": 11, "amplitudeCells": 0.34 },
+            { "wavelengthCells": 4, "amplitudeCells": 0.14 },
+            { "wavelengthCells": 1.5, "amplitudeCells": 0.06 }
+          ]
         }
       },
       "junctionTangentCells": 0.25,
-      "maxDeviationCells": 0.35,
-      "cellCenterClearanceCells": 0.15,
+      "maxDeviationCells": 0.6,
       "minimumCorridorCells": 0.7,
-      "saddleRadiusCells": 0.08,
-      "shoreline": {
-        "bands": [
-          {
-            "tint": "reed",
-            "widthCells": 0.6,
-            "opacity": 0.14,
-            "density": 0.65,
-            "runLengthCells": [1.5, 4]
-          },
-          {
-            "tint": "silt",
-            "widthCells": 0.24,
-            "opacity": 0.24,
-            "density": 0.35,
-            "runLengthCells": [0.75, 2.25]
-          }
-        ],
+      "saddleRadiusCells": 0.08
+    },
+    "seams": {
+      "pooling": { "widthCells": 0.45, "darken": 0.16, "opacity": 0.28 },
+      "ink": {
+        "tint": "ink",
+        "widthCells": 0.15,
+        "opacity": 0.7,
+        "density": 0.85,
+        "runLengthCells": [4, 9]
+      },
+      "waterHatch": {
+        "tint": "ink",
+        "widthCells": 0.1,
+        "offsetsCells": [0.55, 1.05],
+        "opacity": 0.3,
         "bridgeTaperCells": 0.35
       }
+    },
+    "reedMarks": {
+      "tint": "pine",
+      "widthCells": 0.05,
+      "lengthCells": [0.25, 0.5],
+      "perCell": 3,
+      "opacity": 0.5
     },
     "routes": {
       "road": {
         "curve": {
           "sampleSpacingCells": 0.25,
-          "macroWindowCells": 1.5,
-          "fairingIterations": 4,
-          "fairingRadiusCells": 1,
-          "fairingStrength": 0.35,
-          "noiseAmplitudeCells": 0.05,
-          "noiseWavelengthCells": [4, 8]
+          "smoothingPasses": 10,
+          "octaves": [{ "wavelengthCells": 6, "amplitudeCells": 0.05 }]
         },
         "targetWidthCells": 2.1,
         "minimumWidthCells": 1.6,
@@ -108,12 +114,8 @@
       "path": {
         "curve": {
           "sampleSpacingCells": 0.2,
-          "macroWindowCells": 3,
-          "fairingIterations": 6,
-          "fairingRadiusCells": 2,
-          "fairingStrength": 0.45,
-          "noiseAmplitudeCells": 0.04,
-          "noiseWavelengthCells": [5, 10]
+          "smoothingPasses": 14,
+          "octaves": [{ "wavelengthCells": 7, "amplitudeCells": 0.04 }]
         },
         "widthCells": 0.7,
         "opacity": 1

@@ -23,12 +23,8 @@ export const DEFAULT_TERRAIN_ROUTE_SETTINGS: TerrainRouteSettings = {
   road: {
     curve: {
       sampleSpacingCells: 0.25,
-      macroWindowCells: 1.5,
-      fairingIterations: 4,
-      fairingRadiusCells: 1,
-      fairingStrength: 0.35,
-      noiseAmplitudeCells: 0.05,
-      noiseWavelengthCells: [4, 8],
+      smoothingPasses: 10,
+      octaves: [{ wavelengthCells: 6, amplitudeCells: 0.05 }],
     },
     targetWidthCells: 2.1,
     minimumWidthCells: 1.6,
@@ -37,12 +33,8 @@ export const DEFAULT_TERRAIN_ROUTE_SETTINGS: TerrainRouteSettings = {
   path: {
     curve: {
       sampleSpacingCells: 0.2,
-      macroWindowCells: 3,
-      fairingIterations: 6,
-      fairingRadiusCells: 2,
-      fairingStrength: 0.45,
-      noiseAmplitudeCells: 0.04,
-      noiseWavelengthCells: [5, 10],
+      smoothingPasses: 14,
+      octaves: [{ wavelengthCells: 7, amplitudeCells: 0.04 }],
     },
     widthCells: 0.7,
     opacity: 1,
@@ -150,8 +142,6 @@ export interface TerrainRoutePlan {
   readonly roadStroke: TerrainRouteSettings['road']
   readonly pathStroke: TerrainRouteSettings['path']
   readonly roadMaskCells: readonly TerrainRouteCell[]
-  readonly roadTextureRows: readonly string[]
-  readonly pathTextureRows: readonly string[]
   readonly pathGuides: readonly TerrainPathGuide[]
   readonly pathConnectors: readonly TerrainPathConnector[]
   readonly bridgeComponents: readonly TerrainBridgeComponent[]
@@ -251,9 +241,6 @@ export function planTerrainRoutes(
           bridgeForCell.get(cellKey(cell.column, cell.row))?.owner === 'road'),
     )
     .map(cellCoordinate)
-  const roadCode = canonicalCodeFor('road', groundNameForCode)
-  const pathCode = canonicalCodeFor('path', groundNameForCode)
-  const pathCells = cells.filter((cell) => cell.material === 'path').map(cellCoordinate)
   const roadGuide = buildRoadGuide(rows, width, height, roadMaskCells, bridgeForCell, settings)
   const pathConnectors = buildPathConnectors(
     cells,
@@ -272,32 +259,6 @@ export function planTerrainRoutes(
     settings,
     rows,
   )
-  const bridgeCells = new Set(
-    bridgeComponents.flatMap((component) =>
-      component.cells.map((cell) => cellKey(cell.column, cell.row)),
-    ),
-  )
-  const roadTextureRows = guideTextureRows(
-    width,
-    height,
-    cells.filter((cell) => cell.material === 'road').map(cellCoordinate),
-    [roadGuide],
-    roadCode ?? rows[0]?.[0] ?? ' ',
-    bridgeCells,
-  )
-  const pathTextureRows = guideTextureRows(
-    width,
-    height,
-    pathCells,
-    pathGuides.map((guide) =>
-      guide.closed && guide.points[0] !== undefined
-        ? [...guide.points, guide.points[0]]
-        : guide.points,
-    ),
-    pathCode ?? rows[0]?.[0] ?? ' ',
-    bridgeCells,
-  )
-
   return {
     width,
     height,
@@ -308,8 +269,6 @@ export function planTerrainRoutes(
     roadStroke: settings.road,
     pathStroke: settings.path,
     roadMaskCells,
-    roadTextureRows,
-    pathTextureRows,
     pathGuides,
     pathConnectors,
     bridgeComponents,
@@ -343,54 +302,6 @@ export function sparseRows(
     required(result[cell.row], 'Sparse terrain target row is missing.')[cell.column] = code
   }
   return result.map((row) => row.join(''))
-}
-
-function guideTextureRows(
-  width: number,
-  height: number,
-  sourceCells: readonly TerrainRouteCell[],
-  guides: readonly (readonly TerrainRoutePoint[])[],
-  code: string,
-  excludedCells: ReadonlySet<string>,
-): readonly string[] {
-  const covered = new Map<string, TerrainRouteCell>()
-  const addHalo = (point: TerrainRoutePoint): void => {
-    const centerColumn = Math.floor(point.x)
-    const centerRow = Math.floor(point.y)
-    for (let row = centerRow - 1; row <= centerRow + 1; row += 1) {
-      for (let column = centerColumn - 1; column <= centerColumn + 1; column += 1) {
-        const key = cellKey(column, row)
-        if (column < 0 || row < 0 || column >= width || row >= height || excludedCells.has(key)) {
-          continue
-        }
-        covered.set(key, { column, row })
-      }
-    }
-  }
-  for (const cell of sourceCells) {
-    const key = cellKey(cell.column, cell.row)
-    if (!excludedCells.has(key)) covered.set(key, cell)
-  }
-  for (const guide of guides) {
-    if (guide.length === 1) {
-      addHalo(required(guide[0], 'Route texture guide point is missing.'))
-      continue
-    }
-    for (let index = 1; index < guide.length; index += 1) {
-      const start = required(guide[index - 1], 'Route texture segment start is missing.')
-      const end = required(guide[index], 'Route texture segment end is missing.')
-      const length = Math.hypot(end.x - start.x, end.y - start.y)
-      const samples = Math.max(1, Math.ceil(length / 0.25))
-      for (let sample = 0; sample <= samples; sample += 1) {
-        const amount = sample / samples
-        addHalo({
-          x: start.x + (end.x - start.x) * amount,
-          y: start.y + (end.y - start.y) * amount,
-        })
-      }
-    }
-  }
-  return sparseRows(width, height, [...covered.values()].sort(compareCells), code)
 }
 
 function validateInputs(

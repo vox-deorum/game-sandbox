@@ -29,68 +29,58 @@ const APPROVED_PALETTE = {
 
 const LAND_CURVE = {
   sampleSpacingCells: 0.25,
-  macroWindowCells: 0,
-  fairingIterations: 4,
-  fairingRadiusCells: 1.5,
-  fairingStrength: 0.35,
-  noiseAmplitudeCells: 0.04,
-  noiseWavelengthCells: [5, 9],
+  smoothingPasses: 72,
+  octaves: [
+    { wavelengthCells: 8, amplitudeCells: 0.28 },
+    { wavelengthCells: 3, amplitudeCells: 0.12 },
+    { wavelengthCells: 1.2, amplitudeCells: 0.05 },
+  ],
 } as const
 
 const WATER_CURVE = {
   sampleSpacingCells: 0.2,
-  macroWindowCells: 4,
-  fairingIterations: 6,
-  fairingRadiusCells: 2.5,
-  fairingStrength: 0.45,
-  noiseAmplitudeCells: 0.06,
-  noiseWavelengthCells: [7, 12],
+  smoothingPasses: 160,
+  octaves: [
+    { wavelengthCells: 11, amplitudeCells: 0.34 },
+    { wavelengthCells: 4, amplitudeCells: 0.14 },
+    { wavelengthCells: 1.5, amplitudeCells: 0.06 },
+  ],
 } as const
 
 const ROAD_CURVE = {
   sampleSpacingCells: 0.25,
-  macroWindowCells: 1.5,
-  fairingIterations: 4,
-  fairingRadiusCells: 1,
-  fairingStrength: 0.35,
-  noiseAmplitudeCells: 0.05,
-  noiseWavelengthCells: [4, 8],
+  smoothingPasses: 10,
+  octaves: [{ wavelengthCells: 6, amplitudeCells: 0.05 }],
 } as const
 
 const PATH_CURVE = {
   sampleSpacingCells: 0.2,
-  macroWindowCells: 3,
-  fairingIterations: 6,
-  fairingRadiusCells: 2,
-  fairingStrength: 0.45,
-  noiseAmplitudeCells: 0.04,
-  noiseWavelengthCells: [5, 10],
+  smoothingPasses: 14,
+  octaves: [{ wavelengthCells: 7, amplitudeCells: 0.04 }],
 } as const
 
 const APPROVED_CONTOURS = {
   profiles: { land: LAND_CURVE, water: WATER_CURVE },
   junctionTangentCells: 0.25,
-  maxDeviationCells: 0.35,
-  cellCenterClearanceCells: 0.15,
+  maxDeviationCells: 0.6,
   minimumCorridorCells: 0.7,
   saddleRadiusCells: 0.08,
-  shoreline: {
-    bands: [
-      {
-        tint: 'reed',
-        widthCells: 0.6,
-        opacity: 0.14,
-        density: 0.65,
-        runLengthCells: [1.5, 4],
-      },
-      {
-        tint: 'silt',
-        widthCells: 0.24,
-        opacity: 0.24,
-        density: 0.35,
-        runLengthCells: [0.75, 2.25],
-      },
-    ],
+} as const
+
+const APPROVED_SEAMS = {
+  pooling: { widthCells: 0.45, darken: 0.16, opacity: 0.28 },
+  ink: {
+    tint: 'ink',
+    widthCells: 0.15,
+    opacity: 0.7,
+    density: 0.85,
+    runLengthCells: [4, 9],
+  },
+  waterHatch: {
+    tint: 'ink',
+    widthCells: 0.1,
+    offsetsCells: [0.55, 1.05],
+    opacity: 0.3,
     bridgeTaperCells: 0.35,
   },
 } as const
@@ -103,6 +93,14 @@ const APPROVED_ROUTES = {
     opacity: 0.82,
   },
   path: { curve: PATH_CURVE, widthCells: 0.7, opacity: 1 },
+} as const
+
+const APPROVED_REED_MARKS = {
+  tint: 'pine',
+  widthCells: 0.05,
+  lengthCells: [0.25, 0.5],
+  perCell: 3,
+  opacity: 0.5,
 } as const
 
 describe('Hearthside Ink presentation', () => {
@@ -147,8 +145,10 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
-  it('pins the shared land, water, road, and path curve profiles', () => {
+  it('pins the shared curve profiles, junction geometry, and seam calibration', () => {
     expect(HEARTHSIDE_STYLE.terrain.contours).toEqual(APPROVED_CONTOURS)
+    expect(HEARTHSIDE_STYLE.terrain.seams).toEqual(APPROVED_SEAMS)
+    expect(HEARTHSIDE_STYLE.terrain.reedMarks).toEqual(APPROVED_REED_MARKS)
     expect(HEARTHSIDE_STYLE.terrain.routes).toEqual(APPROVED_ROUTES)
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).toBe('timber')
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
@@ -159,7 +159,7 @@ describe('Hearthside Ink presentation', () => {
     )
   })
 
-  it('uses bridge-over-water fills, reed fills, indigo wall fills, and timber planks', () => {
+  it('uses bridge-over-water fills, reeds shaded toward pine, indigo wall fills, and timber planks', () => {
     const terrain = HEARTHSIDE_STYLE.terrain
     expect(terrain.fills.bridge).toEqual({
       frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
@@ -169,6 +169,8 @@ describe('Hearthside Ink presentation', () => {
     expect(terrain.fills.reeds).toEqual({
       frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'],
       tint: 'reed',
+      tintMix: { tint: 'pine', amount: 0.45 },
+      detailShift: 0.2,
       opacity: 1,
     })
     expect(terrain.fills.wall).toEqual({
@@ -188,7 +190,25 @@ describe('Hearthside Ink presentation', () => {
     })
   })
 
-  it('rejects invalid contour geometry and shoreline calibration', () => {
+  it('rejects an out-of-range fill detail shift, an invalid tint mix, and unknown fill keys', () => {
+    const excessiveDetailShift = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveDetailShift.terrain.fills.reeds.detailShift = 0.51
+    expect(() => readHearthsideStyle(excessiveDetailShift)).toThrow('fills.reeds.detailShift')
+
+    const unknownTintMixKey = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownTintMixKey.terrain.fills.reeds.tintMix.mode = 'blend'
+    expect(() => readHearthsideStyle(unknownTintMixKey)).toThrow('tintMix keys do not match')
+
+    const unknownTintMixTint = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownTintMixTint.terrain.fills.reeds.tintMix.tint = 'orange'
+    expect(() => readHearthsideStyle(unknownTintMixTint)).toThrow('tintMix.tint is unknown')
+
+    const extraFillKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraFillKey.terrain.fills.ground.mode = 'wash'
+    expect(() => readHearthsideStyle(extraFillKey)).toThrow('keys do not match its contract')
+  })
+
+  it('rejects invalid contour geometry and seam calibration', () => {
     const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraKey.terrain.contours.mode = 'tiles'
     expect(() => readHearthsideStyle(extraKey)).toThrow('keys do not match')
@@ -198,24 +218,22 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(badSpacing)).toThrow('sampleSpacingCells')
 
     const badWavelength = structuredClone(HEARTHSIDE_STYLE) as any
-    badWavelength.terrain.contours.profiles.water.noiseWavelengthCells = [12, 7]
-    expect(() => readHearthsideStyle(badWavelength)).toThrow('noiseWavelengthCells must be ordered')
+    badWavelength.terrain.contours.profiles.water.octaves[0].wavelengthCells = 256.01
+    expect(() => readHearthsideStyle(badWavelength)).toThrow('wavelengthCells')
 
-    const missingMacroWindow = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingMacroWindow.terrain.contours.profiles.land.macroWindowCells
-    expect(() => readHearthsideStyle(missingMacroWindow)).toThrow('profiles.land keys')
+    const missingSmoothingPasses = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingSmoothingPasses.terrain.contours.profiles.land.smoothingPasses
+    expect(() => readHearthsideStyle(missingSmoothingPasses)).toThrow('profiles.land keys')
 
     const excessiveDeviation = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveDeviation.terrain.contours.maxDeviationCells = 0.351
-    expect(() => readHearthsideStyle(excessiveDeviation)).toThrow('maxDeviationCells')
+    excessiveDeviation.terrain.contours.maxDeviationCells = 0.76
+    expect(() => readHearthsideStyle(excessiveDeviation)).toThrow(
+      'maxDeviationCells must be greater than 0 and at most 0.75',
+    )
 
-    const excessiveNoise = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveNoise.terrain.contours.profiles.water.noiseAmplitudeCells = 4.01
-    expect(() => readHearthsideStyle(excessiveNoise)).toThrow('noiseAmplitudeCells')
-
-    const unsafeCenterClearance = structuredClone(HEARTHSIDE_STYLE) as any
-    unsafeCenterClearance.terrain.contours.cellCenterClearanceCells = 0.149
-    expect(() => readHearthsideStyle(unsafeCenterClearance)).toThrow('cellCenterClearanceCells')
+    const excessiveAmplitude = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveAmplitude.terrain.contours.profiles.water.octaves[0].amplitudeCells = 4.01
+    expect(() => readHearthsideStyle(excessiveAmplitude)).toThrow('amplitudeCells')
 
     const unsafeCorridor = structuredClone(HEARTHSIDE_STYLE) as any
     unsafeCorridor.terrain.contours.minimumCorridorCells = 0.699
@@ -225,25 +243,59 @@ describe('Hearthside Ink presentation', () => {
     excessiveSaddle.terrain.contours.saddleRadiusCells = 0.081
     expect(() => readHearthsideStyle(excessiveSaddle)).toThrow('saddleRadiusCells')
 
-    const badBands = structuredClone(HEARTHSIDE_STYLE) as any
-    badBands.terrain.contours.shoreline.bands.pop()
-    expect(() => readHearthsideStyle(badBands)).toThrow('reed wash and silt bank')
+    const extraSeamKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraSeamKey.terrain.seams.mode = 'bands'
+    expect(() => readHearthsideStyle(extraSeamKey)).toThrow('keys do not match')
 
-    const reversedBands = structuredClone(HEARTHSIDE_STYLE) as any
-    reversedBands.terrain.contours.shoreline.bands.reverse()
-    expect(() => readHearthsideStyle(reversedBands)).toThrow('reed wash before the silt bank')
+    const excessivePoolingWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    excessivePoolingWidth.terrain.seams.pooling.widthCells = 2.01
+    expect(() => readHearthsideStyle(excessivePoolingWidth)).toThrow('pooling.widthCells')
 
-    const badTint = structuredClone(HEARTHSIDE_STYLE) as any
-    badTint.terrain.contours.shoreline.bands[0].tint = 'orange'
-    expect(() => readHearthsideStyle(badTint)).toThrow('bands[0].tint is unknown')
+    const emptyOffsets = structuredClone(HEARTHSIDE_STYLE) as any
+    emptyOffsets.terrain.seams.waterHatch.offsetsCells = []
+    expect(() => readHearthsideStyle(emptyOffsets)).toThrow(
+      'presentation.terrain.seams.waterHatch.offsetsCells must contain between one and four offsets.',
+    )
 
-    const badOpacity = structuredClone(HEARTHSIDE_STYLE) as any
-    badOpacity.terrain.contours.shoreline.bands[1].opacity = 1.1
-    expect(() => readHearthsideStyle(badOpacity)).toThrow('bands[1].opacity must be at most one')
+    const tooManyOffsets = structuredClone(HEARTHSIDE_STYLE) as any
+    tooManyOffsets.terrain.seams.waterHatch.offsetsCells = [0.2, 0.4, 0.6, 0.8, 1]
+    expect(() => readHearthsideStyle(tooManyOffsets)).toThrow(
+      'presentation.terrain.seams.waterHatch.offsetsCells must contain between one and four offsets.',
+    )
 
-    const badRun = structuredClone(HEARTHSIDE_STYLE) as any
-    badRun.terrain.contours.shoreline.bands[0].runLengthCells = [4, 1.5]
-    expect(() => readHearthsideStyle(badRun)).toThrow('runLengthCells must be ordered')
+    const badSeamTint = structuredClone(HEARTHSIDE_STYLE) as any
+    badSeamTint.terrain.seams.ink.tint = 'orange'
+    expect(() => readHearthsideStyle(badSeamTint)).toThrow('ink.tint is unknown')
+
+    const reversedRunLength = structuredClone(HEARTHSIDE_STYLE) as any
+    reversedRunLength.terrain.seams.ink.runLengthCells = [9, 4]
+    expect(() => readHearthsideStyle(reversedRunLength)).toThrow('runLengthCells must be ordered')
+
+    const excessiveBridgeTaper = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveBridgeTaper.terrain.seams.waterHatch.bridgeTaperCells = 1.01
+    expect(() => readHearthsideStyle(excessiveBridgeTaper)).toThrow('bridgeTaperCells')
+  })
+
+  it('rejects invalid reed mark calibration', () => {
+    const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraKey.terrain.reedMarks.mode = 'scatter'
+    expect(() => readHearthsideStyle(extraKey)).toThrow('reedMarks keys do not match')
+
+    const excessivePerCell = structuredClone(HEARTHSIDE_STYLE) as any
+    excessivePerCell.terrain.reedMarks.perCell = 9
+    expect(() => readHearthsideStyle(excessivePerCell)).toThrow('perCell must be at most eight')
+
+    const excessiveWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveWidth.terrain.reedMarks.widthCells = 0.6
+    expect(() => readHearthsideStyle(excessiveWidth)).toThrow('reedMarks.widthCells')
+
+    const reversedLength = structuredClone(HEARTHSIDE_STYLE) as any
+    reversedLength.terrain.reedMarks.lengthCells = [0.5, 0.25]
+    expect(() => readHearthsideStyle(reversedLength)).toThrow('lengthCells must be ordered')
+
+    const unknownTint = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownTint.terrain.reedMarks.tint = 'orange'
+    expect(() => readHearthsideStyle(unknownTint)).toThrow('reedMarks.tint is unknown')
   })
 
   it('keeps terrain fills opaque and gives the inset road its own blend', () => {
@@ -262,7 +314,7 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(invalidOpacity)).toThrow('fills.road.opacity')
   })
 
-  it('rejects unknown route keys, unsafe widths, and invalid route noise', () => {
+  it('rejects unknown route keys, unsafe widths, and invalid route curve profiles', () => {
     const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraKey.terrain.routes.mode = 'centerline'
     expect(() => readHearthsideStyle(extraKey)).toThrow('routes keys do not match')
@@ -279,9 +331,11 @@ describe('Hearthside Ink presentation', () => {
     excessivePathWidth.terrain.routes.path.widthCells = 2.01
     expect(() => readHearthsideStyle(excessivePathWidth)).toThrow('path.widthCells')
 
-    const reversedNoise = structuredClone(HEARTHSIDE_STYLE) as any
-    reversedNoise.terrain.routes.path.curve.noiseWavelengthCells = [10, 5]
-    expect(() => readHearthsideStyle(reversedNoise)).toThrow('noiseWavelengthCells must be ordered')
+    const excessiveSmoothingPasses = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveSmoothingPasses.terrain.routes.path.curve.smoothingPasses = 257
+    expect(() => readHearthsideStyle(excessiveSmoothingPasses)).toThrow(
+      'smoothingPasses must be at most 256',
+    )
 
     const extraCurveKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraCurveKey.terrain.routes.road.curve.mode = 'macro'

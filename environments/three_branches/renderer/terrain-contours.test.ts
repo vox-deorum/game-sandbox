@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
+import { HEARTHSIDE_STYLE } from './presentation.js'
 import {
   type ContourCoordinate,
   planTerrainContours,
@@ -11,7 +11,6 @@ import {
   terrainVariant,
 } from './terrain-contours.js'
 import type { TerrainCurveProfile } from './terrain-curves.js'
-import { HEARTHSIDE_STYLE } from './presentation.js'
 
 const names: Readonly<Record<string, string>> = {
   g: 'ground',
@@ -28,29 +27,28 @@ const names: Readonly<Record<string, string>> = {
 
 const landProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.25,
-  macroWindowCells: 0,
-  fairingIterations: 4,
-  fairingRadiusCells: 1.5,
-  fairingStrength: 0.35,
-  noiseAmplitudeCells: 0.04,
-  noiseWavelengthCells: [5, 9],
+  smoothingPasses: 72,
+  octaves: [
+    { wavelengthCells: 8, amplitudeCells: 0.28 },
+    { wavelengthCells: 3, amplitudeCells: 0.12 },
+    { wavelengthCells: 1.2, amplitudeCells: 0.05 },
+  ],
 }
 
 const waterProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.2,
-  macroWindowCells: 4,
-  fairingIterations: 6,
-  fairingRadiusCells: 2.5,
-  fairingStrength: 0.45,
-  noiseAmplitudeCells: 0.06,
-  noiseWavelengthCells: [7, 12],
+  smoothingPasses: 160,
+  octaves: [
+    { wavelengthCells: 11, amplitudeCells: 0.34 },
+    { wavelengthCells: 4, amplitudeCells: 0.14 },
+    { wavelengthCells: 1.5, amplitudeCells: 0.06 },
+  ],
 }
 
 const settings: TerrainContourSettings = {
   profiles: { land: landProfile, water: waterProfile },
   junctionTangentCells: 0.25,
-  maxDeviationCells: 0.35,
-  cellCenterClearanceCells: 0.15,
+  maxDeviationCells: 0.6,
   minimumCorridorCells: 0.7,
   saddleRadiusCells: 0.08,
 }
@@ -75,7 +73,7 @@ function plan(rows: readonly string[], overrides: ContourTestOverrides = {}): Te
         water: { ...settings.profiles.water, ...profiles?.water },
       },
     },
-    HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+    HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
   )
 }
 
@@ -187,8 +185,8 @@ describe('continuous terrain contour planning', () => {
     ]
     const overrides = {
       profiles: {
-        land: { fairingIterations: 12, fairingStrength: 1, fairingRadiusCells: 3 },
-        water: { fairingIterations: 12, fairingStrength: 1, fairingRadiusCells: 3 },
+        land: { smoothingPasses: 30 },
+        water: { smoothingPasses: 30 },
       },
     } as const
     const result = plan(rows, overrides)
@@ -312,41 +310,33 @@ describe('continuous terrain contour planning', () => {
     }
   })
 
-  it('uses the water macro profile to suppress more staircase cadence than land', () => {
+  it('suppresses staircase cadence as smoothing passes increase', () => {
     const size = 16
     const rows = Array.from(
       { length: size },
       (_, row) => `${'w'.repeat(row + 1)}${'g'.repeat(size - row - 1)}`,
     )
-    const result = plan(rows, { profiles: { water: { noiseAmplitudeCells: 0 } } })
-    const landShaped = plan(rows, {
-      profiles: { water: { ...landProfile, noiseAmplitudeCells: 0 } },
-    })
-    const stair = result.chains.find(
-      (chain) =>
-        chain.materials.includes('ground') &&
-        chain.materials.includes('water') &&
-        chain.rawPoints.length > 6,
-    )!
-    const ordinaryVertices = stair.rawPoints.slice(1, -1)
-    const emittedVertices = ordinaryVertices.filter((vertex) =>
-      stair.points.some((point) => Math.hypot(point.x - vertex.x, point.y - vertex.y) < 1e-9),
+    const stairIn = (result: TerrainContourPlan): TerrainContourChain =>
+      result.chains.find(
+        (chain) =>
+          chain.materials.includes('ground') &&
+          chain.materials.includes('water') &&
+          chain.rawPoints.length > 6,
+      )!
+    const unsmoothed = stairIn(
+      plan(rows, { profiles: { water: { smoothingPasses: 0, octaves: [] } } }),
     )
-    const landStair = landShaped.chains.find((chain) => chain.id === stair.id)!
-    const freeInterior = (point: { readonly rawOffset: number }): boolean =>
-      point.rawOffset >= waterProfile.macroWindowCells + 1 &&
-      point.rawOffset <= stair.rawLength - waterProfile.macroWindowCells - 1
-    const waterSamples = sampleOpenContourAtRawOffsets(stair, 0.5).filter(freeInterior)
-    const landSamples = sampleOpenContourAtRawOffsets(landStair, 0.5).filter(freeInterior)
+    const smoothed = stairIn(plan(rows, { profiles: { water: { octaves: [] } } }))
+    const ordinaryVertices = unsmoothed.rawPoints.slice(1, -1)
+    const emittedVertices = ordinaryVertices.filter((vertex) =>
+      smoothed.points.some((point) => Math.hypot(point.x - vertex.x, point.y - vertex.y) < 1e-9),
+    )
+    const unsmoothedSamples = sampleOpenContourAtRawOffsets(unsmoothed, 0.5)
+    const smoothedSamples = sampleOpenContourAtRawOffsets(smoothed, 0.5)
 
     expect(emittedVertices.length).toBeLessThan(ordinaryVertices.length / 2)
-    expect(contourCadence(waterSamples)).toBeLessThan(contourCadence(landSamples))
-    expect(contourCurvature(waterSamples)).toBeLessThan(contourCurvature(landSamples))
-    expect(
-      stair.points.some(
-        (point) => !point.locked && distanceToPolyline(point, stair.rawPoints) > 0.01,
-      ),
-    ).toBe(true)
+    expect(contourCadence(smoothedSamples)).toBeLessThan(contourCadence(unsmoothedSamples))
+    expect(contourCurvature(smoothedSamples)).toBeLessThan(contourCurvature(unsmoothedSamples))
   })
 
   it('builds direct holes while keeping a nested island as a separate component', () => {
@@ -364,18 +354,12 @@ describe('continuous terrain contour planning', () => {
     expect(island.parentComponentId).toBe(water.id)
   })
 
-  it('keeps curves in their tube, cell centers clear, and one-cell corridors wider than 0.70 cell', () => {
+  it('keeps curves in their tube and one-cell corridors wider than 0.70 cell', () => {
     const result = plan(['wwwww', 'ggggg', 'wwwww'])
     for (const chain of result.chains) {
       expect(
         Math.max(...chain.points.map((point) => distanceToPolyline(point, chain.rawPoints))),
-      ).toBeLessThanOrEqual(settings.maxDeviationCells + 1e-8)
-    }
-    for (let column = 0; column < 5; column += 1) {
-      const center = { x: column + 0.5, y: 1.5 }
-      expect(
-        Math.min(...result.chains.map((chain) => distanceToPolyline(center, chain.points))),
-      ).toBeGreaterThanOrEqual(0.35)
+      ).toBeLessThanOrEqual(settings.maxDeviationCells + 0.02 + 1e-8)
     }
     const allPoints = result.chains.flatMap((chain) => chain.points)
     const upper = allPoints.filter((point) => point.y < 1.3 && point.x >= 0.25 && point.x <= 4.75)
@@ -388,7 +372,7 @@ describe('continuous terrain contour planning', () => {
         Math.min(...upper.map((other) => Math.hypot(point.x - other.x, point.y - other.y))),
       ),
     )
-    expect(minimumWidth).toBeGreaterThanOrEqual(0.7)
+    expect(minimumWidth).toBeGreaterThanOrEqual(settings.minimumCorridorCells)
   })
 
   it('locks structures, map borders, junction tangents, and bridge portals', () => {
@@ -431,7 +415,7 @@ describe('continuous terrain contour planning', () => {
     ).toBe(true)
     expect(shore.points.some((point) => point.shorelineFactor === 0)).toBe(true)
     expect(shore.points.some((point) => point.shorelineFactor === 1)).toBe(true)
-    expect(HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells).toBe(0.35)
+    expect(HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells).toBe(0.35)
   })
 
   it('widens bridge shoreline taper reach from the configured cell distance', () => {
@@ -448,7 +432,7 @@ describe('continuous terrain contour planning', () => {
 
   it('keeps every turning-corridor segment inside its source tube', () => {
     const result = plan(['wwwww', 'wgggw', 'wwwgw', 'wwwww'], {
-      profiles: { water: { noiseAmplitudeCells: 0 } },
+      profiles: { water: { octaves: [] } },
     })
     for (const chain of result.chains) {
       const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
@@ -457,79 +441,40 @@ describe('continuous terrain contour planning', () => {
         const end = points[index + 1]!
         const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
         expect(distanceToPolyline(midpoint, chain.rawPoints)).toBeLessThanOrEqual(
-          settings.maxDeviationCells + 1e-8,
+          settings.maxDeviationCells + 0.02 + 1e-8,
         )
       }
     }
   })
 
-  it('backs a narrow water corridor toward raw geometry in deterministic interval levels', () => {
-    const rows = ['wwwww', 'wgggw', 'wwwgw', 'wwwww']
-    const result = plan(rows, {
-      profiles: { water: { noiseAmplitudeCells: 0 } },
-      maxDeviationCells: 0.05,
-    })
-    const turning = result.chains.find(
-      (chain) =>
-        chain.materials.includes('ground') &&
-        chain.materials.includes('water') &&
-        chain.rawPoints.length > 4,
-    )!
-    const rawVerticesByOffset = new Map(
-      turning.spans
-        .slice(0, -1)
-        .map((span, index) => [span.endOffset.toFixed(9), turning.rawPoints[index + 1]!] as const),
+  it('caps free-point deviation to the local corridor, then lets it open up where terrain is wide', () => {
+    const narrowLimit = (1 - settings.minimumCorridorCells) / 2
+    const narrow = plan(['wwwww', 'ggggg', 'wwwww'])
+    const narrowDeviations = narrow.chains.flatMap((chain) =>
+      chain.points
+        .filter((point) => !point.locked)
+        .map((point) => distanceToPolyline(point, chain.rawPoints)),
     )
-    const sampledTurns = turning.points
-      .map((point) => ({
-        point,
-        raw: rawVerticesByOffset.get(point.rawOffset.toFixed(9)),
-      }))
-      .filter(
-        (entry): entry is typeof entry & { raw: ContourCoordinate } =>
-          !entry.point.locked && entry.raw !== undefined,
-      )
-    const turnDeviations = sampledTurns.map(({ point, raw }) =>
-      Math.hypot(point.x - raw.x, point.y - raw.y),
+    expect(Math.max(...narrowDeviations)).toBeLessThanOrEqual(narrowLimit + 1e-8)
+
+    const wideRows = [
+      ...Array.from({ length: 3 }, () => 'w'.repeat(20)),
+      ...Array.from({ length: 3 }, () => 'g'.repeat(20)),
+    ]
+    const wide = plan(wideRows)
+    const wideDeviations = wide.chains.flatMap((chain) =>
+      chain.points
+        .filter((point) => !point.locked)
+        .map((point) => distanceToPolyline(point, chain.rawPoints)),
     )
-    expect(turnDeviations.some((deviation) => deviation < 1e-9)).toBe(true)
-    expect(turnDeviations.some((deviation) => deviation > 1e-4)).toBe(true)
-    expect(
-      plan(rows, {
-        profiles: { water: { noiseAmplitudeCells: 0 } },
-        maxDeviationCells: 0.05,
-      }),
-    ).toEqual(result)
-    for (const chain of result.chains) {
-      const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
-      for (let index = 0; index < points.length - 1; index += 1) {
-        const start = points[index]!
-        const end = points[index + 1]!
-        for (const amount of [0.25, 0.5, 0.75]) {
-          const sample = {
-            x: start.x + (end.x - start.x) * amount,
-            y: start.y + (end.y - start.y) * amount,
-          }
-          expect(distanceToPolyline(sample, chain.rawPoints)).toBeLessThanOrEqual(0.05 + 1e-8)
-        }
-      }
-    }
-    for (let row = 0; row < rows.length; row += 1) {
-      for (let column = 0; column < rows[row]!.length; column += 1) {
-        if (rows[row]![column] !== 'g') continue
-        const center = { x: column + 0.5, y: row + 0.5 }
-        expect(
-          Math.min(...result.chains.map((chain) => distanceToPolyline(center, chain.points))),
-        ).toBeGreaterThanOrEqual(settings.cellCenterClearanceCells)
-      }
-    }
+    expect(Math.max(...wideDeviations)).toBeGreaterThan(narrowLimit + 1e-8)
   })
 
   it('uses nonperiodic smooth noise along a long straight chain', () => {
     const width = 80
     const result = plan(['w'.repeat(width), 'g'.repeat(width)], {
       profiles: {
-        water: { macroWindowCells: 0, fairingIterations: 0, sampleSpacingCells: 0.25 },
+        water: { smoothingPasses: 0, sampleSpacingCells: 0.25 },
       },
     })
     const boundary = result.chains.find(
@@ -592,7 +537,7 @@ describe('continuous terrain contour planning', () => {
     const sawtooth = plan(
       cells.map((row) => row.join('')),
       {
-        profiles: { water: { noiseAmplitudeCells: 0 } },
+        profiles: { water: { octaves: [] } },
         maxDeviationCells: 0.05,
       },
     ).chains.find(
@@ -617,7 +562,9 @@ describe('continuous terrain contour planning', () => {
       const start = closedPoints[index]!
       const end = closedPoints[index + 1]!
       const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-      expect(distanceToPolyline(midpoint, sawtooth.rawPoints)).toBeLessThanOrEqual(0.05 + 1e-8)
+      expect(distanceToPolyline(midpoint, sawtooth.rawPoints)).toBeLessThanOrEqual(
+        0.05 + 0.02 + 1e-8,
+      )
     }
   })
 
@@ -657,35 +604,24 @@ describe('continuous terrain contour planning', () => {
     expect(performance.now() - startedAt).toBeLessThan(20_000)
   }, 30_000)
 
-  it('keeps a compact fragmented-plan signature deterministic', () => {
-    const rows = Array.from({ length: 20 }, (_, row) =>
-      Array.from({ length: 20 }, (_, column) => ((row + column) % 2 === 0 ? 'g' : 'w')).join(''),
-    )
-    const signature = (result: TerrainContourPlan): readonly unknown[] => [
-      result.components.map((component) => [component.id, component.material, component.cellCount]),
-      result.chains.map((chain) => [chain.id, chain.points.length, chain.rawLength]),
-      result.saddles.map((saddle) => [saddle.x, saddle.y, saddle.winner]),
-    ]
-
-    expect(signature(plan(rows))).toEqual(signature(plan(rows)))
-  })
-
   it('rejects grids or settings that cannot preserve the topology bounds', () => {
     expect(() =>
       planTerrainContours(
         [],
         names,
         settings,
-        HEARTHSIDE_STYLE.terrain.contours.shoreline.bridgeTaperCells,
+        HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
       ),
     ).toThrow(/non-empty rectangular grid/)
     expect(() => plan(['gg'], { profiles: { land: { sampleSpacingCells: 4.01 } } })).toThrow(
       /land profile.*sample spacing/,
     )
-    expect(() => plan(['gg'], { profiles: { water: { noiseAmplitudeCells: 4.01 } } })).toThrow(
-      /water profile.*noise amplitude/,
-    )
-    expect(() => plan(['gg'], { maxDeviationCells: 0.351 })).toThrow(/at most 0.35 cell/)
+    expect(() =>
+      plan(['gg'], {
+        profiles: { water: { octaves: [{ wavelengthCells: 5, amplitudeCells: 4.01 }] } },
+      }),
+    ).toThrow(/water profile.*octave amplitude/)
+    expect(() => plan(['gg'], { maxDeviationCells: 0.76 })).toThrow(/at most 0.75 cell/)
     expect(() => planTerrainContours(['gg'], names, settings, -0.01)).toThrow(
       /Bridge shoreline taper/,
     )

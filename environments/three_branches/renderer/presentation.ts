@@ -4,6 +4,7 @@ import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
 import type { TerrainCurveProfile } from './terrain-curves.js'
+import { mixedTint } from './tint.js'
 import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
 
 /** Logical dimensions exposed to the renderer host. */
@@ -159,20 +160,29 @@ export interface FrameTreatment {
   tint: HearthsidePaletteKey
 }
 
-/** A terrain fill can blend with the full ground layer beneath it. */
+/**
+ * A terrain fill can blend with the full ground layer beneath it, deepen its grain contrast past
+ * the seven percent default, and shade its tint toward a second palette color.
+ */
 export interface TerrainFillTreatment extends FrameTreatment {
   opacity: number
+  detailShift?: number
+  tintMix?: {
+    tint: HearthsidePaletteKey
+    amount: number
+  }
 }
 
-export interface ShorelineBandTreatment {
+/** Deterministic short stalk strokes scattered inside reed cells. */
+export interface TerrainReedMarksTreatment {
   tint: HearthsidePaletteKey
   widthCells: number
+  lengthCells: readonly [number, number]
+  perCell: number
   opacity: number
-  density: number
-  runLengthCells: readonly [number, number]
 }
 
-/** Deterministic subcell geometry and shoreline calibration for natural terrain. */
+/** Deterministic subcell geometry calibration for natural terrain partitions. */
 export interface TerrainContourTreatment {
   profiles: {
     land: TerrainCurveProfile
@@ -180,11 +190,29 @@ export interface TerrainContourTreatment {
   }
   junctionTangentCells: number
   maxDeviationCells: number
-  cellCenterClearanceCells: number
   minimumCorridorCells: number
   saddleRadiusCells: number
-  shoreline: {
-    bands: readonly [ShorelineBandTreatment, ShorelineBandTreatment]
+}
+
+/** Watercolor pooling, broken ink lines, and water hatching drawn along natural seams. */
+export interface TerrainSeamTreatment {
+  pooling: {
+    widthCells: number
+    darken: number
+    opacity: number
+  }
+  ink: {
+    tint: HearthsidePaletteKey
+    widthCells: number
+    opacity: number
+    density: number
+    runLengthCells: readonly [number, number]
+  }
+  waterHatch: {
+    tint: HearthsidePaletteKey
+    widthCells: number
+    offsetsCells: readonly number[]
+    opacity: number
     bridgeTaperCells: number
   }
 }
@@ -225,6 +253,8 @@ export interface HearthsideStyle {
   terrain: {
     fills: Readonly<Record<string, TerrainFillTreatment>>
     contours: TerrainContourTreatment
+    seams: TerrainSeamTreatment
+    reedMarks: TerrainReedMarksTreatment
     routes: TerrainRouteTreatment
     planks: PlankTreatment
     upperWall: FrameTreatment
@@ -332,6 +362,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
     'fills',
     'contours',
+    'seams',
+    'reedMarks',
     'routes',
     'planks',
     'upperWall',
@@ -351,9 +383,11 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   )
   const terrain = {
     fills,
-    contours: contourTreatment(
-      terrainSource.contours,
-      'presentation.terrain.contours',
+    contours: contourTreatment(terrainSource.contours, 'presentation.terrain.contours'),
+    seams: seamTreatment(terrainSource.seams, 'presentation.terrain.seams', paletteNames),
+    reedMarks: reedMarksTreatment(
+      terrainSource.reedMarks,
+      'presentation.terrain.reedMarks',
       paletteNames,
     ),
     routes: routeTreatment(terrainSource.routes, 'presentation.terrain.routes'),
@@ -512,60 +546,15 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 }
 
-function contourTreatment(
-  value: unknown,
-  name: string,
-  palette: ReadonlySet<string>,
-): TerrainContourTreatment {
+function contourTreatment(value: unknown, name: string): TerrainContourTreatment {
   const source = exactRecord(value, name, [
     'profiles',
     'junctionTangentCells',
     'maxDeviationCells',
-    'cellCenterClearanceCells',
     'minimumCorridorCells',
     'saddleRadiusCells',
-    'shoreline',
   ])
   const profilesSource = exactRecord(source.profiles, `${name}.profiles`, ['land', 'water'])
-  const shorelineSource = exactRecord(source.shoreline, `${name}.shoreline`, [
-    'bands',
-    'bridgeTaperCells',
-  ])
-  const bandSources = array(shorelineSource.bands, `${name}.shoreline.bands`)
-  if (bandSources.length !== 2) {
-    throw new Error(`${name}.shoreline.bands must contain the reed wash and silt bank.`)
-  }
-  const bands = bandSources.map((band, index) => {
-    const bandName = `${name}.shoreline.bands[${index}]`
-    const bandSource = exactRecord(band, bandName, [
-      'tint',
-      'widthCells',
-      'opacity',
-      'density',
-      'runLengthCells',
-    ])
-    return {
-      tint: paletteKey(bandSource.tint, palette, `${bandName}.tint`),
-      widthCells: boundedNumber(bandSource.widthCells, `${bandName}.widthCells`, 0, 1),
-      opacity: unitNumber(bandSource.opacity, `${bandName}.opacity`),
-      density: unitNumber(bandSource.density, `${bandName}.density`),
-      runLengthCells: orderedNumberPair(
-        bandSource.runLengthCells,
-        `${bandName}.runLengthCells`,
-        0,
-        8,
-      ),
-    }
-  }) as [ShorelineBandTreatment, ShorelineBandTreatment]
-  if (bands[0].tint !== 'reed' || bands[1].tint !== 'silt') {
-    throw new Error(`${name}.shoreline.bands must order the reed wash before the silt bank.`)
-  }
-  const maxDeviationCells = boundedNumber(
-    source.maxDeviationCells,
-    `${name}.maxDeviationCells`,
-    0,
-    0.35,
-  )
   return {
     profiles: {
       land: curveProfile(profilesSource.land, `${name}.profiles.land`),
@@ -578,13 +567,11 @@ function contourTreatment(
       0.5,
       true,
     ),
-    maxDeviationCells,
-    cellCenterClearanceCells: boundedNumber(
-      source.cellCenterClearanceCells,
-      `${name}.cellCenterClearanceCells`,
-      0.15,
-      0.5,
-      true,
+    maxDeviationCells: boundedNumber(
+      source.maxDeviationCells,
+      `${name}.maxDeviationCells`,
+      0,
+      0.75,
     ),
     minimumCorridorCells: boundedNumber(
       source.minimumCorridorCells,
@@ -599,17 +586,102 @@ function contourTreatment(
       0,
       0.08,
     ),
-    shoreline: {
-      bands,
+  }
+}
+
+function seamTreatment(
+  value: unknown,
+  name: string,
+  palette: ReadonlySet<string>,
+): TerrainSeamTreatment {
+  const source = exactRecord(value, name, ['pooling', 'ink', 'waterHatch'])
+  const poolingSource = exactRecord(source.pooling, `${name}.pooling`, [
+    'widthCells',
+    'darken',
+    'opacity',
+  ])
+  const inkSource = exactRecord(source.ink, `${name}.ink`, [
+    'tint',
+    'widthCells',
+    'opacity',
+    'density',
+    'runLengthCells',
+  ])
+  const hatchSource = exactRecord(source.waterHatch, `${name}.waterHatch`, [
+    'tint',
+    'widthCells',
+    'offsetsCells',
+    'opacity',
+    'bridgeTaperCells',
+  ])
+  const offsetSources = array(hatchSource.offsetsCells, `${name}.waterHatch.offsetsCells`)
+  if (offsetSources.length === 0 || offsetSources.length > 4) {
+    throw new Error(`${name}.waterHatch.offsetsCells must contain between one and four offsets.`)
+  }
+  return {
+    pooling: {
+      widthCells: boundedNumber(poolingSource.widthCells, `${name}.pooling.widthCells`, 0, 2),
+      darken: unitNumber(poolingSource.darken, `${name}.pooling.darken`),
+      opacity: unitNumber(poolingSource.opacity, `${name}.pooling.opacity`),
+    },
+    ink: {
+      tint: paletteKey(inkSource.tint, palette, `${name}.ink.tint`),
+      widthCells: boundedNumber(inkSource.widthCells, `${name}.ink.widthCells`, 0, 1),
+      opacity: unitNumber(inkSource.opacity, `${name}.ink.opacity`),
+      density: unitNumber(inkSource.density, `${name}.ink.density`),
+      runLengthCells: orderedNumberPair(
+        inkSource.runLengthCells,
+        `${name}.ink.runLengthCells`,
+        0,
+        16,
+      ),
+    },
+    waterHatch: {
+      tint: paletteKey(hatchSource.tint, palette, `${name}.waterHatch.tint`),
+      widthCells: boundedNumber(hatchSource.widthCells, `${name}.waterHatch.widthCells`, 0, 1),
+      offsetsCells: offsetSources.map((offset, index) =>
+        boundedNumber(offset, `${name}.waterHatch.offsetsCells[${index}]`, 0, 4),
+      ),
+      opacity: unitNumber(hatchSource.opacity, `${name}.waterHatch.opacity`),
       bridgeTaperCells: boundedNumber(
-        shorelineSource.bridgeTaperCells,
-        `${name}.shoreline.bridgeTaperCells`,
+        hatchSource.bridgeTaperCells,
+        `${name}.waterHatch.bridgeTaperCells`,
         0,
         1,
         true,
       ),
     },
   }
+}
+
+function reedMarksTreatment(
+  value: unknown,
+  name: string,
+  palette: ReadonlySet<string>,
+): TerrainReedMarksTreatment {
+  const source = exactRecord(value, name, [
+    'tint',
+    'widthCells',
+    'lengthCells',
+    'perCell',
+    'opacity',
+  ])
+  const perCell = nonnegativeInteger(source.perCell, `${name}.perCell`)
+  if (perCell > 8) throw new Error(`${name}.perCell must be at most eight.`)
+  return {
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
+    widthCells: boundedNumber(source.widthCells, `${name}.widthCells`, 0, 0.5),
+    lengthCells: orderedNumberPair(source.lengthCells, `${name}.lengthCells`, 0, 2),
+    perCell,
+    opacity: unitNumber(source.opacity, `${name}.opacity`),
+  }
+}
+
+/** Resolve one fill's baked hex tint, including its optional shade toward a second color. */
+export function fillTintHex(treatment: TerrainFillTreatment): string {
+  const base = HEARTHSIDE_STYLE.palette[treatment.tint]
+  if (treatment.tintMix === undefined) return base
+  return mixedTint(base, HEARTHSIDE_STYLE.palette[treatment.tintMix.tint], treatment.tintMix.amount)
 }
 
 function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
@@ -648,22 +720,34 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
 }
 
 function curveProfile(value: unknown, name: string): TerrainCurveProfile {
-  const source = exactRecord(value, name, [
-    'sampleSpacingCells',
-    'macroWindowCells',
-    'fairingIterations',
-    'fairingRadiusCells',
-    'fairingStrength',
-    'noiseAmplitudeCells',
-    'noiseWavelengthCells',
-  ])
-  const fairingIterations = nonnegativeInteger(
-    source.fairingIterations,
-    `${name}.fairingIterations`,
-  )
-  if (fairingIterations > 32) {
-    throw new Error(`${name}.fairingIterations must be at most 32.`)
+  const source = exactRecord(value, name, ['sampleSpacingCells', 'smoothingPasses', 'octaves'])
+  const smoothingPasses = nonnegativeInteger(source.smoothingPasses, `${name}.smoothingPasses`)
+  if (smoothingPasses > 256) {
+    throw new Error(`${name}.smoothingPasses must be at most 256.`)
   }
+  const octaveSources = array(source.octaves, `${name}.octaves`)
+  if (octaveSources.length > 8) {
+    throw new Error(`${name}.octaves must contain at most eight bands.`)
+  }
+  const octaves = octaveSources.map((octave, index) => {
+    const octaveName = `${name}.octaves[${index}]`
+    const octaveSource = exactRecord(octave, octaveName, ['wavelengthCells', 'amplitudeCells'])
+    return {
+      wavelengthCells: boundedNumber(
+        octaveSource.wavelengthCells,
+        `${octaveName}.wavelengthCells`,
+        0,
+        256,
+      ),
+      amplitudeCells: boundedNumber(
+        octaveSource.amplitudeCells,
+        `${octaveName}.amplitudeCells`,
+        0,
+        4,
+        true,
+      ),
+    }
+  })
   return {
     sampleSpacingCells: boundedNumber(
       source.sampleSpacingCells,
@@ -671,34 +755,8 @@ function curveProfile(value: unknown, name: string): TerrainCurveProfile {
       0,
       4,
     ),
-    macroWindowCells: boundedNumber(
-      source.macroWindowCells,
-      `${name}.macroWindowCells`,
-      0,
-      64,
-      true,
-    ),
-    fairingIterations,
-    fairingRadiusCells: boundedNumber(
-      source.fairingRadiusCells,
-      `${name}.fairingRadiusCells`,
-      0,
-      64,
-    ),
-    fairingStrength: unitNumber(source.fairingStrength, `${name}.fairingStrength`),
-    noiseAmplitudeCells: boundedNumber(
-      source.noiseAmplitudeCells,
-      `${name}.noiseAmplitudeCells`,
-      0,
-      4,
-      true,
-    ),
-    noiseWavelengthCells: orderedNumberPair(
-      source.noiseWavelengthCells,
-      `${name}.noiseWavelengthCells`,
-      0,
-      256,
-    ),
+    smoothingPasses,
+    octaves,
   }
 }
 
@@ -749,12 +807,48 @@ function terrainFillTreatment(
   knownFrames: ReadonlySet<string>,
   palette: ReadonlySet<string>,
 ): TerrainFillTreatment {
-  const source = exactRecord(value, name, ['frames', 'tint', 'opacity'])
-  return {
+  const source = recordWithOptional(
+    value,
+    name,
+    ['frames', 'tint', 'opacity'],
+    ['detailShift', 'tintMix'],
+  )
+  const treatment: TerrainFillTreatment = {
     frames: frameNames(source.frames, `${name}.frames`, knownFrames),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
     opacity: unitNumber(source.opacity, `${name}.opacity`),
   }
+  if (source.detailShift !== undefined) {
+    treatment.detailShift = boundedNumber(source.detailShift, `${name}.detailShift`, 0, 0.5)
+  }
+  if (source.tintMix !== undefined) {
+    const mixSource = exactRecord(source.tintMix, `${name}.tintMix`, ['tint', 'amount'])
+    treatment.tintMix = {
+      tint: paletteKey(mixSource.tint, palette, `${name}.tintMix.tint`),
+      amount: unitNumber(mixSource.amount, `${name}.tintMix.amount`),
+    }
+  }
+  return treatment
+}
+
+function recordWithOptional(
+  value: unknown,
+  name: string,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[],
+): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`)
+  }
+  const result = value as Record<string, unknown>
+  const allowed = new Set([...requiredKeys, ...optionalKeys])
+  if (
+    requiredKeys.some((key) => !(key in result)) ||
+    Object.keys(result).some((key) => !allowed.has(key))
+  ) {
+    throw new Error(`${name} keys do not match its contract.`)
+  }
+  return result
 }
 
 function frameNames(value: unknown, name: string, known: ReadonlySet<string>): readonly string[] {

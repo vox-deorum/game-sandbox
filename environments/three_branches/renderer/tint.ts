@@ -93,8 +93,27 @@ export function tintedMaskPixels(pixels: Uint8ClampedArray, tint: string, opacit
 }
 
 /** Stable cache key for an opaque terrain fill baked from one atlas frame. */
-export function opaqueFillCacheKey(frame: string, tint: string): string {
-  return `fill:${tintedMaskCacheKey(frame, tint)}`
+export function opaqueFillCacheKey(
+  frame: string,
+  tint: string,
+  maxShift = TERRAIN_FILL_MAX_VALUE_SHIFT,
+): string {
+  const base = `fill:${tintedMaskCacheKey(frame, tint)}`
+  return maxShift === TERRAIN_FILL_MAX_VALUE_SHIFT ? base : `${base}:${maxShift}`
+}
+
+/** Blend two #rrggbb colors: zero returns the first color, one returns the second. */
+export function mixedTint(first: string, second: string, amount: number): string {
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1) {
+    throw new Error('Terrain tint mix amount must be between zero and one.')
+  }
+  const from = tintChannels(first)
+  const toward = tintChannels(second)
+  const channel = (position: 0 | 1 | 2): string =>
+    Math.round(from[position] + (toward[position] - from[position]) * amount)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${channel(0)}${channel(1)}${channel(2)}`
 }
 
 /** Contrast gain applied to the authored grayscale before the bounded terrain value shift. */
@@ -108,15 +127,16 @@ const opaqueFills = new WeakMap<Texture, Map<string, Texture>>()
 /**
  * Bake an opaque terrain base from a grayscale-alpha mask. Transparent mask pixels become the
  * configured tint. Visible mask pixels gain enough local contrast to survive tinting, while the
- * final same-hue value shift stays within seven percent.
+ * final same-hue value shift stays within the given bound, seven percent by default.
  */
 export function opaqueTintedFillFrame(
   atlas: Texture,
   grid: FrameGrid,
   name: string,
   tint: string,
+  maxShift = TERRAIN_FILL_MAX_VALUE_SHIFT,
 ): Texture {
-  const key = opaqueFillCacheKey(name, tint)
+  const key = opaqueFillCacheKey(name, tint, maxShift)
   let cached = opaqueFills.get(atlas)
   if (cached === undefined) {
     cached = new Map()
@@ -145,7 +165,7 @@ export function opaqueTintedFillFrame(
     frame.height,
   )
   const pixels = context.getImageData(0, 0, frame.width, frame.height)
-  opaqueFillPixels(pixels.data, tint)
+  opaqueFillPixels(pixels.data, tint, maxShift)
   context.putImageData(pixels, 0, 0)
   const baked = Texture.from(canvas)
   cached.set(key, baked)
@@ -153,17 +173,18 @@ export function opaqueTintedFillFrame(
 }
 
 /** Apply the opaque base and restrained same-hue value variation to RGBA terrain pixels. */
-export function opaqueFillPixels(pixels: Uint8ClampedArray, tint: string): void {
+export function opaqueFillPixels(
+  pixels: Uint8ClampedArray,
+  tint: string,
+  maxShift = TERRAIN_FILL_MAX_VALUE_SHIFT,
+): void {
   const [red, green, blue] = tintChannels(tint)
   for (let index = 0; index < pixels.length; index += 4) {
     const grayscale = (pixels[index] ?? 0) / 255
     const alpha = (pixels[index + 3] ?? 0) / 255
     const detail = Math.max(
-      -TERRAIN_FILL_MAX_VALUE_SHIFT,
-      Math.min(
-        TERRAIN_FILL_MAX_VALUE_SHIFT,
-        TERRAIN_FILL_DETAIL_GAIN * alpha * (grayscale * 2 - 1),
-      ),
+      -maxShift,
+      Math.min(maxShift, TERRAIN_FILL_DETAIL_GAIN * alpha * (grayscale * 2 - 1)),
     )
     const value = 1 + detail
     pixels[index] = Math.round(red * value)

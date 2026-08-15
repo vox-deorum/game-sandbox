@@ -9,22 +9,23 @@ import {
 
 const BASE_PROFILE: TerrainCurveProfile = {
   sampleSpacingCells: 0.25,
-  macroWindowCells: 0,
-  fairingIterations: 0,
-  fairingRadiusCells: 1.5,
-  fairingStrength: 0.4,
-  noiseAmplitudeCells: 0,
-  noiseWavelengthCells: [3, 7],
+  smoothingPasses: 0,
+  octaves: [],
 }
 
-const WATER_PROFILE: TerrainCurveProfile = {
+const SMOOTH_PROFILE: TerrainCurveProfile = {
   sampleSpacingCells: 0.2,
-  macroWindowCells: 4,
-  fairingIterations: 6,
-  fairingRadiusCells: 2.5,
-  fairingStrength: 0.45,
-  noiseAmplitudeCells: 0,
-  noiseWavelengthCells: [7, 12],
+  smoothingPasses: 6,
+  octaves: [],
+}
+
+const SHAPED_PROFILE: TerrainCurveProfile = {
+  sampleSpacingCells: 0.2,
+  smoothingPasses: 6,
+  octaves: [
+    { wavelengthCells: 7, amplitudeCells: 0.08 },
+    { wavelengthCells: 12, amplitudeCells: 0.05 },
+  ],
 }
 
 describe('shared terrain curve shaping', () => {
@@ -42,12 +43,15 @@ describe('shared terrain curve shaping', () => {
 
     const invalidProfiles: Array<[Partial<TerrainCurveProfile>, string]> = [
       [{ sampleSpacingCells: 0 }, 'sample spacing'],
-      [{ macroWindowCells: -0.01 }, 'macro window'],
-      [{ fairingIterations: 1.5 }, 'fairing iterations'],
-      [{ fairingRadiusCells: 0 }, 'fairing radius'],
-      [{ fairingStrength: 1.01 }, 'fairing strength'],
-      [{ noiseAmplitudeCells: -0.01 }, 'noise amplitude'],
-      [{ noiseWavelengthCells: [4, 3] }, 'must be ordered'],
+      [{ smoothingPasses: -1 }, 'smoothing passes'],
+      [{ smoothingPasses: 1.5 }, 'smoothing passes'],
+      [{ smoothingPasses: 257 }, 'between zero and 256'],
+      [
+        { octaves: Array.from({ length: 9 }, () => ({ wavelengthCells: 4, amplitudeCells: 0.1 })) },
+        'at most eight bands',
+      ],
+      [{ octaves: [{ wavelengthCells: 0, amplitudeCells: 0.1 }] }, 'octave wavelength'],
+      [{ octaves: [{ wavelengthCells: 4, amplitudeCells: -0.01 }] }, 'octave amplitude'],
     ]
     for (const [override, message] of invalidProfiles) {
       expect(() =>
@@ -59,25 +63,23 @@ describe('shared terrain curve shaping', () => {
   it('is deterministic for equal open and closed inputs', () => {
     const open = [point(0, 0), point(2, 0), point(2, 2), point(4, 2)]
     const closed = [point(0, 0), point(3, 0), point(3, 2), point(0, 2)]
-    const profile = { ...WATER_PROFILE, noiseAmplitudeCells: 0.08 }
 
-    expect(shapeTerrainCurve(open, false, profile, 42)).toEqual(
-      shapeTerrainCurve(open, false, profile, 42),
+    expect(shapeTerrainCurve(open, false, SHAPED_PROFILE, 42)).toEqual(
+      shapeTerrainCurve(open, false, SHAPED_PROFILE, 42),
     )
-    expect(shapeTerrainCurve(closed, true, profile, 42)).toEqual(
-      shapeTerrainCurve(closed, true, profile, 42),
+    expect(shapeTerrainCurve(closed, true, SHAPED_PROFILE, 42)).toEqual(
+      shapeTerrainCurve(closed, true, SHAPED_PROFILE, 42),
     )
-    expect(shapeTerrainCurve(open, false, profile, 42)).not.toEqual(
-      shapeTerrainCurve(open, false, profile, 43),
+    expect(shapeTerrainCurve(open, false, SHAPED_PROFILE, 42)).not.toEqual(
+      shapeTerrainCurve(open, false, SHAPED_PROFILE, 43),
     )
   })
 
   it('keeps locks exact and prevents either free interval from sampling across them', () => {
     const first = [point(-1, 1), point(0, 1), point(1, 1, true), point(2, 1), point(3, 1)]
     const changedLeft = [point(1, -1), point(1, 0), point(1, 1, true), point(2, 1), point(3, 1)]
-    const profile = { ...WATER_PROFILE, noiseAmplitudeCells: 0.05 }
-    const shaped = shapeTerrainCurve(first, false, profile, 19)
-    const changed = shapeTerrainCurve(changedLeft, false, profile, 19)
+    const shaped = shapeTerrainCurve(first, false, SHAPED_PROFILE, 19)
+    const changed = shapeTerrainCurve(changedLeft, false, SHAPED_PROFILE, 19)
     const lock = shaped.find((sample) => sample.locked && sample.sourceOffset === 2)
 
     expect(lock).toEqual({ x: 1, y: 1, sourceOffset: 2, locked: true })
@@ -88,50 +90,20 @@ describe('shared terrain curve shaping', () => {
 
   it('treats an unlocked closed seam cyclically while open endpoints remain exact locks', () => {
     const source = [point(0, 0), point(3, 0), point(3, 3), point(0, 3)]
-    const closed = shapeTerrainCurve(source, true, WATER_PROFILE, 7)
-    const open = shapeTerrainCurve(source, false, WATER_PROFILE, 7)
+    const closed = shapeTerrainCurve(source, true, SMOOTH_PROFILE, 7)
+    const open = shapeTerrainCurve(source, false, SMOOTH_PROFILE, 7)
     const closedSeamGap = distance(
       required(closed.at(-1), 'Closed curve end is missing.'),
       required(closed[0], 'Closed curve start is missing.'),
     )
 
     expect(closed[0]?.locked).toBe(false)
-    expect(closedSeamGap).toBeLessThanOrEqual(WATER_PROFILE.sampleSpacingCells * 1.1)
+    expect(closedSeamGap).toBeLessThanOrEqual(SMOOTH_PROFILE.sampleSpacingCells * 1.1)
     expect(open[0]).toMatchObject({ x: 0, y: 0, sourceOffset: 0, locked: true })
     expect(open.at(-1)).toMatchObject({ x: 0, y: 3, locked: true })
   })
 
-  it('uses shortest circular neighborhoods independently of a short closed curve seam', () => {
-    const source = [point(0, 0), point(1, 0), point(1, 1), point(0, 1)]
-    const profile = {
-      ...BASE_PROFILE,
-      macroWindowCells: 4,
-      fairingRadiusCells: 2.5,
-    }
-    const shaped = shapeTerrainCurve(source, true, profile, 11)
-    const rotatedSource = [
-      ...source.slice(1),
-      required(source[0], 'Square start point is missing.'),
-    ]
-    const rotated = shapeTerrainCurve(rotatedSource, true, profile, 11)
-    const reversed = shapeTerrainCurve(
-      [required(source[0], 'Square start point is missing.'), ...source.slice(1).reverse()],
-      true,
-      profile,
-      11,
-    )
-    const topMiddle = required(
-      shaped.find((sample) => sample.sourceOffset === 0.5),
-      'Shaped top midpoint is missing.',
-    )
-
-    expect(topMiddle.x).toBeCloseTo(0.5, 12)
-    expect(canonicalCoordinates(rotated)).toEqual(canonicalCoordinates(shaped))
-    expect(canonicalCoordinates(reversed)).toEqual(canonicalCoordinates(shaped))
-    expect(shapeTerrainCurve(source, true, profile, 11)).toEqual(shaped)
-  })
-
-  it('leaves resampled geometry unchanged when macro, fairing, and noise are disabled', () => {
+  it('leaves resampled geometry unchanged when smoothing and octaves are disabled', () => {
     const source = [point(0, 0), point(1, 0), point(1, 1), point(2, 1)]
     const shaped = shapeTerrainCurve(source, false, BASE_PROFILE, 0)
 
@@ -152,34 +124,13 @@ describe('shared terrain curve shaping', () => {
     ])
   })
 
-  it('uses the water macro profile to suppress repeated staircase cadence', () => {
-    const source = staircase(24)
-    const local = shapeTerrainCurve(
-      source,
-      false,
-      {
-        ...WATER_PROFILE,
-        macroWindowCells: 0,
-        fairingIterations: 2,
-        fairingRadiusCells: 1,
-        fairingStrength: 0.35,
-      },
-      5,
-    )
-    const water = shapeTerrainCurve(source, false, WATER_PROFILE, 5)
-
-    expect(cadence(local)).toBeGreaterThan(10)
-    expect(cadence(water)).toBeLessThan(cadence(local) / 2)
-    expect(curvatureEnergy(water)).toBeLessThan(curvatureEnergy(local) * 0.55)
-  })
-
-  it('moves noisy points only along the normal of the faired curve', () => {
+  it('moves noisy points only along the local normal of the curve', () => {
     const source = [point(0, 0), point(12, 0)]
     const withoutNoise = shapeTerrainCurve(source, false, BASE_PROFILE, 123)
     const withNoise = shapeTerrainCurve(
       source,
       false,
-      { ...BASE_PROFILE, noiseAmplitudeCells: 0.2, noiseWavelengthCells: [4, 4] },
+      { ...BASE_PROFILE, octaves: [{ wavelengthCells: 4, amplitudeCells: 0.2 }] },
       123,
     )
 
@@ -197,12 +148,28 @@ describe('shared terrain curve shaping', () => {
     ).toBe(true)
   })
 
+  it('caps free point displacement at the envelope ceiling', () => {
+    const source = [point(0, 0), point(10, 0)]
+    const profile: TerrainCurveProfile = {
+      sampleSpacingCells: 0.5,
+      smoothingPasses: 0,
+      octaves: [{ wavelengthCells: 3, amplitudeCells: 4 }],
+    }
+    const shaped = shapeTerrainCurve(source, false, profile, 5, () => 0.1)
+
+    for (const sample of shaped) {
+      if (sample.locked) continue
+      const displacement = Math.hypot(sample.x - sample.sourceOffset, sample.y)
+      expect(displacement).toBeLessThanOrEqual(0.1 + 1e-6)
+    }
+  })
+
   it('emits strictly monotonic source offsets without duplicating a closed seam', () => {
     for (const [source, closed] of [
       [[point(0, 0), point(1.3, 0), point(1.3, 2)], false] as const,
       [[point(0, 0), point(1.3, 0), point(1.3, 2), point(0, 2)], true] as const,
     ]) {
-      const shaped = shapeTerrainCurve(source, closed, WATER_PROFILE, 1)
+      const shaped = shapeTerrainCurve(source, closed, SMOOTH_PROFILE, 1)
       expect(
         shaped.every(
           (sample, index) =>
@@ -224,13 +191,7 @@ describe('shared terrain curve shaping', () => {
       if (row % 2 === 1) columns.reverse()
       for (const column of columns) source.push(point(column, row))
     }
-    const profile = {
-      ...WATER_PROFILE,
-      sampleSpacingCells: 0.5,
-      macroWindowCells: 2,
-      fairingIterations: 2,
-      fairingRadiusCells: 1.5,
-    }
+    const profile: TerrainCurveProfile = { ...SHAPED_PROFILE, sampleSpacingCells: 0.5 }
     const startedAt = performance.now()
     const shaped = shapeTerrainCurve(source, false, profile, 77)
 
@@ -241,43 +202,6 @@ describe('shared terrain curve shaping', () => {
 
 function point(x: number, y: number, locked = false): TerrainCurveSourcePoint {
   return { x, y, locked }
-}
-
-function staircase(steps: number): TerrainCurveSourcePoint[] {
-  const result = [point(0, 0)]
-  for (let step = 0; step < steps; step += 1) {
-    result.push(point(step + 1, step), point(step + 1, step + 1))
-  }
-  return result
-}
-
-function cadence(points: readonly TerrainCurvePoint[]): number {
-  let count = 0
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const before = required(points[index - 1], 'Previous cadence point is missing.')
-    const point = required(points[index], 'Cadence point is missing.')
-    const after = required(points[index + 1], 'Next cadence point is missing.')
-    const firstAngle = Math.atan2(point.y - before.y, point.x - before.x)
-    const secondAngle = Math.atan2(after.y - point.y, after.x - point.x)
-    if (Math.abs(normalizedAngle(secondAngle - firstAngle)) > 0.04) count += 1
-  }
-  return count
-}
-
-function curvatureEnergy(points: readonly TerrainCurvePoint[]): number {
-  let total = 0
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const before = required(points[index - 1], 'Previous curvature point is missing.')
-    const point = required(points[index], 'Curvature point is missing.')
-    const after = required(points[index + 1], 'Next curvature point is missing.')
-    total += Math.hypot(after.x - 2 * point.x + before.x, after.y - 2 * point.y + before.y)
-  }
-  return total
-}
-
-function normalizedAngle(angle: number): number {
-  const turn = (angle + Math.PI) % (Math.PI * 2)
-  return (turn < 0 ? turn + Math.PI * 2 : turn) - Math.PI
 }
 
 function distance(first: TerrainCurvePoint, second: TerrainCurvePoint): number {
@@ -293,10 +217,6 @@ function curveLength(points: readonly TerrainCurveSourcePoint[], closed: boolean
   const first = required(points[0], 'First source point is missing.')
   const last = required(points.at(-1), 'Last source point is missing.')
   return openLength + Math.hypot(last.x - first.x, last.y - first.y)
-}
-
-function canonicalCoordinates(points: readonly TerrainCurvePoint[]): readonly string[] {
-  return points.map((point) => `${point.x.toFixed(12)}:${point.y.toFixed(12)}`).sort()
 }
 
 function required<Value>(value: Value | undefined, message: string): Value {
