@@ -35,7 +35,7 @@ Configured metres become renderer units through shared conversion helpers. South
 | `presentation.ts` | Tunable canvas, world scale, camera values, and provisional diagnostic palette |
 | `scene.ts` | Config-derived static scene, coordinate conversion, and pure frame computation |
 | `collision.ts` | Pure static and dynamic collision truth |
-| `camera.ts` | Visitor focus, follow suspension, and reset policy over the shared camera reducer |
+| `camera.ts` | Visitor focus, inspection suspension, live return, and recenter policy over the shared camera reducer |
 | `map-layer.ts`, `buildings.ts`, `props-layer.ts`, `characters.ts` | Layered ground and stable retained scene objects |
 | `collision-layer.ts`, `chrome.ts` | Off-by-default collision drawing and the village information chrome |
 | `index.ts` | `PixiRenderer` lifecycle, gestures, probes, and automatic renderer definition |
@@ -54,11 +54,11 @@ Environment-specific data probes expose readiness, opening state, tick, phase, v
 
 The camera starts at `overlay_static.spawn` using the configured focus zoom, clamped to frame-derived limits. The first dynamic frame corrects the target to the recorded visitor position.
 
-One policy serves watch, replay, and play. The camera opens on the visitor at the focus zoom and follows its movement on every state update. Pan, wheel zoom, or pinch suspends following for inspection. The Recenter button, a double-click, or a double-tap recenters on the current visitor at the focus zoom and resumes following. Following does not depend on who controls the visitor.
+The camera opens on the visitor at the focus zoom and follows its movement on every state update. Pan, wheel zoom, or pinch suspends following for inspection. In watch and replay, the inspected view remains fixed until Recenter. In live visitor play, releasing manual camera control while the visitor is moving starts a gradual return to the visitor. Manual input cancels that return. The Recenter button, a double-click, or a double-tap centers on the current visitor immediately and resumes following. Return and Recenter both preserve the current zoom.
 
 Full logical pointer coordinates are converted to the content-local viewport before calling camera reducers. Camera state stays outside pure scene computation.
 
-Step 6 reads `ctx.controlledPlayers` for input ownership only; it plays no part in this camera policy.
+Step 6 reads `ctx.controlledPlayers` to activate both visitor input and the live-play camera return.
 
 ## Fixture and local integration
 
@@ -75,7 +75,7 @@ The fixture exposed two Pymunk invariants. When a stopped kinematic character be
 ## Focused verification
 
 - Shared tiled-ground tests cover compatibility, layer ordering, empty cells, neighbour masks, validation, and target repaint.
-- Renderer tests cover header and opening parsing, configuration-derived bounds, scene and collision geometry, tick interpolation, static reference reuse, seek determinism, and camera follow, suspension, and reset.
+- Renderer tests cover header and opening parsing, configuration-derived bounds, scene and collision geometry, tick interpolation, static reference reuse, seek determinism, camera follow, inspection suspension, gradual live return, and zoom-preserving Recenter.
 - Python tests cover restricted builtin filling, fixture semantics, strict JSON, finite physics after a stop, and repeated wall contact.
 - Frontend type checking covers the retained Pixi integration, and the Three Branches browser group covers its live and replay journey.
 

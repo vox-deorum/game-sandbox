@@ -79,6 +79,12 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     // The wheel suspended follow, so the camera now holds still while the visitor keeps walking.
     // That makes it the control for both toggles: neither may move the view.
     const inspectedCamera = await host.getAttribute('data-three-branches-camera')
+    const inspectedZoom = parseCamera(inspectedCamera).zoom
+    const inspectedFrame = await readFrameProbe(host)
+    await expect
+      .poll(async () => (await readFrameProbe(host)).visitor)
+      .not.toBe(inspectedFrame.visitor)
+    await expect(host).toHaveAttribute('data-three-branches-camera', inspectedCamera as string)
     const toggleAt = await controlCentre(host, 'data-three-branches-collision-toggle', canvasBox)
     await page.mouse.click(toggleAt.x, toggleAt.y)
     await expect(host).toHaveAttribute('data-three-branches-collision', 'on')
@@ -93,12 +99,12 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     await expect(host).toHaveAttribute('data-three-branches-collision', 'off')
     await expect(host).toHaveAttribute('data-three-branches-camera', inspectedCamera as string)
 
-    // Recenter returns to the focus zoom and resumes following, so the view tracks the visitor again.
+    // Recenter preserves the inspected zoom and resumes following, so the view tracks the visitor.
     const recenterAt = await controlCentre(host, 'data-three-branches-recenter', canvasBox)
     await page.mouse.click(recenterAt.x, recenterAt.y)
     await expect
       .poll(async () => parseCamera(await host.getAttribute('data-three-branches-camera')).zoom)
-      .toBeCloseTo(initialCamera.zoom, 3)
+      .toBeCloseTo(inspectedZoom, 3)
     const recentered = await host.getAttribute('data-three-branches-camera')
     await expect
       .poll(async () => host.getAttribute('data-three-branches-camera'))

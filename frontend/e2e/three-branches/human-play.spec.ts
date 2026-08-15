@@ -55,6 +55,16 @@ interface Point {
   y: number
 }
 
+interface CameraProbe extends Point {
+  zoom: number
+}
+
+function parseCamera(value: string | null): CameraProbe {
+  const match = /^(\d+(?:\.\d+)?)@(-?\d+),(-?\d+)$/.exec(value ?? '')
+  if (match === null) throw new Error(`Unexpected Three Branches camera probe: ${value}`)
+  return { zoom: Number(match[1]), x: Number(match[2]), y: Number(match[3]) }
+}
+
 /** The visitor's latest landed position in village metres, from the renderer's probe. */
 async function visitorPosition(host: Locator): Promise<Point> {
   const probe = await host.getAttribute('data-three-branches-visitor')
@@ -438,7 +448,15 @@ test('a human visitor walks, emotes, previews a use, and chats across watcher an
     // signal.
     const walk = new KeyboardWalk(page)
     const start = await visitorPosition(host)
-    const startingCamera = await host.getAttribute('data-three-branches-camera')
+    const playBox = await canvasBounds()
+    const openingCamera = parseCamera(await host.getAttribute('data-three-branches-camera'))
+    await page.mouse.move(playBox.x + playBox.width / 2, playBox.y + playBox.height / 2)
+    await page.mouse.wheel(0, -400)
+    await expect
+      .poll(async () => parseCamera(await host.getAttribute('data-three-branches-camera')).zoom)
+      .toBeGreaterThan(openingCamera.zoom)
+    const inspectedCamera = parseCamera(await host.getAttribute('data-three-branches-camera'))
+    const inspectedProbe = await host.getAttribute('data-three-branches-camera')
     // Each poll re-presses W: a stray window blur makes the renderer drop every held key, and the
     // repeat keydown of a re-press restores it (see KeyboardWalk).
     await page.keyboard.down('KeyW')
@@ -459,7 +477,10 @@ test('a human visitor walks, emotes, previews a use, and chats across watcher an
       .toBeGreaterThan(start.y + 0.5)
     await expect
       .poll(async () => host.getAttribute('data-three-branches-camera'))
-      .not.toBe(startingCamera)
+      .not.toBe(inspectedProbe)
+    await expect
+      .poll(async () => parseCamera(await host.getAttribute('data-three-branches-camera')).zoom)
+      .toBeCloseTo(inspectedCamera.zoom, 3)
     await page.keyboard.up('KeyW')
     await page.waitForTimeout(750)
     const rest = await visitorPosition(host)

@@ -1,6 +1,6 @@
 # Step 6: Human play, the visitor
 
-Status: in progress.
+Status: complete.
 
 Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands by implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review both live browser play against a running cast and local play.
 

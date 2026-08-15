@@ -33,7 +33,7 @@ The 54-unit strip keeps its step 3 layout seam and adopts a thematic Hearthside 
 - Phase and tick. The opening state reads `Opening · Tick 1`, and the terminal frame appends `Complete`.
 - A bell indicator: a small drawn bell icon before its state word, toggling between `rings` and `silent`. The icon takes a gilt accent while ringing. A village without a bell omits the indicator.
 - The collision toggle button, off by default. The C key is its keyboard access. Toggling never resets the camera.
-- A Recenter button with the double-click reset behavior: recenter on the current visitor at the focus zoom and resume follow.
+- A Recenter button with the double-click reset behavior: recenter on the current visitor at the current zoom and resume follow.
 
 ### Nameplates
 
@@ -65,7 +65,7 @@ The shared host chat panel is the transcript on the session and replay pages. Th
 
 ### Camera
 
-One policy serves watch, replay, and play. The camera opens on the visitor at the focus zoom and follows its movement. Pan, wheel zoom, or pinch suspends following for inspection. The Recenter button, double-click, or double-tap recenters on the current visitor at the focus zoom and resumes following. Following does not depend on who controls the visitor; step 6 reads `ctx.controlledPlayers` for input ownership only.
+The camera opens on the visitor at the focus zoom and follows its movement. Pan, wheel zoom, or pinch suspends following for inspection. Watch and replay hold the inspected view until Recenter. In live visitor play, releasing manual camera control while the visitor is moving starts a gradual return to the visitor. Further manual input cancels the return. The Recenter button, double-click, or double-tap centers on the current visitor immediately and resumes following. Return and Recenter preserve the current zoom.
 
 Zoom limits keep the fitted whole-village view and step 5.1's sixteen-times close ceiling. The focus zoom may rise if bubble and nameplate readability at the focused view requires it, judged over the pinned fixture under the full HUD.
 
@@ -116,9 +116,9 @@ The shared panel's composer sends broadcasts and direct lines through the recipi
 
 ## Tests
 
-- Renderer unit tests cover the chrome elements and their states, the collision overlay's off default and C toggle, nameplate zoom gating, bubble tagging, wrapping, replacement, and seek clearing, unified camera follow, suspension, and reset, and tuned fixture zoom limits.
+- Renderer unit tests cover the chrome elements and their states, the collision overlay's off default and C toggle, nameplate zoom gating, bubble tagging, wrapping, replacement, and seek clearing, camera follow, inspection suspension, gradual live return, zoom-preserving Recenter, and tuned fixture zoom limits.
 - Shared panel tests cover the display-name hook in chat rows, badges, and the recipient selector on the session and replay pages.
-- The Three Branches browser journeys cover the off collision default, the button, the C key, Recenter, the permanent joystick, and visitor camera follow during live play.
+- The Three Branches browser journeys cover the off collision default, the button, the C key, zoom-preserving Recenter, the permanent joystick, and the visitor camera's gradual return during live play.
 - Update locators whenever markup moves.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
 

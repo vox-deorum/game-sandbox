@@ -19,8 +19,10 @@ import { replaceFallback, runArtLoad } from './art-loading.js'
 import { loadThreeBranchesRuntimeAssets } from './assets.js'
 import { drawBuildings } from './buildings.js'
 import {
+  advanceVisitorReturn,
+  beginVisitorReturn,
   initialVisitorCamera,
-  resetVisitorCamera,
+  recenterVisitorCamera,
   suspendVisitorFollow,
   updateVisitorCamera,
   type VisitorCameraState,
@@ -51,6 +53,8 @@ const CONTENT_SIZE = {
   height:
     THREE_BRANCHES_PRESENTATION.internalSize.height - THREE_BRANCHES_PRESENTATION.chromeHeight,
 }
+const MANUAL_CAMERA_QUIET_MS = 200
+const VISITOR_PLAYER = 'player_0'
 
 interface MovementTransition {
   from: FrameScene
@@ -83,6 +87,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private chrome!: ChromeLayer
   private cameraLimits!: CameraLimits
   private visitorCamera!: VisitorCameraState
+  private readonly returnsCameraDuringPlay: boolean
+  private manualCameraQuietUntilMs = 0
+  private cameraReturnRequested = false
   private cameraGestures: CameraGestures | null = null
   private collisionVisible = false
   private correctedOpeningTarget = false
@@ -101,6 +108,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   /** Parse immutable renderer inputs before Pixi builds the retained scene. */
   constructor(ctx: RendererContext) {
     super(ctx)
+    this.returnsCameraDuringPlay =
+      ctx.sendAction !== undefined && ctx.controlledPlayers.includes(VISITOR_PLAYER)
     // Header data is immutable for the mount. Dynamic states never need to repeat village geometry.
     const village = readStatic(ctx.header)
     this.expectedIds = expectedCharacterIds(ctx.header)
@@ -249,17 +258,30 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       movement.elapsedMs += dtMs
       const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
       this.presentScene(interpolateScene(movement.from, movement.to, progress))
+      this.advanceCameraReturn(dtMs, visitorMoved(movement.from, movement.to))
       if (progress >= 1) {
         this.movement = null
         this.settleRemainingMs = HEARTHSIDE_STYLE.transition.settleGraceMs
       }
-      return this.movement !== null || this.settleRemainingMs > 0 || speaking
+      return (
+        this.movement !== null ||
+        this.cameraReturnRequested ||
+        this.visitorCamera.returning ||
+        this.settleRemainingMs > 0 ||
+        speaking
+      )
     }
+    this.advanceCameraReturn(dtMs, false)
     // A still frame repaints only for the bubbles, including the frame that retires the last one,
     // so a faded bubble leaves the screen rather than holding its final opacity.
     if (speaking || wasSpeaking) this.redrawAnnotations()
     this.settleRemainingMs = Math.max(0, this.settleRemainingMs - dtMs)
-    return this.settleRemainingMs > 0 || speaking
+    return (
+      this.cameraReturnRequested ||
+      this.visitorCamera.returning ||
+      this.settleRemainingMs > 0 ||
+      speaking
+    )
   }
 
   /** Report only the finite state-to-state character transition to the host. */
@@ -296,7 +318,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly onChromeClick = (event: MouseEvent): void => {
     const view = this.viewPoint({ x: event.clientX, y: event.clientY })
     if (within(view, COLLISION_TOGGLE_RECT)) this.toggleCollision()
-    else if (within(view, RECENTER_RECT)) this.resetCamera()
+    else if (within(view, RECENTER_RECT)) this.recenterCamera()
   }
 
   /**
@@ -345,15 +367,17 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         )
       },
       reset: () => {
-        this.resetCamera()
+        this.recenterCamera()
       },
     })
   }
 
-  /** Recenter on the current visitor at the focus zoom and resume following it. */
-  private readonly resetCamera = (): void => {
+  /** Recenter on the current visitor at the current zoom and resume following it. */
+  private readonly recenterCamera = (): void => {
     const previous = cameraProbeValue(this.visitorCamera.camera)
-    this.visitorCamera = resetVisitorCamera(this.visitorCamera, this.cameraLimits, CONTENT_SIZE)
+    this.manualCameraQuietUntilMs = 0
+    this.cameraReturnRequested = false
+    this.visitorCamera = recenterVisitorCamera(this.visitorCamera, this.cameraLimits, CONTENT_SIZE)
     this.applyCamera()
     this.redrawCameraIfChanged(previous)
   }
@@ -364,7 +388,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private applyManualCamera(reduce: (camera: CameraView) => CameraView): void {
     const previous = cameraProbeValue(this.visitorCamera.camera)
-    // Any deliberate inspection gesture suspends live visitor follow until the explicit reset.
+    // Manual input cancels any in-progress return. Live play may begin another return once input
+    // has gone quiet and the visitor moves; watch and replay remain suspended until Recenter.
+    this.manualCameraQuietUntilMs = performance.now() + MANUAL_CAMERA_QUIET_MS
+    this.cameraReturnRequested = false
     this.visitorCamera = suspendVisitorFollow(this.visitorCamera)
     this.visitorCamera = {
       ...this.visitorCamera,
@@ -372,6 +399,33 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     }
     this.applyCamera()
     this.redrawCameraIfChanged(previous)
+  }
+
+  /** Ease a live play inspection view back to a moving visitor once camera input has stopped. */
+  private advanceCameraReturn(dtMs: number, visitorIsMoving: boolean): void {
+    if (!this.returnsCameraDuringPlay || this.visitorCamera.following) {
+      this.cameraReturnRequested = false
+      return
+    }
+    if (this.cameraGestures?.dragging() === true) {
+      this.cameraReturnRequested = false
+      return
+    }
+    if (visitorIsMoving) this.cameraReturnRequested = true
+    if (!this.visitorCamera.returning) {
+      if (!this.cameraReturnRequested || performance.now() < this.manualCameraQuietUntilMs) return
+      this.visitorCamera = beginVisitorReturn(this.visitorCamera)
+      this.cameraReturnRequested = false
+    }
+    const elapsedMs = Number.isFinite(dtMs) ? Math.max(0, dtMs) : 0
+    const previous = cameraProbeValue(this.visitorCamera.camera)
+    this.visitorCamera = advanceVisitorReturn(
+      this.visitorCamera,
+      this.cameraLimits,
+      CONTENT_SIZE,
+      elapsedMs,
+    )
+    if (previous !== cameraProbeValue(this.visitorCamera.camera)) this.applyCamera()
   }
 
   /** Present an inspection-camera transform immediately, but never redraw an unchanged camera. */
@@ -425,7 +479,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const visitor = scene.characters.find((character) => character.id === 'visitor')
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
-      // interpolated visitor until a manual gesture suspends it.
+      // interpolated visitor. A manual gesture suspends it until the mode-specific return policy.
       this.visitorCamera = updateVisitorCamera(
         this.visitorCamera,
         this.cameraLimits,
@@ -526,6 +580,16 @@ function charactersMoved(from: FrameScene, to: FrameScene): boolean {
         start.heading !== character.heading)
     )
   })
+}
+
+function visitorMoved(from: FrameScene, to: FrameScene): boolean {
+  const start = from.characters.find((character) => character.id === 'visitor')
+  const end = to.characters.find((character) => character.id === 'visitor')
+  return (
+    start !== undefined &&
+    end !== undefined &&
+    (start.point.x !== end.point.x || start.point.y !== end.point.y)
+  )
 }
 
 /** Build header-shaped inputs in tests without reaching into the mounted renderer. */
