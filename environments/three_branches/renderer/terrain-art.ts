@@ -3,10 +3,11 @@ import { Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { fillTintHex, HEARTHSIDE_STYLE } from './presentation.js'
-import { planTerrainContours, type TerrainContourPlan, terrainVariant } from './terrain-contours.js'
-import { planTerrainRoutes, type TerrainRoutePlan } from './terrain-routes.js'
+import { planTerrainContours } from './terrain-contours.js'
+import { terrainVariant } from './terrain-helpers.js'
+import { planTerrainRoutes } from './terrain-routes.js'
 import { opaqueTintedFillFrame, tintedMaskFrame } from './tint.js'
-import type { StaticScene } from './types.js'
+import type { StaticScene, TerrainContourPlan, TerrainRoutePlan } from './types.js'
 
 export const BRIDGE_PLANK_CODES = {
   horizontal: 'P',
@@ -208,7 +209,9 @@ function fillFramesFor(
   tintHex: string,
   detailShift?: number,
 ): readonly Texture[] {
-  return frames.map((frame) => opaqueTintedFillFrame(atlas, grid, frame, tintHex, detailShift))
+  return frames.map((frame) =>
+    opaqueTintedFillFrame(atlas, grid, frame, tintHex, detailShift),
+  )
 }
 /** Bake one semantic mask family. */
 function framesFor(
@@ -216,9 +219,8 @@ function framesFor(
   grid: Parameters<typeof tintedMaskFrame>[1],
   frames: readonly string[],
   tint: keyof typeof HEARTHSIDE_STYLE.palette,
-  opacity = 1,
 ): readonly Texture[] {
   return frames.map((frame) =>
-    tintedMaskFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint], opacity),
+    tintedMaskFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]),
   )
 }

@@ -3,8 +3,8 @@ import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
-import type { TerrainCurveProfile } from './terrain-curves.js'
 import { mixedTint } from './tint.js'
+import type { TerrainCurveProfile } from './types.js'
 import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
 
 /** Logical dimensions exposed to the renderer host. */

@@ -1,5 +1,15 @@
 /** Pure, deterministic curve shaping shared by terrain partitions and inset routes. */
 
+import { avalanche, distance, hashUnit, stableHashParts } from '@renderers/base/math.js'
+
+import { required } from './terrain-helpers.js'
+import type {
+  TerrainCurveEnvelope,
+  TerrainCurvePoint,
+  TerrainCurveProfile,
+  TerrainCurveSourcePoint,
+} from './types.js'
+
 const EPSILON = 1e-9
 const OFFSET_DIGITS = 12
 
@@ -11,40 +21,6 @@ const LOCK_BLEND_SNAPSHOT_PASSES = 12
 
 /** Arc reach, in cells, when measuring displacement against the local source polyline. */
 const SOURCE_DISTANCE_WINDOW_CELLS = 2.5
-
-/** One perpendicular displacement band: smooth value noise at a wavelength, scaled to an amplitude. */
-export interface TerrainCurveOctave {
-  readonly wavelengthCells: number
-  readonly amplitudeCells: number
-}
-
-/** Geometry controls shared by land, water, road, and path curve profiles. */
-export interface TerrainCurveProfile {
-  readonly sampleSpacingCells: number
-  readonly smoothingPasses: number
-  readonly octaves: readonly TerrainCurveOctave[]
-}
-
-/**
- * Per-sample displacement ceiling in cells, measured from the raw sampled position.
- * Callers derive it from local clearance so displacement fades smoothly in tight corridors.
- */
-export type TerrainCurveEnvelope = (rawX: number, rawY: number, sourceOffset: number) => number
-
-/** One authored curve point. Locked points split free shaping intervals. */
-export interface TerrainCurveSourcePoint {
-  readonly x: number
-  readonly y: number
-  readonly locked: boolean
-}
-
-/** One shaped point paired with its monotonic offset on the authored curve. */
-export interface TerrainCurvePoint {
-  readonly x: number
-  readonly y: number
-  readonly sourceOffset: number
-  readonly locked: boolean
-}
 
 interface SourceIndex {
   readonly points: readonly TerrainCurveSourcePoint[]
@@ -145,7 +121,7 @@ export function shapeTerrainCurve(
       for (const [octaveIndex, octave] of profile.octaves.entries()) {
         noise +=
           smoothValueNoise(
-            hash(seed, 'octave', octaveIndex),
+            avalanche(stableHashParts(seed, 'octave', octaveIndex)),
             point.x / octave.wavelengthCells,
             point.y / octave.wavelengthCells,
           ) * octave.amplitudeCells
@@ -443,34 +419,16 @@ function smoothValueNoise(seed: number, x: number, y: number): number {
   const localY = y - row
   const fade = (value: number): number => value * value * (3 - 2 * value)
   const valueAt = (offsetX: number, offsetY: number): number =>
-    hashUnit(hash(seed, 'curve-noise', column + offsetX, row + offsetY)) * 2 - 1
+    hashUnit(
+      avalanche(stableHashParts(seed, 'curve-noise', column + offsetX, row + offsetY)),
+    ) *
+      2 -
+    1
   const blendX = fade(localX)
   const blendY = fade(localY)
   const north = valueAt(0, 0) + (valueAt(1, 0) - valueAt(0, 0)) * blendX
   const south = valueAt(0, 1) + (valueAt(1, 1) - valueAt(0, 1)) * blendX
   return north + (south - north) * blendY
-}
-
-function hash(...parts: readonly (string | number)[]): number {
-  let value = 2166136261
-  for (const part of parts) {
-    for (const character of String(part)) {
-      value ^= character.charCodeAt(0)
-      value = Math.imul(value, 16777619)
-    }
-    value ^= 31
-    value = Math.imul(value, 16777619)
-  }
-  value ^= value >>> 16
-  value = Math.imul(value, 0x7feb352d)
-  value ^= value >>> 15
-  value = Math.imul(value, 0x846ca68b)
-  value ^= value >>> 16
-  return value >>> 0
-}
-
-function hashUnit(value: number): number {
-  return value / 0xffffffff
 }
 
 function normalizeOffset(offset: number, totalLength: number): number {
@@ -480,16 +438,4 @@ function normalizeOffset(offset: number, totalLength: number): number {
 
 function offsetKey(offset: number): string {
   return offset.toFixed(OFFSET_DIGITS)
-}
-
-function distance(
-  first: Pick<TerrainCurveSourcePoint, 'x' | 'y'>,
-  second: Pick<TerrainCurveSourcePoint, 'x' | 'y'>,
-): number {
-  return Math.hypot(second.x - first.x, second.y - first.y)
-}
-
-function required<Value>(value: Value | undefined, message: string): Value {
-  if (value === undefined) throw new Error(message)
-  return value
 }

@@ -151,7 +151,8 @@ function paintPlate(
   plate.hotkey.resolution = resolution
 }
 
-function within(point: { x: number; y: number }, rect: Rect): boolean {
+/** Return whether a point lies inside an inclusive axis-aligned rectangle. */
+export function within(point: { x: number; y: number }, rect: Rect): boolean {
   return (
     point.x >= rect.x &&
     point.x <= rect.x + rect.width &&

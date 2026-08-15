@@ -1,3 +1,4 @@
+import { hashUnit, stableHashParts } from '@renderers/base/math.js'
 import {
   createSparseTiledGround,
   createTiledGround,
@@ -12,14 +13,14 @@ import { fillTintHex, HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './pr
 import { PATTERN_CELLS, type TerrainArt, transparentUpperGrid } from './terrain-art.js'
 import type {
   ContourCoordinate,
+  StaticScene,
+  TerrainBridgeComponent,
   TerrainContourChain,
   TerrainContourPlan,
   TerrainContourPoint,
   TerrainContourRing,
-} from './terrain-contours.js'
-import { terrainHash } from './terrain-contours.js'
-import type { TerrainBridgeComponent, TerrainRoutePlan } from './terrain-routes.js'
-import type { StaticScene } from './types.js'
+  TerrainRoutePlan,
+} from './types.js'
 
 /** The natural surface materials whose shared boundaries take the seam treatments. */
 const NATURAL_SEAM_MATERIALS = new Set(['ground', 'field', 'reeds', 'water'])
@@ -256,8 +257,8 @@ function inkPieces(chainId: string, points: readonly TerrainContourPoint[]): Ink
   let active: TerrainContourPoint[] = []
   const push = (): void => {
     if (bucket === undefined || active.length < 2) return
-    const widthUnit = hashUnit(terrainHash('seam-ink-body', chainId, bucket))
-    const toneUnit = hashUnit(terrainHash('seam-ink-tone', chainId, bucket))
+    const widthUnit = hashUnit(stableHashParts('seam-ink-body', chainId, bucket))
+    const toneUnit = hashUnit(stableHashParts('seam-ink-tone', chainId, bucket))
     pieces.push({
       points: active,
       width: spec.widthCells * (1 - INK_WIDTH_JITTER / 2 + INK_WIDTH_JITTER * widthUnit),
@@ -346,7 +347,7 @@ export function reedMarksGraphics(
       if (groundNameForCode[line[column] ?? ''] !== 'reeds') continue
       for (let mark = 0; mark < spec.perCell; mark += 1) {
         const unit = (part: string): number =>
-          terrainHash('reed-mark', part, column, row, mark) / 0xffffffff
+          hashUnit(stableHashParts('reed-mark', part, column, row, mark))
         const x = column + 0.12 + 0.76 * unit('x')
         const y = row + 0.12 + 0.76 * unit('y')
         const length = minimumLength + (maximumLength - minimumLength) * unit('length')
@@ -555,13 +556,14 @@ export function seamStrokeRuns(
   const [minimumRun, maximumRun] = spec.runLengthCells
   const averageRun = (minimumRun + maximumRun) / 2
   const cycleLength = averageRun / Math.min(1, spec.density)
-  const phase = hashUnit(terrainHash(`${tag}-phase`, chain.id)) * cycleLength
+  const phase = hashUnit(stableHashParts(`${tag}-phase`, chain.id)) * cycleLength
   const firstCycle = Math.floor(phase / cycleLength) - 1
   const lastCycle = Math.ceil((chain.rawLength + phase) / cycleLength)
   const tapered = chain.shorelineSpans.length > 0
   for (let cycle = firstCycle; cycle <= lastCycle; cycle += 1) {
     const runLength =
-      minimumRun + hashUnit(terrainHash(`${tag}-run`, chain.id, cycle)) * (maximumRun - minimumRun)
+      minimumRun +
+      hashUnit(stableHashParts(`${tag}-run`, chain.id, cycle)) * (maximumRun - minimumRun)
     const cycleStart = cycle * cycleLength - phase
     const startOffset = Math.max(0, cycleStart)
     const endOffset = Math.min(chain.rawLength, cycleStart + runLength)
@@ -647,9 +649,6 @@ function pointAtRawOffset(
   return { ...fallback, rawOffset: offset }
 }
 
-function hashUnit(hash: number): number {
-  return hash / 0xffffffff
-}
 
 /** Draw the configured ground as the unchanged dense, solid-color pre-art fallback. */
 function drawFallbackMap(layer: Container, scene: StaticScene): TiledGround {

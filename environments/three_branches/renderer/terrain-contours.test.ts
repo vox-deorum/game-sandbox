@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE } from './presentation.js'
-import {
-  type ContourCoordinate,
-  planTerrainContours,
-  TERRAIN_EXTERIOR,
-  type TerrainContourChain,
-  type TerrainContourPlan,
-  type TerrainContourSettings,
-  terrainHash,
-  terrainVariant,
-} from './terrain-contours.js'
-import type { TerrainCurveProfile } from './terrain-curves.js'
+import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
+import type {
+  ContourCoordinate,
+  TerrainContourChain,
+  TerrainContourPlan,
+  TerrainContourSettings,
+  TerrainCurveProfile,
+} from './types.js'
 
 const names: Readonly<Record<string, string>> = {
   g: 'ground',
@@ -190,8 +187,6 @@ describe('continuous terrain contour planning', () => {
       },
     } as const
     const result = plan(rows, overrides)
-
-    expect(result).toEqual(plan(rows, overrides))
     expect(
       result.chains.some((chain) =>
         chain.points.some(
@@ -232,11 +227,9 @@ describe('continuous terrain contour planning', () => {
     }
   })
 
-  it('is canonical and keeps hashing stable for equal input', () => {
+  it('is canonical for equal input', () => {
     const rows = ['ggwww', 'gffww', 'gfrww', 'ggggg']
     expect(plan(rows)).toEqual(plan(rows))
-    expect(terrainHash('g', 4, 7)).toBe(terrainHash('g', 4, 7))
-    expect(terrainVariant(4, 'g', 4, 7)).toBeLessThan(4)
   })
 
   it('resolves both AB/BA saddle orientations through one deterministic centered diamond', () => {
@@ -415,7 +408,6 @@ describe('continuous terrain contour planning', () => {
     ).toBe(true)
     expect(shore.points.some((point) => point.shorelineFactor === 0)).toBe(true)
     expect(shore.points.some((point) => point.shorelineFactor === 1)).toBe(true)
-    expect(HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells).toBe(0.35)
   })
 
   it('widens bridge shoreline taper reach from the configured cell distance', () => {

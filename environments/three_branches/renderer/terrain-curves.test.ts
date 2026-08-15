@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  shapeTerrainCurve,
-  type TerrainCurvePoint,
-  type TerrainCurveProfile,
-  type TerrainCurveSourcePoint,
-} from './terrain-curves.js'
+import { shapeTerrainCurve } from './terrain-curves.js'
+import type {
+  TerrainCurvePoint,
+  TerrainCurveProfile,
+  TerrainCurveSourcePoint,
+} from './types.js'
 
 const BASE_PROFILE: TerrainCurveProfile = {
   sampleSpacingCells: 0.25,

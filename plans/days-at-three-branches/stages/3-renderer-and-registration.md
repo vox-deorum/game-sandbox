@@ -30,7 +30,7 @@ Configured metres become renderer units through shared conversion helpers. South
 
 | Module | Responsibility |
 | --- | --- |
-| `types.ts` | Documented public static, dynamic, scene, coordinate, and collision data contracts |
+| `types.ts` | Documented public static, dynamic, scene, coordinate, collision, and terrain data contracts |
 | `overlay.ts` | Header and dynamic overlay parsing plus rules and catalog access |
 | `presentation.ts` | Tunable canvas, world scale, camera values, and provisional diagnostic palette |
 | `scene.ts` | Config-derived static scene, coordinate conversion, and pure frame computation |

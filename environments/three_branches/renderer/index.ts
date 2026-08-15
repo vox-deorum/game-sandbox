@@ -34,6 +34,7 @@ import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
 import { isTextEntry } from './input.js'
 import { drawMap, drawUpperWalls } from './map-layer.js'
 import { expectedCharacterIds, readSpeech, readStatic } from './overlay.js'
+import { plateProbe, within } from './palette.js'
 import {
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
@@ -177,8 +178,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.ctx.container.dataset.threeBranchesGround = 'ready'
     this.ctx.container.dataset.threeBranchesAssets = 'loading'
     this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
-    this.ctx.container.dataset.threeBranchesCollisionToggle = probeRect(COLLISION_TOGGLE_RECT)
-    this.ctx.container.dataset.threeBranchesRecenter = probeRect(RECENTER_RECT)
+    this.ctx.container.dataset.threeBranchesCollisionToggle = plateProbe(COLLISION_TOGGLE_RECT)
+    this.ctx.container.dataset.threeBranchesRecenter = plateProbe(RECENTER_RECT)
     this.visitorInput = createVisitorInput({
       container: this.ctx.container,
       controlledPlayers: this.ctx.controlledPlayers,
@@ -550,22 +551,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         ? 'pending'
         : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
   }
-}
-
-function probeRect(rect: { x: number; y: number; width: number; height: number }): string {
-  return `${rect.x},${rect.y},${rect.width},${rect.height}`
-}
-
-function within(
-  point: { x: number; y: number },
-  rect: { x: number; y: number; width: number; height: number },
-): boolean {
-  return (
-    point.x >= rect.x &&
-    point.x <= rect.x + rect.width &&
-    point.y >= rect.y &&
-    point.y <= rect.y + rect.height
-  )
 }
 
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {

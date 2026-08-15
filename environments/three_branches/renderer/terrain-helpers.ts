@@ -1,0 +1,66 @@
+/** Pure helpers shared by the Three Branches terrain pipeline. */
+
+import { avalanche, distance, stableHashParts } from '@renderers/base/math.js'
+
+type Point = { readonly x: number; readonly y: number }
+type GridCell = { readonly column: number; readonly row: number }
+
+/** Tolerance used by terrain geometry comparisons. */
+export const EPSILON = 1e-9
+
+/** Return a defined value or throw the supplied terrain diagnostic. */
+export function required<Value>(value: Value | undefined, message: string): Value {
+  if (value === undefined) throw new Error(message)
+  return value
+}
+
+/** Project a point onto the nearest position of a line segment. */
+export function projectToSegment(point: Point, start: Point, end: Point): Point {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const lengthSquared = dx * dx + dy * dy
+  if (lengthSquared <= EPSILON) return start
+  const amount = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
+  )
+  return { x: start.x + dx * amount, y: start.y + dy * amount }
+}
+
+/** Measure the distance from a point to the nearest position of a line segment. */
+export function pointToSegmentDistance(point: Point, start: Point, end: Point): number {
+  return distance(point, projectToSegment(point, start, end))
+}
+
+/** Build the stable key for one integer terrain cell. */
+export function cellKey(column: number, row: number): string {
+  return `${column}:${row}`
+}
+
+/** Sort terrain cells from north to south, then west to east. */
+export function compareCells(first: GridCell, second: GridCell): number {
+  return first.row - second.row || first.column - second.column
+}
+
+/** Read a cell from a row-major rectangular terrain array. */
+export function cellAt<Cell>(
+  cells: readonly Cell[],
+  width: number,
+  height: number,
+  column: number,
+  row: number,
+): Cell | undefined {
+  if (column < 0 || row < 0 || column >= width || row >= height) return undefined
+  return cells[row * width + column]
+}
+
+/** Pick a stable zero-based terrain art variant. */
+export function terrainVariant(
+  count: number,
+  ...parts: readonly (string | number)[]
+): number {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new Error('Terrain variant count must be positive.')
+  }
+  return avalanche(stableHashParts(...parts)) % count
+}
