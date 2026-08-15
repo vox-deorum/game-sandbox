@@ -1,13 +1,12 @@
 /**
- * The visitor's live input layer: the floating virtual joystick, the keyboard axes, the
+ * The visitor's live input layer: the fixed virtual joystick, the keyboard axes, the
  * expression palette, and the once-per-window send loop.
  *
  * Everything here exists only while this screen controls `player_0` and the host passed a live
  * `sendAction`. Spectators and replay viewers get an inert controller that wires no listeners and
- * draws no plates. The controller claims left-half content presses and palette presses in the
- * capture phase before the shared camera gestures see them, so a joystick or palette pointer
- * never pans, zooms, or resets the camera, while the rest of the content area keeps the camera
- * gestures untouched.
+ * draws no controls. The controller claims presses on the joystick and palette in the capture
+ * phase before the shared camera gestures see them. Every other content press remains available
+ * for camera inspection and recentering.
  */
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics } from 'pixi.js'
@@ -36,6 +35,13 @@ const PALETTE = HEARTHSIDE_STYLE.palette
 
 /** The recording player id the human visitor acts for in every plan. */
 const VISITOR_PLAYER = 'player_0'
+const JOYSTICK_MARGIN = 18
+
+/** Permanent bottom-left joystick center in logical renderer coordinates. */
+export const JOYSTICK_CENTER = {
+  x: JOYSTICK_MARGIN + JOYSTICK_RADIUS,
+  y: THREE_BRANCHES_PRESENTATION.internalSize.height - JOYSTICK_MARGIN - JOYSTICK_RADIUS,
+} as const
 
 /** Renderer hooks and host context the controller needs. */
 export interface VisitorInputOptions {
@@ -94,19 +100,19 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   const heldKeys = new Set<string>()
   let joystick: {
     pointerId: number
-    center: { x: number; y: number }
     motion: MotionInput | null
   } | null = null
 
   data.threeBranchesInput = 'ready'
   data.threeBranchesQueued = 'none'
   data.threeBranchesLastAction = 'none'
-  data.threeBranchesJoystick = 'none'
+  data.threeBranchesJoystick = `${JOYSTICK_CENTER.x},${JOYSTICK_CENTER.y}`
   data.threeBranchesUsePreview = 'none'
   for (const plate of EMOTE_PLATES) {
     data[emoteProbeKey(plate.token)] = plateProbe(plate.rect)
   }
   data.threeBranchesUseButton = plateProbe(USE_PLATE_RECT)
+  paintPad(pad, JOYSTICK_CENTER, JOYSTICK_CENTER)
 
   const paintPalette = (): void => {
     palette.update(queued, useHovered, options.resolution())
@@ -135,8 +141,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   const releaseJoystick = (): void => {
     if (joystick === null) return
     joystick = null
-    data.threeBranchesJoystick = 'none'
-    pad.clear()
+    paintPad(pad, JOYSTICK_CENTER, JOYSTICK_CENTER)
     options.redraw()
   }
 
@@ -149,27 +154,26 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       setQueued(plate)
       return
     }
-    if (!inJoystickHalf(view)) return
+    if (!inJoystick(view)) return
     claim(event)
     if (joystick !== null) return
-    joystick = { pointerId: event.pointerId, center: view, motion: null }
-    data.threeBranchesJoystick = `${Math.round(view.x)},${Math.round(view.y)}`
-    paintPad(pad, view, view)
+    joystick = { pointerId: event.pointerId, motion: joystickMotion(JOYSTICK_CENTER, view) }
+    paintPad(pad, JOYSTICK_CENTER, view)
     options.redraw()
   }
 
-  /** The joystick half owns its double press too, so it cannot double-click-reset the camera. */
+  /** The controls own their double presses too, so they cannot also reset the camera. */
   const onDoubleClick = (event: MouseEvent): void => {
     if (ended) return
     const view = options.toView({ x: event.clientX, y: event.clientY })
-    if (paletteHit(view) !== null || inJoystickHalf(view)) claim(event)
+    if (paletteHit(view) !== null || inJoystick(view)) claim(event)
   }
 
   const onPointerMove = (event: PointerEvent): void => {
     if (ended || joystick === null || event.pointerId !== joystick.pointerId) return
     const view = options.toView({ x: event.clientX, y: event.clientY })
-    joystick.motion = joystickMotion(joystick.center, view)
-    paintPad(pad, joystick.center, view)
+    joystick.motion = joystickMotion(JOYSTICK_CENTER, view)
+    paintPad(pad, JOYSTICK_CENTER, view)
     options.redraw()
   }
 
@@ -253,6 +257,8 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
         ended = true
         clearInterval(timer)
         releaseJoystick()
+        options.padLayer.visible = false
+        data.threeBranchesJoystick = 'none'
         heldKeys.clear()
         queued = null
         data.threeBranchesQueued = 'none'
@@ -299,18 +305,12 @@ function isPrimaryPress(event: PointerEvent): boolean {
   return event.isPrimary && (event.pointerType !== 'mouse' || event.button === 0)
 }
 
-/** Whether a view point sits in the joystick's half: the left half of the content area. */
-function inJoystickHalf(view: { x: number; y: number }): boolean {
-  const size = THREE_BRANCHES_PRESENTATION.internalSize
-  return (
-    view.x >= 0 &&
-    view.x < size.width / 2 &&
-    view.y >= THREE_BRANCHES_PRESENTATION.chromeHeight &&
-    view.y <= size.height
-  )
+/** Whether a view point sits inside the fixed joystick ring. */
+function inJoystick(view: { x: number; y: number }): boolean {
+  return Math.hypot(view.x - JOYSTICK_CENTER.x, view.y - JOYSTICK_CENTER.y) <= JOYSTICK_RADIUS
 }
 
-/** Draw the pad ring at its press point and the knob at the clamped drag point. */
+/** Draw the fixed pad ring and the knob at the clamped drag point. */
 function paintPad(
   pad: Graphics,
   center: { x: number; y: number },

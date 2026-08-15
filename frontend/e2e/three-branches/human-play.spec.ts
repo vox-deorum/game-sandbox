@@ -395,6 +395,8 @@ test('a human visitor walks, emotes, previews a use, and chats across watcher an
     const host = page.locator('.renderer-host')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
     await expect(host).toHaveAttribute('data-three-branches-input', 'ready')
+    await expect(host).toHaveAttribute('data-three-branches-joystick', /^\d+,\d+$/)
+    await expect(host).toHaveAttribute('data-three-branches-camera', /^\d+(?:\.\d+)?@-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-visitor', /^-?\d+,-?\d+$/)
     // The palette publishes its geometry probes only while this screen controls the visitor.
     await expect(host).toHaveAttribute('data-three-branches-use-button', /^\d+,\d+,\d+,\d+$/)
@@ -436,6 +438,7 @@ test('a human visitor walks, emotes, previews a use, and chats across watcher an
     // signal.
     const walk = new KeyboardWalk(page)
     const start = await visitorPosition(host)
+    const startingCamera = await host.getAttribute('data-three-branches-camera')
     // Each poll re-presses W: a stray window blur makes the renderer drop every held key, and the
     // repeat keydown of a re-press restores it (see KeyboardWalk).
     await page.keyboard.down('KeyW')
@@ -454,6 +457,9 @@ test('a human visitor walks, emotes, previews a use, and chats across watcher an
         { timeout: 10_000 },
       )
       .toBeGreaterThan(start.y + 0.5)
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-camera'))
+      .not.toBe(startingCamera)
     await page.keyboard.up('KeyW')
     await page.waitForTimeout(750)
     const rest = await visitorPosition(host)

@@ -7,15 +7,15 @@ import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics, type Text } from 'pixi.js'
 
 import { EMOTE_TOKENS } from './input.js'
-import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
-import { labelFor } from './scene.js'
+import { HEARTHSIDE_STYLE, HUD_FONT_SIZE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
+import { titleFor } from './scene.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
 
 type Rect = { x: number; y: number; width: number; height: number }
 
-const PLATE_WIDTH = 96
-const PLATE_HEIGHT = 44
+const PLATE_WIDTH = 136
+const PLATE_HEIGHT = 52
 const PLATE_GAP = 10
 const CONTENT_MARGIN = 18
 
@@ -78,9 +78,9 @@ export function createExpressionPalette(
   createText: RendererTextFactory,
 ): ExpressionPalette {
   const plates = EMOTE_PLATES.map((emote) =>
-    buildPlate(layer, createText, emote.rect, labelFor(emote.token), 13, emote.hotkey),
+    buildPlate(layer, createText, emote.rect, titleFor(emote.token), emote.hotkey),
   )
-  const usePlate = buildPlate(layer, createText, USE_PLATE_RECT, 'Use', 15, '0')
+  const usePlate = buildPlate(layer, createText, USE_PLATE_RECT, 'Use', '0')
 
   const paint = (queued: string | null, useHovered: boolean, resolution: number): void => {
     for (const [index, plate] of plates.entries()) {
@@ -118,12 +118,11 @@ function buildPlate(
   createText: RendererTextFactory,
   rect: Rect,
   labelText: string,
-  labelSize: number,
   hotkeyText: string,
 ): Plate {
   const panel = new Graphics()
   layer.addChild(panel)
-  const label = createText(labelText, labelSize, PALETTE.bone, 'center')
+  const label = createText(labelText, HUD_FONT_SIZE, PALETTE.bone, 'center')
   label.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2)
   layer.addChild(label)
   const hotkey = createText(hotkeyText, 11, PALETTE.bone, 'right')

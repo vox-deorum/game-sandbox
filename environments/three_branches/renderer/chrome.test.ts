@@ -59,7 +59,8 @@ describe('Three Branches chrome strip', () => {
       if (dynamic === null)
         throw new Error('the fixture should carry an overlay on its first frame.')
       expect(dynamic.terminal).toBe(false)
-      expect(statusText(frameScene, 999)).toBe(`${dynamic.phase} · Tick ${dynamic.tick}`)
+      const dayScene = { ...frameScene, dynamic: { ...dynamic, phase: 'day' } }
+      expect(statusText(dayScene, 999)).toBe(`Day · Tick ${dynamic.tick}`)
     })
 
     it('appends Complete on the terminal frame', () => {
@@ -67,7 +68,7 @@ describe('Three Branches chrome strip', () => {
       if (dynamic === null) throw new Error('the fixture should end on a terminal overlay frame.')
       expect(dynamic.terminal).toBe(true)
       expect(statusText(terminalScene, 999)).toBe(
-        `${dynamic.phase} · Tick ${dynamic.tick} · Complete`,
+        `${dynamic.phase.charAt(0).toUpperCase()}${dynamic.phase.slice(1)} · Tick ${dynamic.tick} · Complete`,
       )
     })
   })

@@ -1,7 +1,8 @@
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics, type Text } from 'pixi.js'
 
-import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
+import { HEARTHSIDE_STYLE, HUD_FONT_SIZE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
+import { titleFor } from './scene.js'
 import type { FrameScene } from './types.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
@@ -33,7 +34,7 @@ export interface ChromeLayer {
 export function statusText(scene: FrameScene, fallbackTick: number): string {
   const dynamic = scene.dynamic
   if (dynamic === null) return `Opening · Tick ${fallbackTick}`
-  return `${dynamic.phase} · Tick ${dynamic.tick}${dynamic.terminal ? ' · Complete' : ''}`
+  return `${titleFor(dynamic.phase)} · Tick ${dynamic.tick}${dynamic.terminal ? ' · Complete' : ''}`
 }
 
 /** The bell's state word, or null when the village has no bell or no frame has landed. */
@@ -53,7 +54,6 @@ type Rect = { x: number; y: number; width: number; height: number }
 
 const BELL_ICON_X = 560
 const BELL_ICON_SIZE = 18
-const CHROME_FONT_SIZE = 20
 const TEXTURE_FLECK_COUNT = 40
 
 /**
@@ -71,7 +71,7 @@ export function createChrome(layer: Container, createText: RendererTextFactory):
   layer.addChild(textureFlecks(width, height))
   layer.addChild(new Graphics().rect(0, height - 1, width, 1).fill(PALETTE.ink))
 
-  const status = textAt(layer, createText, 16, height / 2, CHROME_FONT_SIZE, PALETTE.ink)
+  const status = textAt(layer, createText, 16, height / 2, HUD_FONT_SIZE, PALETTE.ink)
 
   const bellIcon = new Graphics()
   layer.addChild(bellIcon)
@@ -80,7 +80,7 @@ export function createChrome(layer: Container, createText: RendererTextFactory):
     createText,
     BELL_ICON_X + BELL_ICON_SIZE + 10,
     height / 2,
-    CHROME_FONT_SIZE,
+    HUD_FONT_SIZE,
     PALETTE.ink,
   )
 
@@ -123,7 +123,7 @@ function plate(layer: Container, createText: RendererTextFactory, rect: Rect): P
   const panel = new Graphics()
   layer.addChild(panel)
   paintPlate(panel, rect, false)
-  const label = createText('', CHROME_FONT_SIZE, PALETTE.bone, 'center')
+  const label = createText('', HUD_FONT_SIZE, PALETTE.bone, 'center')
   label.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2)
   layer.addChild(label)
   return { panel, label }

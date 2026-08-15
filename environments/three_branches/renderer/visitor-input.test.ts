@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { EMOTE_PLATES, USE_PLATE_RECT } from './palette.js'
 import { testText } from './test-helpers.js'
-import { createVisitorInput, type VisitorInputController } from './visitor-input.js'
+import {
+  createVisitorInput,
+  JOYSTICK_CENTER,
+  type VisitorInputController,
+} from './visitor-input.js'
 
 const PACE_MS = 250
 
@@ -149,15 +153,17 @@ describe('Three Branches visitor input', () => {
     })
 
     it('publishes the palette geometry probes while controlled', () => {
-      const { container } = mount()
+      const { container, padLayer } = mount()
       expect(container.getAttribute('data-three-branches-input')).toBe('ready')
-      expect(container.getAttribute('data-three-branches-use-button')).toBe('768,938,96,44')
-      expect(container.getAttribute('data-three-branches-emote-wave')).toBe('874,830,96,44')
-      expect(container.getAttribute('data-three-branches-emote-shake-head')).toBe('1086,830,96,44')
+      expect(container.getAttribute('data-three-branches-use-button')).toBe('608,930,136,52')
+      expect(container.getAttribute('data-three-branches-emote-wave')).toBe('754,806,136,52')
+      expect(container.getAttribute('data-three-branches-emote-shake-head')).toBe('1046,806,136,52')
       expect(container.getAttribute('data-three-branches-queued')).toBe('none')
       expect(container.getAttribute('data-three-branches-last-action')).toBe('none')
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       expect(container.getAttribute('data-three-branches-use-preview')).toBe('none')
+      expect(padLayer.children).toHaveLength(1)
+      expect(padLayer.visible).toBe(true)
     })
   })
 
@@ -223,31 +229,31 @@ describe('Three Branches visitor input', () => {
   })
 
   describe('joystick', () => {
-    it('summons at the press point, drives the drag heading and speed, and stops on release', () => {
+    it('stays at the bottom left, drives a drag, and returns to idle on release', () => {
       const { container, surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('200,400')
-      pointer(window, 'pointermove', 1, 200, 330)
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
-      pointer(window, 'pointerup', 1, 200, 330)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       vi.advanceTimersByTime(PACE_MS * 3)
       expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('reads a dead-zone drag as no movement', () => {
       const { surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      pointer(window, 'pointermove', 1, 205, 400)
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x + 5, JOYSTICK_CENTER.y)
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).not.toHaveBeenCalled()
     })
 
     it('saturates at full speed past the pad ring', () => {
       const { surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      pointer(window, 'pointermove', 1, 200, 900)
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y + 200)
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 270, speed: 1, action: 0 })
     })
@@ -255,51 +261,52 @@ describe('Three Branches visitor input', () => {
     it('wins over held keys while engaged', () => {
       const { surface, sendAction } = mount()
       key('keydown', 'KeyS')
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      pointer(window, 'pointermove', 1, 200, 330)
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
     })
 
-    it('claims left-half presses before the camera gestures and leaves the rest alone', () => {
+    it('claims only the fixed pad and leaves the rest of the left side to the camera', () => {
       const { container, surface } = mount()
       const bubbled = vi.fn()
       container.addEventListener('pointerdown', bubbled)
-      pointer(surface, 'pointerdown', 1, 200, 400)
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
       expect(bubbled).not.toHaveBeenCalled()
-      pointer(window, 'pointerup', 1, 200, 400)
-      // The right half keeps the camera drag, and the chrome strip keeps its own clicks.
-      pointer(surface, 'pointerdown', 2, 700, 400)
+      pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(surface, 'pointerdown', 2, 200, 400)
       expect(bubbled).toHaveBeenCalledTimes(1)
-      pointer(window, 'pointerup', 2, 700, 400)
+      pointer(window, 'pointerup', 2, 200, 400)
       pointer(surface, 'pointerdown', 3, 200, 20)
       expect(bubbled).toHaveBeenCalledTimes(2)
     })
 
-    it('does not summon a pad from the right half', () => {
-      const { container, surface } = mount()
-      pointer(surface, 'pointerdown', 1, 700, 400)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+    it('does not engage from outside the fixed pad', () => {
+      const { container, surface, sendAction } = mount()
+      pointer(surface, 'pointerdown', 1, 200, 400)
+      pointer(window, 'pointermove', 1, 200, 330)
+      vi.advanceTimersByTime(PACE_MS)
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
+      expect(sendAction).not.toHaveBeenCalled()
     })
 
-    it('does not summon or claim a right-button mouse press in the left half', () => {
+    it('does not engage or claim a right-button mouse press on the pad', () => {
       const { container, surface } = mount()
       const bubbled = vi.fn()
       container.addEventListener('pointerdown', bubbled)
       // Button 2 (right) on pointerId 1: a mouse's every button shares that pointerId.
-      pointer(surface, 'pointerdown', 1, 200, 400, true, 2)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 2)
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       expect(bubbled).toHaveBeenCalledTimes(1)
     })
 
     it('keeps a left-button drag engaged through a right-button press and release on the same pointer', () => {
-      const { container, surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      pointer(window, 'pointermove', 1, 200, 330)
+      const { surface, sendAction } = mount()
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       // The right button rides pointerId 1 too, and must not cancel or stop the engaged drag.
-      pointer(surface, 'pointerdown', 1, 200, 400, true, 2)
-      pointer(window, 'pointerup', 1, 200, 400, true, 2)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('200,400')
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 2)
+      pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 2)
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
     })
@@ -308,45 +315,54 @@ describe('Three Branches visitor input', () => {
       const { container, surface, sendAction } = mount()
       const bubbled = vi.fn()
       container.addEventListener('pointerdown', bubbled)
-      pointer(surface, 'pointerdown', 1, 200, 400)
-      pointer(window, 'pointermove', 1, 200, 330)
-      pointer(surface, 'pointerdown', 2, 220, 410, false, 0, 'touch')
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
+      pointer(
+        surface,
+        'pointerdown',
+        2,
+        JOYSTICK_CENTER.x + 20,
+        JOYSTICK_CENTER.y,
+        false,
+        0,
+        'touch',
+      )
       expect(bubbled).toHaveBeenCalledTimes(1)
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('200,400')
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
     })
 
     it('engages and releases the joystick from a primary pen press', () => {
       const { container, surface, sendAction } = mount()
-      pointer(surface, 'pointerdown', 1, 200, 400, true, 0, 'pen')
-      pointer(window, 'pointermove', 1, 200, 330, true, 0, 'pen')
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('200,400')
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 0, 'pen')
+      pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       vi.advanceTimersByTime(PACE_MS)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
-      pointer(window, 'pointerup', 1, 200, 330, true, 0, 'pen')
-      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
     })
 
-    it('claims a left-half double click so it cannot reset the camera', () => {
+    it('claims a pad double click and leaves other left-side double clicks to the camera', () => {
       const { container, surface } = mount()
       const bubbled = vi.fn()
       container.addEventListener('dblclick', bubbled)
-      const left = new MouseEvent('dblclick', {
+      const pad = new MouseEvent('dblclick', {
+        bubbles: true,
+        cancelable: true,
+        clientX: JOYSTICK_CENTER.x,
+        clientY: JOYSTICK_CENTER.y,
+      })
+      surface.dispatchEvent(pad)
+      expect(bubbled).not.toHaveBeenCalled()
+      const outside = new MouseEvent('dblclick', {
         bubbles: true,
         cancelable: true,
         clientX: 200,
         clientY: 400,
       })
-      surface.dispatchEvent(left)
-      expect(bubbled).not.toHaveBeenCalled()
-      const right = new MouseEvent('dblclick', {
-        bubbles: true,
-        cancelable: true,
-        clientX: 700,
-        clientY: 400,
-      })
-      surface.dispatchEvent(right)
+      surface.dispatchEvent(outside)
       expect(bubbled).toHaveBeenCalledTimes(1)
     })
   })
@@ -441,12 +457,13 @@ describe('Three Branches visitor input', () => {
 
   describe('session end', () => {
     it('stops sending and hides the input UI on the terminal frame', () => {
-      const { container, surface, sendAction, paletteLayer, controller } = mount()
+      const { container, surface, sendAction, padLayer, paletteLayer, controller } = mount()
       key('keydown', 'KeyW')
-      pointer(surface, 'pointerdown', 1, 200, 400)
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
       controller.handleFrame(true)
       expect(container.getAttribute('data-three-branches-input')).toBe('ended')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      expect(padLayer.visible).toBe(false)
       expect(paletteLayer.visible).toBe(false)
       key('keydown', 'KeyS')
       vi.advanceTimersByTime(PACE_MS * 4)

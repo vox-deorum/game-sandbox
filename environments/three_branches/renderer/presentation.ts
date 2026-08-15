@@ -55,6 +55,9 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   speechMaxLines: 4,
 } as const
 
+/** Shared type size for the fixed information strip and live action controls. */
+export const HUD_FONT_SIZE = 20
+
 /** Semantic diagnostic colors used by chrome, collision, and the pre-art fallback. */
 export interface ThreeBranchesPalette {
   /** Canvas backdrop. */

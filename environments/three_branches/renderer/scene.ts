@@ -140,6 +140,14 @@ export function labelFor(token: string): string {
   return token.replaceAll('_', ' ')
 }
 
+/** Convert a rules token into a title-cased interface label. */
+export function titleFor(token: string): string {
+  return labelFor(token)
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function shapeOf(value: string): 'box' | 'circle' {
   if (value === 'box' || value === 'circle') return value
   throw new Error(`Unknown catalog shape ${value}.`)

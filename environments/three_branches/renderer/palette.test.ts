@@ -40,8 +40,10 @@ describe('Three Branches expression palette', () => {
       expect(rect.y).toBeGreaterThan(THREE_BRANCHES_PRESENTATION.chromeHeight)
       expect(rect.y + rect.height).toBeLessThanOrEqual(size.height)
       expect(rect.x + rect.width).toBeLessThanOrEqual(size.width)
-      // The joystick claims presses left of the content midline; every plate stays right of it.
+      // The palette stays in the right half, well clear of the fixed bottom-left joystick.
       expect(rect.x).toBeGreaterThanOrEqual(size.width / 2)
+      expect(rect.width).toBe(136)
+      expect(rect.height).toBe(52)
     }
   })
 
@@ -84,11 +86,16 @@ describe('Three Branches expression palette', () => {
     const labels = layer.children.filter((child): child is Text => child instanceof Text)
     // Each of the ten plates carries a label and a hotkey digit.
     expect(labels).toHaveLength(20)
-    const waveLabel = labels.find((label) => label.text === 'wave')
+    const waveLabel = labels.find((label) => label.text === 'Wave')
     if (waveLabel === undefined) throw new Error('the palette should label the wave plate.')
-    expect(labels.some((label) => label.text === 'shake head')).toBe(true)
+    expect(labels.some((label) => label.text === 'Shake Head')).toBe(true)
     expect(labels.some((label) => label.text === 'Use')).toBe(true)
     expect(labels.some((label) => label.text === '0')).toBe(true)
+    expect(
+      labels
+        .filter((label) => !/^\d$/.test(label.text))
+        .every((label) => label.style.fontSize === 20),
+    ).toBe(true)
 
     palette.update('wave', false, 2)
     expect(waveLabel.style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)

@@ -80,13 +80,13 @@ Step 6 implements this specification without further design work. Controls appea
 | chrome strip                               |
 +--------------------------------------------+
 |                world                       |
-|    .------.                                |
-|   (  (o)   )   pad appears at the press    |
-|    '------'    point in the left half      |
+| .------.                                   |
+| (  (o)   )     fixed movement pad          |
+| '------'                                   |
 +--------------------------------------------+
 ```
 
-- A floating virtual joystick serves pointer and touch. A primary press in the left half of the content area summons the pad at the press point. Dragging sets heading from the drag angle and relative speed from the drag distance, with a 15 percent dead zone and full speed at the pad ring. Release stops the visitor and hides the pad. The rest of the content area keeps the camera gestures.
+- A permanent virtual joystick sits in the bottom-left of the content area for pointer and touch. A primary press inside its ring engages the fixed pad. Dragging sets heading from the drag angle and relative speed from the drag distance, with a 15 percent dead zone and full speed at the pad ring. Release stops the visitor and returns the knob to the center. Presses outside the pad and expression palette keep the camera gestures, including the double-click or double-tap that resumes visitor follow.
 - Keyboard locomotion uses WASD and the arrow keys for eight-way headings at full speed. Holding Shift halves the speed. Opposing keys cancel on their axis, and cancelling on both axes yields no keyboard heading.
 - Input composes once per 250 millisecond window: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default.
 
@@ -94,11 +94,11 @@ Step 6 implements this specification without further design work. Controls appea
 
 ```text
 +---------+---------+---------+
-| wave    | nod     | shake   |   1 2 3
+| Wave    | Nod     | Shake   |   1 2 3
 +---------+---------+---------+
-| point   | laugh   | shrug   |   4 5 6
+| Point   | Laugh   | Shrug   |   4 5 6
 +---------+---------+---------+
-| startle | sleep   | sweep   |   7 8 9
+| Startle | Sleep   | Sweep   |   7 8 9
 +---------+---------+---------+
           +---------+
           |   Use   |   0
@@ -118,7 +118,7 @@ The shared panel's composer sends broadcasts and direct lines through the recipi
 
 - Renderer unit tests cover the chrome elements and their states, the collision overlay's off default and C toggle, nameplate zoom gating, bubble tagging, wrapping, replacement, and seek clearing, unified camera follow, suspension, and reset, and tuned fixture zoom limits.
 - Shared panel tests cover the display-name hook in chat rows, badges, and the recipient selector on the session and replay pages.
-- The Three Branches browser journey covers the off collision default, the button, the C key, and Recenter.
+- The Three Branches browser journeys cover the off collision default, the button, the C key, Recenter, the permanent joystick, and visitor camera follow during live play.
 - Update locators whenever markup moves.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.
 
