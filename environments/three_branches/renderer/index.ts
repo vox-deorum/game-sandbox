@@ -14,8 +14,9 @@ import { PixiRenderer } from '@renderers/base/PixiRenderer.js'
 import type { GroundView, TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
+import { type AnnotationLayer, createAnnotationLayer } from './annotations.js'
 import { replaceFallback, runArtLoad } from './art-loading.js'
-import { loadThreeBranchesRuntimeAssets, THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
+import { loadThreeBranchesRuntimeAssets } from './assets.js'
 import { drawBuildings } from './buildings.js'
 import {
   initialVisitorCamera,
@@ -25,11 +26,11 @@ import {
   type VisitorCameraState,
 } from './camera.js'
 import { type CharacterLayer, createCharacterLayer } from './characters.js'
-import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome } from './chrome.js'
+import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome, RECENTER_RECT } from './chrome.js'
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
 import { drawMap, drawUpperWalls } from './map-layer.js'
-import { expectedCharacterIds, readStatic } from './overlay.js'
+import { expectedCharacterIds, readSpeech, readStatic } from './overlay.js'
 import {
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
@@ -38,8 +39,8 @@ import {
 } from './presentation.js'
 import { createPropLayer, type PropLayer } from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
-import thumbnail from './thumbnail.png'
 import { createTerrainArt } from './terrain-art.js'
+import thumbnail from './thumbnail.png'
 import type { CollisionShape, FrameScene, StaticScene } from './types.js'
 
 const CONTENT_SIZE = {
@@ -65,7 +66,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly expectedIds: readonly string[]
   private readonly staticScene: StaticScene
   private readonly staticCollisionShapes: readonly CollisionShape[]
-  private readonly visitorIsHumanControlled: boolean
   private worldRoot!: Container
   private mapLayer!: Container
   private upperLayer!: Container
@@ -75,11 +75,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private collision!: CollisionLayer
   private props!: PropLayer
   private characters!: CharacterLayer
+  private annotations!: AnnotationLayer
   private chrome!: ChromeLayer
   private cameraLimits!: CameraLimits
   private visitorCamera!: VisitorCameraState
   private cameraGestures: CameraGestures | null = null
-  private collisionVisible = true
+  private collisionVisible = false
   private correctedOpeningTarget = false
   private currentScene: FrameScene | null = null
   private presentedScene: FrameScene | null = null
@@ -87,6 +88,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private settleRemainingMs = 0
   private collisionTextZoom = Number.NaN
   private lastDeliveryAtMs: number | null = null
+  /** Whether the previous frame drew a bubble, so the frame that retires the last one still repaints. */
+  private wasSpeaking = false
 
   /** Parse immutable renderer inputs before Pixi builds the retained scene. */
   constructor(ctx: RendererContext) {
@@ -96,8 +99,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.expectedIds = expectedCharacterIds(ctx.header)
     this.staticScene = buildStaticScene(village)
     this.staticCollisionShapes = staticCollision(this.staticScene)
-    // Human attribution alone is not enough: controlledPlayers is empty for watch, replay, and ended play.
-    this.visitorIsHumanControlled = ctx.controlledPlayers.includes('player_0')
   }
 
   protected setup(root: Container): void {
@@ -114,12 +115,15 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const characterLayer = new Container()
     this.upperLayer = new Container()
     const emissiveLayer = new Container()
+    const annotationLayer = new Container()
     const collisionLayer = new Container()
     const chromeLayer = new Container()
     gradedWorld.filters = [new ColorMatrixFilter()]
     gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, this.upperLayer)
     this.worldRoot = new Container()
-    this.worldRoot.addChild(gradedWorld, emissiveLayer, collisionLayer)
+    // Nameplates and bubbles ride above the graded world and below the collision overlay, so the
+    // information layer is never colour-graded and the diagnostic layer still reads on top of it.
+    this.worldRoot.addChild(gradedWorld, emissiveLayer, annotationLayer, collisionLayer)
     this.worldRoot.mask = contentMask
     root.addChild(backdrop, contentMask, this.worldRoot, chromeLayer)
 
@@ -127,7 +131,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
     this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
     this.characters = createCharacterLayer(characterLayer)
+    this.annotations = createAnnotationLayer(annotationLayer)
     this.collision = createCollisionLayer(collisionLayer)
+    this.collision.setVisible(this.collisionVisible)
     this.chrome = createChrome(chromeLayer)
 
     this.cameraLimits = cameraLimits(
@@ -142,13 +148,14 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.cameraLimits,
       CONTENT_SIZE,
       this.staticScene.spawn,
-      this.visitorIsHumanControlled,
     )
     this.applyCamera()
     this.wireCamera(root)
     this.ctx.container.dataset.threeBranchesGround = 'ready'
     this.ctx.container.dataset.threeBranchesAssets = 'loading'
-    this.ctx.container.dataset.threeBranchesCollisionToggle = `${COLLISION_TOGGLE_RECT.x},${COLLISION_TOGGLE_RECT.y},${COLLISION_TOGGLE_RECT.width},${COLLISION_TOGGLE_RECT.height}`
+    this.ctx.container.dataset.threeBranchesCollision = this.collisionVisible ? 'on' : 'off'
+    this.ctx.container.dataset.threeBranchesCollisionToggle = probeRect(COLLISION_TOGGLE_RECT)
+    this.ctx.container.dataset.threeBranchesRecenter = probeRect(RECENTER_RECT)
     void this.loadArt()
   }
 
@@ -158,6 +165,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
+    // A replay-position jump shows only the tick it lands on. Animation-only snaps used for resize
+    // and asset redraws retain the current bubble ages.
+    if (options?.seek === true) this.annotations.clear()
+    this.annotations.deliver(readSpeech(state, this.expectedIds))
     this.props.reconcile(scene)
     this.collision.drawStatic(
       collisionWithPropStates(this.staticCollisionShapes, scene),
@@ -185,10 +196,14 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.updateProbes(state, scene)
   }
 
-  /** Advance character interpolation and its human-controlled visitor camera. */
+  /** Advance character interpolation, the visitor camera, and the speech bubbles' hold and fade. */
   protected override onFrame(dtMs: number): boolean {
+    const speaking = this.annotations.advance(dtMs)
+    const wasSpeaking = this.wasSpeaking
+    this.wasSpeaking = speaking
     const movement = this.movement
     if (movement !== null) {
+      // Presenting a frame redraws the annotations along with everything else.
       movement.elapsedMs += dtMs
       const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
       this.presentScene(interpolateScene(movement.from, movement.to, progress))
@@ -196,10 +211,13 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         this.movement = null
         this.settleRemainingMs = HEARTHSIDE_STYLE.transition.settleGraceMs
       }
-      return this.movement !== null || this.settleRemainingMs > 0
+      return this.movement !== null || this.settleRemainingMs > 0 || speaking
     }
+    // A still frame repaints only for the bubbles, including the frame that retires the last one,
+    // so a faded bubble leaves the screen rather than holding its final opacity.
+    if (speaking || wasSpeaking) this.redrawAnnotations()
     this.settleRemainingMs = Math.max(0, this.settleRemainingMs - dtMs)
-    return this.settleRemainingMs > 0
+    return this.settleRemainingMs > 0 || speaking
   }
 
   /** Report only the finite state-to-state character transition to the host. */
@@ -213,6 +231,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.cameraGestures?.detach()
     this.cameraGestures = null
     this.ctx.container.removeEventListener('click', this.onChromeClick)
+    window.removeEventListener('keydown', this.onKeyDown)
     this.movement = null
     this.settleRemainingMs = 0
     super.destroy()
@@ -232,20 +251,27 @@ export class ThreeBranchesRenderer extends PixiRenderer {
    */
   private readonly onChromeClick = (event: MouseEvent): void => {
     const view = this.viewPoint({ x: event.clientX, y: event.clientY })
-    if (
-      view.x >= COLLISION_TOGGLE_RECT.x &&
-      view.x <= COLLISION_TOGGLE_RECT.x + COLLISION_TOGGLE_RECT.width &&
-      view.y >= COLLISION_TOGGLE_RECT.y &&
-      view.y <= COLLISION_TOGGLE_RECT.y + COLLISION_TOGGLE_RECT.height
-    ) {
-      this.toggleCollision()
-    }
+    if (within(view, COLLISION_TOGGLE_RECT)) this.toggleCollision()
+    else if (within(view, RECENTER_RECT)) this.resetCamera()
+  }
+
+  /**
+   * Keyboard access to the collision overlay. The page owns the keyboard everywhere else, so a key
+   * pressed while a field, a menu, or another handler has it never reaches the toggle.
+   */
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.repeat || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey)
+      return
+    if (event.key !== 'c' && event.key !== 'C') return
+    if (isTextEntry(event.target)) return
+    this.toggleCollision()
   }
 
   private wireCamera(root: Container): void {
     root.eventMode = 'passive'
     root.interactiveChildren = true
     this.ctx.container.addEventListener('click', this.onChromeClick)
+    window.addEventListener('keydown', this.onKeyDown)
     this.cameraGestures = wireCameraGestures(this.ctx.container, {
       toView: (clientPoint) => this.viewPoint(clientPoint),
       accepts: (view) =>
@@ -275,17 +301,17 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         )
       },
       reset: () => {
-        const previous = cameraProbeValue(this.visitorCamera.camera)
-        this.visitorCamera = resetVisitorCamera(
-          this.visitorCamera,
-          this.cameraLimits,
-          CONTENT_SIZE,
-          this.visitorIsHumanControlled,
-        )
-        this.applyCamera()
-        this.redrawCameraIfChanged(previous)
+        this.resetCamera()
       },
     })
+  }
+
+  /** Recenter on the current visitor at the focus zoom and resume following it. */
+  private readonly resetCamera = (): void => {
+    const previous = cameraProbeValue(this.visitorCamera.camera)
+    this.visitorCamera = resetVisitorCamera(this.visitorCamera, this.cameraLimits, CONTENT_SIZE)
+    this.applyCamera()
+    this.redrawCameraIfChanged(previous)
   }
 
   private contentPoint(point: { x: number; y: number }): { x: number; y: number } {
@@ -314,10 +340,24 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.worldRoot.position.set(transform.x, THREE_BRANCHES_PRESENTATION.chromeHeight + transform.y)
     this.worldRoot.scale.set(transform.scale)
     this.ctx.container.dataset.threeBranchesCamera = cameraProbeValue(this.visitorCamera.camera)
+    // Plates and bubbles counter-scale against the camera to hold one readable size, so they follow
+    // every camera change as well as every frame.
+    this.redrawAnnotations()
     if (this.collisionTextZoom !== this.visitorCamera.camera.zoom) {
       this.collisionTextZoom = this.visitorCamera.camera.zoom
       this.redrawAllCollision()
     }
+  }
+
+  private redrawAnnotations(): void {
+    const scene = this.presentedScene
+    if (scene === null) return
+    this.annotations.reconcile(
+      scene,
+      this.visitorCamera.camera.zoom,
+      this.cameraLimits.minZoom,
+      this.textResolution(),
+    )
   }
 
   private readonly toggleCollision = (): void => {
@@ -341,7 +381,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const visitor = scene.characters.find((character) => character.id === 'visitor')
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
-      // interpolated visitor only while the live owner retains human control and has not panned.
+      // interpolated visitor until a manual gesture suspends it.
       this.visitorCamera = updateVisitorCamera(
         this.visitorCamera,
         this.cameraLimits,
@@ -415,6 +455,33 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 }
 
+function probeRect(rect: { x: number; y: number; width: number; height: number }): string {
+  return `${rect.x},${rect.y},${rect.width},${rect.height}`
+}
+
+function within(
+  point: { x: number; y: number },
+  rect: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  )
+}
+
+/** Whether a key event landed in something the person is typing into. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
+  )
+}
+
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {
   const prior = new Map(from.characters.map((character) => [character.id, character]))
   return to.characters.some((character) => {
@@ -437,6 +504,12 @@ const definition = {
   key: 'three-branches-village',
   renderer: ThreeBranchesRenderer,
   thumbnail,
+  // Students, guides, and observations speak only of the visitor and the NPCs, so the host's chat
+  // surfaces name a line's speaker and addressee the same way the village itself does.
+  playerNames: (header: RecordingHeader) =>
+    Object.fromEntries(
+      expectedCharacterIds(header).map((characterId, index) => [`player_${index}`, characterId]),
+    ),
 } satisfies RendererDefinition
 
 export default definition

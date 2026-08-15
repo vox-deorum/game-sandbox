@@ -132,12 +132,26 @@ describe('ReplayTransport', () => {
   })
 
   it('scrubs by rendering the state under the index', () => {
-    const { transport, frames } = makeTransport()
+    const { transport, frames, optionsSeen } = makeTransport()
     transport.seek(3)
     expect(transport.index).toBe(3)
     expect(frames.at(-1)).toBe(3)
     transport.seek(99)
     expect(transport.index).toBe(3) // clamped to the last
+    expect(optionsSeen.slice(-2)).toEqual([
+      { snap: true, seek: true },
+      { snap: true, seek: true },
+    ])
+  })
+
+  it('marks a same-index render as a seek', () => {
+    const { transport, optionsSeen } = makeTransport()
+    transport.renderCurrent()
+    transport.stepBack()
+    expect(optionsSeen).toEqual([
+      { snap: true, seek: true },
+      { snap: true, seek: true },
+    ])
   })
 
   it('seeks to a tick (the ?t= deep link), falling to the latest frame at or before it', () => {

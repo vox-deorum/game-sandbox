@@ -217,6 +217,51 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
 
+  it('shows environment-supplied display names on a row and its targeted badge', () => {
+    const names = { player_0: 'Mira', player_1: 'Nils' }
+    const entries: ChatEntry[] = [
+      { tick: 1, from: 'player_0', to: 'player_1', text: 'meet at the inn' },
+    ]
+    const { container } = render(ChatPanel, {
+      props: { entries, players: PLAYERS, viewerPlayers: ['player_2'], playerNames: names },
+    })
+
+    // The player field and the targeted badge both show the character name, not the compact id.
+    expect(container.querySelector('.chat-player')?.textContent).toBe('Mira')
+    expect(screen.getByText('to Nils')).toBeInTheDocument()
+    expect(screen.queryByText('P0')).toBeNull()
+  })
+
+  it('labels recipient options by name but keeps platform player ids as their values and payload', async () => {
+    const names = { player_0: 'Mira', player_1: 'Nils', player_3: 'Odalys' }
+    const { emitted } = render(ChatPanel, {
+      props: {
+        entries: [],
+        players: PLAYERS,
+        viewerPlayers: ['player_2'],
+        playerNames: names,
+        sendable: true,
+        messageCap: 120,
+        ...LIVE_POLICY,
+      },
+    })
+    const recipient = screen.getByRole('combobox')
+    const input = screen.getByRole('textbox')
+
+    // Labelled by name, not by the compact id.
+    expect(screen.getByRole('option', { name: 'Nils' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'P1' })).toBeNull()
+
+    // Selecting the name-labelled option still sends the platform player id: the send payload must
+    // carry player_1, not the character name.
+    await fireEvent.update(recipient, 'player_1')
+    await fireEvent.update(input, 'meet at the inn')
+    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(emitted('send')?.[0]).toEqual([
+      { sender: 'player_2', to: 'player_1', text: 'meet at the inn' },
+    ])
+  })
+
   it('resets the recipient but retains the draft when the designated sender changes', async () => {
     const props = {
       entries: [] as ChatEntry[],

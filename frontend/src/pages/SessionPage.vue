@@ -54,6 +54,7 @@ import { decisionEntries } from '../lib/state.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { summarizeStates } from '../replay/summary.js'
+import { playerNamesFor } from '../renderers/registry.js'
 
 const route = useRoute()
 const me = useMe()
@@ -72,6 +73,14 @@ const seasonPlayable = ref<boolean | null>(null)
 const anonymousNumbers = ref<Record<string, number>>({})
 // The recording header carries per-player attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)
+// The environment's own display names for this recording's players (e.g. Days at Three Branches'
+// character names), for the chat surfaces to show in place of compact player ids. Undefined until the
+// renderer's metadata and the header are both in, or when the renderer supplies none.
+const chatPlayerNames = computed(() =>
+  meta.value === null || header.value === null
+    ? undefined
+    : playerNamesFor(meta.value.renderer, header.value),
+)
 // The last frame drawn, kept so the end-of-match leaderboard can read the terminal scores/overlay.
 // shallowRef: a StepState is a large value the card reads whole, not deep-reactive data.
 const lastState = shallowRef<StepState | null>(null)
@@ -445,6 +454,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :anonymous-numbers="anonymousNumbers"
               :viewer-players="viewerPlayers"
               :message-cap="row?.message_cap ?? null"
+              :player-names="chatPlayerNames"
               v-bind="chatProps"
               @send="sendChat"
             />
@@ -469,6 +479,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :anonymous-numbers="anonymousNumbers"
             :viewer-players="viewerPlayers"
             :message-cap="row?.message_cap ?? null"
+            :player-names="chatPlayerNames"
             v-bind="chatProps"
             @send="sendChat"
           />

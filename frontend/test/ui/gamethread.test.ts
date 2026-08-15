@@ -126,6 +126,30 @@ describe('GameThread', () => {
     expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
   })
 
+  it('shows environment-supplied display names on message rows, not on decision rows', () => {
+    const names = { player_0: 'Mira', player_1: 'Nils', player_3: 'Odalys' }
+    const chat: ChatEntry[] = [
+      { tick: 3, from: 'player_1', to: 'player_3', text: 'cover the king' },
+    ]
+    const { container } = render(GameThread, {
+      props: { decisions: decisions(), chat, currentTick: 3, players: PLAYERS, playerNames: names },
+    })
+
+    // The message row shows the character name and badges its recipient by name too.
+    const message = container.querySelector('.thread-item--message')
+    expect(message?.querySelector('.thread-msg-player')?.textContent).toBe('Nils')
+    expect(screen.getByText('to Odalys')).toBeInTheDocument()
+
+    // Decision rows are the raw decision log: they keep the compact player id regardless.
+    const decisionRows = Array.from(container.querySelectorAll('.thread-item--decision'))
+    expect(decisionRows.map((row) => row.querySelector('.thread-player')?.textContent)).toEqual([
+      'P0',
+      'P1',
+      'P2',
+      'P3',
+    ])
+  })
+
   it('shows an empty state when there are no decisions', () => {
     render(GameThread, { props: { decisions: [], chat: [] } })
     expect(screen.getByText('No decisions yet.')).toBeInTheDocument()

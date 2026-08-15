@@ -1,16 +1,21 @@
 import {
   createSparseTiledGround,
   createTiledGround,
-  solidColorTileset,
   type GroundView,
-  type TileGrid,
+  solidColorTileset,
   type TiledGround,
+  type TileGrid,
 } from '@renderers/base/tiled-ground.js'
 import { Container, Graphics, GraphicsPath } from 'pixi.js'
 
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
-import { type TerrainContourChain, type TerrainContourPlan, type TerrainContourPoint, type TerrainContourRing } from './terrain-contours.js'
 import { type TerrainArt, transparentUpperGrid } from './terrain-art.js'
+import type {
+  TerrainContourChain,
+  TerrainContourPlan,
+  TerrainContourPoint,
+  TerrainContourRing,
+} from './terrain-contours.js'
 import type { StaticScene } from './types.js'
 
 const CONTOURED_MATERIALS = ['field', 'reeds', 'water', 'path', 'road'] as const
@@ -36,6 +41,15 @@ export interface ShorelineStrokeRun {
   readonly points: readonly TerrainContourPoint[]
   readonly alpha: number
   readonly closed: boolean
+}
+
+/** Return the configured composite alpha for one sparse natural material surface. */
+export function materialLayerAlpha(material: ContouredMaterial): number {
+  const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
+  if (treatment === undefined) {
+    throw new Error(`Three Branches presentation has no ${material} terrain fill.`)
+  }
+  return treatment.opacity
 }
 
 /** Draw the diagnostic fallback or vector-masked Hearthside terrain. */
@@ -70,6 +84,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
       { cellSize, variant: art.variant },
     )
     const mask = contourMask(art.contours, material, cellSize)
+    ground.view.alpha = materialLayerAlpha(material)
     ground.view.mask = mask
     owner.addChild(ground.view, mask)
     grounds.push(ground)
@@ -177,7 +192,8 @@ export function contourMask(
     if (outer === undefined) throw new Error(`Terrain component ${component.id} has no outer ring.`)
     const holes = component.holeRingIds.map((holeId) => {
       const hole = rings.get(holeId)
-      if (hole === undefined) throw new Error(`Terrain component ${component.id} has a missing hole ring.`)
+      if (hole === undefined)
+        throw new Error(`Terrain component ${component.id} has a missing hole ring.`)
       return hole
     })
     mask.path(signedComponentPath(outer, holes, cellSize)).fill('#ffffff')
@@ -204,9 +220,14 @@ export function shorelineStrokeRuns(
     return alpha <= 0 ? [] : [{ points: chain.points, alpha, closed: true }]
   }
   const pivot = chain.closed
-    ? alphas.findIndex((alpha, index) => !sameAlpha(alpha, alphas[(index - 1 + segmentCount) % segmentCount]!))
+    ? alphas.findIndex(
+        (alpha, index) => !sameAlpha(alpha, alphas[(index - 1 + segmentCount) % segmentCount]!),
+      )
     : 0
-  const order = Array.from({ length: segmentCount }, (_, index) => (index + Math.max(0, pivot)) % segmentCount)
+  const order = Array.from(
+    { length: segmentCount },
+    (_, index) => (index + Math.max(0, pivot)) % segmentCount,
+  )
   const runs: ShorelineStrokeRun[] = []
   let points: TerrainContourPoint[] | undefined
   let alpha = 0
@@ -241,7 +262,8 @@ export function shorelineGraphics(plan: TerrainContourPlan, cellSize: number): G
         const first = run.points[0]
         if (first === undefined) continue
         shoreline.moveTo(first.x * cellSize, first.y * cellSize)
-        for (const point of run.points.slice(1)) shoreline.lineTo(point.x * cellSize, point.y * cellSize)
+        for (const point of run.points.slice(1))
+          shoreline.lineTo(point.x * cellSize, point.y * cellSize)
         if (run.closed) shoreline.closePath()
         shoreline.stroke({
           color: HEARTHSIDE_STYLE.palette[band.tint],
@@ -298,7 +320,8 @@ export function drawUpperWalls(layer: Container, scene: StaticScene, art: Terrai
 
 function sourceCodeForMaterial(scene: StaticScene, material: string): string {
   const source = scene.ground.find((ground) => ground.name === material)
-  const bridge = material === 'water' ? scene.ground.find((ground) => ground.name === 'bridge') : undefined
+  const bridge =
+    material === 'water' ? scene.ground.find((ground) => ground.name === 'bridge') : undefined
   const code = source?.code ?? bridge?.code
   if (code === undefined) throw new Error(`Three Branches rules do not define ${material} terrain.`)
   return code

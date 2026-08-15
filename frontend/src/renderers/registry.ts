@@ -9,6 +9,8 @@
  * metadata changes.
  */
 
+import type { RecordingHeader } from '@game-sandbox/schema'
+
 // A neutral placeholder card image for environments whose renderer is not registered yet.
 import placeholderThumbnail from './placeholder.svg'
 import type { Renderer } from './types.js'
@@ -17,6 +19,7 @@ import type { Renderer } from './types.js'
 interface RegistryEntry {
   renderer: Renderer
   thumbnail: string
+  playerNames?: (header: RecordingHeader) => Readonly<Record<string, string>>
 }
 
 const registry = new Map<string, RegistryEntry>()
@@ -24,10 +27,17 @@ const registry = new Map<string, RegistryEntry>()
 /**
  * Register a renderer and its home-card thumbnail under its metadata `renderer` key. The thumbnail is
  * a static image asset URL (imported by the barrel), kept off the renderer so the cards never mount one
- * to show its art. The last registration for a key wins.
+ * to show its art. `playerNames` is optional: a renderer that supplies one lets the chat surfaces show
+ * its characters' names in place of a compact player id; a renderer that supplies none leaves the
+ * compact id as before. The last registration for a key wins.
  */
-export function registerRenderer(key: string, renderer: Renderer, thumbnail: string): void {
-  registry.set(key, { renderer, thumbnail })
+export function registerRenderer(
+  key: string,
+  renderer: Renderer,
+  thumbnail: string,
+  playerNames?: (header: RecordingHeader) => Readonly<Record<string, string>>,
+): void {
+  registry.set(key, { renderer, thumbnail, playerNames })
 }
 
 /** The renderer registered for a key, or `undefined` when none is registered yet. */
@@ -38,4 +48,24 @@ export function getRenderer(key: string): Renderer | undefined {
 /** The thumbnail for a renderer key, falling back to the placeholder when unregistered. */
 export function thumbnailFor(key: string): string {
   return registry.get(key)?.thumbnail ?? placeholderThumbnail
+}
+
+/**
+ * The environment's display names for a recording's players, or undefined when it supplies none.
+ *
+ * These names are decoration over ids the chat already has, so a renderer that cannot name a
+ * header falls back to the compact player id rather than taking the page down with it.
+ */
+export function playerNamesFor(
+  key: string,
+  header: RecordingHeader,
+): Readonly<Record<string, string>> | undefined {
+  const names = registry.get(key)?.playerNames
+  if (names === undefined) return undefined
+  try {
+    return names(header)
+  } catch (error) {
+    console.error(`Renderer '${key}' could not name this recording's players.`, error)
+    return undefined
+  }
 }

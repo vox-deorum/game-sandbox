@@ -915,6 +915,7 @@ interface ContourSpanIndex {
   readonly spans: readonly TerrainContourSpan[]
   readonly fixed: readonly OffsetInterval[]
   readonly bridgeSuppressed: readonly OffsetInterval[]
+  readonly vertexOffsets: readonly number[]
   readonly hasShoreline: boolean
 }
 
@@ -927,17 +928,23 @@ function smoothChain(
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
 ): TerrainContourPoint[] {
-  let points = sampleRawChain(rawPoints, spans, settings.sampleSpacingCells, closed)
+  const spanIndex = indexContourSpans(spans)
+  const lockOffsets = contourLockOffsets(
+    spanIndex.fixed,
+    rawLength,
+    closed,
+    settings.junctionTangentCells,
+  )
+  let points = sampleRawChain(rawPoints, spans, rawLength, settings.sampleSpacingCells, closed)
   for (let pass = 0; pass < settings.smoothingPasses; pass += 1) {
     points = chaikin(points, rawLength, closed, settings.cornerWeight)
   }
+  points = insertLockedPoints(points, lockOffsets, rawPoints, spans, rawLength, closed)
   const [minimumWavelength, maximumWavelength] = settings.noiseWavelengthCells
   const wavelengthUnit = terrainHash('contour-wavelength', id) / 2 ** 32
   const wavelength = minimumWavelength + wavelengthUnit * (maximumWavelength - minimumWavelength)
-  const phase = (terrainHash('contour-phase', id) / 2 ** 32) * Math.PI * 2
   const rawIndex = indexRawPolyline(rawPoints)
-  const spanIndex = indexContourSpans(spans)
-  return points.map((point, index) => {
+  const displaced = points.map((point, index) => {
     const locked = offsetLocked(
       point.rawOffset,
       spanIndex.fixed,
@@ -970,23 +977,23 @@ function smoothChain(
     const noise =
       settings.noiseAmplitudeCells *
       endpointFactor *
-      Math.sin((point.rawOffset / wavelength) * Math.PI * 2 + phase)
-    const displaced = {
+      smoothValueNoise(id, point.x / wavelength, point.y / wavelength)
+    const candidate = {
       x: point.x + (-(after.y - before.y) / tangentLength) * noise,
       y: point.y + ((after.x - before.x) / tangentLength) * noise,
     }
-    const projection = projectToPolyline(displaced, rawIndex)
-    const deviation = distance(displaced, projection.point)
+    const projection = projectToPolyline(candidate, rawIndex)
+    const deviation = distance(candidate, projection.point)
     const limited =
       deviation <= settings.maxDeviationCells
-        ? displaced
+        ? candidate
         : {
             x:
               projection.point.x +
-              ((displaced.x - projection.point.x) / deviation) * settings.maxDeviationCells,
+              ((candidate.x - projection.point.x) / deviation) * settings.maxDeviationCells,
             y:
               projection.point.y +
-              ((displaced.y - projection.point.y) / deviation) * settings.maxDeviationCells,
+              ((candidate.y - projection.point.y) / deviation) * settings.maxDeviationCells,
           }
     return {
       ...limited,
@@ -1001,6 +1008,39 @@ function smoothChain(
       ),
     }
   })
+  if (displaced.every((point) => point.locked)) return displaced
+  return repairCurveTube(
+    displaced,
+    rawPoints,
+    spanIndex,
+    rawLength,
+    closed,
+    settings,
+    bridgeTaperCells,
+    rawIndex,
+  )
+}
+
+/** Smooth deterministic lattice values avoid the repeating cadence of one sinusoid. */
+function smoothValueNoise(id: string, x: number, y: number): number {
+  const column = Math.floor(x)
+  const row = Math.floor(y)
+  const localX = x - column
+  const localY = y - row
+  const fade = (value: number): number => value * value * (3 - 2 * value)
+  const valueAt = (offsetX: number, offsetY: number): number =>
+    (avalancheHash(terrainHash('contour-noise', id, column + offsetX, row + offsetY)) / 2 ** 32) *
+      2 -
+    1
+  const blendX = fade(localX)
+  const blendY = fade(localY)
+  const northWest = valueAt(0, 0)
+  const northEast = valueAt(1, 0)
+  const southWest = valueAt(0, 1)
+  const southEast = valueAt(1, 1)
+  const north = northWest + (northEast - northWest) * blendX
+  const south = southWest + (southEast - southWest) * blendX
+  return north + (south - north) * blendY
 }
 
 function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanIndex {
@@ -1010,6 +1050,7 @@ function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanInd
     spans,
     fixed: spans.filter((span) => span.fixed).sort(byStartOffset),
     bridgeSuppressed: spans.filter((span) => span.bridgeSuppressed).sort(byStartOffset),
+    vertexOffsets: spans.map((span) => span.endOffset),
     hasShoreline: spans.some((span) => span.shoreline),
   }
 }
@@ -1017,28 +1058,76 @@ function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanInd
 function sampleRawChain(
   rawPoints: readonly ContourCoordinate[],
   spans: readonly TerrainContourSpan[],
+  rawLength: number,
   spacing: number,
   closed: boolean,
 ): WorkingPoint[] {
-  const points: WorkingPoint[] = []
-  for (let index = 0; index < spans.length; index += 1) {
-    const span = spans[index]!
-    const start = rawPoints[index]!
-    const end = rawPoints[index + 1]!
-    const count = Math.max(1, Math.ceil((span.endOffset - span.startOffset) / spacing))
-    for (let step = 0; step <= count; step += 1) {
-      if ((index > 0 && step === 0) || (closed && index === spans.length - 1 && step === count)) {
-        continue
-      }
-      const amount = step / count
-      points.push({
-        x: start.x + (end.x - start.x) * amount,
-        y: start.y + (end.y - start.y) * amount,
-        rawOffset: span.startOffset + (span.endOffset - span.startOffset) * amount,
-      })
-    }
+  const intervalCount = Math.max(closed ? 2 : 1, Math.ceil(rawLength / spacing))
+  const interval = rawLength / intervalCount
+  const offsets = Array.from({ length: intervalCount }, (_, index) => (index + 0.5) * interval)
+  if (!closed) offsets.push(0, rawLength)
+  return offsets
+    .sort((first, second) => first - second)
+    .map((rawOffset) => ({
+      ...rawPointAt(rawOffset, rawPoints, spans, rawLength, closed),
+      rawOffset,
+    }))
+}
+
+function contourLockOffsets(
+  fixedIntervals: readonly OffsetInterval[],
+  rawLength: number,
+  closed: boolean,
+  tangentLength: number,
+): number[] {
+  const offsets: number[] = []
+  const offsetKeys = new Set<string>()
+  const add = (offset: number): void => {
+    const normalized = normalizedOffset(offset, rawLength, closed)
+    const key = contourOffsetKey(normalized)
+    if (offsetKeys.has(key)) return
+    offsetKeys.add(key)
+    offsets.push(normalized)
   }
-  return points
+  if (!closed) {
+    add(0)
+    add(Math.min(tangentLength, rawLength))
+    add(Math.max(0, rawLength - tangentLength))
+    add(rawLength)
+  }
+  for (const interval of fixedIntervals) {
+    add(interval.startOffset - tangentLength)
+    add(interval.startOffset)
+    add(interval.endOffset)
+    add(interval.endOffset + tangentLength)
+  }
+  return offsets.sort((first, second) => first - second)
+}
+
+function insertLockedPoints(
+  points: readonly WorkingPoint[],
+  offsets: readonly number[],
+  rawPoints: readonly ContourCoordinate[],
+  spans: readonly TerrainContourSpan[],
+  rawLength: number,
+  closed: boolean,
+): WorkingPoint[] {
+  const merged = [...points]
+  const offsetKeys = new Set(merged.map((point) => contourOffsetKey(point.rawOffset)))
+  for (const rawOffset of offsets) {
+    const key = contourOffsetKey(rawOffset)
+    if (offsetKeys.has(key)) continue
+    offsetKeys.add(key)
+    merged.push({
+      ...rawPointAt(rawOffset, rawPoints, spans, rawLength, closed),
+      rawOffset,
+    })
+  }
+  return merged.sort((first, second) => first.rawOffset - second.rawOffset)
+}
+
+function contourOffsetKey(offset: number): string {
+  return offset.toFixed(9)
 }
 
 function chaikin(
@@ -1154,6 +1243,187 @@ function offsetLocked(
   )
 }
 
+function repairCurveTube(
+  points: readonly TerrainContourPoint[],
+  rawPoints: readonly ContourCoordinate[],
+  spanIndex: ContourSpanIndex,
+  rawLength: number,
+  closed: boolean,
+  settings: TerrainContourSettings,
+  bridgeTaperCells: number,
+  rawIndex: RawPolylineIndex,
+): TerrainContourPoint[] {
+  if (points.length < 2) return [...points]
+  const repaired: TerrainContourPoint[] = [points[0]!]
+  const edgeCount = closed ? points.length : points.length - 1
+  for (let index = 0; index < edgeCount; index += 1) {
+    const start = points[index]!
+    const end = points[(index + 1) % points.length]!
+    let endOffset = end.rawOffset
+    if (closed && endOffset <= start.rawOffset) endOffset += rawLength
+    const additions = repairCurveSegment(
+      start,
+      end,
+      start.rawOffset,
+      endOffset,
+      rawPoints,
+      spanIndex,
+      rawLength,
+      closed,
+      settings,
+      bridgeTaperCells,
+      rawIndex,
+    )
+    const included = closed && index === edgeCount - 1 ? additions.slice(0, -1) : additions
+    for (const point of included) {
+      if (!samePoint(repaired[repaired.length - 1]!, point)) repaired.push(point)
+    }
+  }
+  return repaired
+}
+
+function repairCurveSegment(
+  start: TerrainContourPoint,
+  end: TerrainContourPoint,
+  startOffset: number,
+  endOffset: number,
+  rawPoints: readonly ContourCoordinate[],
+  spanIndex: ContourSpanIndex,
+  rawLength: number,
+  closed: boolean,
+  settings: TerrainContourSettings,
+  bridgeTaperCells: number,
+  rawIndex: RawPolylineIndex,
+): TerrainContourPoint[] {
+  if (segmentStaysInTube(start, end, rawIndex, settings.maxDeviationCells)) return [end]
+  const middleOffset = localFallbackOffset(
+    startOffset,
+    endOffset,
+    spanIndex.vertexOffsets,
+    rawLength,
+    closed,
+  )
+  const normalized = normalizedOffset(middleOffset, rawLength, closed)
+  const rawMiddle = rawPointAt(normalized, rawPoints, spanIndex.spans, rawLength, closed)
+  const locked = offsetLocked(
+    normalized,
+    spanIndex.fixed,
+    rawLength,
+    closed,
+    settings.junctionTangentCells,
+  )
+  const coordinate = locked
+    ? rawMiddle
+    : continuousFallbackCoordinate(
+        start,
+        end,
+        rawMiddle,
+        startOffset,
+        middleOffset,
+        endOffset,
+        settings.maxDeviationCells,
+      )
+  const middle: TerrainContourPoint = {
+    ...coordinate,
+    rawOffset: normalized,
+    locked,
+    shorelineFactor: shorelineFactorAt(normalized, spanIndex, rawLength, closed, bridgeTaperCells),
+  }
+  return [
+    ...repairCurveSegment(
+      start,
+      middle,
+      startOffset,
+      middleOffset,
+      rawPoints,
+      spanIndex,
+      rawLength,
+      closed,
+      settings,
+      bridgeTaperCells,
+      rawIndex,
+    ),
+    ...repairCurveSegment(
+      middle,
+      end,
+      middleOffset,
+      endOffset,
+      rawPoints,
+      spanIndex,
+      rawLength,
+      closed,
+      settings,
+      bridgeTaperCells,
+      rawIndex,
+    ),
+  ]
+}
+
+function continuousFallbackCoordinate(
+  start: ContourCoordinate,
+  end: ContourCoordinate,
+  raw: ContourCoordinate,
+  startOffset: number,
+  middleOffset: number,
+  endOffset: number,
+  maxDeviation: number,
+): ContourCoordinate {
+  const amount = (middleOffset - startOffset) / (endOffset - startOffset)
+  const target = {
+    x: start.x + (end.x - start.x) * amount,
+    y: start.y + (end.y - start.y) * amount,
+  }
+  const targetDistance = distance(raw, target)
+  if (targetDistance <= EPSILON) return raw
+  const scale = Math.min(1, (maxDeviation * 0.9) / targetDistance)
+  return {
+    x: raw.x + (target.x - raw.x) * scale,
+    y: raw.y + (target.y - raw.y) * scale,
+  }
+}
+
+function localFallbackOffset(
+  startOffset: number,
+  endOffset: number,
+  vertexOffsets: readonly number[],
+  rawLength: number,
+  closed: boolean,
+): number {
+  const target = (startOffset + endOffset) / 2
+  let nearest = target
+  let nearestDistance = Number.POSITIVE_INFINITY
+  const consider = (candidate: number): void => {
+    if (candidate <= startOffset + EPSILON || candidate >= endOffset - EPSILON) return
+    const candidateDistance = Math.abs(candidate - target)
+    if (
+      candidateDistance < nearestDistance ||
+      (candidateDistance === nearestDistance && candidate < nearest)
+    ) {
+      nearest = candidate
+      nearestDistance = candidateDistance
+    }
+  }
+  const considerShift = (shift: number): void => {
+    const insertion = lowerBound(vertexOffsets, target - shift)
+    if (insertion > 0) consider(vertexOffsets[insertion - 1]! + shift)
+    if (insertion < vertexOffsets.length) consider(vertexOffsets[insertion]! + shift)
+  }
+  considerShift(0)
+  if (closed) considerShift(rawLength)
+  return nearest
+}
+
+function lowerBound(values: readonly number[], target: number): number {
+  let lower = 0
+  let upper = values.length
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (values[middle]! < target) lower = middle + 1
+    else upper = middle
+  }
+  return lower
+}
+
 function shorelineFactorAt(
   offset: number,
   spanIndex: ContourSpanIndex,
@@ -1188,9 +1458,7 @@ function nearestIntervalDistance(
     if (intervals[middle]!.startOffset <= offset) lower = middle + 1
     else upper = middle
   }
-  const candidateIndexes = closed
-    ? [lower - 1, lower, 0, intervals.length - 1]
-    : [lower - 1, lower]
+  const candidateIndexes = closed ? [lower - 1, lower, 0, intervals.length - 1] : [lower - 1, lower]
   let nearest = Number.POSITIVE_INFINITY
   for (const index of candidateIndexes) {
     if (index < 0 || index >= intervals.length) continue

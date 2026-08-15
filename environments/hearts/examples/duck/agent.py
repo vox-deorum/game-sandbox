@@ -1,21 +1,23 @@
 """The 'duck' example agent: a points-avoiding Hearts player.
 
-It overrides the template's placeholder ``agent.py``. The policy is one idea — never take points
-you can avoid — turned into three rules over the legal-move mask:
+It overrides the template's placeholder ``agent.py``. The policy is one idea, never take points
+you can avoid, turned into three rules over the legal-move mask:
 
 - **Leading**, play your lowest card, so you are unlikely to win the trick.
 - **Following suit**, "duck": play the highest card that still stays *under* the card currently
   winning the trick (shedding a high card safely). If every card you could follow with would win,
   play your lowest so a later player can still overtake you.
-- **Void** in the led suit, you cannot win the trick, so unload your most dangerous card — the
+- **Void** in the led suit, you cannot win the trick, so unload your most dangerous card: the
   queen of spades first, then your highest heart, then your highest card.
 
 That last rule is the clear win over the built-in baseline, which always plays its lowest legal
 card and so clings to the queen and high hearts until they are forced onto it. The example test
 asserts this agent takes fewer points than that baseline across seeds.
 
-It also uses the extra pinned dependency ``six`` (declared in ``requirements.extra.txt``) in a
-trivial display helper, so the dependency-set extension path stays exercised end to end.
+Every import here comes from the template's own dependency set, which is what a submission may
+rely on. Builds install nothing beyond it, so an example routed through the real submission
+pipeline must stay inside it. ``flappy_bird``'s ``hello`` example demonstrates the compose-time
+extras path instead.
 """
 
 from __future__ import annotations
@@ -31,7 +33,6 @@ from sandbox.cards import (
     rank_of,
     suit_of,
 )
-from six import text_type
 from wcwidth import wcswidth
 
 NAME = "duck-hearts"
@@ -73,5 +74,5 @@ class Agent:
 
 
 def display_width(text: str = NAME) -> int:
-    """Display width of ``text``, normalized through the extra dependency (six)."""
-    return wcswidth(text_type(text))
+    """Display width of ``text`` through the template's ``wcwidth`` pin."""
+    return wcswidth(text)

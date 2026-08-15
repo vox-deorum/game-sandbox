@@ -1,8 +1,9 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
+import { messageKey } from '@game-sandbox/schema/message'
 
 import catalogDocument from '../catalog.json'
 import rulesDocument from '../rules.json'
-import type { Cell, VillageDynamic, VillageSize, VillageStatic } from './types.js'
+import type { Cell, SpeechLine, VillageDynamic, VillageSize, VillageStatic } from './types.js'
 import {
   array,
   finiteNumber,
@@ -100,6 +101,35 @@ export function expectedCharacterIds(header: RecordingHeader): readonly string[]
       throw new Error('Three Branches players must be contiguous.')
   })
   return players.map((_, index) => (index === 0 ? 'visitor' : `npc_${index - 1}`))
+}
+
+/**
+ * Read the lines a state delivered, translated from recording player ids to character ids.
+ *
+ * The host has already filtered these for the audience, so this only renames them. A line naming a
+ * player outside the roster is dropped rather than drawn under a fabricated name.
+ */
+export function readSpeech(
+  state: StepState,
+  expectedIds: readonly string[],
+): readonly SpeechLine[] {
+  const named = (playerId: string): string | undefined => {
+    const match = /^player_(\d+)$/.exec(playerId)
+    return match === null ? undefined : expectedIds[Number(match[1])]
+  }
+  const lines: SpeechLine[] = []
+  for (const message of state.messages ?? []) {
+    const speaker = named(message.from)
+    const addressee = message.to === null ? null : named(message.to)
+    if (speaker === undefined || addressee === undefined) continue
+    lines.push({
+      key: messageKey({ tick: state.tick, ...message }),
+      speaker,
+      addressee,
+      text: message.text,
+    })
+  }
+  return lines
 }
 
 /** Read a dynamic frame, or return null for the valid live opening before an overlay exists. */

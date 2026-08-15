@@ -1,6 +1,6 @@
 # Step 5.2: HUD and interaction design
 
-Status: in progress. The owner fixed the design decisions below on 2026-08-14. The mockups await owner approval, and input implementation stays in step 6.
+Status: in progress. The owner fixed the design decisions below on 2026-08-14 and approved the mockups for implementation. The information layer, the display-name hook, and the unified camera have landed. The step 6 input specification is recorded here and builds in step 6. Owner sign-off on the rendered result remains.
 
 Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and may retune the art-driven camera ceiling established in [step 5.1](5-1-art-style.md) under the final HUD. Review the pinned fixture under the full HUD at fitted and close views.
 
@@ -47,7 +47,7 @@ The 54-unit strip keeps its step 3 layout seam and adopts a thematic Hearthside 
                      o           o [npc_2]
 ```
 
-Each character carries a nameplate pill with its character id above its sprite: a cinnabar accent for the visitor, ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. Plate text resolution follows camera zoom, matching the collision overlay's rule.
+Each character carries a nameplate pill with its character id above its sprite: a cinnabar accent for the visitor, ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. A plate and a bubble hold one size on screen at every zoom, so they counter-scale against the camera and their text needs no zoom-dependent resolution.
 
 ### Speech bubbles
 
@@ -87,7 +87,7 @@ Step 6 implements this specification without further design work. Controls appea
 ```
 
 - A floating virtual joystick serves pointer and touch. A primary press in the left half of the content area summons the pad at the press point. Dragging sets heading from the drag angle and relative speed from the drag distance, with a 15 percent dead zone and full speed at the pad ring. Release stops the visitor and hides the pad. The rest of the content area keeps the camera gestures.
-- Keyboard locomotion uses WASD and the arrow keys for eight-way headings at full speed. Holding Shift halves the speed.
+- Keyboard locomotion uses WASD and the arrow keys for eight-way headings at full speed. Holding Shift halves the speed. Opposing keys cancel on their axis, and cancelling on both axes yields no keyboard heading.
 - Input composes once per 250 millisecond window: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default.
 
 ### Expression palette
@@ -108,7 +108,7 @@ Step 6 implements this specification without further design work. Controls appea
 - A 3 by 3 emote grid sits in the lower right of the content area, in ruleset order, with hotkeys 1 through 9.
 - Use is a separate button beside the grid with hotkey 0.
 - Hovering or focusing Use highlights the prop a use would select under the environment's reach-plus-unblocked-line rule. The preview is informational and never sends.
-- A pressed control sets the expression on the next composed action window.
+- A pressed control sets the expression on the next composed action window. The last press in a window wins, and the window sends no expression when nothing was pressed.
 
 ### Chat input
 

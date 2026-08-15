@@ -17,16 +17,16 @@
   "transition": { "naturalMs": 1000, "settleGraceMs": 100 },
   "terrain": {
     "fills": {
-      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed" },
-      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber" },
-      "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment" },
-      "bridge": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
-      "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment" },
-      "doorway": { "frames": ["doorway"], "tint": "bone" },
-      "field": { "frames": ["furrowA", "furrowB", "furrowC", "furrowD"], "tint": "silt" },
-      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "reed" },
-      "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water" },
-      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo" }
+      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed", "opacity": 1 },
+      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber", "opacity": 0.58 },
+      "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment", "opacity": 1 },
+      "bridge": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water", "opacity": 1 },
+      "interior": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "parchment", "opacity": 1 },
+      "doorway": { "frames": ["doorway"], "tint": "bone", "opacity": 1 },
+      "field": { "frames": ["furrowA", "furrowB", "furrowC", "furrowD"], "tint": "silt", "opacity": 1 },
+      "reeds": { "frames": ["reedsA", "reedsB", "reedsC", "reedsD"], "tint": "reed", "opacity": 1 },
+      "water": { "frames": ["rippleA", "rippleB", "rippleC", "rippleD"], "tint": "water", "opacity": 1 },
+      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo", "opacity": 1 }
     },
     "contours": {
       "smoothingPasses": 2,
@@ -39,8 +39,8 @@
       "saddleRadiusCells": 0.08,
       "shoreline": {
         "bands": [
-          { "tint": "reed", "widthCells": 0.3, "opacity": 0.14 },
-          { "tint": "silt", "widthCells": 0.14, "opacity": 0.3 }
+          { "tint": "reed", "widthCells": 0.32, "opacity": 0.16 },
+          { "tint": "silt", "widthCells": 0.16, "opacity": 0.36 }
         ],
         "bridgeTaperCells": 0.25
       }

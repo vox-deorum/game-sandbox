@@ -9,8 +9,9 @@
   message hangs off its tick's decision group, so the caller must supply a decision for every tick that
   carries chat (ReplayPage derives both from the same parsed states); a message on a tick with no
   decision row is never rendered. Rows render through the same shared helpers the split panels use:
-  formatAction/formatPlayer for a decision line, attributionLabel plus the shared broadcast/to-you/
-  from-you badge for a message, so the merged view honours the same blind policy and stays legible on a
+  formatAction/formatPlayer for a decision line, playerName (the compact id unless the renderer supplies
+  names) for a message's player, and attributionLabel plus the shared broadcast/to-you/from-you badge for
+  a message's sender, so the merged view honours the same blind policy and stays legible on a
   same-labelled roster.
 -->
 <script setup lang="ts">
@@ -21,7 +22,7 @@ import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, type MessageBadge, messageBadge, messageKey } from '../lib/chat.js'
-import { formatAction, formatPlayer } from '../lib/format.js'
+import { formatAction, formatPlayer, playerName } from '../lib/format.js'
 import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
@@ -50,6 +51,11 @@ const props = withDefaults(
     setupLlmCalls?: RecordingLlmCall[]
     llmUnavailable?: boolean
     llmPending?: boolean
+    /**
+     * Environment-supplied display names for message rows, keyed by player id; absent shows the
+     * compact player id. Decision rows are the raw decision log and always show the compact id.
+     */
+    playerNames?: Readonly<Record<string, string>>
   }>(),
   {
     currentTick: null,
@@ -62,6 +68,7 @@ const props = withDefaults(
     setupLlmCalls: () => [],
     llmUnavailable: false,
     llmPending: false,
+    playerNames: undefined,
   },
 )
 
@@ -151,9 +158,9 @@ const items = computed<ThreadItem[]>(() => {
         key: `m-${messageKey(entry)}`,
         kind: 'message',
         state: state === 'future' ? 'past' : state,
-        player: formatPlayer(entry.from),
+        player: playerName(entry.from, props.playerNames),
         sender: labelFor(entry.from),
-        badge: messageBadge(entry, props.viewerPlayers),
+        badge: messageBadge(entry, props.viewerPlayers, props.playerNames),
         text: entry.text,
         tick: entry.tick,
       })

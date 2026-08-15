@@ -25,5 +25,10 @@ for (const [path, module] of Object.entries(modules)) {
     throw new Error(`Duplicate renderer key '${definition.key}' from ${path}`)
   }
   rendererKeys.add(definition.key)
-  registerRenderer(definition.key, definition.renderer, definition.thumbnail)
+  registerRenderer(
+    definition.key,
+    definition.renderer,
+    definition.thumbnail,
+    definition.playerNames,
+  )
 }

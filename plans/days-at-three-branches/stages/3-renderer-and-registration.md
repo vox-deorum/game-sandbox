@@ -37,7 +37,7 @@ Configured metres become renderer units through shared conversion helpers. South
 | `collision.ts` | Pure static and dynamic collision truth |
 | `camera.ts` | Visitor focus, follow suspension, and reset policy over the shared camera reducer |
 | `map-layer.ts`, `buildings.ts`, `props-layer.ts`, `characters.ts` | Layered ground and stable retained scene objects |
-| `collision-layer.ts`, `chrome.ts` | Default-on collision drawing and fixed diagnostic chrome |
+| `collision-layer.ts`, `chrome.ts` | Off-by-default collision drawing and the village information chrome |
 | `index.ts` | `PixiRenderer` lifecycle, gestures, probes, and automatic renderer definition |
 
 Presentation defaults are named in one configuration: a 1200 by 1000 logical canvas, a 54-unit chrome strip, 16 renderer units per configured metre, camera padding and zoom range, and a visitor opening zoom of twice the fitted zoom. These are presentation choices that step 5 can tune. Tests check semantic coverage and relationships rather than pinning palette values or map dimensions.
@@ -46,7 +46,7 @@ One layered-ground call paints a configured fill base, a landscape overlay, and 
 
 Static display objects are built once. Props and characters reconcile by stable id, so a replay seek depends only on the delivered header and state. Delivered character positions and headings interpolate across the host's actual tick cadence. Replay scrubs and explicit seeks still snap, and this state motion does not honor reduced-motion preferences. `worldRoot` contains the map, buildings, props, characters, and collision. Fixed chrome remains outside the camera transform.
 
-The ordinary world art carries no text labels. The collision overlay is on by default and supplies diagnostic object, state, character, and expression labels for watch, replay, and play. Its text resolution follows camera zoom. It derives impassable cells from ground passability, object shapes from the catalog, boundaries from the configured frame, and character circles from the configured body radius. Prop facing may add a visual direction marker. An east or west facing trades a prop rectangle's width and height, matching the environment, and every shape stays axis-aligned. The toggle never resets the camera. Its plate is drawn in the chrome strip and clicked in the browser's own coordinates, the way the camera gestures are: the gestures accept only the content below the strip, and the strip answers the band above it. Nothing here depends on display-object hit testing.
+The ordinary world art carries no text labels. The collision overlay ships off by default and supplies diagnostic object, state, character, and expression labels for watch, replay, and play. Its text resolution follows camera zoom. It derives impassable cells from ground passability, object shapes from the catalog, boundaries from the configured frame, and character circles from the configured body radius. Prop facing may add a visual direction marker. An east or west facing trades a prop rectangle's width and height, matching the environment, and every shape stays axis-aligned. The toggle never resets the camera. Its plate is drawn in the chrome strip and clicked in the browser's own coordinates, the way the camera gestures are: the gestures accept only the content below the strip, and the strip answers the band above it. Nothing here depends on display-object hit testing.
 
 Environment-specific data probes expose readiness, opening state, tick, phase, visitor position, collision state, camera state, and terminal state. Tests and browser journeys assert state changes without pinning exact initial values.
 
@@ -54,11 +54,11 @@ Environment-specific data probes expose readiness, opening state, tick, phase, v
 
 The camera starts at `overlay_static.spawn` using the configured focus zoom, clamped to frame-derived limits. The first dynamic frame corrects the target to the recorded visitor position.
 
-Human control is detected only through `ctx.controlledPlayers.includes("player_0")`. While that visitor is human-controlled, each state update recenters on its latest position. Pan, wheel zoom, or pinch suspends following for inspection. Double-click or double-tap restores the configured focus zoom, recenters on the current visitor, and resumes follow only for a human controller.
+One policy serves watch, replay, and play. The camera opens on the visitor at the focus zoom and follows its movement on every state update. Pan, wheel zoom, or pinch suspends following for inspection. The Recenter button, a double-click, or a double-tap recenters on the current visitor at the focus zoom and resumes following. Following does not depend on who controls the visitor.
 
-Watch and replay start focused on the visitor but do not follow later movement automatically. Their reset recenters on the current visitor without enabling follow. Full logical pointer coordinates are converted to the content-local viewport before calling camera reducers. Camera state stays outside pure scene computation.
+Full logical pointer coordinates are converted to the content-local viewport before calling camera reducers. Camera state stays outside pure scene computation.
 
-Step 5.2 may tune zoom limits and add an explicit follow affordance, but it preserves this control and reset seam. Step 6 uses the existing `controlledPlayers` signal when visitor inputs arrive.
+Step 6 reads `ctx.controlledPlayers` for input ownership only; it plays no part in this camera policy.
 
 ## Fixture and local integration
 
@@ -70,7 +70,7 @@ The fixture exposed two Pymunk invariants. When a stopped kinematic character be
 
 ## Browser journey
 
-`frontend/e2e/three-branches/three-branches.spec.ts` defines the `three-branches` group and is listed in the [browser groups table](../../../docs/contributors/testing/browser-e2e.md#groups). The focused journey starts a seed 0 watch session with the resolved scripted visitor, checks renderer probes and tick progress, exercises wheel zoom and collision-toggle isolation, stops through the UI, opens replay, and verifies stable visitor and tick probes across repeated seeks. Existing host coverage remains authoritative for general broadcast and direct-message visibility until the Three Branches HUD and controls arrive.
+`frontend/e2e/three-branches/three-branches.spec.ts` defines the `three-branches` group and is listed in the [browser groups table](../../../docs/contributors/testing/browser-e2e.md#groups). The focused journey starts a seed 0 watch session with the resolved scripted visitor, checks renderer probes and tick progress, exercises wheel zoom, the collision controls' isolation from the camera, and Recenter, stops through the UI, opens replay, and verifies stable visitor and tick probes across repeated seeks. Existing host coverage remains authoritative for general broadcast and direct-message visibility, and [step 6](6-human-play.md) adds the visitor's own journey with its controls.
 
 ## Focused verification
 

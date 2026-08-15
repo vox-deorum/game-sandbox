@@ -18,11 +18,20 @@ import { useLiveFramePresentation } from '../composables/useLiveFramePresentatio
 import { useLiveChat } from '../composables/useLiveChat.js'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
+import { playerNamesFor } from '../renderers/registry.js'
 
 const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const header = ref<RecordingHeader | null>(null)
+// The environment's own display names for this run's players (e.g. Days at Three Branches' character
+// names), for the chat panel to show in place of compact player ids. Undefined until the environment
+// metadata and the header are both in, or when the renderer supplies none.
+const chatPlayerNames = computed(() =>
+  meta.value === null || header.value === null
+    ? undefined
+    : playerNamesFor(meta.value.renderer, header.value),
+)
 const lastState = shallowRef<StepState | null>(null)
 const gameOverDismissed = ref(false)
 // The first resume is the start gate; the relay replays its pause echo until then. Afterwards the
@@ -216,6 +225,7 @@ onMounted(async () => {
           :players="header?.players"
           :viewer-players="controlledPlayers"
           :message-cap="meta?.message_cap ?? null"
+          :player-names="chatPlayerNames"
           v-bind="chatProps"
           @send="sendChat"
         />
@@ -237,6 +247,7 @@ onMounted(async () => {
             :players="header?.players"
             :viewer-players="controlledPlayers"
             :message-cap="meta?.message_cap ?? null"
+            :player-names="chatPlayerNames"
             v-bind="chatProps"
             @send="sendChat"
           />

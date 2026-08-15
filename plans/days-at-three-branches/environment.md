@@ -132,7 +132,7 @@ Watchers and replay viewers see every delivered line. The visitor controller see
 
 The `three-branches-village` renderer draws from the recording overlay and admitted messages. It has no fog. Active prop state drives sustained animation: lanterns and hearths glow, tended shrines trail incense, pumps flow, and the bell swings. Live sessions emit an opening presentation state so the village renders before tick 1.
 
-The permanent viewer-toggleable collision overlay appears in watch, replay, and play. It shades impassable ground, draws catalog collision shapes for interactive props and scenery, keeps doorways visibly open, and shows characters as 0.4 m circles with heading tick, id, and expression label. Interactive props show state labels.
+The permanent viewer-toggleable collision overlay appears in watch, replay, and play, off by default and toggled by a chrome button or the C key. It shades impassable ground, draws catalog collision shapes for interactive props and scenery, keeps doorways visibly open, and shows characters as 0.4 m circles with heading tick, id, and expression label. Interactive props show state labels.
 
 On the visitor seat, pointer and keyboard input compose locomotion. The expression palette offers emotes and use, highlighting the prop a use would select without sending an action. The 250 millisecond cadence is the input window. The host-page chat field has a recipient selector: broadcast or one currently permitted addressee, shown by character id. Spectators and replay viewers have no input.
 

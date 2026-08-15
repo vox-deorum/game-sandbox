@@ -45,13 +45,20 @@ export interface RendererContext {
  * How a state should be presented when it is handed to the renderer. A renderer with no animation (the
  * Flappy Bird reference) ignores this entirely. An animated renderer (Hearts, Crane Reach) uses it to
  * play state-to-state transitions at the right speed and to suppress them where a transition would be
- * wrong: a replay scrub or step jumps to an arbitrary state and must `snap`, while a replay playing on
- * its cadence passes that cadence relative to one second as `transitionScale`, so the animation runs at
- * replay-time speed. Live play passes neither and the renderer uses its natural durations.
+ * wrong: a replay scrub or step jumps to an arbitrary state and must `snap` and `seek`, while a
+ * replay playing on its cadence passes that cadence relative to one second as `transitionScale`, so
+ * the animation runs at replay-time speed. Live play passes none of these and the renderer uses its
+ * natural durations.
  */
 export interface RenderOptions {
-  /** Jump straight to the state with no transition animation (a replay scrub, seek, or step). */
+  /** Jump straight to the state with no transition animation. */
   snap?: boolean
+  /**
+   * Treat the state as a discontinuous replay-position change. A renderer uses this to reset
+   * timeline-dependent presentation such as retained speech. Internal redraws may snap animation
+   * without seeking, so `snap` alone must not reset that state.
+   */
+  seek?: boolean
   /**
    * A multiplier on the renderer's natural phase durations. Omitted or `1` is natural timing, `0`
    * completes immediately without animating, and a paced host passes `cadenceMs / 1_000` so a
@@ -131,4 +138,6 @@ export interface RendererDefinition {
   renderer: Renderer
   /** Static image asset URL used by environment cards. */
   thumbnail: string
+  /** Per-player display names for the host's chat surfaces, keyed by player id. Absent leaves the compact player id. */
+  playerNames?: (header: RecordingHeader) => Readonly<Record<string, string>>
 }

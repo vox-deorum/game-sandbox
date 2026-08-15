@@ -10,9 +10,8 @@
  *
  * It also tells the renderer how to present each frame (the {@link RenderOptions}): a play step passes
  * the cadence relative to one second as the animation scale, so an animated renderer (Hearts, Crane
- * Reach) runs its transitions at replay-time speed, while a scrub, step, or seek snaps, since jumping
- * to an arbitrary frame must not trigger a transition. A draw-only renderer (Flappy Bird) ignores all
- * of this.
+ * Reach) runs its transitions at replay-time speed, while a scrub, step, or seek snaps and marks the
+ * frame as a discontinuous seek. A draw-only renderer (Flappy Bird) ignores all of this.
  *
  * Play is a serialized pump rather than an interval. Each frame starts two clocks at once, the cadence
  * and the renderer's own transition, and the next frame waits for both. A draw-only recording therefore
@@ -24,6 +23,8 @@
 import type { StepState } from '@game-sandbox/schema'
 
 import type { RenderOptions } from '../renderers/types.js'
+
+const SEEK_RENDER_OPTIONS = { snap: true, seek: true } as const satisfies RenderOptions
 
 /** The cadence a scale of 1 corresponds to: a one-second beat is a renderer's natural speed. */
 const NATURAL_CADENCE_MS = 1_000
@@ -86,7 +87,7 @@ export class ReplayTransport {
     // Restarting from the end replays from the top.
     if (this.idx >= this.total - 1) {
       this.idx = 0
-      void this.render({ snap: true })
+      void this.render(SEEK_RENDER_OPTIONS)
     }
     this.isPlaying = true
     this.emit()
@@ -120,7 +121,7 @@ export class ReplayTransport {
   seek(index: number): void {
     const clamped = Math.max(0, Math.min(this.total - 1, index))
     this.idx = clamped
-    void this.render({ snap: true })
+    void this.render(SEEK_RENDER_OPTIONS)
     this.emit()
     // A seek while playing restarts the pump, so the frame landed on gets a whole cadence rather than
     // whatever was left of the one it interrupted.
@@ -148,7 +149,7 @@ export class ReplayTransport {
 
   /** Render the current frame without changing the index (the initial draw after mount); snaps. */
   renderCurrent(): void {
-    void this.render({ snap: true })
+    void this.render(SEEK_RENDER_OPTIONS)
     this.emit()
   }
 

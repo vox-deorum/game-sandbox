@@ -20,12 +20,15 @@ export interface VisitorCameraState {
   target: CameraPoint
 }
 
-/** Open at a configurable visitor-focused scale instead of binding the camera to one map size. */
+/**
+ * Open on the visitor at a configurable focused scale instead of binding the camera to one map
+ * size, and start following: the camera always follows the visitor by default, regardless of
+ * who controls it.
+ */
 export function initialVisitorCamera(
   limits: CameraLimits,
   view: CameraSize,
   spawn: CameraPoint,
-  humanControlled: boolean,
 ): VisitorCameraState {
   const fit = fitCamera(limits, view)
   const focused = clampCamera(
@@ -35,12 +38,12 @@ export function initialVisitorCamera(
   )
   return {
     camera: centerCamera(focused, limits, view, spawn),
-    following: humanControlled,
+    following: true,
     target: spawn,
   }
 }
 
-/** Follow a new visitor position only while live human control still owns camera focus. */
+/** Follow a new visitor position while the camera is following, or unconditionally when forced. */
 export function updateVisitorCamera(
   state: VisitorCameraState,
   limits: CameraLimits,
@@ -61,12 +64,11 @@ export function suspendVisitorFollow(state: VisitorCameraState): VisitorCameraSt
   return { ...state, following: false }
 }
 
-/** Restore the visitor-focused zoom and resume follow only for live human control. */
+/** Restore the visitor-focused zoom, recenter on the latest known target, and resume follow. */
 export function resetVisitorCamera(
   state: VisitorCameraState,
   limits: CameraLimits,
   view: CameraSize,
-  humanControlled: boolean,
 ): VisitorCameraState {
-  return initialVisitorCamera(limits, view, state.target, humanControlled)
+  return initialVisitorCamera(limits, view, state.target)
 }

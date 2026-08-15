@@ -9,8 +9,8 @@ from sandbox.play import play_episode
 _SEEDS = [0, 1, 2, 3, 4, 5, 6, 7]
 
 
-def test_extra_dependency_is_usable():
-    # six comes from requirements.extra.txt; reaching the helper proves it composed in.
+def test_template_dependency_is_usable():
+    # wcwidth is a template pin, so the composed kit and the submission image both carry it.
     assert agent.display_width("duck") == 4
 
 

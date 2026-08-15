@@ -22,7 +22,7 @@ import { computed, ref, useId, watch } from 'vue'
 import type { LiveChatPolicy } from '../composables/useLiveChat.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
-import { formatPlayer } from '../lib/format.js'
+import { playerName } from '../lib/format.js'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
 import UiInput from './ui/UiInput.vue'
@@ -45,6 +45,8 @@ const props = withDefaults(
     messageCap?: number | null
     /** The designated human sender's current policy, published with the latest live state. */
     policy?: LiveChatPolicy | null
+    /** Environment-supplied display names, keyed by player id; absent shows the compact player id. */
+    playerNames?: Readonly<Record<string, string>>
   }>(),
   {
     players: undefined,
@@ -55,6 +57,7 @@ const props = withDefaults(
     sendable: false,
     messageCap: null,
     policy: null,
+    playerNames: undefined,
   },
 )
 
@@ -74,26 +77,28 @@ function labelFor(playerId: string): string {
 
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
 // the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
-// a message identically. The player (`formatPlayer`) rides alongside the attribution label the same way
-// PlayerAttribution pairs them, so a roster of same-labelled agents (three "Naive agent" players in a
-// default Spades table) stays legible.
+// a message identically. The player (`playerName`, the compact id unless the renderer supplies names)
+// rides alongside the attribution label the same way PlayerAttribution pairs them, so a roster of
+// same-labelled agents (three "Naive agent" players in a default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
     key: messageKey(entry),
     tick: entry.tick,
     text: entry.text,
-    player: formatPlayer(entry.from),
+    player: playerName(entry.from, props.playerNames),
     sender: labelFor(entry.from),
-    badge: messageBadge(entry, props.viewerPlayers),
+    badge: messageBadge(entry, props.viewerPlayers, props.playerNames),
   })),
 )
 
-// The recipient options come verbatim from the live policy, labelled by compact player id ("P1").
-// "Everyone" (a broadcast) remains available independently of that ordered direct-recipient list.
+// The recipient options come verbatim from the live policy: valued by platform player id (what the send
+// payload carries) and labelled by name when the renderer supplies one, compact player id ("P1")
+// otherwise. "Everyone" (a broadcast) remains available independently of that ordered direct-recipient
+// list.
 const recipientOptions = computed(() =>
   (props.policy?.targetRecipients ?? []).map((playerId) => ({
     value: playerId,
-    label: formatPlayer(playerId),
+    label: playerName(playerId, props.playerNames),
   })),
 )
 

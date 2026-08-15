@@ -15,6 +15,8 @@ Read the [interaction specification](../../specs/interaction.md) for the product
 
 `environments/flappy_bird/renderer/` is the reference for a realtime draw-only renderer, and `environments/hearts/renderer/` is the reference for turn-based card input and animation.
 
+An environment whose chat should name players instead of showing a compact player id also exports an optional `playerNames` field: a function from the recording header to a per-player display-name map. The host's chat panels apply it everywhere they would otherwise show a player id, including the recipient selector.
+
 ## Rendering model
 
 ```text
@@ -31,7 +33,7 @@ The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts wi
 
 `render(state, options)` returns a promise that resolves when its transition finishes. A draw-only renderer, a snap, a scale of zero, and a change with nothing to animate all resolve immediately. A paced host (the replay transport or live session socket) awaits that promise alongside its cadence timer before delivering the next frame. A transition that runs longer than the cadence therefore finishes instead of being cut off. A superseding render and `destroy` also resolve the earlier promise, so the host never waits for a frame that will not come.
 
-`RenderOptions` has two fields. `snap` jumps straight to the state with no transition for a replay scrub, seek, or step. `transitionScale` multiplies the renderer's natural phase durations: omitted or `1` uses natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so transitions run at that pace. It is not a time budget. If the natural timing exceeds the cadence, the renderer takes longer and the host waits.
+`RenderOptions` has three fields. `snap` jumps straight to the state with no transition. `seek` marks a discontinuous replay-position change, so a renderer can reset retained presentation that must not cross a scrub, step, or seek. Internal redraws such as a resize may snap without seeking. `transitionScale` multiplies the renderer's natural phase durations: omitted or `1` uses natural timing, `0` completes immediately, and a paced host passes its cadence relative to one second so transitions run at that pace. It is not a time budget. If the natural timing exceeds the cadence, the renderer takes longer and the host waits.
 
 A realtime environment's live human session is unpaced: the host draws every frame on arrival and passes no `transitionScale` at all. Natural timing is calibrated to a one-second cadence, so a renderer whose environment steps faster than that cannot use it there, and one that tries will draw its world several ticks behind where it actually is. Such a renderer measures the wall-clock gap between states and animates over that instead, capping it at the natural duration so a stall resumes at ordinary speed.
 
@@ -50,7 +52,7 @@ Keep drawing logic in two layers:
 
 The reconciler creates the nodes the current scene needs, sets every visible property from it, and removes the ones it no longer contains. Unit-test `computeScene` with checked-in states, then cover GPU reconciliation and visible canvas behavior in the browser suite.
 
-A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs (`options.snap`), while `onFrame(dtMs)` advances an optional transition layer at `options.transitionScale`.
+A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs (`options.snap`), `options.seek` resets transient timeline state on those jumps, and `onFrame(dtMs)` advances an optional transition layer at `options.transitionScale`.
 
 Split what redraws every frame from what redraws on interaction. Resolve data that changes only on a click, such as tile lookups and baked text, when it changes, and rebuild per frame only the marks that actually move. Two known deviations exist today and are the first places to look if a profile shows frame cost: the cards move-clock chip re-bakes its label every frame, and the Crane Reach order pulse rebuilds its tile lookup every frame.
 

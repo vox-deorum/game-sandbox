@@ -23,7 +23,7 @@ export interface RendererSize {
 export interface ThreeBranchesPresentation {
   /** Fixed logical surface advertised to the host. */
   internalSize: RendererSize
-  /** Height of the fixed diagnostic strip. */
+  /** Height of the fixed chrome strip. */
   chromeHeight: number
   /** Renderer world units used for one configured metre. */
   unitsPerMetre: number
@@ -33,6 +33,16 @@ export interface ThreeBranchesPresentation {
   maxZoomFactor: number
   /** Visitor-focused opening zoom expressed as a multiple of fitted zoom. */
   focusZoomFactor: number
+  /** Fitted-zoom multiple at which nameplates reach full opacity. */
+  nameplateZoomFactor: number
+  /** Fitted-zoom multiples spanned by the nameplate fade below that factor. */
+  nameplateFadeFactor: number
+  /** Milliseconds a delivered line holds at full opacity. */
+  speechHoldMs: number
+  /** Milliseconds a delivered line takes to fade out after its hold. */
+  speechFadeMs: number
+  /** Longest wrapped line count a speech bubble draws before eliding. */
+  speechMaxLines: number
 }
 
 /** Fixed renderer mechanics that are not Hearthside Ink art calibration. */
@@ -43,6 +53,11 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   cameraPadding: 20,
   maxZoomFactor: 16,
   focusZoomFactor: 2,
+  nameplateZoomFactor: 1.5,
+  nameplateFadeFactor: 0.5,
+  speechHoldMs: 4000,
+  speechFadeMs: 600,
+  speechMaxLines: 4,
 } as const
 
 /** Semantic diagnostic colors used by chrome, collision, and the pre-art fallback. */
@@ -146,6 +161,11 @@ export interface FrameTreatment {
   tint: HearthsidePaletteKey
 }
 
+/** A terrain fill can blend with the full ground layer beneath it. */
+export interface TerrainFillTreatment extends FrameTreatment {
+  opacity: number
+}
+
 export interface ShorelineBandTreatment {
   tint: HearthsidePaletteKey
   widthCells: number
@@ -188,7 +208,7 @@ export interface HearthsideStyle {
   palette: HearthsidePalette
   transition: { naturalMs: number; settleGraceMs: number }
   terrain: {
-    fills: Readonly<Record<string, FrameTreatment>>
+    fills: Readonly<Record<string, TerrainFillTreatment>>
     contours: TerrainContourTreatment
     planks: PlankTreatment
     upperWall: FrameTreatment
@@ -304,7 +324,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const fills = Object.fromEntries(
     groundNames.map((name) => [
       name,
-      frameTreatment(
+      terrainFillTreatment(
         fillsSource[name],
         `presentation.terrain.fills.${name}`,
         terrainFrames,
@@ -609,6 +629,20 @@ function frameTreatment(
   return {
     frames: frameNames(source.frames, `${name}.frames`, knownFrames),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
+  }
+}
+
+function terrainFillTreatment(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+  palette: ReadonlySet<string>,
+): TerrainFillTreatment {
+  const source = exactRecord(value, name, ['frames', 'tint', 'opacity'])
+  return {
+    frames: frameNames(source.frames, `${name}.frames`, knownFrames),
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
+    opacity: unitNumber(source.opacity, `${name}.opacity`),
   }
 }
 

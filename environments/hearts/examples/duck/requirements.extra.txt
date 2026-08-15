@@ -1,3 +1,0 @@
-# Extra pinned dependencies for the duck example. Appended to the template's
-# requirements.txt by compose. Extras extend the set; they never override a template pin.
-six==1.17.0

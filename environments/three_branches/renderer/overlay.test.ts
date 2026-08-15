@@ -1,6 +1,7 @@
+import { messageKey } from '@game-sandbox/schema/message'
 import { describe, expect, it } from 'vitest'
 
-import { expectedCharacterIds, readDynamic, readStatic } from './overlay.js'
+import { expectedCharacterIds, readDynamic, readSpeech, readStatic } from './overlay.js'
 import { clonedHeader, fixtureRecording, openingState } from './test-helpers.js'
 
 describe('Three Branches recording overlay', () => {
@@ -18,6 +19,23 @@ describe('Three Branches recording overlay', () => {
   it('accepts a live opening before dynamic overlay data exists', () => {
     const { header } = fixtureRecording()
     expect(readDynamic(openingState(), expectedCharacterIds(header), readStatic(header))).toBeNull()
+  })
+
+  it('uses the shared message identity when it names delivered speech', () => {
+    const { header, states } = fixtureRecording()
+    const state = structuredClone(states[0])
+    if (state === undefined) throw new Error('Fixture recording has no state.')
+    const message = { from: 'player_0', to: 'player_1', text: 'meet at the well' }
+    state.messages = [message]
+
+    expect(readSpeech(state, expectedCharacterIds(header))).toEqual([
+      {
+        key: messageKey({ tick: state.tick, ...message }),
+        speaker: 'visitor',
+        addressee: 'npc_0',
+        text: message.text,
+      },
+    ])
   })
 
   it('rejects inconsistent ground and a missing player roster', () => {

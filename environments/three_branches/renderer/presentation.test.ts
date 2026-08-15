@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  type FrameTreatment,
   HEARTHSIDE_PALETTE_KEYS,
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
   type PhaseGrade,
   phaseGrade,
   readHearthsideStyle,
+  type TerrainFillTreatment,
   transitionDurationMs,
 } from './presentation.js'
 
@@ -38,8 +38,8 @@ const APPROVED_CONTOURS = {
   saddleRadiusCells: 0.08,
   shoreline: {
     bands: [
-      { tint: 'reed', widthCells: 0.3, opacity: 0.14 },
-      { tint: 'silt', widthCells: 0.14, opacity: 0.3 },
+      { tint: 'reed', widthCells: 0.32, opacity: 0.16 },
+      { tint: 'silt', widthCells: 0.16, opacity: 0.36 },
     ],
     bridgeTaperCells: 0.25,
   },
@@ -93,6 +93,9 @@ describe('Hearthside Ink presentation', () => {
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
       HEARTHSIDE_STYLE.terrain.fills.field?.tint,
     )
+    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
+      HEARTHSIDE_STYLE.terrain.fills.path?.tint,
+    )
   })
 
   it('uses bridge-over-water fills, reed fills, indigo wall fills, and timber planks', () => {
@@ -100,14 +103,17 @@ describe('Hearthside Ink presentation', () => {
     expect(terrain.fills.bridge).toEqual({
       frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
       tint: 'water',
+      opacity: 1,
     })
     expect(terrain.fills.reeds).toEqual({
       frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'],
       tint: 'reed',
+      opacity: 1,
     })
     expect(terrain.fills.wall).toEqual({
       frames: ['floorA', 'floorB', 'floorC', 'floorD'],
       tint: 'indigo',
+      opacity: 1,
     })
     expect(terrain.planks).toEqual({
       horizontal: 'bridgeA',
@@ -163,15 +169,35 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(badOpacity)).toThrow('bands[1].opacity must be at most one')
   })
 
+  it('requires unit-range terrain fill opacity and keeps the road uniquely blended', () => {
+    expect(HEARTHSIDE_STYLE.terrain.fills.road?.opacity).toBe(0.58)
+    expect(
+      Object.entries(HEARTHSIDE_STYLE.terrain.fills)
+        .filter(([name]) => name !== 'road')
+        .map(([, fill]) => fill.opacity),
+    ).toEqual(Array(9).fill(1))
+
+    const missingOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingOpacity.terrain.fills.road.opacity
+    expect(() => readHearthsideStyle(missingOpacity)).toThrow('fills.road keys')
+
+    const invalidOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidOpacity.terrain.fills.road.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidOpacity)).toThrow('fills.road.opacity')
+  })
+
   it('rejects unknown manifest frames, palette tints, and phase keys', () => {
     const badFrame = structuredClone(HEARTHSIDE_STYLE)
-    const fills = badFrame.terrain.fills as Record<string, FrameTreatment>
-    fills.ground = { frames: ['missingFrame'], tint: 'reed' }
+    const fills = badFrame.terrain.fills as Record<string, TerrainFillTreatment>
+    fills.ground = { frames: ['missingFrame'], tint: 'reed', opacity: 1 }
     expect(() => readHearthsideStyle(badFrame)).toThrow('frames[0] is unknown')
 
     const badTint = structuredClone(HEARTHSIDE_STYLE)
-    const tintFills = badTint.terrain.fills as Record<string, { frames: string[]; tint: string }>
-    tintFills.ground = { frames: ['washA'], tint: 'orange' }
+    const tintFills = badTint.terrain.fills as Record<
+      string,
+      { frames: readonly string[]; tint: string; opacity: number }
+    >
+    tintFills.ground = { frames: ['washA'], tint: 'orange', opacity: 1 }
     expect(() => readHearthsideStyle(badTint)).toThrow('tint is unknown')
 
     const badPlank = structuredClone(HEARTHSIDE_STYLE) as any

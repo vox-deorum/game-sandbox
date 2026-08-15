@@ -31,6 +31,27 @@ async function readFrameProbe(host: Locator): Promise<FrameProbe> {
   return { tick, visitor }
 }
 
+/**
+ * The browser point at the centre of a chrome control, read from the rectangle the renderer
+ * publishes for it. The renderer answers the strip in its own logical coordinates, so the journey
+ * converts through the canvas box rather than hunting for a DOM element that does not exist.
+ */
+async function controlCentre(
+  host: Locator,
+  probe: string,
+  canvasBox: { x: number; y: number; width: number; height: number },
+): Promise<{ x: number; y: number }> {
+  const rect = (await host.getAttribute(probe))?.split(',').map(Number)
+  if (rect === undefined || rect.length !== 4 || rect.some((value) => !Number.isFinite(value))) {
+    throw new Error(`Three Branches control probe ${probe} is invalid`)
+  }
+  const [x, y, width, height] = rect
+  return {
+    x: canvasBox.x + ((x + width / 2) / INTERNAL_SIZE.width) * canvasBox.width,
+    y: canvasBox.y + ((y + height / 2) / INTERNAL_SIZE.height) * canvasBox.height,
+  }
+}
+
 test('watch Three Branches, inspect its camera and collision, then repeat a replay seek', async ({
   page,
   admin,
@@ -57,7 +78,7 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     await expect(host).toHaveAttribute('data-three-branches-assets', 'ready')
     await expect(host).toHaveAttribute('data-three-branches-visitor', /^-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-camera', /^\d+(?:\.\d+)?@-?\d+,-?\d+$/)
-    await expect(host).toHaveAttribute('data-three-branches-collision', 'on')
+    await expect(host).toHaveAttribute('data-three-branches-collision', 'off')
 
     const openingTick = Number(await host.getAttribute('data-three-branches-tick'))
     expect(Number.isFinite(openingTick)).toBe(true)
@@ -78,25 +99,33 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
       .poll(async () => parseCamera(await host.getAttribute('data-three-branches-camera')).zoom)
       .toBeGreaterThan(initialCamera.zoom)
 
+    // The wheel suspended follow, so the camera now holds still while the visitor keeps walking.
+    // That makes it the control for both toggles: neither may move the view.
     const inspectedCamera = await host.getAttribute('data-three-branches-camera')
-    const toggle = (await host.getAttribute('data-three-branches-collision-toggle'))
-      ?.split(',')
-      .map(Number)
-    if (
-      toggle === undefined ||
-      toggle.length !== 4 ||
-      toggle.some((value) => !Number.isFinite(value))
-    ) {
-      throw new Error('Three Branches collision toggle probe is invalid')
-    }
-    const [toggleX, toggleY, toggleWidth, toggleHeight] = toggle
-    const clickAt = {
-      x: canvasBox.x + ((toggleX + toggleWidth / 2) / INTERNAL_SIZE.width) * canvasBox.width,
-      y: canvasBox.y + ((toggleY + toggleHeight / 2) / INTERNAL_SIZE.height) * canvasBox.height,
-    }
-    await page.mouse.click(clickAt.x, clickAt.y)
+    const toggleAt = await controlCentre(host, 'data-three-branches-collision-toggle', canvasBox)
+    await page.mouse.click(toggleAt.x, toggleAt.y)
+    await expect(host).toHaveAttribute('data-three-branches-collision', 'on')
+    await expect(host).toHaveAttribute('data-three-branches-camera', inspectedCamera as string)
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', repeat: true }))
+    })
+    await expect(host).toHaveAttribute('data-three-branches-collision', 'on')
+
+    await page.locator('body').press('c')
     await expect(host).toHaveAttribute('data-three-branches-collision', 'off')
     await expect(host).toHaveAttribute('data-three-branches-camera', inspectedCamera as string)
+
+    // Recenter returns to the focus zoom and resumes following, so the view tracks the visitor again.
+    const recenterAt = await controlCentre(host, 'data-three-branches-recenter', canvasBox)
+    await page.mouse.click(recenterAt.x, recenterAt.y)
+    await expect
+      .poll(async () => parseCamera(await host.getAttribute('data-three-branches-camera')).zoom)
+      .toBeCloseTo(initialCamera.zoom, 3)
+    const recentered = await host.getAttribute('data-three-branches-camera')
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-camera'))
+      .not.toBe(recentered)
 
     const stop = page.getByRole('button', { name: 'Stop' })
     await expect(stop).toBeVisible()
@@ -119,7 +148,7 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
       'data-three-branches-camera',
       /^\d+(?:\.\d+)?@-?\d+,-?\d+$/,
     )
-    await expect(replayHost).toHaveAttribute('data-three-branches-collision', 'on')
+    await expect(replayHost).toHaveAttribute('data-three-branches-collision', 'off')
 
     const slider = page.getByRole('slider', { name: 'Replay position' })
     await expect(slider).toBeVisible()
