@@ -2,7 +2,8 @@ import { distance } from '@renderers/base/math.js'
 
 import { EPSILON, cellKey, projectToSegment } from './terrain-helpers.js'
 import { samePoint } from './terrain-contour-graph.js'
-import { indexRawPolyline, projectToPolyline, rawPointAt } from './terrain-contour-shaping.js'
+import { referenceOf, referencePointAtRawOffset } from './terrain-contour-reference.js'
+import { indexRawPolyline, projectToPolyline } from './terrain-contour-shaping.js'
 import type { ComponentRecord } from './terrain-contour-grid.js'
 import type { WorkingChain } from './terrain-contour-graph.js'
 import type { WorkingRing } from './terrain-contour-rings.js'
@@ -12,7 +13,7 @@ const CURVE_BUCKET_SIZE_CELLS = 1
 
 interface CurvePiece {
   readonly chain: WorkingChain
-  readonly rawIndex: RawPolylineIndex
+  readonly referenceIndex: RawPolylineIndex
   readonly index: number
   readonly start: ContourCoordinate
   readonly end: ContourCoordinate
@@ -26,20 +27,26 @@ interface CurvePiece {
  * overshoot by half a cell or more, not a second calibration bound.
  */
 const VALIDATION_SAG_CELLS = 0.08
-const TUBE_SAMPLE_SPACING_CELLS = 0.02
+const TUBE_SAMPLE_SPACING_CELLS = 0.05
+
+/** The corner-cut reference polyline of one chain, with the seam point repeated when closed. */
+function referencePolyline(chain: WorkingChain): readonly ContourCoordinate[] {
+  const points = referenceOf(chain).points
+  return chain.closed ? [...points, points[0]!] : points
+}
 
 /** Emitted-curve pieces, closed rings including their seam chord, for sweeps and repair. */
 function curvePieces(
   chains: readonly WorkingChain[],
-  rawIndexes: ReadonlyMap<WorkingChain, RawPolylineIndex>,
+  referenceIndexes: ReadonlyMap<WorkingChain, RawPolylineIndex>,
 ): CurvePiece[] {
   return chains.flatMap((chain) => {
     if (chain.points.length < 2) throw new Error('Terrain contour chain emitted too few points.')
     const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
-    const rawIndex = rawIndexes.get(chain)!
+    const referenceIndex = referenceIndexes.get(chain)!
     return points.slice(0, -1).map((start, index) => ({
       chain,
-      rawIndex,
+      referenceIndex,
       index,
       start,
       end: points[index + 1]!,
@@ -71,9 +78,9 @@ function nonincidentIntersections(
 
 /**
  * Rare tip geometry can smooth two stretches of boundary across each other, and no local
- * envelope can tell those stretches from an ordinary staircase. Repair directly instead: pull
- * the points of every crossing piece halfway toward their raw positions and sweep again. Raw
- * geometry is planar, so the halving always converges.
+ * envelope can tell those stretches apart in time. Repair directly instead: pull the points of
+ * every crossing piece halfway toward their reference positions and sweep again. The corner-cut
+ * reference is planar, so the halving always converges without reintroducing staircase corners.
  */
 const INTERSECTION_REPAIR_PASSES = 12
 
@@ -81,8 +88,10 @@ export function repairAndValidateCurveGraph(
   chains: readonly WorkingChain[],
   maxDeviation: number,
 ): void {
-  const rawIndexes = new Map(chains.map((chain) => [chain, indexRawPolyline(chain.rawPoints)]))
-  let pieces = curvePieces(chains, rawIndexes)
+  const referenceIndexes = new Map(
+    chains.map((chain) => [chain, indexRawPolyline(referencePolyline(chain))]),
+  )
+  let pieces = curvePieces(chains, referenceIndexes)
   for (let pass = 0; pass < INTERSECTION_REPAIR_PASSES; pass += 1) {
     const offenders = nonincidentIntersections(pieces)
     if (offenders.length === 0) break
@@ -100,29 +109,28 @@ export function repairAndValidateCurveGraph(
       for (const index of indexes) {
         const point = points[index]
         if (point === undefined || point.locked) continue
-        const raw = rawPointAt(
-          point.rawOffset,
-          chain.rawPoints,
-          chain.spans,
-          chain.rawLength,
+        const anchor = referencePointAtRawOffset(
+          referenceOf(chain),
           chain.closed,
+          chain.rawLength,
+          point.rawOffset,
         )
         points[index] = {
           ...point,
-          x: raw.x + (point.x - raw.x) * 0.5,
-          y: raw.y + (point.y - raw.y) * 0.5,
+          x: anchor.x + (point.x - anchor.x) * 0.5,
+          y: anchor.y + (point.y - anchor.y) * 0.5,
         }
       }
       chain.points = points
     }
-    pieces = curvePieces(chains, rawIndexes)
+    pieces = curvePieces(chains, referenceIndexes)
   }
   const allowed = maxDeviation + VALIDATION_SAG_CELLS
   for (const piece of pieces) {
-    const tube = segmentTubeDeviation(piece.start, piece.end, piece.rawIndex)
+    const tube = segmentTubeDeviation(piece.start, piece.end, piece.referenceIndex)
     if (tube.worst + tube.spacing / 2 > allowed + 1e-7) {
       throw new Error(
-        `Terrain contour curve escaped its source tube: chain ${piece.chain.id} ` +
+        `Terrain contour curve escaped its reference tube: chain ${piece.chain.id} ` +
           `(${piece.chain.leftMaterial} against ${piece.chain.rightMaterial}) near ` +
           `(${piece.start.x.toFixed(2)}, ${piece.start.y.toFixed(2)}) deviates ` +
           `${tube.worst.toFixed(3)} of ${allowed.toFixed(3)} allowed cells.`,
@@ -182,7 +190,7 @@ function curveBucketKeys(piece: Pick<CurvePiece, 'start' | 'end'>): readonly str
 function segmentTubeDeviation(
   start: ContourCoordinate,
   end: ContourCoordinate,
-  rawIndex: RawPolylineIndex,
+  referenceIndex: RawPolylineIndex,
 ): { readonly worst: number; readonly spacing: number } {
   const steps = Math.max(1, Math.ceil(distance(start, end) / TUBE_SAMPLE_SPACING_CELLS))
   const spacing = distance(start, end) / steps
@@ -193,7 +201,7 @@ function segmentTubeDeviation(
       x: start.x + (end.x - start.x) * amount,
       y: start.y + (end.y - start.y) * amount,
     }
-    worst = Math.max(worst, projectToPolyline(point, rawIndex).distance)
+    worst = Math.max(worst, projectToPolyline(point, referenceIndex).distance)
   }
   return { worst, spacing }
 }

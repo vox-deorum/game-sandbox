@@ -24,7 +24,7 @@ const names: Readonly<Record<string, string>> = {
 
 const landProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.25,
-  smoothingPasses: 72,
+  smoothingPasses: 16,
   octaves: [
     { wavelengthCells: 8, amplitudeCells: 0.28 },
     { wavelengthCells: 3, amplitudeCells: 0.12 },
@@ -34,7 +34,7 @@ const landProfile: TerrainCurveProfile = {
 
 const waterProfile: TerrainCurveProfile = {
   sampleSpacingCells: 0.2,
-  smoothingPasses: 160,
+  smoothingPasses: 24,
   octaves: [
     { wavelengthCells: 11, amplitudeCells: 0.34 },
     { wavelengthCells: 4, amplitudeCells: 0.14 },
@@ -348,7 +348,7 @@ describe('continuous terrain contour planning', () => {
     const result = plan(['wwwww', 'ggggg', 'wwwww'])
     for (const chain of result.chains) {
       expect(
-        Math.max(...chain.points.map((point) => distanceToPolyline(point, chain.rawPoints))),
+        Math.max(...chain.points.map((point) => distanceToPolyline(point, chain.referencePoints))),
       ).toBeLessThanOrEqual(settings.maxDeviationCells + 0.02 + 1e-8)
     }
     const allPoints = result.chains.flatMap((chain) => chain.points)
@@ -419,21 +419,95 @@ describe('continuous terrain contour planning', () => {
     expect(partialCount(widerShore.points)).toBeGreaterThan(partialCount(defaultShore.points))
   })
 
-  it('keeps every turning-corridor segment inside its source tube', () => {
+  it('keeps every turning-corridor segment inside its reference tube', () => {
     const result = plan(['wwwww', 'wgggw', 'wwwgw', 'wwwww'], {
       profiles: { water: { octaves: [] } },
     })
     for (const chain of result.chains) {
       const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
+      const reference = chain.closed
+        ? [...chain.referencePoints, chain.referencePoints[0]!]
+        : chain.referencePoints
       for (let index = 0; index < points.length - 1; index += 1) {
         const start = points[index]!
         const end = points[index + 1]!
         const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-        expect(distanceToPolyline(midpoint, chain.rawPoints)).toBeLessThanOrEqual(
+        expect(distanceToPolyline(midpoint, reference)).toBeLessThanOrEqual(
           settings.maxDeviationCells + 0.02 + 1e-8,
         )
       }
     }
+  })
+
+  it('renders a one-cell staircase band as diagonals instead of stairs', () => {
+    const rows = ['ggggggg', 'ggggggg', 'eeeeggg', 'wwweeee', 'wwwwwww']
+    const result = plan(rows)
+    const bandChains = result.chains.filter(
+      (chain) => chain.materials.includes('reeds') && !chain.materials.includes(TERRAIN_EXTERIOR),
+    )
+    expect(bandChains).toHaveLength(2)
+    for (const chain of bandChains) {
+      const free = chain.points.filter((point) => !point.locked)
+      expect(
+        Math.max(...free.map((point) => distanceToPolyline(point, chain.rawPoints))),
+      ).toBeGreaterThan(0.2)
+      for (let index = 1; index < chain.points.length - 1; index += 1) {
+        const before = chain.points[index - 1]!
+        const point = chain.points[index]!
+        const after = chain.points[index + 1]!
+        if (before.locked || point.locked || after.locked) continue
+        if (
+          Math.hypot(point.x - before.x, point.y - before.y) < 0.02 ||
+          Math.hypot(after.x - point.x, after.y - point.y) < 0.02
+        ) {
+          continue
+        }
+        const firstAngle = Math.atan2(point.y - before.y, point.x - before.x)
+        const secondAngle = Math.atan2(after.y - point.y, after.x - point.x)
+        expect(Math.abs(normalizedAngle(secondAngle - firstAngle))).toBeLessThan(Math.PI / 3)
+      }
+    }
+    const [first, second] = bandChains
+    const separation = Math.min(
+      ...first!.points.map((point) =>
+        Math.min(
+          ...second!.points.map((other) => Math.hypot(point.x - other.x, point.y - other.y)),
+        ),
+      ),
+    )
+    expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
+  })
+
+  it('exposes a corner-cut reference near the raw boundary that keeps the closed seam contract', () => {
+    const pond = plan(['gggg', 'gwwg', 'gwwg', 'gggg'])
+    const shore = pond.chains.find((chain) => chain.closed && chain.materials.includes('water'))!
+    const corners = [
+      { x: 1, y: 1 },
+      { x: 3, y: 1 },
+      { x: 3, y: 3 },
+      { x: 1, y: 3 },
+    ]
+    expect(
+      shore.referencePoints.some((point) =>
+        corners.some((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9),
+      ),
+    ).toBe(false)
+    const closedReference = [...shore.referencePoints, shore.referencePoints[0]!]
+    for (let index = 0; index < closedReference.length - 1; index += 1) {
+      const start = closedReference[index]!
+      const end = closedReference[index + 1]!
+      const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+      expect(distanceToPolyline(midpoint, shore.rawPoints)).toBeLessThanOrEqual(
+        0.48 / Math.SQRT2 + 1e-9,
+      )
+    }
+    expect(shore.points[0]!.rawOffset).toBe(0)
+    for (let index = 1; index < shore.points.length; index += 1) {
+      expect(shore.points[index]!.rawOffset).toBeGreaterThanOrEqual(
+        shore.points[index - 1]!.rawOffset - 1e-9,
+      )
+    }
+    expect(shore.points.at(-1)!.rawOffset).toBeLessThan(shore.rawLength + 1e-9)
   })
 
   it('caps free-point deviation to the local corridor, then lets it open up where terrain is wide', () => {

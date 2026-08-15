@@ -1,10 +1,23 @@
 import { distance, stableHashParts } from '@renderers/base/math.js'
 
-import { TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
 import { cellKey, EPSILON, pointToSegmentDistance, projectToSegment } from './terrain-helpers.js'
+import {
+  circularDistanceToInterval,
+  nearestIntervalDistance,
+  normalizedOffset,
+  offsetLocked,
+  rawOffsetAtReferenceOffset,
+  rawPointAt,
+  referenceOf,
+  referencePointAtReferenceOffset,
+  referenceSegmentAt,
+  referenceSegmentCount,
+} from './terrain-contour-reference.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
+import type { OffsetInterval } from './terrain-contour-reference.js'
 import type {
   ContourCoordinate,
+  ContourReference,
   TerrainContourPoint,
   TerrainContourSettings,
   TerrainContourSpan,
@@ -12,11 +25,6 @@ import type {
   TerrainCurveSourcePoint,
 } from './types.js'
 import type { WorkingChain } from './terrain-contour-graph.js'
-/** A closed raw-arc interval used for locks and shoreline treatment. */
-export interface OffsetInterval {
-  readonly startOffset: number
-  readonly endOffset: number
-}
 
 interface ContourSpanIndex {
   readonly spans: readonly TerrainContourSpan[]
@@ -25,7 +33,7 @@ interface ContourSpanIndex {
   readonly hasShoreline: boolean
 }
 
-/** One raw source segment tagged with its owning chain and arc interval for clearance queries. */
+/** One reference segment tagged with its owning chain and arc interval for clearance queries. */
 interface ClearanceSegment {
   readonly chain: WorkingChain
   readonly start: ContourCoordinate
@@ -34,39 +42,36 @@ interface ClearanceSegment {
   readonly endOffset: number
 }
 
-/** Cell-bucketed raw segments of every chain, queried while each single chain is shaped. */
+/** Cell-bucketed reference segments of every chain, queried while each single chain is shaped. */
 type ClearanceIndex = ReadonlyMap<string, readonly ClearanceSegment[]>
 
 /** Clearance beyond this many cells never tightens the envelope, so the query stays local. */
 const CLEARANCE_SEARCH_CELLS = 3
 
-/** Arc reach when clamping a shaped point against its own local stretch of raw boundary. */
+/** Arc reach when clamping a shaped point against its own local stretch of reference boundary. */
 const CLAMP_WINDOW_CELLS = 2.5
 
 /**
  * A same-chain segment competes for clearance only when its arc distance is clearly larger than
- * its straight-line distance. Local continuation stays excluded so it can smooth: a straight run
- * holds ratio one and a diagonal staircase about 1.4. Facing walls of an inlet or hairpin sit at
- * two and above and must count, or the two sides smooth across their corridor into each other.
+ * its straight-line distance. Local continuation stays excluded so it can smooth. Facing walls of
+ * an inlet or hairpin sit at ratio two and above and must count, or the two sides smooth across
+ * their corridor into each other. The corner-cut reference holds ratio near one on straight and
+ * diagonal runs, so this bound keeps a comfortable margin.
  */
 const SELF_FOLD_ARC_RATIO = 1.6
 
 export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
   const buckets = new Map<string, ClearanceSegment[]>()
   for (const chain of chains) {
-    for (const [index, span] of chain.spans.entries()) {
-      const start = chain.rawPoints[index]
-      const end = chain.rawPoints[index + 1]
-      if (start === undefined || end === undefined) {
-        throw new Error('Terrain contour clearance segment is missing its raw points.')
-      }
-      const segment: ClearanceSegment = {
-        chain,
-        start,
-        end,
-        startOffset: span.startOffset,
-        endOffset: span.endOffset,
-      }
+    const reference = referenceOf(chain)
+    const count = referenceSegmentCount(reference, chain.closed)
+    for (let index = 0; index < count; index += 1) {
+      const { start, end, startOffset, endOffset } = referenceSegmentAt(
+        reference,
+        chain.closed,
+        index,
+      )
+      const segment: ClearanceSegment = { chain, start, end, startOffset, endOffset }
       const minimumX = Math.floor(Math.min(start.x, end.x))
       const maximumX = Math.floor(Math.max(start.x, end.x))
       const minimumY = Math.floor(Math.min(start.y, end.y))
@@ -85,8 +90,9 @@ export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceI
 }
 
 /**
- * Distance from one raw sample to the nearest competing raw segment. Segments of the same chain
- * count only beyond a short arc window, so a serpentine chain cannot pinch its own corridor.
+ * Distance from one reference sample to the nearest competing reference segment. Segments of the
+ * same chain count only beyond a short arc window, so a serpentine chain cannot pinch its own
+ * corridor.
  */
 function clearanceAt(
   index: ClearanceIndex,
@@ -95,6 +101,7 @@ function clearanceAt(
   sourceOffset: number,
   arcWindowCells: number,
 ): number {
+  const referenceLength = referenceOf(chain).length
   const column = Math.floor(point.x)
   const row = Math.floor(point.y)
   let nearest = Number.POSITIVE_INFINITY
@@ -104,10 +111,10 @@ function clearanceAt(
         const separation = pointToSegmentDistance(point, segment.start, segment.end)
         if (segment.chain === chain) {
           const arcDistance = circularDistanceToInterval(
-            normalizedOffset(sourceOffset, chain.rawLength, chain.closed),
+            normalizedOffset(sourceOffset, referenceLength, chain.closed),
             segment.startOffset,
             segment.endOffset,
-            chain.rawLength,
+            referenceLength,
             chain.closed,
           )
           const window = Math.max(arcWindowCells, SELF_FOLD_ARC_RATIO * separation)
@@ -121,9 +128,10 @@ function clearanceAt(
 }
 
 /**
- * Shape one chain. Junction tangents and fixed spans stay locked, octave noise fades under the
- * clearance envelope, and every free point is finally clamped to that envelope so smoothing can
- * never leave the tube either.
+ * Shape one chain. The corner-cut reference supplies the source polyline, junction tangents and
+ * fixed spans stay locked on raw geometry, octave noise fades under the clearance envelope, and
+ * every free point is finally clamped to that envelope so smoothing can never leave the tube
+ * either.
  */
 function shapeContourChain(
   chain: WorkingChain,
@@ -132,25 +140,16 @@ function shapeContourChain(
   layoutHash: number,
   clearanceIndex: ClearanceIndex,
 ): readonly TerrainContourPoint[] {
+  const reference = referenceOf(chain)
   const spanIndex = indexContourSpans(chain.spans)
-  const lockOffsets = contourLockOffsets(
-    spanIndex.fixed,
-    chain.rawLength,
-    chain.closed,
-    settings.junctionTangentCells,
-  )
   const profile = chain.pairKey.split('\u0000').includes('water')
     ? settings.profiles.water
     : settings.profiles.land
-  const source = curveSourcePoints(
-    chain.rawPoints,
-    chain.spans,
-    chain.rawLength,
-    chain.closed,
-    lockOffsets,
-    spanIndex,
-    settings.junctionTangentCells,
-  )
+  const source: TerrainCurveSourcePoint[] = reference.points.map((point, index) => ({
+    x: point.x,
+    y: point.y,
+    locked: reference.locked[index] === true,
+  }))
   const envelope: TerrainCurveEnvelope = (rawX, rawY, sourceOffset) => {
     const clearance = clearanceAt(
       clearanceIndex,
@@ -172,32 +171,34 @@ function shapeContourChain(
     envelope,
   )
   return shaped.map((point): TerrainContourPoint => {
-    const raw = rawPointAt(
-      point.sourceOffset,
-      chain.rawPoints,
-      spanIndex.spans,
-      chain.rawLength,
+    const rawOffset = rawOffsetAtReferenceOffset(
+      reference,
       chain.closed,
-    )
-    const rawOffset = normalizedOffset(point.sourceOffset, chain.rawLength, chain.closed)
-    const shorelineFactor = shorelineFactorAt(
+      chain.rawLength,
       point.sourceOffset,
+    )
+    const shorelineFactor = shorelineFactorAt(
+      rawOffset,
       spanIndex,
       chain.rawLength,
       chain.closed,
       bridgeTaperCells,
     )
     const locked = offsetLocked(
-      point.sourceOffset,
+      rawOffset,
       spanIndex.fixed,
       chain.rawLength,
       chain.closed,
       settings.junctionTangentCells,
     )
-    if (locked) return { x: raw.x, y: raw.y, rawOffset, locked: true, shorelineFactor }
-    const nearest = nearestOwnSegment(chain, point, rawOffset)
+    if (locked) {
+      const raw = rawPointAt(rawOffset, chain.rawPoints, spanIndex.spans, chain.rawLength, chain.closed)
+      return { x: raw.x, y: raw.y, rawOffset, locked: true, shorelineFactor }
+    }
+    const anchor = referencePointAtReferenceOffset(reference, chain.closed, point.sourceOffset)
+    const nearest = nearestReferenceSegment(reference, chain.closed, point, point.sourceOffset)
     const cap = Math.min(
-      envelope(raw.x, raw.y, point.sourceOffset),
+      envelope(anchor.x, anchor.y, point.sourceOffset),
       envelope(nearest.foot.x, nearest.foot.y, nearest.footOffset),
     )
     if (nearest.separation <= cap) {
@@ -215,38 +216,38 @@ function shapeContourChain(
 }
 
 /**
- * The nearest point on the chain's own raw boundary within a local arc window of one offset.
- * The window keeps the clamp honest at concave corners and stops a smoothed small closed chain
- * from hiding near a far side of its own ring.
+ * The nearest point on the chain's own reference polyline within a local arc window of one
+ * offset. The window keeps the clamp honest at concave corners and stops a smoothed small closed
+ * chain from hiding near a far side of its own ring.
  */
-function nearestOwnSegment(
-  chain: WorkingChain,
+function nearestReferenceSegment(
+  reference: ContourReference,
+  closed: boolean,
   point: ContourCoordinate,
-  rawOffset: number,
+  referenceOffset: number,
 ): { readonly foot: ContourCoordinate; readonly separation: number; readonly footOffset: number } {
-  const spans = chain.spans
-  const count = spans.length
+  const count = referenceSegmentCount(reference, closed)
+  const offsets = reference.offsets
+  const points = reference.points
+  const endOffsetOf = (index: number): number =>
+    index + 1 < offsets.length ? offsets[index + 1]! : reference.length
+  const normalized = normalizedOffset(referenceOffset, reference.length, closed)
   let lower = 0
   let upper = count - 1
   while (lower < upper) {
     const middle = Math.floor((lower + upper) / 2)
-    if (spans[middle]!.endOffset > rawOffset + EPSILON) upper = middle
+    if (endOffsetOf(middle) > normalized + EPSILON) upper = middle
     else lower = middle + 1
   }
   const measure = (
     index: number,
   ): { foot: ContourCoordinate; separation: number; footOffset: number } => {
-    const start = chain.rawPoints[index]
-    const end = chain.rawPoints[index + 1]
-    const span = spans[index]
-    if (start === undefined || end === undefined || span === undefined) {
-      throw new Error('Terrain contour clamp segment is missing its raw points.')
-    }
-    const foot = projectToSegment(point, start, end)
+    const start = points[index]!
+    const foot = projectToSegment(point, start, points[(index + 1) % points.length]!)
     return {
       foot,
       separation: distance(point, foot),
-      footOffset: span.startOffset + distance(start, foot),
+      footOffset: offsets[index]! + distance(start, foot),
     }
   }
   let best = measure(lower)
@@ -254,16 +255,14 @@ function nearestOwnSegment(
     let index = lower
     for (let step = 0; step < count - 1; step += 1) {
       let next = index + direction
-      if (chain.closed) next = (next + count) % count
+      if (closed) next = (next + count) % count
       else if (next < 0 || next >= count) break
-      const span = spans[next]
-      if (span === undefined) break
       const arcDistance = circularDistanceToInterval(
-        rawOffset,
-        span.startOffset,
-        span.endOffset,
-        chain.rawLength,
-        chain.closed,
+        normalized,
+        offsets[next]!,
+        endOffsetOf(next),
+        reference.length,
+        closed,
       )
       if (arcDistance > CLAMP_WINDOW_CELLS + EPSILON) break
       const candidate = measure(next)
@@ -272,29 +271,6 @@ function nearestOwnSegment(
     }
   }
   return best
-}
-
-function curveSourcePoints(
-  rawPoints: readonly ContourCoordinate[],
-  spans: readonly TerrainContourSpan[],
-  rawLength: number,
-  closed: boolean,
-  lockOffsets: readonly number[],
-  spanIndex: ContourSpanIndex,
-  tangentLength: number,
-): TerrainCurveSourcePoint[] {
-  const offsets = new Map<string, number>()
-  for (const offset of [...spans.map((span) => span.startOffset), ...lockOffsets]) {
-    const normalized = normalizedOffset(offset, rawLength, closed)
-    offsets.set(contourOffsetKey(normalized), normalized)
-  }
-  if (!closed) offsets.set(contourOffsetKey(rawLength), rawLength)
-  return [...offsets.values()]
-    .sort((first, second) => first - second)
-    .map((offset) => ({
-      ...rawPointAt(offset, rawPoints, spans, rawLength, closed),
-      locked: offsetLocked(offset, spanIndex.fixed, rawLength, closed, tangentLength),
-    }))
 }
 
 function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanIndex {
@@ -306,92 +282,6 @@ function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanInd
     bridgeSuppressed: spans.filter((span) => span.bridgeSuppressed).sort(byStartOffset),
     hasShoreline: spans.some((span) => span.shoreline),
   }
-}
-
-function contourLockOffsets(
-  fixedIntervals: readonly OffsetInterval[],
-  rawLength: number,
-  closed: boolean,
-  tangentLength: number,
-): number[] {
-  const offsets: number[] = []
-  const offsetKeys = new Set<string>()
-  const add = (offset: number): void => {
-    const normalized = normalizedOffset(offset, rawLength, closed)
-    const key = contourOffsetKey(normalized)
-    if (offsetKeys.has(key)) return
-    offsetKeys.add(key)
-    offsets.push(normalized)
-  }
-  if (!closed) {
-    add(0)
-    add(Math.min(tangentLength, rawLength))
-    add(Math.max(0, rawLength - tangentLength))
-    add(rawLength)
-  }
-  for (const interval of fixedIntervals) {
-    add(interval.startOffset - tangentLength)
-    add(interval.startOffset)
-    add(interval.endOffset)
-    add(interval.endOffset + tangentLength)
-  }
-  return offsets.sort((first, second) => first - second)
-}
-
-function contourOffsetKey(offset: number): string {
-  return offset.toFixed(9)
-}
-
-function normalizedOffset(offset: number, rawLength: number, closed: boolean): number {
-  if (!closed) return Math.max(0, Math.min(rawLength, offset))
-  const normalized = offset % rawLength
-  return normalized < 0 ? normalized + rawLength : normalized
-}
-
-export function rawPointAt(
-  offset: number,
-  rawPoints: readonly ContourCoordinate[],
-  spans: readonly TerrainContourSpan[],
-  rawLength: number,
-  closed: boolean,
-): ContourCoordinate {
-  const normalized = normalizedOffset(offset, rawLength, closed)
-  let lower = 0
-  let upper = spans.length
-  while (lower < upper) {
-    const middle = Math.floor((lower + upper) / 2)
-    if (spans[middle]!.endOffset > normalized + EPSILON) upper = middle
-    else lower = middle + 1
-  }
-  const selectedIndex = Math.min(lower, spans.length - 1)
-  const selected = spans[selectedIndex]!
-  const start = rawPoints[selectedIndex]!
-  const end = rawPoints[selectedIndex + 1]!
-  const amount = Math.max(
-    0,
-    Math.min(1, (normalized - selected.startOffset) / (selected.endOffset - selected.startOffset)),
-  )
-  return { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount }
-}
-
-function offsetLocked(
-  offset: number,
-  fixedIntervals: readonly OffsetInterval[],
-  rawLength: number,
-  closed: boolean,
-  tangentLength: number,
-): boolean {
-  const normalized = normalizedOffset(offset, rawLength, closed)
-  if (
-    !closed &&
-    (normalized <= tangentLength + EPSILON || rawLength - normalized <= tangentLength + EPSILON)
-  ) {
-    return true
-  }
-  return (
-    nearestIntervalDistance(normalized, fixedIntervals, rawLength, closed) <=
-    tangentLength + EPSILON
-  )
 }
 
 function shorelineFactorAt(
@@ -414,60 +304,19 @@ function shorelineFactorAt(
   return Math.min(1, distance / taperCells)
 }
 
-function nearestIntervalDistance(
-  offset: number,
-  intervals: readonly OffsetInterval[],
-  length: number,
-  closed: boolean,
-): number {
-  if (intervals.length === 0) return Number.POSITIVE_INFINITY
-  let lower = 0
-  let upper = intervals.length
-  while (lower < upper) {
-    const middle = Math.floor((lower + upper) / 2)
-    if (intervals[middle]!.startOffset <= offset) lower = middle + 1
-    else upper = middle
-  }
-  const candidateIndexes = closed ? [lower - 1, lower, 0, intervals.length - 1] : [lower - 1, lower]
-  let nearest = Number.POSITIVE_INFINITY
-  for (const index of candidateIndexes) {
-    if (index < 0 || index >= intervals.length) continue
-    const interval = intervals[index]!
-    nearest = Math.min(
-      nearest,
-      circularDistanceToInterval(offset, interval.startOffset, interval.endOffset, length, closed),
-    )
-  }
-  return nearest
-}
-
-function circularDistanceToInterval(
-  offset: number,
-  start: number,
-  end: number,
-  length: number,
-  closed: boolean,
-): number {
-  const direct = offset < start ? start - offset : offset > end ? offset - end : 0
-  if (!closed) return direct
-  const below = Math.abs(offset + length - end)
-  const above = Math.abs(start + length - offset)
-  return Math.min(direct, below, above)
-}
-
-/** A raw source-polyline segment used by curve validation. */
+/** A reference-polyline segment used by curve validation. */
 export interface RawPolylineSegment {
   readonly start: ContourCoordinate
   readonly end: ContourCoordinate
 }
 
-/** A cell-bucketed index of raw source-polyline segments. */
+/** A cell-bucketed index of polyline segments. */
 export interface RawPolylineIndex {
   readonly segments: readonly RawPolylineSegment[]
   readonly buckets: ReadonlyMap<string, readonly RawPolylineSegment[]>
 }
 
-/** Index raw source segments by cell so local contour adjustments avoid full-chain scans. */
+/** Index polyline segments by cell so local contour adjustments avoid full-chain scans. */
 export function indexRawPolyline(points: readonly ContourCoordinate[]): RawPolylineIndex {
   const segments = points.slice(0, -1).map((start, index) => ({ start, end: points[index + 1]! }))
   const buckets = new Map<string, RawPolylineSegment[]>()
@@ -507,7 +356,7 @@ export function projectToPolyline(
   return { point: nearest, distance: nearestDistance }
 }
 
-/** Return raw segments in the point cell and its eight neighbors, without duplicate probes. */
+/** Return indexed segments in the point cell and its eight neighbors, without duplicate probes. */
 function nearbyRawSegments(
   point: ContourCoordinate,
   index: RawPolylineIndex,
@@ -523,7 +372,7 @@ function nearbyRawSegments(
   return [...segments]
 }
 
-/** Shape every raw chain after the global clearance index has been built. */
+/** Shape every chain after references and the global clearance index have been built. */
 export function shapeChains(
   chains: readonly WorkingChain[],
   settings: TerrainContourSettings,

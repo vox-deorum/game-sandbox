@@ -4,6 +4,7 @@ import { FIXED_MATERIALS, TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
 import { cellAt, compareCells, EPSILON } from './terrain-helpers.js'
 import type {
   ContourCoordinate,
+  ContourReference,
   TerrainContourPoint,
   TerrainContourSide,
   TerrainContourSpan,
@@ -48,6 +49,7 @@ export interface WorkingChain {
   readonly rawPoints: readonly ContourCoordinate[]
   readonly rawLength: number
   readonly spans: readonly TerrainContourSpan[]
+  reference?: ContourReference
   points: readonly TerrainContourPoint[]
   readonly materials: readonly [string, string]
   readonly leftMaterial: string

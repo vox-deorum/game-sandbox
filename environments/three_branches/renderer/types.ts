@@ -306,6 +306,20 @@ export interface ContourCoordinate {
   readonly y: number
 }
 
+/** Corner-cut reference polyline that contour shaping and validation measure against. */
+export interface ContourReference {
+  /** Reference vertices in traversal order, without a repeated seam point. */
+  readonly points: readonly ContourCoordinate[]
+  /** Raw arc offset of each vertex, strictly increasing from zero. */
+  readonly rawOffsets: readonly number[]
+  /** Reference arc offset of each vertex, accumulated exactly as curve resampling does. */
+  readonly offsets: readonly number[]
+  /** Total reference arc length, including the seam segment of a closed chain. */
+  readonly length: number
+  /** Whether each vertex sits inside locked geometry. */
+  readonly locked: readonly boolean[]
+}
+
 /** Numeric controls for planning and shaping terrain contours. */
 export interface TerrainContourSettings {
   /** Curve profiles selected by terrain family. */
@@ -317,9 +331,13 @@ export interface TerrainContourSettings {
   }
   /** Locked tangent length on each side of a junction, in cells. */
   readonly junctionTangentCells: number
-  /** Maximum displacement from a raw boundary, in cells. */
+  /** Maximum displacement from a reference boundary, in cells. */
   readonly maxDeviationCells: number
-  /** Minimum visual corridor between competing boundaries, in cells. */
+  /**
+   * Minimum visual corridor between competing boundaries, in cells. One-cell corridors that run
+   * diagonally floor a little lower, near 0.6 cells, because the corner-cut reference renders a
+   * one-cell staircase band as a diagonal band of that natural width.
+   */
   readonly minimumCorridorCells: number
   /** Radius used to route ambiguous two-material saddles, in cells. */
   readonly saddleRadiusCells: number
@@ -405,6 +423,8 @@ export interface TerrainContourChain {
   readonly points: readonly TerrainContourPoint[]
   /** Authored points before shaping. */
   readonly rawPoints: readonly ContourCoordinate[]
+  /** Corner-cut reference points that shaping deviated from. */
+  readonly referencePoints: readonly ContourCoordinate[]
   /** Total authored curve length measured in cells. */
   readonly rawLength: number
   /** Source-provenance spans along the chain. */
