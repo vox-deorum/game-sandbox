@@ -134,5 +134,6 @@ describe('Three Branches chrome strip', () => {
     expect(labels).toHaveLength(4)
     expect(labels.every((label) => label.resolution === 1)).toBe(true)
     expect(labels.every((label) => label.style.fontWeight === 'bold')).toBe(true)
+    expect(labels.every((label) => label.style.fontSize === 20)).toBe(true)
   })
 })

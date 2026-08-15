@@ -53,6 +53,7 @@ type Rect = { x: number; y: number; width: number; height: number }
 
 const BELL_ICON_X = 560
 const BELL_ICON_SIZE = 18
+const CHROME_FONT_SIZE = 20
 const TEXTURE_FLECK_COUNT = 40
 
 /**
@@ -70,7 +71,7 @@ export function createChrome(layer: Container, createText: RendererTextFactory):
   layer.addChild(textureFlecks(width, height))
   layer.addChild(new Graphics().rect(0, height - 1, width, 1).fill(PALETTE.ink))
 
-  const status = textAt(layer, createText, 16, height / 2, 19, PALETTE.ink)
+  const status = textAt(layer, createText, 16, height / 2, CHROME_FONT_SIZE, PALETTE.ink)
 
   const bellIcon = new Graphics()
   layer.addChild(bellIcon)
@@ -79,7 +80,7 @@ export function createChrome(layer: Container, createText: RendererTextFactory):
     createText,
     BELL_ICON_X + BELL_ICON_SIZE + 10,
     height / 2,
-    15,
+    CHROME_FONT_SIZE,
     PALETTE.ink,
   )
 
@@ -122,7 +123,7 @@ function plate(layer: Container, createText: RendererTextFactory, rect: Rect): P
   const panel = new Graphics()
   layer.addChild(panel)
   paintPlate(panel, rect, false)
-  const label = createText('', 15, PALETTE.bone, 'center')
+  const label = createText('', CHROME_FONT_SIZE, PALETTE.bone, 'center')
   label.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2)
   layer.addChild(label)
   return { panel, label }

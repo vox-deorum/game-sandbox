@@ -31,10 +31,14 @@ function speechLine(overrides: Partial<SpeechLine> & { key: string; speaker: str
 
 /** Every Text node's current string, gathered from anywhere in the layer's display tree. */
 function collectText(node: Container): string[] {
-  const found: string[] = []
+  return collectTextNodes(node).map((text) => text.text)
+}
+
+function collectTextNodes(node: Container): Text[] {
+  const found: Text[] = []
   for (const child of node.children) {
-    if (child instanceof Text) found.push(child.text)
-    found.push(...collectText(child as Container))
+    if (child instanceof Text) found.push(child)
+    found.push(...collectTextNodes(child as Container))
   }
   return found
 }
@@ -149,6 +153,7 @@ describe('createAnnotationLayer', () => {
     annotations.reconcile(scene, 4, 2, 1)
     expect(layer.children).toHaveLength(scene.characters.length)
     expect(collectText(layer)).toContain('visitor')
+    expect(collectTextNodes(layer).find((text) => text.text === 'visitor')?.style.fontSize).toBe(14)
 
     const trimmed: FrameScene = {
       ...scene,

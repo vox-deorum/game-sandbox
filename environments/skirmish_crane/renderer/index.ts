@@ -39,17 +39,17 @@ import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './asset
 import { drawActivationSeal, drawBattlefield, drawRangeWash, drawZoneMarkers } from './board.js'
 import {
   activationPulseAlpha,
-  drawFogVeil,
-  drawOrderMarks,
   CONFIRM_BUTTON,
+  drawFogVeil,
   drawOrderControls,
+  drawOrderMarks,
   drawOrderPulse,
   FOG_CROSSFADE_MS,
   fogCrossfade,
   type OrderPlan,
   previewPhase,
-  REVERT_PULSE_MS,
   RESET_BUTTON,
+  REVERT_PULSE_MS,
   revertPulse,
   setResetButtonActive,
   wireOrderButtons,
@@ -618,8 +618,7 @@ export class CraneReachRenderer extends PixiRenderer {
   private updateEventPhaseProbe(): void {
     const event = this.event
     const schedule = this.eventSchedule
-    this.ctx.container.dataset.craneEventSettling =
-      this.settleRemainingMs > 0 ? 'true' : 'false'
+    this.ctx.container.dataset.craneEventSettling = this.settleRemainingMs > 0 ? 'true' : 'false'
     if (event === null || schedule === null) {
       this.ctx.container.dataset.craneEventPhase = 'idle'
       this.ctx.container.dataset.craneEventTracks = ''
@@ -910,7 +909,7 @@ export class CraneReachRenderer extends PixiRenderer {
         // Keep a two-CSS-pixel opaque edge even when the logical canvas is scaled down.
         { color: '#000000', width: 2 / Math.max(0.01, this.effectiveScale()) },
       )
-      damage.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
+      damage.resolution = this.textResolution(this.camera?.zoom ?? 1)
       damage.position.set(
         target?.x ?? this.event.to.x,
         (target?.y ?? this.event.to.y) - numeralRise,
@@ -923,7 +922,7 @@ export class CraneReachRenderer extends PixiRenderer {
         const color = cue.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
         const sign = cue.delta > 0 ? '+' : ''
         const capture = this.text(`${sign}${cue.delta}`, textMetrics.size, color, 'center', MONO)
-        capture.resolution = this.textResolution() * (this.camera?.zoom ?? 1)
+        capture.resolution = this.textResolution(this.camera?.zoom ?? 1)
         capture.position.set(cue.position.x, cue.position.y - numeralRise)
         capture.alpha = numeralFade
         this.eventLayer.addChild(capture)
@@ -1070,7 +1069,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.text.bind(this),
       scene,
       plan,
-      this.textResolution() * (this.camera?.zoom ?? 1),
+      this.textResolution(this.camera?.zoom ?? 1),
     )
     this.drawEndpointGhost(scene, unit, endpoint)
     // Clicking the endpoint takes a step back and clicking the unit's own tile resets; everything
@@ -1203,7 +1202,7 @@ export class CraneReachRenderer extends PixiRenderer {
     data.craneStepTextResolution =
       plan.order.path.directions.length === 0
         ? 'none'
-        : String(this.textResolution() * (this.camera?.zoom ?? 1))
+        : String(this.textResolution(this.camera?.zoom ?? 1))
     data.craneStrikePreview = previewProbe(plan.preview)
     const first = scene.tiles.find((tile) => offered.has(tile.key))
     if (first === undefined) {

@@ -32,6 +32,20 @@ export function clear(layer: Container): void {
 }
 
 /**
+ * Resolve a text texture's device-pixel density for the complete display transform.
+ *
+ * Downscaled text stays at native device density and is minified by the GPU. Enlarged text bakes at
+ * the transformed density so Pixi never magnifies a smaller glyph bitmap.
+ */
+export function textTextureResolution(
+  devicePixelRatio: number,
+  displayScale: number,
+  localScale = 1,
+): number {
+  return devicePixelRatio * Math.max(1, displayScale * localScale)
+}
+
+/**
  * A device-input intent a renderer declares from {@link PixiRenderer.inputs}: a gesture (keys and/or
  * a pointer on the stage) mapped to an action sent for a player. The base wires the mechanics — the
  * listeners, `preventDefault`, auto-repeat suppression, and teardown — so a renderer says "Space,
@@ -377,15 +391,12 @@ export abstract class PixiRenderer implements RendererInstance {
   }
 
   /**
-   * The device-pixel resolution a `Text` node must bake its bitmap at to stay crisp. PixiJS `Graphics`
-   * are vector and re-rasterize sharply under any transform, but `Text` bakes a fixed bitmap (at the
-   * app's `resolution`, i.e. `devicePixelRatio`) that the root's scale then *magnifies* — soft text.
-   * Multiplying by {@link scaleFactor} makes the texture's native density match its on-screen size.
-   * A subclass sets `node.resolution = this.textResolution()` when it applies a `Text`; because a
-   * resize re-runs `update`, the value tracks the live size with no extra wiring.
+   * The device-pixel resolution a Text node needs to stay crisp through its display transforms.
+   * PixiJS Graphics re-rasterize under transforms, but Text uses a fixed bitmap. Downscaled text
+   * keeps native device density, while enlarged text follows the combined root and local scale.
    */
-  protected textResolution(): number {
-    return this.devicePixelRatio() * this.scaleFactor
+  protected textResolution(localScale = 1): number {
+    return textTextureResolution(this.devicePixelRatio(), this.scaleFactor, localScale)
   }
 
   /** The canvas width in CSS pixels over the logical scene width, tracked on every resize. */

@@ -8,6 +8,7 @@ import {
   lerp,
   stableHash,
 } from '../src/renderers/base/math.js'
+import { textTextureResolution } from '../src/renderers/base/PixiRenderer.js'
 import { applyTexture, centeredSprite, flattenPoints } from '../src/renderers/base/pixi-helpers.js'
 
 describe('renderer math', () => {
@@ -29,6 +30,14 @@ describe('renderer math', () => {
     expect(stableHash('renderer-key')).toBe(590_418_368)
     expect(stableHash('')).toBe(2_166_136_261)
     expect(stableHash('renderer-key')).not.toBe(stableHash('Renderer-Key'))
+  })
+
+  it('keeps shrunken text at native density and follows magnification', () => {
+    expect(textTextureResolution(1, 0.6)).toBe(1)
+    expect(textTextureResolution(2, 0.6)).toBe(2)
+    expect(textTextureResolution(1, 1.25)).toBe(1.25)
+    expect(textTextureResolution(1, 0.6, 0.5)).toBe(1)
+    expect(textTextureResolution(1, 0.6, 2)).toBeCloseTo(1.2)
   })
 })
 

@@ -452,7 +452,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   private worldTextResolution(): number {
-    return this.textResolution() * this.visitorCamera.camera.zoom
+    return this.textResolution(this.visitorCamera.camera.zoom)
   }
 
   private async loadArt(): Promise<void> {
