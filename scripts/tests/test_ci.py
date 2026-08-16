@@ -91,3 +91,31 @@ def test_aop_check_rejects_a_successful_handshake(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(SystemExit, match="did not require"):
         ci._require_aop_client_certificate(["docker", "compose", "--project-name", "smoke"])
+
+
+def _proxy_inspection(ports: str):
+    """Answer both calls the published-port check makes: the container lookup, then the inspection."""
+
+    def run(args: list[str], **kwargs: object) -> ci.subprocess.CompletedProcess[str]:
+        stdout = ports if "inspect" in args else "proxy-container-id\n"
+        return ci.subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
+
+    return run
+
+
+def test_published_port_check_accepts_real_host_bindings(monkeypatch: pytest.MonkeyPatch) -> None:
+    bound = (
+        '{"443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "443"}], '
+        '"8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18443"}]}'
+    )
+    monkeypatch.setattr(ci.subprocess, "run", _proxy_inspection(bound))
+
+    ci._require_published_proxy_ports(["docker", "compose", "--project-name", "smoke"])
+
+
+def test_published_port_check_catches_an_internal_only_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The failure this guards: Docker records the request but binds nothing, so the host refuses."""
+    monkeypatch.setattr(ci.subprocess, "run", _proxy_inspection('{"443/tcp": null, "8443/tcp": null}'))
+
+    with pytest.raises(SystemExit, match="443/tcp, 8443/tcp"):
+        ci._require_published_proxy_ports(["docker", "compose", "--project-name", "smoke"])

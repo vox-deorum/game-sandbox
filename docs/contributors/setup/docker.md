@@ -68,7 +68,7 @@ The manually triggered Compose smoke workflow rehearses this deployment on a Lin
 
 ## How the container is set up
 
-`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container joins an outbound network for GitHub and model providers and the `game-sandbox-internal` network. nginx joins only the internal network.
+`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container joins an outbound network for GitHub and model providers and the `game-sandbox-internal` network. nginx joins both of those networks. It needs the outbound one only to be reachable at all: Docker binds a published port through a container's endpoint on a non-internal network, and the internal network is gateway-free, so an nginx attached to that network alone leaves every published port unbound on the host. nginx addresses the app by the `app-internal` alias, which the app carries only on the internal network, so traffic to the app never crosses the outbound one.
 
 The Compose `app` container publishes no host ports. nginx publishes public port 443 and binds `${LOCAL_HTTPS_PORT:-8443}` to IPv4 loopback. It forwards HTTP and WebSocket traffic to the Compose `app` container through Docker DNS, including after that container is recreated.
 

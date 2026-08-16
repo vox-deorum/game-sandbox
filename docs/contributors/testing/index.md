@@ -100,7 +100,7 @@ UI changes need matching jsdom tests and relevant browser journeys. Run the cove
 uv run python scripts/ci.py compose-smoke
 ```
 
-This manually dispatched job boots a temporary Compose project on a Linux Docker daemon and verifies the TLS boundary, proxy and Compose `app` container connectivity, mounted data, and session cleanup. It does not cover the Cloudflare source-IP allowlist, and it refuses to run while a repository-root `.env` or `.tls` exists. See [Run the app in Docker](../setup/docker.md) and [Execution boundary](../runtime/execution.md); on Windows, run it under WSL.
+This manually dispatched job boots a temporary Compose project on a Linux Docker daemon, checks that the proxy's published ports reached the host, and verifies the TLS boundary, proxy and Compose `app` container connectivity, mounted data, and session cleanup. It does not cover the Cloudflare source-IP allowlist, and it refuses to run while a repository-root `.env` or `.tls` exists. See [Run the app in Docker](../setup/docker.md) and [Execution boundary](../runtime/execution.md); on Windows, run it under WSL.
 
 Backend integration covers the LLM network boundary.
 

@@ -286,6 +286,37 @@ def _require_aop_client_certificate(compose: list[str]) -> None:
         )
 
 
+def _require_published_proxy_ports(compose: list[str]) -> None:
+    """Prove the proxy's published ports actually reached the host.
+
+    Inspect the runtime view rather than ``HostConfig.PortBindings``: the daemon keeps the request
+    there whether or not it binds anything. Docker binds a published port only on a container's
+    gateway endpoint, so a proxy attached to nothing but the gateway-free internal network leaves
+    ``NetworkSettings.Ports`` null and answers no host connection.
+    """
+    proxy_id = subprocess.run(
+        [*compose, "ps", "-q", "proxy"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    published = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", proxy_id],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    ports = json.loads(published.stdout) or {}
+    unbound = [port for port in ("443/tcp", "8443/tcp") if not ports.get(port)]
+    if unbound:
+        raise SystemExit(
+            f"the proxy published no host binding for {', '.join(unbound)}; a container attached "
+            "only to an internal network never gets its ports bound"
+        )
+
+
 def job_compose_smoke() -> None:
     # Rehearses the containerized deployment from docs/contributors/setup/docker.md: build the app
     # and proxy images, boot compose.yaml with throwaway state, and check the TLS and container
@@ -338,6 +369,7 @@ def job_compose_smoke() -> None:
     try:
         _run([*compose, "build", "--pull"])
         _run([*compose, "up", "-d"])
+        _require_published_proxy_ports(compose)
         _wait_for_http(url, 300, ca_file=certificate)
         _require_aop_client_certificate(compose)
         _require_https_rejection(

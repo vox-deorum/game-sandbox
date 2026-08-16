@@ -36,6 +36,7 @@ services:
       game-sandbox-internal:
         aliases:
           - app
+          - app-internal
       app-outbound: {}
 
   proxy:
@@ -54,8 +55,13 @@ services:
       - "127.0.0.1:${LOCAL_HTTPS_PORT:-8443}:8443"
     volumes:
       - ./.tls:/tls
+    # Docker binds a published port only on a container's gateway endpoint, and the internal
+    # network is gateway-free, so a proxy attached to it alone reaches no host port at all.
+    # app-outbound supplies that endpoint. nginx still reaches the app over the internal
+    # network: it addresses the app-internal alias, which exists only there.
     networks:
       - game-sandbox-internal
+      - app-outbound
     healthcheck:
       test:
         - CMD-SHELL

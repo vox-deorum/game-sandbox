@@ -15,12 +15,12 @@ Both modes run the same application code. Containerized mode packages the proces
 
 The app container mounts the daemon socket and launches session containers as siblings on the same daemon. Nothing is nested: there is one daemon, and the app is one more container on it. nginx is the only service that publishes site ports.
 
-Containerized mode follows four rules:
+Containerized mode follows six rules:
 
 - **One data path on both sides.** Session containers bind-mount the recordings directory, and the daemon resolves a bind path against its own host filesystem, never against the requesting container. The data directory therefore sits at the identical absolute path on the host and inside the app container, and `compose.yaml` mounts it that way from a single `DATA_DIR` value.
 - **One public origin port.** nginx publishes HTTPS on port 443. It accepts public requests only from Cloudflare address ranges and requires Cloudflare's Global Authenticated Origin Pulls certificate. It serves the configured public hostname with a generated self-signed certificate. This combination requires Cloudflare SSL/TLS mode **Full**, not **Full (strict)**.
 - **One loopback origin port.** nginx publishes a second HTTPS listener on IPv4 loopback, port 8443 by default. It serves the full site for local administration and health checks without Cloudflare client authentication. It accepts only the `localhost` and `127.0.0.1` hostnames.
-- **No published app ports.** nginx reaches the app through a named internal Docker network. LLM-enabled session relays join that network and target the app service directly. The app's HTTP and internal LLM listener ports never bind to the host. [Execution](execution.md#live-sessions) defines the session-side network path.
+- **No published app ports.** nginx reaches the app through a named internal Docker network. LLM-enabled session relays join that network and target the app service directly. The app's HTTP and internal LLM listener ports never bind to the host. nginx also joins the outbound network, because Docker binds a published port only through an endpoint on a non-internal network. It addresses the app by an alias that exists only on the internal network, so its traffic to the app stays off the outbound one. [Execution](execution.md#live-sessions) defines the session-side network path.
 - **One backend per daemon.** At startup the backend reaps leftover containers from a previous run, telling a previous incarnation of itself from a live peer by process id. Process ids are namespace-local, so that distinction only works across host processes: host-process backends may share a daemon safely, while a containerized backend must be its daemon's only backend.
 - **A single-tenant machine.** The mounted daemon socket grants full control of the daemon, which is root-equivalent on the host. The machine hosting a containerized deployment runs nothing that must be protected from this app.
 
