@@ -8,6 +8,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -63,7 +64,7 @@ def test_missing_required_method_fails_detection():
     assert not is_agent(NoAct())
 
 
-def _load_template_agent_class(path: Path) -> type:
+def _load_template_agent_module(path: Path) -> ModuleType:
     # Load a template agent.py under a unique module name so it never collides with a repo's own
     # 'agent' module in sys.modules. The template ships a working agent whose top-level
     # ``from sandbox.<name> import ...`` is live, and that helper (``sandbox.cards`` /
@@ -86,7 +87,7 @@ def _load_template_agent_class(path: Path) -> type:
             assert spec is not None and spec.loader is not None
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            return module.Agent
+            return module
         finally:
             sys.path[:] = saved_path
             for key in [k for k in sys.modules if k == "sandbox" or k.startswith("sandbox.")]:
@@ -96,7 +97,7 @@ def _load_template_agent_class(path: Path) -> type:
 
 @pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
 def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
-    template_cls = _load_template_agent_class(agent_path)
+    template_cls = _load_template_agent_module(agent_path).Agent
     for name in ("reset", "act"):
         base_sig = inspect.signature(getattr(AgentBase, name))
         stub_sig = inspect.signature(getattr(template_cls, name))
@@ -109,6 +110,47 @@ def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
         assert base_parameters == stub_parameters, name
     # The template stub structurally satisfies the agent interface.
     assert is_agent(template_cls())
+
+
+def test_three_branches_starter_prioritizes_benches_then_doorways_then_pumps_and_waves(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    path = ENVIRONMENT_PACKAGES_DIR / "three_branches" / "template" / "agent.py"
+    module = _load_template_agent_module(path)
+    observation = {}
+    example = module.Agent()
+    example.reset(7, observation)
+    heading = 15.0
+    here = {"x": 1.0, "y": 1.0}
+    bench = {"type": "bench", "cell": {"x": 2, "y": 2}}
+
+    monkeypatch.setattr(module.me, "heading", lambda _observation: heading)
+    monkeypatch.setattr(module.props, "usable", lambda _observation: bench)
+    assert example.act(observation) == module.action.stand(heading, "use")
+
+    doorway = {"x": 3.0, "y": 4.0}
+    monkeypatch.setattr(module.props, "usable", lambda _observation: None)
+    monkeypatch.setattr(module.me, "position", lambda _observation: here)
+    monkeypatch.setattr(module.me, "home", lambda _observation: "home_1")
+    monkeypatch.setattr(module.people, "seen", lambda _observation: ())
+    monkeypatch.setattr(module.layout, "doorway", lambda _observation, _home: doorway)
+    monkeypatch.setattr(module.layout, "cell_at", lambda _observation, _position: {"x": 1, "y": 1})
+    monkeypatch.setattr(module.layout, "ground_at", lambda _observation, _cell: "interior")
+    assert example.act(observation) == module.action.walk(
+        module.geometry.heading_to(here, doorway), 1.0, "none"
+    )
+
+    pump = {"type": "pump", "cell": {"x": 5, "y": 6}}
+    monkeypatch.setattr(module.layout, "ground_at", lambda _observation, _cell: "ground")
+    monkeypatch.setattr(module.people, "seen", lambda _observation: ({"id": "player_0"},))
+    monkeypatch.setattr(module.props, "all", lambda _observation: (pump,))
+    assert example.act(observation) == module.action.walk(
+        module.geometry.heading_to(here, {"x": 5.5, "y": 6.5}), 1.0, "wave"
+    )
+
+    monkeypatch.setattr(module.people, "seen", lambda _observation: ())
+    monkeypatch.setattr(module.props, "all", lambda _observation: ())
+    assert example.act(observation) == module.action.walk(heading, 0.0, "none")
 
 
 @pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)

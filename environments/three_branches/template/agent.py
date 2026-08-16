@@ -40,3 +40,10 @@ class Agent:
         if pump is not None:
             return action.walk(geometry.heading_to(here, _cell_centre(pump["cell"])), 1.0, expression)
         return action.walk(heading, 0.0, expression)
+
+    # Optional: messaging. On your turn, chat receives messages addressed to your player since
+    # its previous turn. Return messages with a recipient and text, or nothing to stay silent.
+    # Use None as the recipient to broadcast. Every message is recorded and shown in replays.
+    #
+    # def chat(self, inbox: list[dict]) -> list[dict] | None:
+    #     ...

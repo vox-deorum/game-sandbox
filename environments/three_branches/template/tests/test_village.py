@@ -1,4 +1,4 @@
-"""Pins for the public ``sandbox.village`` helpers and starter agent."""
+"""Pins for the public ``sandbox.village`` helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import copy
 import subprocess
 import sys
 
-import agent
 import pytest
 from sandbox.env import META, make_env
 from sandbox.harness.environment import resolve_parameters
@@ -208,35 +207,6 @@ def test_doorway_returns_none_or_the_nearest_deterministic_multi_cell_run():
 
     observation["village"]["ground"] = tuple("g" * 120 for _ in range(120))
     assert layout.doorway(observation, "near") is None
-
-
-def test_starter_prioritizes_benches_then_doorways_then_pumps_and_waves(monkeypatch):
-    _env, observations = _observations()
-    observation = copy.deepcopy(observations["player_1"])
-    example = agent.Agent()
-    example.reset(7, observation)
-    heading = me.heading(observation)
-    bench = next(prop for prop in props.all(observation) if prop["type"] == "bench")
-
-    monkeypatch.setattr(agent.props, "usable", lambda _observation: bench)
-    assert example.act(observation) == action.stand(heading, "use")
-
-    monkeypatch.setattr(agent.props, "usable", lambda _observation: None)
-    monkeypatch.setattr(agent.layout, "ground_at", lambda _observation, _cell: "interior")
-    monkeypatch.setattr(agent.layout, "doorway", lambda _observation, _home: {"x": 3.0, "y": 4.0})
-    monkeypatch.setattr(agent.me, "position", lambda _observation: {"x": 1.0, "y": 1.0})
-    monkeypatch.setattr(agent.layout, "cell_at", lambda _observation, _position: {"x": 1, "y": 1})
-    assert example.act(observation) == action.walk(
-        geometry.heading_to({"x": 1.0, "y": 1.0}, {"x": 3.0, "y": 4.0}), 1.0
-    )
-
-    monkeypatch.setattr(agent.layout, "ground_at", lambda _observation, _cell: "ground")
-    observation["seen"] = (observation["self"],)
-    assert example.act(observation)["action"] == action.walk(0.0, 1.0, "wave")["action"]
-
-    observation["seen"] = ()
-    observation["village"]["props"] = tuple(prop for prop in props.all(observation) if prop["type"] != "pump")
-    assert example.act(observation) == action.walk(heading, 0.0)
 
 
 def test_importing_helpers_does_not_load_the_engine_stack():
