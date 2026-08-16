@@ -258,6 +258,7 @@ function assembleReference(
         y: last.point.y + (first.point.y - last.point.y) * amount,
       },
       locked: false,
+      midline: false,
     })
   }
   const points: ContourCoordinate[] = []
