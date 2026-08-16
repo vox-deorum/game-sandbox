@@ -13,12 +13,6 @@ import type {
 const EPSILON = 1e-9
 const OFFSET_DIGITS = 12
 
-/**
- * Heavy smoothing flattens junction approaches onto their pinned locks. The shape near a lock
- * blends back toward this low-pass snapshot so approaches keep a natural, lightly rounded form.
- */
-const LOCK_BLEND_SNAPSHOT_PASSES = 12
-
 /** Arc reach, in cells, when measuring displacement against the local source polyline. */
 const SOURCE_DISTANCE_WINDOW_CELLS = 2.5
 
@@ -61,7 +55,6 @@ export function shapeTerrainCurve(
   const passes = closed
     ? Math.min(profile.smoothingPasses, Math.ceil((samples.length * samples.length) / 90))
     : profile.smoothingPasses
-  let lowPassSnapshot: typeof positions | undefined
   for (let pass = 0; pass < passes; pass += 1) {
     const current = positions
     positions = samples.map((sample, sampleIndex) => {
@@ -75,27 +68,6 @@ export function shapeTerrainCurve(
       return {
         x: point.x * 0.5 + (before.x + after.x) * 0.25,
         y: point.y * 0.5 + (before.y + after.y) * 0.25,
-      }
-    })
-    if (pass + 1 === LOCK_BLEND_SNAPSHOT_PASSES) lowPassSnapshot = positions
-  }
-  if (lowPassSnapshot !== undefined && passes > LOCK_BLEND_SNAPSHOT_PASSES) {
-    const snapshot = lowPassSnapshot
-    const sigmaCells = profile.sampleSpacingCells * Math.sqrt(passes / 2)
-    const blendRadius = 3 * sigmaCells
-    positions = positions.map((point, sampleIndex) => {
-      const sample = required(samples[sampleIndex], 'Terrain curve blend sample is missing.')
-      if (sample.locked) return { x: sample.rawX, y: sample.rawY }
-      const lockDistance = required(
-        lockDistances[sampleIndex],
-        'Terrain curve lock distance is missing.',
-      )
-      const amount = smoothstep(Math.min(1, lockDistance / blendRadius))
-      if (amount >= 1) return point
-      const low = required(snapshot[sampleIndex], 'Terrain curve blend snapshot is missing.')
-      return {
-        x: low.x + (point.x - low.x) * amount,
-        y: low.y + (point.y - low.y) * amount,
       }
     })
   }
@@ -337,11 +309,6 @@ function pointAtOffset(
   const start = required(index.points[startIndex], 'Terrain curve segment start is missing.')
   const end = required(index.points[endIndex], 'Terrain curve segment end is missing.')
   return { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount }
-}
-
-function smoothstep(value: number): number {
-  const clamped = Math.max(0, Math.min(1, value))
-  return clamped * clamped * (3 - 2 * clamped)
 }
 
 /**
