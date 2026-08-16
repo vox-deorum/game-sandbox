@@ -147,7 +147,7 @@
   "characters": {
     "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],
     "details": ["hairKnot", "reedCap", "headscarf"],
-    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameMs": 170 },
+    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameMs": 680 },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
   "propEffects": {

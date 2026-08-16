@@ -425,21 +425,54 @@ export const THREE_BRANCHES_THUMBNAIL_ASSET = {
 
 export type ThreeBranchesAtlasName = (typeof THREE_BRANCHES_ASSET_CATALOG)[number]['name']
 
-/** Resolve and load the terrain atlas used by the current renderer. */
-export async function loadThreeBranchesRuntimeAssets<T>(
-  load: (source: string) => Promise<T> | T,
-): Promise<T> {
-  const path = './assets/terrain-atlas.png'
-  const source = threeBranchesTerrainAssetUrls()[path]
-  if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
-  return load(source)
+/** Runtime pages consumed after the terrain and character art units have landed. */
+export interface ThreeBranchesRuntimeAssets<T> {
+  terrain: T
+  characters: {
+    body: T
+    clothing: T
+    arms: T
+    details: T
+  }
+  effects: T
 }
 
-/** Ask Vite for the production URL of the one atlas consumed at runtime. */
-function threeBranchesTerrainAssetUrls(): Record<string, string> {
-  return import.meta.glob('./assets/terrain-atlas.png', {
-    eager: true,
-    import: 'default',
-    query: '?url',
-  }) as Record<string, string>
+/** Resolve and load only the atlas pages consumed by terrain and characters. */
+export async function loadThreeBranchesRuntimeAssets<T>(
+  load: (source: string) => Promise<T> | T,
+): Promise<ThreeBranchesRuntimeAssets<T>> {
+  const urls = threeBranchesRuntimeAssetUrls()
+  const loadPath = (path: string): Promise<T> => {
+    const source = urls[path]
+    if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
+    return Promise.resolve(load(source))
+  }
+  const [terrain, body, clothing, arms, details, effects] = await Promise.all([
+    loadPath('./assets/terrain-atlas.png'),
+    loadPath('./assets/characters-body-atlas.png'),
+    loadPath('./assets/characters-clothing-atlas.png'),
+    loadPath('./assets/characters-arms-atlas.png'),
+    loadPath('./assets/characters-details-atlas.png'),
+    loadPath('./assets/effects-atlas.png'),
+  ])
+  return { terrain, characters: { body, clothing, arms, details }, effects }
+}
+
+/** Ask Vite for production URLs without bundling the deferred atlas pages. */
+function threeBranchesRuntimeAssetUrls(): Record<string, string> {
+  return import.meta.glob(
+    [
+      './assets/terrain-atlas.png',
+      './assets/characters-body-atlas.png',
+      './assets/characters-clothing-atlas.png',
+      './assets/characters-arms-atlas.png',
+      './assets/characters-details-atlas.png',
+      './assets/effects-atlas.png',
+    ],
+    {
+      eager: true,
+      import: 'default',
+      query: '?url',
+    },
+  ) as Record<string, string>
 }

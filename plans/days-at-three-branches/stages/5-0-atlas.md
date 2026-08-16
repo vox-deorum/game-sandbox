@@ -41,9 +41,9 @@ The commands:
 
 Freshness is pixel defined, never byte defined: checks decode both sides and compare pixels, so zlib encoder variance across platforms cannot fail CI.
 
-## Terrain-only runtime loading
+## Incremental runtime loading
 
-`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and terrain load function. The only manifest changes are the six props renames and the added `ATLAS_PAGES` export. The runtime glob names only `terrain-atlas.png`, the one page consumed by the current renderer, so deferred pages and loose frames never enter the bundle. `source-art/` keeps the high-resolution originals as untouched provenance. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and runtime load function. The only manifest changes are the six props renames and the added `ATLAS_PAGES` export. The runtime glob names only pages with shipped consumers: terrain, the four character layers, and effects. Buildings, props, scenery, and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution originals as untouched provenance. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 ## Migration
 
@@ -59,4 +59,4 @@ All three ride the existing vitest include globs, so `scripts/ci.py` needs no ch
 
 ## Done when
 
-All nine pages have complete committed loose frame sets, `assets/props-atlas.png` is restored and matches the 36 loose props under the renamed frames, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only the terrain page, `source-art/` is unchanged, and the plan README and step 5.1 reference this pipeline.
+All nine pages have complete committed loose frame sets, `assets/props-atlas.png` is restored and matches the 36 loose props under the renamed frames, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, `source-art/` is unchanged, and the plan README and step 5.1 reference this pipeline.

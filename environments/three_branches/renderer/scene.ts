@@ -109,7 +109,7 @@ export function computeScene(
         ? character.id
         : `${character.id}: ${labelFor(character.expression.type)}`,
   }))
-  return { static: staticScene, dynamic, characters }
+  return { static: staticScene, dynamic, presentationTick: dynamic?.tick ?? 0, characters }
 }
 
 /** Interpolate matching stable-id characters while keeping the target frame authoritative. */
@@ -118,6 +118,7 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
   const prior = new Map(from.characters.map((character) => [character.id, character]))
   return {
     ...to,
+    presentationTick: lerp(from.presentationTick, to.presentationTick, amount),
     characters: to.characters.map((character) => {
       const start = prior.get(character.id)
       if (start === undefined) return character

@@ -104,7 +104,7 @@ The local manifest is the only asset catalog. Keep only the high-resolution orig
 
 `environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants, land, water, road, and path curve profiles, seam treatments (pooling, ink, water hatching), reed marks, inset route and deck geometry, roof fade, phase grades, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 
-`renderer/assets.ts` owns the catalog and runtime loader. Its six atlas entries record each source and compiled file, dimensions, tintability, consumer, and sprite-sheet frame grid. The runtime loader resolves only terrain until the deferred consumers land. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
+`renderer/assets.ts` owns the catalog and runtime loader. Its six atlas entries record each source and compiled file, dimensions, tintability, consumer, and sprite-sheet frame grid. The runtime loader resolves only pages with shipped consumers: terrain, the four character layers, and effects. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
 
 | Group | Compiled dimensions | Contents |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ The common layer under every visual step. It has no owner gate: the step 3 solid
 - `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
 - `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
-- `loadArt()` runs after setup: it resolves the terrain URL, loads that atlas, slices frames, bakes the tinted tileset, swaps the textured layers in, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
+- `loadArt()` runs after setup: it resolves the current runtime pages, validates and slices their frames, bakes the tinted tileset, installs terrain and character art, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
 
 `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
 

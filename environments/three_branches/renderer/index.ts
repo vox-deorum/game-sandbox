@@ -15,7 +15,7 @@ import type { GroundView, TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
 import { type AnnotationLayer, createAnnotationLayer } from './annotations.js'
-import { replaceFallback, runArtLoad } from './art-loading.js'
+import { runArtLoad } from './art-loading.js'
 import { loadThreeBranchesRuntimeAssets } from './assets.js'
 import { drawBuildings } from './buildings.js'
 import {
@@ -27,7 +27,7 @@ import {
   updateVisitorCamera,
   type VisitorCameraState,
 } from './camera.js'
-import { type CharacterLayer, createCharacterLayer } from './characters.js'
+import { type CharacterLayer, createCharacterArt, createCharacterLayer } from './characters.js'
 import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome, RECENTER_RECT } from './chrome.js'
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
@@ -77,6 +77,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly propShapes: readonly CollisionShape[]
   private worldRoot!: Container
   private mapLayer!: Container
+  private characterLayer!: Container
   private upperLayer!: Container
   private mapGround!: GroundView
   private upperGround: TiledGround | null = null
@@ -131,7 +132,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.mapLayer = new Container()
     const sceneryLayer = new Container()
     const propLayer = new Container()
-    const characterLayer = new Container()
+    this.characterLayer = new Container()
     this.upperLayer = new Container()
     const emissiveLayer = new Container()
     const annotationLayer = new Container()
@@ -143,7 +144,13 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const inputLayer = new Container()
     inputLayer.addChild(padLayer, paletteLayer)
     gradedWorld.filters = [new ColorMatrixFilter()]
-    gradedWorld.addChild(this.mapLayer, sceneryLayer, propLayer, characterLayer, this.upperLayer)
+    gradedWorld.addChild(
+      this.mapLayer,
+      sceneryLayer,
+      propLayer,
+      this.characterLayer,
+      this.upperLayer,
+    )
     this.worldRoot = new Container()
     // Nameplates and bubbles ride above the graded world and below the collision overlay, so the
     // information layer is never colour-graded and the diagnostic layer still reads on top of it.
@@ -154,7 +161,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.mapGround = drawMap(this.mapLayer, this.staticScene)
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
     this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
-    this.characters = createCharacterLayer(characterLayer)
+    this.characters = createCharacterLayer(this.characterLayer)
     this.annotations = createAnnotationLayer(annotationLayer, createText)
     this.collision = createCollisionLayer(collisionLayer, createText)
     this.collision.setVisible(this.collisionVisible)
@@ -439,6 +446,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.worldRoot.position.set(transform.x, THREE_BRANCHES_PRESENTATION.chromeHeight + transform.y)
     this.worldRoot.scale.set(transform.scale)
     this.ctx.container.dataset.threeBranchesCamera = cameraProbeValue(this.visitorCamera.camera)
+    this.redrawCharacters()
     // Plates and bubbles counter-scale against the camera to hold one readable size, so they follow
     // every camera change as well as every frame.
     this.redrawAnnotations()
@@ -459,6 +467,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     )
   }
 
+  private redrawCharacters(): void {
+    const scene = this.presentedScene
+    if (scene === null) return
+    this.characters.reconcile(scene, this.visitorCamera.camera.zoom, this.cameraLimits.minZoom)
+  }
+
   private readonly toggleCollision = (): void => {
     this.collisionVisible = !this.collisionVisible
     this.collision.setVisible(this.collisionVisible)
@@ -476,7 +490,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private presentScene(scene: FrameScene): void {
     this.presentedScene = scene
-    this.characters.reconcile(scene)
     const visitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
@@ -514,19 +527,68 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     await runArtLoad({
       load: () => loadThreeBranchesRuntimeAssets<Texture>((source) => Assets.load<Texture>(source)),
       active: () => !this.isDestroyed,
-      install: (terrainAtlas) => {
-        if (!(terrainAtlas instanceof Texture)) {
-          throw new Error('Three Branches terrain atlas must be one texture.')
+      install: (assets) => {
+        const textures = [
+          assets.terrain,
+          assets.characters.body,
+          assets.characters.clothing,
+          assets.characters.arms,
+          assets.characters.details,
+          assets.effects,
+        ]
+        if (!textures.every((texture) => texture instanceof Texture)) {
+          throw new Error('Three Branches runtime atlases must be textures.')
         }
-        const terrain = createTerrainArt(terrainAtlas, this.staticScene)
-        this.mapGround = replaceFallback(
-          this.mapGround,
-          () => drawMap(this.mapLayer, this.staticScene, terrain),
-          () => this.redrawCurrentFrame(),
-        )
-        this.upperGround?.destroy()
-        this.upperGround = drawUpperWalls(this.upperLayer, this.staticScene, terrain)
-        this.buildingOutlines.destroy({ children: true })
+        const terrain = createTerrainArt(assets.terrain, this.staticScene)
+        const characterArt = createCharacterArt({ ...assets.characters, effects: assets.effects })
+        const nextMapLayer = new Container()
+        const nextCharacterLayer = new Container()
+        const nextUpperLayer = new Container()
+        let nextMapGround: GroundView | null = null
+        let nextUpperGround: TiledGround | null = null
+        try {
+          nextMapGround = drawMap(nextMapLayer, this.staticScene, terrain)
+          nextUpperGround = drawUpperWalls(nextUpperLayer, this.staticScene, terrain)
+          const nextCharacters = createCharacterLayer(nextCharacterLayer)
+          nextCharacters.install(characterArt)
+          if (this.presentedScene !== null) {
+            nextCharacters.reconcile(
+              this.presentedScene,
+              this.visitorCamera.camera.zoom,
+              this.cameraLimits.minZoom,
+            )
+          }
+
+          const previousMapLayer = this.mapLayer
+          const previousCharacterLayer = this.characterLayer
+          const previousUpperLayer = this.upperLayer
+          const previousMapGround = this.mapGround
+          const previousUpperGround = this.upperGround
+          replaceSceneLayer(previousMapLayer, nextMapLayer)
+          replaceSceneLayer(previousCharacterLayer, nextCharacterLayer)
+          replaceSceneLayer(previousUpperLayer, nextUpperLayer)
+          this.mapLayer = nextMapLayer
+          this.characterLayer = nextCharacterLayer
+          this.upperLayer = nextUpperLayer
+          this.mapGround = nextMapGround
+          this.upperGround = nextUpperGround
+          this.characters = nextCharacters
+
+          previousMapGround.destroy()
+          previousUpperGround?.destroy()
+          this.buildingOutlines.destroy({ children: true })
+          previousMapLayer.destroy({ children: true })
+          previousCharacterLayer.destroy({ children: true })
+          previousUpperLayer.destroy({ children: true })
+        } catch (error) {
+          nextMapGround?.destroy()
+          nextUpperGround?.destroy()
+          nextMapLayer.destroy({ children: true })
+          nextCharacterLayer.destroy({ children: true })
+          nextUpperLayer.destroy({ children: true })
+          throw error
+        }
+        this.redrawCurrentFrame()
       },
       status: (status) => {
         this.ctx.container.dataset.threeBranchesAssets = status
@@ -551,6 +613,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         ? 'pending'
         : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
   }
+}
+
+function replaceSceneLayer(current: Container, replacement: Container): void {
+  const parent = current.parent
+  if (parent === null) throw new Error('Three Branches scene layer is detached.')
+  parent.addChildAt(replacement, parent.getChildIndex(current))
 }
 
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {

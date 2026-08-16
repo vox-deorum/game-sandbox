@@ -100,11 +100,18 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads only the terrain atlas at runtime', async () => {
+  it('loads only the terrain and character atlas pages used at runtime', async () => {
     const load = vi.fn((source: string) => source)
-    const terrain = await loadThreeBranchesRuntimeAssets(load)
+    const assets = await loadThreeBranchesRuntimeAssets(load)
+    const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledOnce()
-    expect(terrain).toMatch(/terrain-atlas\.png/)
+    expect(load).toHaveBeenCalledTimes(6)
+    expect(assets.terrain).toMatch(/terrain-atlas\.png/)
+    expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
+    expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
+    expect(assets.characters.arms).toMatch(/characters-arms-atlas\.png/)
+    expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
+    expect(assets.effects).toMatch(/effects-atlas\.png/)
+    expect(sources.some((source) => /buildings|props|scenery/.test(source))).toBe(false)
   })
 })

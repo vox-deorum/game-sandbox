@@ -94,6 +94,7 @@ describe('Three Branches pure scene', () => {
     expect(visitor?.point.x).toBeCloseTo(
       ((fromVisitor?.point.x ?? 0) + (toVisitor?.point.x ?? 0)) / 2,
     )
+    expect(halfway.presentationTick).toBeCloseTo((from.presentationTick + to.presentationTick) / 2)
     expect(halfway.static).toBe(scene)
     expect(to).toEqual(computeScene(states[1] as (typeof states)[number], scene, roster))
   })

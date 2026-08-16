@@ -214,6 +214,8 @@ export interface FrameScene {
   static: StaticScene
   /** Dynamic payload, or null before the live opening supplies one. */
   dynamic: VillageDynamic | null
+  /** Recorded tick with interpolation progress applied for seek-safe presentation motion. */
+  presentationTick: number
   /** Dynamic character drawables. */
   characters: readonly CharacterDrawable[]
 }
