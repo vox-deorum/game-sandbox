@@ -1,6 +1,6 @@
 # Step 7: Template, helpers, guide, and the worked example
 
-Status: in progress.
+Status: complete.
 
 Part of [the plan](../README.md). This build-order step completes the student surface. It begins after step 4's generator and finishes after step 6. Using only the published guide, a student must be able to compose the template, run its pins, and play a local day with their villagers and the scripted visitor.
 

@@ -1,6 +1,6 @@
 # Step 5.2: HUD and interaction design
 
-Status: in progress. The owner fixed the design decisions below on 2026-08-14 and approved the mockups for implementation. The information layer, the display-name hook, and the unified camera have landed. The step 6 input specification is recorded here and builds in step 6. Owner sign-off on the rendered result remains.
+Status: complete.
 
 Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and may retune the art-driven camera ceiling established in [step 5.1](5-1-art-style.md) under the final HUD. Review the pinned fixture under the full HUD at fitted and close views.
 
