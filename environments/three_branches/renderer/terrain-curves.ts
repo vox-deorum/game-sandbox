@@ -4,7 +4,7 @@ import { distance, hashUnit, stableHashParts } from '@renderers/base/math.js'
 
 import { required } from './terrain-helpers.js'
 import type {
-  TerrainCurveEnvelope,
+  TerrainCurveBudget,
   TerrainCurvePoint,
   TerrainCurveProfile,
   TerrainCurveSourcePoint,
@@ -35,19 +35,22 @@ interface WorkingPoint extends TerrainCurvePoint {
 }
 
 /**
- * Resample and shape one open or closed polyline without applying topology or clearance policy.
+ * Resample and shape one open or closed polyline without applying topology policy.
  * Smoothing is a fixed three-point corner kernel run on the resampled points, so every sample
  * keeps its raw source offset and locked points stay exactly in place. Multi-octave value noise
- * then displaces free points along the local normal, scaled down by the envelope ceiling and by
- * arc distance to the nearest lock. Callers remain responsible for accepting, clipping, or
- * backing off the returned candidates.
+ * then displaces free points along the local normal.
+ *
+ * The optional budget bounds how far each sample may leave the source curve, and bounds both
+ * stages: smoothing is pulled back to it before noise is measured against what is left. A caller
+ * that varies its budget smoothly along the arc therefore gets a smooth curve, where clamping the
+ * finished curve instead would kink it wherever the bound stepped between neighbouring samples.
  */
 export function shapeTerrainCurve(
   source: readonly TerrainCurveSourcePoint[],
   closed: boolean,
   profile: TerrainCurveProfile,
   seed: number,
-  envelope?: TerrainCurveEnvelope,
+  budget?: TerrainCurveBudget,
 ): readonly TerrainCurvePoint[] {
   const index = validateInputs(source, closed, profile, seed)
   const samples = resample(index, profile.sampleSpacingCells)
@@ -96,19 +99,40 @@ export function shapeTerrainCurve(
     })
   }
 
+  const ceilingAt = (sampleIndex: number, sample: WorkingPoint): number =>
+    Math.min(
+      budget?.(sample.sourceOffset) ?? Number.POSITIVE_INFINITY,
+      required(lockDistances[sampleIndex], 'Terrain curve lock distance is missing.'),
+    )
+
+  /** Pull every free sample back onto its ceiling, contracting toward the source it left. */
+  const withinCeiling = (
+    current: readonly { readonly x: number; readonly y: number }[],
+  ): { x: number; y: number }[] =>
+    samples.map((sample, sampleIndex) => {
+      const point = required(current[sampleIndex], 'Terrain curve ceiling point is missing.')
+      if (sample.locked) return { x: point.x, y: point.y }
+      const ceiling = ceilingAt(sampleIndex, sample)
+      if (!Number.isFinite(ceiling)) return { x: point.x, y: point.y }
+      const nearest = nearestSource(index, point.x, point.y, sample.sourceOffset)
+      if (nearest.distance <= ceiling) return { x: point.x, y: point.y }
+      const reach = Math.hypot(point.x - sample.rawX, point.y - sample.rawY)
+      const slack = reach - nearest.distance
+      const scale = reach <= EPSILON ? 0 : Math.min(1, (ceiling + slack) / reach)
+      return {
+        x: sample.rawX + (point.x - sample.rawX) * scale,
+        y: sample.rawY + (point.y - sample.rawY) * scale,
+      }
+    })
+
+  positions = withinCeiling(positions)
+
   const totalAmplitude = profile.octaves.reduce((sum, octave) => sum + octave.amplitudeCells, 0)
   if (totalAmplitude > EPSILON && samples.length > 2) {
     const beforeNoise = positions
     positions = samples.map((sample, sampleIndex) => {
       const point = required(beforeNoise[sampleIndex], 'Terrain curve noise point is missing.')
       if (sample.locked) return { x: sample.rawX, y: sample.rawY }
-      const ceiling = Math.min(
-        envelope?.(sample.rawX, sample.rawY, sample.sourceOffset) ?? Number.POSITIVE_INFINITY,
-        required(lockDistances[sampleIndex], 'Terrain curve lock distance is missing.'),
-      )
-      const used = distanceToSource(index, point.x, point.y, sample.sourceOffset)
-      const room = ceiling - used
-      if (room <= EPSILON) return point
       const beforeIndex = previousIndex(sampleIndex, samples.length, closed)
       const afterIndex = nextIndex(sampleIndex, samples.length, closed)
       const before = beforeNoise[beforeIndex] ?? point
@@ -126,12 +150,16 @@ export function shapeTerrainCurve(
             point.y / octave.wavelengthCells,
           ) * octave.amplitudeCells
       }
-      const scale = Math.min(1, room / totalAmplitude)
+      // The ceiling alone scales the octaves, and the pull-back below holds the total. Scaling by
+      // the room a sample has left instead would silence noise exactly where smoothing already
+      // spent the ceiling, and a neighbour still at full amplitude then spikes away from it.
+      const scale = Math.min(1, ceilingAt(sampleIndex, sample) / totalAmplitude)
       return {
         x: point.x + (-dy / tangentLength) * noise * scale,
         y: point.y + (dx / tangentLength) * noise * scale,
       }
     })
+    positions = withinCeiling(positions)
   }
 
   return samples.map((sample, sampleIndex) => ({
@@ -304,21 +332,26 @@ function smoothstep(value: number): number {
 }
 
 /**
- * Arc-windowed distance from a shaped position to the source polyline around one offset. Only
- * segments within the window count, so a fold-back elsewhere on the curve never masks how far
- * the position really sits from its own local stretch of the source.
+ * Nearest point on the source polyline to a shaped position, searched over an arc window around
+ * the position's own offset. Only segments within the window count, so a fold-back elsewhere on
+ * the curve never masks how far the position really sits from its own local stretch of source.
  */
-function distanceToSource(index: SourceIndex, x: number, y: number, sourceOffset: number): number {
+function nearestSource(
+  index: SourceIndex,
+  x: number,
+  y: number,
+  sourceOffset: number,
+): { readonly distance: number; readonly foot: { readonly x: number; readonly y: number } } {
   const pointCount = index.points.length
   const segmentCount = index.closed ? pointCount : pointCount - 1
-  if (segmentCount <= 0) return 0
+  if (segmentCount <= 0) return { distance: 0, foot: { x, y } }
   const segmentStart = (segment: number): number =>
     required(index.offsets[segment], 'Terrain curve segment start offset is missing.')
   const segmentEnd = (segment: number): number =>
     segment + 1 < index.offsets.length
       ? required(index.offsets[segment + 1], 'Terrain curve segment end offset is missing.')
       : index.totalLength
-  const separationFrom = (segment: number): number => {
+  const footOn = (segment: number): { distance: number; foot: { x: number; y: number } } => {
     const start = required(index.points[segment], 'Terrain curve segment start is missing.')
     const end = required(
       index.points[(segment + 1) % pointCount],
@@ -327,12 +360,12 @@ function distanceToSource(index: SourceIndex, x: number, y: number, sourceOffset
     const dx = end.x - start.x
     const dy = end.y - start.y
     const lengthSquared = dx * dx + dy * dy
-    if (lengthSquared <= EPSILON) return Math.hypot(x - start.x, y - start.y)
-    const amount = Math.max(
-      0,
-      Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared),
-    )
-    return Math.hypot(x - (start.x + dx * amount), y - (start.y + dy * amount))
+    const amount =
+      lengthSquared <= EPSILON
+        ? 0
+        : Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared))
+    const foot = { x: start.x + dx * amount, y: start.y + dy * amount }
+    return { distance: Math.hypot(x - foot.x, y - foot.y), foot }
   }
   let lower = 0
   let upper = segmentCount - 1
@@ -341,7 +374,7 @@ function distanceToSource(index: SourceIndex, x: number, y: number, sourceOffset
     if (segmentEnd(middle) > sourceOffset + EPSILON) upper = middle
     else lower = middle + 1
   }
-  let nearest = separationFrom(lower)
+  let nearest = footOn(lower)
   for (const direction of [-1, 1] as const) {
     let segment = lower
     let coverage = 0
@@ -351,7 +384,8 @@ function distanceToSource(index: SourceIndex, x: number, y: number, sourceOffset
       else if (next < 0 || next >= segmentCount) break
       coverage += Math.max(0, segmentEnd(next) - segmentStart(next))
       segment = next
-      nearest = Math.min(nearest, separationFrom(segment))
+      const candidate = footOn(segment)
+      if (candidate.distance < nearest.distance) nearest = candidate
       if (coverage >= SOURCE_DISTANCE_WINDOW_CELLS) break
     }
   }

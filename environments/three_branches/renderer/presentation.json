@@ -73,7 +73,7 @@
       },
       "junctionTangentCells": 0.25,
       "maxDeviationCells": 0.6,
-      "minimumCorridorCells": 0.7
+      "minimumCorridorCells": 0.45
     },
     "seams": {
       "pooling": { "widthCells": 0.45, "darken": 0.16, "opacity": 0.28 },
@@ -81,8 +81,8 @@
         "tint": "ink",
         "widthCells": 0.15,
         "opacity": 0.7,
-        "density": 0.85,
-        "runLengthCells": [4, 9]
+        "runLengthCells": [4, 9],
+        "gapLengthCells": [0.6, 1.7]
       },
       "waterHatch": {
         "tint": "ink",
@@ -147,7 +147,7 @@
   "characters": {
     "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],
     "details": ["hairKnot", "reedCap", "headscarf"],
-    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameMs": 680 },
+    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameRatio": 0.68 },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
   "propEffects": {

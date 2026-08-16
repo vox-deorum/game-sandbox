@@ -15,6 +15,7 @@ Implement the [`sandbox.village` contract](../environment.md#package-and-student
 | `action` | Build complete, in-space orders and validate expressions. |
 | `me`, `people`, `props`, `day` | Read the current observation, including standing knowledge and perception. |
 | `layout`, `geometry` | Read static village facts and provide pure movement, sight, and geometry calculations. |
+
 Observation readers and static-map queries take observation first. `action.walk`, `action.stand`, the geometry functions, and the two player-id predicates are pure and take no observation. Student code, chat records, and documentation use `player_0` for the visitor and `player_1` upward for NPCs. Messaging uses the shared raw chat dictionaries without an environment-specific helper or id translation.
 
 The complete public surface is:

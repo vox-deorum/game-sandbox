@@ -63,7 +63,7 @@ const APPROVED_CONTOURS = {
   profiles: { land: LAND_CURVE, water: WATER_CURVE },
   junctionTangentCells: 0.25,
   maxDeviationCells: 0.6,
-  minimumCorridorCells: 0.7,
+  minimumCorridorCells: 0.45,
 } as const
 
 const APPROVED_SEAMS = {
@@ -72,8 +72,8 @@ const APPROVED_SEAMS = {
     tint: 'ink',
     widthCells: 0.15,
     opacity: 0.7,
-    density: 0.85,
     runLengthCells: [4, 9],
+    gapLengthCells: [0.6, 1.7],
   },
   waterHatch: {
     tint: 'ink',
@@ -235,7 +235,7 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(excessiveAmplitude)).toThrow('amplitudeCells')
 
     const unsafeCorridor = structuredClone(HEARTHSIDE_STYLE) as any
-    unsafeCorridor.terrain.contours.minimumCorridorCells = 0.699
+    unsafeCorridor.terrain.contours.minimumCorridorCells = 0.249
     expect(() => readHearthsideStyle(unsafeCorridor)).toThrow('minimumCorridorCells')
 
     const extraSeamKey = structuredClone(HEARTHSIDE_STYLE) as any
@@ -363,5 +363,19 @@ describe('Hearthside Ink presentation', () => {
     const grades = badPhases.phaseGrades as Record<string, PhaseGrade>
     grades.day = grades.midday as PhaseGrade
     expect(() => readHearthsideStyle(badPhases)).toThrow('phaseGrades keys')
+  })
+
+  it('requires the character walk frame ratio to fit within one recorded tick', () => {
+    const zeroRatio = structuredClone(HEARTHSIDE_STYLE)
+    zeroRatio.characters.walk.frameRatio = 0
+    expect(() => readHearthsideStyle(zeroRatio)).toThrow(
+      'characters.walk.frameRatio must be greater than 0',
+    )
+
+    const excessiveRatio = structuredClone(HEARTHSIDE_STYLE)
+    excessiveRatio.characters.walk.frameRatio = 1.01
+    expect(() => readHearthsideStyle(excessiveRatio)).toThrow(
+      'characters.walk.frameRatio must be greater than 0 and at most 1',
+    )
   })
 })

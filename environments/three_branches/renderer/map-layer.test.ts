@@ -12,6 +12,7 @@ import {
   pathGuideGraphics,
   reedMarksGraphics,
   roadGuideGraphics,
+  type SeamStrokeRun,
   seamStrokeRuns,
   signedComponentPath,
 } from './map-layer.js'
@@ -48,6 +49,18 @@ const names: Readonly<Record<string, string>> = {
 
 function shorelinePoint(x: number, factor: number): TerrainContourPoint {
   return { x, y: 0, rawOffset: x, locked: false, shorelineFactor: factor }
+}
+
+const INK_SPEC = HEARTHSIDE_STYLE.terrain.seams.ink
+
+function visibleLength(runs: readonly SeamStrokeRun[]): number {
+  return runs.reduce((total, run) => {
+    const start = run.points[0]
+    const end = run.points.at(-1)
+    return start === undefined || end === undefined
+      ? total
+      : total + (end.rawOffset - start.rawOffset)
+  }, 0)
 }
 
 function routePlan(rows: readonly string[]): TerrainRoutePlan {
@@ -225,25 +238,19 @@ describe('Three Branches map layer', () => {
   it('draws reed marks on the reed surface rather than on the reed cells', () => {
     const strokeCount = (graphic: Graphics): number =>
       graphic.context.instructions.filter((instruction) => instruction.action === 'stroke').length
-    // The surface, not the grid, decides where a stalk may go: reed cells whose surface was
-    // planned away carry no marks at all.
+    // The surface, not the grid, decides where a stalk may go. A reed cell the surface never
+    // reaches carries no marks, and a cell the surface does reach carries them without being a
+    // reed cell, so the stalks follow the drawn bank in both directions.
     const reedRows = ['ggggg', 'geeeg', 'geeeg', 'geeeg', 'ggggg']
-    const gated = reedMarksGraphics(contourPlan(['ggggg', 'ggggg', 'ggggg']), reedRows, names, 16)
+    const plainRows = ['ggggg', 'ggggg', 'ggggg', 'ggggg', 'ggggg']
+
+    const gated = reedMarksGraphics(contourPlan(plainRows), reedRows, names, 16)
     expect(strokeCount(gated)).toBe(0)
     gated.destroy()
 
-    // A diagonal band is where the two disagree: the cells step and the surface cuts across.
-    const diagonal = ['ggggggg', 'geggggg', 'ggeggeg', 'gggeegg', 'ggggegg', 'ggggggg']
-    const onReeds = materialSurface(contourPlan(diagonal), 'reeds')
-    const reedCell = (x: number, y: number): boolean =>
-      names[diagonal[Math.floor(y)]?.[Math.floor(x)] ?? ''] === 'reeds'
-    let disagreements = 0
-    for (let y = 0.5; y < diagonal.length; y += 1) {
-      for (let x = 0.5; x < 7; x += 1) {
-        if (onReeds(x, y) !== reedCell(x, y)) disagreements += 1
-      }
-    }
-    expect(disagreements).toBeGreaterThan(0)
+    const reached = reedMarksGraphics(contourPlan(reedRows), plainRows, names, 16)
+    expect(strokeCount(reached)).toBeGreaterThan(0)
+    reached.destroy()
   })
 
   it('reports the drawn surface of a material, holes excluded', () => {
@@ -299,27 +306,53 @@ describe('Three Branches map layer', () => {
   })
 
   it('breaks a seam into deterministic runs that repeat for the same chain and tag', () => {
-    const points = Array.from({ length: 11 }, (_, x) => shorelinePoint(x, 1))
-    const chain = { id: 'bank', closed: false, rawLength: 10, points, shorelineSpans: [] }
-    const spec = { opacity: 0.7, density: 0.85, runLengthCells: [4, 9] as [number, number] }
-    const first = seamStrokeRuns(chain, spec, 'seam-ink')
-    const second = seamStrokeRuns(chain, spec, 'seam-ink')
-    const visibleLength = first.reduce((total, run) => {
-      const start = run.points[0]
-      const end = run.points.at(-1)
-      return start === undefined || end === undefined
-        ? total
-        : total + (end.rawOffset - start.rawOffset)
-    }, 0)
+    const points = Array.from({ length: 41 }, (_, index) => shorelinePoint(index, 1))
+    const chain = { id: 'bank', closed: false, rawLength: 40, points, shorelineSpans: [] }
+    const first = seamStrokeRuns(chain, INK_SPEC, 'seam-ink')
+    const second = seamStrokeRuns(chain, INK_SPEC, 'seam-ink')
 
     expect(first).toEqual(second)
     expect(first.length).toBeGreaterThan(1)
-    expect(visibleLength).toBeGreaterThan(0)
-    expect(visibleLength).toBeLessThan(chain.rawLength)
+    expect(visibleLength(first)).toBeGreaterThan(0)
+    expect(visibleLength(first)).toBeLessThan(chain.rawLength)
+  })
+
+  it('leaves no gap longer than the configured maximum and never overlaps two runs', () => {
+    for (const id of ['bank', 'reed-edge', 'shore', 'field-line', 'pond']) {
+      const points = Array.from({ length: 61 }, (_, index) => shorelinePoint(index / 2, 1))
+      const chain = { id, closed: false, rawLength: 30, points, shorelineSpans: [] }
+      const spans = seamStrokeRuns(chain, INK_SPEC, 'seam-ink').map((run) => ({
+        start: run.points[0]!.rawOffset,
+        end: run.points.at(-1)!.rawOffset,
+      }))
+
+      let covered = 0
+      for (const [index, span] of spans.entries()) {
+        const previousEnd = index === 0 ? 0 : spans[index - 1]!.end
+        expect(span.start).toBeGreaterThanOrEqual(previousEnd - 1e-9)
+        expect(span.start - previousEnd).toBeLessThanOrEqual(INK_SPEC.gapLengthCells[1] + 1e-9)
+        covered = span.end
+      }
+      expect(chain.rawLength - covered).toBeLessThanOrEqual(INK_SPEC.gapLengthCells[1] + 1e-9)
+    }
+  })
+
+  it('draws a chain shorter than one run in full rather than dropping it into a gap', () => {
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+      for (const rawLength of [0.5, 2, 3.5]) {
+        const points = [shorelinePoint(0, 1), shorelinePoint(rawLength, 1)]
+        const chain = { id, closed: false, rawLength, points, shorelineSpans: [] }
+        expect(visibleLength(seamStrokeRuns(chain, INK_SPEC, 'seam-ink'))).toBeCloseTo(rawLength, 9)
+      }
+    }
   })
 
   it('holds full opacity on a land-land seam and tapers only where the chain has shoreline spans', () => {
-    const spec = { opacity: 0.2, density: 1, runLengthCells: [2, 2] as [number, number] }
+    const spec = {
+      opacity: 0.2,
+      runLengthCells: [2, 2] as [number, number],
+      gapLengthCells: [0.5, 0.5] as [number, number],
+    }
     const flatChain = {
       id: 'land-land',
       closed: false,

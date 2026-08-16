@@ -1,5 +1,6 @@
 import { distance, stableHashParts } from '@renderers/base/math.js'
 
+import { samePoint } from './terrain-contour-graph.js'
 import {
   cellKey,
   EPSILON,
@@ -15,21 +16,18 @@ import {
   offsetLocked,
   rawOffsetAtReferenceOffset,
   rawPointAt,
+  referenceIntervalAt,
   referenceOf,
-  referencePointAtReferenceOffset,
-  referenceSegmentAt,
-  referenceSegmentCount,
   withReferencePoints,
 } from './terrain-contour-reference.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
 import type { OffsetInterval } from './terrain-contour-reference.js'
 import type {
   ContourCoordinate,
-  ContourReference,
   TerrainContourPoint,
   TerrainContourSettings,
   TerrainContourSpan,
-  TerrainCurveEnvelope,
+  TerrainCurveBudget,
   TerrainCurveSourcePoint,
 } from './types.js'
 import type { WorkingChain } from './terrain-contour-graph.js'
@@ -69,17 +67,25 @@ type ClearanceIndex = ReadonlyMap<string, readonly ClearanceSegment[]>
  */
 const CLEARANCE_SEARCH_CELLS = 2
 
-/** Arc reach when clamping a shaped point against its own local stretch of reference boundary. */
-const CLAMP_WINDOW_CELLS = 2.5
+/**
+ * How fast the displacement budget may grow along the arc, in cells per cell. A curve leaving a
+ * lock has to reach its full budget over a stretch of boundary rather than at one point, and half
+ * a cell of freedom per cell travelled is the slope at which that approach still reads as drawn
+ * rather than kinked.
+ */
+const BUDGET_SLOPE = 0.5
 
 /**
- * A same-chain segment competes for clearance only when its arc distance is clearly larger than
- * its straight-line distance. Local continuation stays excluded so it can smooth. Facing walls of
- * an inlet or hairpin sit at ratio two and above and must count, or the two sides smooth across
- * their corridor into each other. A staircase holds ratio near 1.4, so this bound leaves it free
- * to flatten while still catching a genuine fold.
+ * A segment of the boundary a sample sits on competes for clearance only when its arc distance is
+ * clearly larger than its straight-line distance. Local continuation stays excluded so it can
+ * smooth. Facing walls of an inlet or hairpin sit at ratio two and above and must count, or the
+ * two sides smooth across their corridor into each other. A staircase holds ratio near 1.4, so
+ * this bound leaves it free to flatten while still catching a genuine fold.
  */
 const SELF_FOLD_ARC_RATIO = 1.6
+
+/** Arc reach within which a chain never competes with itself, whatever the ratio says. */
+const SELF_ARC_WINDOW_CELLS = 1.4
 
 /** How many times reference separation may reopen a corridor before shaping runs. */
 const SEPARATION_PASSES = 3
@@ -136,16 +142,22 @@ function buildIndex(polylines: readonly ClearancePolyline[]): ClearanceIndex {
 }
 
 /**
- * Distance from one sample to the nearest competing segment. Segments of the same chain count only
- * beyond a short arc window, so a serpentine chain cannot pinch its own corridor.
+ * Distance from one sample to the nearest competing boundary.
+ *
+ * A segment counts only where its distance really is a corridor. Segments of the same chain, and
+ * segments of a chain meeting this one at a junction, are measured along the boundary as well and
+ * drop out while that arc still tracks their straight-line distance: a chain smoothing along
+ * itself, and two branches leaving a junction, separate about as fast as the boundary runs, so
+ * neither ever pinches the other. A hairpin or a narrow wedge folds back faster than that, stays
+ * in, and keeps its corridor.
  */
 export function clearanceAt(
   index: ClearanceIndex,
   chain: WorkingChain,
   point: ContourCoordinate,
   sourceOffset: number,
-  arcWindowCells: number,
 ): number {
+  const ownLength = referenceOf(chain).length
   const column = Math.floor(point.x)
   const row = Math.floor(point.y)
   let nearest = Number.POSITIVE_INFINITY
@@ -153,6 +165,7 @@ export function clearanceAt(
     for (let x = column - CLEARANCE_SEARCH_CELLS; x <= column + CLEARANCE_SEARCH_CELLS; x += 1) {
       for (const segment of index.get(cellKey(x, y)) ?? []) {
         const separation = pointToSegmentDistance(point, segment.start, segment.end)
+        if (separation >= nearest) continue
         if (segment.chain === chain) {
           const arcDistance = circularDistanceToInterval(
             normalizedOffset(sourceOffset, segment.ownerLength, chain.closed),
@@ -161,11 +174,44 @@ export function clearanceAt(
             segment.ownerLength,
             chain.closed,
           )
-          const window = Math.max(arcWindowCells, SELF_FOLD_ARC_RATIO * separation)
+          const window = Math.max(SELF_ARC_WINDOW_CELLS, SELF_FOLD_ARC_RATIO * separation)
           if (arcDistance <= window + EPSILON) continue
         }
-        nearest = Math.min(nearest, separation)
+        const junction = junctionArc(chain, ownLength, sourceOffset, segment)
+        if (junction <= SELF_FOLD_ARC_RATIO * separation + EPSILON) continue
+        nearest = separation
       }
+    }
+  }
+  return nearest
+}
+
+/**
+ * Arc from one sample to a competing segment through a node the two chains share, infinite when
+ * they share none. An open chain ends on the junction it meets, so a chain carrying on across that
+ * junction is this boundary running on rather than a bank facing it. Closed chains only ever pass
+ * through nodes of their own, so they share none.
+ */
+function junctionArc(
+  chain: WorkingChain,
+  ownLength: number,
+  sourceOffset: number,
+  segment: ClearanceSegment,
+): number {
+  if (chain.closed || segment.chain.closed) return Number.POSITIVE_INFINITY
+  const offset = Math.max(0, Math.min(ownLength, sourceOffset))
+  const ownEnds = [
+    { point: chain.rawPoints[0]!, arc: offset },
+    { point: chain.rawPoints.at(-1)!, arc: ownLength - offset },
+  ]
+  const otherEnds = [
+    { point: segment.chain.rawPoints[0]!, arc: segment.startOffset },
+    { point: segment.chain.rawPoints.at(-1)!, arc: segment.ownerLength - segment.endOffset },
+  ]
+  let nearest = Number.POSITIVE_INFINITY
+  for (const own of ownEnds) {
+    for (const other of otherEnds) {
+      if (samePoint(own.point, other.point)) nearest = Math.min(nearest, own.arc + other.arc)
     }
   }
   return nearest
@@ -185,10 +231,57 @@ export function clearanceCeiling(
 }
 
 /**
+ * How far one chain may leave its reference at each reference vertex.
+ *
+ * The budget is built on the static reference, before any curve moves, so shaping is bounded by
+ * construction rather than corrected afterwards. Every free point starts with half the slack it
+ * has beyond the corridor to competing boundaries, which leaves both sides of a corridor free to
+ * spend their own half without the two ever meeting, and locks hold zero. Eroding along the arc
+ * then limits how fast the budget may grow, so it can never step between neighbouring samples: a
+ * bound that jumps is what puts a kink in an otherwise smooth curve.
+ */
+function buildDisplacementBudget(
+  chain: WorkingChain,
+  settings: TerrainContourSettings,
+  clearanceIndex: ClearanceIndex,
+): TerrainCurveBudget {
+  const reference = referenceOf(chain)
+  const count = reference.points.length
+  const offsetAt = (index: number): number =>
+    required(reference.offsets[index], 'Terrain reference offset is missing.')
+  const cells = reference.points.map((point, index) =>
+    reference.locked[index] === true
+      ? 0
+      : clearanceCeiling(
+          clearanceAt(clearanceIndex, chain, point, offsetAt(index)),
+          settings,
+          settings.maxDeviationCells,
+        ),
+  )
+  const stepTo = (index: number): number =>
+    index === 0 ? reference.length - offsetAt(count - 1) : offsetAt(index) - offsetAt(index - 1)
+  for (let lap = 0; lap < (chain.closed ? 2 : 1); lap += 1) {
+    for (let index = chain.closed ? 0 : 1; index < count; index += 1) {
+      const previous = (index - 1 + count) % count
+      cells[index] = Math.min(cells[index]!, cells[previous]! + BUDGET_SLOPE * stepTo(index))
+    }
+    for (let index = chain.closed ? count - 1 : count - 2; index >= 0; index -= 1) {
+      const next = (index + 1) % count
+      cells[index] = Math.min(cells[index]!, cells[next]! + BUDGET_SLOPE * stepTo(next))
+    }
+  }
+  return (sourceOffset) => {
+    const { startIndex, amount } = referenceIntervalAt(reference, chain.closed, sourceOffset)
+    const start = cells[startIndex]!
+    const end = startIndex + 1 < count ? cells[startIndex + 1]! : chain.closed ? cells[0]! : start
+    return start + (end - start) * amount
+  }
+}
+
+/**
  * Shape one chain. The corner-cut reference supplies the source polyline, junction tangents and
- * fixed spans stay locked on raw geometry, octave noise fades under the clearance envelope, and
- * every free point is finally clamped to that envelope so smoothing can never leave the tube
- * either.
+ * fixed spans stay locked on raw geometry, and the displacement budget bounds smoothing and noise
+ * alike.
  */
 function shapeContourChain(
   chain: WorkingChain,
@@ -207,24 +300,12 @@ function shapeContourChain(
     y: point.y,
     locked: reference.locked[index] === true,
   }))
-  const envelope: TerrainCurveEnvelope = (rawX, rawY, sourceOffset) =>
-    clearanceCeiling(
-      clearanceAt(
-        clearanceIndex,
-        chain,
-        { x: rawX, y: rawY },
-        sourceOffset,
-        settings.minimumCorridorCells * 2,
-      ),
-      settings,
-      settings.maxDeviationCells,
-    )
   const shaped = shapeTerrainCurve(
     source,
     chain.closed,
     profile,
     stableHashParts('terrain-contour-shape', layoutHash, chain.pairKey),
-    envelope,
+    buildDisplacementBudget(chain, settings, clearanceIndex),
   )
   return shaped.map((point): TerrainContourPoint => {
     const rawOffset = rawOffsetAtReferenceOffset(
@@ -248,85 +329,17 @@ function shapeContourChain(
       settings.junctionTangentCells,
     )
     if (locked) {
-      const raw = rawPointAt(rawOffset, chain.rawPoints, spanIndex.spans, chain.rawLength, chain.closed)
+      const raw = rawPointAt(
+        rawOffset,
+        chain.rawPoints,
+        spanIndex.spans,
+        chain.rawLength,
+        chain.closed,
+      )
       return { x: raw.x, y: raw.y, rawOffset, locked: true, shorelineFactor }
     }
-    const anchor = referencePointAtReferenceOffset(reference, chain.closed, point.sourceOffset)
-    const nearest = nearestReferenceSegment(reference, chain.closed, point, point.sourceOffset)
-    const cap = Math.min(
-      envelope(anchor.x, anchor.y, point.sourceOffset),
-      envelope(nearest.foot.x, nearest.foot.y, nearest.footOffset),
-    )
-    if (nearest.separation <= cap) {
-      return { x: point.x, y: point.y, rawOffset, locked: false, shorelineFactor }
-    }
-    const scale = nearest.separation <= EPSILON ? 0 : cap / nearest.separation
-    return {
-      x: nearest.foot.x + (point.x - nearest.foot.x) * scale,
-      y: nearest.foot.y + (point.y - nearest.foot.y) * scale,
-      rawOffset,
-      locked: false,
-      shorelineFactor,
-    }
+    return { x: point.x, y: point.y, rawOffset, locked: false, shorelineFactor }
   })
-}
-
-/**
- * The nearest point on the chain's own reference polyline within a local arc window of one
- * offset. The window keeps the clamp honest at concave corners and stops a smoothed small closed
- * chain from hiding near a far side of its own ring.
- */
-function nearestReferenceSegment(
-  reference: ContourReference,
-  closed: boolean,
-  point: ContourCoordinate,
-  referenceOffset: number,
-): { readonly foot: ContourCoordinate; readonly separation: number; readonly footOffset: number } {
-  const count = referenceSegmentCount(reference, closed)
-  const offsets = reference.offsets
-  const points = reference.points
-  const endOffsetOf = (index: number): number =>
-    index + 1 < offsets.length ? offsets[index + 1]! : reference.length
-  const normalized = normalizedOffset(referenceOffset, reference.length, closed)
-  let lower = 0
-  let upper = count - 1
-  while (lower < upper) {
-    const middle = Math.floor((lower + upper) / 2)
-    if (endOffsetOf(middle) > normalized + EPSILON) upper = middle
-    else lower = middle + 1
-  }
-  const measure = (
-    index: number,
-  ): { foot: ContourCoordinate; separation: number; footOffset: number } => {
-    const start = points[index]!
-    const foot = projectToSegment(point, start, points[(index + 1) % points.length]!)
-    return {
-      foot,
-      separation: distance(point, foot),
-      footOffset: offsets[index]! + distance(start, foot),
-    }
-  }
-  let best = measure(lower)
-  for (const direction of [-1, 1] as const) {
-    let index = lower
-    for (let step = 0; step < count - 1; step += 1) {
-      let next = index + direction
-      if (closed) next = (next + count) % count
-      else if (next < 0 || next >= count) break
-      const arcDistance = circularDistanceToInterval(
-        normalized,
-        offsets[next]!,
-        endOffsetOf(next),
-        reference.length,
-        closed,
-      )
-      if (arcDistance > CLAMP_WINDOW_CELLS + EPSILON) break
-      const candidate = measure(next)
-      if (candidate.separation < best.separation) best = candidate
-      index = next
-    }
-  }
-  return best
 }
 
 function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanIndex {
@@ -474,7 +487,6 @@ function separateReferences(
           chain,
           point,
           required(reference.offsets[pointIndex], 'Terrain reference offset is missing.'),
-          settings.minimumCorridorCells * 2,
         )
         const shortfall = settings.minimumCorridorCells - clearance
         if (shortfall <= 0) continue

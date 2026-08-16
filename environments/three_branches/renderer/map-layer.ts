@@ -621,34 +621,43 @@ function appendBridgeDecks(
   }
 }
 
-/** Split one seam into deterministic visible arc intervals with shoreline taper alpha. */
+/**
+ * Split one seam into deterministic visible arc intervals with shoreline taper alpha.
+ *
+ * Runs and gaps alternate, each drawn from its own configured range, so no stretch of boundary
+ * longer than one gap ever goes undrawn and runs never overlap into a doubled stroke. A chain
+ * shorter than the shortest run is drawn whole, since a hand-drawn line does not skip a bank for
+ * being short.
+ */
 export function seamStrokeRuns(
   chain: Pick<TerrainContourChain, 'id' | 'closed' | 'points' | 'rawLength' | 'shorelineSpans'>,
   spec: {
     readonly opacity: number
-    readonly density: number
     readonly runLengthCells: readonly [number, number]
+    readonly gapLengthCells: readonly [number, number]
   },
   tag: string,
 ): readonly SeamStrokeRun[] {
   const runs: SeamStrokeRun[] = []
-  if (chain.points.length < 2 || chain.rawLength <= 0 || spec.density <= 0) return runs
-  const [minimumRun, maximumRun] = spec.runLengthCells
-  const averageRun = (minimumRun + maximumRun) / 2
-  const cycleLength = averageRun / Math.min(1, spec.density)
-  const phase = hashUnit(stableHashParts(`${tag}-phase`, chain.id)) * cycleLength
-  const firstCycle = Math.floor(phase / cycleLength) - 1
-  const lastCycle = Math.ceil((chain.rawLength + phase) / cycleLength)
+  if (chain.points.length < 2 || chain.rawLength <= 0) return runs
   const tapered = chain.shorelineSpans.length > 0
-  for (let cycle = firstCycle; cycle <= lastCycle; cycle += 1) {
-    const runLength =
-      minimumRun +
-      hashUnit(stableHashParts(`${tag}-run`, chain.id, cycle)) * (maximumRun - minimumRun)
-    const cycleStart = cycle * cycleLength - phase
-    const startOffset = Math.max(0, cycleStart)
-    const endOffset = Math.min(chain.rawLength, cycleStart + runLength)
-    if (endOffset - startOffset <= 1e-9) continue
-    appendTaperedRuns(runs, chain, startOffset, endOffset, spec.opacity, tapered)
+  const pick = (range: readonly [number, number], role: string, index: number): number =>
+    range[0] + hashUnit(stableHashParts(`${tag}-${role}`, chain.id, index)) * (range[1] - range[0])
+  if (chain.rawLength <= spec.runLengthCells[0]) {
+    appendTaperedRuns(runs, chain, 0, chain.rawLength, spec.opacity, tapered)
+    return runs
+  }
+  // The phase spans one whole run and gap, so where a chain falls in the pattern varies with its
+  // id instead of every chain starting mid-stroke at its first point.
+  let offset = -pick([0, spec.runLengthCells[1] + spec.gapLengthCells[1]], 'phase', 0)
+  for (let index = 0; offset < chain.rawLength; index += 1) {
+    const runLength = pick(spec.runLengthCells, 'run', index)
+    const startOffset = Math.max(0, offset)
+    const endOffset = Math.min(chain.rawLength, offset + runLength)
+    if (endOffset - startOffset > 1e-9) {
+      appendTaperedRuns(runs, chain, startOffset, endOffset, spec.opacity, tapered)
+    }
+    offset += runLength + pick(spec.gapLengthCells, 'gap', index)
   }
   return runs
 }

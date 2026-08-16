@@ -270,13 +270,11 @@ export interface TerrainCurveProfile {
 }
 
 /**
- * Returns a displacement ceiling in cells for one source sample.
+ * Returns how far one source sample may leave its own source curve, in cells.
  *
- * @param rawX Source x coordinate in cells.
- * @param rawY Source y coordinate in cells.
  * @param sourceOffset Arc offset on the source curve in cells.
  */
-export type TerrainCurveEnvelope = (rawX: number, rawY: number, sourceOffset: number) => number
+export type TerrainCurveBudget = (sourceOffset: number) => number
 
 /** One authored point supplied to terrain curve shaping. */
 export interface TerrainCurveSourcePoint {

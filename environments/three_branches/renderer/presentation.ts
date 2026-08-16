@@ -204,8 +204,8 @@ export interface TerrainSeamTreatment {
     tint: HearthsidePaletteKey
     widthCells: number
     opacity: number
-    density: number
     runLengthCells: readonly [number, number]
+    gapLengthCells: readonly [number, number]
   }
   waterHatch: {
     tint: HearthsidePaletteKey
@@ -267,7 +267,7 @@ export interface HearthsideStyle {
   characters: {
     clothingTints: readonly HearthsidePaletteKey[]
     details: readonly string[]
-    walk: { frames: readonly string[]; frameMs: number }
+    walk: { frames: readonly string[]; frameRatio: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
   propEffects: Readonly<Record<string, readonly string[]>>
@@ -459,7 +459,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const poseFrames = framesFor('characters', 'body')
   const walkSource = exactRecord(charactersSource.walk, 'presentation.characters.walk', [
     'frames',
-    'frameMs',
+    'frameRatio',
   ])
   const visitorSource = exactRecord(charactersSource.visitor, 'presentation.characters.visitor', [
     'detail',
@@ -475,7 +475,12 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     details: frameNames(charactersSource.details, 'presentation.characters.details', detailFrames),
     walk: {
       frames: frameNames(walkSource.frames, 'presentation.characters.walk.frames', poseFrames),
-      frameMs: positiveNumber(walkSource.frameMs, 'presentation.characters.walk.frameMs'),
+      frameRatio: boundedNumber(
+        walkSource.frameRatio,
+        'presentation.characters.walk.frameRatio',
+        0,
+        1,
+      ),
     },
     visitor: {
       detail: knownText(
@@ -574,7 +579,7 @@ function contourTreatment(value: unknown, name: string): TerrainContourTreatment
     minimumCorridorCells: boundedNumber(
       source.minimumCorridorCells,
       `${name}.minimumCorridorCells`,
-      0.7,
+      0.25,
       1,
       true,
     ),
@@ -596,8 +601,8 @@ function seamTreatment(
     'tint',
     'widthCells',
     'opacity',
-    'density',
     'runLengthCells',
+    'gapLengthCells',
   ])
   const hatchSource = exactRecord(source.waterHatch, `${name}.waterHatch`, [
     'tint',
@@ -620,12 +625,17 @@ function seamTreatment(
       tint: paletteKey(inkSource.tint, palette, `${name}.ink.tint`),
       widthCells: boundedNumber(inkSource.widthCells, `${name}.ink.widthCells`, 0, 1),
       opacity: unitNumber(inkSource.opacity, `${name}.ink.opacity`),
-      density: unitNumber(inkSource.density, `${name}.ink.density`),
       runLengthCells: orderedNumberPair(
         inkSource.runLengthCells,
         `${name}.ink.runLengthCells`,
         0,
         16,
+      ),
+      gapLengthCells: orderedNumberPair(
+        inkSource.gapLengthCells,
+        `${name}.ink.gapLengthCells`,
+        0,
+        4,
       ),
     },
     waterHatch: {

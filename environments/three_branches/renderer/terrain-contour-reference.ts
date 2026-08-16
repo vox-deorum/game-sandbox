@@ -50,6 +50,28 @@ export const MAX_REFERENCE_DRIFT_CELLS = 0.55
 /** Spacing the simplified chords are resampled back to, in cells. */
 const REFERENCE_SPACING_CELLS = 1
 
+/**
+ * A closed chain may not drift past its own mean inradius either, the enclosed area over the
+ * perimeter. A small island is narrower than the drift bound in every direction, so that bound
+ * alone would let its whole boundary slide inward and shrink it away. The mean inradius stays
+ * below half the narrowest width of any loop, and grows past the drift bound as soon as a loop is
+ * a few cells across, so a small feature keeps its shape while long staircase runs still flatten.
+ */
+function referenceDrift(
+  rawPoints: readonly ContourCoordinate[],
+  rawLength: number,
+  closed: boolean,
+): number {
+  if (!closed || rawLength <= EPSILON) return MAX_REFERENCE_DRIFT_CELLS
+  let twiceArea = 0
+  for (let index = 0; index + 1 < rawPoints.length; index += 1) {
+    const first = required(rawPoints[index], 'Terrain contour raw point is missing.')
+    const second = required(rawPoints[index + 1], 'Terrain contour raw point is missing.')
+    twiceArea += first.x * second.y - second.x * first.y
+  }
+  return Math.min(MAX_REFERENCE_DRIFT_CELLS, Math.abs(twiceArea) / 2 / rawLength)
+}
+
 /** Return the mutable reference slot of a working chain or fail loudly. */
 export function referenceOf(chain: { readonly reference?: ContourReference }): ContourReference {
   return required(chain.reference, 'Terrain contour chain has no reference geometry.')
@@ -121,7 +143,11 @@ export function buildContourReference(
       locked: lockedAt(offset),
       midline: midlineKeys.has(key),
     }))
-  const simplified = simplifyCandidates(candidates, closed)
+  const simplified = simplifyCandidates(
+    candidates,
+    closed,
+    referenceDrift(rawPoints, rawLength, closed),
+  )
   return assembleReference(simplified, rawLength, closed)
 }
 
@@ -165,6 +191,7 @@ function collinearRuns(
 function simplifyCandidates(
   candidates: readonly ReferenceCandidate[],
   closed: boolean,
+  drift: number,
 ): ReferenceCandidate[] {
   const count = candidates.length
   if (count < 3) return [...candidates]
@@ -173,19 +200,21 @@ function simplifyCandidates(
   if (anchors.length === 0) {
     // A closed chain with nothing locked. Four spread anchors keep the loop a loop: with fewer, a
     // pond within tolerance of a line would collapse onto it. Midline candidates are preferred so
-    // the anchors sit on the quantized line rather than hinging chords on a stair corner.
+    // the anchors sit on the quantized line rather than hinging chords on a stair corner. Each
+    // quarter takes a candidate no other quarter holds, since anchors that coincide leave the loop
+    // spanned by fewer chords than it has sides and one whole side simplifies away.
     const midline = candidates.flatMap((candidate, index) => (candidate.midline ? [index] : []))
     const pool = midline.length >= 4 ? midline : candidates.map((_, index) => index)
     for (const quarter of [0, 1, 2, 3]) {
       const target = (quarter * count) / 4
-      let best = pool[0]!
+      let best = -1
       for (const index of pool) {
-        if (Math.abs(index - target) < Math.abs(best - target)) best = index
+        if (kept[index] === true) continue
+        if (best < 0 || Math.abs(index - target) < Math.abs(best - target)) best = index
       }
-      if (!kept[best]) {
-        kept[best] = true
-        anchors.push(best)
-      }
+      if (best < 0) break
+      kept[best] = true
+      anchors.push(best)
     }
     anchors.sort((first, second) => first - second)
   }
@@ -209,7 +238,7 @@ function simplifyCandidates(
       const [from, to] = stack.pop()!
       if (to - from < 2) continue
       let farthest = -1
-      let largest = MAX_REFERENCE_DRIFT_CELLS
+      let largest = drift
       for (let index = from + 1; index < to; index += 1) {
         const foot = projectToSegment(at(index).point, at(from).point, at(to).point)
         const deviation = distance(at(index).point, foot)
@@ -327,40 +356,14 @@ export function withReferencePoints(
   }
 }
 
-/** Number of reference segments, including the seam segment of a closed chain. */
-export function referenceSegmentCount(reference: ContourReference, closed: boolean): number {
-  return closed ? reference.points.length : reference.points.length - 1
-}
-
-/** One reference segment by index, the closed seam segment coming last. */
-export function referenceSegmentAt(
-  reference: ContourReference,
-  closed: boolean,
-  index: number,
-): ReferenceSegment {
-  const pointCount = reference.points.length
-  const start = required(reference.points[index], 'Terrain contour reference segment is missing.')
-  const end = required(
-    reference.points[(index + 1) % pointCount],
-    'Terrain contour reference segment is missing.',
-  )
-  const startOffset = required(
-    reference.offsets[index],
-    'Terrain contour reference offset is missing.',
-  )
-  const endOffset =
-    index + 1 < pointCount
-      ? required(reference.offsets[index + 1], 'Terrain contour reference offset is missing.')
-      : reference.length
-  return { start, end, startOffset, endOffset }
-}
-
-interface ReferenceInterval {
+/** One reference segment index paired with how far along it a lookup landed. */
+export interface ReferenceInterval {
   readonly startIndex: number
   readonly amount: number
 }
 
-function referenceIntervalAt(
+/** Locate one reference-arc offset on the reference polyline. */
+export function referenceIntervalAt(
   reference: ContourReference,
   closed: boolean,
   referenceOffset: number,

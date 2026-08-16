@@ -1,6 +1,8 @@
+import { hashUnit, stableHashParts } from '@renderers/base/math.js'
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE } from './presentation.js'
 import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
+import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
 import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
 import type {
@@ -48,7 +50,7 @@ const settings: TerrainContourSettings = {
   profiles: { land: landProfile, water: waterProfile },
   junctionTangentCells: 0.25,
   maxDeviationCells: 0.6,
-  minimumCorridorCells: 0.7,
+  minimumCorridorCells: 0.45,
 }
 
 interface ContourTestOverrides extends Omit<Partial<TerrainContourSettings>, 'profiles'> {
@@ -223,32 +225,107 @@ function sampleOpenContourAtRawOffsets(
   })
 }
 
+/** One smooth deterministic field, the shape a generated village elevation has. */
+function smoothField(seed: number, x: number, y: number, wavelength: number): number {
+  const column = Math.floor(x / wavelength)
+  const row = Math.floor(y / wavelength)
+  const fade = (value: number): number => value * value * (3 - 2 * value)
+  const blendX = fade(x / wavelength - column)
+  const blendY = fade(y / wavelength - row)
+  const at = (offsetX: number, offsetY: number): number =>
+    hashUnit(stableHashParts('layout-field', seed, column + offsetX, row + offsetY))
+  const top = at(0, 0) + (at(1, 0) - at(0, 0)) * blendX
+  const bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * blendX
+  return top + (bottom - top) * blendY
+}
+
+/**
+ * A generated layout of water, reeds, fields, and ground. Quantizing a smooth field is what the
+ * village generator does, so these carry the shapes that matter here: banks at every angle, thin
+ * bands, single-cell islands, and material junctions.
+ */
+function generatedRows(seed: number, size: number): string[] {
+  return Array.from({ length: size }, (_, y) =>
+    Array.from({ length: size }, (_, x) => {
+      const value = smoothField(seed, x, y, 6) * 0.7 + smoothField(seed + 100, x, y, 2.5) * 0.3
+      if (value < 0.34) return 'w'
+      if (value < 0.42) return 'e'
+      return value > 0.66 ? 'f' : 'g'
+    }).join(''),
+  )
+}
+
+/**
+ * The layouts the property sweeps run over. Generated seeds vary the layout rather than the noise
+ * key, since the contour pass derives its noise from the layout itself.
+ */
+const layoutSuite: readonly (readonly string[])[] = [
+  ['ggww', 'ggww'],
+  ['ggg', 'gww', 'ggw'],
+  ['gwgwg'],
+  ['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'],
+  ['gggggg', 'gfffgg', 'gffegg', 'ggeewg', 'gggwwg', 'gggggg'],
+  ['ggggggg', 'geggggg', 'ggeggeg', 'gggeegg', 'ggggegg', 'ggggggg'],
+  ...[0, 1, 2, 3, 4, 5].map((seed) => generatedRows(seed, 32)),
+]
+
+/**
+ * Shaping bounds sample points, so the chords between them may sag a little further, most where
+ * tangential slide stretches the spacing. The sweep allows that sag: it is a tripwire for
+ * construction failures, which overshoot by half a cell or more, not a second calibration bound.
+ */
+const TUBE_SAG_CELLS = 0.08
+
 describe('continuous terrain contour planning', () => {
-  it('backs a forced nonincident crossing toward the raw planar graph', () => {
-    const rows = [
-      'gwwgggwg',
-      'ggwwggww',
-      'wggwwggw',
-      'ggwggwww',
-      'gwwgwggg',
-      'gggwgwgg',
-      'gwgggwgw',
-      'ggwgggwg',
-    ]
-    const overrides = {
-      profiles: {
-        land: { smoothingPasses: 30 },
-        water: { smoothingPasses: 30 },
-      },
-    } as const
-    const result = plan(rows, overrides)
-    expect(
-      result.chains.some((chain) =>
-        chain.points.some(
-          (point) => !point.locked && distanceToPolyline(point, chain.rawPoints) > 0.01,
-        ),
-      ),
-    ).toBe(true)
+  it('draws a planar curve graph inside its reference tube across the layout suite', () => {
+    const failures: string[] = []
+    for (const [index, rows] of layoutSuite.entries()) {
+      const result = plan(rows)
+      for (const [first, second] of findCurveCrossings(result.chains)) {
+        failures.push(
+          `layout ${index}: chain ${first.chain.id} crosses ${second.chain.id} near ` +
+            `(${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)})`,
+        )
+      }
+      const tube = maxCurveTubeDeviation(result.chains)
+      if (tube.cells > settings.maxDeviationCells + TUBE_SAG_CELLS) {
+        failures.push(
+          `layout ${index}: chain ${tube.chainId} left its tube by ${tube.cells.toFixed(3)} cells ` +
+            `at (${tube.at.x.toFixed(2)}, ${tube.at.y.toFixed(2)})`,
+        )
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it('leaves its junction approaches free to curve across the layout suite', () => {
+    // Chains meeting at a junction continue each other's boundary rather than facing it across a
+    // corridor. Counting them as competitors drives the clearance to nothing and pins both
+    // approaches back onto the raw cell staircase, which is what makes a map look angular at every
+    // material meeting.
+    let near = 0
+    let moved = 0
+    let drift = 0
+    for (const rows of layoutSuite) {
+      for (const chain of plan(rows).chains) {
+        if (chain.closed) continue
+        const ends = [chain.rawPoints[0]!, chain.rawPoints.at(-1)!]
+        for (const point of chain.points) {
+          if (point.locked) continue
+          const toJunction = Math.min(
+            ...ends.map((end) => Math.hypot(point.x - end.x, point.y - end.y)),
+          )
+          if (toJunction > 1.2) continue
+          const fromRaw = distanceToPolyline(point, chain.rawPoints)
+          near += 1
+          drift += fromRaw
+          if (fromRaw > 0.05) moved += 1
+        }
+      }
+    }
+    expect(near).toBeGreaterThan(500)
+    expect(moved / near).toBeGreaterThan(0.4)
+    expect(drift / near).toBeGreaterThan(0.08)
   })
 
   it('closes straight, concave, diagonal, and disconnected regions against the exterior', () => {

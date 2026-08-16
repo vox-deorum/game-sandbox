@@ -1,52 +1,56 @@
+/**
+ * Geometry checks over a planned contour graph.
+ *
+ * Partition ownership is a correctness bound and stays in the renderer: a face that never closes,
+ * or a chain a ring does not own once in each direction, means the drawn fills themselves are
+ * wrong. The curve sweeps bound shaping calibration instead, so the tests run them across the
+ * layout suite and the renderer does not. A curve bulging a tenth of a cell past its tube is still
+ * art, while aborting art installation over it drops the whole map back to flat diagnostic colour.
+ */
+
 import { distance } from '@renderers/base/math.js'
 
-import { EPSILON, cellKey, projectToSegment } from './terrain-helpers.js'
+import { EPSILON } from './terrain-helpers.js'
 import { samePoint } from './terrain-contour-graph.js'
 import { referenceOf, referencePointAtRawOffset } from './terrain-contour-reference.js'
 import { indexRawPolyline, projectToPolyline } from './terrain-contour-shaping.js'
 import type { ComponentRecord } from './terrain-contour-grid.js'
 import type { WorkingChain } from './terrain-contour-graph.js'
 import type { WorkingRing } from './terrain-contour-rings.js'
-import type { ContourCoordinate, TerrainContourPoint, TerrainContourUse } from './types.js'
-import type { RawPolylineIndex } from './terrain-contour-shaping.js'
-const CURVE_BUCKET_SIZE_CELLS = 1
+import type { ContourCoordinate, TerrainContourUse } from './types.js'
 
-interface CurvePiece {
-  readonly chain: WorkingChain
-  readonly referenceIndex: RawPolylineIndex
+const CURVE_BUCKET_SIZE_CELLS = 1
+const TUBE_SAMPLE_SPACING_CELLS = 0.05
+
+/** The chain fields the curve sweeps read, shared by working chains and planned ones. */
+export interface CurveChainView {
+  readonly id: string
+  readonly closed: boolean
+  readonly points: readonly ContourCoordinate[]
+}
+
+/** One drawn chord of one chain, closed rings including their seam chord. */
+interface CurvePiece<Chain extends CurveChainView> {
+  readonly chain: Chain
   readonly index: number
   readonly start: ContourCoordinate
   readonly end: ContourCoordinate
   readonly count: number
 }
 
-/**
- * Shaping constrains sample points, so chords between samples may sag past the point bound,
- * most where tangential slide and the lock blend stretch the spacing between emitted points.
- * Validation allows that interpolation sag; it is a tripwire for construction failures, which
- * overshoot by half a cell or more, not a second calibration bound.
- */
-const VALIDATION_SAG_CELLS = 0.08
-const TUBE_SAMPLE_SPACING_CELLS = 0.05
-
-/** The corner-cut reference polyline of one chain, with the seam point repeated when closed. */
-function referencePolyline(chain: WorkingChain): readonly ContourCoordinate[] {
-  const points = referenceOf(chain).points
-  return chain.closed ? [...points, points[0]!] : points
+/** The drawn polyline of one chain, with the seam point repeated when closed. */
+function closedPolyline(points: readonly ContourCoordinate[], closed: boolean) {
+  return closed ? [...points, points[0]!] : points
 }
 
-/** Emitted-curve pieces, closed rings including their seam chord, for sweeps and repair. */
-function curvePieces(
-  chains: readonly WorkingChain[],
-  referenceIndexes: ReadonlyMap<WorkingChain, RawPolylineIndex>,
-): CurvePiece[] {
+function curvePieces<Chain extends CurveChainView>(
+  chains: readonly Chain[],
+): CurvePiece<Chain>[] {
   return chains.flatMap((chain) => {
     if (chain.points.length < 2) throw new Error('Terrain contour chain emitted too few points.')
-    const points = chain.closed ? [...chain.points, chain.points[0]!] : chain.points
-    const referenceIndex = referenceIndexes.get(chain)!
+    const points = closedPolyline(chain.points, chain.closed)
     return points.slice(0, -1).map((start, index) => ({
       chain,
-      referenceIndex,
       index,
       start,
       end: points[index + 1]!,
@@ -55,12 +59,12 @@ function curvePieces(
   })
 }
 
-/** Every pair of emitted pieces that truly cross, excluding shared endpoints and junctions. */
-function nonincidentIntersections(
-  pieces: readonly CurvePiece[],
-): readonly (readonly [CurvePiece, CurvePiece])[] {
-  const found: [CurvePiece, CurvePiece][] = []
-  for (const [first, second] of spatialCurvePairs(pieces)) {
+/** Every pair of drawn chords that truly cross, excluding shared endpoints and junctions. */
+export function findCurveCrossings<Chain extends CurveChainView>(
+  chains: readonly Chain[],
+): readonly (readonly [CurvePiece<Chain>, CurvePiece<Chain>])[] {
+  const found: [CurvePiece<Chain>, CurvePiece<Chain>][] = []
+  for (const [first, second] of spatialCurvePairs(curvePieces(chains))) {
     if (
       first.chain === second.chain &&
       piecesAreAdjacent(first, second) &&
@@ -84,17 +88,10 @@ function nonincidentIntersections(
  */
 const INTERSECTION_REPAIR_PASSES = 12
 
-export function repairAndValidateCurveGraph(
-  chains: readonly WorkingChain[],
-  maxDeviation: number,
-): void {
-  const referenceIndexes = new Map(
-    chains.map((chain) => [chain, indexRawPolyline(referencePolyline(chain))]),
-  )
-  let pieces = curvePieces(chains, referenceIndexes)
+export function repairCurveGraph(chains: readonly WorkingChain[]): void {
   for (let pass = 0; pass < INTERSECTION_REPAIR_PASSES; pass += 1) {
-    const offenders = nonincidentIntersections(pieces)
-    if (offenders.length === 0) break
+    const offenders = findCurveCrossings(chains)
+    if (offenders.length === 0) return
     const indexesByChain = new Map<WorkingChain, Set<number>>()
     for (const [first, second] of offenders) {
       for (const piece of [first, second]) {
@@ -123,39 +120,41 @@ export function repairAndValidateCurveGraph(
       }
       chain.points = points
     }
-    pieces = curvePieces(chains, referenceIndexes)
-  }
-  const allowed = maxDeviation + VALIDATION_SAG_CELLS
-  for (const piece of pieces) {
-    const tube = segmentTubeDeviation(piece.start, piece.end, piece.referenceIndex)
-    if (tube.worst + tube.spacing / 2 > allowed + 1e-7) {
-      throw new Error(
-        `Terrain contour curve escaped its reference tube: chain ${piece.chain.id} ` +
-          `(${piece.chain.leftMaterial} against ${piece.chain.rightMaterial}) near ` +
-          `(${piece.start.x.toFixed(2)}, ${piece.start.y.toFixed(2)}) deviates ` +
-          `${tube.worst.toFixed(3)} of ${allowed.toFixed(3)} allowed cells.`,
-      )
-    }
-  }
-  const offenders = nonincidentIntersections(pieces)
-  const offending = offenders[0]
-  if (offending !== undefined) {
-    const [first, second] = offending
-    throw new Error(
-      `Terrain contour curves contain a nonincident intersection: chain ${first.chain.id} ` +
-        `(${first.chain.leftMaterial} against ${first.chain.rightMaterial}) crosses chain ` +
-        `${second.chain.id} near (${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)}).`,
-    )
   }
 }
 
+/** The worst distance from a drawn curve to the reference polyline it was shaped from. */
+export function maxCurveTubeDeviation(
+  chains: readonly (CurveChainView & { readonly referencePoints: readonly ContourCoordinate[] })[],
+): { readonly cells: number; readonly chainId: string; readonly at: ContourCoordinate } {
+  let worst = { cells: 0, chainId: '', at: { x: 0, y: 0 } }
+  for (const chain of chains) {
+    const reference = indexRawPolyline(closedPolyline(chain.referencePoints, chain.closed))
+    const points = closedPolyline(chain.points, chain.closed)
+    for (const [index, start] of points.slice(0, -1).entries()) {
+      const end = points[index + 1]!
+      const steps = Math.max(1, Math.ceil(distance(start, end) / TUBE_SAMPLE_SPACING_CELLS))
+      for (let step = 0; step <= steps; step += 1) {
+        const amount = step / steps
+        const at = {
+          x: start.x + (end.x - start.x) * amount,
+          y: start.y + (end.y - start.y) * amount,
+        }
+        const cells = projectToPolyline(at, reference).distance
+        if (cells > worst.cells) worst = { cells, chainId: chain.id, at }
+      }
+    }
+  }
+  return worst
+}
+
 /** Return each pair of locally overlapping curve pieces once in deterministic insertion order. */
-function spatialCurvePairs(
-  pieces: readonly CurvePiece[],
-): readonly (readonly [CurvePiece, CurvePiece])[] {
-  const buckets = new Map<string, CurvePiece[]>()
+function spatialCurvePairs<Chain extends CurveChainView>(
+  pieces: readonly CurvePiece<Chain>[],
+): readonly (readonly [CurvePiece<Chain>, CurvePiece<Chain>])[] {
+  const buckets = new Map<string, CurvePiece<Chain>[]>()
   const indexes = new Map(pieces.map((piece, index) => [piece, index]))
-  const pairs: [CurvePiece, CurvePiece][] = []
+  const pairs: [CurvePiece<Chain>, CurvePiece<Chain>][] = []
   const seen = new Set<string>()
   for (let index = 0; index < pieces.length; index += 1) {
     const piece = pieces[index]!
@@ -174,7 +173,10 @@ function spatialCurvePairs(
   return pairs
 }
 
-function curveBucketKeys(piece: Pick<CurvePiece, 'start' | 'end'>): readonly string[] {
+function curveBucketKeys(piece: {
+  readonly start: ContourCoordinate
+  readonly end: ContourCoordinate
+}): readonly string[] {
   const minimumX = Math.floor(Math.min(piece.start.x, piece.end.x) / CURVE_BUCKET_SIZE_CELLS)
   const maximumX = Math.floor(Math.max(piece.start.x, piece.end.x) / CURVE_BUCKET_SIZE_CELLS)
   const minimumY = Math.floor(Math.min(piece.start.y, piece.end.y) / CURVE_BUCKET_SIZE_CELLS)
@@ -186,29 +188,9 @@ function curveBucketKeys(piece: Pick<CurvePiece, 'start' | 'end'>): readonly str
   return keys
 }
 
-/** Sample a chord closely enough to certify its full 1-Lipschitz distance bound. */
-function segmentTubeDeviation(
-  start: ContourCoordinate,
-  end: ContourCoordinate,
-  referenceIndex: RawPolylineIndex,
-): { readonly worst: number; readonly spacing: number } {
-  const steps = Math.max(1, Math.ceil(distance(start, end) / TUBE_SAMPLE_SPACING_CELLS))
-  const spacing = distance(start, end) / steps
-  let worst = 0
-  for (let step = 0; step <= steps; step += 1) {
-    const amount = step / steps
-    const point = {
-      x: start.x + (end.x - start.x) * amount,
-      y: start.y + (end.y - start.y) * amount,
-    }
-    worst = Math.max(worst, projectToPolyline(point, referenceIndex).distance)
-  }
-  return { worst, spacing }
-}
-
 function piecesAreAdjacent(
-  first: { readonly chain: WorkingChain; readonly index: number; readonly count: number },
-  second: { readonly chain: WorkingChain; readonly index: number; readonly count: number },
+  first: { readonly chain: CurveChainView; readonly index: number; readonly count: number },
+  second: { readonly chain: CurveChainView; readonly index: number; readonly count: number },
 ): boolean {
   if (Math.abs(first.index - second.index) === 1) return true
   return (
@@ -237,12 +219,12 @@ function adjacentPiecesMeetOnlyAtEndpoint(
 
 function incidentIntersection(
   first: {
-    readonly chain: WorkingChain
+    readonly chain: CurveChainView
     readonly start: ContourCoordinate
     readonly end: ContourCoordinate
   },
   second: {
-    readonly chain: WorkingChain
+    readonly chain: CurveChainView
     readonly start: ContourCoordinate
     readonly end: ContourCoordinate
   },

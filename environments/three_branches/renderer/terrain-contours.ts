@@ -12,10 +12,7 @@ import {
   assignComponentAndRingIds,
   buildRings,
 } from './terrain-contour-rings.js'
-import {
-  repairAndValidateCurveGraph,
-  validatePartition,
-} from './terrain-contour-validation.js'
+import { repairCurveGraph, validatePartition } from './terrain-contour-validation.js'
 import type { TerrainContourPlan, TerrainContourSettings } from './types.js'
 
 export { TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
@@ -45,7 +42,7 @@ export function planTerrainContours(
   buildContourReferences(workingChains, settings)
   const clearanceIndex = buildClearanceIndex(workingChains)
   shapeChains(workingChains, settings, bridgeTaperCells, layoutHash, clearanceIndex)
-  repairAndValidateCurveGraph(workingChains, settings.maxDeviationCells)
+  repairCurveGraph(workingChains)
 
   const workingRings = buildRings(graph.nodes, graph.segments, workingChains)
   assignComponentAndRingIds(componentRecords, workingRings)

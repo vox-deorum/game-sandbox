@@ -20,12 +20,7 @@ Season 4 uses `cast_10` with daynight on. Each villager derives a role from its 
 
 Keep Season 3's live visitor reactions: `greet`, `follow`, and `avoid`.
 
-The shipped table assigns the guaranteed pump, board, repair bench, hearth, and bell once, then
-spreads three stall jobs and two plot jobs across explicit offsets. `me.rng` varies roles only
-within choices that keep those compatible targets. A visitor reaction lasts 40 ticks. Fixed
-per-slot return windows leave enough route time for each home, and residents who share a home use
-separate interior points. Lanterns are optional dressing, so a resident assigned to a missing
-lantern returns to that resident's guaranteed role prop for the evening work period.
+The shipped table assigns the guaranteed pump, board, repair bench, hearth, and bell once, then spreads three stall jobs and two plot jobs across explicit offsets. `me.rng` varies roles only within choices that keep those compatible targets. A visitor reaction lasts 40 ticks. Fixed per-slot return windows leave enough route time for each home, and residents who share a home use separate interior points. Lanterns are optional dressing, so a resident assigned to a missing lantern returns to that resident's guaranteed role prop for the evening work period.
 
 ## What to build
 
@@ -43,9 +38,7 @@ A routine is `decide(observation, memory, goal)`: return a helper-built action D
 
 **Budget and reporting rules:** Build the graph once in `reset`, where step 1 provides the layout before tick one. Later `act` calls search the cached graph. Measure and report reset and per-tick costs separately. The graph resolution remains an explicit example choice that students may change.
 
-The shipped example uses one graph node for every walkable cell. The village helpers cache their
-model by immutable layout content and use a spatial collision index, so repeated cell and segment
-checks reuse exact static geometry without rescanning every collision shape.
+The shipped example uses one graph node for every walkable cell. The village helpers cache their model by immutable layout content and use a spatial collision index, so repeated cell and segment checks reuse exact static geometry without rescanning every collision shape.
 
 ### Routine menu
 

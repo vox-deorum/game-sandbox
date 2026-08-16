@@ -55,8 +55,8 @@ export function validateInputs(
   if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.75)) {
     throw new Error('Contour maximum deviation must be greater than zero and at most 0.75 cell.')
   }
-  if (!(settings.minimumCorridorCells >= 0.7 && settings.minimumCorridorCells <= 1)) {
-    throw new Error('Contour minimum corridor must be between 0.70 and one cell.')
+  if (!(settings.minimumCorridorCells >= 0.25 && settings.minimumCorridorCells <= 1)) {
+    throw new Error('Contour minimum corridor must be between 0.25 and one cell.')
   }
   if (!Number.isFinite(bridgeTaperCells) || bridgeTaperCells < 0 || bridgeTaperCells > 1) {
     throw new Error('Bridge shoreline taper must be between zero and one cell.')

@@ -12,12 +12,12 @@ python -m sandbox eval
 
 ## Files you will use
 
-| Path | Purpose |
-| --- | --- |
-| `agent.py` | Your `Agent` implementation and starter TODOs. |
+| Path             | Purpose                                           |
+| ---------------- | ------------------------------------------------- |
+| `agent.py`       | Your `Agent` implementation and starter TODOs.    |
 | `environment.md` | Rules, helpers, observations, and local commands. |
-| `tests/` | Checks your submission should pass. |
-| `sandbox/` | Local game, helpers, and types. Do not edit it. |
+| `tests/`         | Checks your submission should pass.               |
+| `sandbox/`       | Local game, helpers, and types. Do not edit it.   |
 
 The starter shows `action.walk`, `action.stand`, an emote, and `use`. Read [`environment.md`](environment.md) before changing it. Begin with one behavior that you can recognize in `watch`, then make it more responsive to the people and props it sees.
 
