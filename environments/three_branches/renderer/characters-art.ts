@@ -51,9 +51,8 @@ export function characterWalkFrame(
   moved: number,
 ): string {
   if (moved <= 0) return CHARACTER_REST_FRAME
-  const { frameMs } = HEARTHSIDE_STYLE.characters.walk
   const elapsedFrames = Math.floor(
-    (fractionalTick * HEARTHSIDE_STYLE.transition.naturalMs) / frameMs,
+    fractionalTick / HEARTHSIDE_STYLE.characters.walk.frameRatio,
   )
   const playerPhase = stableHashParts('character-walk', playerId) % CHARACTER_WALK_CYCLE.length
   return CHARACTER_WALK_CYCLE[(elapsedFrames + playerPhase) % CHARACTER_WALK_CYCLE.length] ?? 'pass'

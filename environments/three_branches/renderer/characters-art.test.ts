@@ -44,9 +44,7 @@ describe('Three Branches character art choices', () => {
   it('rests while still and advances the four-pose walk cycle from fractional tick', () => {
     const playerId = 'player_7'
     const frameTicks = CHARACTER_WALK_CYCLE.map(
-      (_, index) =>
-        ((index + 0.25) * HEARTHSIDE_STYLE.characters.walk.frameMs) /
-        HEARTHSIDE_STYLE.transition.naturalMs,
+      (_, index) => (index + 0.25) * HEARTHSIDE_STYLE.characters.walk.frameRatio,
     )
     const frames = frameTicks.map((tick) => characterWalkFrame(playerId, tick, 0.5))
     const rotations = CHARACTER_WALK_CYCLE.map((_, offset) =>
@@ -61,12 +59,15 @@ describe('Three Branches character art choices', () => {
   })
 
   it('gives fixed player ids distinct stable phases at the same fractional tick', () => {
-    const tick =
-      (0.25 * HEARTHSIDE_STYLE.characters.walk.frameMs) / HEARTHSIDE_STYLE.transition.naturalMs
+    const { frameRatio } = HEARTHSIDE_STYLE.characters.walk
+    const tick = 0.25 * frameRatio
 
+    expect(frameRatio).toBe(0.68)
     expect(characterWalkFrame('player_2', tick, 0.5)).toBe('leftForward')
     expect(characterWalkFrame('player_4', tick, 0.5)).toBe('rightForward')
     expect(characterWalkFrame('player_1', tick, 0.5)).toBe('pass')
+    expect(characterWalkFrame('player_2', frameRatio * 0.999, 0.5)).toBe('leftForward')
+    expect(characterWalkFrame('player_2', frameRatio, 0.5)).toBe('pass')
   })
 
   it('rotates the north-authored sprite to exact recorded headings', () => {
