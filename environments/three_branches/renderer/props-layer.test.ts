@@ -1,4 +1,4 @@
-import { Container, Rectangle, Texture } from 'pixi.js'
+import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
@@ -29,17 +29,24 @@ function node(root: Container, label: string): Container {
   return found
 }
 
+function spriteNode(root: Container, label: string): Sprite {
+  const found = root.children.find((child) => child.label === label)
+  if (!(found instanceof Sprite)) throw new Error(`Missing sprite ${label}.`)
+  return found
+}
+
 describe('Three Branches retained props', () => {
   it('slices named views over their atlas source with manifest rectangles', () => {
     const source = Texture.WHITE.source
-    const props = new Texture({ source, frame: new Rectangle(0, 0, 576, 384) })
+    const props = new Texture({ source, frame: new Rectangle(0, 0, 2304, 1536) })
     const scenery = new Texture({ source, frame: new Rectangle(0, 0, 128, 128) })
-    const effects = new Texture({ source, frame: new Rectangle(0, 0, 768, 512) })
+    const effects = new Texture({ source, frame: new Rectangle(0, 0, 1344, 512) })
     const views = createPropArt({ props, scenery, effects })
-    expect(views.props.stallBase?.source).toBe(source)
-    expect(views.props.stallBase?.frame).toMatchObject({ x: 0, y: 0, width: 96, height: 64 })
+    expect(views.props.stallOpen?.source).toBe(source)
+    expect(views.props.stallOpen?.frame).toMatchObject({ x: 0, y: 0, width: 384, height: 256 })
+    expect(views.props.bellFoundation?.frame).toMatchObject({ x: 384, y: 768, width: 384, height: 256 })
     expect(views.scenery.marketCrate?.frame).toMatchObject({ x: 64, y: 64, width: 64, height: 64 })
-    expect(views.effects.flameA?.frame).toMatchObject({ x: 0, y: 128, width: 192, height: 128 })
+    expect(views.effects.flameA?.frame).toMatchObject({ x: 768, y: 0, width: 192, height: 128 })
   })
 
   it('retains state nodes and leaves fallback untouched when complete art preflight fails', () => {
@@ -52,33 +59,21 @@ describe('Three Branches retained props', () => {
     const hearthId = frame.static.props.find((item) => item.type === 'hearth')?.id
     if (hearthId === undefined) throw new Error('Fixture has no hearth.')
     const hearth = node(props, `prop:${hearthId}`)
-    const hearthBase = node(scenery, `prop-base:${hearthId}`)
-    expect(node(hearthBase, 'prop-fallback').visible).toBe(true)
+    expect(node(hearth, 'prop-fallback').visible).toBe(true)
     const missing = { ...art(), props: { ...frameMap('props') } }
-    delete (missing.props as Record<string, Texture>).bellClapper
+    delete (missing.props as Record<string, Texture>).hearthLit
     expect(() => layer.install(missing)).toThrow(/prop frame is missing/)
-    expect(node(hearthBase, 'prop-fallback').visible).toBe(true)
+    expect(node(hearth, 'prop-fallback').visible).toBe(true)
 
     layer.install(art())
     layer.reconcile(frame)
-    const overlays = node(hearth, 'prop-overlays')
-    const retained = overlays.children[0]
+    expect(node(hearth, 'prop-fallback').visible).toBe(false)
+    const still = spriteNode(hearth, 'prop-still')
+    expect(still.visible).toBe(true)
+    expect(still.texture).toBe(Texture.WHITE)
     layer.reconcile(frame)
-    expect(node(hearth, 'prop-overlays').children[0]).toBe(retained)
-    const hearthArt = node(hearthBase, 'prop-base')
-    expect(hearthArt.scale.x).toBe(16 / 96)
-    expect(hearthArt.scale.y).toBe(16 / 64)
-    const plot = frame.static.props.find((item) => item.type === 'plot')
-    const eastBench = frame.static.props.find(
-      (item) => item.type === 'bench' && item.facing === 'east',
-    )
-    if (plot === undefined || eastBench === undefined) throw new Error('Fixture lacks scale examples.')
-    const plotArt = node(node(scenery, `prop-base:${plot.id}`), 'prop-base')
-    expect(plotArt.scale.x).toBe(0.5)
-    expect(plotArt.scale.y).toBe(0.5)
-    const eastBenchArt = node(node(scenery, `prop-base:${eastBench.id}`), 'prop-base')
-    expect(eastBenchArt.scale.x).toBe(32 / 96)
-    expect(eastBenchArt.scale.y).toBe(16 / 64)
+    expect(spriteNode(hearth, 'prop-still')).toBe(still)
+
     const crate = node(scenery, 'scenery:scenery:0')
     expect(crate.position.x).toBe(frame.static.scenery[0]?.rect.x! + frame.static.scenery[0]?.rect.width! / 2)
     expect(crate.getChildByLabel('scenery-art')?.scale.x).toBe(0.25)
@@ -105,7 +100,7 @@ describe('Three Branches retained props', () => {
     const layer = createPropLayer(scenery, props, new Container(), new Container(), frame.static)
     const east = frame.static.props.find((item) => item.shape === 'box' && item.facing === 'east')
     if (east === undefined) throw new Error('Fixture has no east-facing box prop.')
-    const fallback = node(node(scenery, `prop-base:${east.id}`), 'prop-fallback').getLocalBounds()
+    const fallback = node(node(props, `prop:${east.id}`), 'prop-fallback').getLocalBounds()
     expect(fallback.width).toBe(east.rect.height)
     expect(fallback.height).toBe(east.rect.width)
     layer.highlight(east.id)

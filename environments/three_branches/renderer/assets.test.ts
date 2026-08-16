@@ -70,7 +70,7 @@ describe('Three Branches asset catalog', () => {
     }
 
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
-    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(19)
+    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(20)
 
     const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
     expect(

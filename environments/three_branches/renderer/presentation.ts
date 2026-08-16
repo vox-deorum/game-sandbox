@@ -3,6 +3,7 @@ import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
+import { smoothingPassesFor } from './terrain-curves.js'
 import { mixedTint } from './tint.js'
 import type { TerrainCurveProfile } from './types.js'
 import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
@@ -738,11 +739,7 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
 }
 
 function curveProfile(value: unknown, name: string): TerrainCurveProfile {
-  const source = exactRecord(value, name, ['sampleSpacingCells', 'smoothingPasses', 'octaves'])
-  const smoothingPasses = nonnegativeInteger(source.smoothingPasses, `${name}.smoothingPasses`)
-  if (smoothingPasses > 256) {
-    throw new Error(`${name}.smoothingPasses must be at most 256.`)
-  }
+  const source = exactRecord(value, name, ['sampleSpacingCells', 'cornerRadiusCells', 'octaves'])
   const octaveSources = array(source.octaves, `${name}.octaves`)
   if (octaveSources.length > 8) {
     throw new Error(`${name}.octaves must contain at most eight bands.`)
@@ -766,16 +763,24 @@ function curveProfile(value: unknown, name: string): TerrainCurveProfile {
       ),
     }
   })
-  return {
+  const profile: TerrainCurveProfile = {
     sampleSpacingCells: boundedNumber(
       source.sampleSpacingCells,
       `${name}.sampleSpacingCells`,
       0,
       4,
     ),
-    smoothingPasses,
+    cornerRadiusCells: boundedNumber(
+      source.cornerRadiusCells,
+      `${name}.cornerRadiusCells`,
+      0,
+      4,
+      true,
+    ),
     octaves,
   }
+  smoothingPassesFor(profile, `${name}.cornerRadiusCells`)
+  return profile
 }
 
 function plankTreatment(

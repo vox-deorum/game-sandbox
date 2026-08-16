@@ -257,7 +257,7 @@ export type CollisionShape =
 export interface TerrainCurveOctave {
   /** Noise wavelength measured in cells. */
   readonly wavelengthCells: number
-  /** Maximum perpendicular displacement measured in cells. */
+  /** Perpendicular displacement the band usually draws, measured in cells. */
   readonly amplitudeCells: number
 }
 
@@ -265,8 +265,8 @@ export interface TerrainCurveOctave {
 export interface TerrainCurveProfile {
   /** Distance between resampled points measured in cells. */
   readonly sampleSpacingCells: number
-  /** Number of corner-smoothing passes. */
-  readonly smoothingPasses: number
+  /** Radius a corner is rounded over, measured in cells, zero to keep every corner exact. */
+  readonly cornerRadiusCells: number
   /** Ordered noise bands applied after smoothing. */
   readonly octaves: readonly TerrainCurveOctave[]
 }

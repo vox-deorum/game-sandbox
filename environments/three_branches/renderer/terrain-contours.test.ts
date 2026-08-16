@@ -752,7 +752,7 @@ describe('continuous terrain contour planning', () => {
     const width = 80
     const result = plan(['w'.repeat(width), 'g'.repeat(width)], {
       profiles: {
-        water: { smoothingPasses: 0, sampleSpacingCells: 0.25 },
+        water: { cornerRadiusCells: 0, sampleSpacingCells: 0.25 },
       },
     })
     const boundary = result.chains.find(

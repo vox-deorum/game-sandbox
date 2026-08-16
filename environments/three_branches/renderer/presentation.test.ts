@@ -28,40 +28,36 @@ const APPROVED_PALETTE = {
 } as const
 
 // An amplitude is the distance a boundary usually moves, so these are readable as drawn shape:
-// the bank wanders about a quarter cell overall, most of it at the scale of its own chords. Every
-// wavelength stays at six sample spacings or more, below which a period is too few samples to
-// draw and every sample becomes a corner.
+// the bank wanders about a quarter cell overall. Nothing smooths the noise, since it is laid on
+// after the corner kernel has run, so a band draws every bend it carries: a wavelength has to stay
+// several times the corner radius, or the boundary turns an elbow on every half period.
 const LAND_CURVE = {
   sampleSpacingCells: 0.25,
-  smoothingPasses: 8,
+  cornerRadiusCells: 0.8,
   octaves: [
-    { wavelengthCells: 8, amplitudeCells: 0.16 },
-    { wavelengthCells: 4.5, amplitudeCells: 0.2 },
-    { wavelengthCells: 2.2, amplitudeCells: 0.13 },
-    { wavelengthCells: 1.6, amplitudeCells: 0.05 },
+    { wavelengthCells: 9, amplitudeCells: 0.2 },
+    { wavelengthCells: 4.5, amplitudeCells: 0.14 },
   ],
 } as const
 
 const WATER_CURVE = {
   sampleSpacingCells: 0.2,
-  smoothingPasses: 10,
+  cornerRadiusCells: 0.8,
   octaves: [
-    { wavelengthCells: 11, amplitudeCells: 0.18 },
-    { wavelengthCells: 5, amplitudeCells: 0.22 },
-    { wavelengthCells: 2.4, amplitudeCells: 0.15 },
-    { wavelengthCells: 1.4, amplitudeCells: 0.06 },
+    { wavelengthCells: 11, amplitudeCells: 0.22 },
+    { wavelengthCells: 5, amplitudeCells: 0.15 },
   ],
 } as const
 
 const ROAD_CURVE = {
   sampleSpacingCells: 0.25,
-  smoothingPasses: 10,
+  cornerRadiusCells: 0.56,
   octaves: [{ wavelengthCells: 6, amplitudeCells: 0.05 }],
 } as const
 
 const PATH_CURVE = {
   sampleSpacingCells: 0.2,
-  smoothingPasses: 14,
+  cornerRadiusCells: 0.53,
   octaves: [{ wavelengthCells: 7, amplitudeCells: 0.04 }],
 } as const
 
@@ -226,9 +222,9 @@ describe('Hearthside Ink presentation', () => {
     badWavelength.terrain.contours.profiles.water.octaves[0].wavelengthCells = 256.01
     expect(() => readHearthsideStyle(badWavelength)).toThrow('wavelengthCells')
 
-    const missingSmoothingPasses = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingSmoothingPasses.terrain.contours.profiles.land.smoothingPasses
-    expect(() => readHearthsideStyle(missingSmoothingPasses)).toThrow('profiles.land keys')
+    const missingCornerRadius = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingCornerRadius.terrain.contours.profiles.land.cornerRadiusCells
+    expect(() => readHearthsideStyle(missingCornerRadius)).toThrow('profiles.land keys')
 
     const excessiveDeviation = structuredClone(HEARTHSIDE_STYLE) as any
     excessiveDeviation.terrain.contours.maxDeviationCells = 0.76
@@ -332,10 +328,15 @@ describe('Hearthside Ink presentation', () => {
     excessivePathWidth.terrain.routes.path.widthCells = 2.01
     expect(() => readHearthsideStyle(excessivePathWidth)).toThrow('path.widthCells')
 
-    const excessiveSmoothingPasses = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveSmoothingPasses.terrain.routes.path.curve.smoothingPasses = 257
-    expect(() => readHearthsideStyle(excessiveSmoothingPasses)).toThrow(
-      'smoothingPasses must be at most 256',
+    const excessiveCornerRadius = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveCornerRadius.terrain.routes.path.curve.cornerRadiusCells = 4.01
+    expect(() => readHearthsideStyle(excessiveCornerRadius)).toThrow('cornerRadiusCells')
+
+    const unaffordableCornerRadius = structuredClone(HEARTHSIDE_STYLE) as any
+    unaffordableCornerRadius.terrain.routes.path.curve.cornerRadiusCells = 3.5
+    unaffordableCornerRadius.terrain.routes.path.curve.sampleSpacingCells = 0.1
+    expect(() => readHearthsideStyle(unaffordableCornerRadius)).toThrow(
+      'more than the 256 allowed',
     )
 
     const extraCurveKey = structuredClone(HEARTHSIDE_STYLE) as any

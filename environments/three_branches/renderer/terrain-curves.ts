@@ -16,6 +16,28 @@ const OFFSET_DIGITS = 12
 /** Arc reach, in cells, when measuring displacement against the local source polyline. */
 const SOURCE_DISTANCE_WINDOW_CELLS = 2.5
 
+/** Most smoothing passes one curve may run, which is what bounds the cost of a corner radius. */
+const MAX_SMOOTHING_PASSES = 256
+
+/**
+ * Smoothing passes that round a corner over the radius the profile asks for.
+ *
+ * The three-point kernel spreads a sample's influence the way diffusion spreads heat, so successive
+ * passes add in quadrature and the radius they round to grows as the square root of their count:
+ * `radius = spacing * sqrt(passes / 2)`. Inverting that leaves the corner shape a distance the
+ * caller sets, rather than something that quietly changes whenever the sample spacing moves.
+ */
+export function smoothingPassesFor(profile: TerrainCurveProfile, label: string): number {
+  const passes = Math.round(2 * (profile.cornerRadiusCells / profile.sampleSpacingCells) ** 2)
+  if (passes > MAX_SMOOTHING_PASSES) {
+    throw new Error(
+      `${label} corner radius needs ${passes} smoothing passes at that sample spacing, ` +
+        `more than the ${MAX_SMOOTHING_PASSES} allowed.`,
+    )
+  }
+  return passes
+}
+
 interface SourceIndex {
   readonly points: readonly TerrainCurveSourcePoint[]
   readonly offsets: readonly number[]
@@ -30,9 +52,10 @@ interface WorkingPoint extends TerrainCurvePoint {
 
 /**
  * Resample and shape one open or closed polyline without applying topology policy.
- * Smoothing is a fixed three-point corner kernel run on the resampled points, so every sample
- * keeps its raw source offset and locked points stay exactly in place. Multi-octave value noise
- * then displaces free points along the local normal by the amplitude each octave asks for.
+ * Smoothing is a three-point corner kernel run over as many passes as the profile's corner radius
+ * calls for, so every sample keeps its raw source offset and locked points stay exactly in place.
+ * Multi-octave value noise then displaces free points along the local normal by the amplitude each
+ * octave asks for.
  *
  * The optional budget bounds how far each sample may leave the source curve, and bounds both
  * stages: smoothing is pulled back to it before noise runs, and the total is pulled back again
@@ -52,9 +75,10 @@ export function shapeTerrainCurve(
   const lockDistances = arcDistancesToLocks(samples, index.totalLength, closed)
   let positions = samples.map(({ rawX, rawY }) => ({ x: rawX, y: rawY }))
 
+  const requested = smoothingPassesFor(profile, 'Terrain curve')
   const passes = closed
-    ? Math.min(profile.smoothingPasses, Math.ceil((samples.length * samples.length) / 90))
-    : profile.smoothingPasses
+    ? Math.min(requested, Math.ceil((samples.length * samples.length) / 90))
+    : requested
   for (let pass = 0; pass < passes; pass += 1) {
     const current = positions
     positions = samples.map((sample, sampleIndex) => {
@@ -170,13 +194,8 @@ function validateInputs(
     throw new Error('Terrain curve seed must be a finite integer.')
   }
   bounded(profile.sampleSpacingCells, 0, 4, 'sample spacing')
-  if (
-    !Number.isInteger(profile.smoothingPasses) ||
-    profile.smoothingPasses < 0 ||
-    profile.smoothingPasses > 256
-  ) {
-    throw new Error('Terrain curve smoothing passes must be an integer between zero and 256.')
-  }
+  bounded(profile.cornerRadiusCells, 0, 4, 'corner radius', true)
+  smoothingPassesFor(profile, 'Terrain curve')
   if (!Array.isArray(profile.octaves) || profile.octaves.length > 8) {
     throw new Error('Terrain curve octaves must be a list of at most eight bands.')
   }
