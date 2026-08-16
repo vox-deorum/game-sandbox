@@ -329,33 +329,6 @@ function assembleReference(
   return { points, rawOffsets, offsets, length, locked }
 }
 
-/** Rebuild a reference around moved points, keeping their raw offsets and lock flags. */
-export function withReferencePoints(
-  reference: ContourReference,
-  points: readonly ContourCoordinate[],
-  closed: boolean,
-): ContourReference {
-  const offsets: number[] = []
-  let accumulated = 0
-  for (const [index, point] of points.entries()) {
-    if (index > 0) {
-      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), point)
-      if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
-      accumulated += step
-    }
-    offsets.push(accumulated)
-  }
-  const first = required(points[0], 'Terrain contour reference is empty.')
-  return {
-    ...reference,
-    points: points.map(({ x, y }) => ({ x, y })),
-    offsets,
-    length: closed
-      ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), first)
-      : accumulated,
-  }
-}
-
 /** One reference segment index paired with how far along it a lookup landed. */
 export interface ReferenceInterval {
   readonly startIndex: number

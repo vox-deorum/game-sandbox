@@ -18,7 +18,6 @@ import {
   rawPointAt,
   referenceIntervalAt,
   referenceOf,
-  withReferencePoints,
 } from './terrain-contour-reference.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
 import type { OffsetInterval } from './terrain-contour-reference.js'
@@ -86,9 +85,6 @@ const SELF_FOLD_ARC_RATIO = 1.6
 
 /** Arc reach within which a chain never competes with itself, whatever the ratio says. */
 const SELF_ARC_WINDOW_CELLS = 1.4
-
-/** How many times reference separation may reopen a corridor before shaping runs. */
-const SEPARATION_PASSES = 3
 
 /** Index the shaped reference of every chain. */
 export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
@@ -442,9 +438,12 @@ function nearbyRawSegments(
 }
 
 /**
- * Build the reference of every chain, bounding how far each may leave its raw boundary by the
- * clearance to its competitors. Measuring that bound against raw geometry, before any reference
- * moves, is what keeps two references a corridor apart without a settling pass.
+ * Build the reference of every chain.
+ *
+ * Every reference leaves its raw boundary by the same drift bound, so two banks of a thin band
+ * shed the same staircase and travel together, keeping the width between them. That is what holds
+ * a corridor open here, and the displacement budget below spends only half of whatever slack is
+ * left, so neither bank can close on the other later.
  */
 export function buildContourReferences(
   chains: readonly WorkingChain[],
@@ -452,64 +451,6 @@ export function buildContourReferences(
 ): void {
   for (const chain of chains) {
     chain.reference = buildContourReference(chain, settings.junctionTangentCells)
-  }
-  separateReferences(chains, settings)
-}
-
-/**
- * Reopen any corridor the smoothed references closed on each other.
- *
- * Every reference leaves its raw boundary by the same drift bound, so two banks of a thin band
- * shed the same staircase and travel together, keeping the width between them. Bounding each
- * bank instead by its absolute distance to the other would forbid exactly that, and a band only a
- * cell or two wide would keep its steps. What actually has to hold is the distance between the
- * two after they move, so measure that and correct only where it fell short: pull the offending
- * point back toward its raw anchor by half the shortfall, since the competitor yields the other
- * half on its own turn.
- */
-function separateReferences(
-  chains: readonly WorkingChain[],
-  settings: TerrainContourSettings,
-): void {
-  const movable = chains.filter((chain) => referenceOf(chain).locked.includes(false))
-  if (movable.length === 0) return
-  for (let pass = 0; pass < SEPARATION_PASSES; pass += 1) {
-    const index = buildClearanceIndex(chains)
-    let separatedAny = false
-    for (const chain of movable) {
-      const reference = referenceOf(chain)
-      const points = [...reference.points]
-      let separated = false
-      for (const [pointIndex, point] of points.entries()) {
-        if (reference.locked[pointIndex] === true) continue
-        const clearance = clearanceAt(
-          index,
-          chain,
-          point,
-          required(reference.offsets[pointIndex], 'Terrain reference offset is missing.'),
-        )
-        const shortfall = settings.minimumCorridorCells - clearance
-        if (shortfall <= 0) continue
-        const anchor = rawPointAt(
-          required(reference.rawOffsets[pointIndex], 'Terrain reference offset is missing.'),
-          chain.rawPoints,
-          chain.spans,
-          chain.rawLength,
-          chain.closed,
-        )
-        const drift = distance(anchor, point)
-        if (drift <= EPSILON) continue
-        const scale = Math.max(0, 1 - shortfall / 2 / drift)
-        points[pointIndex] = {
-          x: anchor.x + (point.x - anchor.x) * scale,
-          y: anchor.y + (point.y - anchor.y) * scale,
-        }
-        separated = true
-        separatedAny = true
-      }
-      if (separated) chain.reference = withReferencePoints(reference, points, chain.closed)
-    }
-    if (!separatedAny) break
   }
 }
 
