@@ -1,12 +1,12 @@
 # Step 5.0: Atlas pipeline
 
-Status: complete.
+Status: complete. Consuming art stages expand declared pages under this shared pipeline.
 
 Part of [the plan](../README.md). This stage is independent infrastructure: it adds a shared split and merge pipeline for atlas art to the base renderer and reorganizes the committed Three Branches art around it. It precedes the other parts of build-order step 5, and [step 5.1](5-1-art-style.md) iterates its art through this pipeline.
 
 ## Loose frames are the editable truth
 
-Every atlas frame lives as one loose PNG beside the compiled page. The compiled pages are ready for their planned consumers, but the bundle loads only the terrain page used by the current renderer. The pipeline converts between the two forms, and both are committed.
+Every atlas frame lives as one loose PNG beside the compiled page. The bundle loads only pages with shipped consumers. The pipeline converts between the two forms, and both are committed. Consuming stages update this inventory when their assets land.
 
 | Page | Frames directory | Frames |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ Every atlas frame lives as one loose PNG beside the compiled page. The compiled 
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 16 |
 
-The Frames column counts loose files, not frame pixels. Each page's current frame dimensions live in `renderer/assets.ts` and may change with the consuming art unit while the file count and names remain stable.
+The Frames column counts loose files, not frame pixels. Each page's current frame dimensions, count, and names live in `renderer/assets.ts` and change only with the consuming art unit, its loose files, compiled page, source-art metadata, plan facts, and tests in the same change set.
 
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
 
@@ -43,20 +43,20 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 ## Incremental runtime loading
 
-`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and runtime load function. The only manifest changes are the six props renames and the added `ATLAS_PAGES` export. The runtime glob names only pages with shipped consumers: terrain, the four character layers, and effects. Buildings, props, scenery, and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution originals as untouched provenance. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and runtime load function. The runtime glob names only pages with shipped consumers: terrain, the four character layers, and effects. Buildings, props, scenery, and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 ## Migration
 
-Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` layer pages into 116 loose frames. Pack `props` from the 36 loose files already on disk, which restores the missing `assets/props-atlas.png` and makes the declared six-atlas contract true again. Commit loose frames and compiled pages together.
+Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` layer pages into 116 loose frames. Pack `props` from its 36 loose files. Commit loose frames and compiled pages together.
 
 ## Tests
 
 - Pure packer tests in `frontend/test/atlas.test.ts` run on small synthetic images: name derivation for flat, nested, and underscored paths, a split-then-pack pixel round trip, and one failure case each for a missing frame, a stray PNG, a mis-sized frame, a non-gray pixel on a grayscale-alpha page, and bad grid arithmetic.
-- `assets.test.ts` checks catalog completeness, the nontrivial nested props paths, and terrain-only runtime loading.
+- `assets.test.ts` checks catalog completeness, the nontrivial nested props paths, and the exact runtime page set for terrain, the four character layers, and effects.
 - A freshness test in `environments/three_branches/renderer/atlas.test.ts` packs every page from its committed loose frames and compares pixels against the committed page, and checks each page's PNG header against its declared dimensions.
 
 All three ride the existing vitest include globs, so `scripts/ci.py` needs no change.
 
 ## Done when
 
-All nine pages have complete committed loose frame sets, `assets/props-atlas.png` is restored and matches the 36 loose props under the renamed frames, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, `source-art/` is unchanged, and the plan README and step 5.1 reference this pipeline.
+All nine declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 36 loose props, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.

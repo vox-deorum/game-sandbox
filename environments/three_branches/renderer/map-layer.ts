@@ -11,6 +11,7 @@ import { AlphaFilter, Container, FillPattern, Graphics, GraphicsPath, Matrix } f
 
 import { fillTintHex, HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from './presentation.js'
 import { PATTERN_CELLS, type TerrainArt, transparentUpperGrid } from './terrain-art.js'
+import { pointToSegmentDistance } from './terrain-helpers.js'
 import type {
   ContourCoordinate,
   StaticScene,
@@ -33,7 +34,6 @@ type SurfaceMaterial = (typeof OVERLAY_MATERIALS)[number] | 'road' | 'path'
 export interface SeamStrokeRun {
   readonly points: readonly TerrainContourPoint[]
   readonly alpha: number
-  readonly closed: boolean
 }
 
 /** Return the configured composite alpha for one drawn surface material. */
@@ -223,8 +223,7 @@ function ringContains(ring: readonly ContourCoordinate[], x: number, y: number):
     const corner = ring[index]!
     const before = ring[previous]!
     if (corner.y > y === before.y > y) continue
-    const crossing =
-      ((before.x - corner.x) * (y - corner.y)) / (before.y - corner.y) + corner.x
+    const crossing = ((before.x - corner.x) * (y - corner.y)) / (before.y - corner.y) + corner.x
     if (x < crossing) enclosed = !enclosed
   }
   return enclosed
@@ -378,12 +377,11 @@ export function hatchGraphics(plan: TerrainContourPlan, cellSize: number): Graph
       for (const run of runs) {
         const points = offsetPolyline(run.points, sign * offsetCells)
         const first = points[0]
-        if (first === undefined) continue
+        if (first === undefined || points.length < 2) continue
         hatch.moveTo(first.x * cellSize, first.y * cellSize)
         for (const point of points.slice(1)) {
           hatch.lineTo(point.x * cellSize, point.y * cellSize)
         }
-        if (run.closed) hatch.closePath()
         hatch.stroke({
           color: HEARTHSIDE_STYLE.palette[spec.tint],
           width: spec.widthCells * cellSize,
@@ -449,20 +447,153 @@ export function reedMarksGraphics(
   return marks
 }
 
-/** Offset run points along the chain's left normal, negative offsets landing on the right. */
+/** Corners whose miter runs longer than this many offsets are bevelled instead of spiked. */
+const OFFSET_MITER_LIMIT = 2
+/**
+ * How far inside its own offset a point may sit before it counts as folded, in cells. The source
+ * is a sampled curve, so its chords sag under the arc they stand for and the check needs that much
+ * slack. A fold shallower than this needs the bank to bend within a rounding of the offset itself.
+ */
+const OFFSET_FOLD_SLACK_CELLS = 0.05
+
+/** One offset point together with the source vertex it was raised from. */
+interface OffsetPoint {
+  readonly point: ContourCoordinate
+  readonly at: number
+}
+
+/**
+ * Offset run points along the chain's left normal, negative offsets landing on the right.
+ *
+ * Each source segment moves as a whole and consecutive offset segments meet where their lines
+ * cross, so a corner keeps its full offset instead of being pulled back toward the bank. Where the
+ * bank turns tighter than the offset, that meeting swings past the opposite branch and the line
+ * folds into a bowtie, which strokes as a small dark triangle out on the water. Two rules undo
+ * that: every point of a true offset stays the full offset away from its source, and a true offset
+ * walks its source forward rather than back down it. The survivors join across each gap, which is
+ * close to where the two branches of the fold would have met.
+ */
 export function offsetPolyline(
   points: readonly TerrainContourPoint[],
   offsetCells: number,
 ): readonly ContourCoordinate[] {
-  return points.map((point, index) => {
-    const before = points[Math.max(0, index - 1)] ?? point
-    const after = points[Math.min(points.length - 1, index + 1)] ?? point
-    const dx = after.x - before.x
-    const dy = after.y - before.y
-    const length = Math.hypot(dx, dy)
-    if (length <= 1e-9) return { x: point.x, y: point.y }
-    return { x: point.x + (-dy / length) * offsetCells, y: point.y + (dx / length) * offsetCells }
+  const source = withoutRepeats(points)
+  if (source.length < 2) return []
+  const normals = source.slice(0, -1).map((start, index) => {
+    const end = source[index + 1]!
+    const length = Math.hypot(end.x - start.x, end.y - start.y)
+    return { x: -(end.y - start.y) / length, y: (end.x - start.x) / length }
   })
+  const moved: OffsetPoint[] = []
+  for (const [at, vertex] of source.entries()) {
+    const before = normals[Math.max(0, at - 1)]!
+    const after = normals[Math.min(normals.length - 1, at)]!
+    const spread = 1 + before.x * after.x + before.y * after.y
+    const miter = { x: (before.x + after.x) / spread, y: (before.y + after.y) / spread }
+    if (spread > 0 && Math.hypot(miter.x, miter.y) <= OFFSET_MITER_LIMIT) {
+      moved.push({ at, point: displace(vertex, miter, offsetCells) })
+      continue
+    }
+    moved.push(
+      { at, point: displace(vertex, before, offsetCells) },
+      { at, point: displace(vertex, after, offsetCells) },
+    )
+  }
+  const clear = withoutFolds(moved, source, Math.abs(offsetCells))
+  return onlyAdvancing(clear, source).map((offset) => offset.point)
+}
+
+function displace(
+  vertex: ContourCoordinate,
+  direction: ContourCoordinate,
+  offsetCells: number,
+): ContourCoordinate {
+  return { x: vertex.x + direction.x * offsetCells, y: vertex.y + direction.y * offsetCells }
+}
+
+/**
+ * Drop the points a fold shallower than the slack leaves behind. Inside a fold the offset doubles
+ * back, so a step that runs against the source it was raised from belongs to one.
+ */
+function onlyAdvancing(
+  moved: readonly OffsetPoint[],
+  source: readonly ContourCoordinate[],
+): OffsetPoint[] {
+  const kept: OffsetPoint[] = []
+  for (const candidate of moved) {
+    const last = kept.at(-1)
+    if (last !== undefined && last.at !== candidate.at) {
+      const alongSource = {
+        x: source[candidate.at]!.x - source[last.at]!.x,
+        y: source[candidate.at]!.y - source[last.at]!.y,
+      }
+      const alongOffset = {
+        x: candidate.point.x - last.point.x,
+        y: candidate.point.y - last.point.y,
+      }
+      if (alongOffset.x * alongSource.x + alongOffset.y * alongSource.y <= 0) continue
+    }
+    kept.push(candidate)
+  }
+  return kept
+}
+
+/** The run without the repeated points a taper split or an arc interval can leave behind. */
+function withoutRepeats(points: readonly TerrainContourPoint[]): ContourCoordinate[] {
+  const result: ContourCoordinate[] = []
+  for (const point of points) {
+    const last = result.at(-1)
+    if (last !== undefined && Math.hypot(point.x - last.x, point.y - last.y) <= 1e-9) continue
+    result.push({ x: point.x, y: point.y })
+  }
+  return result
+}
+
+/**
+ * Drop the offset points that ended up nearer their source than the offset they were given. Only
+ * source segments within one offset of a point can rule it out, so the segments are bucketed at
+ * that size and each point measures the nine buckets its own disc reaches.
+ */
+function withoutFolds(
+  moved: readonly OffsetPoint[],
+  source: readonly ContourCoordinate[],
+  offset: number,
+): OffsetPoint[] {
+  const size = Math.max(offset, 1e-6)
+  const buckets = new Map<string, number[]>()
+  const spanKeys = (low: number, high: number): number[] => {
+    const keys: number[] = []
+    for (let key = Math.floor(low / size); key <= Math.floor(high / size); key += 1) keys.push(key)
+    return keys
+  }
+  for (let index = 0; index + 1 < source.length; index += 1) {
+    const start = source[index]!
+    const end = source[index + 1]!
+    for (const y of spanKeys(Math.min(start.y, end.y), Math.max(start.y, end.y))) {
+      for (const x of spanKeys(Math.min(start.x, end.x), Math.max(start.x, end.x))) {
+        const bucket = buckets.get(`${x}:${y}`) ?? []
+        bucket.push(index)
+        buckets.set(`${x}:${y}`, bucket)
+      }
+    }
+  }
+  const kept: OffsetPoint[] = []
+  for (const offsetPoint of moved) {
+    const { point } = offsetPoint
+    let nearest = Number.POSITIVE_INFINITY
+    for (const y of spanKeys(point.y - offset, point.y + offset)) {
+      for (const x of spanKeys(point.x - offset, point.x + offset)) {
+        for (const index of buckets.get(`${x}:${y}`) ?? []) {
+          nearest = Math.min(
+            nearest,
+            pointToSegmentDistance(point, source[index]!, source[index + 1]!),
+          )
+        }
+      }
+    }
+    if (nearest >= offset - OFFSET_FOLD_SLACK_CELLS) kept.push(offsetPoint)
+  }
+  return kept
 }
 
 /** Keep building interiors, thresholds, and walls as exact square texture cells. */
@@ -680,19 +811,19 @@ function appendTaperedRuns(
     if (start === undefined || end === undefined) continue
     const alpha = opacity * Math.min(factorOf(start), factorOf(end))
     if (alpha <= 0) {
-      if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+      if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
       active = undefined
       continue
     }
     if (active === undefined || Math.abs(activeAlpha - alpha) > 1e-9) {
-      if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+      if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
       active = [start, end]
       activeAlpha = alpha
     } else {
       active.push(end)
     }
   }
-  if (active !== undefined) result.push({ points: active, alpha: activeAlpha, closed: false })
+  if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
 }
 
 function pointsForArcInterval(
@@ -737,7 +868,6 @@ function pointAtRawOffset(
   if (fallback === undefined) throw new Error('Seam chain has no points.')
   return { ...fallback, rawOffset: offset }
 }
-
 
 /** Draw the configured ground as the unchanged dense, solid-color pre-art fallback. */
 function drawFallbackMap(layer: Container, scene: StaticScene): TiledGround {

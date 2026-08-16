@@ -61,7 +61,7 @@ const PATH_CURVE = {
 
 const APPROVED_CONTOURS = {
   profiles: { land: LAND_CURVE, water: WATER_CURVE },
-  junctionTangentCells: 0.25,
+  junctionTangentCells: 0.15,
   maxDeviationCells: 0.6,
   minimumCorridorCells: 0.45,
 } as const

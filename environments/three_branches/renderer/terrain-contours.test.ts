@@ -48,7 +48,7 @@ const waterProfile: TerrainCurveProfile = {
 
 const settings: TerrainContourSettings = {
   profiles: { land: landProfile, water: waterProfile },
-  junctionTangentCells: 0.25,
+  junctionTangentCells: 0.15,
   maxDeviationCells: 0.6,
   minimumCorridorCells: 0.45,
 }
