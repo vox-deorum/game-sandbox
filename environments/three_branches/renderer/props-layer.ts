@@ -10,6 +10,7 @@ import { frameRectangle } from './tint.js'
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
 const PROP_SCALE = 0.14
+const BELL_SCALE = 0.2
 const SCENERY_SCALE = 0.25
 const EFFECT_SCALE = 0.25
 const FIXED_MONUMENT_TYPES = new Set(['pump', 'bell'])
@@ -186,9 +187,10 @@ function createPropNode(item: StaticDrawable): PropNode {
   root.rotation = visualFacing(item)
   const shadow = propShadow(item)
   const fallbackNode = fallback(item, true)
-  const foundation = propSprite('prop-foundation', Texture.EMPTY)
+  const artScale = item.type === 'bell' ? BELL_SCALE : PROP_SCALE
+  const foundation = propSprite('prop-foundation', Texture.EMPTY, artScale)
   foundation.visible = false
-  const still = propSprite('prop-still', Texture.EMPTY)
+  const still = propSprite('prop-still', Texture.EMPTY, artScale)
   if (!isFixedMonument(item)) root.addChild(shadow)
   root.addChild(fallbackNode, still)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
@@ -246,8 +248,8 @@ function sprite(label: string, frame: Texture, scale: number): Sprite {
   return node
 }
 
-function propSprite(label: string, frame: Texture): Sprite {
-  return sprite(label, frame, PROP_SCALE)
+function propSprite(label: string, frame: Texture, scale = PROP_SCALE): Sprite {
+  return sprite(label, frame, scale)
 }
 
 function centerX(item: StaticDrawable): number { return item.rect.x + item.rect.width / 2 }

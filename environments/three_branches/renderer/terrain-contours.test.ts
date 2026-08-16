@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { readStatic } from './overlay.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
 import { buildStaticScene } from './scene.js'
-import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
 import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
 import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
@@ -236,11 +235,15 @@ function generatedRows(seed: number, size: number): string[] {
 }
 
 /**
- * The recorded 120 by 120 village the game actually draws. Planning validates every code against
- * the table above, so this fails loudly rather than quietly if the two ever diverge.
+ * The recorded 120 by 120 village the game actually contours. Road and path cells never reach
+ * this pass: the route plan hands their cells to the nearest natural material first, which moves
+ * hundreds of cells and reshapes the boundaries around every route. Contouring the scene rows
+ * instead would sweep a map the game never draws. Planning validates every code against the table
+ * above, so this fails loudly rather than quietly if the two ever diverge.
  */
 function shippingRows(): readonly string[] {
-  return buildStaticScene(readStatic(fixtureRecording().header)).topFirstRows
+  const scene = buildStaticScene(readStatic(fixtureRecording().header))
+  return planTerrainRoutes(scene.topFirstRows, names, HEARTHSIDE_STYLE.terrain.routes).visualRows
 }
 
 /**
@@ -284,6 +287,30 @@ describe('continuous terrain contour planning', () => {
           `layout ${index}: chain ${tube.chainId} left its tube by ${tube.cells.toFixed(3)} cells ` +
             `at (${tube.at.x.toFixed(2)}, ${tube.at.y.toFixed(2)})`,
         )
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it('runs one chain along a boundary from junction to junction', () => {
+    // Both ends of a chain are locked, so a chain cut anywhere other than a junction freezes the
+    // curve onto that raw cell corner and freezes its direction there too. Cut a diagonal boundary
+    // once per step and it is drawn as a staircase however well the reference flattens it. Two
+    // chain ends meeting at one corner with the same pair of materials is that cut.
+    const failures: string[] = []
+    for (const [index, rows] of layoutSuite.entries()) {
+      const endsAt = new Map<string, string[]>()
+      for (const chain of plan(rows).chains) {
+        if (chain.closed) continue
+        for (const end of [chain.rawPoints[0]!, chain.rawPoints.at(-1)!]) {
+          const corner = `${end.x},${end.y}`
+          endsAt.set(corner, [...(endsAt.get(corner) ?? []), chain.materials.join(' ')])
+        }
+      }
+      for (const [corner, pairs] of endsAt) {
+        if (pairs.length === 2 && pairs[0] === pairs[1]) {
+          failures.push(`layout ${index}: ${pairs[0]?.replace(' ', ' meets ')} is cut at ${corner}`)
+        }
       }
     }
     expect(failures).toEqual([])
@@ -703,18 +730,19 @@ describe('continuous terrain contour planning', () => {
       { x: 3, y: 3 },
       { x: 1, y: 3 },
     ]
-    // A square pond's corners are genuine shape, so the reference may keep them exactly; the
-    // emitted curve rounds them, so no drawn point sits on a corner itself.
+    // A square pond turns rather than steps at every corner, so the reference keeps all four
+    // exactly; the emitted curve rounds them, so no drawn point sits on a corner itself.
     expect(
       shore.points.some((point) =>
         corners.some((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9),
       ),
     ).toBe(false)
-    const closedReference = [...shore.referencePoints, shore.referencePoints[0]!]
-    for (const point of closedReference) {
-      expect(distanceToPolyline(point, [...shore.rawPoints])).toBeLessThanOrEqual(
-        MAX_REFERENCE_DRIFT_CELLS + 1e-9,
-      )
+    for (const corner of corners) {
+      expect(
+        shore.referencePoints.some(
+          (point) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9,
+        ),
+      ).toBe(true)
     }
     expect(shore.points[0]!.rawOffset).toBe(0)
     for (let index = 1; index < shore.points.length; index += 1) {

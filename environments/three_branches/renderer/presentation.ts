@@ -244,6 +244,7 @@ export interface PlankTreatment {
   shadowTint: HearthsidePaletteKey
   shadowOpacity: number
   shadowOffsetCells: number
+  textureBleedCells: number
 }
 
 export interface PhaseGrade {
@@ -822,6 +823,7 @@ function plankTreatment(
     'shadowTint',
     'shadowOpacity',
     'shadowOffsetCells',
+    'textureBleedCells',
   ])
   return {
     horizontal: knownText(source.horizontal, knownFrames, `${name}.horizontal`),
@@ -835,6 +837,12 @@ function plankTreatment(
       `${name}.shadowOffsetCells`,
       0,
       1,
+    ),
+    textureBleedCells: boundedNumber(
+      source.textureBleedCells,
+      `${name}.textureBleedCells`,
+      0,
+      0.25,
     ),
   }
 }

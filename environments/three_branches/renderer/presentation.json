@@ -139,7 +139,8 @@
       "tint": "timber",
       "shadowTint": "backdrop",
       "shadowOpacity": 0.25,
-      "shadowOffsetCells": 0.06
+      "shadowOffsetCells": 0.06,
+      "textureBleedCells": 0.025
     },
     "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
   },

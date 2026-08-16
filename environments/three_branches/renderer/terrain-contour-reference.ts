@@ -1,15 +1,18 @@
 /**
  * Reference geometry for terrain contours. The raw boundary polylines trace unit cell edges, so a
- * boundary that really runs at a shallow angle arrives quantized into stair runs of whatever length
- * that angle implies. Shaping and validation measure deviation against this reference instead: the
- * simplest polyline that stays within a fixed tolerance of the boundary's segment midpoints.
+ * boundary that really runs at an angle arrives quantized into stair runs of whatever length that
+ * angle implies. Shaping and validation measure deviation against this reference instead.
  *
- * Quantization error is bounded in amplitude, never in wavelength, so smoothing cannot remove it:
- * whatever window a filter uses, some map has stair runs longer than its reach, and they survive.
- * Tolerance simplification matches the error instead. The midpoints of the segments quantizing a
- * straight line are collinear on that line at every run length, so every staircase fits inside the
- * tolerance tube of one chord and collapses to it, while a genuine corner stays because it does
- * not fit. Locked geometry keeps its raw shape, so chains still meet their junctions exactly.
+ * Whether a corner between two straight runs is quantization or shape is a question about the way
+ * the boundary continues, not about any distance: a boundary that steps and carries on the same
+ * way is drawing a line the grid cannot draw, while a boundary that turns back is drawing a
+ * feature. So a corner is dropped when its two neighbouring runs travel in the same direction,
+ * which makes it one step of a staircase, and kept exactly otherwise, which covers every corner of
+ * a rectangle, every tip, and every notch. A dropped corner leaves the midpoints of the runs it
+ * joined, and those midpoints sit on the line their runs quantize, at every run length and however
+ * the slope varies along the boundary. Reading them as a polyline therefore recovers the line the
+ * staircase was drawing without flattening it into a ruled one. Locked geometry keeps its raw
+ * shape, so chains still meet their junctions exactly.
  */
 
 import { distance } from '@renderers/base/math.js'
@@ -40,14 +43,15 @@ export interface ReferenceSegment {
 }
 
 /**
- * How far the reference may leave the raw boundary, and therefore the simplification tolerance.
- * The midpoints of a quantized straight run sit on the line it approximates, so this never binds
- * on a staircase; it bounds how much shape a genuinely sharp feature, such as a one-cell inlet,
- * may lose.
+ * How far the reference may leave the candidates it spans, and therefore how much of the residual
+ * wobble between run midpoints it may flatten. Midpoints are collinear wherever the runs they
+ * belong to keep the same lengths, so this only has to absorb the wobble left where run lengths
+ * change, which is a fraction of a cell. It also bounds how much shape a genuinely sharp feature,
+ * such as a one-cell inlet, may lose.
  */
 export const MAX_REFERENCE_DRIFT_CELLS = 0.55
 
-/** Spacing the simplified chords are resampled back to, in cells. */
+/** Spacing the reference chords are resampled back to, in cells. */
 const REFERENCE_SPACING_CELLS = 1
 
 /**
@@ -77,19 +81,20 @@ export function referenceOf(chain: { readonly reference?: ContourReference }): C
   return required(chain.reference, 'Terrain contour chain has no reference geometry.')
 }
 
-/** One candidate vertex of the simplified reference. */
-interface ReferenceCandidate {
+/** One vertex of the reference polyline. */
+interface ReferenceVertex {
   readonly offset: number
   readonly point: ContourCoordinate
   readonly locked: boolean
-  /** Whether this candidate is a run midpoint, sitting on the line its run quantizes. */
+  /** Whether this vertex is a run midpoint, where the line that run quantizes passes. */
   readonly midline: boolean
 }
 
-/** One maximal collinear stretch of raw segments. */
+/** One maximal straight stretch of the raw boundary, with the direction it travels. */
 interface SpanRun {
   readonly startOffset: number
   readonly endOffset: number
+  readonly direction: ContourCoordinate
 }
 
 /**
@@ -109,12 +114,13 @@ export function buildContourReference(
   const lockedAt = (offset: number): boolean =>
     offsetLocked(offset, fixed, rawLength, closed, junctionTangentCells)
 
-  // Candidate vertices. Quantization noise lives entirely inside the straight runs of the raw
-  // boundary, so a free run contributes only its midpoint, which sits on the line the run
-  // quantizes; shape can only live at the corners between runs, so each run boundary joins as
-  // well, and simplification drops the corners of a staircase, which stay within tolerance of the
-  // run-midpoint chord, while keeping a genuine corner exactly. Locked stretches carry their raw
-  // vertices and tangent points instead, since a lock must keep the raw shape.
+  // Candidate vertices. A step corner is never one: it is the grid drawing an angle, so offering
+  // it would let the reference hinge on the staircase itself. Every other corner is offered
+  // exactly, and every run offers its midpoint, which is where the line the run quantizes passes.
+  // Locked stretches carry their raw vertices and tangent points instead, since a lock keeps the
+  // raw shape whatever the geometry around it is doing.
+  const runs = straightRuns(rawPoints, spans, rawLength, closed)
+  const step = stepCorners(runs, closed)
   const offsetByKey = new Map<string, number>()
   const midlineKeys = new Set<string>()
   const addOffset = (offset: number, midline = false): void => {
@@ -126,8 +132,8 @@ export function buildContourReference(
   for (const span of spans) {
     if (lockedAt(span.startOffset)) addOffset(span.startOffset)
   }
-  for (const run of collinearRuns(rawPoints, spans)) {
-    addOffset(run.startOffset)
+  for (const [index, run] of runs.entries()) {
+    if (step[index] !== true) addOffset(run.startOffset)
     const midpoint = (run.startOffset + run.endOffset) / 2
     if (!lockedAt(midpoint)) addOffset(midpoint, true)
   }
@@ -135,7 +141,7 @@ export function buildContourReference(
   for (const offset of contourLockOffsets(fixed, rawLength, closed, junctionTangentCells)) {
     addOffset(offset)
   }
-  const candidates: ReferenceCandidate[] = [...offsetByKey.entries()]
+  const candidates: ReferenceVertex[] = [...offsetByKey.entries()]
     .sort(([, first], [, second]) => first - second)
     .map(([key, offset]) => ({
       offset,
@@ -143,63 +149,111 @@ export function buildContourReference(
       locked: lockedAt(offset),
       midline: midlineKeys.has(key),
     }))
-  const simplified = simplifyCandidates(
-    candidates,
+  return assembleReference(
+    simplifyCandidates(candidates, closed, referenceDrift(rawPoints, rawLength, closed)),
+    rawLength,
     closed,
-    referenceDrift(rawPoints, rawLength, closed),
   )
-  return assembleReference(simplified, rawLength, closed)
 }
 
 /**
- * Group the raw segments into maximal collinear runs. The seam of a closed chain always starts a
- * run: a collinear seam candidate sits on its neighbors' chord and simplifies away, so merging
- * across it would buy nothing.
+ * Which corners are steps of a staircase rather than shape.
+ *
+ * `step[index]` covers the corner where run `index` begins. A run whose two neighbours travel the
+ * same way has crossed between them, which is the boundary travelling, stepping over, and carrying
+ * on. One crossing on its own settles nothing, since a one-cell notch opens exactly that way and
+ * only turns back on its far side. Two neighbouring crossings do settle it: the boundary has
+ * stepped over twice the same way, which is how the grid draws a line at an angle, at any run
+ * length and at any slope. So a corner is a step when it sits inside four runs alternating between
+ * the same two directions, and stays exactly where the raw boundary put it otherwise, which covers
+ * every corner of a rectangle and every tip, notch, and lone step along an edge.
  */
-function collinearRuns(
+function stepCorners(runs: readonly SpanRun[], closed: boolean): boolean[] {
+  const count = runs.length
+  const step = runs.map(() => false)
+  if (count < 4) return step
+  const crossings = runs.map((_, index) => {
+    if (!closed && (index < 1 || index + 1 >= count)) return false
+    const before = required(runs[(index - 1 + count) % count], 'Terrain contour run is missing.')
+    const after = required(runs[(index + 1) % count], 'Terrain contour run is missing.')
+    return (
+      Math.abs(before.direction.x - after.direction.x) <= EPSILON &&
+      Math.abs(before.direction.y - after.direction.y) <= EPSILON
+    )
+  })
+  const crosses = (index: number): boolean =>
+    !closed && (index < 0 || index >= count)
+      ? false
+      : crossings[(index + count) % count] === true
+  for (let index = 0; index < count; index += 1) {
+    // Two neighbouring crossings reaching across this corner put it inside the four-run stretch.
+    step[index] =
+      (crosses(index - 2) && crosses(index - 1)) ||
+      (crosses(index - 1) && crosses(index)) ||
+      (crosses(index) && crosses(index + 1))
+  }
+  return step
+}
+
+/**
+ * Group the raw segments into maximal straight runs, each carrying the unit direction it travels.
+ * A closed chain merges its seam run into the first one when the two continue each other, since
+ * the seam is an arbitrary point on a loop and a run split there would read as a corner.
+ */
+function straightRuns(
   rawPoints: readonly ContourCoordinate[],
   spans: readonly TerrainContourSpan[],
+  rawLength: number,
+  closed: boolean,
 ): SpanRun[] {
   const runs: SpanRun[] = []
   const direction = (index: number): ContourCoordinate => {
     const from = required(rawPoints[index], 'Terrain contour raw point is missing.')
     const to = required(rawPoints[index + 1], 'Terrain contour raw point is missing.')
-    return { x: to.x - from.x, y: to.y - from.y }
+    const length = Math.hypot(to.x - from.x, to.y - from.y)
+    return { x: (to.x - from.x) / length, y: (to.y - from.y) / length }
   }
+  const continues = (first: ContourCoordinate, second: ContourCoordinate): boolean =>
+    Math.abs(first.x - second.x) <= EPSILON && Math.abs(first.y - second.y) <= EPSILON
   let start = 0
   for (let index = 1; index <= spans.length; index += 1) {
-    if (index < spans.length) {
-      const previous = direction(index - 1)
-      const current = direction(index)
-      const cross = previous.x * current.y - previous.y * current.x
-      const dot = previous.x * current.x + previous.y * current.y
-      if (Math.abs(cross) <= EPSILON && dot > 0) continue
-    }
+    if (index < spans.length && continues(direction(index - 1), direction(index))) continue
     runs.push({
       startOffset: required(spans[start], 'Terrain contour span is missing.').startOffset,
       endOffset: required(spans[index - 1], 'Terrain contour span is missing.').endOffset,
+      direction: direction(start),
     })
     start = index
+  }
+  const first = runs[0]
+  const last = runs.at(-1)
+  if (closed && runs.length > 2 && first !== undefined && last !== undefined) {
+    if (continues(first.direction, last.direction)) {
+      runs[0] = { ...first, startOffset: last.startOffset - rawLength }
+      runs.pop()
+    }
   }
   return runs
 }
 
 /**
- * Keep every locked candidate and, inside each free run between them, the minimal vertices whose
- * chords stay within the drift tolerance of the candidates they span.
+ * Keep every locked candidate and, between them, the fewest vertices whose chords stay within the
+ * drift bound of the candidates they span. What survives here is the wobble left after the step
+ * corners were withheld: a stretch of staircase offers only its run midpoints, and those sit on
+ * one line for as long as the runs keep their lengths, so one chord spans the lot.
  */
 function simplifyCandidates(
-  candidates: readonly ReferenceCandidate[],
+  candidates: readonly ReferenceVertex[],
   closed: boolean,
   drift: number,
-): ReferenceCandidate[] {
+): ReferenceVertex[] {
   const count = candidates.length
   if (count < 3) return [...candidates]
   const kept = candidates.map((candidate) => candidate.locked)
   const anchors = candidates.flatMap((candidate, index) => (candidate.locked ? [index] : []))
   if (anchors.length === 0) {
     // A closed chain with nothing locked. Four spread anchors keep the loop a loop: with fewer, a
-    // pond within tolerance of a line would collapse onto it. Midline candidates are preferred so
+    // pond within tolerance of a line would collapse onto it. Midline vertices are preferred so
     // the anchors sit on the quantized line rather than hinging chords on a stair corner. Each
     // quarter takes a candidate no other quarter holds, since anchors that coincide leave the loop
     // spanned by fewer chords than it has sides and one whole side simplifies away.
@@ -231,7 +285,7 @@ function simplifyCandidates(
     kept[0] = true
     kept[count - 1] = true
   }
-  const at = (index: number): ReferenceCandidate => candidates[index % count]!
+  const at = (index: number): ReferenceVertex => candidates[index % count]!
   for (const run of runs) {
     const stack: [number, number][] = [run]
     while (stack.length > 0) {
@@ -248,10 +302,11 @@ function simplifyCandidates(
         }
       }
       if (farthest < 0) continue
-      // The violation says where the chord must bend, and the bend goes to the nearest candidate
-      // sitting on the quantized line, so a staircase corner never becomes a hinge that would
-      // drag the chord off the line and push its neighbors over tolerance in turn. Only when the
-      // window holds no midline candidate is the violation a genuine corner, kept exactly.
+      // The violation says where the chord must bend, and the bend goes to the nearest vertex
+      // sitting on the quantized line, so a corner the raw boundary happens to pass through never
+      // becomes a hinge that would drag the chord off that line and push its neighbours over the
+      // bound in turn. Only when the window holds no midline vertex is the violation a genuine
+      // corner, kept exactly.
       let hinge = -1
       for (let index = from + 1; index < to; index += 1) {
         if (!at(index).midline) continue
@@ -266,12 +321,12 @@ function simplifyCandidates(
 }
 
 /**
- * Resample the simplified chords back to reference spacing and accumulate arc offsets. A closed
+ * Resample the reference chords back to reference spacing and accumulate arc offsets. A closed
  * reference regains a vertex at raw offset zero, interpolated on its wrap chord, because the
  * raw-offset lookups treat the first vertex as the start of the raw period.
  */
 function assembleReference(
-  simplified: ReferenceCandidate[],
+  simplified: ReferenceVertex[],
   rawLength: number,
   closed: boolean,
 ): ContourReference {

@@ -1,7 +1,7 @@
 import { distance } from '@renderers/base/math.js'
 
 import { FIXED_MATERIALS, TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
-import { cellAt, compareCells, EPSILON } from './terrain-helpers.js'
+import { cellAt, compareCells, EPSILON, required } from './terrain-helpers.js'
 import type {
   ContourCoordinate,
   ContourReference,
@@ -201,14 +201,26 @@ export function buildChains(
   for (const seed of segments) {
     if (visited.has(seed.id)) continue
     const key = pairKey(seed)
-    const start = !continues(seed.start, key)
-      ? seed.start
-      : !continues(seed.end, key)
-        ? seed.end
-        : seed.start
-    const atoms: ChainAtom[] = []
-    let node = start
+    // Walk back to where this run begins before walking it. A seed that lands mid-run would
+    // otherwise leave everything behind it for a later seed to claim as a chain of its own, and
+    // since both ends of a chain are locked, each of those cuts freezes the curve onto a raw cell
+    // corner. Edges are added row by row, so a boundary running at an angle is seeded on nearly
+    // every row, and cutting it there is what leaves a drawn boundary stepping. On a closed loop
+    // the walk comes back to the seed and any node of the loop serves as its start.
     let segment = seed
+    let node = seed.start
+    while (continues(node, key)) {
+      const behindId = node.segments.find((segmentId) => segmentId !== segment.id)
+      if (behindId === undefined) {
+        throw new Error('Terrain contour chain ended at a degree-two node.')
+      }
+      const behind = required(segmentById.get(behindId), 'Terrain contour segment is missing.')
+      if (behind.id === seed.id) break
+      segment = behind
+      node = behind.end === node ? behind.start : behind.end
+    }
+    const start = node
+    const atoms: ChainAtom[] = []
     let closed = false
     while (true) {
       if (visited.has(segment.id)) {

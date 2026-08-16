@@ -152,7 +152,11 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     cellSize,
     variant: art.variant,
   })
-  const deckClip = bridgeDeckMask(art.routes.bridgeComponents, cellSize)
+  const deckClip = bridgeDeckMask(
+    art.routes.bridgeComponents,
+    cellSize,
+    plankTreatment.textureBleedCells * 2,
+  )
   planks.view.label = 'terrain-planks'
   deckClip.label = 'terrain-planks-mask'
   planks.view.mask = deckClip
