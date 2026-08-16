@@ -1,6 +1,6 @@
 # Step 8: Starter village routines and the dialogue example
 
-Status: planned.
+Status: complete.
 
 Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into one worked example named `neighbor`, which serves the [Season 4](../pedagogy.md#season-4-village-life-week-4) and [Season 5](../pedagogy.md#season-5-the-conversation-week-5) starter material. It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
 
@@ -20,6 +20,13 @@ Season 4 uses `cast_10` with daynight on. Each villager derives a role from its 
 
 Keep Season 3's live visitor reactions: `greet`, `follow`, and `avoid`.
 
+The shipped table assigns the guaranteed pump, board, repair bench, hearth, and bell once, then
+spreads three stall jobs and two plot jobs across explicit offsets. `me.rng` varies roles only
+within choices that keep those compatible targets. A visitor reaction lasts 40 ticks. Fixed
+per-slot return windows leave enough route time for each home, and residents who share a home use
+separate interior points. Lanterns are optional dressing, so a resident assigned to a missing
+lantern returns to that resident's guaranteed role prop for the evening work period.
+
 ## What to build
 
 ### Example package and memory
@@ -35,6 +42,10 @@ A routine is `decide(observation, memory, goal)`: return a helper-built action D
 **Operational rules:** `go_to` searches village cells using `layout.walkable` for nodes, `layout.can_step` for edges, and `layout.ground_at` speed limits for edge cost. It reads semantic static records, delegates collision geometry to helpers, caches its graph in villager memory, and replans after a stall. Document this as a replaceable working approach, not the required routing method.
 
 **Budget and reporting rules:** Build the graph once in `reset`, where step 1 provides the layout before tick one. Later `act` calls search the cached graph. Measure and report reset and per-tick costs separately. The graph resolution remains an explicit example choice that students may change.
+
+The shipped example uses one graph node for every walkable cell. The village helpers cache their
+model by immutable layout content and use a spatial collision index, so repeated cell and segment
+checks reuse exact static geometry without rescanning every collision shape.
 
 ### Routine menu
 
@@ -69,18 +80,19 @@ Use a non-adaptive static schedule and document its approximations.
 
 ### CI wiring
 
+The Three Branches browser journey composes `neighbor`, submits it under the demo member, and leaves a Season 4 `Village Life` window open. A fresh full e2e database therefore lets `npm run demo` launch the worked example, while `PUBLISHED_EXAMPLES` remains empty.
+
 Add `("three_branches", "neighbor")` to `scripts/tests/test_compose.py`'s example inventory. Add the example's `routines.py` and `dialogue.py` to `scripts/_envs.py`'s pyright set.
 
 ## Tests
 
 `tests/test_neighbor.py` follows the `vanguard` pattern: hand-built observations, an action-space wrapper, and pinned-seed episodes using environment metadata presets.
 
-- Per-routine constructed-observation tests cover routed distance reduction, still in-reach tending, bench rest, hearing-range gathering, greeting, follow bands, avoidance distance, still watch and sleep, and non-`None` wandering.
-- A full Season 4 fuzz run keeps every action in space and verifies that every commanded use is taken by the engine.
-- Routing reaches every named place from every home over pinned seeds, uses cell helpers rather than observation-footprint geometry, and builds once in reset. Report reset and per-tick costs separately.
-- A pinned Season 4 day-arc test requires every villager to leave home, reach three districts, use a prop in each working phase, and return home by night.
-- Fake-proxy dialogue tests cover cross-tick requests, direct villager-to-`player_0` delivery through raw chat dictionaries, exhaustion and error fallbacks, reply truncation, waiting-line replacement, and leaving hearing range or moving behind a wall while a request or waiting line exists.
-- `neighbor` completes healthy days with LLM on and off, on both plans, within decision and episode budgets.
+- A reset smoke test verifies private graphs, stable slots, and a legal first action.
+- A schedule test covers ten role-compatible targets, visitor reassignment, and the fixed return-home windows.
+- One constructed routine-menu test covers all ten routines, with a focused stalled-route replan regression.
+- Fake-proxy dialogue tests cover latest-line replacement, direct capped replies, fallbacks, hearing loss, and a real within-range wall blocking line of sight.
+- One pinned full Season 4 `cast_10` day keeps every action in space, requires every resident to move, realizes every commanded use, observes morning and evening work, and finishes with every resident sleeping at home.
 
 The static role table, phase places, and follow and avoid distance bands are defaults the day-arc test may adjust.
 

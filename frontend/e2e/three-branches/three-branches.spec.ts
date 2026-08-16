@@ -1,8 +1,23 @@
+import { rmSync } from 'node:fs'
+
 import type { Locator } from '@playwright/test'
 
-import { getSession, startSession, stopSessionAndAwaitFree } from '../support/api.js'
+import {
+  activeWindows,
+  closePlay,
+  closeSubmissions,
+  declareSeason,
+  getSession,
+  openPlay,
+  openSubmissions,
+  setSeasonOverrides,
+  startSession,
+  stopSessionAndAwaitFree,
+  submitReadyAgent,
+} from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
+import { stageExampleAgent } from '../support/stage-example-agent.js'
 import { controlCentre, ENV_ID } from './support.js'
 
 interface CameraProbe {
@@ -32,21 +47,46 @@ async function readFrameProbe(host: Locator): Promise<FrameProbe> {
 test('watch Three Branches, inspect its camera and collision, then repeat a replay seek', async ({
   page,
   admin,
+  as,
 }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   await authenticateBrowser(page.context(), admin)
 
-  const sessionId = await startSession(
-    admin,
-    ENV_ID,
-    {
-      seat_0: { kind: 'builtin-agent', name: 'naive' },
-      seat_1: { kind: 'builtin-agent', name: 'scripted_visitor' },
-    },
-    { seed: 0 },
-  )
+  const stagedDir = stageExampleAgent(ENV_ID, 'neighbor')
+  let sessionId: string | null = null
 
   try {
+    // The complete e2e database is the npm demo fixture. Replace the seeded windows and deliberately
+    // leave Village Life open so the printed student account can run its ready neighbor submission.
+    const originalWindows = await activeWindows(admin, ENV_ID)
+    if (originalWindows.submissionSeasonId !== null) {
+      await closeSubmissions(admin, originalWindows.submissionSeasonId)
+    }
+    if (originalWindows.playSeasonId !== null) {
+      await closePlay(admin, originalWindows.playSeasonId)
+    }
+
+    const season = await declareSeason(admin, 'Village Life', ENV_ID)
+    await setSeasonOverrides(admin, season.id, {
+      parameters: { seat_plan: 'cast_10', daynight: true },
+    })
+    await openSubmissions(admin, season.id)
+    await openPlay(admin, season.id)
+    const submissionId = await submitReadyAgent(await as('ada-lovelace'), stagedDir, ENV_ID)
+    sessionId = await startSession(
+      admin,
+      ENV_ID,
+      {
+        seat_0: { kind: 'submission', submission_id: submissionId },
+        seat_1: { kind: 'builtin-agent', name: 'scripted_visitor' },
+      },
+      { seed: 0, seasonId: season.id },
+    )
+    expect((await getSession(admin, sessionId))?.parameters).toEqual({
+      seat_plan: 'cast_10',
+      daynight: true,
+    })
+
     await page.goto(`/sessions/${sessionId}`)
     const canvas = page.locator('canvas.renderer-canvas')
     const host = page.locator('.renderer-host')
@@ -151,6 +191,11 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     await expect(page.locator('.replay-position')).toContainText(`${total}/${total}`)
     await expect.poll(async () => readFrameProbe(replayHost)).toEqual(finalProbe)
   } finally {
-    await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
+    // Keep the ready submission and Village Life windows in the database. Only the temporary source
+    // checkout and any still-running validation session belong to this test's local cleanup.
+    if (sessionId !== null) {
+      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
+    }
+    rmSync(stagedDir, { recursive: true, force: true })
   }
 })

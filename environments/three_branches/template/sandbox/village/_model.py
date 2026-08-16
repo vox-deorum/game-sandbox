@@ -8,8 +8,9 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from math import hypot
+from math import floor, hypot
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 _ROOT = Path(__file__).parent
@@ -49,31 +50,59 @@ class Model:
     blocked: tuple[Shape, ...]
     prop_shapes: tuple[Shape, ...]
     scenery_shapes: tuple[Shape, ...]
+    collision_shapes: tuple[Shape, ...]
+    collision_buckets: Mapping[tuple[int, int], tuple[int, ...]]
 
 
-def _json_default(value: object) -> object:
-    """Normalize scalar-array leaves without importing their implementation library."""
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        raise TypeError(f"village data contains an unsupported value: {value!r}") from None
+PlacementFingerprint = tuple[str, float, float, bool]
+VillageFingerprint = tuple[
+    int,
+    int,
+    float,
+    tuple[str, ...],
+    tuple[PlacementFingerprint, ...],
+    tuple[PlacementFingerprint, ...],
+]
 
 
 def model(observation: Mapping[str, object]) -> Model:
     """Return the cached immutable calculation model for one observation's village."""
     village = observation["village"]
-    key = json.dumps(village, sort_keys=True, separators=(",", ":"), default=_json_default)
-    return _model(key)
+    assert isinstance(village, Mapping)
+    size, ground, props, scenery = village["size"], village["ground"], village["props"], village["scenery"]
+    assert isinstance(size, Mapping)
+    fingerprint = _fingerprint(size, ground, props, scenery)
+    return _model(fingerprint)
+
+
+def _fingerprint(
+    size: Mapping[str, object], ground: object, props: object, scenery: object
+) -> VillageFingerprint:
+    return (
+        int(size["cells_x"]),
+        int(size["cells_y"]),
+        float(size["cell_size"]),
+        ground if isinstance(ground, tuple) else tuple(str(row) for row in ground),
+        tuple(_placement_fingerprint(item) for item in props),
+        tuple(_placement_fingerprint(item) for item in scenery),
+    )
+
+
+def _placement_fingerprint(item: object) -> PlacementFingerprint:
+    assert isinstance(item, Mapping)
+    cell = item["cell"]
+    assert isinstance(cell, Mapping)
+    return (
+        str(item["type"]),
+        float(cell["x"]),
+        float(cell["y"]),
+        item.get("facing") in {"east", "west"},
+    )
 
 
 @lru_cache(maxsize=32)
-def _model(key: str) -> Model:
-    village = json.loads(key)
-    size = village["size"]
-    cell_size = float(size["cell_size"])
-    ground = tuple(village["ground"])
-    props = tuple(village["props"])
-    scenery = tuple(village["scenery"])
+def _model(fingerprint: VillageFingerprint) -> Model:
+    cells_x, cells_y, cell_size, ground, props, scenery = fingerprint
     blocked_cells = {
         (x, y)
         for y, row in enumerate(ground)
@@ -83,15 +112,21 @@ def _model(key: str) -> Model:
     doorway_cells = {
         (x, y) for y, row in enumerate(ground) for x, code in enumerate(row) if code == DOORWAY_CODE
     }
+    blocked = _rectangles(blocked_cells, cell_size)
+    prop_shapes = tuple(_shape(item, PROP_BY_TYPE[item[0]], cell_size) for item in props)
+    scenery_shapes = tuple(_shape(item, SCENERY_BY_TYPE[item[0]], cell_size) for item in scenery)
+    collision_shapes = (*blocked, *prop_shapes, *scenery_shapes)
     return Model(
-        int(size["cells_x"]),
-        int(size["cells_y"]),
+        cells_x,
+        cells_y,
         cell_size,
         ground,
         _components(doorway_cells),
-        _rectangles(blocked_cells, cell_size),
-        tuple(_shape(item, PROP_BY_TYPE[item["type"]], cell_size) for item in props),
-        tuple(_shape(item, SCENERY_BY_TYPE[item["type"]], cell_size) for item in scenery),
+        blocked,
+        prop_shapes,
+        scenery_shapes,
+        collision_shapes,
+        _collision_buckets(collision_shapes, cells_x, cells_y, cell_size),
     )
 
 
@@ -134,15 +169,46 @@ def _rectangles(cells: set[tuple[int, int]], cell_size: float) -> tuple[Shape, .
     return tuple(rectangles)
 
 
-def _shape(item: Mapping[str, object], kind: Mapping[str, object], cell_size: float) -> Shape:
+def _shape(item: PlacementFingerprint, kind: Mapping[str, object], cell_size: float) -> Shape:
     width, height = float(kind["width"]), float(kind["height"])
-    if item.get("facing") in {"east", "west"}:
+    if item[3]:
         width, height = height, width
-    cell = item["cell"]
-    assert isinstance(cell, Mapping)
-    return Shape(
-        str(kind["shape"]), float(cell["x"]) * cell_size, float(cell["y"]) * cell_size, width, height
-    )
+    return Shape(str(kind["shape"]), item[1] * cell_size, item[2] * cell_size, width, height)
+
+
+def _collision_buckets(
+    shapes: tuple[Shape, ...], cells_x: int, cells_y: int, cell_size: float
+) -> Mapping[tuple[int, int], tuple[int, ...]]:
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for index, shape in enumerate(shapes):
+        low_x, low_y, high_x, high_y = _shape_bounds(shape)
+        for y in _bucket_range(low_y, high_y, cell_size, cells_y):
+            for x in _bucket_range(low_x, high_x, cell_size, cells_x):
+                buckets.setdefault((x, y), []).append(index)
+    return MappingProxyType({cell: tuple(indices) for cell, indices in buckets.items()})
+
+
+def _shape_bounds(shape: Shape) -> tuple[float, float, float, float]:
+    if shape.kind == "circle":
+        x, y = shape.center
+        return x - shape.radius, y - shape.radius, x + shape.radius, y + shape.radius
+    return shape.x, shape.y, shape.x + shape.width, shape.y + shape.height
+
+
+def _bucket_range(low: float, high: float, cell_size: float, limit: int) -> range:
+    first = max(0, floor(low / cell_size))
+    last = min(limit - 1, floor(high / cell_size))
+    return range(first, last + 1) if first <= last else range(0)
+
+
+def _collision_candidates(
+    model: Model, low_x: float, low_y: float, high_x: float, high_y: float
+) -> tuple[Shape, ...]:
+    indices: set[int] = set()
+    for y in _bucket_range(low_y, high_y, model.cell_size, model.cells_y):
+        for x in _bucket_range(low_x, high_x, model.cell_size, model.cells_x):
+            indices.update(model.collision_buckets.get((x, y), ()))
+    return tuple(model.collision_shapes[index] for index in indices)
 
 
 def cell(model: Model, point: Mapping[str, object]) -> tuple[int, int] | None:
@@ -191,7 +257,9 @@ def body_clear(model: Model, point: tuple[float, float], radius: float) -> bool:
         return False
     return not any(
         _circle_hits_shape(point, radius, shape)
-        for shape in (*model.blocked, *model.prop_shapes, *model.scenery_shapes)
+        for shape in _collision_candidates(
+            model, point[0] - radius, point[1] - radius, point[0] + radius, point[1] + radius
+        )
     )
 
 
@@ -207,7 +275,13 @@ def segment_clear(model: Model, start: tuple[float, float], end: tuple[float, fl
         return False
     return not any(
         _segment_hits_shape(start, end, radius, shape)
-        for shape in (*model.blocked, *model.prop_shapes, *model.scenery_shapes)
+        for shape in _collision_candidates(
+            model,
+            min(start[0], end[0]) - radius,
+            min(start[1], end[1]) - radius,
+            max(start[0], end[0]) + radius,
+            max(start[1], end[1]) + radius,
+        )
     )
 
 

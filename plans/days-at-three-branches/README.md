@@ -1,6 +1,6 @@
 # Days at Three Branches: Implementation Plan
 
-Status: in progress. Steps 1, 2, 5.0, and 6 have shipped. Steps 3, 4, 5.1, 5.2, 7, and 8 remain.
+Status: in progress. Steps 1, 2, 5.0, 6, and 8 have shipped. Steps 3, 4, 5.1, 5.2, and 7 remain.
 
 ## Goal
 

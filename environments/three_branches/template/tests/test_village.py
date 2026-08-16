@@ -10,6 +10,7 @@ import agent
 import pytest
 from sandbox.env import META, make_env
 from sandbox.harness.environment import resolve_parameters
+from sandbox.village import _model as village_model
 from sandbox.village import action, day, geometry, layout, me, people, props
 
 
@@ -76,6 +77,79 @@ def test_static_helpers_respect_the_boundary_and_do_not_cross_observations():
     second_prop = props.all(second)[0]
     first_prop["cell"]["x"] = 99
     assert second_prop["cell"]["x"] != 99
+
+
+def test_static_helpers_reuse_models_for_unchanged_or_equal_village_mappings():
+    _env, observations = _observations()
+    observation = copy.deepcopy(observations["player_1"])
+    equal_observation = copy.deepcopy(observation)
+    village_model._model.cache_clear()
+
+    first = village_model.model(observation)
+    assert layout.cell_at(observation, me.position(observation)) is not None
+    assert isinstance(layout.walkable(observation, {"x": 0, "y": 0}), bool)
+
+    assert observation["village"] is not equal_observation["village"]
+    assert village_model.model(equal_observation) is first
+
+    previous_props = observation["village"]["props"]
+    observation["village"]["props"] = tuple(prop for prop in previous_props)
+    assert observation["village"]["props"] is not previous_props
+    assert village_model.model(observation) is first
+
+
+def test_content_cache_distinguishes_dropped_equal_and_variant_village_mappings():
+    _env, observations = _observations()
+    source = observations["player_1"]["village"]
+    village_model._model.cache_clear()
+    expected: dict[bool, village_model.Model] = {}
+
+    for index in range(200):
+        village = copy.deepcopy(source)
+        variant = index % 2 == 1
+        if variant:
+            village["props"][0]["cell"]["x"] += 1
+        result = village_model.model({"village": village})
+        if variant not in expected:
+            expected[variant] = result
+        assert result is expected[variant]
+        del village
+
+
+def test_collision_buckets_match_the_full_collision_shape_checks():
+    _env, observations = _observations()
+    village = village_model.model(observations["player_1"])
+    radius = geometry.BODY_RADIUS
+    width, height = village.cells_x * village.cell_size, village.cells_y * village.cell_size
+    step_x, step_y = max(1, village.cells_x // 5), max(1, village.cells_y // 5)
+    points = tuple(
+        ((x + 0.5) * village.cell_size, (y + 0.5) * village.cell_size)
+        for y in range(0, village.cells_y, step_y)
+        for x in range(0, village.cells_x, step_x)
+    )
+
+    def brute_body(point):
+        return (
+            radius <= point[0] <= width - radius
+            and radius <= point[1] <= height - radius
+            and not any(
+                village_model._circle_hits_shape(point, radius, shape) for shape in village.collision_shapes
+            )
+        )
+
+    assert all(village_model.body_clear(village, point, radius) == brute_body(point) for point in points)
+    assert all(
+        village_model.segment_clear(village, start, end, radius)
+        == (
+            brute_body(start)
+            and brute_body(end)
+            and not any(
+                village_model._segment_hits_shape(start, end, radius, shape)
+                for shape in village.collision_shapes
+            )
+        )
+        for start, end in zip(points, points[1:], strict=False)
+    )
 
 
 def test_player_id_predicates_and_geometry_are_stable():

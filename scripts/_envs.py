@@ -138,9 +138,15 @@ def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
         if package_dir.name == "three_branches"
         else ()
     )
-    # blocks.py belongs to the banner example alone, so it is checked where it ships instead of
-    # being required of every composed skirmish_crane tree.
-    pyright_example_files = ("blocks.py",) if package_dir.name == "skirmish_crane" else ()
+    # These modules belong to individual examples, so they are checked where they ship instead of
+    # being required of every composed tree for their environment.
+    pyright_example_files = (
+        ("blocks.py",)
+        if package_dir.name == "skirmish_crane"
+        else ("routines.py", "dialogue.py")
+        if package_dir.name == "three_branches"
+        else ()
+    )
     # Flappy's and Skirmish's observation TypedDicts (observation_types.py) live beside env.py in
     # the source package, so they are already swept into `modules` above for the env-side
     # sandbox/env/ copy; this additionally places a copy at sandbox/observation_types.py, the
