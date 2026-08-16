@@ -224,11 +224,13 @@ export interface TerrainRouteTreatment {
     curve: TerrainCurveProfile
     targetWidthCells: number
     minimumWidthCells: number
+    edgeFadeCells: number
     opacity: number
   }
   path: {
     curve: TerrainCurveProfile
     widthCells: number
+    edgeFadeCells: number
     opacity: number
   }
 }
@@ -239,6 +241,9 @@ export interface PlankTreatment {
   vertical: string
   compact: string
   tint: HearthsidePaletteKey
+  shadowTint: HearthsidePaletteKey
+  shadowOpacity: number
+  shadowOffsetCells: number
 }
 
 export interface PhaseGrade {
@@ -711,9 +716,15 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
     'curve',
     'targetWidthCells',
     'minimumWidthCells',
+    'edgeFadeCells',
     'opacity',
   ])
-  const pathSource = exactRecord(source.path, `${name}.path`, ['curve', 'widthCells', 'opacity'])
+  const pathSource = exactRecord(source.path, `${name}.path`, [
+    'curve',
+    'widthCells',
+    'edgeFadeCells',
+    'opacity',
+  ])
   const roadTargetWidthCells = boundedNumber(
     roadSource.targetWidthCells,
     `${name}.road.targetWidthCells`,
@@ -730,11 +741,23 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
         0,
         roadTargetWidthCells,
       ),
+      edgeFadeCells: boundedNumber(
+        roadSource.edgeFadeCells,
+        `${name}.road.edgeFadeCells`,
+        0,
+        0.5,
+      ),
       opacity: unitNumber(roadSource.opacity, `${name}.road.opacity`),
     },
     path: {
       curve: curveProfile(pathSource.curve, `${name}.path.curve`),
       widthCells: boundedNumber(pathSource.widthCells, `${name}.path.widthCells`, 0, 2),
+      edgeFadeCells: boundedNumber(
+        pathSource.edgeFadeCells,
+        `${name}.path.edgeFadeCells`,
+        0,
+        0.5,
+      ),
       opacity: unitNumber(pathSource.opacity, `${name}.path.opacity`),
     },
   }
@@ -791,12 +814,28 @@ function plankTreatment(
   knownFrames: ReadonlySet<string>,
   palette: ReadonlySet<string>,
 ): PlankTreatment {
-  const source = exactRecord(value, name, ['horizontal', 'vertical', 'compact', 'tint'])
+  const source = exactRecord(value, name, [
+    'horizontal',
+    'vertical',
+    'compact',
+    'tint',
+    'shadowTint',
+    'shadowOpacity',
+    'shadowOffsetCells',
+  ])
   return {
     horizontal: knownText(source.horizontal, knownFrames, `${name}.horizontal`),
     vertical: knownText(source.vertical, knownFrames, `${name}.vertical`),
     compact: knownText(source.compact, knownFrames, `${name}.compact`),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
+    shadowTint: paletteKey(source.shadowTint, palette, `${name}.shadowTint`),
+    shadowOpacity: unitNumber(source.shadowOpacity, `${name}.shadowOpacity`),
+    shadowOffsetCells: boundedNumber(
+      source.shadowOffsetCells,
+      `${name}.shadowOffsetCells`,
+      0,
+      1,
+    ),
   }
 }
 function framesFor(group: string, layer?: string): ReadonlySet<string> {

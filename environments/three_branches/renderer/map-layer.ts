@@ -27,6 +27,7 @@ import type {
 const NATURAL_SEAM_MATERIALS = new Set(['ground', 'field', 'reeds', 'water'])
 const OVERLAY_MATERIALS = ['field', 'reeds', 'water'] as const
 const STRUCTURE_NAMES = ['interior', 'doorway', 'wall'] as const
+const ROUTE_EDGE_FADE_STEPS = 10
 
 type SurfaceMaterial = (typeof OVERLAY_MATERIALS)[number] | 'road' | 'path'
 
@@ -93,13 +94,43 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   add(seams[3], 'terrain-seam-hatch')
   add(seamCover, 'terrain-seam-cover')
 
-  const path = pathGuideGraphics(art.routes, cellSize, fillPatternFor(art, 'path', cellSize))
-  path.alpha = materialLayerAlpha('path')
-  add(path, 'terrain-path')
+  const pathTreatment = HEARTHSIDE_STYLE.terrain.routes.path
+  const pathPattern = fillPatternFor(art, 'path', cellSize)
+  const pathLayers = routeFadeLayers(
+    'terrain-path',
+    pathTreatment.edgeFadeCells,
+    materialLayerAlpha('path'),
+    (extraWidthCells) => pathGuideGraphics(art.routes, cellSize, pathPattern, extraWidthCells),
+  )
+  const pathBridgeCutout = bridgeDeckMask(
+    art.routes.bridgeComponents,
+    cellSize,
+    pathTreatment.edgeFadeCells * 2,
+  )
+  pathLayers.view.setMask?.({ mask: pathBridgeCutout, inverse: true })
+  owner.addChild(pathLayers.view, pathBridgeCutout)
+  graphics.push(...pathLayers.graphics)
+  pathBridgeCutout.label = 'terrain-path-bridge-cutout'
+  graphics.push(pathBridgeCutout)
 
-  const road = roadGuideGraphics(art.routes, cellSize, fillPatternFor(art, 'road', cellSize))
-  road.filters = [new AlphaFilter({ alpha: materialLayerAlpha('road') })]
-  add(road, 'terrain-road')
+  const roadTreatment = HEARTHSIDE_STYLE.terrain.routes.road
+  const roadPattern = fillPatternFor(art, 'road', cellSize)
+  const roadLayers = routeFadeLayers(
+    'terrain-road',
+    roadTreatment.edgeFadeCells,
+    materialLayerAlpha('road'),
+    (extraWidthCells) => roadGuideGraphics(art.routes, cellSize, roadPattern, extraWidthCells),
+  )
+  const roadBridgeCutout = bridgeDeckMask(
+    art.routes.bridgeComponents,
+    cellSize,
+    roadTreatment.edgeFadeCells * 2,
+  )
+  roadLayers.view.setMask?.({ mask: roadBridgeCutout, inverse: true })
+  owner.addChild(roadLayers.view, roadBridgeCutout)
+  graphics.push(...roadLayers.graphics)
+  roadBridgeCutout.label = 'terrain-road-bridge-cutout'
+  graphics.push(roadBridgeCutout)
 
   const structures = createSparseTiledGround(
     exactTerrainGrid(scene.topFirstRows, names, STRUCTURE_NAMES),
@@ -109,6 +140,13 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   structures.view.label = 'terrain-structures'
   owner.addChild(structures.view)
   grounds.push(structures)
+
+  const plankTreatment = HEARTHSIDE_STYLE.terrain.planks
+  const plankShadow = bridgeDeckMask(art.routes.bridgeComponents, cellSize)
+  plankShadow.tint = HEARTHSIDE_STYLE.palette[plankTreatment.shadowTint]
+  plankShadow.alpha = plankTreatment.shadowOpacity
+  plankShadow.y = plankTreatment.shadowOffsetCells * cellSize
+  add(plankShadow, 'terrain-planks-shadow')
 
   const planks = createSparseTiledGround(art.plankLayer, art.tileset, {
     cellSize,
@@ -628,9 +666,10 @@ export function pathGuideGraphics(
   routes: TerrainRoutePlan,
   cellSize: number,
   fill: RouteFill,
+  extraWidthCells = 0,
 ): Graphics {
   const path = new Graphics()
-  appendPathGuides(path, routes, cellSize, fill)
+  appendPathGuides(path, routes, cellSize, fill, extraWidthCells)
   return path
 }
 
@@ -639,9 +678,10 @@ export function roadGuideGraphics(
   routes: TerrainRoutePlan,
   cellSize: number,
   fill: RouteFill,
+  extraWidthCells = 0,
 ): Graphics {
   const road = new Graphics()
-  appendRoadGuide(road, routes, cellSize, fill)
+  appendRoadGuide(road, routes, cellSize, fill, extraWidthCells)
   return road
 }
 
@@ -659,13 +699,18 @@ function appendPathGuides(
   routes: TerrainRoutePlan,
   cellSize: number,
   fill: RouteFill,
+  extraWidthCells = 0,
 ): void {
   for (const guide of routes.pathGuides) {
     const first = guide.points[0]
     if (first === undefined) continue
     if (guide.points.length === 1) {
       target
-        .circle(first.x * cellSize, first.y * cellSize, (guide.widthCells * cellSize) / 2)
+        .circle(
+          first.x * cellSize,
+          first.y * cellSize,
+          ((guide.widthCells + extraWidthCells) * cellSize) / 2,
+        )
         .fill(fill)
       continue
     }
@@ -674,8 +719,39 @@ function appendPathGuides(
       target.lineTo(point.x * cellSize, point.y * cellSize)
     }
     if (guide.closed) target.closePath()
-    target.stroke(routeStroke(fill, guide.widthCells * cellSize))
+    target.stroke(routeStroke(fill, (guide.widthCells + extraWidthCells) * cellSize))
   }
+}
+
+interface RouteFadeLayers {
+  readonly view: Container
+  readonly graphics: readonly Graphics[]
+}
+
+/** Draw one route surface from concentric layers whose composite alpha rises linearly inward. */
+function routeFadeLayers(
+  label: string,
+  edgeFadeCells: number,
+  opacity: number,
+  drawLayer: (extraWidthCells: number) => Graphics,
+): RouteFadeLayers {
+  const view = new Container()
+  const graphics: Graphics[] = []
+  view.label = label
+  let previousComposite = 0
+  for (let step = 0; step < ROUTE_EDGE_FADE_STEPS; step += 1) {
+    const targetComposite = (opacity * (step + 1)) / ROUTE_EDGE_FADE_STEPS
+    const layerOpacity = (targetComposite - previousComposite) / (1 - previousComposite)
+    const extraWidthCells =
+      2 * edgeFadeCells * (1 - (2 * step) / (ROUTE_EDGE_FADE_STEPS - 1))
+    const layer = drawLayer(extraWidthCells)
+    layer.filters = [new AlphaFilter({ alpha: layerOpacity })]
+    layer.label = `${label}-fade-${step}`
+    view.addChild(layer)
+    graphics.push(layer)
+    previousComposite = targetComposite
+  }
+  return { view, graphics }
 }
 
 function appendRoadGuide(
@@ -683,6 +759,7 @@ function appendRoadGuide(
   routes: TerrainRoutePlan,
   cellSize: number,
   fill: RouteFill,
+  extraWidthCells = 0,
 ): void {
   for (let index = 1; index < routes.roadGuide.length; index += 1) {
     const previous = routes.roadGuide[index - 1]
@@ -691,11 +768,13 @@ function appendRoadGuide(
     target
       .moveTo(previous.x * cellSize, previous.y * cellSize)
       .lineTo(point.x * cellSize, point.y * cellSize)
-      .stroke(routeStroke(fill, Math.min(previous.widthCells, point.widthCells) * cellSize))
+      .stroke(
+        routeStroke(fill, (Math.min(previous.widthCells, point.widthCells) + extraWidthCells) * cellSize),
+      )
   }
   for (const point of routes.roadGuide) {
     target
-      .circle(point.x * cellSize, point.y * cellSize, (point.widthCells * cellSize) / 2)
+      .circle(point.x * cellSize, point.y * cellSize, ((point.widthCells + extraWidthCells) * cellSize) / 2)
       .fill(fill)
   }
 }
@@ -704,9 +783,10 @@ function appendRoadGuide(
 export function bridgeDeckMask(
   components: readonly TerrainBridgeComponent[],
   cellSize: number,
+  extraWidthCells = 0,
 ): Graphics {
   const mask = new Graphics()
-  appendBridgeDecks(mask, components, cellSize)
+  appendBridgeDecks(mask, components, cellSize, extraWidthCells)
   return mask
 }
 
@@ -714,6 +794,7 @@ function appendBridgeDecks(
   target: Graphics,
   components: readonly TerrainBridgeComponent[],
   cellSize: number,
+  extraWidthCells = 0,
 ): void {
   for (const component of components) {
     const { deck } = component
@@ -745,8 +826,8 @@ function appendBridgeDecks(
       .lineTo(axis[1].x * cellSize, axis[1].y * cellSize)
       .stroke({
         color: '#ffffff',
-        width: deck.widthCells * cellSize,
-        cap: 'square',
+        width: (deck.widthCells + extraWidthCells) * cellSize,
+        cap: deck.cap,
         join: 'round',
       })
   }

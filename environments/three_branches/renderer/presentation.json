@@ -118,6 +118,7 @@
         },
         "targetWidthCells": 2.1,
         "minimumWidthCells": 1.6,
+        "edgeFadeCells": 0.05,
         "opacity": 1
       },
       "path": {
@@ -127,6 +128,7 @@
           "octaves": [{ "wavelengthCells": 7, "amplitudeCells": 0.04 }]
         },
         "widthCells": 0.7,
+        "edgeFadeCells": 0.01,
         "opacity": 1
       }
     },
@@ -134,7 +136,10 @@
       "horizontal": "bridgeA",
       "vertical": "bridgeB",
       "compact": "bridgeC",
-      "tint": "timber"
+      "tint": "timber",
+      "shadowTint": "backdrop",
+      "shadowOpacity": 0.25,
+      "shadowOffsetCells": 0.06
     },
     "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
   },

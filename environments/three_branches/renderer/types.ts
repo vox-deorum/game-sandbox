@@ -596,7 +596,7 @@ export interface TerrainBridgeDeckSpec {
   /** Deck width measured in cells. */
   readonly widthCells: number
   /** Stroke cap used at deck portals. */
-  readonly cap: 'square' | 'round'
+  readonly cap: 'butt' | 'square' | 'round'
   /** Deck center measured in route-space cells. */
   readonly center: TerrainRoutePoint
   /** Deck axis endpoints when the component has a principal axis. */
