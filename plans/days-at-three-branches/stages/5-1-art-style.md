@@ -79,7 +79,7 @@ Build characters from shared north-facing grayscale-alpha masks in a conventiona
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
-Every catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. Each 384 by 256 runtime canvas centers that footprint with at least two transparent pixels at its edge. The atlas leaves its unnamed trailing cells transparent. The pump is a fixed north-facing monument: its circular footing stays centered on the placement cell while the mechanism may extend north beyond its smaller collision circle. The bell has a state-independent circular stone foundation below characters and a fixed-north upper assembly above them. Both bell art parts render at 0.20 versus the common 0.14 scale, while its collision remains a 0.4-cell circle. Drive the result only from prop id, type, state, facing, and tick.
+Every catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. Each 384 by 256 runtime canvas centers that footprint with at least two transparent pixels at its edge. The atlas leaves its unnamed trailing cells transparent. The pump is a fixed north-facing monument: its circular footing stays centered on the placement cell while the mechanism may extend north beyond its smaller collision circle. The bell has a state-independent circular stone foundation below characters and a fixed-north upper assembly above them. The configured prop scale defaults to 0.14 and overrides bell to 0.20 for both art parts, while its collision remains a 0.4-cell circle. Drive the result only from prop id, type, state, facing, and tick.
 
 | Prop | Still treatment |
 | --- | --- |
@@ -92,7 +92,7 @@ Every catalog state has one distinct complete north-facing still across its cata
 | Inn hearth | `lit` has a gilt-and-cinnabar coal core; `unlit` has cool ash and stacked dark wood. |
 | Repair bench | `busy` has a laid-out tool and bright workpiece; `idle` has a cleared top and stored tools. |
 | Well pump | Its round well curb is centered on the collision circle and its fixed-north mechanical assembly extends beyond it. `flowing` has a visible pale water stream and wet basin mark; `idle` has a dry basin and upright handle. |
-| Beacon bell | Its state-independent filled circular stone foundation is centered on the 0.4-cell collision circle below characters. Its fixed-north timber bell upper assembly extends beyond it above characters. Both parts use 0.20 scale versus the common 0.14. The registered `ringing` upper has a tilted bell and exposed clapper, while `silent` hangs plumb. Manual owner review remains pending. |
+| Beacon bell | Its state-independent filled circular stone foundation is centered on the 0.4-cell collision circle below characters. Its fixed-north timber bell upper assembly extends beyond it above characters. The configured 0.14 default overrides both parts to 0.20. The registered `ringing` upper has a tilted bell and exposed clapper, while `silent` hangs plumb. Manual owner review remains pending. |
 
 Animate only lantern flicker, hearth fire, shrine incense, pump water, and bell swing. Each animation is a seek-safe function of fractional playback tick, prop id, current state, and a stable hash phase. A new prop type needs no renderer change only when it reuses a placement token, art treatment, and transition mechanism.
 
@@ -135,7 +135,7 @@ Status: complete.
 
 The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
-- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
+- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `props` (default still scale and type overrides), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
 - `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
 - `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
@@ -143,7 +143,7 @@ The common layer under every visual step. It has no owner gate: the step 3 solid
 
 `overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
 
-The foundation's successful art load swaps in the configured tinted terrain fills. The Terrain step owns fill variation, contour composition, shoreline, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
+The foundation's successful art load swaps in the configured tinted terrain fills. Successful prop-art installation reapplies configured foundation and still scales to retained nodes only after full art preflight succeeds. The Terrain step owns fill variation, contour composition, shoreline, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
 
 ## Terrain
 

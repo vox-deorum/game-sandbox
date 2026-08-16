@@ -166,6 +166,7 @@
     "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameRatio": 0.68 },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
+  "props": { "defaultScale": 0.14, "scaleByType": { "bell": 0.2 } },
   "propEffects": {
     "lantern": {
       "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],

@@ -3,14 +3,12 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { emissiveSpec, hasPropEffect, propEffectFrames, propEffectSpec } from './effects.js'
 import { CATALOG } from './overlay.js'
-import { HEARTHSIDE_STYLE, PALETTE } from './presentation.js'
+import { HEARTHSIDE_STYLE, PALETTE, propVisualScale } from './presentation.js'
 import { isShippedPropType, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 import { frameRectangle } from './tint.js'
 
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
-const PROP_SCALE = 0.14
-const BELL_SCALE = 0.2
 const SCENERY_SCALE = 0.25
 const EFFECT_SCALE = 0.25
 const FIXED_MONUMENT_TYPES = new Set(['pump', 'bell'])
@@ -110,6 +108,7 @@ export function createPropLayer(
   return {
     install(nextArt) {
       preflightArt(nextArt)
+      for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
       for (const item of scene.scenery) installScenery(sceneryLayer, item, nextArt)
       for (const node of nodes.values()) {
@@ -187,7 +186,7 @@ function createPropNode(item: StaticDrawable): PropNode {
   root.rotation = visualFacing(item)
   const shadow = propShadow(item)
   const fallbackNode = fallback(item, true)
-  const artScale = item.type === 'bell' ? BELL_SCALE : PROP_SCALE
+  const artScale = propVisualScale(item.type)
   const foundation = propSprite('prop-foundation', Texture.EMPTY, artScale)
   foundation.visible = false
   const still = propSprite('prop-still', Texture.EMPTY, artScale)
@@ -248,8 +247,14 @@ function sprite(label: string, frame: Texture, scale: number): Sprite {
   return node
 }
 
-function propSprite(label: string, frame: Texture, scale = PROP_SCALE): Sprite {
+function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
+}
+
+function syncArtScale(node: Pick<PropNode, 'item' | 'foundation' | 'still'>): void {
+  const scale = propVisualScale(node.item.type)
+  node.foundation.scale.set(scale)
+  node.still.scale.set(scale)
 }
 
 function centerX(item: StaticDrawable): number { return item.rect.x + item.rect.width / 2 }

@@ -1,7 +1,7 @@
 import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
-import { RULES } from './overlay.js'
+import { CATALOG, RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
 import { smoothingPassesFor } from './terrain-curves.js'
 import { mixedTint } from './tint.js'
@@ -279,6 +279,10 @@ export interface HearthsideStyle {
     walk: { frames: readonly string[]; frameRatio: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
+  props: {
+    defaultScale: number
+    scaleByType: Readonly<Record<string, number>>
+  }
   propEffects: Readonly<Record<string, { frames: readonly string[]; frameRate: number }>>
   emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
   cranes: {
@@ -332,6 +336,11 @@ export function phaseGrade(phase: string): PhaseGrade | null {
   return HEARTHSIDE_STYLE.phaseGrades[phase] ?? null
 }
 
+/** Resolve one complete prop-still scale from the validated visual calibration. */
+export function propVisualScale(type: string): number {
+  return HEARTHSIDE_STYLE.props.scaleByType[type] ?? HEARTHSIDE_STYLE.props.defaultScale
+}
+
 /** Validate an injected document for tests and future configuration edits. */
 export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const source = exactRecord(value, 'presentation', [
@@ -341,6 +350,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'roofs',
     'phaseGrades',
     'characters',
+    'props',
     'propEffects',
     'emissives',
     'cranes',
@@ -501,6 +511,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     },
   }
 
+  const props = propScaleTreatment(source.props, 'presentation.props')
+
   const effectsFrames = framesFor('effects')
   const propEffectsSource = exactRecord(source.propEffects, 'presentation.propEffects', [
     'lantern',
@@ -569,9 +581,30 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     roofs,
     phaseGrades,
     characters,
+    props,
     propEffects,
     emissives,
     cranes,
+  }
+}
+
+function propScaleTreatment(value: unknown, name: string): HearthsideStyle['props'] {
+  const source = exactRecord(value, name, ['defaultScale', 'scaleByType'])
+  const overrides = recordWithOptional(
+    source.scaleByType,
+    `${name}.scaleByType`,
+    [],
+    CATALOG.props.map((prop) => prop.token),
+  )
+  const scaleByType = Object.fromEntries(
+    Object.entries(overrides).map(([type, scale]) => [
+      type,
+      boundedNumber(scale, `${name}.scaleByType.${type}`, 0.05, 0.5, true),
+    ]),
+  )
+  return {
+    defaultScale: boundedNumber(source.defaultScale, `${name}.defaultScale`, 0.05, 0.5, true),
+    scaleByType,
   }
 }
 
