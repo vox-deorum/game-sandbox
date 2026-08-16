@@ -12,7 +12,7 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 | --- | --- | --- |
 | `terrain-atlas.png` | `assets/terrain/` | 64 |
 | `buildings-atlas.png` | `assets/buildings/` | 16 |
-| `props-atlas.png` | `assets/props/<type>/<state>.png` | 19 |
+| `props-atlas.png` | `assets/props/<type>/<state>.png` plus `assets/props/bell/foundation.png` | 20 |
 | `scenery-atlas.png` | `assets/scenery/` | 4 |
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 28 |
@@ -21,7 +21,7 @@ The Frames column counts loose files, not frame pixels. Each page's current fram
 
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
 
-The props frame names in `assets.ts` derive from catalog tokens and states without a hand-maintained table. Slots 0 through 18 name complete prop states in catalog order, from `stallOpen` through `bellSilent`. The remaining 17 cells are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling.
+The props frame names in `assets.ts` derive from catalog tokens and states, followed by the fixed bell foundation. Slots 0 through 18 name complete prop states in catalog order, from `stallOpen` through `bellSilent`; slot 19 is `bellFoundation` from `props/bell/foundation.png`. The remaining 16 cells are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling.
 
 The effects page is a 7 by 4 grid of 28 runtime frames on a 1344 by 512 page. Its 384 by 256 source cells live on a 2688 by 1024 source page.
 
@@ -61,4 +61,4 @@ All three ride the existing vitest include globs, so `scripts/ci.py` needs no ch
 
 ## Done when
 
-All nine declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 19 loose props with transparent unnamed trailing cells, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
+All nine declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 20 loose prop frames with transparent unnamed trailing cells, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.

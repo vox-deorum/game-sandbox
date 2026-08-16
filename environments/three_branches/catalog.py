@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from importlib import resources
+from math import isfinite
 from types import MappingProxyType
 from typing import Any
 
 from .rules import GROUND_BY_CODE
-from .validation import mapping, positive_int, token
+from .validation import mapping, positive_int, positive_number, token
 
 _SHAPES = {"box", "circle"}
 _MOVING_TRANSITIONS = {"toggle", "occupancy", "timed"}
@@ -32,6 +33,7 @@ class PropType:
     width: int
     height: int
     shape: str
+    collision_scale: float
     activity: str
     states: tuple[str, ...]
     start: str
@@ -103,6 +105,7 @@ def load(data: Any) -> Catalog:
             positive_int(entry["width"], "catalog.prop.width"),
             positive_int(entry["height"], "catalog.prop.height"),
             entry["shape"],
+            _collision_scale(entry["collision_scale"]),
             token(entry["activity"], "catalog.prop.activity"),
             tuple(token(state, "catalog.prop.states", max_length=9) for state in entry["states"]),
             token(entry["start"], "catalog.prop.start", max_length=9),
@@ -118,6 +121,7 @@ def load(data: Any) -> Catalog:
                     "width",
                     "height",
                     "shape",
+                    "collision_scale",
                     "activity",
                     "states",
                     "start",
@@ -168,6 +172,13 @@ def load(data: Any) -> Catalog:
     if not {"i", "d", "x"} <= set(GROUND_BY_CODE):
         raise ValueError("catalog needs the interior, doorway, and wall ground codes from the rules")
     return Catalog(buildings, props, scenery)
+
+
+def _collision_scale(value: Any) -> float:
+    scale = positive_number(value, "catalog.prop.collision_scale")
+    if not isfinite(scale) or scale > 1:
+        raise ValueError("catalog.prop.collision_scale must be finite and no greater than one")
+    return scale
 
 
 CATALOG = load(json.loads(resources.files(__package__).joinpath("catalog.json").read_text(encoding="utf-8")))

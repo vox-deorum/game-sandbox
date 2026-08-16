@@ -80,6 +80,11 @@ export function propTreatment(type: string, state: string): PropTreatment {
   return treatment
 }
 
+/** Resolve a state-independent foundation frame for a fixed monument. */
+export function propFoundationFrame(type: string): string | null {
+  return type === 'bell' ? 'bellFoundation' : null
+}
+
 /** Select one fixed scenery frame from a catalog type and stable placement id. */
 export function sceneryFrame(type: string, id: string): string {
   if (type === 'crate') return 'marketCrate'

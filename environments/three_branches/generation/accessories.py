@@ -500,7 +500,8 @@ def _shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
     x, y = item.cell
     if source.shape == "box":
         return Rect(float(x), float(y), float(width), float(height))
-    return Circle(x + width / 2, y + height / 2, min(width, height) / 2)
+    scale = source.collision_scale if isinstance(item, PlacedProp) else 1.0
+    return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
 
 def _touches(shape: Rect | Circle, point: Point, radius: float) -> bool:

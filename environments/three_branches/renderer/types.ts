@@ -150,6 +150,8 @@ export interface StaticDrawable {
   label: string
   /** Catalog collision shape. */
   shape: 'box' | 'circle'
+  /** Catalog collision diameter fraction for circular props. */
+  collisionScale: number
   /** Config-derived renderer extent. */
   rect: WorldRect
   /** Optional cardinal presentation direction. */

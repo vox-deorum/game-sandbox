@@ -173,7 +173,11 @@ def _shape(item: PlacementFingerprint, kind: Mapping[str, object], cell_size: fl
     width, height = float(kind["width"]), float(kind["height"])
     if item[3]:
         width, height = height, width
-    return Shape(str(kind["shape"]), item[1] * cell_size, item[2] * cell_size, width, height)
+    x, y = item[1] * cell_size, item[2] * cell_size
+    if kind["shape"] != "circle":
+        return Shape("box", x, y, width, height)
+    diameter = min(width, height) * float(kind.get("collision_scale", 1.0))
+    return Shape("circle", x + (width - diameter) / 2, y + (height - diameter) / 2, diameter, diameter)
 
 
 def _collision_buckets(

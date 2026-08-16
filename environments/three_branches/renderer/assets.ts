@@ -142,6 +142,7 @@ export const PROPS_ATLAS_FRAME_NAMES = [
   'pumpIdle',
   'bellRinging',
   'bellSilent',
+  'bellFoundation',
 ] as const
 
 export const SCENERY_ATLAS_FRAME_NAMES = ['pineA', 'pineB', 'pineC', 'marketCrate'] as const
@@ -236,7 +237,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     height: 1536,
     tintable: false,
     format: 'full-color',
-    consumer: 'complete interactive prop state stills, with separate effects and emissives',
+    consumer: 'complete interactive prop state stills and the fixed bell foundation, with separate effects and emissives',
     frames: {
       width: 384,
       height: 256,
@@ -362,6 +363,7 @@ function flatFramePaths(names: readonly string[]): readonly string[] {
 }
 
 function propsFramePath(name: string): string {
+  if (name === 'bellFoundation') return 'bell/foundation.png'
   for (const prop of catalogDocument.props) {
     const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
     const state = prop.states.find((value) => `${type}${value[0]?.toUpperCase()}${value.slice(1)}` === name)

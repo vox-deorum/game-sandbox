@@ -75,7 +75,7 @@ Build characters from shared north-facing grayscale-alpha masks in a conventiona
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
-Every catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. Each 96 by 64 runtime canvas centers that footprint with at least two transparent pixels at its edge. The atlas leaves its unnamed trailing cells transparent. Drive the result only from prop id, type, state, facing, and tick.
+Every catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. Each 384 by 256 runtime canvas centers that footprint with at least two transparent pixels at its edge. The atlas leaves its unnamed trailing cells transparent. The pump is a fixed north-facing monument: its circular footing stays centered on the placement cell while the mechanism may extend north beyond its smaller collision circle. The bell has a state-independent circular stone foundation below characters and a fixed-north upper assembly above them. Drive the result only from prop id, type, state, facing, and tick.
 
 | Prop | Still treatment |
 | --- | --- |
@@ -87,8 +87,8 @@ Every catalog state has one distinct complete north-facing still across its cata
 | Garden plot | `tended` has ordered dark furrows and young green rows; `overgrown` has irregular pine-green growth that does not hide the fence. |
 | Inn hearth | `lit` has a gilt-and-cinnabar coal core; `unlit` has cool ash and stacked dark wood. |
 | Repair bench | `busy` has a laid-out tool and bright workpiece; `idle` has a cleared top and stored tools. |
-| Well pump | `flowing` has a visible pale water stream and wet basin mark; `idle` has a dry basin and upright handle. |
-| Beacon bell | `ringing` has a tilted bell, exposed clapper, and ringing lines; `silent` hangs plumb without those marks. |
+| Well pump | Its round well curb is centered on the collision circle and its fixed-north mechanical assembly extends beyond it. `flowing` has a visible pale water stream and wet basin mark; `idle` has a dry basin and upright handle. |
+| Beacon bell | Its state-independent filled circular stone foundation is centered on the collision circle below characters. Its fixed-north timber bell upper assembly extends beyond it above characters. The registered `ringing` upper has a tilted bell and exposed clapper, while `silent` hangs plumb. Manual owner review remains pending. |
 
 Animate only lantern flicker, hearth fire, shrine incense, pump water, and bell swing. Each animation is a seek-safe function of fractional playback tick, prop id, current state, and a stable hash phase. A new prop type needs no renderer change only when it reuses a placement token, art treatment, and transition mechanism.
 
@@ -119,7 +119,7 @@ The separate 320 by 180 thumbnail is a final Hearthside Ink image, not a screens
 
 ### Collision truth
 
-[ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. The collision overlay remains exact and authoritative. Natural surface contours may move by at most 0.6 cell perpendicular to the source edge while preserving the 0.45-cell corridor; they may cross cell centres. Walls, doorways, catalog shapes, the collision grid, generation, and recordings remain exact. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. Non-solid shadows, glow, smoke, and other effects may extend outside a shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
+[ruleset.md](../ruleset.md) fixes impassable ground, catalog collision shapes, counts, states, transitions, and prop reach. The collision overlay remains exact and authoritative. Natural surface contours may move by at most 0.6 cell perpendicular to the source edge while preserving the 0.45-cell corridor; they may cross cell centres. Walls, doorways, catalog shapes, the collision grid, generation, and recordings remain exact. Water and walls read solid, doorway ground open, and round catalog shapes read round, so walkers visibly slide around the pump, hearth, bell, lantern, and pine. The pump and bell use a 0.4-cell centered collision diameter inside their one-cell placement footprints. Their upper mechanisms, shadows, glow, smoke, and other non-solid effects may extend outside that shape. Art needing another extent changes the ground table or catalog and its generator, fixture, overlay, and tests together.
 
 ## Correctness, review, and configuration
 
@@ -174,13 +174,13 @@ Pending. The owner reviews the cast in watch sessions and records the date here.
 
 ## Props, scenery, and effects
 
-`props-art.ts` resolves every catalog type and state to one complete north-facing state still. Each 384 by 256 canvas centers its collision footprint, holds at least two transparent pixels at the edge, and draws at fixed 0.125 scale inside a facing container. `SHIPPED_PROP_TYPES` enables all ten complete prop still types. `effects.ts` holds the five sustained animations and emissive specs as pure functions of fractional tick, prop id, state, and stable hash phase. Effect configuration objects own their frames and `frameRate`. `props-layer.ts` keeps scenery unchanged, validates the shipped still and needed accent frames before installation, and installs art atomically.
+`props-art.ts` resolves every catalog type and state to one complete north-facing state still. Each 384 by 256 canvas centers its collision footprint, holds at least two transparent pixels at the edge, and draws at the owner-calibrated fixed scale inside a facing container. `SHIPPED_PROP_TYPES` enables all ten complete prop still types. The pump ignores placement facing, keeps its centered shadow below characters, and draws its complete still and effects in the upper character layer. The bell adds its state-independent foundation to the prop layer below characters, while its fixed-north upper still and effect stay in the upper character layer. `effects.ts` holds the five sustained animations and emissive specs as pure functions of fractional tick, prop id, state, and stable hash phase. Effect configuration objects own their frames and `frameRate`. `props-layer.ts` keeps scenery unchanged, validates the shipped still and needed accent frames before installation, and installs art atomically.
 
 After visual acceptance, tests cover every catalog state mapping, enabled-type preflight, excluded-type fallback, fixed scaling, centered placement, facing rotation, and deterministic animation. The owner then reviews every state in [the treatment table](#characters-props-and-dressing), the pines and crates, and the emissives.
 
 ### Prop sign-off
 
-The owner approved all ten complete prop still types on 2026-08-15. The accepted still art remains approved. The next manual owner review covers the native-density correction, slower expanded animations, characters at 85% scale, props at 115% scale, and subtle prop contact shadows. State shadows may extend beyond collision, while gameplay and collision remain exact. Review the accepted slice by toggling `stall_0` and `lantern_0`, tending `plot_0`, waiting 600 ticks for its return, inspecting fitted, middle, and close zoom with collision overlays, and confirming north and south stall rotation. The review accepts no fragments, artwork inside each footprint, clear state changes, correctly layered lantern glow, and the pending calibration.
+The owner approved all ten complete prop still types on 2026-08-15. The accepted still art remains approved. The next manual owner review covers the native-density correction, slower expanded animations, the owner-calibrated character and prop sizes, subtle prop contact shadows, and the revised fixed-north pump and bell. Confirm that each monument's collision circle follows its centered round footing, its upper mechanism occludes characters, and the bell reads as a solid civic plinth rather than a well. State shadows and the two monument mechanisms may extend beyond collision, while gameplay and collision remain exact. Review the accepted slice by toggling `stall_0` and `lantern_0`, tending `plot_0`, waiting 600 ticks for its return, inspecting fitted, middle, and close zoom with collision overlays, and confirming north and south stall rotation. The review accepts no fragments, clear state changes, correctly layered accents, exact collision registration, and the pending calibration.
 
 ## Roofs
 

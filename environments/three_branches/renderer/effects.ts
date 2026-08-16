@@ -8,6 +8,7 @@ export interface PropEffectSpec {
   tint: HearthsidePaletteKey
   alpha: number
   scale: number
+  offsetX: number
   offsetY: number
   rotation: number
   phase: number
@@ -49,15 +50,15 @@ export function propEffectSpec(
   const wave = Math.sin((frameClock / frames.length) * Math.PI * 2)
   switch (effect) {
     case 'lantern':
-      return { frame, tint: 'gilt', alpha: 0.7 + wave * 0.16, scale: 0.92 + wave * 0.08, offsetY: 0, rotation: 0, phase }
+      return { frame, tint: 'gilt', alpha: 0.7 + wave * 0.16, scale: 0.92 + wave * 0.08, offsetX: 0, offsetY: 0, rotation: 0, phase }
     case 'hearth':
-      return { frame, tint: 'cinnabar', alpha: 0.82 + wave * 0.12, scale: 0.9 + wave * 0.1, offsetY: 1 - wave, rotation: 0, phase }
+      return { frame, tint: 'cinnabar', alpha: 0.82 + wave * 0.12, scale: 0.9 + wave * 0.1, offsetX: 0, offsetY: 1 - wave, rotation: 0, phase }
     case 'shrine':
-      return { frame, tint: 'violet', alpha: 0.45 + wave * 0.16, scale: 0.86 + wave * 0.1, offsetY: -4 - wave * 3, rotation: wave * 0.08, phase }
+      return { frame, tint: 'violet', alpha: 0.45 + wave * 0.16, scale: 0.86 + wave * 0.1, offsetX: 0, offsetY: -4 - wave * 3, rotation: wave * 0.08, phase }
     case 'pump':
-      return { frame, tint: 'water', alpha: 0.72 + wave * 0.14, scale: 0.94 + wave * 0.06, offsetY: wave * 2, rotation: 0, phase }
+      return { frame, tint: 'water', alpha: 0.72 + wave * 0.14, scale: 0.94 + wave * 0.06, offsetX: 2.9, offsetY: -4 + wave * 2, rotation: 0, phase }
     case 'bell':
-      return { frame, tint: 'gilt', alpha: 0.58 + wave * 0.2, scale: 1, offsetY: 0, rotation: wave * 0.12, phase }
+      return { frame, tint: 'gilt', alpha: 0.58 + wave * 0.2, scale: 1, offsetX: 0, offsetY: -5, rotation: wave * 0.12, phase }
   }
   throw new Error('Three Branches prop effect is unsupported.')
 }

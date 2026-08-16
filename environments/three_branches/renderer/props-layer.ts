@@ -4,7 +4,7 @@ import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { emissiveSpec, hasPropEffect, propEffectFrames, propEffectSpec } from './effects.js'
 import { CATALOG } from './overlay.js'
 import { HEARTHSIDE_STYLE, PALETTE } from './presentation.js'
-import { isShippedPropType, propTreatment, sceneryFrame } from './props-art.js'
+import { isShippedPropType, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 import { frameRectangle } from './tint.js'
 
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
@@ -12,6 +12,7 @@ import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 const PROP_SCALE = 0.14
 const SCENERY_SCALE = 0.25
 const EFFECT_SCALE = 0.25
+const FIXED_MONUMENT_TYPES = new Set(['pump', 'bell'])
 
 /** Pages that become artwork for props, scenery, and their effects. */
 export interface PropAtlasTextures {
@@ -40,6 +41,7 @@ interface PropNode {
   root: Container
   fallback: Graphics
   shadow: Sprite
+  foundation: Sprite
   still: Sprite
   effect: Sprite
   emissive: Sprite
@@ -77,7 +79,12 @@ export function createPropLayer(
   for (const item of scene.props) {
     const node = createPropNode(item)
     nodes.set(item.id, node)
-    propLayer.addChild(node.root)
+    if (isFixedMonument(item)) {
+      upperLayer.addChild(node.root)
+      node.shadow.position.set(centerX(item), centerY(item))
+      node.foundation.position.set(centerX(item), centerY(item))
+      propLayer.addChild(node.shadow, node.foundation)
+    } else propLayer.addChild(node.root)
     upperLayer.addChild(node.effect)
     emissiveLayer.addChild(node.emissive)
   }
@@ -92,6 +99,9 @@ export function createPropLayer(
     node.fallback.visible = !shipped
     node.shadow.visible = shipped
     node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
+    const foundationFrame = propFoundationFrame(node.item.type)
+    node.foundation.visible = shipped && foundationFrame !== null
+    node.foundation.texture = foundationFrame === null ? Texture.EMPTY : texture(art.props, foundationFrame)
     node.still.visible = shipped
     node.still.texture = shipped ? texture(art.props, propTreatment(node.item.type, state).frame) : Texture.EMPTY
   }
@@ -117,7 +127,7 @@ export function createPropLayer(
       const tick = typeof value === 'number' ? value : value.presentationTick
       let active = false
       for (const node of nodes.values()) {
-        node.root.rotation = facing(node.item.facing)
+        node.root.rotation = visualFacing(node.item)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
           node.emissive.visible = false
@@ -134,8 +144,8 @@ export function createPropLayer(
           node.effect.tint = HEARTHSIDE_STYLE.palette[effect.tint]
           node.effect.alpha = effect.alpha
           node.effect.scale.set(EFFECT_SCALE * effect.scale)
-          node.effect.position.set(centerX(node.item), centerY(node.item) + effect.offsetY)
-          node.effect.rotation = facing(node.item.facing) + effect.rotation
+          node.effect.position.set(centerX(node.item) + effect.offsetX, centerY(node.item) + effect.offsetY)
+          node.effect.rotation = visualFacing(node.item) + effect.rotation
         }
         if (emissive !== null) {
           node.emissive.texture = texture(art.effects, emissive.frame)
@@ -143,7 +153,7 @@ export function createPropLayer(
           node.emissive.alpha = emissive.alpha
           node.emissive.scale.set(EFFECT_SCALE * emissive.scale)
           node.emissive.position.set(centerX(node.item), centerY(node.item))
-          node.emissive.rotation = facing(node.item.facing)
+          node.emissive.rotation = visualFacing(node.item)
         }
       }
       return active
@@ -155,7 +165,7 @@ export function createPropLayer(
       if (item === undefined) return
       const stroke = { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
       if (item.shape === 'circle') {
-        highlightNode.circle(centerX(item), centerY(item), Math.min(item.rect.width, item.rect.height) / 2 + 2).stroke(stroke)
+        highlightNode.circle(centerX(item), centerY(item), (Math.min(item.rect.width, item.rect.height) / 2) * item.collisionScale + 2).stroke(stroke)
       } else {
         highlightNode.rect(item.rect.x - 2, item.rect.y - 2, item.rect.width + 4, item.rect.height + 4).stroke(stroke)
       }
@@ -173,16 +183,21 @@ function createSceneryNode(item: StaticDrawable): Container {
 function createPropNode(item: StaticDrawable): PropNode {
   const root = new Container({ label: `prop:${item.id}` })
   root.position.set(centerX(item), centerY(item))
-  root.rotation = facing(item.facing)
+  root.rotation = visualFacing(item)
   const shadow = propShadow(item)
   const fallbackNode = fallback(item, true)
+  const foundation = propSprite('prop-foundation', Texture.EMPTY)
+  foundation.visible = false
   const still = propSprite('prop-still', Texture.EMPTY)
-  root.addChild(shadow, fallbackNode, still)
+  if (!isFixedMonument(item)) root.addChild(shadow)
+  root.addChild(fallbackNode, still)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
+  effect.rotation = visualFacing(item)
+  emissive.rotation = visualFacing(item)
   effect.visible = false
   emissive.visible = false
-  return { item, root, fallback: fallbackNode, shadow, still, effect, emissive, state: null }
+  return { item, root, fallback: fallbackNode, shadow, foundation, still, effect, emissive, state: null }
 }
 
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
@@ -209,7 +224,8 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
 function propShadow(item: StaticDrawable): Sprite {
   const shadow = sprite('prop-contact-shadow', Texture.EMPTY, 1)
   const { width, height } = localFootprint(item)
-  shadow.scale.set((width * 0.9) / 192, (height * 0.6) / 128)
+  const collisionScale = isFixedMonument(item) ? item.collisionScale : 1
+  shadow.scale.set((width * collisionScale * 0.9) / 192, (height * collisionScale * 0.6) / 128)
   shadow.tint = HEARTHSIDE_STYLE.palette.backdrop
   shadow.alpha = 0.25
   shadow.visible = false
@@ -236,6 +252,8 @@ function propSprite(label: string, frame: Texture): Sprite {
 
 function centerX(item: StaticDrawable): number { return item.rect.x + item.rect.width / 2 }
 function centerY(item: StaticDrawable): number { return item.rect.y + item.rect.height / 2 }
+function isFixedMonument(item: StaticDrawable): boolean { return FIXED_MONUMENT_TYPES.has(item.type) }
+function visualFacing(item: StaticDrawable): number { return isFixedMonument(item) ? 0 : facing(item.facing) }
 function facing(value: string | undefined): number {
   return ({ north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 } as Record<string, number>)[value ?? 'north'] ?? 0
 }
@@ -265,6 +283,8 @@ function preflightArt(art: PropArt): void {
   }
   for (const prop of CATALOG.props) {
     if (!isShippedPropType(prop.token)) continue
+    const foundationFrame = propFoundationFrame(prop.token)
+    if (foundationFrame !== null) texture(art.props, foundationFrame)
     for (const state of prop.states) {
       texture(art.props, propTreatment(prop.token, state).frame)
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
