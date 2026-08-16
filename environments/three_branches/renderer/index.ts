@@ -41,7 +41,12 @@ import {
   THREE_BRANCHES_PRESENTATION,
   transitionDurationMs,
 } from './presentation.js'
-import { createPropLayer, type PropLayer } from './props-layer.js'
+import {
+  createPropArt,
+  createPropLayer,
+  hasSustainedPropEffectTransition,
+  type PropLayer,
+} from './props-layer.js'
 import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
 import { createTerrainArt } from './terrain-art.js'
 import thumbnail from './thumbnail.png'
@@ -134,6 +139,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const propLayer = new Container()
     this.characterLayer = new Container()
     this.upperLayer = new Container()
+    const effectsLayer = new Container()
     const emissiveLayer = new Container()
     const annotationLayer = new Container()
     const collisionLayer = new Container()
@@ -150,6 +156,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       propLayer,
       this.characterLayer,
       this.upperLayer,
+      effectsLayer,
     )
     this.worldRoot = new Container()
     // Nameplates and bubbles ride above the graded world and below the collision overlay, so the
@@ -160,7 +167,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
     this.mapGround = drawMap(this.mapLayer, this.staticScene)
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
-    this.props = createPropLayer(sceneryLayer, propLayer, this.staticScene)
+    this.props = createPropLayer(sceneryLayer, propLayer, effectsLayer, emissiveLayer, this.staticScene)
     this.characters = createCharacterLayer(this.characterLayer)
     this.annotations = createAnnotationLayer(annotationLayer, createText)
     this.collision = createCollisionLayer(collisionLayer, createText)
@@ -229,6 +236,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     if (options?.seek === true) this.annotations.clear()
     this.annotations.deliver(readSpeech(state, this.expectedIds))
     this.props.reconcile(scene)
+    this.props.advance(scene)
     this.collision.drawStatic(
       collisionWithPropStates(this.staticCollisionShapes, scene),
       this.worldTextResolution(),
@@ -236,7 +244,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
     const durationMs = transitionDurationMs(options, deliveryGapMs)
     const shouldAnimate =
-      durationMs > 0 && this.presentedScene !== null && charactersMoved(this.presentedScene, scene)
+      durationMs > 0 && this.presentedScene !== null && (charactersMoved(this.presentedScene, scene) || hasSustainedPropEffectTransition(this.presentedScene, scene))
     this.settleRemainingMs = 0
     if (shouldAnimate && this.presentedScene !== null) {
       // Movement always follows the renderer transport. It deliberately does not inspect the
@@ -267,6 +275,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
       this.presentScene(interpolateScene(movement.from, movement.to, progress))
       this.advanceCameraReturn(dtMs, visitorMoved(movement.from, movement.to))
+      this.props.advance(this.presentedScene ?? movement.to)
       if (progress >= 1) {
         this.movement = null
         this.settleRemainingMs = HEARTHSIDE_STYLE.transition.settleGraceMs
@@ -530,6 +539,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       install: (assets) => {
         const textures = [
           assets.terrain,
+          assets.props,
+          assets.scenery,
           assets.characters.body,
           assets.characters.clothing,
           assets.characters.arms,
@@ -540,6 +551,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           throw new Error('Three Branches runtime atlases must be textures.')
         }
         const terrain = createTerrainArt(assets.terrain, this.staticScene)
+        const propArt = createPropArt({ props: assets.props, scenery: assets.scenery, effects: assets.effects })
         const characterArt = createCharacterArt({ ...assets.characters, effects: assets.effects })
         const nextMapLayer = new Container()
         const nextCharacterLayer = new Container()
@@ -558,6 +570,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
               this.cameraLimits.minZoom,
             )
           }
+
+          this.props.install(propArt)
+          if (this.presentedScene !== null) this.props.advance(this.presentedScene)
 
           const previousMapLayer = this.mapLayer
           const previousCharacterLayer = this.characterLayer

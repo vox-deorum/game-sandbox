@@ -153,11 +153,26 @@
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
   "propEffects": {
-    "lantern": ["glow", "glowFlicker"],
-    "hearth": ["flameA", "flameB", "flameC", "flameD"],
-    "shrine": ["smokeA", "smokeB"],
-    "pump": ["waterA", "waterB"],
-    "bell": ["bellLinesA", "bellLinesB"]
+    "lantern": {
+      "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],
+      "frameRate": 0.5
+    },
+    "hearth": {
+      "frames": ["flameA", "flameE", "flameB", "flameC", "flameF", "flameD"],
+      "frameRate": 1
+    },
+    "shrine": {
+      "frames": ["smokeA", "smokeC", "smokeD", "smokeB", "smokeD", "smokeC"],
+      "frameRate": 0.5
+    },
+    "pump": {
+      "frames": ["waterA", "waterC", "waterD", "waterB", "waterD", "waterC"],
+      "frameRate": 1
+    },
+    "bell": {
+      "frames": ["bellLinesC", "bellLinesA", "bellLinesD", "bellLinesB", "bellLinesE", "bellLinesF"],
+      "frameRate": 1.5
+    }
   },
   "emissives": { "lantern": "gilt", "hearth": "cinnabar", "frame": "glow" },
   "cranes": { "frames": ["craneA", "craneB"], "tint": "bone", "count": [1, 3], "frameMs": 260 }

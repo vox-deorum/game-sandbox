@@ -81,8 +81,12 @@ export function findCurveCrossings<Chain extends CurveChainView>(
 }
 
 /**
- * Rare tip geometry can smooth two stretches of boundary across each other, and no local
- * envelope can tell those stretches apart in time. Repair directly instead: pull the points of
+ * Where the reference turns a corner tighter than the displacement the curve spends there,
+ * neighbouring samples move inward along converging normals, swap order along the boundary, and
+ * the chords between them cross. Every crossing over the layout suite has that shape: two chords
+ * two to six samples apart, about a tenth of a cell across. Clearance cannot catch it, since the
+ * geometry it would have to see is the same curve a few samples along, which self-exclusion has
+ * to ignore for any boundary to smooth at all. Repair it directly instead: pull the points of
  * every crossing piece halfway toward their reference positions and sweep again. The corner-cut
  * reference is planar, so the halving always converges without reintroducing staircase corners.
  */

@@ -27,7 +27,7 @@ export interface AtlasFrame {
   image: RgbaImage
 }
 
-/** Confirm that a page contract describes a complete, rectangular atlas. */
+/** Confirm that a page contract describes a rectangular atlas with a named row-major prefix. */
 export function validateAtlasPageSpec(spec: AtlasPageSpec): void {
   if (spec.group.trim().length === 0) throw new Error('Atlas group must not be empty')
   if (spec.format !== 'full-color' && spec.format !== 'grayscale-alpha') {
@@ -46,9 +46,13 @@ export function validateAtlasPageSpec(spec: AtlasPageSpec): void {
   if (spec.width % spec.columns !== 0 || spec.height % spec.rows !== 0) {
     throw new Error('Atlas dimensions must divide evenly by its grid')
   }
-  if (spec.framePaths.length !== spec.columns * spec.rows) {
+  const capacity = spec.columns * spec.rows
+  if (spec.framePaths.length === 0) {
+    throw new Error('Atlas must declare at least one frame path')
+  }
+  if (spec.framePaths.length > capacity) {
     throw new Error(
-      `Atlas grid expects ${spec.columns * spec.rows} frame paths, received ${spec.framePaths.length}`,
+      `Atlas grid capacity is ${capacity} frame paths, received ${spec.framePaths.length}`,
     )
   }
 
@@ -97,7 +101,9 @@ export function splitAtlas(spec: AtlasPageSpec, atlas: RgbaImage): AtlasFrame[] 
   })
 }
 
-/** Validate loose frames and compose them into their declared row-major atlas page. */
+/** Validate loose frames and compose them into their declared row-major atlas page.
+ * Unnamed cells stay transparent.
+ */
 export function composeAtlas(spec: AtlasPageSpec, frames: readonly AtlasFrame[]): RgbaImage {
   validateAtlasPageSpec(spec)
   validateAtlasFrames(spec, frames)
@@ -153,7 +159,7 @@ export function validateAtlasFrames(spec: AtlasPageSpec, frames: readonly AtlasF
   }
 }
 
-/** Return the name of the first frame whose decoded pixels differ, or null when images match. */
+/** Return the first differing named frame or unused cell, or null when images match. */
 export function compareAtlasPixels(
   spec: AtlasPageSpec,
   expected: RgbaImage,
@@ -178,7 +184,8 @@ export function compareAtlasPixels(
     const frameColumn = Math.floor(x / (spec.width / spec.columns))
     const frameRow = Math.floor(y / (spec.height / spec.rows))
     const frameIndex = frameRow * spec.columns + frameColumn
-    return frameName(spec.framePaths[frameIndex] ?? '')
+    const path = spec.framePaths[frameIndex]
+    return path === undefined ? `unused cell ${frameIndex}` : frameName(path)
   }
   return null
 }

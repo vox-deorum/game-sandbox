@@ -270,7 +270,7 @@ export interface HearthsideStyle {
     walk: { frames: readonly string[]; frameRatio: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
-  propEffects: Readonly<Record<string, readonly string[]>>
+  propEffects: Readonly<Record<string, { frames: readonly string[]; frameRate: number }>>
   emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
   cranes: {
     frames: readonly string[]
@@ -501,10 +501,26 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'bell',
   ])
   const propEffects = Object.fromEntries(
-    Object.entries(propEffectsSource).map(([name, frameValue]) => [
-      name,
-      frameNames(frameValue, `presentation.propEffects.${name}`, effectsFrames),
-    ]),
+    Object.entries(propEffectsSource).map(([name, frameValue]) => {
+      const effectSource = exactRecord(frameValue, `presentation.propEffects.${name}`, [
+        'frames',
+        'frameRate',
+      ])
+      return [
+        name,
+        {
+          frames: frameNames(
+            effectSource.frames,
+            `presentation.propEffects.${name}.frames`,
+            effectsFrames,
+          ),
+          frameRate: positiveNumber(
+            effectSource.frameRate,
+            `presentation.propEffects.${name}.frameRate`,
+          ),
+        },
+      ]
+    }),
   )
   const emissivesSource = exactRecord(source.emissives, 'presentation.emissives', [
     'lantern',

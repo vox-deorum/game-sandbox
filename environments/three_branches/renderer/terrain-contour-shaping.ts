@@ -83,9 +83,6 @@ const BUDGET_SLOPE = 0.5
  */
 const SELF_FOLD_ARC_RATIO = 1.6
 
-/** Arc reach within which a chain never competes with itself, whatever the ratio says. */
-const SELF_ARC_WINDOW_CELLS = 1.4
-
 /** Index the shaped reference of every chain. */
 export function buildClearanceIndex(chains: readonly WorkingChain[]): ClearanceIndex {
   return buildIndex(
@@ -170,8 +167,7 @@ export function clearanceAt(
             segment.ownerLength,
             chain.closed,
           )
-          const window = Math.max(SELF_ARC_WINDOW_CELLS, SELF_FOLD_ARC_RATIO * separation)
-          if (arcDistance <= window + EPSILON) continue
+          if (arcDistance <= SELF_FOLD_ARC_RATIO * separation + EPSILON) continue
         }
         const junction = junctionArc(chain, ownLength, sourceOffset, segment)
         if (junction <= SELF_FOLD_ARC_RATIO * separation + EPSILON) continue

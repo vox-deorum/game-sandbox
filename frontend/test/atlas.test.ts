@@ -81,6 +81,30 @@ describe('atlas names and pure pixel operations', () => {
     expect(compareAtlasPixels(spec(), original, packed)).toBeNull()
   })
 
+  it('leaves unnamed trailing cells transparent and identifies stale unused cells', () => {
+    const partialSpec = spec({
+      width: 6,
+      columns: 3,
+      framePaths: ['first.png', 'nested/second_frame.png'],
+    })
+    const original = image(
+      6,
+      2,
+      [
+        1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255, 13, 14, 15, 255, 16, 17, 18,
+        255, 19, 20, 21, 255, 22, 23, 24, 255, 25, 26, 27, 255, 28, 29, 30, 255, 31, 32, 33, 255,
+        34, 35, 36, 255,
+      ],
+    )
+    const frames = splitAtlas(partialSpec, original)
+    const packed = composeAtlas(partialSpec, frames)
+
+    expect(frames).toHaveLength(2)
+    expect(packed.data.subarray(16, 24)).toEqual(new Uint8Array(8))
+    expect(packed.data.subarray(40, 48)).toEqual(new Uint8Array(8))
+    expect(compareAtlasPixels(partialSpec, packed, original)).toBe('unused cell 2')
+  })
+
   it('rejects missing, stray, and mis-sized frames', () => {
     const frames = splitAtlas(spec(), page())
     const first = frames[0]
@@ -98,11 +122,15 @@ describe('atlas names and pure pixel operations', () => {
     ).toThrow('expected 2x2')
   })
 
-  it('rejects colored pixels in grayscale-alpha frames and invalid grid arithmetic', () => {
+  it('rejects colored pixels in grayscale-alpha frames and invalid grid contracts', () => {
     const graySpec = spec({ format: 'grayscale-alpha' })
     const frames = splitAtlas(graySpec, page())
     expect(() => validateAtlasFrames(graySpec, frames)).toThrow('not grayscale-alpha')
     expect(() => validateAtlasPageSpec(spec({ width: 5 }))).toThrow('divide evenly')
+    expect(() => validateAtlasPageSpec(spec({ framePaths: [] }))).toThrow('at least one frame path')
+    expect(() => validateAtlasPageSpec(spec({ columns: 1 }))).toThrow(
+      'capacity is 1 frame paths, received 2',
+    )
   })
 
   it('rejects an empty group and an unknown pixel format', () => {
