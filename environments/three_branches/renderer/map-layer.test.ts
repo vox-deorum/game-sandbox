@@ -7,6 +7,7 @@ import {
   drawMap,
   exactTerrainGrid,
   materialLayerAlpha,
+  materialSurface,
   ownedTerrainView,
   pathGuideGraphics,
   reedMarksGraphics,
@@ -25,7 +26,12 @@ import {
   planTerrainContours,
 } from './terrain-contours.js'
 import { planTerrainRoutes } from './terrain-routes.js'
-import type { StaticScene, TerrainContourPoint, TerrainRoutePlan } from './types.js'
+import type {
+  StaticScene,
+  TerrainContourPlan,
+  TerrainContourPoint,
+  TerrainRoutePlan,
+} from './types.js'
 
 const names: Readonly<Record<string, string>> = {
   w: 'water',
@@ -46,6 +52,15 @@ function shorelinePoint(x: number, factor: number): TerrainContourPoint {
 
 function routePlan(rows: readonly string[]): TerrainRoutePlan {
   return planTerrainRoutes(rows, names, HEARTHSIDE_STYLE.terrain.routes)
+}
+
+function contourPlan(rows: readonly string[]): TerrainContourPlan {
+  return planTerrainContours(
+    rows,
+    names,
+    HEARTHSIDE_STYLE.terrain.contours,
+    HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
+  )
 }
 
 function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
@@ -191,18 +206,53 @@ describe('Three Branches map layer', () => {
   it('draws deterministic reed mark strokes only where the ground grid has reeds', () => {
     const strokeCount = (graphic: Graphics): number =>
       graphic.context.instructions.filter((instruction) => instruction.action === 'stroke').length
+    const reedRows = ['ggggg', 'geeeg', 'geeeg', 'geeeg', 'ggggg']
 
-    const withReeds = reedMarksGraphics(['ge', 'gg'], names, 16)
-    const withReedsAgain = reedMarksGraphics(['ge', 'gg'], names, 16)
+    const withReeds = reedMarksGraphics(contourPlan(reedRows), reedRows, names, 16)
+    const withReedsAgain = reedMarksGraphics(contourPlan(reedRows), reedRows, names, 16)
     expect(strokeCount(withReeds)).toBeGreaterThan(0)
     expect(strokeCount(withReeds)).toBe(strokeCount(withReedsAgain))
     expect(withReeds.getLocalBounds()).toEqual(withReedsAgain.getLocalBounds())
     withReeds.destroy()
     withReedsAgain.destroy()
 
-    const withoutReeds = reedMarksGraphics(['gg', 'gg'], names, 16)
+    const plainRows = ['ggggg', 'ggggg']
+    const withoutReeds = reedMarksGraphics(contourPlan(plainRows), plainRows, names, 16)
     expect(strokeCount(withoutReeds)).toBe(0)
     withoutReeds.destroy()
+  })
+
+  it('draws reed marks on the reed surface rather than on the reed cells', () => {
+    const strokeCount = (graphic: Graphics): number =>
+      graphic.context.instructions.filter((instruction) => instruction.action === 'stroke').length
+    // The surface, not the grid, decides where a stalk may go: reed cells whose surface was
+    // planned away carry no marks at all.
+    const reedRows = ['ggggg', 'geeeg', 'geeeg', 'geeeg', 'ggggg']
+    const gated = reedMarksGraphics(contourPlan(['ggggg', 'ggggg', 'ggggg']), reedRows, names, 16)
+    expect(strokeCount(gated)).toBe(0)
+    gated.destroy()
+
+    // A diagonal band is where the two disagree: the cells step and the surface cuts across.
+    const diagonal = ['ggggggg', 'geggggg', 'ggeggeg', 'gggeegg', 'ggggegg', 'ggggggg']
+    const onReeds = materialSurface(contourPlan(diagonal), 'reeds')
+    const reedCell = (x: number, y: number): boolean =>
+      names[diagonal[Math.floor(y)]?.[Math.floor(x)] ?? ''] === 'reeds'
+    let disagreements = 0
+    for (let y = 0.5; y < diagonal.length; y += 1) {
+      for (let x = 0.5; x < 7; x += 1) {
+        if (onReeds(x, y) !== reedCell(x, y)) disagreements += 1
+      }
+    }
+    expect(disagreements).toBeGreaterThan(0)
+  })
+
+  it('reports the drawn surface of a material, holes excluded', () => {
+    const plan = contourPlan(['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'])
+    const onWater = materialSurface(plan, 'water')
+    expect(onWater(1.5, 1.5)).toBe(true)
+    expect(onWater(2.5, 2.5)).toBe(false)
+    expect(onWater(0.2, 0.2)).toBe(false)
+    expect(materialSurface(plan, 'reeds')(1.5, 1.5)).toBe(false)
   })
 
   it('uses one signed component path for direct holes and a separate island', () => {

@@ -42,7 +42,7 @@ export function planTerrainContours(
 
   const graph = buildGraph(cells, width, height, componentKeyForCell)
   const workingChains = buildChains(graph.nodes, graph.segments)
-  buildContourReferences(workingChains, settings, layoutHash)
+  buildContourReferences(workingChains, settings)
   const clearanceIndex = buildClearanceIndex(workingChains)
   shapeChains(workingChains, settings, bridgeTaperCells, layoutHash, clearanceIndex)
   repairAndValidateCurveGraph(workingChains, settings.maxDeviationCells)

@@ -436,10 +436,9 @@ function nearbyRawSegments(
 export function buildContourReferences(
   chains: readonly WorkingChain[],
   settings: TerrainContourSettings,
-  layoutHash: number,
 ): void {
   for (const chain of chains) {
-    chain.reference = buildContourReference(chain, settings.junctionTangentCells, layoutHash)
+    chain.reference = buildContourReference(chain, settings.junctionTangentCells)
   }
   separateReferences(chains, settings)
 }

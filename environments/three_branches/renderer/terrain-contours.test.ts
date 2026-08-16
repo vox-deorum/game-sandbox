@@ -158,35 +158,35 @@ function rawPointsWithOffsets(
 }
 
 /**
- * Spread of each polyline around the best-fit line of the raw staircase. A quantized straight run
- * spans about one cell; the line it quantizes spans nothing, so the spread is what is left of the
- * stair rhythm.
+ * Spread of each polyline around its own best-fit line. A staircase oscillates one step around
+ * any line, so its spread is about a cell; the line it quantizes has none, so the spread is what
+ * is left of the stair rhythm. Each polyline is measured against its own fit because the
+ * reference may legitimately sit tilted within tolerance of the raw fit, hinged on its locked
+ * junction ends, and a tilted straight line carries no rhythm.
  */
 function stairResidual(chain: TerrainContourChain): {
   readonly raw: number
   readonly reference: number
   readonly emitted: number
 } {
-  const fit = chain.rawPoints
-  const meanX = fit.reduce((sum, point) => sum + point.x, 0) / fit.length
-  const meanY = fit.reduce((sum, point) => sum + point.y, 0) / fit.length
-  let sxx = 0
-  let sxy = 0
-  let syy = 0
-  for (const point of fit) {
-    sxx += (point.x - meanX) ** 2
-    sxy += (point.x - meanX) * (point.y - meanY)
-    syy += (point.y - meanY) ** 2
-  }
-  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy)
-  const offsetFromLine = (point: ContourCoordinate): number =>
-    (point.x - meanX) * -Math.sin(angle) + (point.y - meanY) * Math.cos(angle)
-  // Trim the locked ends, which are pinned onto the raw staircase by design.
   const spread = (points: readonly ContourCoordinate[]): number => {
-    const middle = points
-      .slice(Math.ceil(points.length * 0.15), Math.floor(points.length * 0.85))
-      .map(offsetFromLine)
-    return Math.max(...middle) - Math.min(...middle)
+    // Trim the locked ends, which are pinned onto the raw staircase by design.
+    const middle = points.slice(Math.ceil(points.length * 0.15), Math.floor(points.length * 0.85))
+    const meanX = middle.reduce((sum, point) => sum + point.x, 0) / middle.length
+    const meanY = middle.reduce((sum, point) => sum + point.y, 0) / middle.length
+    let sxx = 0
+    let sxy = 0
+    let syy = 0
+    for (const point of middle) {
+      sxx += (point.x - meanX) ** 2
+      sxy += (point.x - meanX) * (point.y - meanY)
+      syy += (point.y - meanY) ** 2
+    }
+    const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+    const offsets = middle.map(
+      (point) => (point.x - meanX) * -Math.sin(angle) + (point.y - meanY) * Math.cos(angle),
+    )
+    return Math.max(...offsets) - Math.min(...offsets)
   }
   return {
     raw: spread(chain.rawPoints),
@@ -428,8 +428,8 @@ describe('continuous terrain contour planning', () => {
       const residual = stairResidual(chain)
 
       expect(residual.raw).toBeGreaterThan(0.7)
-      expect(residual.reference).toBeLessThan(0.25)
-      expect(residual.emitted).toBeLessThan(0.35)
+      expect(residual.reference).toBeLessThan(0.1)
+      expect(residual.emitted).toBeLessThan(0.25)
     }
   })
 
@@ -546,16 +546,25 @@ describe('continuous terrain contour planning', () => {
     expect(shore.points.some((point) => point.shorelineFactor === 1)).toBe(true)
   })
 
-  it('widens bridge shoreline taper reach from the configured cell distance', () => {
+  it('ramps bridge shoreline suppression more gently as the taper distance grows', () => {
     const rows = ['ggggggg', 'gwwbwwg', 'ggggggg']
     const defaultShore = plan(rows).chains.find((chain) => chain.shorelineSpans.length > 0)!
     const widerShore = planTerrainContours(rows, names, settings, 0.5).chains.find(
       (chain) => chain.id === defaultShore.id,
     )!
-    const partialCount = (points: readonly { shorelineFactor: number }[]): number =>
-      points.filter((point) => point.shorelineFactor > 0 && point.shorelineFactor < 1).length
-
-    expect(partialCount(widerShore.points)).toBeGreaterThan(partialCount(defaultShore.points))
+    // The taper sets suppression strength alone, so both plans emit the same points and every
+    // point on the ramp is weaker under the wider one.
+    expect(widerShore.points).toHaveLength(defaultShore.points.length)
+    let ramped = 0
+    for (const [index, point] of defaultShore.points.entries()) {
+      const wider = widerShore.points[index]!
+      expect(wider.rawOffset).toBeCloseTo(point.rawOffset, 9)
+      if (point.shorelineFactor <= 0 || point.shorelineFactor >= 1) continue
+      expect(wider.shorelineFactor).toBeLessThan(point.shorelineFactor)
+      ramped += 1
+    }
+    expect(ramped).toBeGreaterThan(0)
+    expect(widerShore.points.some((point) => point.shorelineFactor === 0)).toBe(true)
   })
 
   it('keeps every turning-corridor segment inside its reference tube', () => {
@@ -626,8 +635,10 @@ describe('continuous terrain contour planning', () => {
       { x: 3, y: 3 },
       { x: 1, y: 3 },
     ]
+    // A square pond's corners are genuine shape, so the reference may keep them exactly; the
+    // emitted curve rounds them, so no drawn point sits on a corner itself.
     expect(
-      shore.referencePoints.some((point) =>
+      shore.points.some((point) =>
         corners.some((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9),
       ),
     ).toBe(false)

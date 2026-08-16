@@ -229,9 +229,10 @@ export function normalizeDiagonalTouches(
 }
 
 /**
- * Settle one corner touch. A checkerboard keeps the winner the saddle routing used to pick, so an
- * ambiguous pair still resolves the same way for a given map. Otherwise the touching pair is
- * joined, preferring to rewrite a cell that is not water so shorelines keep their footprint.
+ * Settle one corner touch. A checkerboard has two materials crossing at the same corner and no
+ * reason to prefer either, so the winner is hashed from the corner and the material pair, which
+ * settles it the same way for a given map. Otherwise the touching pair is joined, preferring to
+ * rewrite a cell that is not water so shorelines keep their footprint.
  */
 function resolveTouch(
   grid: string[][],
@@ -252,9 +253,9 @@ function resolveTouch(
   const otherSecond = required(materials[secondOther], 'Visual grid corner material is missing.')
 
   if (otherFirst === otherSecond) {
-    // Both diagonals touch. Keep the pair the saddle rule used to connect and part the other.
+    // Both diagonals touch. Join one pair and part the other, the choice hashed from the corner.
     const pair = [touching, otherFirst].sort() as [string, string]
-    const winner = pair[terrainVariant(2, 'terrain-saddle', column, row, ...pair)]
+    const winner = pair[terrainVariant(2, 'terrain-corner-touch', column, row, ...pair)]
     const losers = winner === touching ? [firstOther, secondOther] : [firstDiagonal, secondDiagonal]
     const winnerCode = codeAt(winner === touching ? firstDiagonal : firstOther)
     for (const index of losers) {

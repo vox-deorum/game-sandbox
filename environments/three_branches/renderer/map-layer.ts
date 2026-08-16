@@ -82,7 +82,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   const seamCover = routeCoverGraphics(art.routes, cellSize)
   const seams = [
     poolingGraphics(art.contours, cellSize),
-    reedMarksGraphics(art.routes.visualRows, names, cellSize),
+    reedMarksGraphics(art.contours, art.routes.visualRows, names, cellSize),
     inkGraphics(art.contours, cellSize, fillPatternFor(art, 'ink', cellSize)),
     hatchGraphics(art.contours, cellSize),
   ] as const
@@ -138,14 +138,13 @@ function fillPatternFor(art: TerrainArt, material: string, cellSize: number): Fi
   return pattern
 }
 
-/** One signed path per component of the material, including only its direct hole rings. */
-export function componentPaths(
+/** The outer ring and direct hole rings of every component of one material. */
+function componentRings(
   plan: TerrainContourPlan,
   material: string,
-  cellSize: number,
-): GraphicsPath[] {
+): { readonly outer: TerrainContourRing; readonly holes: readonly TerrainContourRing[] }[] {
   const rings = new Map(plan.rings.map((ring) => [ring.id, ring]))
-  const paths: GraphicsPath[] = []
+  const parts = []
   for (const component of plan.components) {
     if (component.exterior || component.material !== material) continue
     const outer = rings.get(component.outerRingId)
@@ -156,9 +155,79 @@ export function componentPaths(
         throw new Error(`Terrain component ${component.id} has a missing hole ring.`)
       return hole
     })
-    paths.push(signedComponentPath(outer, holes, cellSize))
+    parts.push({ outer, holes })
   }
-  return paths
+  return parts
+}
+
+/** One signed path per component of the material, including only its direct hole rings. */
+export function componentPaths(
+  plan: TerrainContourPlan,
+  material: string,
+  cellSize: number,
+): GraphicsPath[] {
+  return componentRings(plan, material).map(({ outer, holes }) =>
+    signedComponentPath(outer, holes, cellSize),
+  )
+}
+
+/**
+ * A containment test for the drawn surface of one material, in cell coordinates.
+ *
+ * Decoration scattered by cell has to ask this before it draws. The cell grid and the contour
+ * surface only agree where the boundary runs along a cell edge, so anything placed by cell alone
+ * spills over the boundary wherever it runs at an angle, and its own edge redraws exactly the
+ * staircase the contour pass exists to remove.
+ */
+export function materialSurface(
+  plan: TerrainContourPlan,
+  material: string,
+): (x: number, y: number) => boolean {
+  const parts = componentRings(plan, material).map(({ outer, holes }) => ({
+    bounds: ringBounds(outer.points),
+    outer: outer.points,
+    holes: holes.map((hole) => hole.points),
+  }))
+  return (x, y) =>
+    parts.some(
+      ({ bounds, outer, holes }) =>
+        x >= bounds.left &&
+        x <= bounds.right &&
+        y >= bounds.top &&
+        y <= bounds.bottom &&
+        ringContains(outer, x, y) &&
+        !holes.some((hole) => ringContains(hole, x, y)),
+    )
+}
+
+function ringBounds(points: readonly ContourCoordinate[]): {
+  left: number
+  right: number
+  top: number
+  bottom: number
+} {
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys),
+  }
+}
+
+/** Crossing count of a ray cast from the point, odd meaning the ring encloses it. */
+function ringContains(ring: readonly ContourCoordinate[], x: number, y: number): boolean {
+  let enclosed = false
+  for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+    const corner = ring[index]!
+    const before = ring[previous]!
+    if (corner.y > y === before.y > y) continue
+    const crossing =
+      ((before.x - corner.x) * (y - corner.y)) / (before.y - corner.y) + corner.x
+    if (x < crossing) enclosed = !enclosed
+  }
+  return enclosed
 }
 
 /** Darken one #rrggbb color multiplicatively toward black. */
@@ -329,10 +398,16 @@ export function hatchGraphics(plan: TerrainContourPlan, cellSize: number): Graph
 }
 
 /**
- * Scatter deterministic short stalk strokes inside every reed cell of the visual grid. The marks
- * carry the reed texture until a bolder authored reed frame pass lands in the atlas.
+ * Scatter deterministic short stalk strokes across the reed surface. The marks carry the reed
+ * texture until a bolder authored reed frame pass lands in the atlas.
+ *
+ * The scatter walks cells, since that is what makes it deterministic and evenly dense, but the
+ * reed surface is the smooth contour polygon rather than the cells it was quantized from. Every
+ * mark is placed by cell and then kept only if it lands on that surface, so the stalks stop where
+ * the drawn bank stops instead of drawing the cell staircase back over it.
  */
 export function reedMarksGraphics(
+  plan: TerrainContourPlan,
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,
   cellSize: number,
@@ -342,14 +417,19 @@ export function reedMarksGraphics(
   if (spec.perCell === 0 || spec.opacity <= 0) return marks
   const color = HEARTHSIDE_STYLE.palette[spec.tint]
   const [minimumLength, maximumLength] = spec.lengthCells
+  const onReeds = materialSurface(plan, 'reeds')
   for (const [row, line] of rows.entries()) {
     for (let column = 0; column < line.length; column += 1) {
-      if (groundNameForCode[line[column] ?? ''] !== 'reeds') continue
+      // Cells the surface reaches without being reed cells carry marks too, so the stalks follow
+      // the boundary outward as well as inward.
+      const reedCell = groundNameForCode[line[column] ?? ''] === 'reeds'
+      if (!reedCell && !onReeds(column + 0.5, row + 0.5)) continue
       for (let mark = 0; mark < spec.perCell; mark += 1) {
         const unit = (part: string): number =>
           hashUnit(stableHashParts('reed-mark', part, column, row, mark))
         const x = column + 0.12 + 0.76 * unit('x')
         const y = row + 0.12 + 0.76 * unit('y')
+        if (!onReeds(x, y)) continue
         const length = minimumLength + (maximumLength - minimumLength) * unit('length')
         const angle = -Math.PI / 2 + (unit('angle') - 0.5) * 0.9
         const dx = (Math.cos(angle) * length) / 2

@@ -1,23 +1,21 @@
 /**
  * Reference geometry for terrain contours. The raw boundary polylines trace unit cell edges, so a
  * boundary that really runs at a shallow angle arrives quantized into stair runs of whatever length
- * that angle implies. Shaping and validation measure deviation against this reference instead, a
- * heavily smoothed copy of the raw boundary held within a fixed drift of it: that recovers the line
- * the stairs quantize at every run length, where corner treatment alone only reshapes the corners.
- * Locked geometry keeps its raw shape, so chains still meet their junctions exactly.
+ * that angle implies. Shaping and validation measure deviation against this reference instead: the
+ * simplest polyline that stays within a fixed tolerance of the boundary's segment midpoints.
+ *
+ * Quantization error is bounded in amplitude, never in wavelength, so smoothing cannot remove it:
+ * whatever window a filter uses, some map has stair runs longer than its reach, and they survive.
+ * Tolerance simplification matches the error instead. The midpoints of the segments quantizing a
+ * straight line are collinear on that line at every run length, so every staircase fits inside the
+ * tolerance tube of one chord and collapses to it, while a genuine corner stays because it does
+ * not fit. Locked geometry keeps its raw shape, so chains still meet their junctions exactly.
  */
 
-import { distance, stableHashParts } from '@renderers/base/math.js'
+import { distance } from '@renderers/base/math.js'
 
-import { shapeTerrainCurve } from './terrain-curves.js'
-import { EPSILON, required } from './terrain-helpers.js'
-import type {
-  ContourCoordinate,
-  ContourReference,
-  TerrainContourSpan,
-  TerrainCurveProfile,
-  TerrainCurveSourcePoint,
-} from './types.js'
+import { EPSILON, projectToSegment, required } from './terrain-helpers.js'
+import type { ContourCoordinate, ContourReference, TerrainContourSpan } from './types.js'
 
 /** A closed raw-arc interval used for locks and shoreline treatment. */
 export interface OffsetInterval {
@@ -42,37 +40,44 @@ export interface ReferenceSegment {
 }
 
 /**
- * How far the reference may leave the raw boundary. A quantized straight run sits at most half a
- * step from the line it approximates, so this never binds on a staircase; it bounds how much shape
- * a genuinely sharp feature, such as a one-cell inlet, may lose.
+ * How far the reference may leave the raw boundary, and therefore the simplification tolerance.
+ * The midpoints of a quantized straight run sit on the line it approximates, so this never binds
+ * on a staircase; it bounds how much shape a genuinely sharp feature, such as a one-cell inlet,
+ * may lose.
  */
 export const MAX_REFERENCE_DRIFT_CELLS = 0.55
 
-/** Spacing of the reference samples along the raw boundary, in cells. */
+/** Spacing the simplified chords are resampled back to, in cells. */
 const REFERENCE_SPACING_CELLS = 1
-
-/**
- * Half-width of the fitting window in samples, and how many times the fit runs. Repeating a
- * modest window reaches further than one wide window without the overshoot a wide quadratic
- * develops on a winding bank.
- */
-const SMOOTH_RADIUS_SAMPLES = 5
-const SMOOTH_ROUNDS = 4
 
 /** Return the mutable reference slot of a working chain or fail loudly. */
 export function referenceOf(chain: { readonly reference?: ContourReference }): ContourReference {
   return required(chain.reference, 'Terrain contour chain has no reference geometry.')
 }
 
+/** One candidate vertex of the simplified reference. */
+interface ReferenceCandidate {
+  readonly offset: number
+  readonly point: ContourCoordinate
+  readonly locked: boolean
+  /** Whether this candidate is a run midpoint, sitting on the line its run quantizes. */
+  readonly midline: boolean
+}
+
+/** One maximal collinear stretch of raw segments. */
+interface SpanRun {
+  readonly startOffset: number
+  readonly endOffset: number
+}
+
 /**
- * Build the smoothed reference polyline for one chain. The curve engine resamples by raw arc
+ * Build the simplified reference polyline for one chain. The curve engine resamples by raw arc
  * length and pins locked samples onto the raw boundary, so its own output offsets are the raw
  * offsets this reference reports.
  */
 export function buildContourReference(
   chain: ReferenceSourceChain,
   junctionTangentCells: number,
-  layoutHash: number,
 ): ContourReference {
   const { rawPoints, spans, rawLength, closed } = chain
   const fixed = spans
@@ -82,134 +87,217 @@ export function buildContourReference(
   const lockedAt = (offset: number): boolean =>
     offsetLocked(offset, fixed, rawLength, closed, junctionTangentCells)
 
-  const sourceOffsets = new Map<string, number>()
-  const addSource = (offset: number): void => {
+  // Candidate vertices. Quantization noise lives entirely inside the straight runs of the raw
+  // boundary, so a free run contributes only its midpoint, which sits on the line the run
+  // quantizes; shape can only live at the corners between runs, so each run boundary joins as
+  // well, and simplification drops the corners of a staircase, which stay within tolerance of the
+  // run-midpoint chord, while keeping a genuine corner exactly. Locked stretches carry their raw
+  // vertices and tangent points instead, since a lock must keep the raw shape.
+  const offsetByKey = new Map<string, number>()
+  const midlineKeys = new Set<string>()
+  const addOffset = (offset: number, midline = false): void => {
     const normalized = normalizedOffset(offset, rawLength, closed)
-    sourceOffsets.set(contourOffsetKey(normalized), normalized)
+    const key = contourOffsetKey(normalized)
+    offsetByKey.set(key, normalized)
+    if (midline) midlineKeys.add(key)
   }
-  // Sample on the profile's own grid rather than at every raw vertex, so the engine's resampling
-  // lands on these offsets exactly. Carrying the vertices instead would leave the smoothing kernel
-  // working on unevenly spaced points and would strand near-duplicate samples beside them.
-  const spacing = REFERENCE_SPACING_CELLS
-  for (let step = 0; step * spacing < rawLength; step += 1) addSource(step * spacing)
-  if (!closed) addSource(rawLength)
+  for (const span of spans) {
+    if (lockedAt(span.startOffset)) addOffset(span.startOffset)
+  }
+  for (const run of collinearRuns(rawPoints, spans)) {
+    addOffset(run.startOffset)
+    const midpoint = (run.startOffset + run.endOffset) / 2
+    if (!lockedAt(midpoint)) addOffset(midpoint, true)
+  }
+  if (!closed) addOffset(rawLength)
   for (const offset of contourLockOffsets(fixed, rawLength, closed, junctionTangentCells)) {
-    addSource(offset)
+    addOffset(offset)
   }
-  const source: TerrainCurveSourcePoint[] = [...sourceOffsets.values()]
-    .sort((first, second) => first - second)
-    .map((offset) => ({
-      ...rawPointAt(offset, rawPoints, spans, rawLength, closed),
+  const candidates: ReferenceCandidate[] = [...offsetByKey.entries()]
+    .sort(([, first], [, second]) => first - second)
+    .map(([key, offset]) => ({
+      offset,
+      point: rawPointAt(offset, rawPoints, spans, rawLength, closed),
       locked: lockedAt(offset),
+      midline: midlineKeys.has(key),
     }))
-  // Structures, map borders, and saddle diamonds are locked end to end, so smoothing them would
-  // only pin every sample back onto the boundary they started from. Their reference is the raw
-  // polyline itself, carrying its vertices alone rather than a sampling grid nothing can move.
-  const sourceOffsetList = [...sourceOffsets.values()].sort((first, second) => first - second)
-  if (source.every((point) => point.locked)) return rawReference(source, sourceOffsetList, closed)
-
-  const smoothed = smoothSamples(source, closed)
-
-  const points: ContourCoordinate[] = []
-  const rawOffsets: number[] = []
-  const offsets: number[] = []
-  const locked: boolean[] = []
-  let accumulated = 0
-  for (const [index, point] of smoothed.entries()) {
-    const rawOffset = required(sourceOffsetList[index], 'Terrain reference offset is missing.')
-    const anchor = rawPointAt(rawOffset, rawPoints, spans, rawLength, closed)
-    const isLocked = required(source[index], 'Terrain reference sample is missing.').locked
-    // A locked sample stays pinned onto the raw boundary, so it has no drift to bound.
-    const held = isLocked
-      ? { x: anchor.x, y: anchor.y }
-      : driftLimited(anchor, point, MAX_REFERENCE_DRIFT_CELLS)
-    if (index > 0) {
-      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), held)
-      if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
-      accumulated += step
-    }
-    points.push(held)
-    rawOffsets.push(rawOffset)
-    offsets.push(accumulated)
-    locked.push(isLocked)
-  }
-  const first = required(points[0], 'Terrain contour reference is empty.')
-  const length = closed
-    ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), first)
-    : accumulated
-  return { points, rawOffsets, offsets, length, locked }
+  const simplified = simplifyCandidates(candidates, closed)
+  return assembleReference(simplified, rawLength, closed)
 }
 
 /**
- * Low-pass the samples by fitting a quadratic through a window around each one.
- *
- * Plain averaging is the wrong tool here, however many times it runs: it pulls every bend toward
- * its chord, so on a bank that curves it spends the whole drift allowance straightening the arc
- * rather than the stairs, and the drift clamp then scales back the stair correction along with
- * it. A quadratic fit reproduces a bend of that shape exactly and removes only what it cannot
- * follow, which is the quantization rhythm. One window is too short to see past a long stair run,
- * so the fit repeats: each round reaches further while still reproducing the bend underneath.
+ * Group the raw segments into maximal collinear runs. The seam of a closed chain always starts a
+ * run: a collinear seam candidate sits on its neighbors' chord and simplifies away, so merging
+ * across it would buy nothing.
  */
-function smoothSamples(
-  samples: readonly TerrainCurveSourcePoint[],
-  closed: boolean,
-): ContourCoordinate[] {
-  const count = samples.length
-  const radius = Math.min(SMOOTH_RADIUS_SAMPLES, Math.floor((count - 1) / 2))
-  if (radius < 2) return samples.map(({ x, y }) => ({ x, y }))
-  let squares = 0
-  let quads = 0
-  for (let offset = -radius; offset <= radius; offset += 1) {
-    squares += offset * offset
-    quads += offset ** 4
+function collinearRuns(
+  rawPoints: readonly ContourCoordinate[],
+  spans: readonly TerrainContourSpan[],
+): SpanRun[] {
+  const runs: SpanRun[] = []
+  const direction = (index: number): ContourCoordinate => {
+    const from = required(rawPoints[index], 'Terrain contour raw point is missing.')
+    const to = required(rawPoints[index + 1], 'Terrain contour raw point is missing.')
+    return { x: to.x - from.x, y: to.y - from.y }
   }
-  const determinant = (radius * 2 + 1) * quads - squares * squares
-  const weights = Array.from({ length: radius * 2 + 1 }, (_, index) => {
-    const offset = index - radius
-    return (quads - squares * offset * offset) / determinant
-  })
-  let positions = samples.map(({ x, y }) => ({ x, y }))
-  for (let round = 0; round < SMOOTH_ROUNDS; round += 1) {
-    const current = positions
-    positions = current.map((point, index) => {
-      if (required(samples[index], 'Terrain reference sample is missing.').locked) return point
-      let x = 0
-      let y = 0
-      for (let offset = -radius; offset <= radius; offset += 1) {
-        // An open chain reflects at its ends, which keeps the window centred instead of dragging
-        // the last samples toward whichever neighbor happens to exist.
-        const at = closed ? (index + offset + count) % count : reflectIndex(index + offset, count)
-        const neighbor = required(current[at], 'Terrain reference neighbor is missing.')
-        const weight = required(weights[offset + radius], 'Terrain reference weight is missing.')
-        x += neighbor.x * weight
-        y += neighbor.y * weight
-      }
-      return { x, y }
+  let start = 0
+  for (let index = 1; index <= spans.length; index += 1) {
+    if (index < spans.length) {
+      const previous = direction(index - 1)
+      const current = direction(index)
+      const cross = previous.x * current.y - previous.y * current.x
+      const dot = previous.x * current.x + previous.y * current.y
+      if (Math.abs(cross) <= EPSILON && dot > 0) continue
+    }
+    runs.push({
+      startOffset: required(spans[start], 'Terrain contour span is missing.').startOffset,
+      endOffset: required(spans[index - 1], 'Terrain contour span is missing.').endOffset,
     })
+    start = index
   }
-  return positions
+  return runs
 }
 
-function reflectIndex(index: number, count: number): number {
-  if (index < 0) return Math.min(count - 1, -index)
-  if (index >= count) return Math.max(0, count * 2 - 2 - index)
-  return index
+/**
+ * Keep every locked candidate and, inside each free run between them, the minimal vertices whose
+ * chords stay within the drift tolerance of the candidates they span.
+ */
+function simplifyCandidates(
+  candidates: readonly ReferenceCandidate[],
+  closed: boolean,
+): ReferenceCandidate[] {
+  const count = candidates.length
+  if (count < 3) return [...candidates]
+  const kept = candidates.map((candidate) => candidate.locked)
+  const anchors = candidates.flatMap((candidate, index) => (candidate.locked ? [index] : []))
+  if (anchors.length === 0) {
+    // A closed chain with nothing locked. Four spread anchors keep the loop a loop: with fewer, a
+    // pond within tolerance of a line would collapse onto it. Midline candidates are preferred so
+    // the anchors sit on the quantized line rather than hinging chords on a stair corner.
+    const midline = candidates.flatMap((candidate, index) => (candidate.midline ? [index] : []))
+    const pool = midline.length >= 4 ? midline : candidates.map((_, index) => index)
+    for (const quarter of [0, 1, 2, 3]) {
+      const target = (quarter * count) / 4
+      let best = pool[0]!
+      for (const index of pool) {
+        if (Math.abs(index - target) < Math.abs(best - target)) best = index
+      }
+      if (!kept[best]) {
+        kept[best] = true
+        anchors.push(best)
+      }
+    }
+    anchors.sort((first, second) => first - second)
+  }
+  const runs: [number, number][] = []
+  for (let index = 0; index + 1 < anchors.length; index += 1) {
+    runs.push([anchors[index]!, anchors[index + 1]!])
+  }
+  if (closed) runs.push([anchors[anchors.length - 1]!, anchors[0]! + count])
+  else {
+    // Open chains lock their end zones, so the ends are anchors already; guard the degenerate
+    // configuration where they somehow are not.
+    if (anchors[0]! > 0) runs.push([0, anchors[0]!])
+    if (anchors[anchors.length - 1]! < count - 1) runs.push([anchors[anchors.length - 1]!, count - 1])
+    kept[0] = true
+    kept[count - 1] = true
+  }
+  const at = (index: number): ReferenceCandidate => candidates[index % count]!
+  for (const run of runs) {
+    const stack: [number, number][] = [run]
+    while (stack.length > 0) {
+      const [from, to] = stack.pop()!
+      if (to - from < 2) continue
+      let farthest = -1
+      let largest = MAX_REFERENCE_DRIFT_CELLS
+      for (let index = from + 1; index < to; index += 1) {
+        const foot = projectToSegment(at(index).point, at(from).point, at(to).point)
+        const deviation = distance(at(index).point, foot)
+        if (deviation > largest) {
+          largest = deviation
+          farthest = index
+        }
+      }
+      if (farthest < 0) continue
+      // The violation says where the chord must bend, and the bend goes to the nearest candidate
+      // sitting on the quantized line, so a staircase corner never becomes a hinge that would
+      // drag the chord off the line and push its neighbors over tolerance in turn. Only when the
+      // window holds no midline candidate is the violation a genuine corner, kept exactly.
+      let hinge = -1
+      for (let index = from + 1; index < to; index += 1) {
+        if (!at(index).midline) continue
+        if (hinge < 0 || Math.abs(index - farthest) < Math.abs(hinge - farthest)) hinge = index
+      }
+      if (hinge < 0) hinge = farthest
+      kept[hinge % count] = true
+      stack.push([from, hinge], [hinge, to])
+    }
+  }
+  return candidates.filter((_, index) => kept[index])
 }
 
-/** The reference of a fully locked chain: its own samples, which nothing may move. */
-function rawReference(
-  source: readonly TerrainCurveSourcePoint[],
-  rawOffsets: readonly number[],
+/**
+ * Resample the simplified chords back to reference spacing and accumulate arc offsets. A closed
+ * reference regains a vertex at raw offset zero, interpolated on its wrap chord, because the
+ * raw-offset lookups treat the first vertex as the start of the raw period.
+ */
+function assembleReference(
+  simplified: ReferenceCandidate[],
+  rawLength: number,
   closed: boolean,
 ): ContourReference {
-  const points = source.map(({ x, y }) => ({ x, y }))
-  return withReferencePoints(
-    { points, rawOffsets, offsets: [], length: 0, locked: points.map(() => true) },
-    points,
-    closed,
-  )
+  const first = required(simplified[0], 'Terrain contour reference is empty.')
+  if (closed && first.offset > EPSILON) {
+    const last = required(simplified.at(-1), 'Terrain contour reference is empty.')
+    const gap = rawLength - last.offset + first.offset
+    const amount = gap <= EPSILON ? 0 : (rawLength - last.offset) / gap
+    simplified.unshift({
+      offset: 0,
+      point: {
+        x: last.point.x + (first.point.x - last.point.x) * amount,
+        y: last.point.y + (first.point.y - last.point.y) * amount,
+      },
+      locked: false,
+    })
+  }
+  const points: ContourCoordinate[] = []
+  const rawOffsets: number[] = []
+  const locked: boolean[] = []
+  for (const [index, vertex] of simplified.entries()) {
+    points.push({ x: vertex.point.x, y: vertex.point.y })
+    rawOffsets.push(vertex.offset)
+    locked.push(vertex.locked)
+    const next =
+      index + 1 < simplified.length ? simplified[index + 1] : closed ? simplified[0] : undefined
+    if (next === undefined) continue
+    const nextOffset = index + 1 < simplified.length ? next.offset : rawLength
+    const pieces = Math.ceil(distance(vertex.point, next.point) / REFERENCE_SPACING_CELLS)
+    for (let piece = 1; piece < pieces; piece += 1) {
+      const amount = piece / pieces
+      points.push({
+        x: vertex.point.x + (next.point.x - vertex.point.x) * amount,
+        y: vertex.point.y + (next.point.y - vertex.point.y) * amount,
+      })
+      rawOffsets.push(vertex.offset + (nextOffset - vertex.offset) * amount)
+      locked.push(false)
+    }
+  }
+  const offsets: number[] = []
+  let accumulated = 0
+  for (const [index, point] of points.entries()) {
+    if (index > 0) {
+      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), point)
+      if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
+      accumulated += step
+    }
+    offsets.push(accumulated)
+  }
+  const start = required(points[0], 'Terrain contour reference is empty.')
+  const length = closed
+    ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), start)
+    : accumulated
+  return { points, rawOffsets, offsets, length, locked }
 }
-
 
 /** Rebuild a reference around moved points, keeping their raw offsets and lock flags. */
 export function withReferencePoints(
@@ -235,21 +323,6 @@ export function withReferencePoints(
     length: closed
       ? accumulated + distance(required(points.at(-1), 'Terrain contour reference is empty.'), first)
       : accumulated,
-  }
-}
-
-/** Hold one smoothed point within its drift bound of the raw position it was sampled from. */
-function driftLimited(
-  anchor: ContourCoordinate,
-  point: ContourCoordinate,
-  bound: number,
-): ContourCoordinate {
-  const drift = distance(anchor, point)
-  if (drift <= bound) return { x: point.x, y: point.y }
-  const scale = drift <= EPSILON ? 0 : bound / drift
-  return {
-    x: anchor.x + (point.x - anchor.x) * scale,
-    y: anchor.y + (point.y - anchor.y) * scale,
   }
 }
 
@@ -395,6 +468,21 @@ export function rawPointAt(
   return { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount }
 }
 
+/**
+ * Arc distance from one raw offset to the nearest locked geometry: a fixed span, or either end of
+ * an open chain, which is pinned onto the junction the chain meets there.
+ */
+function lockedArcDistance(
+  offset: number,
+  fixedIntervals: readonly OffsetInterval[],
+  rawLength: number,
+  closed: boolean,
+): number {
+  const normalized = normalizedOffset(offset, rawLength, closed)
+  const toFixed = nearestIntervalDistance(normalized, fixedIntervals, rawLength, closed)
+  return closed ? toFixed : Math.min(toFixed, normalized, rawLength - normalized)
+}
+
 /** Whether one raw offset sits inside locked geometry. */
 export function offsetLocked(
   offset: number,
@@ -403,17 +491,7 @@ export function offsetLocked(
   closed: boolean,
   tangentLength: number,
 ): boolean {
-  const normalized = normalizedOffset(offset, rawLength, closed)
-  if (
-    !closed &&
-    (normalized <= tangentLength + EPSILON || rawLength - normalized <= tangentLength + EPSILON)
-  ) {
-    return true
-  }
-  return (
-    nearestIntervalDistance(normalized, fixedIntervals, rawLength, closed) <=
-    tangentLength + EPSILON
-  )
+  return lockedArcDistance(offset, fixedIntervals, rawLength, closed) <= tangentLength + EPSILON
 }
 
 /** Raw offsets that must appear as pinned curve vertices around locked geometry. */
