@@ -166,7 +166,12 @@
     "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameRatio": 0.68 },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
-  "props": { "defaultScale": 0.14, "scaleByType": { "bell": 0.2 } },
+  "props": {
+    "defaultScale": 0.14,
+    "scaleByType": { "bell": 0.36, "pump": 0.33 },
+    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } }
+  },
+  "scenery": { "defaultScale": 0.25, "scaleByType": { "crate": 0.3 } },
   "propEffects": {
     "lantern": {
       "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],

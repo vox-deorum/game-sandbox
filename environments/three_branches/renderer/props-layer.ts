@@ -3,13 +3,18 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
 import { emissiveSpec, hasPropEffect, propEffectFrames, propEffectSpec } from './effects.js'
 import { CATALOG } from './overlay.js'
-import { HEARTHSIDE_STYLE, PALETTE, propVisualScale } from './presentation.js'
+import {
+  HEARTHSIDE_STYLE,
+  PALETTE,
+  propEffectAnchor,
+  propVisualScale,
+  sceneryVisualScale,
+} from './presentation.js'
 import { isShippedPropType, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 import { frameRectangle } from './tint.js'
 
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
-const SCENERY_SCALE = 0.25
 const EFFECT_SCALE = 0.25
 const FIXED_MONUMENT_TYPES = new Set(['pump', 'bell'])
 
@@ -144,7 +149,12 @@ export function createPropLayer(
           node.effect.tint = HEARTHSIDE_STYLE.palette[effect.tint]
           node.effect.alpha = effect.alpha
           node.effect.scale.set(EFFECT_SCALE * effect.scale)
-          node.effect.position.set(centerX(node.item) + effect.offsetX, centerY(node.item) + effect.offsetY)
+          const propScale = propVisualScale(node.item.type)
+          const anchor = propEffectAnchor(node.item.type)
+          node.effect.position.set(
+            centerX(node.item) + anchor.x * propScale + effect.offsetX,
+            centerY(node.item) + anchor.y * propScale + effect.offsetY,
+          )
           node.effect.rotation = visualFacing(node.item) + effect.rotation
         }
         if (emissive !== null) {
@@ -203,8 +213,18 @@ function createPropNode(item: StaticDrawable): PropNode {
 
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
-  if (!(root instanceof Container) || root.getChildByLabel('scenery-art') !== null) return
-  const artNode = sprite('scenery-art', texture(art.scenery, sceneryFrame(item.type, item.id)), SCENERY_SCALE)
+  if (!(root instanceof Container)) return
+  const existing = root.getChildByLabel('scenery-art')
+  if (existing instanceof Sprite) {
+    existing.scale.set(sceneryVisualScale(item.type))
+    return
+  }
+  if (existing !== null) return
+  const artNode = sprite(
+    'scenery-art',
+    texture(art.scenery, sceneryFrame(item.type, item.id)),
+    sceneryVisualScale(item.type),
+  )
   artNode.tint = HEARTHSIDE_STYLE.palette[item.type === 'pine' ? 'pine' : 'timber']
   root.addChild(artNode)
   const fallbackNode = root.getChildByLabel('scenery-fallback')

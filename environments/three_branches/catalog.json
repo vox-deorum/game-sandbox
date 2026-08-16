@@ -13,8 +13,8 @@
     {"token": "plot", "width": 3, "height": 2, "shape": "box", "collision_scale": 1.0, "activity": "tending_plot", "states": ["tended", "overgrown"], "start": "overgrown", "transition": "timed", "duration": 600},
     {"token": "hearth", "width": 1, "height": 1, "shape": "circle", "collision_scale": 1.0, "activity": "tending_hearth", "states": ["lit", "unlit"], "start": "unlit", "transition": "toggle", "duration": null},
     {"token": "repair_bench", "width": 2, "height": 1, "shape": "box", "collision_scale": 1.0, "activity": "working_bench", "states": ["busy", "idle"], "start": "idle", "transition": "occupancy", "duration": null},
-    {"token": "pump", "width": 1, "height": 1, "shape": "circle", "collision_scale": 0.4, "activity": "working_pump", "states": ["flowing", "idle"], "start": "idle", "transition": "timed", "duration": 10},
-    {"token": "bell", "width": 1, "height": 1, "shape": "circle", "collision_scale": 0.4, "activity": "ringing_bell", "states": ["ringing", "silent"], "start": "silent", "transition": "timed", "duration": 40}
+    {"token": "pump", "width": 1, "height": 1, "shape": "circle", "collision_scale": 1, "activity": "working_pump", "states": ["flowing", "idle"], "start": "idle", "transition": "timed", "duration": 10},
+    {"token": "bell", "width": 1, "height": 1, "shape": "circle", "collision_scale": 1, "activity": "ringing_bell", "states": ["ringing", "silent"], "start": "silent", "transition": "timed", "duration": 40}
   ],
   "scenery": [
     {"token": "pine", "width": 1, "height": 1, "shape": "circle"},

@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { RULES } from './overlay.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
+import { coordinateKey } from './terrain-contour-graph.js'
 import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
 import { planTerrainContours } from './terrain-contours.js'
 import { planTerrainRoutes } from './terrain-routes.js'
@@ -242,9 +243,15 @@ export function contourSvg(scene: ContourDebugScene, options: SvgOptions): strin
     raw.push(path(chain.rawPoints, false))
     reference.push(path(closedPolyline(chain.referencePoints, chain.closed), chain.closed))
     drawn.push(path(closedPoints(chain), false))
-    for (const [index, point] of chain.referencePoints.entries()) {
+    // The reference and the drawn curve are sampled at their own spacings, so a reference vertex is
+    // read as locked by position rather than by index: a lock pins the drawn sample there onto the
+    // same raw point the reference vertex holds.
+    const lockedPoints = new Set(
+      chain.points.filter((point) => point.locked).map((point) => coordinateKey(point)),
+    )
+    for (const point of chain.referencePoints) {
       if (!visible(point)) continue
-      const locked = chain.points[index]?.locked === true ? ' class="locked"' : ''
+      const locked = lockedPoints.has(coordinateKey(point)) ? ' class="locked"' : ''
       reference.push(`<circle cx="${round(point.x)}" cy="${round(point.y)}" r="0.06"${locked}/>`)
     }
   }

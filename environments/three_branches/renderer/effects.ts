@@ -56,7 +56,7 @@ export function propEffectSpec(
     case 'shrine':
       return { frame, tint: 'violet', alpha: 0.45 + wave * 0.16, scale: 0.86 + wave * 0.1, offsetX: 0, offsetY: -4 - wave * 3, rotation: wave * 0.08, phase }
     case 'pump':
-      return { frame, tint: 'water', alpha: 0.72 + wave * 0.14, scale: 0.94 + wave * 0.06, offsetX: 2.9, offsetY: -4 + wave * 2, rotation: 0, phase }
+      return { frame, tint: 'water', alpha: 0.72 + wave * 0.14, scale: 0.94 + wave * 0.06, offsetX: 0, offsetY: wave * 2, rotation: 0, phase }
     case 'bell':
       return { frame, tint: 'gilt', alpha: 0.58 + wave * 0.2, scale: 1, offsetX: 0, offsetY: -5, rotation: wave * 0.12, phase }
   }

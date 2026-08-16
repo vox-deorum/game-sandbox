@@ -255,6 +255,20 @@ export interface PhaseGrade {
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
+interface VisualScaleTreatment {
+  defaultScale: number
+  scaleByType: Readonly<Record<string, number>>
+}
+
+export interface SourceAnchor {
+  x: number
+  y: number
+}
+
+interface PropVisualTreatment extends VisualScaleTreatment {
+  effectAnchorByType: Readonly<Record<string, SourceAnchor>>
+}
+
 export interface HearthsideStyle {
   palette: HearthsidePalette
   transition: { naturalMs: number; settleGraceMs: number }
@@ -279,10 +293,8 @@ export interface HearthsideStyle {
     walk: { frames: readonly string[]; frameRatio: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
-  props: {
-    defaultScale: number
-    scaleByType: Readonly<Record<string, number>>
-  }
+  props: PropVisualTreatment
+  scenery: VisualScaleTreatment
   propEffects: Readonly<Record<string, { frames: readonly string[]; frameRate: number }>>
   emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
   cranes: {
@@ -338,7 +350,17 @@ export function phaseGrade(phase: string): PhaseGrade | null {
 
 /** Resolve one complete prop-still scale from the validated visual calibration. */
 export function propVisualScale(type: string): number {
-  return HEARTHSIDE_STYLE.props.scaleByType[type] ?? HEARTHSIDE_STYLE.props.defaultScale
+  return visualScaleFor(type, HEARTHSIDE_STYLE.props)
+}
+
+/** Resolve an effect anchor measured from the center of a complete prop source canvas. */
+export function propEffectAnchor(type: string): SourceAnchor {
+  return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
+}
+
+/** Resolve one scenery sprite scale from the validated visual calibration. */
+export function sceneryVisualScale(type: string): number {
+  return visualScaleFor(type, HEARTHSIDE_STYLE.scenery)
 }
 
 /** Validate an injected document for tests and future configuration edits. */
@@ -351,6 +373,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'phaseGrades',
     'characters',
     'props',
+    'scenery',
     'propEffects',
     'emissives',
     'cranes',
@@ -511,7 +534,16 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     },
   }
 
-  const props = propScaleTreatment(source.props, 'presentation.props')
+  const props = propVisualTreatment(
+    source.props,
+    'presentation.props',
+    CATALOG.props.map((prop) => prop.token),
+  )
+  const scenery = visualScaleTreatment(
+    source.scenery,
+    'presentation.scenery',
+    CATALOG.scenery.map((item) => item.token),
+  )
 
   const effectsFrames = framesFor('effects')
   const propEffectsSource = exactRecord(source.propEffects, 'presentation.propEffects', [
@@ -582,30 +614,62 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     phaseGrades,
     characters,
     props,
+    scenery,
     propEffects,
     emissives,
     cranes,
   }
 }
 
-function propScaleTreatment(value: unknown, name: string): HearthsideStyle['props'] {
+function visualScaleTreatment(
+  value: unknown,
+  name: string,
+  knownTypes: readonly string[],
+): VisualScaleTreatment {
   const source = exactRecord(value, name, ['defaultScale', 'scaleByType'])
-  const overrides = recordWithOptional(
-    source.scaleByType,
-    `${name}.scaleByType`,
-    [],
-    CATALOG.props.map((prop) => prop.token),
-  )
-  const scaleByType = Object.fromEntries(
-    Object.entries(overrides).map(([type, scale]) => [
-      type,
-      boundedNumber(scale, `${name}.scaleByType.${type}`, 0.05, 0.5, true),
-    ]),
-  )
+  const overrides = recordWithOptional(source.scaleByType, `${name}.scaleByType`, [], knownTypes)
   return {
     defaultScale: boundedNumber(source.defaultScale, `${name}.defaultScale`, 0.05, 0.5, true),
-    scaleByType,
+    scaleByType: Object.fromEntries(
+      Object.entries(overrides).map(([type, scale]) => [
+        type,
+        boundedNumber(scale, `${name}.scaleByType.${type}`, 0.05, 0.5, true),
+      ]),
+    ),
   }
+}
+
+function propVisualTreatment(
+  value: unknown,
+  name: string,
+  knownTypes: readonly string[],
+): PropVisualTreatment {
+  const source = exactRecord(value, name, ['defaultScale', 'scaleByType', 'effectAnchorByType'])
+  const scales = visualScaleTreatment(
+    { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
+    name,
+    knownTypes,
+  )
+  const anchors = recordWithOptional(source.effectAnchorByType, `${name}.effectAnchorByType`, [], knownTypes)
+  return {
+    ...scales,
+    effectAnchorByType: Object.fromEntries(
+      Object.entries(anchors).map(([type, value]) => {
+        const anchor = exactRecord(value, `${name}.effectAnchorByType.${type}`, ['x', 'y'])
+        return [
+          type,
+          {
+            x: boundedNumber(anchor.x, `${name}.effectAnchorByType.${type}.x`, -192, 192),
+            y: boundedNumber(anchor.y, `${name}.effectAnchorByType.${type}.y`, -128, 128),
+          },
+        ]
+      }),
+    ),
+  }
+}
+
+function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {
+  return treatment.scaleByType[type] ?? treatment.defaultScale
 }
 
 function contourTreatment(value: unknown, name: string): TerrainContourTreatment {
