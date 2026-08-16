@@ -9,7 +9,7 @@ import { frameRectangle } from './tint.js'
 
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
-const PROP_SCALE = 0.125
+const PROP_SCALE = 0.14
 const SCENERY_SCALE = 0.25
 const EFFECT_SCALE = 0.25
 
@@ -39,6 +39,7 @@ interface PropNode {
   item: StaticDrawable
   root: Container
   fallback: Graphics
+  shadow: Sprite
   still: Sprite
   effect: Sprite
   emissive: Sprite
@@ -89,6 +90,8 @@ export function createPropLayer(
     if (art === null) return
     const shipped = isShippedPropType(node.item.type)
     node.fallback.visible = !shipped
+    node.shadow.visible = shipped
+    node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
     node.still.visible = shipped
     node.still.texture = shipped ? texture(art.props, propTreatment(node.item.type, state).frame) : Texture.EMPTY
   }
@@ -171,14 +174,15 @@ function createPropNode(item: StaticDrawable): PropNode {
   const root = new Container({ label: `prop:${item.id}` })
   root.position.set(centerX(item), centerY(item))
   root.rotation = facing(item.facing)
+  const shadow = propShadow(item)
   const fallbackNode = fallback(item, true)
   const still = propSprite('prop-still', Texture.EMPTY)
-  root.addChild(fallbackNode, still)
+  root.addChild(shadow, fallbackNode, still)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.visible = false
   emissive.visible = false
-  return { item, root, fallback: fallbackNode, still, effect, emissive, state: null }
+  return { item, root, fallback: fallbackNode, shadow, still, effect, emissive, state: null }
 }
 
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
@@ -196,14 +200,29 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
   const color = interactive ? PALETTE.prop : PALETTE.scenery
   if (item.shape === 'circle') node.circle(0, 0, Math.min(item.rect.width, item.rect.height) / 2).fill(color)
   else {
-    const turned = item.facing === 'east' || item.facing === 'west'
-    const width = turned ? item.rect.height : item.rect.width
-    const height = turned ? item.rect.width : item.rect.height
+    const { width, height } = localFootprint(item)
     node.rect(-width / 2, -height / 2, width, height).fill(color)
   }
   return node
 }
 
+function propShadow(item: StaticDrawable): Sprite {
+  const shadow = sprite('prop-contact-shadow', Texture.EMPTY, 1)
+  const { width, height } = localFootprint(item)
+  shadow.scale.set((width * 0.9) / 192, (height * 0.6) / 128)
+  shadow.tint = HEARTHSIDE_STYLE.palette.backdrop
+  shadow.alpha = 0.25
+  shadow.visible = false
+  return shadow
+}
+
+function localFootprint(item: StaticDrawable): { width: number; height: number } {
+  const turned = item.facing === 'east' || item.facing === 'west'
+  return {
+    width: turned ? item.rect.height : item.rect.width,
+    height: turned ? item.rect.width : item.rect.height,
+  }
+}
 function sprite(label: string, frame: Texture, scale: number): Sprite {
   const node = new Sprite({ label, texture: frame })
   node.anchor.set(0.5)
@@ -236,6 +255,7 @@ function framesFor(name: 'props' | 'scenery' | 'effects', atlasTexture: Texture)
   return Object.fromEntries(atlas.frames.names.map((frame) => [frame, new Texture({ source: atlasTexture.source, frame: frameRectangle(atlas.frames, frame) })]))
 }
 function preflightArt(art: PropArt): void {
+  texture(art.effects, 'characterShadow')
   for (const scenery of CATALOG.scenery) {
     if (scenery.token === 'pine') {
       texture(art.scenery, 'pineA')

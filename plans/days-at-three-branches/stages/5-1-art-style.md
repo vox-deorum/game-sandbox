@@ -180,7 +180,7 @@ After visual acceptance, tests cover every catalog state mapping, enabled-type p
 
 ### Prop sign-off
 
-The owner approved all ten complete prop still types on 2026-08-15. The maximum-zoom density correction and slower expanded animations remain pending the next manual owner review. Review the accepted slice by toggling `stall_0` and `lantern_0`, tending `plot_0`, waiting 600 ticks for its return, inspecting fitted, middle, and close zoom with collision overlays, and confirming north and south stall rotation. The review accepts no fragments, artwork inside each footprint, clear state changes, and correctly layered lantern glow.
+The owner approved all ten complete prop still types on 2026-08-15. The accepted still art remains approved. The next manual owner review covers the native-density correction, slower expanded animations, characters at 85% scale, props at 115% scale, and subtle prop contact shadows. State shadows may extend beyond collision, while gameplay and collision remain exact. Review the accepted slice by toggling `stall_0` and `lantern_0`, tending `plot_0`, waiting 600 ticks for its return, inspecting fitted, middle, and close zoom with collision overlays, and confirming north and south stall rotation. The review accepts no fragments, artwork inside each footprint, clear state changes, correctly layered lantern glow, and the pending calibration.
 
 ## Roofs
 

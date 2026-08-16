@@ -11,7 +11,7 @@ import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from './presen
 import { type FrameGrid, frameRectangle } from './tint.js'
 import type { CharacterDrawable, FrameScene } from './types.js'
 
-const CHARACTER_SCALE = THREE_BRANCHES_PRESENTATION.unitsPerMetre / 128
+const CHARACTER_SCALE = (THREE_BRANCHES_PRESENTATION.unitsPerMetre / 128) * 0.85
 
 /** Loaded pages needed to assemble the retained character art. */
 export interface CharacterAtlasTextures {
