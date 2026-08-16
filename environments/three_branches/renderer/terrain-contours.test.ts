@@ -1,10 +1,13 @@
 import { hashUnit, stableHashParts } from '@renderers/base/math.js'
 import { describe, expect, it } from 'vitest'
+import { readStatic } from './overlay.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
+import { buildStaticScene } from './scene.js'
 import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
 import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
 import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
+import { fixtureRecording } from './test-helpers.js'
 import type {
   ContourCoordinate,
   TerrainContourChain,
@@ -26,32 +29,9 @@ const names: Readonly<Record<string, string>> = {
   x: 'wall',
 }
 
-const landProfile: TerrainCurveProfile = {
-  sampleSpacingCells: 0.25,
-  smoothingPasses: 8,
-  octaves: [
-    { wavelengthCells: 8, amplitudeCells: 0.28 },
-    { wavelengthCells: 3, amplitudeCells: 0.12 },
-    { wavelengthCells: 1.2, amplitudeCells: 0.05 },
-  ],
-}
-
-const waterProfile: TerrainCurveProfile = {
-  sampleSpacingCells: 0.2,
-  smoothingPasses: 10,
-  octaves: [
-    { wavelengthCells: 11, amplitudeCells: 0.34 },
-    { wavelengthCells: 4, amplitudeCells: 0.14 },
-    { wavelengthCells: 1.5, amplitudeCells: 0.06 },
-  ],
-}
-
-const settings: TerrainContourSettings = {
-  profiles: { land: landProfile, water: waterProfile },
-  junctionTangentCells: 0.15,
-  maxDeviationCells: 0.6,
-  minimumCorridorCells: 0.45,
-}
+// The sweeps run the shipping configuration. A second copy of the profiles here would drift from
+// the one the game draws with, and the properties below are exactly the ones worth holding on it.
+const settings: TerrainContourSettings = HEARTHSIDE_STYLE.terrain.contours
 
 interface ContourTestOverrides extends Omit<Partial<TerrainContourSettings>, 'profiles'> {
   readonly profiles?: {
@@ -256,8 +236,18 @@ function generatedRows(seed: number, size: number): string[] {
 }
 
 /**
+ * The recorded 120 by 120 village the game actually draws. Planning validates every code against
+ * the table above, so this fails loudly rather than quietly if the two ever diverge.
+ */
+function shippingRows(): readonly string[] {
+  return buildStaticScene(readStatic(fixtureRecording().header)).topFirstRows
+}
+
+/**
  * The layouts the property sweeps run over. Generated seeds vary the layout rather than the noise
- * key, since the contour pass derives its noise from the layout itself.
+ * key, since the contour pass derives its noise from the layout itself. The recorded village goes
+ * in as well: a property that holds on every synthetic grid and fails on the shipping map has not
+ * been tested at all.
  */
 const layoutSuite: readonly (readonly string[])[] = [
   ['ggww', 'ggww'],
@@ -267,6 +257,7 @@ const layoutSuite: readonly (readonly string[])[] = [
   ['gggggg', 'gfffgg', 'gffegg', 'ggeewg', 'gggwwg', 'gggggg'],
   ['ggggggg', 'geggggg', 'ggeggeg', 'gggeegg', 'ggggegg', 'ggggggg'],
   ...[0, 1, 2, 3, 4, 5].map((seed) => generatedRows(seed, 32)),
+  shippingRows(),
 ]
 
 /**

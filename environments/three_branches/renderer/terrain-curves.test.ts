@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { shapeTerrainCurve } from './terrain-curves.js'
 import type {
+  TerrainCurveBudget,
   TerrainCurvePoint,
   TerrainCurveProfile,
   TerrainCurveSourcePoint,
@@ -146,6 +147,30 @@ describe('shared terrain curve shaping', () => {
           sample.y !== required(withoutNoise[index], 'Quiet curve point is missing.').y,
       ),
     ).toBe(true)
+  })
+
+  it('displaces a free boundary by the amplitude its octaves were configured for', () => {
+    // Nothing used to hold this, so the amplitudes were free to be inert and stayed that way.
+    const source = [point(0, 0), point(400, 0)]
+    const wander = (amount: number, budget?: TerrainCurveBudget): number => {
+      const octaves = [
+        { wavelengthCells: 9, amplitudeCells: 0.2 * amount },
+        { wavelengthCells: 3, amplitudeCells: 0.15 * amount },
+      ]
+      const shaped = shapeTerrainCurve(source, false, { ...BASE_PROFILE, octaves }, 7, budget)
+      const free = shaped.filter((sample) => !sample.locked)
+      return Math.sqrt(free.reduce((sum, sample) => sum + sample.y * sample.y, 0) / free.length)
+    }
+    // Given room to spare, the boundary moves the distance it was asked to move. Independent
+    // octaves add in quadrature, so the amplitudes they were configured with do too.
+    const asked = Math.hypot(0.2, 0.15)
+    expect(wander(1)).toBeGreaterThan(asked * 0.8)
+    expect(wander(1)).toBeLessThan(asked * 1.25)
+
+    // Under a ceiling the amplitudes overrun, raising them still raises the wander. Scaling the
+    // octaves by the ceiling over their own sum divided that back out exactly, so a boundary
+    // configured four times as bold drew the identical curve.
+    expect(wander(4, () => 0.45)).toBeGreaterThan(wander(2, () => 0.45) * 1.1)
   })
 
   it('caps free point displacement at the envelope ceiling', () => {

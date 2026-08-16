@@ -27,13 +27,18 @@ const APPROVED_PALETTE = {
   timber: '#8a6246',
 } as const
 
+// An amplitude is the distance a boundary usually moves, so these are readable as drawn shape:
+// the bank wanders about a quarter cell overall, most of it at the scale of its own chords. Every
+// wavelength stays at six sample spacings or more, below which a period is too few samples to
+// draw and every sample becomes a corner.
 const LAND_CURVE = {
   sampleSpacingCells: 0.25,
   smoothingPasses: 8,
   octaves: [
-    { wavelengthCells: 8, amplitudeCells: 0.28 },
-    { wavelengthCells: 3, amplitudeCells: 0.12 },
-    { wavelengthCells: 1.2, amplitudeCells: 0.05 },
+    { wavelengthCells: 8, amplitudeCells: 0.16 },
+    { wavelengthCells: 4.5, amplitudeCells: 0.2 },
+    { wavelengthCells: 2.2, amplitudeCells: 0.13 },
+    { wavelengthCells: 1.6, amplitudeCells: 0.05 },
   ],
 } as const
 
@@ -41,9 +46,10 @@ const WATER_CURVE = {
   sampleSpacingCells: 0.2,
   smoothingPasses: 10,
   octaves: [
-    { wavelengthCells: 11, amplitudeCells: 0.34 },
-    { wavelengthCells: 4, amplitudeCells: 0.14 },
-    { wavelengthCells: 1.5, amplitudeCells: 0.06 },
+    { wavelengthCells: 11, amplitudeCells: 0.18 },
+    { wavelengthCells: 5, amplitudeCells: 0.22 },
+    { wavelengthCells: 2.4, amplitudeCells: 0.15 },
+    { wavelengthCells: 1.4, amplitudeCells: 0.06 },
   ],
 } as const
 

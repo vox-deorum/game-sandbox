@@ -38,12 +38,13 @@ interface WorkingPoint extends TerrainCurvePoint {
  * Resample and shape one open or closed polyline without applying topology policy.
  * Smoothing is a fixed three-point corner kernel run on the resampled points, so every sample
  * keeps its raw source offset and locked points stay exactly in place. Multi-octave value noise
- * then displaces free points along the local normal.
+ * then displaces free points along the local normal by the amplitude each octave asks for.
  *
  * The optional budget bounds how far each sample may leave the source curve, and bounds both
- * stages: smoothing is pulled back to it before noise is measured against what is left. A caller
- * that varies its budget smoothly along the arc therefore gets a smooth curve, where clamping the
- * finished curve instead would kink it wherever the bound stepped between neighbouring samples.
+ * stages: smoothing is pulled back to it before noise runs, and the total is pulled back again
+ * after. A caller that varies its budget smoothly along the arc therefore gets a smooth curve,
+ * where clamping the finished curve instead would kink it wherever the bound stepped between
+ * neighbouring samples.
  */
 export function shapeTerrainCurve(
   source: readonly TerrainCurveSourcePoint[],
@@ -105,7 +106,12 @@ export function shapeTerrainCurve(
       required(lockDistances[sampleIndex], 'Terrain curve lock distance is missing.'),
     )
 
-  /** Pull every free sample back onto its ceiling, contracting toward the source it left. */
+  /**
+   * Pull every free sample back onto its ceiling, contracting toward the point of the source it
+   * strayed from. Contracting toward the sample's own source position instead mixes the distance
+   * that has to be bounded with the tangential slide that does not, so it lands past the ceiling
+   * by however far the sample slid, and a corridor gives up that much on each of its two sides.
+   */
   const withinCeiling = (
     current: readonly { readonly x: number; readonly y: number }[],
   ): { x: number; y: number }[] =>
@@ -114,21 +120,24 @@ export function shapeTerrainCurve(
       if (sample.locked) return { x: point.x, y: point.y }
       const ceiling = ceilingAt(sampleIndex, sample)
       if (!Number.isFinite(ceiling)) return { x: point.x, y: point.y }
-      const nearest = nearestSource(index, point.x, point.y, sample.sourceOffset)
-      if (nearest.distance <= ceiling) return { x: point.x, y: point.y }
-      const reach = Math.hypot(point.x - sample.rawX, point.y - sample.rawY)
-      const slack = reach - nearest.distance
-      const scale = reach <= EPSILON ? 0 : Math.min(1, (ceiling + slack) / reach)
+      const { distance: strayed, foot } = nearestSource(
+        index,
+        point.x,
+        point.y,
+        sample.sourceOffset,
+      )
+      if (strayed <= ceiling) return { x: point.x, y: point.y }
+      const scale = ceiling / strayed
       return {
-        x: sample.rawX + (point.x - sample.rawX) * scale,
-        y: sample.rawY + (point.y - sample.rawY) * scale,
+        x: foot.x + (point.x - foot.x) * scale,
+        y: foot.y + (point.y - foot.y) * scale,
       }
     })
 
   positions = withinCeiling(positions)
 
-  const totalAmplitude = profile.octaves.reduce((sum, octave) => sum + octave.amplitudeCells, 0)
-  if (totalAmplitude > EPSILON && samples.length > 2) {
+  const displaces = profile.octaves.some((octave) => octave.amplitudeCells > EPSILON)
+  if (displaces && samples.length > 2) {
     const beforeNoise = positions
     positions = samples.map((sample, sampleIndex) => {
       const point = required(beforeNoise[sampleIndex], 'Terrain curve noise point is missing.')
@@ -150,13 +159,17 @@ export function shapeTerrainCurve(
             point.y / octave.wavelengthCells,
           ) * octave.amplitudeCells
       }
-      // The ceiling alone scales the octaves, and the pull-back below holds the total. Scaling by
-      // the room a sample has left instead would silence noise exactly where smoothing already
-      // spent the ceiling, and a neighbour still at full amplitude then spikes away from it.
-      const scale = Math.min(1, ceilingAt(sampleIndex, sample) / totalAmplitude)
+      // Each octave displaces by the distance it was configured for, and where the room runs out
+      // the total gives way to it smoothly. Two earlier ways of doing this both misbehaved:
+      // scaling the octaves by the ceiling over their own sum divided out the very amplitudes it
+      // multiplied by, leaving the configuration inert, and clipping at the ceiling left the
+      // boundary running along its bound and turning a corner every time the noise changed sign.
+      const room = ceilingAt(sampleIndex, sample)
+      if (room <= EPSILON) return point
+      const moved = Number.isFinite(room) ? room * Math.tanh(noise / room) : noise
       return {
-        x: point.x + (-dy / tangentLength) * noise * scale,
-        y: point.y + (dx / tangentLength) * noise * scale,
+        x: point.x + (-dy / tangentLength) * moved,
+        y: point.y + (dx / tangentLength) * moved,
       }
     })
     positions = withinCeiling(positions)
@@ -421,6 +434,21 @@ function nextIndex(index: number, length: number, closed: boolean): number {
   return closed ? 0 : index
 }
 
+/**
+ * Deviation of the raw faded value field, as a fraction of its range.
+ *
+ * The lattice values are uniform and a point takes a smoothstep blend of the four around it, so
+ * the field reaches one only where a sample lands on a lattice corner and sits far inside that
+ * everywhere else. Its deviation works out at the square root of a third of the mean squared
+ * blend weight, which is close to 0.43, and simulating the field agrees.
+ */
+const VALUE_NOISE_DEVIATION = 0.43
+
+/**
+ * One octave of smooth value noise, carrying the deviation factor so that one unit out is one
+ * deviation out. An amplitude in cells then means the distance a boundary usually moves, rather
+ * than a peak it reaches on a handful of samples, which is the only reading a caller can act on.
+ */
 function smoothValueNoise(seed: number, x: number, y: number): number {
   const column = Math.floor(x)
   const row = Math.floor(y)
@@ -428,14 +456,12 @@ function smoothValueNoise(seed: number, x: number, y: number): number {
   const localY = y - row
   const fade = (value: number): number => value * value * (3 - 2 * value)
   const valueAt = (offsetX: number, offsetY: number): number =>
-    hashUnit(stableHashParts(seed, 'curve-noise', column + offsetX, row + offsetY)) *
-      2 -
-    1
+    hashUnit(stableHashParts(seed, 'curve-noise', column + offsetX, row + offsetY)) * 2 - 1
   const blendX = fade(localX)
   const blendY = fade(localY)
   const north = valueAt(0, 0) + (valueAt(1, 0) - valueAt(0, 0)) * blendX
   const south = valueAt(0, 1) + (valueAt(1, 1) - valueAt(0, 1)) * blendX
-  return north + (south - north) * blendY
+  return (north + (south - north) * blendY) / VALUE_NOISE_DEVIATION
 }
 
 function normalizeOffset(offset: number, totalLength: number): number {

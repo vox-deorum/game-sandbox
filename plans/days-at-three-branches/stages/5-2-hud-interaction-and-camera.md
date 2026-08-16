@@ -55,18 +55,18 @@ Each character carries a nameplate pill with its raw player id above its sprite:
 
 Every target scene expression other than `none` draws a compact parchment chip above its character. The chip combines a tintable Hearthside Ink pictogram with the same title-cased text used by the expression palette. It stays upright, counter-scales with the camera, and lives in the ungraded annotation layer. The vertical stack is character, nameplate, expression chip, then speech bubble; the bubble moves above an active chip instead of overlapping it.
 
-| Expression | Text | Pictogram direction |
-| --- | --- | --- |
-| `wave` | Wave | Raised hand with two greeting strokes |
-| `nod` | Nod | Head mark with a short vertical motion stroke |
-| `shake_head` | Shake Head | Head mark with paired side strokes |
-| `point` | Point | Hand and one clear outward direction stroke |
-| `laugh` | Laugh | Open smile with two light radiating marks |
-| `shrug` | Shrug | Paired raised hands and shoulder arc |
-| `startle` | Startle | Compact burst around an upright figure mark |
-| `sleep` | Sleep | Closed eye with one rising rest mark |
-| `sweep` | Sweep | Small broom and curved floor stroke |
-| `use` | Use | Hand meeting a simple object square |
+| Expression   | Text       | Pictogram direction                           |
+| ------------ | ---------- | --------------------------------------------- |
+| `wave`       | Wave       | Raised hand with two greeting strokes         |
+| `nod`        | Nod        | Head mark with a short vertical motion stroke |
+| `shake_head` | Shake Head | Head mark with paired side strokes            |
+| `point`      | Point      | Hand and one clear outward direction stroke   |
+| `laugh`      | Laugh      | Open smile with two light radiating marks     |
+| `shrug`      | Shrug      | Paired raised hands and shoulder arc          |
+| `startle`    | Startle    | Compact burst around an upright figure mark   |
+| `sleep`      | Sleep      | Closed eye with one rising rest mark          |
+| `sweep`      | Sweep      | Small broom and curved floor stroke           |
+| `use`        | Use        | Hand meeting a simple object square           |
 
 The chip reflects only the expression in the target recorded scene. `none` removes it immediately. Repeating one token keeps the same chip without a restart, hold timer, or release fade. Its subtle accent phase is a pure function of player id, expression type, and absolute fractional presentation tick, so a live transition, repeated state, replay, and direct seek draw the same result. The icon and text remain steady while only the restrained accent changes, avoiding a blinking label. Expression drawing never replaces walking, position interpolation, or recorded heading, because locomotion and expression may occur together.
 
