@@ -47,6 +47,8 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 `assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and runtime load function. The runtime glob names only pages with shipped consumers: terrain, props, scenery, the four character layers, and effects. Buildings and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
+The road pilot retains its four native 1254 by 1254 colour sources in `renderer/source-art/road-material-source.png`, ordered `roadA roadB / roadC roadD`. The terrain source page keeps grayscale 192 by 128 previews of those sources in slots 4 through 7; loose runtime frames remain the packer's editable input.
+
 ## Migration
 
 Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` layer pages into 116 loose frames. Pack `props` from its 19 loose state files, leaving the remaining trailing cells transparent. Commit loose frames and compiled pages together.

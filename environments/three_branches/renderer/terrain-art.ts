@@ -73,7 +73,16 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     if (frames === undefined || frames.length === 0) {
       throw new Error(`Three Branches terrain has no fill frames for ${material}.`)
     }
-    patterns[material] = patternTexture(frames, ground.code, manifest.frames.width)
+    const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
+    if (treatment === undefined) {
+      throw new Error(`Three Branches presentation has no ${material} terrain fill.`)
+    }
+    patterns[material] = patternTexture(
+      frames,
+      ground.code,
+      manifest.frames.width,
+      treatment.offsetPassOpacity,
+    )
   }
   const groundTreatment = HEARTHSIDE_STYLE.terrain.fills.ground
   if (groundTreatment === undefined) {
@@ -143,11 +152,16 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
  * variant layout repeats every PATTERN_CELLS cells and stays deterministic per material code.
  *
  * The frames keep calm matching borders, so one aligned layer leaves a faint blank grid on cell
- * boundaries. A second half-cell-offset grain pass at half strength covers those strips and
- * breaks the grid without touching the atlas art. Wrapped variant indices keep the offset pass
- * seamless across the pattern's own repeat edges.
+ * boundaries. A second half-cell-offset grain pass can cover those strips and break the grid
+ * without touching the atlas art. Wrapped variant indices keep the offset pass seamless across
+ * the pattern's own repeat edges. Materials with continuous authored texture can disable it.
  */
-function patternTexture(frames: readonly Texture[], code: string, tileSize: number): Texture {
+function patternTexture(
+  frames: readonly Texture[],
+  code: string,
+  tileSize: number,
+  offsetPassOpacity = 0.5,
+): Texture {
   const canvas = document.createElement('canvas')
   canvas.width = tileSize * PATTERN_CELLS
   canvas.height = tileSize * PATTERN_CELLS
@@ -163,17 +177,19 @@ function patternTexture(frames: readonly Texture[], code: string, tileSize: numb
       context.drawImage(frameAt(code, column, row), column * tileSize, row * tileSize)
     }
   }
-  const half = tileSize / 2
-  context.globalAlpha = 0.5
-  for (let row = -1; row < PATTERN_CELLS; row += 1) {
-    for (let column = -1; column < PATTERN_CELLS; column += 1) {
-      const wrappedColumn = ((column % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
-      const wrappedRow = ((row % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
-      context.drawImage(
-        frameAt(`${code}-offset`, wrappedColumn, wrappedRow),
-        column * tileSize + half,
-        row * tileSize + half,
-      )
+  if (offsetPassOpacity > 0) {
+    const half = tileSize / 2
+    context.globalAlpha = offsetPassOpacity
+    for (let row = -1; row < PATTERN_CELLS; row += 1) {
+      for (let column = -1; column < PATTERN_CELLS; column += 1) {
+        const wrappedColumn = ((column % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
+        const wrappedRow = ((row % PATTERN_CELLS) + PATTERN_CELLS) % PATTERN_CELLS
+        context.drawImage(
+          frameAt(`${code}-offset`, wrappedColumn, wrappedRow),
+          column * tileSize + half,
+          row * tileSize + half,
+        )
+      }
     }
   }
   context.globalAlpha = 1

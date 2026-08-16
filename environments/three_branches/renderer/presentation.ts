@@ -167,6 +167,8 @@ export interface FrameTreatment {
  */
 export interface TerrainFillTreatment extends FrameTreatment {
   opacity: number
+  /** Opacity of the half-cell-offset pattern pass. Defaults to the shared 0.5 treatment. */
+  offsetPassOpacity?: number
   detailShift?: number
   tintMix?: {
     tint: HearthsidePaletteKey
@@ -834,12 +836,16 @@ function terrainFillTreatment(
     value,
     name,
     ['frames', 'tint', 'opacity'],
-    ['detailShift', 'tintMix'],
+    ['offsetPassOpacity', 'detailShift', 'tintMix'],
   )
   const treatment: TerrainFillTreatment = {
     frames: frameNames(source.frames, `${name}.frames`, knownFrames),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
     opacity: unitNumber(source.opacity, `${name}.opacity`),
+    offsetPassOpacity:
+      source.offsetPassOpacity === undefined
+        ? 0.5
+        : unitNumber(source.offsetPassOpacity, `${name}.offsetPassOpacity`),
   }
   if (source.detailShift !== undefined) {
     treatment.detailShift = boundedNumber(source.detailShift, `${name}.detailShift`, 0, 0.5)

@@ -18,8 +18,20 @@
   "terrain": {
     "fills": {
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed", "opacity": 1 },
-      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber", "opacity": 1 },
-      "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment", "opacity": 1 },
+      "road": {
+        "frames": ["roadA", "roadB", "roadC", "roadD"],
+        "tint": "silt",
+        "tintMix": { "tint": "timber", "amount": 0.2 },
+        "detailShift": 0.12,
+        "opacity": 1,
+        "offsetPassOpacity": 0
+      },
+      "path": {
+        "frames": ["roadA", "roadB", "roadC", "roadD"],
+        "tint": "parchment",
+        "opacity": 1,
+        "offsetPassOpacity": 0
+      },
       "bridge": {
         "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
         "tint": "water",
@@ -106,7 +118,7 @@
         },
         "targetWidthCells": 2.1,
         "minimumWidthCells": 1.6,
-        "opacity": 0.82
+        "opacity": 1
       },
       "path": {
         "curve": {
