@@ -11,7 +11,7 @@ from functools import lru_cache
 from math import floor, hypot
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 _ROOT = Path(__file__).parent
 RULES: dict[str, Any] = json.loads((_ROOT / "rules.json").read_text(encoding="utf-8"))
@@ -71,12 +71,20 @@ def model(observation: Mapping[str, object]) -> Model:
     assert isinstance(village, Mapping)
     size, ground, props, scenery = village["size"], village["ground"], village["props"], village["scenery"]
     assert isinstance(size, Mapping)
-    fingerprint = _fingerprint(size, ground, props, scenery)
+    fingerprint = _fingerprint(
+        size,
+        cast("str | tuple[str, ...]", ground),
+        cast("tuple[Mapping[str, object], ...]", props),
+        cast("tuple[Mapping[str, object], ...]", scenery),
+    )
     return _model(fingerprint)
 
 
 def _fingerprint(
-    size: Mapping[str, object], ground: object, props: object, scenery: object
+    size: Mapping[str, object],
+    ground: str | tuple[str, ...],
+    props: tuple[Mapping[str, object], ...],
+    scenery: tuple[Mapping[str, object], ...],
 ) -> VillageFingerprint:
     return (
         int(size["cells_x"]),

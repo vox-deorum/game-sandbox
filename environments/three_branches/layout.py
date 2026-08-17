@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .catalog import BUILDING_BY_TOKEN, PROP_BY_TOKEN, SCENERY_BY_TOKEN
+from .catalog import BUILDING_BY_TOKEN, PROP_BY_TOKEN, SCENERY_BY_TOKEN, PropType
 from .geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect
 from .grid import Cell, Grid
 from .rules import FRAME, GROUND_BY_CODE, PROFILE, Ground
@@ -151,7 +151,7 @@ class Layout:
         x, y = item.cell
         if source.shape == "box":
             return Rect(float(x), float(y), float(width), float(height))
-        scale = source.collision_scale if isinstance(item, PlacedProp) else 1.0
+        scale = source.collision_scale if isinstance(source, PropType) else 1.0
         return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
     def doorway(self, building_id: str) -> tuple[Cell, ...]:

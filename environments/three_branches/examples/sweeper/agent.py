@@ -8,6 +8,13 @@ IDLE_TICKS = 12
 DIRECTIONS = ((0, 1), (1, 0), (0, -1), (-1, 0))
 
 
+def _cell(item: object) -> dict[str, int]:
+    assert isinstance(item, dict)
+    cell = item["cell"]
+    assert isinstance(cell, dict)
+    return cell
+
+
 def _centre(cell: dict[str, int]) -> dict[str, float]:
     return {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
 
@@ -31,7 +38,7 @@ class Agent:
         self._quarter = rng.randrange(4)
         matching = [prop for prop in props.all(observation) if prop["type"] == self._role]
         in_quarter = [
-            prop for prop in matching if _quarter(prop["cell"], layout.frame(observation)) == self._quarter
+            prop for prop in matching if _quarter(_cell(prop), layout.frame(observation)) == self._quarter
         ]
         candidates = in_quarter or matching
         self._target = candidates[0] if candidates else None
@@ -54,7 +61,7 @@ class Agent:
         here_cell = layout.cell_at(observation, here)
         if here_cell is None:
             return action.stand(heading, "sweep")
-        goal = _centre(target["cell"])
+        goal = _centre(_cell(target))
         best = here_cell
         best_distance = geometry.distance(_centre(here_cell), goal)
         for dx, dy in DIRECTIONS:

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from math import hypot
+from typing import cast
 
 from . import me
 from ._model import CATALOG, distance_to_shape, line_clear, model, nearest
@@ -14,14 +15,14 @@ from .geometry import PROP_REACH
 TYPES = tuple(item["token"] for item in CATALOG["props"])
 
 
-def all(observation: Mapping[str, object]):
+def all(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     """Return every static prop placement in canonical layout order."""
-    return observation["village"]["props"]
+    return cast(tuple[Mapping[str, object], ...], observation["village"]["props"])
 
 
-def seen(observation: Mapping[str, object]):
+def seen(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     """Return the dynamic states of props in the current vision cone."""
-    return observation["props"]
+    return cast(tuple[Mapping[str, object], ...], observation["props"])
 
 
 def in_reach(observation: Mapping[str, object]):

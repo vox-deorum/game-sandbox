@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import heapq
 from collections.abc import Mapping
+from random import Random
+from typing import cast
 
-from sandbox.village import action, geometry, layout, me, people, props
+from sandbox.village import action, day, geometry, layout, me, people, props
 
 Cell = tuple[int, int]
 Graph = dict[Cell, tuple[tuple[Cell, float], ...]]
@@ -65,7 +67,7 @@ def go_to(observation: Mapping[str, object], memory: dict[str, object], goal: ob
             return action.stand(me.heading(observation))
         return action.walk(geometry.heading_to(here, _center(reentry)))
     state["last_cell"] = start
-    destinations = state.setdefault("destinations", {})
+    destinations = cast("dict[object, Cell]", state.setdefault("destinations", {}))
     cache_key = _destination_key(observation, goal)
     destination = destinations.get(cache_key) if cache_key is not None else None
     if destination is None:
@@ -102,17 +104,17 @@ def wander(observation: Mapping[str, object], memory: dict[str, object], goal: o
         route_goal = memory.get("home_point", goal) if goal == memory.get("home") else goal
         return go_to(observation, memory, route_goal)
     state = _state(memory, "wander")
-    tick = int(observation["tick"])
+    tick = day.tick(observation)
     point = _goal_point(observation, goal)
     heading = (
         me.heading(observation) if point is None else geometry.heading_to(me.position(observation), point)
     )
-    if state.get("until", -1) <= tick:
-        rng = memory.get("rng")
+    if cast("int", state.get("until", -1)) <= tick:
+        rng = cast("Random | None", memory.get("rng"))
         turn = rng.choice((-45.0, -20.0, 0.0, 20.0, 45.0)) if rng is not None else 0.0
         state["heading"] = (heading + turn) % 360.0
         state["until"] = tick + 16
-    return action.walk(float(state.get("heading", heading)), 0.45, "sweep")
+    return action.walk(cast("float", state.get("heading", heading)), 0.45, "sweep")
 
 
 def tend(observation: Mapping[str, object], memory: dict[str, object], goal: object):
@@ -193,11 +195,11 @@ def follow(observation: Mapping[str, object], memory: dict[str, object], goal: o
         return _graph_step_toward(
             observation,
             memory,
-            target["position"],
-            min(1.0, float(target.get("moved", 0.75)) + 0.25),
+            _position_of(target),
+            min(1.0, float(cast("float", target.get("moved", 0.75))) + 0.25),
         )
     if distance < _COMFORT_DISTANCE - 0.75:
-        return _graph_step_away(observation, memory, target["position"], goal, 0.5)
+        return _graph_step_away(observation, memory, _position_of(target), goal, 0.5)
     return action.stand(heading)
 
 
@@ -210,7 +212,7 @@ def avoid(observation: Mapping[str, object], memory: dict[str, object], goal: ob
         candidates, key=lambda person: geometry.distance(me.position(observation), person["position"])
     )
     if geometry.distance(me.position(observation), target["position"]) < _COMFORT_DISTANCE + 1.0:
-        return _graph_step_away(observation, memory, target["position"], goal, 0.8, "startle")
+        return _graph_step_away(observation, memory, _position_of(target), goal, 0.8, "startle")
     return go_to(observation, memory, goal)
 
 
@@ -242,7 +244,7 @@ def sleep_at(observation: Mapping[str, object], memory: dict[str, object], goal:
 
 def prop_goal(observation: Mapping[str, object], kind: str, offset: int = 0) -> str | None:
     """Choose one static prop in layout order, spreading equal jobs around the village."""
-    matching = [item["id"] for item in props.all(observation) if item["type"] == kind]
+    matching = [str(item["id"]) for item in props.all(observation) if item["type"] == kind]
     return matching[offset % len(matching)] if matching else None
 
 
@@ -261,8 +263,8 @@ def building_slot_goal(observation: Mapping[str, object], building_id: str, slot
 
 
 def _state(memory: dict[str, object], name: str) -> dict[str, object]:
-    routines = memory.setdefault("routines", {})
-    return routines.setdefault(name, {})
+    routines = cast("dict[str, object]", memory.setdefault("routines", {}))
+    return cast("dict[str, object]", routines.setdefault(name, {}))
 
 
 def _graph_step_toward(
@@ -318,8 +320,11 @@ def _route(graph: Graph, start: Cell, destination: Cell) -> list[Cell] | None:
         _score, cost, cell = heapq.heappop(queue)
         if cell == destination:
             path = [cell]
-            while previous[path[-1]] is not None:
-                path.append(previous[path[-1]])
+            while True:
+                prior = previous[path[-1]]
+                if prior is None:
+                    break
+                path.append(prior)
             return list(reversed(path))
         if cost != costs[cell]:
             continue
@@ -400,7 +405,7 @@ def _settle_and_use(
     return action.stand(me.heading(observation), "use")
 
 
-def _goal_point(observation: Mapping[str, object], goal: object):
+def _goal_point(observation: Mapping[str, object], goal: object) -> Mapping[str, object] | None:
     if isinstance(goal, Mapping) and "x" in goal and "y" in goal:
         return goal
     if not isinstance(goal, str):
@@ -412,29 +417,35 @@ def _goal_point(observation: Mapping[str, object], goal: object):
     if building is not None:
         return _building_point(building)
     person = _person(observation, goal)
-    return None if person is None else person["position"]
+    return None if person is None else _position_of(person)
 
 
-def _prop(observation: Mapping[str, object], goal: object):
+def _prop(observation: Mapping[str, object], goal: object) -> Mapping[str, object] | None:
     return next((item for item in props.all(observation) if item["id"] == goal), None)
 
 
-def _person(observation: Mapping[str, object], goal: object, *, seen_only: bool = False):
+def _person(
+    observation: Mapping[str, object], goal: object, *, seen_only: bool = False
+) -> Mapping[str, object] | None:
     records = (
         people.seen(observation) if seen_only else (*people.seen(observation), *people.nearby(observation))
     )
     return next((item for item in records if item["id"] == goal), None)
 
 
+def _position_of(item: Mapping[str, object]) -> Mapping[str, object]:
+    return cast("Mapping[str, object]", item["position"])
+
+
 def _prop_point(item: Mapping[str, object]) -> dict[str, float]:
-    cell = item["cell"]
-    return {"x": float(cell["x"]) + 0.5, "y": float(cell["y"]) + 0.5}
+    cell = cast(Mapping[str, float], item["cell"])
+    return {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
 
 
 def _building_point(building: Mapping[str, object]) -> dict[str, float]:
     width, height = _BUILDING_SIZES.get(str(building["type"]), (1, 1))
-    cell = building["cell"]
-    return {"x": float(cell["x"]) + width / 2, "y": float(cell["y"]) + height / 2}
+    cell = cast(Mapping[str, float], building["cell"])
+    return {"x": cell["x"] + width / 2, "y": cell["y"] + height / 2}
 
 
 def _center(cell: Cell) -> dict[str, float]:

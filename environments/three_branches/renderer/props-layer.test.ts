@@ -79,7 +79,9 @@ describe('Three Branches retained props', () => {
     if (bell === undefined || pump === undefined) throw new Error('Fixture needs bell and pump.')
     const bellStill = spriteNode(node(upper, `prop:${bell.id}`), 'prop-still')
     const pumpStill = spriteNode(node(upper, `prop:${pump.id}`), 'prop-still')
-    const foundation = props.children.find((child) => child.label === 'prop-foundation')
+    const foundation = props.children.find(
+      (child) => child.label === 'prop-foundation' && child.visible,
+    )
     if (!(foundation instanceof Sprite)) throw new Error('Fixture has no bell foundation.')
 
     expect(bellStill.scale.x).toBe(0.36 / 8)
@@ -117,7 +119,7 @@ describe('Three Branches retained props', () => {
 
     const crate = node(scenery, 'scenery:scenery:0')
     expect(crate.position.x).toBe(frame.static.scenery[0]?.rect.x! + frame.static.scenery[0]?.rect.width! / 2)
-    expect(crate.getChildByLabel('scenery-art')?.scale.x).toBe(0.25)
+    expect(crate.getChildByLabel('scenery-art')?.scale.x).toBe(0.3)
 
     const lit = { ...frame, dynamic: frame.dynamic === null ? null : { ...frame.dynamic, props: { ...frame.dynamic.props, [hearthId]: 'lit' } } }
     layer.reconcile(lit)

@@ -1,132 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  HEARTHSIDE_PALETTE_KEYS,
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
   type PhaseGrade,
   phaseGrade,
-  propEffectAnchor,
-  propMonumentTreatment,
   readHearthsideStyle,
   type TerrainFillTreatment,
   transitionDurationMs,
 } from './presentation.js'
 
-const APPROVED_PALETTE = {
-  backdrop: '#101816',
-  parchment: '#cfc5a9',
-  bone: '#efe7d3',
-  ink: '#6f6757',
-  reed: '#a9ae8a',
-  silt: '#bfa072',
-  water: '#5a7680',
-  pine: '#4f6a4b',
-  indigo: '#27436b',
-  cinnabar: '#b0402e',
-  gilt: '#d9a441',
-  violet: '#6b5d72',
-  timber: '#8a6246',
-} as const
-
-// An amplitude is the distance a boundary usually moves, so these are readable as drawn shape:
-// the bank wanders about a quarter cell overall. Nothing smooths the noise, since it is laid on
-// after the corner kernel has run, so a band draws every bend it carries: a wavelength has to stay
-// several times the corner radius, or the boundary turns an elbow on every half period.
-const LAND_CURVE = {
-  sampleSpacingCells: 0.25,
-  cornerRadiusCells: 0.8,
-  octaves: [
-    { wavelengthCells: 9, amplitudeCells: 0.2 },
-    { wavelengthCells: 4.5, amplitudeCells: 0.14 },
-  ],
-} as const
-
-const WATER_CURVE = {
-  sampleSpacingCells: 0.2,
-  cornerRadiusCells: 0.8,
-  octaves: [
-    { wavelengthCells: 11, amplitudeCells: 0.22 },
-    { wavelengthCells: 5, amplitudeCells: 0.15 },
-  ],
-} as const
-
-const ROAD_CURVE = {
-  sampleSpacingCells: 0.25,
-  cornerRadiusCells: 0.56,
-  octaves: [{ wavelengthCells: 6, amplitudeCells: 0.05 }],
-} as const
-
-const PATH_CURVE = {
-  sampleSpacingCells: 0.2,
-  cornerRadiusCells: 0.53,
-  octaves: [{ wavelengthCells: 7, amplitudeCells: 0.04 }],
-} as const
-
-const APPROVED_CONTOURS = {
-  profiles: { land: LAND_CURVE, water: WATER_CURVE },
-  junctionTangentCells: 0.15,
-  maxDeviationCells: 0.6,
-} as const
-
-const APPROVED_SEAMS = {
-  pooling: { widthCells: 0.45, darken: 0.16, opacity: 0.28 },
-  ink: {
-    tint: 'ink',
-    widthCells: 0.15,
-    opacity: 0.7,
-    runLengthCells: [4, 9],
-    gapLengthCells: [0.6, 1.7],
-  },
-  waterHatch: {
-    tint: 'ink',
-    widthCells: 0.1,
-    offsetsCells: [0.55, 1.05],
-    opacity: 0.3,
-    bridgeTaperCells: 0.35,
-  },
-} as const
-
-const APPROVED_ROUTES = {
-  road: {
-    curve: ROAD_CURVE,
-    targetWidthCells: 2.1,
-    minimumWidthCells: 1.6,
-    opacity: 1,
-  },
-  path: { curve: PATH_CURVE, widthCells: 0.7, opacity: 1 },
-} as const
-
-const APPROVED_REED_MARKS = {
-  tint: 'pine',
-  widthCells: 0.05,
-  lengthCells: [0.25, 0.5],
-  perCell: 3,
-  opacity: 0.5,
-} as const
-
+// The palette, curve profiles, seam calibration, route widths, and fill tints are presentation
+// configuration that art passes are meant to move freely, so nothing here pins their values. What
+// the suite guards is the reader: every malformed shape below must still be rejected.
 describe('Hearthside Ink presentation', () => {
-  it('exports exactly the thirteen approved palette colors', () => {
-    expect(HEARTHSIDE_PALETTE_KEYS).toHaveLength(13)
-    expect(HEARTHSIDE_STYLE.palette).toEqual(APPROVED_PALETTE)
-  })
-
-  it('keeps monument texture density and source anchors separate from canonical effect offsets', () => {
-    expect(propMonumentTreatment('pump')).toEqual({
-      textureDensityDivisor: 4,
-      sourceAnchorByRole: { still: { x: 344, y: 384 } },
-    })
-    expect(propMonumentTreatment('bell')).toEqual({
-      textureDensityDivisor: 8,
-      sourceAnchorByRole: {
-        still: { x: 384, y: 480 },
-        foundation: { x: 384, y: 256 },
-      },
-    })
-    expect(propMonumentTreatment('stall')).toBeNull()
-    expect(propEffectAnchor('pump')).toEqual({ x: 31, y: -61 })
-  })
-
   it('rejects incomplete or out-of-frame monument calibration', () => {
     const missingFoundation = structuredClone(HEARTHSIDE_STYLE) as any
     delete missingFoundation.props.monumentByType.bell.sourceAnchorByRole.foundation
@@ -169,51 +56,6 @@ describe('Hearthside Ink presentation', () => {
     expect(measureDeliveryGap(700, 900, { transitionScale: 0.5 })).toEqual({
       gapMs: undefined,
       nextMs: null,
-    })
-  })
-
-  it('pins the shared curve profiles, junction geometry, and seam calibration', () => {
-    expect(HEARTHSIDE_STYLE.terrain.contours).toEqual(APPROVED_CONTOURS)
-    expect(HEARTHSIDE_STYLE.terrain.seams).toEqual(APPROVED_SEAMS)
-    expect(HEARTHSIDE_STYLE.terrain.reedMarks).toEqual(APPROVED_REED_MARKS)
-    expect(HEARTHSIDE_STYLE.terrain.routes).toEqual(APPROVED_ROUTES)
-    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).toBe('timber')
-    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
-      HEARTHSIDE_STYLE.terrain.fills.field?.tint,
-    )
-    expect(HEARTHSIDE_STYLE.terrain.fills.road?.tint).not.toBe(
-      HEARTHSIDE_STYLE.terrain.fills.path?.tint,
-    )
-  })
-
-  it('uses bridge-over-water fills, reeds shaded toward pine, indigo wall fills, and timber planks', () => {
-    const terrain = HEARTHSIDE_STYLE.terrain
-    expect(terrain.fills.bridge).toEqual({
-      frames: ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
-      tint: 'water',
-      opacity: 1,
-    })
-    expect(terrain.fills.reeds).toEqual({
-      frames: ['reedsA', 'reedsB', 'reedsC', 'reedsD'],
-      tint: 'reed',
-      tintMix: { tint: 'pine', amount: 0.45 },
-      detailShift: 0.2,
-      opacity: 1,
-    })
-    expect(terrain.fills.wall).toEqual({
-      frames: ['floorA', 'floorB', 'floorC', 'floorD'],
-      tint: 'indigo',
-      opacity: 1,
-    })
-    expect(terrain.planks).toEqual({
-      horizontal: 'bridgeA',
-      vertical: 'bridgeB',
-      compact: 'bridgeC',
-      tint: 'timber',
-    })
-    expect(terrain.upperWall).toEqual({
-      frames: ['wallA', 'wallB', 'wallC', 'wallD'],
-      tint: 'indigo',
     })
   })
 

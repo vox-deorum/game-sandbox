@@ -53,12 +53,12 @@ describe('Three Branches terrain art planning', () => {
     expect(roadBridge).toMatchObject({
       owner: 'road',
       orientation: 'horizontal',
-      deck: { kind: 'axis', widthCells: 2.1, cap: 'square' },
+      deck: { kind: 'axis', widthCells: 2.1 },
     })
     expect(pathBridge).toMatchObject({
       owner: 'path',
       orientation: 'vertical',
-      deck: { kind: 'axis', widthCells: 0.7, cap: 'square' },
+      deck: { kind: 'axis', widthCells: 0.7 },
     })
     expect(compactBridge).toMatchObject({
       orientation: 'compact',

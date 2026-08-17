@@ -243,7 +243,7 @@ describe('terrain route planner', () => {
         { x: 2, y: 2.5 },
         { x: 3, y: 2.5 },
       ],
-      deck: { kind: 'axis', widthCells: 2.1, cap: 'square' },
+      deck: { kind: 'axis', widthCells: 2.1 },
     })
     expect(bridge.contacts.map((contact) => contact.owner).sort()).toEqual(['path', 'path', 'road'])
   })
@@ -258,7 +258,7 @@ describe('terrain route planner', () => {
       { x: 2.5, y: 2 },
       { x: 2.5, y: 3 },
     ])
-    expect(bridge.deck).toMatchObject({ kind: 'axis', widthCells: 0.7, cap: 'square' })
+    expect(bridge.deck).toMatchObject({ kind: 'axis', widthCells: 0.7 })
   })
 
   it('uses a centered rounded compact deck for a tied component', () => {

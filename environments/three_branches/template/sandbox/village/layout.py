@@ -22,20 +22,29 @@ SPEED_LIMITS = {item["name"]: float(item["speed"]) for item in GROUND_BY_CODE.va
 
 
 def frame(observation: Mapping[str, object]):
+    """Return the village grid dimensions and cell scale, as the ``cells_x``, ``cells_y``, and
+    ``cell_size`` mapping from ``observation["village"]["size"]``. ``cell_size`` arrives as a NumPy
+    ``float32`` scalar."""
     return observation["village"]["size"]
 
 
 def cell_at(observation: Mapping[str, object], position: Mapping[str, object]):
+    """Return the zero-based grid cell a position falls in, as an ``{"x": int, "y": int}``
+    mapping, or ``None`` when the position is outside the village."""
     found = cell(model(observation), position)
     return None if found is None else {"x": found[0], "y": found[1]}
 
 
 def ground_at(observation: Mapping[str, object], cell_value: Mapping[str, object]) -> str | None:
+    """Return the ground name under one cell, such as ``"ground"``, ``"road"``, ``"water"``, or
+    ``"interior"``. ``None`` for a cell outside the village."""
     item = ground(model(observation), cell_value)
     return None if item is None else str(item["name"])
 
 
 def walkable(observation: Mapping[str, object], cell_value: Mapping[str, object]) -> bool:
+    """Return whether a character can stand on a cell: its ground is passable and a body the size
+    of a villager clears it (no wall, water, or blocking prop)."""
     village_model = model(observation)
     point = center(village_model, cell_value)
     item = ground(village_model, cell_value)
@@ -50,6 +59,8 @@ def walkable(observation: Mapping[str, object], cell_value: Mapping[str, object]
 def can_step(
     observation: Mapping[str, object], start_cell: Mapping[str, object], end_cell: Mapping[str, object]
 ) -> bool:
+    """Return whether a character can legally move from one cardinally adjacent cell to the next:
+    both cells are walkable and the body clears the path between their centres."""
     village_model = model(observation)
     start, end = center(village_model, start_cell), center(village_model, end_cell)
     if start is None or end is None:
@@ -68,14 +79,22 @@ def can_step(
 def line_of_sight(
     observation: Mapping[str, object], start_pos: Mapping[str, object], end_pos: Mapping[str, object]
 ) -> bool:
+    """Return whether the straight line between two positions is clear, meaning no sight-blocking
+    ground such as a wall lies across it. Props are not tested and doorways do not block, so this
+    is "could the two points see each other, ignoring the vision cone". A position outside the
+    village is never clear."""
     return line_clear(model(observation), start_pos, end_pos)
 
 
 def buildings(observation: Mapping[str, object]):
+    """Return every building placement in the village, each with an ``id``, ``type``, and
+    ``cell``."""
     return observation["village"]["buildings"]
 
 
 def building(observation: Mapping[str, object], building_id: str):
+    """Return the building placement with the given id, or ``None`` when there is no such
+    building."""
     return next((item for item in buildings(observation) if item["id"] == building_id), None)
 
 
@@ -111,4 +130,6 @@ def _run_center(run: tuple[tuple[int, int], ...], cell_size: float) -> tuple[flo
 
 
 def spawn(observation: Mapping[str, object]):
+    """Return the village spawn position as an ``{"x": float, "y": float}`` mapping, in metres
+    from the village southwest corner. Both values arrive as NumPy ``float32`` scalars."""
     return observation["village"]["spawn"]

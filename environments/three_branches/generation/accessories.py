@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass, replace
 from math import atan2, dist, hypot, pi
 
-from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN, SCENERY_BY_TOKEN
+from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN, SCENERY_BY_TOKEN, PropType
 from ..geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect, nearest_point
 from ..grid import Cell
 from ..layout import PlacedProp, Scenery, footprint, footprint_cells
@@ -500,7 +500,7 @@ def _shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
     x, y = item.cell
     if source.shape == "box":
         return Rect(float(x), float(y), float(width), float(height))
-    scale = source.collision_scale if isinstance(item, PlacedProp) else 1.0
+    scale = source.collision_scale if isinstance(source, PropType) else 1.0
     return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
 
