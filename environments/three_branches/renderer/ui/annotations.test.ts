@@ -198,7 +198,7 @@ describe('createAnnotationLayer', () => {
     expect(layer.children).toHaveLength(scene.characters.length)
     expect(collectText(layer)).toContain('player_0')
     expect(collectTextNodes(layer).find((text) => text.text === 'player_0')?.style.fontSize).toBe(
-      14,
+      15,
     )
 
     const firstCharacter = scene.characters[0]
@@ -460,6 +460,101 @@ describe('expression chips', () => {
     expect(accent.scale.x).toBeCloseTo(22 / 192)
     expect(icon.scale.y).toBe(icon.scale.x)
     expect(accent.scale.y).toBe(accent.scale.x)
+  })
+
+  it('holds a gone expression for two delivered states, then fades it out across the next', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const withChip = sceneWithExpression({ type: 'wave', target: 'none' })
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    annotations.observeExpressions(withChip, 500)
+    annotations.reconcile(withChip, closeZoom, fittedZoom, 1)
+    const chip = chipOf(layer)
+    expect(chip.visible).toBe(true)
+    expect(chip.alpha).toBe(1)
+
+    // The expression reads none; only the delivered-state tail holds the chip: two states at full
+    // opacity, then one state spent ramping the chip to zero.
+    annotations.observeExpressions(withoutChip, 500)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chip.visible).toBe(true)
+    expect(chip.alpha).toBe(1)
+    expect(chipText(chip)).toBe('Wave')
+
+    annotations.observeExpressions(withoutChip, 500)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chip.visible).toBe(true)
+    expect(chip.alpha).toBe(1)
+
+    annotations.observeExpressions(withoutChip, 500)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chip.visible).toBe(true)
+    expect(chip.alpha).toBeCloseTo(1)
+    expect(annotations.advance(200)).toBe(true)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chip.alpha).toBeCloseTo(0.6)
+    expect(annotations.advance(300)).toBe(false)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chip.visible).toBe(false)
+  })
+
+  it('replaces a held expression tail when a newer expression arrives', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    annotations.observeExpressions(sceneWithExpression({ type: 'wave', target: 'none' }), 500)
+    annotations.observeExpressions(withoutChip, 500)
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    const chip = chipOf(layer)
+    expect(chipText(chip)).toBe('Wave')
+
+    annotations.observeExpressions(sceneWithExpression({ type: 'nod', target: 'none' }), 500)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'nod', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    expect(chipText(chip)).toBe('Nod')
+    expect(chip.alpha).toBe(1)
+  })
+
+  it('keeps a repeated expression live instead of starting its tail early', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const withChip = sceneWithExpression({ type: 'wave', target: 'none' })
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    annotations.observeExpressions(withChip, 500)
+    annotations.observeExpressions(withChip, 500)
+    // Only a none state starts the hold; repeated live states never begin the tail.
+    annotations.observeExpressions(withoutChip, 500)
+    expect(annotations.expressionChipTitle('player_0')).toBe('Wave')
+    expect(annotations.advance(2000)).toBe(false)
+  })
+
+  it('drops the expression chip tail on clear, as a replay seek must', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    annotations.observeExpressions(sceneWithExpression({ type: 'wave', target: 'none' }), 500)
+    annotations.observeExpressions(withoutChip, 500)
+    annotations.clear()
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    expect(chipOf(layer).visible).toBe(false)
+    expect(annotations.expressionChipTitle('player_0')).toBeNull()
+  })
+
+  it('reports whichever expression chip is drawn, held or live, to the host probe', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    expect(annotations.expressionChipTitle('player_0')).toBeNull()
+    annotations.observeExpressions(sceneWithExpression({ type: 'wave', target: 'none' }), 500)
+    expect(annotations.expressionChipTitle('player_0')).toBe('Wave')
+    annotations.observeExpressions(withoutChip, 500)
+    expect(annotations.expressionChipTitle('player_0')).toBe('Wave')
+    annotations.clear()
+    expect(annotations.expressionChipTitle('player_0')).toBeNull()
   })
 })
 

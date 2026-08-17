@@ -53,12 +53,7 @@ import {
 import { collisionWithPropStates, frameCollision, staticCollision } from './map/collision.js'
 import { type CollisionLayer, createCollisionLayer } from './map/collision-layer.js'
 import { drawMap, drawUpperWalls, type MapLayerView } from './map/map-layer.js'
-import {
-  buildStaticScene,
-  computeScene,
-  expressionTitleFor,
-  interpolateScene,
-} from './map/scene.js'
+import { buildStaticScene, computeScene, interpolateScene } from './map/scene.js'
 import { createWorldArtStack, type WorldArtStack } from './map/world-stack.js'
 
 // props/
@@ -271,6 +266,15 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // and asset redraws retain the current bubble ages.
     if (options?.seek === true) this.annotations.clear()
     this.annotations.deliver(readSpeech(state, this.expectedIds))
+    const durationMs = transitionDurationMs(options, deliveryGapMs)
+    // A snap re-presentation is not a landed state, so it must not move the expression chip tails;
+    // only real states age a held chip or close out a fade over one state's presentation time.
+    if (options?.snap !== true) {
+      this.annotations.observeExpressions(
+        scene,
+        durationMs > 0 ? durationMs : HEARTHSIDE_STYLE.transition.naturalMs,
+      )
+    }
     this.props.reconcile(scene)
     this.props.advance(scene)
     this.collision.drawStatic(
@@ -278,7 +282,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.worldTextResolution(),
     )
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
-    const durationMs = transitionDurationMs(options, deliveryGapMs)
     const shouldAnimate =
       durationMs > 0 &&
       this.presentedScene !== null &&
@@ -328,9 +331,13 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       )
     }
     this.advanceCameraReturn(dtMs, false)
-    // A still frame repaints only for the bubbles, including the frame that retires the last one,
-    // so a faded bubble leaves the screen rather than holding its final opacity.
-    if (speaking || wasSpeaking) this.redrawAnnotations()
+    // A still frame repaints the bubbles and any expression tails that aged this frame, including
+    // the frame that retires the last bubble or completes the last chip fade, so neither holds its
+    // final opacity. The probe follows that same screen when it changes.
+    if (speaking || wasSpeaking) {
+      this.redrawAnnotations()
+      this.updateExpressionChipProbe()
+    }
     this.settleRemainingMs = Math.max(0, this.settleRemainingMs - dtMs)
     return (
       this.cameraReturnRequested ||
@@ -512,20 +519,23 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   /**
-   * The expression chip the annotation layer draws above the visitor, or none while no expression is
-   * shown or the camera sits below the full-nameplate zoom. Zooming back below that threshold hides
-   * the chip, so the probe reports the same visibility the layer draws.
+   * The expression chip title the annotation layer draws above the visitor, or none while no
+   * expression shows or the camera sits below the full-nameplate zoom. The retained tail map is
+   * authoritative once a state has been observed, but a snap presentation (a replay seek, an asset
+   * redraw, the very first state) reconciles the live scene without any tail, so the presented
+   * scene's own expression title stands in then. Zooming below full-plate opacity hides the chip,
+   * so the probe reports the same visibility the layer draws.
    */
   private updateExpressionChipProbe(): void {
     const visitor = this.presentedScene?.characters.find(
       (character) => character.id === VISITOR_PLAYER,
     )
-    const expressionTitle =
-      visitor === undefined ? null : expressionTitleFor(this.staticScene, visitor.expression)
+    const title =
+      this.annotations.expressionChipTitle(VISITOR_PLAYER) ?? visitor?.expressionTitle ?? null
     this.ctx.container.dataset.threeBranchesExpressionChip =
-      expressionTitle !== null &&
+      title !== null &&
       nameplateAlpha(this.visitorCamera.camera.zoom, this.cameraLimits.minZoom) === 1
-        ? expressionTitle
+        ? title
         : 'none'
   }
 

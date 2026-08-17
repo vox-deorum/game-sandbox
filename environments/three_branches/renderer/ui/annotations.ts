@@ -14,11 +14,22 @@ export interface AnnotationLayer {
   reconcile(scene: FrameScene, zoom: number, fittedZoom: number, resolution: number): void
   /** Slice the expression chip's effects textures into the retained chip nodes. */
   install(art: ExpressionArt): void
+  /**
+   * Advance the per-character expression chip machines by one delivered state. A live chip stays
+   * live; a chip whose expression read `none` holds {@link EXPRESSION_HOLD_TICKS} more states at full
+   * opacity and then fades across one state of `tickMs`. Called once per landed state, never on a
+   * redraw, so the tail survives movement animation and replay cadence.
+   */
+  observeExpressions(scene: FrameScene, tickMs: number): void
+  /** The expression chip title currently drawn above one character, or null for none. */
+  expressionChipTitle(characterId: string): string | null
   /** Retain the lines one state delivered, replacing each speaker's previous line. */
   deliver(lines: readonly SpeechLine[]): void
-  /** Drop every retained line, as an arbitrary replay seek must. */
+  /**
+   * Drop every retained line and expression chip tail, as an arbitrary replay seek must.
+   */
   clear(): void
-  /** Age retained lines, and report whether any still needs drawing. */
+  /** Age retained lines and expression fades, and report whether any still needs drawing. */
   advance(dtMs: number): boolean
 }
 
@@ -34,6 +45,25 @@ export interface ExpressionArt {
 interface RetainedBubble {
   readonly line: SpeechLine
   readonly ageMs: number
+}
+
+/**
+ * The per-character expression chip tail. A `live` entry draws the target expression at full opacity;
+ * when the expression reads `none`, the same entry enters `hold` for {@link EXPRESSION_HOLD_TICKS}
+ * delivered states and finally `fade`, ramping the chip's alpha to zero across one state. Only one
+ * entry exists per character, so a newer expression always replaces the older one.
+ */
+interface ExpressionChip {
+  readonly title: string
+  /** The expression token, for the chip's accent frame and pictogram. */
+  readonly type: string
+  phase: 'live' | 'hold' | 'fade'
+  /** Delivered states yet to show at full opacity in the hold phase. */
+  remainTicks: number
+  /** Milliseconds one no-expression state lasts, the fade phase's full span. */
+  fadeMs: number
+  /** Milliseconds the fade phase has already shown. */
+  elapsedMs: number
 }
 
 /** The plate, chip, and bubble display objects retained for one character, keyed by its stable id. */
@@ -55,19 +85,23 @@ interface CharacterNode {
 const PLATE_CLEARANCE = 14
 const PLATE_PADDING_X = 8
 const PLATE_PADDING_Y = 4
-const PLATE_FONT_SIZE = 14
-const PLATE_CHAR_WIDTH = 8.75
-const PLATE_LINE_HEIGHT = 16
+const PLATE_FONT_SIZE = 15
+const PLATE_CHAR_WIDTH = 9.375
+const PLATE_LINE_HEIGHT = 17
 const CHIP_GAP = 6
 const CHIP_PADDING_X = 8
 const CHIP_PADDING_Y = 3
-const CHIP_FONT_SIZE = 12
-const CHIP_CHAR_WIDTH = 7.25
+const CHIP_FONT_SIZE = 15
+const CHIP_CHAR_WIDTH = 9.0625
 const CHIP_TEXT_GAP = 6
 const CHIP_ICON_SIZE = 18
 const CHIP_ACCENT_SIZE = 22
-const CHIP_LINE_HEIGHT = 16
+const CHIP_LINE_HEIGHT = 20
 const CHIP_ACCENT_ALPHA = 0.45
+// The expression chip lingers this many delivered states at full opacity once its expression reads
+// `none`, then fades out across the next delivered state. Counting delivered states (never redraws)
+// keeps the tail deterministic through movement animation and replay cadence.
+const EXPRESSION_HOLD_TICKS = 2
 const BUBBLE_GAP = 10
 const BUBBLE_CHARS_PER_LINE = 24
 const BUBBLE_FONT_SIZE = 12
@@ -93,6 +127,8 @@ export function createAnnotationLayer(
 ): AnnotationLayer {
   const nodes = new Map<string, CharacterNode>()
   const bubbles = new Map<string, RetainedBubble>()
+  // One expression chip tail per character, replaced by the newest expression and aged by delivery.
+  const chips = new Map<string, ExpressionChip>()
   // Every key in the last delivered state, so redrawing a multi-line state never restarts the final
   // bubble. Replacing the set on each delivery keeps memory bounded by one state.
   let lastDeliveryKeys = new Set<string>()
@@ -105,6 +141,7 @@ export function createAnnotationLayer(
         if (!active.has(id)) {
           node.root.destroy({ children: true })
           nodes.delete(id)
+          chips.delete(id)
         }
       }
 
@@ -125,21 +162,23 @@ export function createAnnotationLayer(
         node.plateLabel.alpha = plateAlpha
 
         // The expression chip appears only where the nameplate is fully opaque, and the bubble
-        // stacks above it when one is drawn, otherwise above the plate.
+        // stacks above it when one is drawn, otherwise above the plate. The chip's content and
+        // alpha come from the tail machine when one is held or fading, else from the live expression.
         let stackTop = plateTop
-        const chipShown = character.expressionTitle !== null && plateAlpha === 1
+        const retained = chips.get(character.id)
+        const chipShown =
+          plateAlpha === 1 && (retained !== undefined || character.expressionTitle !== null)
         node.chip.visible = chipShown
-        if (chipShown && character.expressionTitle !== null) {
-          const accentFrame = expressionAccentFrame(
-            character.id,
-            character.expression.type,
-            scene.presentationTick,
-          )
-          stackTop = drawChip(node, character.expressionTitle, plateTop - CHIP_GAP, resolution, art)
+        if (chipShown) {
+          const title = retained?.title ?? character.expressionTitle ?? ''
+          const type = retained?.type ?? character.expression.type
+          const accentFrame = expressionAccentFrame(character.id, type, scene.presentationTick)
+          stackTop = drawChip(node, title, plateTop - CHIP_GAP, resolution, art)
+          node.chip.alpha = retained === undefined ? 1 : displayedChipAlpha(retained)
           if (art !== null) {
             // The retained sprites carry no intrinsic scale: the effects grid frames are 192 by 128
             // units at 1:1, so each one is scaled down into its reserved chip lane as its texture lands.
-            const icon = art.icon[character.expression.type] ?? Texture.EMPTY
+            const icon = art.icon[type] ?? Texture.EMPTY
             const accent = art.accent[accentFrame] ?? Texture.EMPTY
             node.chipIcon.texture = icon
             node.chipIcon.scale.set(chipSpriteScale(icon, CHIP_ICON_SIZE))
@@ -163,6 +202,53 @@ export function createAnnotationLayer(
       art = nextArt
     },
 
+    observeExpressions(scene, tickMs) {
+      const present = new Set(scene.characters.map((character) => character.id))
+      for (const character of scene.characters) {
+        const title = character.expressionTitle
+        const previous = chips.get(character.id)
+        if (title !== null) {
+          // A live expression (new or repeated) replaces and resets any hold or fade tail.
+          chips.set(character.id, {
+            title,
+            type: character.expression.type,
+            phase: 'live',
+            remainTicks: 0,
+            fadeMs: 0,
+            elapsedMs: 0,
+          })
+          continue
+        }
+        if (previous === undefined) continue
+        if (previous.phase === 'live') {
+          chips.set(character.id, {
+            ...previous,
+            phase: 'hold',
+            remainTicks: EXPRESSION_HOLD_TICKS,
+          })
+        } else if (previous.phase === 'hold') {
+          if (previous.remainTicks > 1) {
+            chips.set(character.id, { ...previous, remainTicks: previous.remainTicks - 1 })
+          } else {
+            chips.set(character.id, {
+              ...previous,
+              phase: 'fade',
+              remainTicks: 0,
+              // The fade spans this one delivered state, whatever its playback rate.
+              fadeMs: Math.max(1, tickMs),
+              elapsedMs: 0,
+            })
+          }
+        }
+      }
+      for (const id of [...chips.keys()]) if (!present.has(id)) chips.delete(id)
+    },
+
+    expressionChipTitle(characterId) {
+      const chip = chips.get(characterId)
+      return chip === undefined ? null : chip.title
+    },
+
     deliver(lines) {
       const deliveryKeys = new Set(lines.map((line) => line.key))
       for (const line of lines) {
@@ -175,7 +261,12 @@ export function createAnnotationLayer(
     clear() {
       bubbles.clear()
       lastDeliveryKeys.clear()
-      for (const node of nodes.values()) node.bubble.visible = false
+      chips.clear()
+      for (const node of nodes.values()) {
+        node.bubble.visible = false
+        node.chip.visible = false
+        node.chip.alpha = 1
+      }
     },
 
     advance(dtMs) {
@@ -187,7 +278,18 @@ export function createAnnotationLayer(
           bubbles.set(speaker, { line: bubble.line, ageMs })
         }
       }
-      return bubbles.size > 0
+      let fading = false
+      for (const [id, chip] of chips) {
+        if (chip.phase !== 'fade') continue
+        const elapsedMs = chip.elapsedMs + dtMs
+        if (elapsedMs >= chip.fadeMs) {
+          chips.delete(id)
+        } else {
+          chips.set(id, { ...chip, elapsedMs })
+          fading = true
+        }
+      }
+      return bubbles.size > 0 || fading
     },
   }
 }
@@ -314,6 +416,12 @@ export function createExpressionArt(atlas: Texture): ExpressionArt {
  */
 function chipSpriteScale(texture: Texture, targetWidth: number): number {
   return texture.width > 0 ? targetWidth / texture.width : 1
+}
+
+/** Chip opacity for one tail machine entry: full through live and hold, ramping to zero across fade. */
+function displayedChipAlpha(chip: ExpressionChip): number {
+  if (chip.phase !== 'fade') return 1
+  return Math.max(0, 1 - chip.elapsedMs / chip.fadeMs)
 }
 
 function ellipsize(line: string, charsPerLine: number): string {
