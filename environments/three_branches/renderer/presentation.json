@@ -152,12 +152,28 @@
       "shed": ["shedFill", "shedEdge", "shedCorner", "shedRidge"]
     }
   },
-  "phaseGrades": {
-    "dawn": { "brightness": 0.96, "contrast": 0.98, "saturation": 0.9, "tint": "violet" },
-    "morning": { "brightness": 1, "contrast": 1, "saturation": 1, "tint": "parchment" },
-    "midday": { "brightness": 1.04, "contrast": 1.02, "saturation": 1.04, "tint": "bone" },
-    "evening": { "brightness": 0.92, "contrast": 1.03, "saturation": 0.9, "tint": "silt" },
-    "night": { "brightness": 0.7, "contrast": 1.08, "saturation": 0.7, "tint": "indigo" }
+  "postEffects": {
+    "authoredGrade": {
+      "brightness": 1.02,
+      "contrast": 0.88,
+      "saturation": 0.8,
+      "tint": "parchment",
+      "tintMix": 0.2
+    },
+    "nightGrade": {
+      "brightness": 0.7,
+      "contrast": 1.08,
+      "saturation": 0.7,
+      "tint": "indigo",
+      "tintMix": 0.18
+    },
+    "propContactShadow": {
+      "tint": "backdrop",
+      "opacity": 0.18,
+      "widthFactor": 0.92,
+      "heightFactor": 0.58,
+      "offsetYCells": 0.03
+    }
   },
   "characters": {
     "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],

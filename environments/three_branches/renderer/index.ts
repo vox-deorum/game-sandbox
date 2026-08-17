@@ -1,4 +1,4 @@
-import type { RecordingHeader, StepState } from '@game-sandbox/schema'
+import type { StepState } from '@game-sandbox/schema'
 import {
   type CameraLimits,
   type CameraView,
@@ -11,9 +11,9 @@ import {
 } from '@renderers/base/camera.js'
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { PixiRenderer, type RendererTextFactory } from '@renderers/base/PixiRenderer.js'
-import type { GroundView, TiledGround } from '@renderers/base/tiled-ground.js'
+import type { TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
-import { Assets, ColorMatrixFilter, Container, Graphics, Texture } from 'pixi.js'
+import { Assets, Container, Graphics, Texture } from 'pixi.js'
 import { type AnnotationLayer, createAnnotationLayer } from './annotations.js'
 import { runArtLoad } from './art-loading.js'
 import { loadThreeBranchesRuntimeAssets } from './assets.js'
@@ -32,7 +32,7 @@ import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome, RECENTER_RECT } 
 import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
 import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
 import { isTextEntry } from './input.js'
-import { drawMap, drawUpperWalls } from './map-layer.js'
+import { drawMap, drawUpperWalls, type MapLayerView } from './map-layer.js'
 import { expectedCharacterIds, readSpeech, readStatic } from './overlay.js'
 import { plateProbe, within } from './palette.js'
 import {
@@ -53,6 +53,7 @@ import thumbnail from './thumbnail.png'
 import type { CollisionShape, FrameScene, StaticScene, WorldPoint } from './types.js'
 import { propUseShapes, selectUseTarget } from './use-preview.js'
 import { createVisitorInput, type VisitorInputController } from './visitor-input.js'
+import { createWorldArtStack, type WorldArtStack } from './world-stack.js'
 
 const CONTENT_SIZE = {
   width: THREE_BRANCHES_PRESENTATION.internalSize.width,
@@ -80,11 +81,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private readonly staticScene: StaticScene
   private readonly staticCollisionShapes: readonly CollisionShape[]
   private readonly propShapes: readonly CollisionShape[]
+  private world!: WorldArtStack
   private worldRoot!: Container
-  private mapLayer!: Container
   private characterLayer!: Container
   private upperLayer!: Container
-  private mapGround!: GroundView
+  private mapView!: MapLayerView
   private upperGround: TiledGround | null = null
   private buildingOutlines!: Container
   private collision!: CollisionLayer
@@ -133,44 +134,35 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     const contentMask = new Graphics()
       .rect(0, THREE_BRANCHES_PRESENTATION.chromeHeight, CONTENT_SIZE.width, CONTENT_SIZE.height)
       .fill('#ffffff')
-    const gradedWorld = new Container()
-    this.mapLayer = new Container()
-    const sceneryLayer = new Container()
-    const propLayer = new Container()
-    this.characterLayer = new Container()
-    this.upperLayer = new Container()
-    const effectsLayer = new Container()
-    const emissiveLayer = new Container()
-    const annotationLayer = new Container()
-    const collisionLayer = new Container()
     const chromeLayer = new Container()
     // The fixed input layer (pad and palette) sits above the world and below the chrome strip.
     const padLayer = new Container()
     const paletteLayer = new Container()
     const inputLayer = new Container()
     inputLayer.addChild(padLayer, paletteLayer)
-    gradedWorld.filters = [new ColorMatrixFilter()]
-    gradedWorld.addChild(
-      this.mapLayer,
-      sceneryLayer,
-      propLayer,
-      this.characterLayer,
-      this.upperLayer,
-      effectsLayer,
-    )
-    this.worldRoot = new Container()
-    // Nameplates and bubbles ride above the graded world and below the collision overlay, so the
-    // information layer is never colour-graded and the diagnostic layer still reads on top of it.
-    this.worldRoot.addChild(gradedWorld, emissiveLayer, annotationLayer, collisionLayer)
+    this.mapView = drawMap(this.staticScene)
+    this.world = createWorldArtStack(this.mapView)
+    this.characterLayer = this.world.characters
+    this.upperLayer = this.world.upper
+    this.worldRoot = this.world.root
     this.worldRoot.mask = contentMask
     root.addChild(backdrop, contentMask, this.worldRoot, inputLayer, chromeLayer)
 
-    this.mapGround = drawMap(this.mapLayer, this.staticScene)
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
-    this.props = createPropLayer(sceneryLayer, propLayer, effectsLayer, emissiveLayer, this.staticScene)
+    this.props = createPropLayer(
+      {
+        scenery: this.world.scenery,
+        shadows: this.world.shadows,
+        props: this.world.props,
+        effects: this.world.effects,
+        emissives: this.world.emissives,
+        highlight: this.world.highlight,
+      },
+      this.staticScene,
+    )
     this.characters = createCharacterLayer(this.characterLayer)
-    this.annotations = createAnnotationLayer(annotationLayer, createText)
-    this.collision = createCollisionLayer(collisionLayer, createText)
+    this.annotations = createAnnotationLayer(this.world.annotations, createText)
+    this.collision = createCollisionLayer(this.world.collision, createText)
     this.collision.setVisible(this.collisionVisible)
     this.chrome = createChrome(chromeLayer, createText)
 
@@ -317,6 +309,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     window.removeEventListener('keydown', this.onKeyDown)
     this.movement = null
     this.settleRemainingMs = 0
+    this.mapView.destroy()
+    this.upperGround?.destroy()
+    this.upperGround = null
+    this.world.destroy()
     super.destroy()
   }
 
@@ -499,6 +495,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private presentScene(scene: FrameScene): void {
     this.presentedScene = scene
+    // Only the exact night phase darkens the world. Opening, day, the other named phases, and any
+    // unknown value stay neutral beyond the authored grade, and the switch never fades.
+    this.world.setNightGrade(scene.dynamic?.phase === 'night')
     const visitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
@@ -559,13 +558,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           effects: assets.effects,
         })
         const characterArt = createCharacterArt({ ...assets.characters, effects: assets.effects })
-        const nextMapLayer = new Container()
+        let nextMapView: MapLayerView | null = null
         const nextCharacterLayer = new Container()
         const nextUpperLayer = new Container()
-        let nextMapGround: GroundView | null = null
         let nextUpperGround: TiledGround | null = null
         try {
-          nextMapGround = drawMap(nextMapLayer, this.staticScene, terrain)
+          nextMapView = drawMap(this.staticScene, terrain)
           nextUpperGround = drawUpperWalls(nextUpperLayer, this.staticScene, terrain)
           const nextCharacters = createCharacterLayer(nextCharacterLayer)
           nextCharacters.install(characterArt)
@@ -580,31 +578,27 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           this.props.install(propArt)
           if (this.presentedScene !== null) this.props.advance(this.presentedScene)
 
-          const previousMapLayer = this.mapLayer
+          const previousMapView = this.mapView
           const previousCharacterLayer = this.characterLayer
           const previousUpperLayer = this.upperLayer
-          const previousMapGround = this.mapGround
           const previousUpperGround = this.upperGround
-          replaceSceneLayer(previousMapLayer, nextMapLayer)
+          replaceMapLayerView(previousMapView, nextMapView)
           replaceSceneLayer(previousCharacterLayer, nextCharacterLayer)
           replaceSceneLayer(previousUpperLayer, nextUpperLayer)
-          this.mapLayer = nextMapLayer
+          this.mapView = nextMapView
           this.characterLayer = nextCharacterLayer
           this.upperLayer = nextUpperLayer
-          this.mapGround = nextMapGround
           this.upperGround = nextUpperGround
           this.characters = nextCharacters
 
-          previousMapGround.destroy()
+          previousMapView.destroy()
           previousUpperGround?.destroy()
           this.buildingOutlines.destroy({ children: true })
-          previousMapLayer.destroy({ children: true })
           previousCharacterLayer.destroy({ children: true })
           previousUpperLayer.destroy({ children: true })
         } catch (error) {
-          nextMapGround?.destroy()
+          nextMapView?.destroy()
           nextUpperGround?.destroy()
-          nextMapLayer.destroy({ children: true })
           nextCharacterLayer.destroy({ children: true })
           nextUpperLayer.destroy({ children: true })
           throw error
@@ -640,6 +634,12 @@ function replaceSceneLayer(current: Container, replacement: Container): void {
   const parent = current.parent
   if (parent === null) throw new Error('Three Branches scene layer is detached.')
   parent.addChildAt(replacement, parent.getChildIndex(current))
+}
+
+/** Attach both replacement map branches before the prior view releases either live branch. */
+function replaceMapLayerView(current: MapLayerView, replacement: MapLayerView): void {
+  replaceSceneLayer(current.naturalView, replacement.naturalView)
+  replaceSceneLayer(current.architectureView, replacement.architectureView)
 }
 
 function charactersMoved(from: FrameScene, to: FrameScene): boolean {

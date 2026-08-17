@@ -3,6 +3,7 @@ import {
   createSparseTiledGround,
   createTiledGround,
   type GroundView,
+  type GroundSpan,
   solidColorTileset,
   type TiledGround,
   type TileGrid,
@@ -37,6 +38,14 @@ export interface SeamStrokeRun {
   readonly alpha: number
 }
 
+/** The separately composited natural and authored portions of one immutable village map. */
+export interface MapLayerView {
+  readonly naturalView: Container
+  readonly architectureView: Container
+  readonly span: GroundSpan
+  destroy(): void
+}
+
 /** Return the configured composite alpha for one drawn surface material. */
 export function materialLayerAlpha(material: SurfaceMaterial): number {
   if (material === 'road') return HEARTHSIDE_STYLE.terrain.routes.road.opacity
@@ -49,25 +58,31 @@ export function materialLayerAlpha(material: SurfaceMaterial): number {
 }
 
 /** Draw the diagnostic fallback or the anti-aliased Hearthside terrain surfaces and seams. */
-export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt): GroundView {
-  if (art === undefined) return drawFallbackMap(layer, scene)
+export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
+  if (art === undefined) return drawFallbackMap(scene)
   const cellSize = THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.village.size.cellSize
-  const owner = new Container()
+  const naturalView = new Container()
+  const architectureView = new Container()
   const grounds: GroundView[] = []
   const graphics: Graphics[] = []
   const span = {
     width: scene.village.size.cellsX * cellSize,
     height: scene.village.size.cellsY * cellSize,
   }
-  const add = (graphic: Graphics, label: string): void => {
+  const addNatural = (graphic: Graphics, label: string): void => {
     graphic.label = label
-    owner.addChild(graphic)
+    naturalView.addChild(graphic)
+    graphics.push(graphic)
+  }
+  const addArchitecture = (graphic: Graphics, label: string): void => {
+    graphic.label = label
+    architectureView.addChild(graphic)
     graphics.push(graphic)
   }
 
   const ground = new Graphics()
   ground.rect(0, 0, span.width, span.height).fill(fillPatternFor(art, 'ground', cellSize))
-  add(ground, 'terrain-ground')
+  addNatural(ground, 'terrain-ground')
 
   for (const material of OVERLAY_MATERIALS) {
     const surface = new Graphics()
@@ -76,7 +91,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
       surface.path(path).fill(pattern)
     }
     surface.alpha = materialLayerAlpha(material)
-    add(surface, `terrain-${material}`)
+    addNatural(surface, `terrain-${material}`)
   }
 
   const names = Object.fromEntries(scene.ground.map((ground) => [ground.code, ground.name]))
@@ -88,11 +103,11 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     hatchGraphics(art.contours, cellSize),
   ] as const
   for (const seam of seams) seam.setMask?.({ mask: seamCover, inverse: true })
-  add(seams[0], 'terrain-seam-pooling')
-  add(seams[1], 'terrain-reed-marks')
-  add(seams[2], 'terrain-seam-ink')
-  add(seams[3], 'terrain-seam-hatch')
-  add(seamCover, 'terrain-seam-cover')
+  addNatural(seams[0], 'terrain-seam-pooling')
+  addNatural(seams[1], 'terrain-reed-marks')
+  addNatural(seams[2], 'terrain-seam-ink')
+  addNatural(seams[3], 'terrain-seam-hatch')
+  addNatural(seamCover, 'terrain-seam-cover')
 
   const pathTreatment = HEARTHSIDE_STYLE.terrain.routes.path
   const pathPattern = fillPatternFor(art, 'path', cellSize)
@@ -108,7 +123,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     pathTreatment.edgeFadeCells * 2,
   )
   pathLayers.view.setMask?.({ mask: pathBridgeCutout, inverse: true })
-  owner.addChild(pathLayers.view, pathBridgeCutout)
+  naturalView.addChild(pathLayers.view, pathBridgeCutout)
   graphics.push(...pathLayers.graphics)
   pathBridgeCutout.label = 'terrain-path-bridge-cutout'
   graphics.push(pathBridgeCutout)
@@ -127,7 +142,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     roadTreatment.edgeFadeCells * 2,
   )
   roadLayers.view.setMask?.({ mask: roadBridgeCutout, inverse: true })
-  owner.addChild(roadLayers.view, roadBridgeCutout)
+  naturalView.addChild(roadLayers.view, roadBridgeCutout)
   graphics.push(...roadLayers.graphics)
   roadBridgeCutout.label = 'terrain-road-bridge-cutout'
   graphics.push(roadBridgeCutout)
@@ -138,7 +153,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
     { cellSize, variant: art.variant },
   )
   structures.view.label = 'terrain-structures'
-  owner.addChild(structures.view)
+  architectureView.addChild(structures.view)
   grounds.push(structures)
 
   const plankTreatment = HEARTHSIDE_STYLE.terrain.planks
@@ -146,7 +161,7 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   plankShadow.tint = HEARTHSIDE_STYLE.palette[plankTreatment.shadowTint]
   plankShadow.alpha = plankTreatment.shadowOpacity
   plankShadow.y = plankTreatment.shadowOffsetCells * cellSize
-  add(plankShadow, 'terrain-planks-shadow')
+  addArchitecture(plankShadow, 'terrain-planks-shadow')
 
   const planks = createSparseTiledGround(art.plankLayer, art.tileset, {
     cellSize,
@@ -160,12 +175,11 @@ export function drawMap(layer: Container, scene: StaticScene, art?: TerrainArt):
   planks.view.label = 'terrain-planks'
   deckClip.label = 'terrain-planks-mask'
   planks.view.mask = deckClip
-  owner.addChild(planks.view, deckClip)
+  architectureView.addChild(planks.view, deckClip)
   grounds.push(planks)
   graphics.push(deckClip)
 
-  layer.addChild(owner)
-  return ownedTerrainView(owner, grounds, graphics, span)
+  return ownedMapLayerView(naturalView, architectureView, grounds, graphics, span)
 }
 
 /** Wrap one repeating pattern texture so world cells and the pattern grid stay aligned. */
@@ -974,7 +988,7 @@ function pointAtRawOffset(
 }
 
 /** Draw the configured ground as the unchanged dense, solid-color pre-art fallback. */
-function drawFallbackMap(layer: Container, scene: StaticScene): TiledGround {
+function drawFallbackMap(scene: StaticScene): MapLayerView {
   const baseCode = scene.ground.find((item) => item.layer === 'base')?.code
   if (baseCode === undefined) throw new Error('Three Branches rules do not define a fill ground.')
   const rowsFor = (wanted: 'landscape' | 'structure'): string[] =>
@@ -983,19 +997,32 @@ function drawFallbackMap(layer: Container, scene: StaticScene): TiledGround {
     )
   const baseRows = scene.topFirstRows.map(() => baseCode.repeat(scene.village.size.cellsX))
   const colors = Object.fromEntries(scene.ground.map((ground) => [ground.code, ground.color]))
-  const ground = createTiledGround(
+  const tileset = solidColorTileset(colors)
+  const cellSize = THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.village.size.cellSize
+  const naturalGround = createTiledGround(
     { columns: scene.village.size.cellsX, rows: baseRows },
-    solidColorTileset(colors),
+    tileset,
     {
-      cellSize: THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.village.size.cellSize,
-      layers: [
-        { columns: scene.village.size.cellsX, rows: rowsFor('landscape') },
-        { columns: scene.village.size.cellsX, rows: rowsFor('structure') },
-      ],
+      cellSize,
+      layers: [{ columns: scene.village.size.cellsX, rows: rowsFor('landscape') }],
     },
   )
-  layer.addChild(ground.view)
-  return ground
+  const architectureGround = createSparseTiledGround(
+    { columns: scene.village.size.cellsX, rows: rowsFor('structure') },
+    tileset,
+    { cellSize },
+  )
+  const naturalView = new Container()
+  const architectureView = new Container()
+  naturalView.addChild(naturalGround.view)
+  architectureView.addChild(architectureGround.view)
+  return ownedMapLayerView(
+    naturalView,
+    architectureView,
+    [naturalGround, architectureGround],
+    [],
+    naturalGround.span,
+  )
 }
 
 /** Draw only the configured wall ground into the layer that sits above characters. */
@@ -1033,22 +1060,25 @@ function appendRing(path: GraphicsPath, ring: TerrainContourRing, cellSize: numb
   path.closePath()
 }
 
-export function ownedTerrainView(
-  owner: Container,
+export function ownedMapLayerView(
+  naturalView: Container,
+  architectureView: Container,
   grounds: readonly GroundView[],
   graphics: readonly Graphics[],
-  span: GroundView['span'],
-): GroundView {
+  span: GroundSpan,
+): MapLayerView {
   let destroyed = false
   return {
-    view: owner,
+    naturalView,
+    architectureView,
     span,
     destroy() {
       if (destroyed) return
       destroyed = true
       for (const ground of grounds) ground.destroy()
       for (const graphic of graphics) graphic.destroy()
-      owner.destroy({ children: false })
+      naturalView.destroy({ children: false })
+      architectureView.destroy({ children: false })
     },
   }
 }

@@ -59,9 +59,9 @@ const TEXTURE_FLECK_COUNT = 40
 /**
  * Build the fixed village information strip and its Recenter and collision controls.
  *
- * The strip is drawn once here with Pixi `Graphics` and `Text`, outside the graded world
- * container, so it is never colour-graded. It is clicked in the browser's own coordinates by the
- * renderer, which is how every other gesture in this environment is answered.
+ * The strip is drawn once here with Pixi `Graphics` and `Text`, outside the world root entirely, so
+ * neither world grade nor the camera transform reaches it. It is clicked in the browser's own
+ * coordinates by the renderer, which is how every other gesture in this environment is answered.
  */
 export function createChrome(layer: Container, createText: RendererTextFactory): ChromeLayer {
   const width = THREE_BRANCHES_PRESENTATION.internalSize.width

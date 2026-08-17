@@ -140,7 +140,7 @@ Step 6 implements this specification without further design work. Controls appea
 
 - A 3 by 3 emote grid sits in the lower right of the content area, in ruleset order, with hotkeys 1 through 9.
 - Use is a separate button beside the grid with hotkey 0.
-- Hovering Use highlights the prop a use would select under the environment's reach-plus-unblocked-line rule. The palette is drawn on the canvas, so pointer hover is the preview affordance and hotkey 0 is the keyboard access to use itself. The preview is informational and never sends.
+- Hovering Use highlights the prop a use would select under the environment's reach-plus-unblocked-line rule. The palette is drawn on the canvas, so pointer hover is the preview affordance and hotkey 0 is the keyboard access to use itself. The preview is informational and never sends. The highlight owns its own layer above the emissives and outside both [step 5.1](5-1-art-style.md#day-phase) world grades, so hovering a prop never shifts its colour.
 - A pressed control sets the expression on the next composed action window. The last press in a window wins, and the window sends no expression when nothing was pressed.
 
 ### Chat input

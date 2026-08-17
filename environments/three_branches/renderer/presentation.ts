@@ -246,11 +246,22 @@ export interface PlankTreatment {
   textureBleedCells: number
 }
 
-export interface PhaseGrade {
+/** A restrained affine colour treatment applied to a world composite. */
+export interface ColorGradeTreatment {
   brightness: number
   contrast: number
   saturation: number
   tint: HearthsidePaletteKey
+  tintMix: number
+}
+
+/** The grounding shadow drawn under every prop, sized from its unrotated collision footprint. */
+export interface PropContactShadowTreatment {
+  tint: HearthsidePaletteKey
+  opacity: number
+  widthFactor: number
+  heightFactor: number
+  offsetYCells: number
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
@@ -300,7 +311,11 @@ export interface HearthsideStyle {
     fadeMs: number
     frames: Readonly<Record<string, readonly string[]>>
   }
-  phaseGrades: Readonly<Record<string, PhaseGrade>>
+  postEffects: {
+    authoredGrade: ColorGradeTreatment
+    nightGrade: ColorGradeTreatment
+    propContactShadow: PropContactShadowTreatment
+  }
   characters: {
     clothingTints: readonly HearthsidePaletteKey[]
     details: readonly string[]
@@ -357,11 +372,6 @@ export function measureDeliveryGap(
   }
 }
 
-/** Day and unknown phases are deliberately neutral. */
-export function phaseGrade(phase: string): PhaseGrade | null {
-  return HEARTHSIDE_STYLE.phaseGrades[phase] ?? null
-}
-
 /** Resolve one complete prop-still scale from the validated visual calibration. */
 export function propVisualScale(type: string): number {
   return visualScaleFor(type, HEARTHSIDE_STYLE.props)
@@ -389,7 +399,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'transition',
     'terrain',
     'roofs',
-    'phaseGrades',
+    'postEffects',
     'characters',
     'props',
     'scenery',
@@ -487,28 +497,28 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     ),
   }
 
-  const configuredPhases = RULES.phases.map((phase) => phase.name)
-  const gradesSource = exactRecord(source.phaseGrades, 'presentation.phaseGrades', configuredPhases)
-  const phaseGrades = Object.fromEntries(
-    configuredPhases.map((name) => {
-      const path = `presentation.phaseGrades.${name}`
-      const grade = exactRecord(gradesSource[name], path, [
-        'brightness',
-        'contrast',
-        'saturation',
-        'tint',
-      ])
-      return [
-        name,
-        {
-          brightness: positiveNumber(grade.brightness, `${path}.brightness`),
-          contrast: positiveNumber(grade.contrast, `${path}.contrast`),
-          saturation: nonnegativeNumber(grade.saturation, `${path}.saturation`),
-          tint: paletteKey(grade.tint, paletteNames, `${path}.tint`),
-        },
-      ]
-    }),
-  )
+  const postEffectsSource = exactRecord(source.postEffects, 'presentation.postEffects', [
+    'authoredGrade',
+    'nightGrade',
+    'propContactShadow',
+  ])
+  const postEffects = {
+    authoredGrade: colorGradeTreatment(
+      postEffectsSource.authoredGrade,
+      'presentation.postEffects.authoredGrade',
+      paletteNames,
+    ),
+    nightGrade: colorGradeTreatment(
+      postEffectsSource.nightGrade,
+      'presentation.postEffects.nightGrade',
+      paletteNames,
+    ),
+    propContactShadow: propContactShadowTreatment(
+      postEffectsSource.propContactShadow,
+      'presentation.postEffects.propContactShadow',
+      paletteNames,
+    ),
+  }
 
   const charactersSource = exactRecord(source.characters, 'presentation.characters', [
     'clothingTints',
@@ -630,13 +640,56 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     transition,
     terrain,
     roofs,
-    phaseGrades,
+    postEffects,
     characters,
     props,
     scenery,
     propEffects,
     emissives,
     cranes,
+  }
+}
+
+function colorGradeTreatment(
+  value: unknown,
+  name: string,
+  palette: ReadonlySet<string>,
+): ColorGradeTreatment {
+  const source = exactRecord(value, name, [
+    'brightness',
+    'contrast',
+    'saturation',
+    'tint',
+    'tintMix',
+  ])
+  return {
+    brightness: boundedNumber(source.brightness, `${name}.brightness`, 0, 2),
+    contrast: boundedNumber(source.contrast, `${name}.contrast`, 0, 2),
+    saturation: boundedNumber(source.saturation, `${name}.saturation`, 0, 2, true),
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
+    tintMix: unitNumber(source.tintMix, `${name}.tintMix`),
+  }
+}
+
+/** The southward offset stays a small fraction of a cell so a shadow never reads as a second prop. */
+function propContactShadowTreatment(
+  value: unknown,
+  name: string,
+  palette: ReadonlySet<string>,
+): PropContactShadowTreatment {
+  const source = exactRecord(value, name, [
+    'tint',
+    'opacity',
+    'widthFactor',
+    'heightFactor',
+    'offsetYCells',
+  ])
+  return {
+    tint: paletteKey(source.tint, palette, `${name}.tint`),
+    opacity: unitNumber(source.opacity, `${name}.opacity`),
+    widthFactor: boundedNumber(source.widthFactor, `${name}.widthFactor`, 0, 2),
+    heightFactor: boundedNumber(source.heightFactor, `${name}.heightFactor`, 0, 2),
+    offsetYCells: boundedNumber(source.offsetYCells, `${name}.offsetYCells`, 0, 0.25, true),
   }
 }
 

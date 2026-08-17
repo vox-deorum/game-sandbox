@@ -56,22 +56,28 @@ Each semantic building has a simple roof container aligned to its rect. A roof i
 
 Keep step 3's shared tile-map pipeline. Build static terrain, upper walls, semantic roofs, scenery, and permanent prop bases once at mount from the recording header's layout. Never rebuild them on a tick update or seek.
 
-Reconcile characters, prop-state treatments, roof alpha, phase grade, emissives, and crane dressing by stable id. The shared Pixi ticker smooths position, heading, walk frames, sustained effects, and crane motion between recorded ticks.
+Reconcile characters, prop-state treatments, roof alpha, the night grade, emissives, and crane dressing by stable id. The shared Pixi ticker smooths position, heading, walk frames, sustained effects, and crane motion between recorded ticks.
 
 Resolve state treatments once per recorded tick. Between ticks, transform the cast and sustained effects without rebuilding art, and move collision bodies with their art. `presentation.json` owns the natural one-second transition. Paced hosts scale it to replay or watch cadence. An unpaced human session measures the gap between states, caps it at the natural duration, and passes no cadence. Keep the frame loop briefly alive after settling, reuse masks, and load textures only through the renderer-local manifest.
 
 Draw world layers in this order:
 
-1. Night-ink surround, then continuous terrain surfaces and their seam treatments, followed by inset routes, exact floors, doorways, walls, and bridge planks.
-2. Scenery shadows and static prop bases.
-3. Dynamic prop stills.
-4. Character shadows and characters.
-5. Upper walls, semantic roofs, and effects that belong above characters.
-6. World-only day-phase grade.
-7. Post-grade emissives, including lantern and hearth warmth.
-8. Collision overlay, always above art and never graded.
+1. Night-ink surround, then natural terrain: continuous surfaces, their seam treatments, reed marks, and inset routes.
+2. The authored composite, drawn in this order and covered as a whole by the authored-art grade:
+   1. Lower architecture: exact floors, doorways, walls, bridge shadows, and bridge planks.
+   2. Scenery.
+   3. Prop contact shadows.
+   4. Prop stills and foundations.
+   5. Character shadows and characters.
+   6. Upper walls and semantic roofs.
+   7. Monument uppers and sustained effects.
+3. The night grade, which covers steps 1 and 2 together so terrain and authored art darken as one.
+4. Emissives, including lantern and hearth warmth.
+5. The prop interaction highlight.
+6. Nameplates, expression chips, and speech bubbles.
+7. Collision overlay, always above art and never graded.
 
-HUD and interaction are step 5.2 work and are never colour-graded.
+Natural terrain keeps its daytime colour through the authored grade, so generated artwork moves toward the terrain rather than both drifting together. Everything from step 4 onward sits outside both grades, which makes "post-grade" structural rather than a rule to remember. HUD and interaction are step 5.2 work and are never colour-graded.
 
 ### Characters, props, and dressing
 
@@ -100,13 +106,19 @@ White cranes are renderer dressing, not layout or game data. Derive count, start
 
 ### Day phase
 
-With `daynight`, the overlay's dawn, morning, midday, evening, or night phase selects one world-only colour grade. It changes wash and contrast, not geometry, state meaning, or palette identity. Render sparse emissives after it. With daynight off, `day` is neutral. The collision overlay and later HUD remain ungraded.
+Two grades run, and both are pure colour: they change wash and contrast, never geometry, state meaning, or palette identity.
+
+The authored-art grade is always on. It pulls generated objects and architecture toward the quieter terrain palette by desaturating, easing contrast so ink edges lift off pure black, and mixing a little parchment. Natural terrain and routes stay out of it and remain the daytime reference.
+
+The night grade is the only phase-driven one. With `daynight`, the exact `night` phase attaches it over terrain and authored art together; it switches at presentation of the target scene, with no fade. Dawn, morning, midday, and evening carry no grade of their own, and with daynight off `day` is likewise neutral. Emissives render after both grades, so lantern and hearth warmth stays clean at night. The collision overlay, the prop highlight, and the HUD remain ungraded.
+
+The cost ceiling is one viewport-clipped filter pass outside night and two during it.
 
 ### Assets and thumbnail
 
 The local manifest is the only asset catalog. Keep only the high-resolution originals used by the approved art in `environments/three_branches/renderer/source-art/`. Keep optimised compiled files in `environments/three_branches/renderer/assets/`. Loose per-frame files under `assets/<group>/` are the editable truth; [step 5.0](5-0-atlas.md) compiles them into the atlas pages, and both are committed. Use grayscale-alpha masks for tintable textures and full-colour raster art only where tinting cannot express the treatment.
 
-`environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants, land, water, road, and path curve profiles, seam treatments (pooling, ink, water hatching), reed marks, inset route and deck geometry, roof fade, phase grades, character treatments, prop and scenery scales, monument texture-density divisors and source-pixel anchors, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
+`environments/three_branches/renderer/presentation.json`, validated by `presentation.ts`, owns the palette, ground variants, land, water, road, and path curve profiles, seam treatments (pooling, ink, water hatching), reed marks, inset route and deck geometry, roof fade, post effects (the authored grade, the night grade, and the prop contact shadow), character treatments, prop and scenery scales, monument texture-density divisors and source-pixel anchors, prop effects, and crane dressing. `generation.json` remains generation-only, so visual calibration cannot alter seeded layouts.
 
 `renderer/assets.ts` owns the catalog and runtime loader. Its seven atlas entries record each source and compiled file, dimensions, tintability, consumer, and sprite-sheet frame grid. The runtime loader resolves only pages with shipped consumers: terrain, props, monuments, scenery, the four character layers, and effects. Edit art by changing loose frames and running the step 5.0 pack command, never by hand-editing an atlas page.
 
@@ -136,15 +148,19 @@ Status: complete.
 
 The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
-- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `phaseGrades` (dawn, morning, midday, evening, night, no day entry), `characters` (clothing tints, details, walk, visitor), `props` (0.14 default still scale, bell and pump scale overrides, the canonical 384 by 256 effect offsets, and monument density divisors with source-pixel anchors), `scenery` (0.25 default sprite scale with crates at 0.30), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
-- `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest, every tint against the palette, and the graded phases against `rules.json`, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
+- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `postEffects` (`authoredGrade`, `nightGrade`, and `propContactShadow`), `characters` (clothing tints, details, walk, visitor), `props` (0.14 default still scale, bell and pump scale overrides, the canonical 384 by 256 effect offsets, and monument density divisors with source-pixel anchors), `scenery` (0.25 default sprite scale with crates at 0.30), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
+- Each grade carries brightness, contrast, saturation, a palette tint, and a tint mix. Brightness and contrast must be above zero and at most two, saturation zero through two, and tint mix zero through one. The contact shadow carries a palette tint, an opacity, width and height factors above zero and at most two, and a southward offset of zero through a quarter cell.
+- `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest and every tint against the palette, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.
-- `index.ts` reshuffles the scene graph to `worldRoot { gradedWorld { map, scenery, props, characters, upper }, emissives, collision }` with chrome outside the camera transform, matching the draw order above. One ColorMatrixFilter on `gradedWorld` is the world-only grade, so post-grade and ungraded are structural.
+- `post-effects.ts` folds one grade into a row-major five-by-four matrix: saturation around luminance, contrast around mid grey, brightness, then the tint mix. Nothing is clamped on the processor, since the framebuffer performs the final clamp, and the identity alpha row keeps transparent apertures crisp.
+- `world-stack.ts` owns the world containers and both retained filters. The authored filter stays attached to the authored composite. The night filter is retained across the whole mount and attached to the shared parent of terrain and authored art only during the night phase, never rebuilt or faded. Both filters inherit render-target resolution and antialiasing, add no padding, and clip to the viewport, so a pass costs one screen-sized texture at any zoom.
+- `map-layer.ts` returns a `MapLayerView` for both loaded and fallback art: separate natural and architecture roots, the map span, and an idempotent `destroy()`. The view exclusively owns both roots and their tiled-ground, graphics, and mask resources. Art replacement builds the next views off-tree, attaches both replacements only after construction succeeds, then destroys the previous view once; a failure destroys only the incomplete replacement.
+- `props-layer.ts` draws contact shadows into a world-space layer rather than inside the rotating prop roots. Each shadow is sized from the prop's unrotated footprint, keeps the fixed-monument collision scaling, rotates by the prop's visual facing, and sits at the collision centre plus the configured southward offset, so the offset never turns with the prop. The interaction highlight moves to its own post-grade layer.
 - `loadArt()` runs after setup: it resolves the current runtime pages, validates and slices their frames, bakes the tinted tileset, installs terrain and character art, sets the `threeBranchesAssets` probe to ready, and re-renders. The solid-colour drawing remains the pre-load and failure fallback.
 
-`overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
+`overlay.ts`, `collision.ts`, `collision-layer.ts`, `chrome.ts`, and `camera.ts` do not change. Tests cover configuration validation, the 13 fixed hexes, and the paced and unpaced duration rules.
 
-The foundation's successful art load swaps in the configured tinted terrain fills. Successful prop-art installation reapplies configured foundation and still scales, plus retained scenery-art scales, only after full art preflight succeeds. The Terrain step owns fill variation, contour composition, shoreline, bridge overlays, and upper-wall artwork. The world-grade filter remains neutral until the Phase, cranes, and cadence step composes and applies the configured grades.
+The foundation's successful art load swaps in the configured tinted terrain fills. Successful prop-art installation reapplies configured foundation and still scales, plus retained scenery-art scales, only after full art preflight succeeds. The Terrain step owns fill variation, contour composition, shoreline, bridge overlays, and upper-wall artwork.
 
 ## Terrain
 
@@ -203,14 +219,22 @@ Tests cover occupancy targets, easing, and snap semantics. The owner reviews the
 
 Pending. The owner reviews the roofs in watch sessions and records the date here.
 
+### Post-effect sign-off
+
+Pending. This gate is handed over without automated tests or independent review, so nothing is added until the owner accepts the look. Inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daytime and at night, and review every state of all ten prop families, characters, pine and crate scenery, interiors, walls, bridges, sustained effects, highlights, and emissives. `season_4` carries `daynight`, so its night phase begins at tick 961; a recorded replay scrubs there faster than a live episode does.
+
+Accept only if natural terrain and routes retain their daytime colours, generated artwork and architecture read as part of the same restrained palette, every prop state stays immediately distinguishable, ink edges and transparent apertures stay crisp, contact shadows ground props without reading as dark decals, night darkens terrain and authored artwork together, lantern and hearth emissives keep clean warmth, highlighting and annotations and collision and controls are unchanged, maximum-zoom panning and animated effects stay smooth, and no halos, filter seams, clipping, added blur, or muddy shadows appear. The likely dials are grade contrast, tint mix, and shadow opacity.
+
+Record the acceptance date and screenshots here. If the scene still reads as digitally separate after this gate, plan a separate world-space paper-grain pilot rather than adding grain to this work.
+
 ## Phase, cranes, and cadence
 
-- Day phase: per-phase wash, contrast, brightness, and saturation compose one colour matrix; `day` and missing entries yield no filter.
+- Day phase: the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade.
 - `cranes.ts` derives count, routes, and per-tick states from the static-layout key, drawn north-facing and rotated to the route tangent.
 - Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over the gap capped at the natural duration. The frame loop stays alive for a short grace after settling.
 - The 320 by 180 thumbnail lands here.
 
-Tests cover crane determinism and the cadence rules. The owner reviews each phase grade over the finished village, the cranes, and the fixture and generated seeds at fitted, mid, and close scales. The bare full browser suite runs before handoff.
+Tests cover crane determinism and the cadence rules. The owner reviews the night grade over the finished village, the cranes, and the fixture and generated seeds at fitted, mid, and close scales. The bare full browser suite runs before handoff.
 
 ### Final sign-off
 
@@ -220,7 +244,8 @@ Pending. The owner reviews the finished style across phases and seeds and record
 
 The suite tests structure, not aesthetics: no test measures whether the village reads well, since that is the owner's call at each sign-off. Keep the mechanical coverage to:
 
-- Configuration: `presentation.json` validation for contour, seam, route, and deck calibration, the 13 fixed hexes, day-grade neutrality, and the paced and unpaced duration rules.
+- Configuration: `presentation.json` validation for contour, seam, route, deck, and post-effect calibration, the 13 fixed hexes, and the paced and unpaced duration rules.
+- Post effects: known colour vectors through the grade matrix in the stated operation order, preserved alpha, unclamped results, authored filter placement, the retained night filter's lifecycle, the exact layer order with every post-grade exclusion, natural against architecture map ownership for both loaded and fallback art, idempotent map destruction with failed-replacement rollback, and world-south shadow offsets for east and west rectangles and for circular monuments. No aesthetic screenshot goldens.
 - Determinism: equal inputs give equal fills, contours, routes, tints, walk frames, prop treatments, and crane routes, and sustained animations are pure at equal inputs.
 - Scene lifecycle: statics build once per static-layout key, dynamic nodes reconcile by id, no tick rebuilds statics, and seek, frame repeat, and resize snap.
 - Collision truth: overlay solids match wall ground, doorways stay passable, and prop and scenery sprites sit on their catalog shapes.

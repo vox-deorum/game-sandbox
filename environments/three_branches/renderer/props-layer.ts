@@ -10,6 +10,7 @@ import {
   propMonumentTreatment,
   propVisualScale,
   sceneryVisualScale,
+  THREE_BRANCHES_PRESENTATION,
 } from './presentation.js'
 import { isShippedPropType, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 import { frameRectangle } from './tint.js'
@@ -17,6 +18,9 @@ import { frameRectangle } from './tint.js'
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
 const EFFECT_SCALE = 0.25
+
+/** The effects-atlas cell the contact shadow is drawn from, so its scale reaches a real footprint. */
+const SHADOW_SOURCE = shadowSourceSize()
 
 /** Pages that become artwork for props, scenery, and their effects. */
 export interface PropAtlasTextures {
@@ -64,14 +68,22 @@ export function createPropArt(atlases: PropAtlasTextures): PropArt {
   }
 }
 
+/** The world containers a prop draws into, each owned by the world-art stack. */
+export interface PropLayerTargets {
+  scenery: Container
+  /** Contact shadows, in world space below every prop so one prop's shadow never covers another. */
+  shadows: Container
+  props: Container
+  /** Monument uppers and sustained effects that belong above characters. */
+  effects: Container
+  emissives: Container
+  /** The interaction highlight, drawn after the world grades so hovering never shifts colour. */
+  highlight: Container
+}
+
 /** Build retained prop stills and reconcile their recorded state by stable prop id. */
-export function createPropLayer(
-  sceneryLayer: Container,
-  propLayer: Container,
-  upperLayer: Container,
-  emissiveLayer: Container,
-  scene: StaticScene,
-): PropLayer {
+export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): PropLayer {
+  const cellSize = THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.village.size.cellSize
   const starts = new Map(
     scene.props.map((item) => {
       const start = CATALOG.props.find((kind) => kind.token === item.type)?.start
@@ -82,21 +94,22 @@ export function createPropLayer(
   const nodes = new Map<string, PropNode>()
   let art: PropArt | null = null
 
-  for (const item of scene.scenery) sceneryLayer.addChild(createSceneryNode(item))
+  for (const item of scene.scenery) layers.scenery.addChild(createSceneryNode(item))
   for (const item of scene.props) {
-    const node = createPropNode(item)
+    const node = createPropNode(item, cellSize)
     nodes.set(item.id, node)
+    layers.shadows.addChild(node.shadow)
     if (isFixedMonument(item)) {
-      upperLayer.addChild(node.root)
-      node.shadow.position.set(centerX(item), centerY(item))
+      // A monument's civic upper reads above characters, while its plinth stays with the props.
+      layers.effects.addChild(node.root)
       node.foundation.position.set(centerX(item), centerY(item))
-      propLayer.addChild(node.shadow, node.foundation)
-    } else propLayer.addChild(node.root)
-    upperLayer.addChild(node.effect)
-    emissiveLayer.addChild(node.emissive)
+      layers.props.addChild(node.foundation)
+    } else layers.props.addChild(node.root)
+    layers.effects.addChild(node.effect)
+    layers.emissives.addChild(node.emissive)
   }
   const highlightNode = new Graphics({ label: 'prop-highlight' })
-  propLayer.addChild(highlightNode)
+  layers.highlight.addChild(highlightNode)
 
   const applyState = (node: PropNode, state: string): void => {
     if (node.state === state) return
@@ -123,7 +136,7 @@ export function createPropLayer(
       preflightArt(nextArt)
       for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
-      for (const item of scene.scenery) installScenery(sceneryLayer, item, nextArt)
+      for (const item of scene.scenery) installScenery(layers.scenery, item, nextArt)
       for (const node of nodes.values()) {
         const state = node.state ?? start(starts, node.item.id)
         node.state = null
@@ -198,17 +211,16 @@ function createSceneryNode(item: StaticDrawable): Container {
   return root
 }
 
-function createPropNode(item: StaticDrawable): PropNode {
+function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   const root = new Container({ label: `prop:${item.id}` })
   root.position.set(centerX(item), centerY(item))
   root.rotation = visualFacing(item)
-  const shadow = propShadow(item)
+  const shadow = propShadow(item, cellSize)
   const fallbackNode = fallback(item, true)
   const artScale = propArtScale(item)
   const foundation = propSprite('prop-foundation', Texture.EMPTY, artScale)
   foundation.visible = false
   const still = propSprite('prop-still', Texture.EMPTY, artScale)
-  if (!isFixedMonument(item)) root.addChild(shadow)
   root.addChild(fallbackNode, still)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
@@ -250,13 +262,25 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
   return node
 }
 
-function propShadow(item: StaticDrawable): Sprite {
-  const shadow = sprite('prop-contact-shadow', Texture.EMPTY, 1)
+/**
+ * Ground one prop in world space. The sprite carries the facing rotation itself and the southward
+ * offset is added to its world position afterwards, so the offset stays south whichever way the
+ * prop turns. Sizing keeps reading the unrotated footprint, which preserves the east and west
+ * behaviour the rotating prop root used to give for free.
+ */
+function propShadow(item: StaticDrawable, cellSize: number): Sprite {
+  const treatment = HEARTHSIDE_STYLE.postEffects.propContactShadow
+  const shadow = sprite(`prop-contact-shadow:${item.id}`, Texture.EMPTY, 1)
   const { width, height } = localFootprint(item)
   const collisionScale = isFixedMonument(item) ? item.collisionScale : 1
-  shadow.scale.set((width * collisionScale * 0.9) / 192, (height * collisionScale * 0.6) / 128)
-  shadow.tint = HEARTHSIDE_STYLE.palette.backdrop
-  shadow.alpha = 0.25
+  shadow.scale.set(
+    (width * collisionScale * treatment.widthFactor) / SHADOW_SOURCE.width,
+    (height * collisionScale * treatment.heightFactor) / SHADOW_SOURCE.height,
+  )
+  shadow.rotation = visualFacing(item)
+  shadow.position.set(centerX(item), centerY(item) + treatment.offsetYCells * cellSize)
+  shadow.tint = HEARTHSIDE_STYLE.palette[treatment.tint]
+  shadow.alpha = treatment.opacity
   shadow.visible = false
   return shadow
 }
@@ -327,12 +351,22 @@ function texture(frames: Readonly<Record<string, Texture>>, name: string): Textu
   if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${name}`)
   return value
 }
+function atlasEntry(name: 'props' | 'monuments' | 'scenery' | 'effects') {
+  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
+  if (atlas === undefined || 'layers' in atlas) {
+    throw new Error(`Three Branches ${name} atlas is missing.`)
+  }
+  return atlas
+}
+function shadowSourceSize(): { width: number; height: number } {
+  const atlas = atlasEntry('effects')
+  return { width: atlas.frames.width, height: atlas.frames.height }
+}
 function framesFor(
   name: 'props' | 'monuments' | 'scenery' | 'effects',
   atlasTexture: Texture,
 ): Readonly<Record<string, Texture>> {
-  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
-  if (atlas === undefined || 'layers' in atlas) throw new Error(`Three Branches ${name} atlas is missing.`)
+  const atlas = atlasEntry(name)
   return Object.fromEntries(atlas.frames.names.map((frame) => [frame, new Texture({ source: atlasTexture.source, frame: frameRectangle(atlas.frames, frame) })]))
 }
 function preflightArt(art: PropArt): void {
