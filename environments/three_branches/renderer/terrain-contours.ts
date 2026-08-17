@@ -3,11 +3,7 @@ import { stableHashParts } from '@renderers/base/math.js'
 import { buildCells, buildComponents, validateInputs } from './terrain-contour-grid.js'
 import { buildChains, buildGraph } from './terrain-contour-graph.js'
 import { referenceOf } from './terrain-contour-reference.js'
-import {
-  buildClearanceIndex,
-  buildContourReferences,
-  shapeChains,
-} from './terrain-contour-shaping.js'
+import { buildContourReferences, shapeChains } from './terrain-contour-shaping.js'
 import {
   assignComponentAndRingIds,
   buildRings,
@@ -28,7 +24,7 @@ export function planTerrainContours(
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
 ): TerrainContourPlan {
-  const { width, height } = validateInputs(rows, groundNameForCode, settings, bridgeTaperCells)
+  const { width, height } = validateInputs(rows, groundNameForCode)
   const layoutHash = stableHashParts('terrain-layout', width, height, rows.join('\n'))
   const cells = buildCells(rows, groundNameForCode, width, height)
   const componentRecords = buildComponents(cells)
@@ -40,8 +36,7 @@ export function planTerrainContours(
   const graph = buildGraph(cells, width, height, componentKeyForCell)
   const workingChains = buildChains(graph.nodes, graph.segments)
   buildContourReferences(workingChains, settings)
-  const clearanceIndex = buildClearanceIndex(workingChains)
-  shapeChains(workingChains, settings, bridgeTaperCells, layoutHash, clearanceIndex)
+  shapeChains(workingChains, settings, bridgeTaperCells, layoutHash)
   repairCurveGraph(workingChains)
 
   const workingRings = buildRings(graph.nodes, graph.segments, workingChains)

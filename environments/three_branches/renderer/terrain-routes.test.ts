@@ -26,11 +26,11 @@ const RAW_SETTINGS: TerrainRouteSettings = {
   ...SETTINGS,
   road: {
     ...SETTINGS.road,
-    curve: { ...SETTINGS.road.curve, smoothingPasses: 0, octaves: [] },
+    curve: { ...SETTINGS.road.curve, cornerRadiusCells: 0, octaves: [] },
   },
   path: {
     ...SETTINGS.path,
-    curve: { ...SETTINGS.path.curve, smoothingPasses: 0, octaves: [] },
+    curve: { ...SETTINGS.path.curve, cornerRadiusCells: 0, octaves: [] },
   },
 }
 const NO_NOISE_SETTINGS: TerrainRouteSettings = {

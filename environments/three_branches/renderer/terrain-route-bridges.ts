@@ -89,7 +89,7 @@ function finishBridgeComponent(
     deck: {
       kind: axis === undefined ? 'compact' : 'axis',
       widthCells: owner === 'road' ? settings.road.targetWidthCells : settings.path.widthCells,
-      cap: axis === undefined ? 'round' : 'square',
+      cap: axis === undefined ? 'round' : 'butt',
       center,
       ...(axis === undefined ? {} : { axis }),
     },

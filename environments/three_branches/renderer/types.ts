@@ -150,6 +150,8 @@ export interface StaticDrawable {
   label: string
   /** Catalog collision shape. */
   shape: 'box' | 'circle'
+  /** Catalog collision diameter fraction for circular props. */
+  collisionScale: number
   /** Config-derived renderer extent. */
   rect: WorldRect
   /** Optional cardinal presentation direction. */
@@ -255,7 +257,7 @@ export type CollisionShape =
 export interface TerrainCurveOctave {
   /** Noise wavelength measured in cells. */
   readonly wavelengthCells: number
-  /** Maximum perpendicular displacement measured in cells. */
+  /** Perpendicular displacement the band usually draws, measured in cells. */
   readonly amplitudeCells: number
 }
 
@@ -263,8 +265,8 @@ export interface TerrainCurveOctave {
 export interface TerrainCurveProfile {
   /** Distance between resampled points measured in cells. */
   readonly sampleSpacingCells: number
-  /** Number of corner-smoothing passes. */
-  readonly smoothingPasses: number
+  /** Radius a corner is rounded over, measured in cells, zero to keep every corner exact. */
+  readonly cornerRadiusCells: number
   /** Ordered noise bands applied after smoothing. */
   readonly octaves: readonly TerrainCurveOctave[]
 }
@@ -333,12 +335,6 @@ export interface TerrainContourSettings {
   readonly junctionTangentCells: number
   /** Maximum displacement from a reference boundary, in cells. */
   readonly maxDeviationCells: number
-  /**
-   * Minimum visual corridor between competing boundaries, in cells. One-cell corridors that run
-   * diagonally floor a little lower, near 0.6 cells, because the corner-cut reference renders a
-   * one-cell staircase band as a diagonal band of that natural width.
-   */
-  readonly minimumCorridorCells: number
 }
 
 /** One authored cell that contributes provenance to a contour side. */
@@ -594,7 +590,7 @@ export interface TerrainBridgeDeckSpec {
   /** Deck width measured in cells. */
   readonly widthCells: number
   /** Stroke cap used at deck portals. */
-  readonly cap: 'square' | 'round'
+  readonly cap: 'butt' | 'square' | 'round'
   /** Deck center measured in route-space cells. */
   readonly center: TerrainRoutePoint
   /** Deck axis endpoints when the component has a principal axis. */

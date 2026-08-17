@@ -1,10 +1,12 @@
 import { hashUnit, stableHashParts } from '@renderers/base/math.js'
 import { describe, expect, it } from 'vitest'
+import { readStatic } from './overlay.js'
 import { HEARTHSIDE_STYLE } from './presentation.js'
-import { MAX_REFERENCE_DRIFT_CELLS } from './terrain-contour-reference.js'
+import { buildStaticScene } from './scene.js'
 import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
 import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
 import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
+import { fixtureRecording } from './test-helpers.js'
 import type {
   ContourCoordinate,
   TerrainContourChain,
@@ -26,32 +28,9 @@ const names: Readonly<Record<string, string>> = {
   x: 'wall',
 }
 
-const landProfile: TerrainCurveProfile = {
-  sampleSpacingCells: 0.25,
-  smoothingPasses: 8,
-  octaves: [
-    { wavelengthCells: 8, amplitudeCells: 0.28 },
-    { wavelengthCells: 3, amplitudeCells: 0.12 },
-    { wavelengthCells: 1.2, amplitudeCells: 0.05 },
-  ],
-}
-
-const waterProfile: TerrainCurveProfile = {
-  sampleSpacingCells: 0.2,
-  smoothingPasses: 10,
-  octaves: [
-    { wavelengthCells: 11, amplitudeCells: 0.34 },
-    { wavelengthCells: 4, amplitudeCells: 0.14 },
-    { wavelengthCells: 1.5, amplitudeCells: 0.06 },
-  ],
-}
-
-const settings: TerrainContourSettings = {
-  profiles: { land: landProfile, water: waterProfile },
-  junctionTangentCells: 0.25,
-  maxDeviationCells: 0.6,
-  minimumCorridorCells: 0.45,
-}
+// The sweeps run the shipping configuration. A second copy of the profiles here would drift from
+// the one the game draws with, and the properties below are exactly the ones worth holding on it.
+const settings: TerrainContourSettings = HEARTHSIDE_STYLE.terrain.contours
 
 interface ContourTestOverrides extends Omit<Partial<TerrainContourSettings>, 'profiles'> {
   readonly profiles?: {
@@ -256,8 +235,22 @@ function generatedRows(seed: number, size: number): string[] {
 }
 
 /**
+ * The recorded 120 by 120 village the game actually contours. Road and path cells never reach
+ * this pass: the route plan hands their cells to the nearest natural material first, which moves
+ * hundreds of cells and reshapes the boundaries around every route. Contouring the scene rows
+ * instead would sweep a map the game never draws. Planning validates every code against the table
+ * above, so this fails loudly rather than quietly if the two ever diverge.
+ */
+function shippingRows(): readonly string[] {
+  const scene = buildStaticScene(readStatic(fixtureRecording().header))
+  return planTerrainRoutes(scene.topFirstRows, names, HEARTHSIDE_STYLE.terrain.routes).visualRows
+}
+
+/**
  * The layouts the property sweeps run over. Generated seeds vary the layout rather than the noise
- * key, since the contour pass derives its noise from the layout itself.
+ * key, since the contour pass derives its noise from the layout itself. The recorded village goes
+ * in as well: a property that holds on every synthetic grid and fails on the shipping map has not
+ * been tested at all.
  */
 const layoutSuite: readonly (readonly string[])[] = [
   ['ggww', 'ggww'],
@@ -267,6 +260,7 @@ const layoutSuite: readonly (readonly string[])[] = [
   ['gggggg', 'gfffgg', 'gffegg', 'ggeewg', 'gggwwg', 'gggggg'],
   ['ggggggg', 'geggggg', 'ggeggeg', 'gggeegg', 'ggggegg', 'ggggggg'],
   ...[0, 1, 2, 3, 4, 5].map((seed) => generatedRows(seed, 32)),
+  shippingRows(),
 ]
 
 /**
@@ -293,6 +287,30 @@ describe('continuous terrain contour planning', () => {
           `layout ${index}: chain ${tube.chainId} left its tube by ${tube.cells.toFixed(3)} cells ` +
             `at (${tube.at.x.toFixed(2)}, ${tube.at.y.toFixed(2)})`,
         )
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it('runs one chain along a boundary from junction to junction', () => {
+    // Both ends of a chain are locked, so a chain cut anywhere other than a junction freezes the
+    // curve onto that raw cell corner and freezes its direction there too. Cut a diagonal boundary
+    // once per step and it is drawn as a staircase however well the reference flattens it. Two
+    // chain ends meeting at one corner with the same pair of materials is that cut.
+    const failures: string[] = []
+    for (const [index, rows] of layoutSuite.entries()) {
+      const endsAt = new Map<string, string[]>()
+      for (const chain of plan(rows).chains) {
+        if (chain.closed) continue
+        for (const end of [chain.rawPoints[0]!, chain.rawPoints.at(-1)!]) {
+          const corner = `${end.x},${end.y}`
+          endsAt.set(corner, [...(endsAt.get(corner) ?? []), chain.materials.join(' ')])
+        }
+      }
+      for (const [corner, pairs] of endsAt) {
+        if (pairs.length === 2 && pairs[0] === pairs[1]) {
+          failures.push(`layout ${index}: ${pairs[0]?.replace(' ', ' meets ')} is cut at ${corner}`)
+        }
       }
     }
     expect(failures).toEqual([])
@@ -526,25 +544,11 @@ describe('continuous terrain contour planning', () => {
     )
     expect(banks.length).toBeGreaterThan(0)
     for (const bank of banks) {
-      // A corridor this narrow binds the drift ceiling, so its banks straighten part of the way
-      // rather than all of it: the two boundaries may never spend more than half their slack.
+      // Both banks shed the same staircase, which is what keeps the two cells between them, so
+      // each straightens part of the way rather than all of it.
       const residual = stairResidual(bank)
       expect(residual.raw).toBeGreaterThan(0.7)
       expect(residual.reference).toBeLessThan(residual.raw / 2)
-    }
-    const separation = Math.min(
-      ...banks.flatMap((bank, index) =>
-        banks
-          .slice(index + 1)
-          .flatMap((other) =>
-            bank.points.map((point) =>
-              Math.min(...other.points.map((far) => Math.hypot(point.x - far.x, point.y - far.y))),
-            ),
-          ),
-      ),
-    )
-    if (Number.isFinite(separation)) {
-      expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
     }
   })
 
@@ -560,25 +564,13 @@ describe('continuous terrain contour planning', () => {
     expect(island.holeRingIds).toHaveLength(0)
   })
 
-  it('keeps curves in their tube and one-cell corridors wider than 0.70 cell', () => {
+  it('keeps the two banks of a one-cell land strip inside their tube', () => {
     const result = plan(['wwwww', 'ggggg', 'wwwww'])
     for (const chain of result.chains) {
       expect(
         Math.max(...chain.points.map((point) => distanceToPolyline(point, chain.referencePoints))),
       ).toBeLessThanOrEqual(settings.maxDeviationCells + 0.02 + 1e-8)
     }
-    const allPoints = result.chains.flatMap((chain) => chain.points)
-    const upper = allPoints.filter((point) => point.y < 1.3 && point.x >= 0.25 && point.x <= 4.75)
-    const lower = allPoints.filter((point) => point.y > 1.7 && point.x >= 0.25 && point.x <= 4.75)
-    const minimumWidth = Math.min(
-      ...upper.map((point) =>
-        Math.min(...lower.map((other) => Math.hypot(point.x - other.x, point.y - other.y))),
-      ),
-      ...lower.map((point) =>
-        Math.min(...upper.map((other) => Math.hypot(point.x - other.x, point.y - other.y))),
-      ),
-    )
-    expect(minimumWidth).toBeGreaterThanOrEqual(settings.minimumCorridorCells)
   })
 
   it('locks structures, map borders, junction tangents, and bridge portals', () => {
@@ -692,15 +684,6 @@ describe('continuous terrain contour planning', () => {
         expect(Math.abs(normalizedAngle(secondAngle - firstAngle))).toBeLessThan(Math.PI / 3)
       }
     }
-    const [first, second] = bandChains
-    const separation = Math.min(
-      ...first!.points.map((point) =>
-        Math.min(
-          ...second!.points.map((other) => Math.hypot(point.x - other.x, point.y - other.y)),
-        ),
-      ),
-    )
-    expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
   })
 
   it('exposes a reference near the raw boundary that keeps the closed seam contract', () => {
@@ -712,18 +695,19 @@ describe('continuous terrain contour planning', () => {
       { x: 3, y: 3 },
       { x: 1, y: 3 },
     ]
-    // A square pond's corners are genuine shape, so the reference may keep them exactly; the
-    // emitted curve rounds them, so no drawn point sits on a corner itself.
+    // A square pond turns rather than steps at every corner, so the reference keeps all four
+    // exactly; the emitted curve rounds them, so no drawn point sits on a corner itself.
     expect(
       shore.points.some((point) =>
         corners.some((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9),
       ),
     ).toBe(false)
-    const closedReference = [...shore.referencePoints, shore.referencePoints[0]!]
-    for (const point of closedReference) {
-      expect(distanceToPolyline(point, [...shore.rawPoints])).toBeLessThanOrEqual(
-        MAX_REFERENCE_DRIFT_CELLS + 1e-9,
-      )
+    for (const corner of corners) {
+      expect(
+        shore.referencePoints.some(
+          (point) => Math.hypot(point.x - corner.x, point.y - corner.y) < 1e-9,
+        ),
+      ).toBe(true)
     }
     expect(shore.points[0]!.rawOffset).toBe(0)
     for (let index = 1; index < shore.points.length; index += 1) {
@@ -734,34 +718,29 @@ describe('continuous terrain contour planning', () => {
     expect(shore.points.at(-1)!.rawOffset).toBeLessThan(shore.rawLength + 1e-9)
   })
 
-  it('caps free-point deviation to the local corridor, then lets it open up where terrain is wide', () => {
-    const narrowLimit = (1 - settings.minimumCorridorCells) / 2
-    const narrow = plan(['wwwww', 'ggggg', 'wwwww'])
-    const narrowDeviations = narrow.chains.flatMap((chain) =>
-      chain.points
-        .filter((point) => !point.locked)
-        .map((point) => distanceToPolyline(point, chain.rawPoints)),
-    )
-    expect(Math.max(...narrowDeviations)).toBeLessThanOrEqual(narrowLimit + 1e-8)
-
-    const wideRows = [
+  it('spends the wander its octaves ask for on a wide bank', () => {
+    const rows = [
       ...Array.from({ length: 3 }, () => 'w'.repeat(20)),
       ...Array.from({ length: 3 }, () => 'g'.repeat(20)),
     ]
-    const wide = plan(wideRows)
-    const wideDeviations = wide.chains.flatMap((chain) =>
+    const deviations = plan(rows).chains.flatMap((chain) =>
       chain.points
         .filter((point) => !point.locked)
         .map((point) => distanceToPolyline(point, chain.rawPoints)),
     )
-    expect(Math.max(...wideDeviations)).toBeGreaterThan(narrowLimit + 1e-8)
+    // An octave amplitude is the distance the boundary usually moves, so along a bank this long
+    // the farthest sample has to clear the largest amplitude asked for.
+    const largestAmplitude = Math.max(
+      ...settings.profiles.water.octaves.map((octave) => octave.amplitudeCells),
+    )
+    expect(Math.max(...deviations)).toBeGreaterThan(largestAmplitude)
   })
 
   it('uses nonperiodic smooth noise along a long straight chain', () => {
     const width = 80
     const result = plan(['w'.repeat(width), 'g'.repeat(width)], {
       profiles: {
-        water: { smoothingPasses: 0, sampleSpacingCells: 0.25 },
+        water: { cornerRadiusCells: 0, sampleSpacingCells: 0.25 },
       },
     })
     const boundary = result.chains.find(
@@ -837,29 +816,27 @@ describe('continuous terrain contour planning', () => {
     expect(performance.now() - startedAt).toBeLessThan(20_000)
   }, 30_000)
 
-  it('rejects grids or settings that cannot preserve the topology bounds', () => {
-    expect(() =>
-      planTerrainContours(
-        [],
-        names,
-        settings,
-        HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
-      ),
-    ).toThrow(/non-empty rectangular grid/)
+  it('rejects grids it cannot contour and profiles it cannot shape with', () => {
+    const taper = HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells
+    expect(() => planTerrainContours([], names, settings, taper)).toThrow(
+      /non-empty rectangular grid/,
+    )
+    expect(() => plan(['gg', 'g'])).toThrow(/non-empty rectangular grid/)
+    expect(() => plan(['q'])).toThrow(/has no ground name/)
+    expect(() => planTerrainContours(['g'], { g: 'lava' }, settings, taper)).toThrow(
+      /cannot be contoured/,
+    )
+    // Calibration bounds are held where the configuration is read. What is left to hold here is
+    // that a chain reaches the profile its own materials name: the all-ground grid never shapes
+    // anything with the water profile, and the mixed grid shapes its water chains with it.
     expect(() => plan(['gg'], { profiles: { land: { sampleSpacingCells: 4.01 } } })).toThrow(
-      /land profile.*sample spacing/,
+      /sample spacing/,
     )
     expect(() =>
-      plan(['gg'], {
+      plan(['gw'], {
         profiles: { water: { octaves: [{ wavelengthCells: 5, amplitudeCells: 4.01 }] } },
       }),
-    ).toThrow(/water profile.*octave amplitude/)
-    expect(() => plan(['gg'], { maxDeviationCells: 0.76 })).toThrow(/at most 0.75 cell/)
-    expect(() => planTerrainContours(['gg'], names, settings, -0.01)).toThrow(
-      /Bridge shoreline taper/,
-    )
-    expect(() => planTerrainContours(['gg'], names, settings, 1.01)).toThrow(
-      /Bridge shoreline taper/,
-    )
+    ).toThrow(/octave amplitude/)
+    expect(() => plan(['gg'], { profiles: { water: { sampleSpacingCells: 4.01 } } })).not.toThrow()
   })
 })

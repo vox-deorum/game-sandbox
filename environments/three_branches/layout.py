@@ -151,7 +151,8 @@ class Layout:
         x, y = item.cell
         if source.shape == "box":
             return Rect(float(x), float(y), float(width), float(height))
-        return Circle(x + width / 2, y + height / 2, min(width, height) / 2)
+        scale = source.collision_scale if isinstance(item, PlacedProp) else 1.0
+        return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
     def doorway(self, building_id: str) -> tuple[Cell, ...]:
         building = next((item for item in self.buildings if item.id == building_id), None)

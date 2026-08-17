@@ -47,7 +47,7 @@ function readPngHeader(relativePath: string): PngHeader {
 }
 
 describe('Three Branches asset catalog', () => {
-  it('catalogs the six approved atlas groups with complete frame grids', () => {
+  it('catalogs the six approved atlas groups with named frame prefixes', () => {
     expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
       'terrain',
       'buildings',
@@ -60,12 +60,17 @@ describe('Three Branches asset catalog', () => {
     for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
       expect(atlas.tintable).toBe(atlas.format === 'grayscale-alpha')
       for (const raster of rastersFor(atlas)) {
-        expect(raster.frames.names).toHaveLength(raster.frames.columns * raster.frames.rows)
+        expect(raster.frames.names.length).toBeLessThanOrEqual(
+          raster.frames.columns * raster.frames.rows,
+        )
         expect(new Set(raster.frames.names).size).toBe(raster.frames.names.length)
         expect(raster.frames.width * raster.frames.columns).toBe(raster.width)
         expect(raster.frames.height * raster.frames.rows).toBe(raster.height)
       }
     }
+
+    const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
+    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(20)
 
     const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
     expect(
@@ -77,10 +82,10 @@ describe('Three Branches asset catalog', () => {
     const props = ATLAS_PAGES.find((page) => page.group === 'props')
     expect(props?.framePaths).toEqual(
       expect.arrayContaining([
-        'stall/base.png',
-        'repair_bench/base.png',
+        'stall/open.png',
+        'lantern/lit.png',
         'repair_bench/busy.png',
-        'bell/clapper.png',
+        'bell/ringing.png',
       ]),
     )
   })
@@ -100,18 +105,20 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads only the terrain and character atlas pages used at runtime', async () => {
+  it('loads terrain, prop, scenery, character, and effects pages while keeping buildings deferred', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(6)
+    expect(load).toHaveBeenCalledTimes(8)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
     expect(assets.characters.arms).toMatch(/characters-arms-atlas\.png/)
     expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
-    expect(sources.some((source) => /buildings|props|scenery/.test(source))).toBe(false)
+    expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /buildings/.test(source))).toBe(false)
   })
 })

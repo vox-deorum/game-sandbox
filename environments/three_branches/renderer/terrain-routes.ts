@@ -20,7 +20,7 @@ export const DEFAULT_TERRAIN_ROUTE_SETTINGS: TerrainRouteSettings = {
   road: {
     curve: {
       sampleSpacingCells: 0.25,
-      smoothingPasses: 10,
+      cornerRadiusCells: 0.56,
       octaves: [{ wavelengthCells: 6, amplitudeCells: 0.05 }],
     },
     targetWidthCells: 2.1,
@@ -30,7 +30,7 @@ export const DEFAULT_TERRAIN_ROUTE_SETTINGS: TerrainRouteSettings = {
   path: {
     curve: {
       sampleSpacingCells: 0.2,
-      smoothingPasses: 14,
+      cornerRadiusCells: 0.53,
       octaves: [{ wavelengthCells: 7, amplitudeCells: 0.04 }],
     },
     widthCells: 0.7,

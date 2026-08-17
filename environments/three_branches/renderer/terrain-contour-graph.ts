@@ -9,7 +9,6 @@ import type {
   TerrainContourSide,
   TerrainContourSpan,
   TerrainShorelineSpan,
-  TerrainContourUse,
 } from './types.js'
 import type { CellRecord } from './terrain-contour-grid.js'
 /** A shared contour-graph vertex. */
@@ -34,7 +33,7 @@ export interface SideRecord extends TerrainContourSide {
 }
 
 /** One graph segment in a canonical chain direction. */
-export interface ChainAtom {
+interface ChainAtom {
   readonly segment: GraphSegment
   readonly reversed: boolean
 }
@@ -154,14 +153,6 @@ function sideFromCells(
   }
   const componentKey = componentKeyForCell.get(first.index)
   if (componentKey === undefined) throw new Error('Terrain contour source cell has no component.')
-  if (
-    cells.some(
-      (cell) =>
-        cell.material !== first.material || componentKeyForCell.get(cell.index) !== componentKey,
-    )
-  ) {
-    throw new Error('Terrain contour side crosses material components.')
-  }
   return {
     material: first.material,
     semantics: [...new Set(cells.map((cell) => cell.semantic))].sort(),
@@ -201,14 +192,23 @@ export function buildChains(
   for (const seed of segments) {
     if (visited.has(seed.id)) continue
     const key = pairKey(seed)
-    const start = !continues(seed.start, key)
-      ? seed.start
-      : !continues(seed.end, key)
-        ? seed.end
-        : seed.start
-    const atoms: ChainAtom[] = []
-    let node = start
+    // Walk back to where this run begins before walking it. A seed that lands mid-run would
+    // otherwise leave everything behind it for a later seed to claim as a chain of its own, and
+    // since both ends of a chain are locked, each of those cuts freezes the curve onto a raw cell
+    // corner. Edges are added row by row, so a boundary running at an angle is seeded on nearly
+    // every row, and cutting it there is what leaves a drawn boundary stepping. On a closed loop
+    // the walk comes back to the seed and any node of the loop serves as its start.
     let segment = seed
+    let node = seed.start
+    while (continues(node, key)) {
+      const behindId = node.segments.find((segmentId) => segmentId !== segment.id)!
+      const behind = segmentById.get(behindId)!
+      if (behind.id === seed.id) break
+      segment = behind
+      node = behind.end === node ? behind.start : behind.end
+    }
+    const start = node
+    const atoms: ChainAtom[] = []
     let closed = false
     while (true) {
       if (visited.has(segment.id)) {
@@ -220,14 +220,11 @@ export function buildChains(
       atoms.push({ segment, reversed })
       node = reversed ? segment.start : segment.end
       if (!continues(node, key)) break
-      const nextId = node.segments.find((segmentId) => segmentId !== segment.id)
-      if (nextId === undefined) throw new Error('Terrain contour chain ended at a degree-two node.')
+      const nextId = node.segments.find((segmentId) => segmentId !== segment.id)!
       segment = segmentById.get(nextId)!
     }
     sourceChains.push({ closed, pairKey: key, atoms: canonicalAtoms(atoms, closed) })
   }
-  if (visited.size !== segments.length)
-    throw new Error('Terrain contour chain ownership is incomplete.')
 
   const ordered = sourceChains.sort(
     (first, second) =>
@@ -306,9 +303,6 @@ function finishChain(
   for (const atom of source.atoms) {
     const start = atomStart(atom)
     const end = atomEnd(atom)
-    if (!samePoint(rawPoints[rawPoints.length - 1]!, start)) {
-      throw new Error('Terrain contour chain source edges are not continuous.')
-    }
     const length = distance(start, end)
     const left = atom.reversed ? atom.segment.right : atom.segment.left
     const right = atom.reversed ? atom.segment.left : atom.segment.right

@@ -38,7 +38,7 @@ export function staticCollision(scene: StaticScene): readonly CollisionShape[] {
         id: item.id,
         kind: 'circle',
         center: { x: item.rect.x + item.rect.width / 2, y: item.rect.y + item.rect.height / 2 },
-        radius: Math.min(item.rect.width, item.rect.height) / 2,
+        radius: (Math.min(item.rect.width, item.rect.height) / 2) * item.collisionScale,
         label: item.label,
         group: 'object',
       })

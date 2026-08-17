@@ -60,18 +60,21 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
     drawableFor(village, buildingByType, item, () => ({
       label: labelFor(item.type),
       shape: 'box',
+      collisionScale: 1,
     })),
   )
   const props = village.props.map((item) =>
     drawableFor(village, propByType, item, (kind) => ({
       label: labelFor(kind.activity),
       shape: shapeOf(kind.shape),
+      collisionScale: kind.collision_scale,
     })),
   )
   const scenery = village.scenery.map((item, index) =>
     drawableFor(village, sceneryByType, { ...item, id: `scenery:${index}` }, (kind) => ({
       label: labelFor(item.type),
       shape: shapeOf(kind.shape),
+      collisionScale: 1,
     })),
   )
   return {
@@ -170,7 +173,7 @@ function drawableFor<TKind extends CatalogFootprint>(
   village: VillageStatic,
   catalog: Readonly<Record<string, TKind>>,
   placement: DrawablePlacement,
-  describe: (kind: TKind) => Pick<StaticDrawable, 'label' | 'shape'>,
+  describe: (kind: TKind) => Pick<StaticDrawable, 'label' | 'shape' | 'collisionScale'>,
 ): StaticDrawable {
   const kind = catalog[placement.type]
   if (kind === undefined) throw new Error(`Unknown catalog type ${placement.type}.`)

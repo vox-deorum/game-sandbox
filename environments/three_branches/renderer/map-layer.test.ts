@@ -8,6 +8,7 @@ import {
   exactTerrainGrid,
   materialLayerAlpha,
   materialSurface,
+  offsetPolyline,
   ownedTerrainView,
   pathGuideGraphics,
   reedMarksGraphics,
@@ -23,9 +24,9 @@ import {
   plankRowsFor,
   type TerrainArt,
 } from './terrain-art.js'
-import {
-  planTerrainContours,
-} from './terrain-contours.js'
+import { findCurveCrossings } from './terrain-contour-validation.js'
+import { planTerrainContours } from './terrain-contours.js'
+import { pointToSegmentDistance } from './terrain-helpers.js'
 import { planTerrainRoutes } from './terrain-routes.js'
 import type {
   StaticScene,
@@ -382,6 +383,65 @@ describe('Three Branches map layer', () => {
     expect(taperRuns.some((run) => run.alpha < 0.2)).toBe(true)
   })
 
+  it('offsets a straight run into an exact parallel line', () => {
+    const run = Array.from({ length: 5 }, (_, index) => shorelinePoint(index, 1))
+    expect(offsetPolyline(run, -0.55)).toEqual(run.map((point) => ({ x: point.x, y: -0.55 })))
+  })
+
+  it('keeps the hatch offset its full distance out where the bank bends tighter than the offset', () => {
+    // A bank that turns tighter than the offset used to fold the hatch line into a bowtie, which
+    // strokes as a small dark triangle sitting out on the water.
+    const bank = Array.from({ length: 121 }, (_, index) => {
+      const x = index / 20
+      return { x, y: 4 + 0.6 * Math.cos(x * 2), rawOffset: x, locked: false, shorelineFactor: 1 }
+    })
+    const offset = 1.05
+    const hatch = offsetPolyline(bank, -offset)
+
+    expect(findCurveCrossings([{ id: 'bank', closed: false, points: hatch }])).toEqual([])
+    expect(hatch.length).toBeGreaterThan(60)
+    for (const point of hatch) {
+      const nearest = Math.min(
+        ...bank
+          .slice(0, -1)
+          .map((start, index) => pointToSegmentDistance(point, start, bank[index + 1]!)),
+      )
+      expect(nearest).toBeGreaterThan(offset - 0.06)
+    }
+  })
+
+  it('draws every water hatch of a bending river without a folded loop', () => {
+    const rows = [
+      'gggggggggg',
+      'gwwwggwwwg',
+      'gggwggwggg',
+      'ggwwggwwgg',
+      'ggwgggggwg',
+      'gwwggwwwwg',
+      'gwggggwggg',
+      'gwwwwwwggg',
+      'gggggggggg',
+    ]
+    const plan = contourPlan(rows)
+    const drawn = plan.chains.filter((chain) => chain.shorelineSpans.length > 0)
+    const folded: string[] = []
+    expect(drawn.length).toBeGreaterThan(3)
+    for (const chain of drawn) {
+      const sign = chain.leftMaterial === 'water' ? 1 : -1
+      for (const offsetCells of HEARTHSIDE_STYLE.terrain.seams.waterHatch.offsetsCells) {
+        const points = offsetPolyline(chain.points, sign * offsetCells)
+        if (points.length < 2) continue
+        for (const [first] of findCurveCrossings([{ id: chain.id, closed: false, points }])) {
+          folded.push(
+            `${chain.id} at ${offsetCells} near ` +
+              `(${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)})`,
+          )
+        }
+      }
+    }
+    expect(folded).toEqual([])
+  })
+
   it('strokes the road and path guides with their configured pattern fills', () => {
     const { art } = sparseLayerFixture()
     const fill = new FillPattern(Texture.WHITE, 'repeat')
@@ -492,7 +552,6 @@ describe('Three Branches map layer', () => {
     expect(releases).toBe(1)
     expect(graphic.destroyed).toBe(true)
   })
-
 })
 
 function required<Value>(value: Value | null | undefined, message: string): Value {

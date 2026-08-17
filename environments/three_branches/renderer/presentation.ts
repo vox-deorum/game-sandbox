@@ -1,8 +1,9 @@
 import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from './assets.js'
-import { RULES } from './overlay.js'
+import { CATALOG, RULES } from './overlay.js'
 import presentationDocument from './presentation.json'
+import { smoothingPassesFor } from './terrain-curves.js'
 import { mixedTint } from './tint.js'
 import type { TerrainCurveProfile } from './types.js'
 import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
@@ -166,6 +167,8 @@ export interface FrameTreatment {
  */
 export interface TerrainFillTreatment extends FrameTreatment {
   opacity: number
+  /** Opacity of the half-cell-offset pattern pass. Defaults to the shared 0.5 treatment. */
+  offsetPassOpacity?: number
   detailShift?: number
   tintMix?: {
     tint: HearthsidePaletteKey
@@ -190,7 +193,6 @@ export interface TerrainContourTreatment {
   }
   junctionTangentCells: number
   maxDeviationCells: number
-  minimumCorridorCells: number
 }
 
 /** Watercolor pooling, broken ink lines, and water hatching drawn along natural seams. */
@@ -221,11 +223,13 @@ export interface TerrainRouteTreatment {
     curve: TerrainCurveProfile
     targetWidthCells: number
     minimumWidthCells: number
+    edgeFadeCells: number
     opacity: number
   }
   path: {
     curve: TerrainCurveProfile
     widthCells: number
+    edgeFadeCells: number
     opacity: number
   }
 }
@@ -236,6 +240,10 @@ export interface PlankTreatment {
   vertical: string
   compact: string
   tint: HearthsidePaletteKey
+  shadowTint: HearthsidePaletteKey
+  shadowOpacity: number
+  shadowOffsetCells: number
+  textureBleedCells: number
 }
 
 export interface PhaseGrade {
@@ -246,6 +254,20 @@ export interface PhaseGrade {
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
+interface VisualScaleTreatment {
+  defaultScale: number
+  scaleByType: Readonly<Record<string, number>>
+}
+
+export interface SourceAnchor {
+  x: number
+  y: number
+}
+
+interface PropVisualTreatment extends VisualScaleTreatment {
+  effectAnchorByType: Readonly<Record<string, SourceAnchor>>
+}
+
 export interface HearthsideStyle {
   palette: HearthsidePalette
   transition: { naturalMs: number; settleGraceMs: number }
@@ -270,7 +292,9 @@ export interface HearthsideStyle {
     walk: { frames: readonly string[]; frameRatio: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
-  propEffects: Readonly<Record<string, readonly string[]>>
+  props: PropVisualTreatment
+  scenery: VisualScaleTreatment
+  propEffects: Readonly<Record<string, { frames: readonly string[]; frameRate: number }>>
   emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
   cranes: {
     frames: readonly string[]
@@ -323,6 +347,21 @@ export function phaseGrade(phase: string): PhaseGrade | null {
   return HEARTHSIDE_STYLE.phaseGrades[phase] ?? null
 }
 
+/** Resolve one complete prop-still scale from the validated visual calibration. */
+export function propVisualScale(type: string): number {
+  return visualScaleFor(type, HEARTHSIDE_STYLE.props)
+}
+
+/** Resolve an effect anchor measured from the center of a complete prop source canvas. */
+export function propEffectAnchor(type: string): SourceAnchor {
+  return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
+}
+
+/** Resolve one scenery sprite scale from the validated visual calibration. */
+export function sceneryVisualScale(type: string): number {
+  return visualScaleFor(type, HEARTHSIDE_STYLE.scenery)
+}
+
 /** Validate an injected document for tests and future configuration edits. */
 export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const source = exactRecord(value, 'presentation', [
@@ -332,6 +371,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'roofs',
     'phaseGrades',
     'characters',
+    'props',
+    'scenery',
     'propEffects',
     'emissives',
     'cranes',
@@ -492,6 +533,17 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     },
   }
 
+  const props = propVisualTreatment(
+    source.props,
+    'presentation.props',
+    CATALOG.props.map((prop) => prop.token),
+  )
+  const scenery = visualScaleTreatment(
+    source.scenery,
+    'presentation.scenery',
+    CATALOG.scenery.map((item) => item.token),
+  )
+
   const effectsFrames = framesFor('effects')
   const propEffectsSource = exactRecord(source.propEffects, 'presentation.propEffects', [
     'lantern',
@@ -501,10 +553,26 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'bell',
   ])
   const propEffects = Object.fromEntries(
-    Object.entries(propEffectsSource).map(([name, frameValue]) => [
-      name,
-      frameNames(frameValue, `presentation.propEffects.${name}`, effectsFrames),
-    ]),
+    Object.entries(propEffectsSource).map(([name, frameValue]) => {
+      const effectSource = exactRecord(frameValue, `presentation.propEffects.${name}`, [
+        'frames',
+        'frameRate',
+      ])
+      return [
+        name,
+        {
+          frames: frameNames(
+            effectSource.frames,
+            `presentation.propEffects.${name}.frames`,
+            effectsFrames,
+          ),
+          frameRate: positiveNumber(
+            effectSource.frameRate,
+            `presentation.propEffects.${name}.frameRate`,
+          ),
+        },
+      ]
+    }),
   )
   const emissivesSource = exactRecord(source.emissives, 'presentation.emissives', [
     'lantern',
@@ -544,10 +612,63 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     roofs,
     phaseGrades,
     characters,
+    props,
+    scenery,
     propEffects,
     emissives,
     cranes,
   }
+}
+
+function visualScaleTreatment(
+  value: unknown,
+  name: string,
+  knownTypes: readonly string[],
+): VisualScaleTreatment {
+  const source = exactRecord(value, name, ['defaultScale', 'scaleByType'])
+  const overrides = recordWithOptional(source.scaleByType, `${name}.scaleByType`, [], knownTypes)
+  return {
+    defaultScale: boundedNumber(source.defaultScale, `${name}.defaultScale`, 0.05, 0.5, true),
+    scaleByType: Object.fromEntries(
+      Object.entries(overrides).map(([type, scale]) => [
+        type,
+        boundedNumber(scale, `${name}.scaleByType.${type}`, 0.05, 0.5, true),
+      ]),
+    ),
+  }
+}
+
+function propVisualTreatment(
+  value: unknown,
+  name: string,
+  knownTypes: readonly string[],
+): PropVisualTreatment {
+  const source = exactRecord(value, name, ['defaultScale', 'scaleByType', 'effectAnchorByType'])
+  const scales = visualScaleTreatment(
+    { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
+    name,
+    knownTypes,
+  )
+  const anchors = recordWithOptional(source.effectAnchorByType, `${name}.effectAnchorByType`, [], knownTypes)
+  return {
+    ...scales,
+    effectAnchorByType: Object.fromEntries(
+      Object.entries(anchors).map(([type, value]) => {
+        const anchor = exactRecord(value, `${name}.effectAnchorByType.${type}`, ['x', 'y'])
+        return [
+          type,
+          {
+            x: boundedNumber(anchor.x, `${name}.effectAnchorByType.${type}.x`, -192, 192),
+            y: boundedNumber(anchor.y, `${name}.effectAnchorByType.${type}.y`, -128, 128),
+          },
+        ]
+      }),
+    ),
+  }
+}
+
+function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {
+  return treatment.scaleByType[type] ?? treatment.defaultScale
 }
 
 function contourTreatment(value: unknown, name: string): TerrainContourTreatment {
@@ -555,7 +676,6 @@ function contourTreatment(value: unknown, name: string): TerrainContourTreatment
     'profiles',
     'junctionTangentCells',
     'maxDeviationCells',
-    'minimumCorridorCells',
   ])
   const profilesSource = exactRecord(source.profiles, `${name}.profiles`, ['land', 'water'])
   return {
@@ -575,13 +695,6 @@ function contourTreatment(value: unknown, name: string): TerrainContourTreatment
       `${name}.maxDeviationCells`,
       0,
       0.75,
-    ),
-    minimumCorridorCells: boundedNumber(
-      source.minimumCorridorCells,
-      `${name}.minimumCorridorCells`,
-      0.25,
-      1,
-      true,
     ),
   }
 }
@@ -692,9 +805,15 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
     'curve',
     'targetWidthCells',
     'minimumWidthCells',
+    'edgeFadeCells',
     'opacity',
   ])
-  const pathSource = exactRecord(source.path, `${name}.path`, ['curve', 'widthCells', 'opacity'])
+  const pathSource = exactRecord(source.path, `${name}.path`, [
+    'curve',
+    'widthCells',
+    'edgeFadeCells',
+    'opacity',
+  ])
   const roadTargetWidthCells = boundedNumber(
     roadSource.targetWidthCells,
     `${name}.road.targetWidthCells`,
@@ -711,22 +830,30 @@ function routeTreatment(value: unknown, name: string): TerrainRouteTreatment {
         0,
         roadTargetWidthCells,
       ),
+      edgeFadeCells: boundedNumber(
+        roadSource.edgeFadeCells,
+        `${name}.road.edgeFadeCells`,
+        0,
+        0.5,
+      ),
       opacity: unitNumber(roadSource.opacity, `${name}.road.opacity`),
     },
     path: {
       curve: curveProfile(pathSource.curve, `${name}.path.curve`),
       widthCells: boundedNumber(pathSource.widthCells, `${name}.path.widthCells`, 0, 2),
+      edgeFadeCells: boundedNumber(
+        pathSource.edgeFadeCells,
+        `${name}.path.edgeFadeCells`,
+        0,
+        0.5,
+      ),
       opacity: unitNumber(pathSource.opacity, `${name}.path.opacity`),
     },
   }
 }
 
 function curveProfile(value: unknown, name: string): TerrainCurveProfile {
-  const source = exactRecord(value, name, ['sampleSpacingCells', 'smoothingPasses', 'octaves'])
-  const smoothingPasses = nonnegativeInteger(source.smoothingPasses, `${name}.smoothingPasses`)
-  if (smoothingPasses > 256) {
-    throw new Error(`${name}.smoothingPasses must be at most 256.`)
-  }
+  const source = exactRecord(value, name, ['sampleSpacingCells', 'cornerRadiusCells', 'octaves'])
   const octaveSources = array(source.octaves, `${name}.octaves`)
   if (octaveSources.length > 8) {
     throw new Error(`${name}.octaves must contain at most eight bands.`)
@@ -750,16 +877,24 @@ function curveProfile(value: unknown, name: string): TerrainCurveProfile {
       ),
     }
   })
-  return {
+  const profile: TerrainCurveProfile = {
     sampleSpacingCells: boundedNumber(
       source.sampleSpacingCells,
       `${name}.sampleSpacingCells`,
       0,
       4,
     ),
-    smoothingPasses,
+    cornerRadiusCells: boundedNumber(
+      source.cornerRadiusCells,
+      `${name}.cornerRadiusCells`,
+      0,
+      4,
+      true,
+    ),
     octaves,
   }
+  smoothingPassesFor(profile, `${name}.cornerRadiusCells`)
+  return profile
 }
 
 function plankTreatment(
@@ -768,12 +903,35 @@ function plankTreatment(
   knownFrames: ReadonlySet<string>,
   palette: ReadonlySet<string>,
 ): PlankTreatment {
-  const source = exactRecord(value, name, ['horizontal', 'vertical', 'compact', 'tint'])
+  const source = exactRecord(value, name, [
+    'horizontal',
+    'vertical',
+    'compact',
+    'tint',
+    'shadowTint',
+    'shadowOpacity',
+    'shadowOffsetCells',
+    'textureBleedCells',
+  ])
   return {
     horizontal: knownText(source.horizontal, knownFrames, `${name}.horizontal`),
     vertical: knownText(source.vertical, knownFrames, `${name}.vertical`),
     compact: knownText(source.compact, knownFrames, `${name}.compact`),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
+    shadowTint: paletteKey(source.shadowTint, palette, `${name}.shadowTint`),
+    shadowOpacity: unitNumber(source.shadowOpacity, `${name}.shadowOpacity`),
+    shadowOffsetCells: boundedNumber(
+      source.shadowOffsetCells,
+      `${name}.shadowOffsetCells`,
+      0,
+      1,
+    ),
+    textureBleedCells: boundedNumber(
+      source.textureBleedCells,
+      `${name}.textureBleedCells`,
+      0,
+      0.25,
+    ),
   }
 }
 function framesFor(group: string, layer?: string): ReadonlySet<string> {
@@ -813,12 +971,16 @@ function terrainFillTreatment(
     value,
     name,
     ['frames', 'tint', 'opacity'],
-    ['detailShift', 'tintMix'],
+    ['offsetPassOpacity', 'detailShift', 'tintMix'],
   )
   const treatment: TerrainFillTreatment = {
     frames: frameNames(source.frames, `${name}.frames`, knownFrames),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
     opacity: unitNumber(source.opacity, `${name}.opacity`),
+    offsetPassOpacity:
+      source.offsetPassOpacity === undefined
+        ? 0.5
+        : unitNumber(source.offsetPassOpacity, `${name}.offsetPassOpacity`),
   }
   if (source.detailShift !== undefined) {
     treatment.detailShift = boundedNumber(source.detailShift, `${name}.detailShift`, 0, 0.5)

@@ -18,8 +18,20 @@
   "terrain": {
     "fills": {
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed", "opacity": 1 },
-      "road": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "timber", "opacity": 1 },
-      "path": { "frames": ["roadA", "roadB", "roadC", "roadD"], "tint": "parchment", "opacity": 1 },
+      "road": {
+        "frames": ["roadA", "roadB", "roadC", "roadD"],
+        "tint": "silt",
+        "tintMix": { "tint": "timber", "amount": 0.2 },
+        "detailShift": 0.12,
+        "opacity": 1,
+        "offsetPassOpacity": 0
+      },
+      "path": {
+        "frames": ["roadA", "roadB", "roadC", "roadD"],
+        "tint": "parchment",
+        "opacity": 1,
+        "offsetPassOpacity": 0
+      },
       "bridge": {
         "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
         "tint": "water",
@@ -54,26 +66,23 @@
       "profiles": {
         "land": {
           "sampleSpacingCells": 0.25,
-          "smoothingPasses": 8,
+          "cornerRadiusCells": 0.8,
           "octaves": [
-            { "wavelengthCells": 8, "amplitudeCells": 0.28 },
-            { "wavelengthCells": 3, "amplitudeCells": 0.12 },
-            { "wavelengthCells": 1.2, "amplitudeCells": 0.05 }
+            { "wavelengthCells": 9, "amplitudeCells": 0.2 },
+            { "wavelengthCells": 4.5, "amplitudeCells": 0.14 }
           ]
         },
         "water": {
           "sampleSpacingCells": 0.2,
-          "smoothingPasses": 10,
+          "cornerRadiusCells": 0.8,
           "octaves": [
-            { "wavelengthCells": 11, "amplitudeCells": 0.34 },
-            { "wavelengthCells": 4, "amplitudeCells": 0.14 },
-            { "wavelengthCells": 1.5, "amplitudeCells": 0.06 }
+            { "wavelengthCells": 11, "amplitudeCells": 0.22 },
+            { "wavelengthCells": 5, "amplitudeCells": 0.15 }
           ]
         }
       },
-      "junctionTangentCells": 0.25,
-      "maxDeviationCells": 0.6,
-      "minimumCorridorCells": 0.45
+      "junctionTangentCells": 0.15,
+      "maxDeviationCells": 0.6
     },
     "seams": {
       "pooling": { "widthCells": 0.45, "darken": 0.16, "opacity": 0.28 },
@@ -103,20 +112,22 @@
       "road": {
         "curve": {
           "sampleSpacingCells": 0.25,
-          "smoothingPasses": 10,
+          "cornerRadiusCells": 0.56,
           "octaves": [{ "wavelengthCells": 6, "amplitudeCells": 0.05 }]
         },
         "targetWidthCells": 2.1,
         "minimumWidthCells": 1.6,
-        "opacity": 0.82
+        "edgeFadeCells": 0.05,
+        "opacity": 1
       },
       "path": {
         "curve": {
           "sampleSpacingCells": 0.2,
-          "smoothingPasses": 14,
+          "cornerRadiusCells": 0.53,
           "octaves": [{ "wavelengthCells": 7, "amplitudeCells": 0.04 }]
         },
         "widthCells": 0.7,
+        "edgeFadeCells": 0.01,
         "opacity": 1
       }
     },
@@ -124,7 +135,11 @@
       "horizontal": "bridgeA",
       "vertical": "bridgeB",
       "compact": "bridgeC",
-      "tint": "timber"
+      "tint": "timber",
+      "shadowTint": "backdrop",
+      "shadowOpacity": 0.25,
+      "shadowOffsetCells": 0.06,
+      "textureBleedCells": 0.025
     },
     "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
   },
@@ -150,12 +165,33 @@
     "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameRatio": 0.68 },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
+  "props": {
+    "defaultScale": 0.14,
+    "scaleByType": { "bell": 0.36, "pump": 0.33 },
+    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } }
+  },
+  "scenery": { "defaultScale": 0.25, "scaleByType": { "crate": 0.3 } },
   "propEffects": {
-    "lantern": ["glow", "glowFlicker"],
-    "hearth": ["flameA", "flameB", "flameC", "flameD"],
-    "shrine": ["smokeA", "smokeB"],
-    "pump": ["waterA", "waterB"],
-    "bell": ["bellLinesA", "bellLinesB"]
+    "lantern": {
+      "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],
+      "frameRate": 0.5
+    },
+    "hearth": {
+      "frames": ["flameA", "flameE", "flameB", "flameC", "flameF", "flameD"],
+      "frameRate": 1
+    },
+    "shrine": {
+      "frames": ["smokeA", "smokeC", "smokeD", "smokeB", "smokeD", "smokeC"],
+      "frameRate": 0.5
+    },
+    "pump": {
+      "frames": ["waterA", "waterC", "waterD", "waterB", "waterD", "waterC"],
+      "frameRate": 1
+    },
+    "bell": {
+      "frames": ["bellLinesC", "bellLinesA", "bellLinesD", "bellLinesB", "bellLinesE", "bellLinesF"],
+      "frameRate": 1.5
+    }
   },
   "emissives": { "lantern": "gilt", "hearth": "cinnabar", "frame": "glow" },
   "cranes": { "frames": ["craneA", "craneB"], "tint": "bone", "count": [1, 3], "frameMs": 260 }

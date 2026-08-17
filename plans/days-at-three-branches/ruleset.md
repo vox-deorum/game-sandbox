@@ -70,8 +70,8 @@ The wall ring takes a cell off each side, so a site's floor is its cells less tw
 | plot | 3 by 2, solid box filling its rect | 5 | tending the plot | tended, overgrown | overgrown | timed, 600 ticks |
 | hearth | 1 by 1, solid inscribed circle | 1 | tending the hearth | lit, unlit | unlit | toggle |
 | repair_bench | 2 by 1, solid box filling its rect | 1 | working the bench | busy, idle | idle | occupancy |
-| pump | 1 by 1, solid inscribed circle | 1 | working the pump | flowing, idle | idle | timed, 10 ticks |
-| bell | 1 by 1, solid inscribed circle | 1 | ringing the bell | ringing, silent | silent | timed, 40 ticks |
+| pump | 1 by 1, centered 0.6-cell-diameter solid circle | 1 | working the pump | flowing, idle | idle | timed, 10 ticks |
+| bell | 1 by 1, centered 0.6-cell-diameter solid circle | 1 | ringing the bell | ringing, silent | silent | timed, 40 ticks |
 
 ### Scenery types
 
