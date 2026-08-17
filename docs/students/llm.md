@@ -1,6 +1,6 @@
 # Using the LLM API
 
-Some assignments may ask your game agent to call an LLM. First, request a development key to authenticate your agent with the course website. The key works only for this environment's submission-open season and stops working when that season closes for submissions.
+Some assignments may ask your game agent to call an LLM. First, request a development key to authenticate your agent with the course website. The key works only for this environment's submission-open season (the season currently accepting submissions) and stops working when that season closes for submissions.
 
 ## Set up development access
 
@@ -13,7 +13,7 @@ Some assignments may ask your game agent to call an LLM. First, request a develo
    OPENAI_API_KEY=the-returned-development-key
    ```
 
-   The template's `.env.example` shows the same two names with placeholder values.
+   The template's `.env.example` shows the same two names with empty values to fill in.
 
 3. Send a test request. The command below uses the `small` tier if it is enabled for this environment's submission-open season. Use a tier enabled for that season.
 
@@ -128,20 +128,20 @@ LLMs cost more than most other techniques used in game AI, so use them efficient
 | `medium` | 2 per token          |
 | `large`  | 4 per token          |
 
-Each season gives you two allowances, each with a token budget (how much you can use LLMs) and a request-rate limit (how often you can send LLM requests).
+Your model use is metered by a token budget (how much you can use LLMs) and a request-rate limit (how often you can send LLM requests).
 
-- One covers developing your agent; check its usage at **My Agents**.
-- The other covers automated leaderboard runs. In each run, each agent-controlled player receives a temporary key and its own allowance.
+- Your development budget is fixed for the season. Check its usage at **My Agents**.
+- Automated leaderboard runs are metered separately. In each run, each agent-controlled player receives a temporary key and its own allowance.
 
 ## Troubleshooting
 
 LLM calls can fail even when your code is correct. Every model-assisted path through `act` needs a legal fallback action.
 
-Only successful calls spend the budget. The runner handles retries, so you do not need your own retry loop.
+Only successful calls spend the budget. The LLM service handles retries, so you do not need your own retry loop.
 
 | Problem | What to do |
 | --- | --- |
-| `budget_exceeded` | Use the legal fallback. Reduce model use or wait for the next allowance. |
+| `budget_exceeded` | Use the legal fallback and reduce model use. Your development budget is fixed for the season. |
 | `model_not_allowed` | Choose a tier enabled for this environment's submission-open season. |
 | A temporary error or `meter_unavailable` | Use the legal fallback and try again later. Tell course staff if the problem continues. |
 | A request error or unusable response | Use the legal fallback. Check your request and response parsing, then test again. |

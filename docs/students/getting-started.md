@@ -16,9 +16,9 @@ Install:
 
 ## 1. Copy the template to your computer
 
-Find the agent template's GitHub repository link in your assignment or on the environment's **My Submissions** page. On My Submissions, choose **Set Up Locally** for the exact clone command. **Cloning** a repository means copying it to your computer.
+Find the agent template's GitHub repository link in your assignment or on the environment's **My Submissions** page. On My Submissions, choose **Set Up Locally**, which shows the clone command you can use. **Cloning** a repository means copying it to your computer.
 
-In Visual Studio Code, select **Clone Git Repository** on the Start page. After the cloned repository folder opens, select **Terminal > New Terminal**. Use that terminal for the rest of this guide. It should start in the folder containing `agent.py` and `manifest.json`.
+If you use Visual Studio Code, select **Clone Git Repository** on the Start page. After the cloned repository folder opens, select **Terminal > New Terminal**. Use that terminal for the rest of this guide. It should start in the folder containing `agent.py` and `manifest.json`.
 
 To clone with Git in a terminal instead, run:
 
@@ -49,14 +49,14 @@ If automatic setup fails, follow Python's [virtual environment guide](https://do
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-When a virtual environment is active, your terminal usually shows `(.venv)` at the start of the prompt. The requirements files list the exact package versions used by the template and its tests, so do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
+When a virtual environment is active, your terminal usually shows `(.venv)` at the start of the prompt. The requirements files list the packages used by the template and its tests, so do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
 
 ## 3. Improve your agent
 
 Open `agent.py`, which already contains a small working agent for you to improve. It has two required methods:
 
 - `reset(seed, observation)` prepares the agent for a new game from its first-turn observation.
-- `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
+- `act(observation)` reads the current game state and returns an action. In most templates, a `TODO(you)` comment marks the line for you to change.
 
 See [Agent interface](agent-interface.md) for more about these methods and the optional methods you can add.
 
@@ -95,7 +95,7 @@ git commit -m "Improve my agent"
 git push
 ```
 
-`git status` shows what changed, `git add` selects changes for the commit, `git commit` creates it, and `git push` sends it to GitHub. Check `git status` before adding files, and never add `.env` or an API key. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
+`git status` shows what changed, `git add` selects changes for the commit, `git commit` creates it, and `git push` sends it to GitHub. Check `git status` before adding files. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
 
 ## 7. Submit
 
@@ -107,9 +107,9 @@ Submit your repository URL through the course website. The server records one ex
 | --- | --- |
 | `--vs PATH` | Use a saved agent in opposing seats that accept student agents, in place of Naive or your own agent. Your controls, companions, and fixed built-in roles do not change. `PATH` may be the agent folder or its `manifest.json` file. |
 | `--seat N` | Choose seat `N`. Seats start at `0`. Without this option, `play` chooses a human seat, while `watch` and `eval` choose the first seat that accepts your agent. |
-| `--companion NAME_OR_PATH` | Let an agent control your teammates while you play. Pass a built-in name or agent folder; omit this option, or pass `self`, to control the whole team when allowed. Any required companion is chosen automatically. |
-| `season.json` | Apply the season's gameplay settings and time limits to `play`, `watch`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
-| `--preset NAME` | Use one named gameplay preset for `play` or `watch`. It replaces the gameplay settings from `season.json` for that command but keeps the time limits. If you also pass `--parameter`, that value takes priority. |
+| `--companion NAME_OR_PATH` | Let an agent control your teammates while you play. Pass a built-in name or agent folder; omit this option, or pass `self`, to control the whole team when every member allows it. A seat with members you cannot control yourself needs an explicit `--companion`. |
+| `season.json` | Apply the season's gameplay parameters and time limits to `play`, `watch`, and `eval`. Download the file through **Set Up Locally** and put it beside `manifest.json`. Delete it to return to environment defaults. |
+| `--preset NAME` | Use one named gameplay preset for `play` or `watch`. It replaces the gameplay parameters from `season.json` for that command but keeps the time limits. If you also pass `--parameter`, that value takes priority. |
 | `--parameter NAME=VALUE`, `--decision-limit-ms N`, `--game-limit-ms N` | Change a setting or time limit from `season.json` for one `play`, `watch`, or `eval` command. Repeat `--parameter` to change several settings. |
 | `python -m sandbox setup` | Prepare the virtual environment without starting a game. |
 | `python -m sandbox watch --seed N` | Repeat one starting condition and random generator. |

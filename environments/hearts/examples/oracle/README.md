@@ -1,6 +1,6 @@
 # Example: hearts/oracle
 
-This Hearts agent makes one non-streaming call to the class OpenAI-compatible endpoint on each turn. It sends the legal cards and current trick state, follows a valid suggested card, and otherwise plays its lowest legal card.
+This Hearts agent makes one non-streaming call to the course's OpenAI-compatible endpoint on each turn. It sends the legal cards and current trick state, follows a valid suggested card, and otherwise plays its lowest legal card.
 
 Compose the runnable repository:
 

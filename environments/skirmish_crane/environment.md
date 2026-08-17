@@ -2,7 +2,7 @@
 
 Skirmish at Crane Reach is a turn-based tactics game on a hex field where Red and Blue fight for ground. Your side wins by defeating the other side, reaching the capture target when capture zones are enabled, or leading at the round limit. The shared [agent interface](../../docs/students/agent-interface.md) explains the methods every environment uses.
 
-Most importantly: every unit runs a separate `Agent` instance with its own state. Your code does not command an army, and your agents do not share observations or memory.
+Most importantly: every unit runs a separate `Agent` instance with its own state. Your code does not command an army, and your agents do not share observations or memory. The [agent interface](../../docs/students/agent-interface.md#agent-instances-and-state) installs one instance per player, each with its own memory.
 
 ## Start with the template
 
@@ -34,13 +34,13 @@ return action.stay()
 return action.move(path_id)
 ```
 
-Add a visible enemy id and the observation when you name a target: `action.stay(enemy_id, observation)` or `action.move(path_id, enemy_id, observation)`. The helpers resolve that id to the target slot the game needs.
+Pass a visible enemy id and the observation when you name a target: `action.stay(enemy_id, observation)` or `action.move(path_id, enemy_id, observation)`. The helpers resolve that id to the target slot the game needs.
 
 The observation has an authoritative `action_mask` with a `path` array and a `target` array. A `1` allows a choice and a `0` rejects it. Use `action.legal_paths(observation)`, `action.legal_steps(observation)`, and `action.possible_targets(observation)` rather than reimplementing legality. Values returned by those readers are legal, but `action.move` and `action.stay` only build dictionaries: an arbitrary path id or unit id can still make an invalid order. A path and target that are individually allowed may be combined.
 
 ## How the starter agent works
 
-The template is intentionally weak but complete, so its behavior is easy to recognize in a recording. It keeps no episode state, so `reset` has nothing to prepare. Each `act` first gets the enemies this unit can see:
+The helper names used below, such as `visible.enemies`, come from `sandbox.crane` and are each listed in [Helpers](#helpers). The template is weak but complete, so its behavior is easy to recognize in a recording. It keeps no episode state, so `reset` has nothing to prepare. Each `act` first gets the enemies this unit can see:
 
 ```python
 enemies = visible.enemies(observation)
@@ -67,7 +67,7 @@ if me.unit_type(observation) == "archer":
     return action.stay(nearest["unit_id"], observation)
 ```
 
-This change is deliberately narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `watch`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster, units, zone` gives you longer routes, full-roster coordination, fixed unit stats, and capture-zone geometry.
+This change is narrow: when an archer sees the nearest enemy, it stops walking closer and tries to shoot it. Run `watch`, then compare several seeded `eval` episodes before and after. The first improvement needs no new imports. Later, `from sandbox.crane import paths, roster, units, zone` gives you longer routes, full-roster coordination, fixed unit stats, and capture-zone geometry.
 
 Try one experiment at a time:
 
@@ -116,7 +116,7 @@ In `skirmish`, `player_0`, `player_1`, and `player_2` are Red's footman, archer,
 | Damage          | 3       | 2      | 3       |
 | Vision          | 4       | 6      | 6       |
 
-Damage is the attacker's damage after the adjustments below and never drops below 1. The point-symmetric hex field is 15 tiles across in early seasons and 21 later. Mirrored spawn positions give neither side better ground, every passable tile is reachable from every other, and each tile holds at most one unit.
+Damage is the attacker's damage after the adjustments below and never drops below 1. The point-symmetric field mirrors the spawn positions so neither side gets better ground. Every passable tile is reachable from every other, and each tile holds at most one unit.
 
 Each tile has one terrain and at most one feature. Their effects stack, so a hill with a forest costs 3 to enter and provides both effects.
 
@@ -153,7 +153,7 @@ Import helpers at the top of `agent.py`:
 from sandbox.crane import action, me, tile, visible
 ```
 
-`roster`, `paths`, `units`, and `zone` are available when you need them, but the first improvement does not. The helpers do not choose strategy or include a pathfinder. Season 2 route planning remains your work.
+`roster`, `paths`, `units`, and `zone` are available when you need them, but the first improvement does not need them. The helpers do not choose strategy or include a pathfinder, so you plan routes yourself.
 
 `act` receives one dictionary with `observation` and `action_mask` keys. The current match state is under `observation["observation"]`. Its `self` field describes your unit, `visible_units` lists other units in vision, `round` starts at 1, and `capture` holds both scores and the target. `battlefield`, both `rosters`, and `parameters` are shared match knowledge and stay constant for the match, so you may cache them from `reset`. Treat them as read-only: every player receives the same objects, so mutating them corrupts what other players observe.
 
@@ -208,9 +208,7 @@ Field extent is the hex distance from center to edge. All six included presets u
 
 The local start dialog lets you choose any of the six seasons. For example, run `python -m sandbox watch --preset season_4`.
 
-`season.json`, beside `manifest.json`, supplies local settings automatically to `play`, `watch`, and `eval`. It can set gameplay parameters and decision and game time limits. Submitted matches use the stored settings for their season.
-
-For one command, a preset replaces the gameplay parameters in `season.json` but keeps its decision and game time limits. Repeated `--parameter` flags override gameplay settings, and `--decision-limit-ms` and `--game-limit-ms` override their respective time limits.
+For `season.json`, `--preset`, `--parameter`, and the time-limit flags, see [Getting started](../../docs/students/getting-started.md#more-local-run-options).
 
 ## Time limits
 
@@ -230,7 +228,7 @@ def chat(self, inbox: list[dict]) -> list[dict]:
 
 See the shared [agent interface](../../docs/students/agent-interface.md#chatinbox) for generic message policy, replay details, and chat time accounting.
 
-## Advanced raw reference
+## Optional advanced raw reference
 
 The helpers are enough for the starter. This section gives the exact raw shapes for agents that need them.
 

@@ -46,8 +46,8 @@ class Agent:
     """Plays the lowest-ranked card that is legal right now."""
 
     def reset(self, seed, observation) -> None:
-        # Called once before each game. The opening observation is available here for
-        # precomputation outside the decision clock. This agent keeps no state between turns.
+        # Called once before each game. The opening observation is available here for setup
+        # before the first turn's time limit counts. This agent keeps no state between turns.
         pass
 
     def act(self, observation: HeartsObservation) -> int:
@@ -86,8 +86,6 @@ During play, every action gives a reward of `0.0`. When the game ends, each play
 | Final penalty score | Final reward |
 | ------------------- | ------------ |
 | `0`                 | `0.0`        |
-| `5`                 | `-5.0`       |
-| `13`                | `-13.0`      |
 | `26`                | `-26.0`      |
 
 While the game is still running, the `scores` observation shows the penalty points taken so far. The moon-shot adjustment applies to the final score and reward when the game ends.
@@ -134,6 +132,10 @@ return play(min(legal, key=rank_of))
 This prioritizes giving away a heart or the queen of spades only when you cannot follow suit. Record the mean reward from `python -m sandbox eval` before and after the change. An episode is a full deal, so compare several seeded deals.
 
 When your agent is ready, the [submitting guide](../../docs/students/submitting.md) explains how to submit it.
+
+## Time limits
+
+Hearts is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late, the environment plays the legal card with the lowest rank, breaking ties by the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Under the hood
 
@@ -191,7 +193,7 @@ Everything else sits under the `"observation"` key in readable structures. Cards
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
-| `hand` | sequence of cards | The card objects you are holding, in the order dealt. Grows shorter as the hand plays out; some may still be illegal this turn. |
+| `hand` | sequence of cards | The card objects you are holding, in ascending card order. Grows shorter as the hand plays out; some may still be illegal this turn. |
 | `current_trick` | sequence of `{player, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
 | `trick_leader` | `0..3` | The player index that led the current trick. |
 | `led_suit` | `0..4` | `0` clubs, `1` diamonds, `2` spades, `3` hearts; `4` means no card has been led yet because you are starting the trick. |
@@ -200,7 +202,3 @@ Everything else sits under the `"observation"` key in readable structures. Cards
 | `scores` | length-4 array | Running penalty points indexed by player index. Each value is from `0` through `26`, and lower is better. |
 
 Read these through `observation["observation"]`, or use the matching helpers.
-
-## Time limits
-
-Hearts is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late, the environment plays the legal card with the lowest rank, breaking ties by the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.

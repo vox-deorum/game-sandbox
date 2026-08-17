@@ -23,6 +23,9 @@ python -m sandbox eval   # compare your agent with Naive
 | `season.json` | Optional local season settings downloaded from My Submissions. |
 | `tests/` | Checks your submission should pass. |
 | `sandbox/` | Local game, commands, helper package, and observation types. Do not edit it. |
+| `requirements.txt` | Exact Python package versions used by the server. |
+| `requirements-dev.txt` | Test dependencies. |
+| `.env.example` | Example local LLM settings. |
 
 The starter returns Crane orders with `action.move()` and `action.stay()` from `sandbox.crane`. Its `act(observation)` receives the current observation and action mask. Before changing the strategy, read [`environment.md`](environment.md). It starts with a small archer improvement you can copy, then explains when an order is legal.
 

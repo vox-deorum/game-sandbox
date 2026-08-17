@@ -9,3 +9,5 @@ Compose it with:
 ```console
 uv run python scripts/compose.py three_branches sweeper
 ```
+
+The result is written to `build/examples/three_branches/sweeper/`.

@@ -1,6 +1,6 @@
 # Example: flappy_bird/hello
 
-A Flappy Bird agent that aims at the next pipe gap using velocity lookahead. This directory stores only these differences from the composed template:
+A Flappy Bird agent that aims at the next pipe gap using velocity lookahead. This directory stores its differences from the composed template:
 
 - `agent.py` adds the lookahead policy.
 - `requirements.extra.txt` adds `six`.

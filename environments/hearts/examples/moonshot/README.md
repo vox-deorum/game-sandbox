@@ -1,9 +1,9 @@
 # Example: hearts/moonshot
 
-An aggressive Hearts agent that tries to shoot the moon. This directory stores only these differences from the composed template:
+An aggressive Hearts agent that tries to shoot the moon. This directory stores its differences from the composed template:
 
 - `agent.py` leads high, wins when it can, and retains point cards when void.
-- `tests/test_moonshot.py` checks a complete game and the winning policy.
+- `tests/test_moonshot.py` checks the winning policy.
 
 Compose the runnable repository:
 

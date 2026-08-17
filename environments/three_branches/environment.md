@@ -1,8 +1,8 @@
 # Days at Three Branches
 
-Days at Three Branches is a village simulation. Your program controls one NPC, and the platform starts a separate copy for every villager. Each copy has its own memory and sees only its own observation. Villagers can coordinate by moving, noticing one another, using props, and speaking.
+Days at Three Branches is a village simulation. Your program controls one NPC, and the platform starts a separate instance for every villager. Every instance has its own memory and sees only its own observation. See [Agent instances and state](../../docs/students/agent-interface.md#agent-instances-and-state) for how instances and state work. Villagers can coordinate by moving, noticing one another, using props, and speaking.
 
-Start with the [template](https://github.com/Minor-Solutions/game-sandbox/tree/main/environments/three_branches/template). Edit `agent.py`, then run `python -m sandbox watch` from that folder to watch a day beside the scripted visitor.
+Start with the [template](https://github.com/Minor-Solutions/game-sandbox/tree/main/environments/three_branches/template). After you complete [Getting Started](../../docs/students/getting-started.md), open `agent.py` and run `python -m sandbox watch` from that folder to watch a day beside the scripted visitor. Then follow [Improve the starter](#improve-the-starter).
 
 ## Make an action
 
@@ -12,26 +12,31 @@ Import the small helper namespaces rather than assembling raw action dictionarie
 from sandbox.village import action, me, people
 
 
-def act(self, observation):
-    heading = me.heading(observation)
-    if people.seen(observation):
-        return action.walk(heading, 0.5, "wave")
-    return action.stand(heading, "none")
+class Agent:
+    def reset(self, seed, observation):
+        # Called once before each day. Build durable state here, not in act.
+        pass
+
+    def act(self, observation):
+        heading = me.heading(observation)
+        if people.seen(observation):
+            return action.walk(heading, 0.5, "wave")
+        return action.stand(heading, "none")
 ```
 
 `action.walk(heading, speed, expression)` wraps headings into `[0.0, 360.0)` and clamps speed to `0.0` through `1.0`. `action.stand(heading, expression)` is the still version. Expressions are `"none"`, `"use"`, or one of `action.EMOTES`.
 
 ## Improve the starter
 
-The starter walks toward its home's doorway while it is on interior ground. Outside, it heads toward the well-plaza pump. It waves while walking when it sees somebody and sits only when `props.usable(observation)` previews a bench.
+The starter walks toward its home's doorway while it is on interior ground. Outside, it heads toward the well-plaza pump. It waves when it sees somebody and sits only when `props.usable(observation)` previews a bench.
 
-That is intentionally weak. It does not remember a route or avoid walls. A useful first improvement is to choose a destination from the static village, then compare nearby points with `layout.walkable` and `layout.can_step` before walking.
+It does not remember a route or avoid walls. A useful first improvement is to choose a destination from the static village, then check nearby points with `layout.walkable` and `layout.can_step` before walking.
 
 ## A village day
 
 One submission controls the cast seat. The platform makes a separate `Agent` instance for every NPC: `player_1` through `player_5` in `cast_5`, or through `player_10` in `cast_10`. The visitor is `player_0` and is human-controlled in live play or controlled by the scripted visitor in automated runs. `reset(seed, observation)` runs once before a day, so build any route graph there instead of in every `act` call.
 
-A day has 1200 simultaneous ticks. Your action is chosen from the current observation, then every character moves, then prop use resolves in character order. Every healthy completed character scores 100. The automated board uses compute time as its tiebreaker, while people judge whether the village feels alive.
+One episode is one day of village life, with 1200 simultaneous ticks. Your action is chosen from the current observation, then every character moves, then prop use resolves in character order. Every healthy completed character scores 100. The automated board uses compute time as its tiebreaker, while people judge whether the village feels alive.
 
 Ground, walls, doorways, buildings, props, and scenery are standing knowledge in `observation["village"]`. Water and walls stop movement. Walls block sight and hearing, but doorways do not. Interactive props have collision shapes, so `layout.walkable` and `layout.can_step` are safer than assuming a prop's cell is empty.
 
@@ -46,12 +51,12 @@ from sandbox.village import action, day, geometry, layout, me, people, props
 | Namespace | Main helpers |
 | --- | --- |
 | `action` | `walk`, `stand`, and `EMOTES` |
-| `me` | `player_id`, position, heading, movement, expression, home, and `rng` |
+| `me` | `player_id`, position, heading, `moved`, expression, home, and `rng` |
 | `people` | seen people, nearby people, roster, and player-id predicates |
 | `props` | all placements, seen state, reach, use preview, and `TYPES` |
 | `layout` | cells, ground, safe standing and steps, sight, buildings, and doorways |
 | `geometry` | distance, heading, wrapping, vision cone, and ranges |
-| `day` | tick, phase, bell, and resolved parameters |
+| `day` | tick, phase, `bell_ringing`, and resolved parameters |
 
 Helpers that read village state take `observation` first. `action` and `geometry` are pure builders or calculations and do not take an observation. `me.rng(observation, session_seed)` gives each player a stable independent `random.Random` stream for that session seed.
 
@@ -63,7 +68,7 @@ Return `action.stand(heading, "use")` to use a prop. Use requires speed `0`, a c
 
 The first season uses five villagers with day and night off. Later seasons can use ten villagers, day phases, and the optional LLM API. `day.parameters(observation)` shows the resolved settings, and `day.phase(observation)` is `"day"` when day and night is off.
 
-Each `act` call has a 0.25 second limit. A whole day has a 120 second limit. The cast decisions run sequentially, so quick code matters more in `cast_10`. Build durable data in `reset` and keep per-tick work small.
+Each `act` call has a 0.25 second limit. A whole day has a 120 second limit. The cast decisions run sequentially, so quick code matters more in `cast_10`. Build durable data in `reset` and keep per-tick work small. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how limits are measured and enforced.
 
 ## Run locally
 
@@ -87,21 +92,15 @@ def chat(self, inbox):
     return []
 ```
 
-Each item in `inbox` is a raw dictionary. It includes the sender, recipient, text, and the tick when it was sent:
+A message is a plain dictionary with a sender, recipient, text, and the tick it was sent on, such as `{"from": "player_0", "to": "player_2", "text": "Meet at the pump.", "tick": 3}`. A broadcast with `None` as the recipient reaches every player who can hear the sender. See the [agent interface](../../docs/students/agent-interface.md#chatinbox) for the full message shape, delivery timing, and replay visibility.
 
-```python
-{"from": "player_0", "to": "player_2", "text": "Meet at the pump.", "tick": 3}
-```
+## Optional raw reference
 
-Use `None` for `"to"` to broadcast to every player who can hear the sender. Messages are delivered on a later acting opportunity, and every message is visible in the replay.
-
-## Raw reference
-
-`act` receives a plain dictionary. You can use it directly, but the helpers above keep common work readable.
+This optional raw reference shows the exact shapes for agents that need them. `act` receives a plain dictionary. You can use it directly, but the helpers above keep common work readable.
 
 | Field | Contents |
 | --- | --- |
-| `self` | id, position, heading, movement from the previous tick, expression |
+| `self` | id, position, heading, `moved` (movement from the previous tick), expression |
 | `seen` | visible characters: id, position, heading, movement, expression |
 | `nearby` | characters within hearing range and line, with id and position only |
 | `props` | visible interactive prop ids and states |

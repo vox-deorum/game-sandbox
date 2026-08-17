@@ -1,9 +1,9 @@
 # Example: hearts/closer
 
-A Hearts agent that focuses on playing last in a trick. This directory stores only these differences from the composed template:
+A Hearts agent that focuses on playing last in a trick. This directory stores its differences from the composed template:
 
 - `agent.py` ducks when possible and makes forced wins cheaply when points are present.
-- `tests/test_closer.py` checks a complete game and the last-player policy.
+- `tests/test_closer.py` checks the last-player policy.
 
 Compose the runnable repository:
 

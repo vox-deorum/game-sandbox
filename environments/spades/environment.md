@@ -53,8 +53,8 @@ class Agent:
     """Bids one trick, then always plays its lowest-ranked legal card."""
 
     def reset(self, seed, observation) -> None:
-        # Called once before each hand. The opening observation is available here for
-        # precomputation outside the decision clock. This agent keeps no state between turns.
+        # Called once before each hand. The opening observation is available here for setup
+        # before the first turn's time limit counts. This agent keeps no state between turns.
         pass
 
     def act(self, observation: SpadesObservation) -> int:
@@ -106,13 +106,9 @@ During play, every action gives a reward of `0.0`. When the game ends, each play
 | Set on a contract of 4                    | `-40.0`  |
 | Both partners bid 13 (impossible to make) | `-260.0` |
 
-The lowest possible team score is minus 260 (both partners bidding 13, a contract of 26 that thirteen tricks can never satisfy).
-
 ## The helper module
 
-The starting agent uses the template's `sandbox.cards` helper module to avoid raw arrays and action numbers. Import what you need at the top of `agent.py`.
-
-`is_bidding(observation)` tells you the phase, `bid(n)` and `play(card)` build actions, `legal_bids(observation)` and `legal_cards(observation)` list legal choices, and `partner_player(observation)` identifies your partner's player index. `Card` and `SpadesObservation` are importable for editors and type checkers. The [raw reference](#under-the-hood) documents encodings.
+The starting agent uses the template's `sandbox.cards` helper module to avoid raw arrays and action numbers. Import what you need at the top of `agent.py`. `Card` and `SpadesObservation` are importable for editors and type checkers. The [raw reference](#under-the-hood) documents encodings.
 
 The module provides these helpers and constants:
 
@@ -155,6 +151,39 @@ return bid(max(1, sum(rank_of(card) >= 13 for card in hand_cards(observation))))
 Run `python -m sandbox eval` before and after the edit, comparing averages across complete seeded hands. Keep the playing strategy unchanged for now. It still spends low cards even when the team needs tricks.
 
 When your agent is ready, follow the [submitting guide](../../docs/students/submitting.md) to submit it.
+
+## Time limits
+
+Spades is turn-based, so moves have no fixed delay between them. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. The game continues after this legal default. See [Time limits](../../docs/students/agent-interface.md#time-limits) for the applicable limits and forfeit rules.
+
+## Messaging
+
+Spades enables messaging by default, so your agent may talk during a hand. `agent.py` includes a commented-out `chat` method to start from. The complete agent below sends one direct message to its partner on every turn:
+
+```python
+from sandbox.cards import bid, is_bidding, legal_cards, partner_player, play
+
+
+class Agent:
+    def reset(self, seed, observation):
+        self.partner = None
+        self.partner_message = None
+
+    def act(self, observation):
+        partner_index = partner_player(observation)
+        self.partner = f"player_{partner_index}"
+        if is_bidding(observation):
+            return bid(1)
+        return play(legal_cards(observation)[0])
+
+    def chat(self, inbox):
+        for message in inbox:
+            if message["from"] == self.partner:
+                self.partner_message = message["text"]
+        return [{"to": self.partner, "text": "I am ready"}]
+```
+
+Messages use a platform player ID string such as `"player_2"`, not the player index in the observation. The example builds the platform player ID from the partner index and saves it during `act`, because `chat` does not receive the observation. A message can hold up to 120 characters by default (some emoji count as more than one). A season can lower that cap or disable messaging, but cannot raise it. See the [agent interface](../../docs/students/agent-interface.md#chatinbox) for delivery timing, broadcast and targeted messages, replay visibility, and how chat time counts toward your limits.
 
 ## Under the hood
 
@@ -225,7 +254,7 @@ Everything else lives under the `"observation"` key. Your hand and tricks are se
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
-| `hand` | sequence of cards | The card objects you are holding, in the order dealt. |
+| `hand` | sequence of cards | The card objects you are holding, in ascending card order. |
 | `phase` | `0` or `1` | `0` during the bidding round, `1` during play. `is_bidding` reads this. |
 | `bids` | 4 categories | Each bid indexed by player index (`0..13`, where `0` is nil); `14` marks an index that has not bid yet. |
 | `team_scores` | length-2 array | The two teams' running projected hand scores: `[team of player indices 0/2, team of 1/3]`. |
@@ -240,36 +269,3 @@ Everything else lives under the `"observation"` key. Your hand and tricks are se
 | `tricks_won` | length-4 array | Tricks taken so far, indexed by player index. |
 
 Read these through `observation["observation"]`, or use the matching helpers.
-
-## Time limits
-
-Spades is turn-based, so moves have no fixed delay between them. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. The game continues after this legal default. See [Time limits](../../docs/students/agent-interface.md#time-limits) for the applicable limits and forfeit rules.
-
-## Messaging
-
-Spades enables messaging by default, so your agent may talk during a hand. `agent.py` includes a commented-out `chat` method to start from. The complete agent below sends one direct message to its partner on every turn:
-
-```python
-from sandbox.cards import bid, is_bidding, legal_cards, partner_player, play
-
-
-class Agent:
-    def reset(self, seed, observation):
-        self.partner = None
-        self.partner_message = None
-
-    def act(self, observation):
-        partner_index = partner_player(observation)
-        self.partner = f"player_{partner_index}"
-        if is_bidding(observation):
-            return bid(1)
-        return play(legal_cards(observation)[0])
-
-    def chat(self, inbox):
-        for message in inbox:
-            if message["from"] == self.partner:
-                self.partner_message = message["text"]
-        return [{"to": self.partner, "text": "I am ready"}]
-```
-
-Messages use a platform player ID string such as `"player_2"`, not the player index in the observation. The example builds the platform player ID from the partner index and saves it during `act`, because `chat` does not receive the observation. A message can hold up to 120 characters by default (some emoji count as more than one). A season can lower that cap or disable messaging, but cannot raise it. See the [agent interface](../../docs/students/agent-interface.md#chatinbox) for delivery timing, broadcast and targeted messages, replay visibility, and how chat time counts toward your limits.

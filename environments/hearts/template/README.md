@@ -1,6 +1,6 @@
 # Game Sandbox Agent Template: Hearts
 
-This repository is a complete starter project for a Hearts agent. Edit `agent.py` and, if you use the optional LLM API, a local `.env` file. Everything in `sandbox/` is provided.
+This repository is a complete starter project for a Hearts agent. Edit `agent.py` and add a local `.env` file if you use the optional LLM API. Everything in `sandbox/` is provided.
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
@@ -52,31 +52,19 @@ Useful options:
 - `--seed N`, for example `python -m sandbox watch --seed 7`, repeats the same game.
 - `python -m sandbox play --seat 2` lets you play player 2. In Hearts, each seat contains one player.
 - `--vs rivals/v1` uses a saved rival in the other positions. `watch` and `eval` keep your current agent in the selected position; `play` keeps the position you control. The getting started guide explains how to make the rival folder.
-- `eval` reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. Use it to compare changes against the same seeds, not to predict leaderboard results.
+- `eval` reports the higher-is-better reward, so a Hearts result closer to zero is better. Use it to compare changes against the same seeds, not to predict leaderboard results.
 
 The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and the GitHub workflow.
 
 ## Write the agent
 
-Open `agent.py` and implement:
-
-- `reset(seed, observation)`, called once before each game with the first-turn observation.
-- `act(observation)`, called on your turn to return the card you want to play.
-
-Read [`environment.md`](environment.md) before you start: it explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.
-
-Two optional methods are available; see the [agent interface reference]({{DOCS_URL}}students/agent-interface/) for their full signatures:
-
-- `learn(observation, action, reward, terminated)` updates a learning agent after a step.
-- `chat(inbox)` sends messages in environments that enable communication. Hearts ships with messaging off.
-
-Leave out any optional method you do not use.
+Open `agent.py` and implement the required `reset(seed, observation)` and `act(observation)` methods. `act` runs on your turn and returns the card you want to play. Read [`environment.md`](environment.md) before you start; it explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits. The optional `learn` and `chat` methods are described in the [agent interface reference]({{DOCS_URL}}students/agent-interface/) with full signatures; Hearts ships with messaging off. Leave an optional method out when you do not use it.
 
 The template already plays its lowest-ranked legal card. `TODO(you)` in `act` marks where to improve it.
 
 ## Submit
 
-Submit the repository URL through the course website. Game Sandbox pins one commit, and a later submission replaces it while the season is open. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
+Submit the repository URL through the course website. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
 
 ## Optional LLM API
 

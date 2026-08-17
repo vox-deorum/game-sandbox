@@ -1,10 +1,10 @@
-# Neighbor
+# Example: three_branches/neighbor
 
 `neighbor` is the Season 4 starter example for Days at Three Branches. Each villager owns a separate memory dictionary, builds its route graph during `reset`, and follows the same static role table through dawn, morning, midday, evening, and night.
 
 Compose the example from the repository root, then use its normal local watch command:
 
-```text
+```console
 uv run python scripts/compose.py three_branches neighbor
 cd build/examples/three_branches/neighbor
 python -m sandbox watch
@@ -24,6 +24,6 @@ From the repository root, rebuild the end-to-end fixture and start the demo:
 npm run demo -- --rerun-e2e
 ```
 
-This requires Docker and can take several minutes. Open <http://localhost:8080>, sign in with the printed student credentials, and open Three Branches. Under `Play and Rate: Village Life`, choose the agent, select `Rate` or `Watch again`, then select `Start watching`.
+This requires Docker and can take several minutes. Open <http://localhost:8080>, sign in with the printed student credentials, and open Days at Three Branches. Under `Play and Rate: Village Life`, choose the agent, select `Rate` or `Watch again`, then select `Start watching`.
 
 Later launches can use `npm run demo`, which reuses the generated fixture.

@@ -12,7 +12,7 @@ Gravity pulls the bird down, and each flap gives it a small upward push. The bir
 
 ## Your first agent
 
-Your template contains a working agent. On every step, `act` receives an observation of the bird and pipes and returns `FLAP` or `IDLE`. The helper module provides readable names for the observation values and actions.
+Your template contains a working agent. On every step, `act` receives an observation of the bird and pipes, then returns `FLAP` or `IDLE`. The helper module provides readable names for the observation values and actions.
 
 The starting strategy uses one comparison: flap when the bird sits below the middle of the screen, otherwise let gravity pull it down. It reads the bird and screen heights to make that decision. See [The helper module](#the-helper-module) for the exact scales, and follow the comments inside `act` for the reasoning:
 
@@ -24,8 +24,8 @@ class Agent:
     """Flaps whenever the bird is below the middle of the screen."""
 
     def reset(self, seed, observation) -> None:
-        # Called once before each episode. The opening observation is available here for
-        # precomputation outside the decision clock. This agent keeps no state between steps.
+        # Called once before each game. The opening observation is available here for setup
+        # before the first turn's time limit counts. This agent keeps no state between steps.
         pass
 
     def act(self, observation: FlappyObservation) -> int:
@@ -62,11 +62,7 @@ The rewards add together during a run, and a higher total usually means the bird
 
 ## The helper module
 
-The starting agent uses the template's `sandbox.features` helper module. Import what you need at the top of `agent.py`. The helpers avoid raw expressions such as `observation["player"]["y"]` and `return 1`.
-
-`player_y(observation)` returns the bird's vertical position in pixels. `next_gap_center(observation)` returns the gap center of the first observed pipe whose right edge remains beyond the bird's left edge, on the same scale. It safely falls back to the middle of the screen when there is no such pipe. `player_velocity(observation)` returns how far the bird moves vertically each step, so adding it to the position estimates the bird's position on the next step.
-
-`FlappyObservation`, the observation shape, is also importable from `sandbox.features`.
+The starting agent uses the template's `sandbox.features` helper module. Import what you need at the top of `agent.py`. The helpers avoid raw expressions such as `observation["player"]["y"]` and `return 1`. `FlappyObservation`, the observation shape, is also importable from `sandbox.features`.
 
 The module provides these helpers and constants:
 
@@ -74,9 +70,9 @@ The module provides these helpers and constants:
 | --- | --- |
 | `player_x(observation)` | The bird's horizontal position in screen pixels |
 | `player_y(observation)` | The bird's vertical position in screen pixels, `0` at the top and larger lower down |
-| `player_velocity(observation)` | The bird's vertical velocity in pixels per step (positive is downward) |
+| `player_velocity(observation)` | The bird's vertical velocity in pixels per step (positive is downward); adding it to the position estimates the next step |
 | `next_pipe(observation)` | The first observed pipe whose right edge is still beyond the bird's left edge, as `{x, gap_top, gap_bottom}`, or `None` if there is none |
-| `next_gap_center(observation)` | The pixel height of the next gap's center, the height to aim for |
+| `next_gap_center(observation)` | The pixel height of the next gap's center, the height to aim for; it falls back to the middle of the screen when no pipe is observed |
 | `screen_width(observation)` | The screen width in pixels |
 | `screen_height(observation)` | The screen height in pixels |
 | `FLAP`, `IDLE` | The two actions, `1` (flap) and `0` (do nothing) |
@@ -93,6 +89,12 @@ return FLAP if player_y(observation) > target_y else IDLE
 Record the mean score from `python -m sandbox eval` before and after the edit. Compare seeded averages, not one lucky run. Once the bird tracks gaps, use `player_velocity` to account for where it will be on the next step.
 
 When your agent plays well, the [submitting guide](../../docs/students/submitting.md) explains how to submit it.
+
+> _Do I need to read the pipe-gap setting?_ Usually not. The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any gap from 60 to 200 pixels, so read the gap from each observation instead of assuming a fixed opening. Use **Set Up Locally** on My Submissions to download the season's setting into your template. The gap matters when you tune how much room to leave from a pipe edge: narrower gaps reward earlier, gentler corrections, while wider gaps allow more vertical movement before the next pipe arrives.
+
+## Time limits
+
+Flappy Bird advances once every 50 milliseconds, or 20 steps per second, but that pace is not the agent's timeout. The usual limits are 1 second for each call to `act` and 120 seconds of measured computation during one game, and a season may use different limits. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how the limits are measured and enforced.
 
 ## Under the hood
 
@@ -158,13 +160,3 @@ Because `y` increases downward, `gap_top` is smaller than `gap_bottom`. `next_ga
 #### The rest
 
 `pipes_passed` counts pipes cleared in the episode. `width` and `height` are screen dimensions in pixels, available through `screen_width` and `screen_height`.
-
-## Pipe-gap setting
-
-The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any gap from 60 to 200 pixels, so read the gap from each observation instead of assuming a fixed opening. Use **Set Up Locally** on My Submissions to download the season's setting into your template.
-
-Most starter strategies do not need to read the season setting directly. It matters when you tune how much room to leave from a pipe edge: narrower gaps reward earlier, gentler corrections, while wider gaps allow more vertical movement before the next pipe arrives.
-
-## Time limits
-
-Flappy Bird advances once every 50 milliseconds, or 20 steps per second, but that pace is not the agent's timeout. The usual limits are 1 second for each call to `act` and 120 seconds of measured computation during one game, and a season may use different limits. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how the limits are measured and enforced.

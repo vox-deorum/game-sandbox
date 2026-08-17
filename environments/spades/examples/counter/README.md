@@ -1,9 +1,9 @@
 # Example: spades/counter
 
-A Spades agent that bids honestly and plays to make its contract. This directory stores only these differences from the composed template:
+A Spades agent that bids honestly and plays to make its contract. This directory stores its differences from the composed template:
 
 - `agent.py` counts likely tricks, wins cheaply until the contract is safe, then avoids bags.
-- `tests/test_counter.py` checks a complete game and the bidding heuristic.
+- `tests/test_counter.py` checks the bidding heuristic.
 
 Compose the runnable repository:
 

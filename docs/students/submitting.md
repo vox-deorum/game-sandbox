@@ -18,7 +18,7 @@ Normally, submit a public GitHub repository. You can use a private repository on
 
 1. Open your repository on GitHub and copy its URL from the browser address bar.
 2. Open your environment on the course website and go to **My Submissions**.
-3. Review the season changes shown on the page. Use **Set Up Locally** if you need the template link or a `season.json` file that applies its gameplay parameters and decision and game limits on your computer. Messaging and LLM availability remain website and server settings.
+3. Review the season changes shown on the page (a **season** is one competition round for this environment). Use **Set Up Locally** if you need the template link or a `season.json` file that applies its gameplay parameters and decision and game limits on your computer. Messaging and LLM availability remain website and server settings.
 4. Paste the GitHub URL.
 5. Optionally write a **rating prompt**, a short note telling raters what to evaluate about your agent.
 6. Review the reachability check, which confirms that the server can reach your repository, then submit.
@@ -74,17 +74,17 @@ Check these points if static validation fails:
 
 If the Load check fails with a missing class, make sure `class_name` in your manifest matches your class's name exactly, including capitalization. Static validation only confirms that `class_name` is a non-empty string, and the Load check is what looks for a class with that exact name in your module.
 
-## Leaderboards and official games
+## Leaderboards and official matches
 
-**Ready** means the server can load your agent, not that it has played an official game yet. A **match** is one scheduled, recorded episode.
+**Ready** means the server can load your agent, not that it has played an official match yet. A **match** is one scheduled, recorded episode.
 
 A **season** is one competition round for one environment. It fixes opponents or player layout, game settings, repeated starting positions, time limits, and enabled LLM limits. The environment page shows play-open changes, and **My Submissions** shows the submission-open season and its reproducible local settings. See [Seasons](../specs/seasons.md) for the full rules.
 
-Here is what to know about the season's boards and official games:
+Here is what to know about the season's boards and official matches:
 
-- The **automated board** ranks the average official game score. Higher is always better on this board. See [Leaderboards](../specs/leaderboard.md) for how runs are scored and how tied scores are broken.
+- The **automated board** ranks the average official match score. Higher is always better on this board. See [Leaderboards](../specs/leaderboard.md) for how runs are scored and how tied scores are broken.
 - The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games. See [Leaderboards](../specs/leaderboard.md) for the full rating rules.
 - Official matches run on the server's schedule, and you can watch their replays on the website.
-- While the season's play window is open, watch, play, and rating surfaces show anonymized agents under neutral numbered labels. See [Seasons](../specs/seasons.md) for the release rules.
+- While the season's play window is open, watch, play, and rating surfaces show anonymized agents under neutral numbered labels. See [Frontend](../specs/frontend.md) for the exact rule.
 
 `python -m sandbox watch` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board. A downloaded `season.json` applies only to local episode commands. The server always uses its stored season. A crash, an illegal action, or exhausting your game limit forfeits your assigned seat. See [Time limits](agent-interface.md#time-limits) for the full rule.

@@ -1,6 +1,6 @@
 # Game Sandbox Agent Template: Spades
 
-This repository is a complete starter project for a Spades agent. Edit `agent.py` and, if you use the optional LLM API, a local `.env` file. Everything in `sandbox/` is provided.
+This repository is a complete starter project for a Spades agent. Edit `agent.py` and add a local `.env` file if you use the optional LLM API. Everything in `sandbox/` is provided.
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
@@ -59,25 +59,13 @@ The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manu
 
 ## Write the agent
 
-Open `agent.py` and implement:
-
-- `reset(seed, observation)`, called once before each game with the first-turn observation.
-- `act(observation)`, called on your turn. Choose a bid with `bid(k)` during bidding or a card with `play(card)` during card play. Each helper returns the integer `act` must return.
-
-Read [`environment.md`](environment.md) before you start. It explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits.
-
-Two optional methods are available. The [agent interface reference]({{DOCS_URL}}students/agent-interface/) covers both in full:
-
-- `learn(observation, action, reward, terminated)` updates a learning agent after a step.
-- `chat(inbox)` sends and receives messages. Spades enables messaging, and `agent.py` includes a commented-out `chat` hook to start from.
-
-Leave an optional method out when you do not use it.
+Open `agent.py` and implement the required `reset(seed, observation)` and `act(observation)` methods. On your turn `act` chooses a bid with `bid(k)` during bidding or a card with `play(card)` during card play; each helper returns the integer `act` must return. Read [`environment.md`](environment.md) before you start; it explains the starter agent, rules, observations, `sandbox.cards` helpers, scoring, and time limits. The optional `learn` and `chat` methods are covered in the [agent interface reference]({{DOCS_URL}}students/agent-interface/). Spades enables messaging, and `agent.py` includes a commented-out `chat` hook to start from. Leave an optional method out when you do not use it.
 
 The template bids one trick and plays its lowest-ranked legal card. `TODO(you)` in `act` marks where to improve it.
 
 ## Submit
 
-Submit the repository URL through the course website. Game Sandbox pins one commit, and a later submission replaces it while the season is open. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
+Submit the repository URL through the course website. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
 
 ## Optional LLM API
 

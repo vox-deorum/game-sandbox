@@ -2,7 +2,7 @@
 
 Open `agent.py` and replace the `TODO(you)` in `act` with a strategy that returns a legal action. Your [environment page](environments/index.md) explains the actions and observations for your game.
 
-Your `Agent` is a Python class that holds its decision-making code and remembered values. The runner creates a separate **instance** for each player your code controls. Each instance has its own **state**, which is not shared with other instances.
+Your `Agent` is a Python class that holds its decision-making code and remembered values. The runner creates a separate **instance** for each player your code controls. Each instance has its own **memory**, which is not shared with other instances.
 
 ## Minimal agent
 
@@ -18,7 +18,7 @@ class Agent:
 
 > _What are `: int` and `-> None`?_ These are optional Python type hints. Python ignores them at runtime, so you can leave them as they are.
 
-While the example shows the shape of an agent class, it always chooses action `0`, i.e., doing nothing. Replace the decision in `act` with your own strategy.
+The example shows the shape of an agent class but always chooses action `0`, doing nothing.
 
 ## Methods
 
@@ -29,7 +29,7 @@ While the example shows the shape of an agent class, it always chooses action `0
 | `learn(observation, action, reward, terminated)` | No | Update an agent that learns after each step. |
 | [`chat(inbox)`](#chatinbox) | No | Receive and send messages when the environment enables messaging. |
 
-The runner calls an optional method only if you define it, so leave it out until you need it. Most first agents use only `reset` and `act`.
+The runner calls an optional method only if you define it, so leave it out until you need it.
 
 ### `reset(seed, observation)`
 
@@ -73,7 +73,7 @@ The runner creates your agent by calling `Agent()` with no arguments. Put setup 
 
 > _What's `__init__`?_ Python runs this method once, automatically, when an object of your class is created, before `reset` is ever called.
 
-An instance can remember information between games in one session, including values updated by `learn`. Nothing it remembers carries over to a later official session, a later submission, or a later season. If your code controls multiple players, each player has its own instance and its own remembered values.
+An instance can remember information for the rest of the current game, including values updated by `learn`. Nothing it remembers carries over to a later session, a later submission, or a later season. If your code controls multiple players, each player has its own instance and its own remembered values.
 
 ## Official run restrictions
 
@@ -88,7 +88,7 @@ Develop and test on your own computer, then put everything your agent needs in t
 
 ## Time limits
 
-Your environment guide lists the default decision limit and game limit. The environment overview shows changes for the play-open season. **My Submissions** shows changes for the **submission-open season**, the season accepting submissions.
+Your environment guide lists the default decision limit and game limit. The environment overview shows changes for the **play-open season**, the season open for watching and playing. **My Submissions** shows changes for the **submission-open season**, the season accepting submissions.
 
 - A **decision limit** applies to one turn. If `act` takes longer than this limit, the runner ignores its result and uses a legal default action for that turn. The game continues, but the time spent in `act` still counts toward the game limit.
 - A **game limit** applies to your agent's total computation during one game (one full episode). Time in `reset`, `act`, `learn`, and `chat` counts toward it. Reset has no separate per-call limit. Exhausting the game limit during reset stops the game before its first turn.
@@ -128,4 +128,4 @@ Every model-assisted path through `act` must return a legal fallback action if t
 
 ## Manifest
 
-`manifest.json` sits in the root of your repository and tells the runner where to find your class. `entry_point` names the Python module (`agent` means `agent.py`), `class_name` names the class to create, and `template_version` records the version of the template's shared packages. Keep the template's manifest unchanged unless you rename the module or class. [Submitting](submitting.md#manifest-problems) shows the file and a checklist for fixing validation failures.
+`manifest.json` sits in the root of your repository and tells the runner where to find your class. Keep it unchanged unless you rename the module or class. [Submitting](submitting.md#manifest-problems) shows the file and a checklist for fixing validation failures.
