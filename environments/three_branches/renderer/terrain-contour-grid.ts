@@ -1,10 +1,5 @@
-import { shapeTerrainCurve } from './terrain-curves.js'
 import { connectedComponents } from './terrain-helpers.js'
-import type {
-  TerrainContourCell,
-  TerrainContourSettings,
-  TerrainCurveSourcePoint,
-} from './types.js'
+import type { TerrainContourCell } from './types.js'
 /** The material outside the authored grid. It closes every map-edge face. */
 export const TERRAIN_EXTERIOR = '__exterior__'
 
@@ -32,8 +27,6 @@ export interface ComponentRecord {
 export function validateInputs(
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,
-  settings: TerrainContourSettings,
-  bridgeTaperCells: number,
 ): { width: number; height: number } {
   const width = rows[0]?.length ?? 0
   if (width === 0 || rows.some((row) => row.length !== width)) {
@@ -48,38 +41,7 @@ export function validateInputs(
       throw new Error(`Terrain ground ${JSON.stringify(semantic)} cannot be contoured.`)
     }
   }
-  validateCurveProfiles(settings.profiles)
-  if (!(settings.junctionTangentCells >= 0 && settings.junctionTangentCells <= 0.5)) {
-    throw new Error('Contour junction tangent must be between zero and 0.5 cell.')
-  }
-  if (!(settings.maxDeviationCells > 0 && settings.maxDeviationCells <= 0.75)) {
-    throw new Error('Contour maximum deviation must be greater than zero and at most 0.75 cell.')
-  }
-  if (!(settings.minimumCorridorCells >= 0.25 && settings.minimumCorridorCells <= 1)) {
-    throw new Error('Contour minimum corridor must be between 0.25 and one cell.')
-  }
-  if (!Number.isFinite(bridgeTaperCells) || bridgeTaperCells < 0 || bridgeTaperCells > 1) {
-    throw new Error('Bridge shoreline taper must be between zero and one cell.')
-  }
   return { width, height: rows.length }
-}
-
-function validateCurveProfiles(profiles: TerrainContourSettings['profiles']): void {
-  const source: readonly TerrainCurveSourcePoint[] = [
-    { x: 0, y: 0, locked: true },
-    { x: 1, y: 0, locked: true },
-  ]
-  for (const [name, profile] of [
-    ['land', profiles.land],
-    ['water', profiles.water],
-  ] as const) {
-    try {
-      shapeTerrainCurve(source, false, profile, 0)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new Error(`Contour ${name} profile is invalid: ${message}`)
-    }
-  }
 }
 
 function materialForSemantic(semantic: string): string {

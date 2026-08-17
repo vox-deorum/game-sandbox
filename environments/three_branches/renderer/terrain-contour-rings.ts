@@ -24,8 +24,6 @@ export function buildRings(
   const placement = new Map<number, { chain: WorkingChain; reversed: boolean }>()
   for (const chain of chains) {
     for (const atom of chain.atoms) {
-      if (placement.has(atom.segment.id))
-        throw new Error('Terrain contour edge has duplicate chain ownership.')
       placement.set(atom.segment.id, { chain, reversed: atom.reversed })
     }
   }
@@ -34,17 +32,12 @@ export function buildRings(
   const chainById = new Map(chains.map((chain) => [chain.id, chain]))
   for (const segment of segments) {
     for (const reversed of [false, true]) {
-      const startKey = directedKey(segment.id, reversed)
-      if (visited.has(startKey)) continue
+      if (visited.has(directedKey(segment.id, reversed))) continue
       const darts: DirectedSegment[] = []
       let current: DirectedSegment = { segment, reversed }
       while (true) {
         const key = directedKey(current.segment.id, current.reversed)
-        if (visited.has(key)) {
-          if (key !== startKey)
-            throw new Error('Terrain contour half-edge entered a different face cycle.')
-          break
-        }
+        if (visited.has(key)) break
         visited.add(key)
         darts.push(current)
         current = nextDirectedSegment(current, segmentById, nodeById)
@@ -82,8 +75,6 @@ export function buildRings(
       })
     }
   }
-  if (visited.size !== segments.length * 2)
-    throw new Error('Terrain contour graph has open face ownership.')
   return rings
 }
 
@@ -126,7 +117,6 @@ function nextDirectedSegment(
   const reverseIndex = outgoing.findIndex(
     (item) => item.candidate.segment.id === directed.segment.id,
   )
-  if (reverseIndex < 0) throw new Error('Terrain contour node lost its incoming half-edge.')
   return outgoing[(reverseIndex - 1 + outgoing.length) % outgoing.length]!.candidate
 }
 

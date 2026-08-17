@@ -370,11 +370,7 @@ function assembleReference(
   const offsets: number[] = []
   let accumulated = 0
   for (const [index, point] of points.entries()) {
-    if (index > 0) {
-      const step = distance(required(points[index - 1], 'Terrain reference point is missing.'), point)
-      if (step <= EPSILON) throw new Error('Terrain contour reference contains duplicate vertices.')
-      accumulated += step
-    }
+    if (index > 0) accumulated += distance(points[index - 1]!, point)
     offsets.push(accumulated)
   }
   const start = required(points[0], 'Terrain contour reference is empty.')

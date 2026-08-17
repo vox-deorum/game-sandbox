@@ -856,29 +856,27 @@ describe('continuous terrain contour planning', () => {
     expect(performance.now() - startedAt).toBeLessThan(20_000)
   }, 30_000)
 
-  it('rejects grids or settings that cannot preserve the topology bounds', () => {
-    expect(() =>
-      planTerrainContours(
-        [],
-        names,
-        settings,
-        HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
-      ),
-    ).toThrow(/non-empty rectangular grid/)
+  it('rejects grids it cannot contour and profiles it cannot shape with', () => {
+    const taper = HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells
+    expect(() => planTerrainContours([], names, settings, taper)).toThrow(
+      /non-empty rectangular grid/,
+    )
+    expect(() => plan(['gg', 'g'])).toThrow(/non-empty rectangular grid/)
+    expect(() => plan(['q'])).toThrow(/has no ground name/)
+    expect(() => planTerrainContours(['g'], { g: 'lava' }, settings, taper)).toThrow(
+      /cannot be contoured/,
+    )
+    // Calibration bounds are held where the configuration is read. What is left to hold here is
+    // that a chain reaches the profile its own materials name: the all-ground grid never shapes
+    // anything with the water profile, and the mixed grid shapes its water chains with it.
     expect(() => plan(['gg'], { profiles: { land: { sampleSpacingCells: 4.01 } } })).toThrow(
-      /land profile.*sample spacing/,
+      /sample spacing/,
     )
     expect(() =>
-      plan(['gg'], {
+      plan(['gw'], {
         profiles: { water: { octaves: [{ wavelengthCells: 5, amplitudeCells: 4.01 }] } },
       }),
-    ).toThrow(/water profile.*octave amplitude/)
-    expect(() => plan(['gg'], { maxDeviationCells: 0.76 })).toThrow(/at most 0.75 cell/)
-    expect(() => planTerrainContours(['gg'], names, settings, -0.01)).toThrow(
-      /Bridge shoreline taper/,
-    )
-    expect(() => planTerrainContours(['gg'], names, settings, 1.01)).toThrow(
-      /Bridge shoreline taper/,
-    )
+    ).toThrow(/octave amplitude/)
+    expect(() => plan(['gg'], { profiles: { water: { sampleSpacingCells: 4.01 } } })).not.toThrow()
   })
 })

@@ -28,7 +28,7 @@ export function planTerrainContours(
   settings: TerrainContourSettings,
   bridgeTaperCells: number,
 ): TerrainContourPlan {
-  const { width, height } = validateInputs(rows, groundNameForCode, settings, bridgeTaperCells)
+  const { width, height } = validateInputs(rows, groundNameForCode)
   const layoutHash = stableHashParts('terrain-layout', width, height, rows.join('\n'))
   const cells = buildCells(rows, groundNameForCode, width, height)
   const componentRecords = buildComponents(cells)

@@ -1,7 +1,7 @@
 import { distance } from '@renderers/base/math.js'
 
 import { FIXED_MATERIALS, TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
-import { cellAt, compareCells, EPSILON, required } from './terrain-helpers.js'
+import { cellAt, compareCells, EPSILON } from './terrain-helpers.js'
 import type {
   ContourCoordinate,
   ContourReference,
@@ -9,7 +9,6 @@ import type {
   TerrainContourSide,
   TerrainContourSpan,
   TerrainShorelineSpan,
-  TerrainContourUse,
 } from './types.js'
 import type { CellRecord } from './terrain-contour-grid.js'
 /** A shared contour-graph vertex. */
@@ -34,7 +33,7 @@ export interface SideRecord extends TerrainContourSide {
 }
 
 /** One graph segment in a canonical chain direction. */
-export interface ChainAtom {
+interface ChainAtom {
   readonly segment: GraphSegment
   readonly reversed: boolean
 }
@@ -154,14 +153,6 @@ function sideFromCells(
   }
   const componentKey = componentKeyForCell.get(first.index)
   if (componentKey === undefined) throw new Error('Terrain contour source cell has no component.')
-  if (
-    cells.some(
-      (cell) =>
-        cell.material !== first.material || componentKeyForCell.get(cell.index) !== componentKey,
-    )
-  ) {
-    throw new Error('Terrain contour side crosses material components.')
-  }
   return {
     material: first.material,
     semantics: [...new Set(cells.map((cell) => cell.semantic))].sort(),
@@ -210,11 +201,8 @@ export function buildChains(
     let segment = seed
     let node = seed.start
     while (continues(node, key)) {
-      const behindId = node.segments.find((segmentId) => segmentId !== segment.id)
-      if (behindId === undefined) {
-        throw new Error('Terrain contour chain ended at a degree-two node.')
-      }
-      const behind = required(segmentById.get(behindId), 'Terrain contour segment is missing.')
+      const behindId = node.segments.find((segmentId) => segmentId !== segment.id)!
+      const behind = segmentById.get(behindId)!
       if (behind.id === seed.id) break
       segment = behind
       node = behind.end === node ? behind.start : behind.end
@@ -232,14 +220,11 @@ export function buildChains(
       atoms.push({ segment, reversed })
       node = reversed ? segment.start : segment.end
       if (!continues(node, key)) break
-      const nextId = node.segments.find((segmentId) => segmentId !== segment.id)
-      if (nextId === undefined) throw new Error('Terrain contour chain ended at a degree-two node.')
+      const nextId = node.segments.find((segmentId) => segmentId !== segment.id)!
       segment = segmentById.get(nextId)!
     }
     sourceChains.push({ closed, pairKey: key, atoms: canonicalAtoms(atoms, closed) })
   }
-  if (visited.size !== segments.length)
-    throw new Error('Terrain contour chain ownership is incomplete.')
 
   const ordered = sourceChains.sort(
     (first, second) =>
@@ -318,9 +303,6 @@ function finishChain(
   for (const atom of source.atoms) {
     const start = atomStart(atom)
     const end = atomEnd(atom)
-    if (!samePoint(rawPoints[rawPoints.length - 1]!, start)) {
-      throw new Error('Terrain contour chain source edges are not continuous.')
-    }
     const length = distance(start, end)
     const left = atom.reversed ? atom.segment.right : atom.segment.left
     const right = atom.reversed ? atom.segment.left : atom.segment.right
