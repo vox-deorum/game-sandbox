@@ -1,5 +1,6 @@
-import { Container } from 'pixi.js'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Container, Text } from 'pixi.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { testText } from '../core/test-helpers.js'
 import { EMOTE_PLATES, USE_PLATE_RECT } from './palette.js'
 import {
@@ -7,8 +8,6 @@ import {
   JOYSTICK_CENTER,
   type VisitorInputController,
 } from './visitor-input.js'
-
-const PACE_MS = 250
 
 /** The view point at the middle of a palette plate. */
 function plateCenter(rect: { x: number; y: number; width: number; height: number }) {
@@ -59,6 +58,7 @@ interface Mounted {
   paletteLayer: Container
   sendAction: ReturnType<typeof vi.fn>
   previewTarget: ReturnType<typeof vi.fn>
+  targetTransition: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   controller: VisitorInputController
 }
@@ -66,23 +66,12 @@ interface Mounted {
 describe('Three Branches visitor input', () => {
   const mounted: Mounted[] = []
 
-  beforeEach(() => {
-    vi.useFakeTimers()
-  })
-
-  afterEach(() => {
-    for (const entry of mounted.splice(0)) {
-      entry.controller.destroy()
-      entry.container.remove()
-    }
-    vi.useRealTimers()
-  })
-
   function mount(
     overrides: {
       controlledPlayers?: readonly string[]
       sendAction?: ((playerId: string, action: unknown) => void) | undefined
       previewTarget?: () => string | null
+      targetTransition?: (propId: string) => string
     } = {},
   ): Mounted {
     const container = document.createElement('div')
@@ -94,12 +83,12 @@ describe('Three Branches visitor input', () => {
     const paletteLayer = new Container()
     const sendAction = vi.fn()
     const previewTarget = vi.fn(overrides.previewTarget ?? ((): string | null => 'stall_0'))
+    const targetTransition = vi.fn(overrides.targetTransition ?? ((): string => 'toggle'))
     const onPreview = vi.fn()
     const controller = createVisitorInput({
       container,
       controlledPlayers: overrides.controlledPlayers ?? ['player_0'],
       sendAction: 'sendAction' in overrides ? overrides.sendAction : sendAction,
-      paceMs: PACE_MS,
       padLayer,
       paletteLayer,
       createText: testText,
@@ -107,6 +96,7 @@ describe('Three Branches visitor input', () => {
       currentHeading: () => 45,
       resolution: () => 1,
       previewTarget,
+      targetTransition,
       onPreview,
       redraw: vi.fn(),
     })
@@ -117,6 +107,7 @@ describe('Three Branches visitor input', () => {
       paletteLayer,
       sendAction,
       previewTarget,
+      targetTransition,
       onPreview,
       controller,
     }
@@ -124,10 +115,25 @@ describe('Three Branches visitor input', () => {
     return entry
   }
 
+  afterEach(() => {
+    for (const entry of mounted.splice(0)) {
+      entry.controller.destroy()
+      entry.container.remove()
+    }
+  })
+
+  /** Locate the Use plate's label in the palette layer, for paint assertions. */
+  function useLabel(paletteLayer: Container): Text {
+    const labels = paletteLayer.children.filter((child): child is Text => child instanceof Text)
+    const label = labels.find((node) => node.text === 'Use')
+    if (label === undefined) throw new Error('the palette should label the use plate.')
+    return label
+  }
+
   describe('gating', () => {
     it('stays inert without control of player_0', () => {
       const windowListener = vi.spyOn(window, 'addEventListener')
-      const { container, surface, sendAction, paletteLayer, padLayer } = mount({
+      const { container, surface, sendAction, paletteLayer, padLayer, controller } = mount({
         controlledPlayers: [],
       })
       expect(container.getAttribute('data-three-branches-input')).toBe('none')
@@ -137,7 +143,7 @@ describe('Three Branches visitor input', () => {
       expect(windowListener).not.toHaveBeenCalled()
       key('keydown', 'KeyW')
       pointer(surface, 'pointerdown', 1, 200, 400)
-      vi.advanceTimersByTime(PACE_MS * 4)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
       windowListener.mockRestore()
     })
@@ -161,67 +167,70 @@ describe('Three Branches visitor input', () => {
       expect(container.getAttribute('data-three-branches-last-action')).toBe('none')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       expect(container.getAttribute('data-three-branches-use-preview')).toBe('none')
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
       expect(padLayer.children).toHaveLength(1)
       expect(padLayer.visible).toBe(true)
     })
   })
 
   describe('keyboard', () => {
-    it('sends held keys once per window at full speed', () => {
-      const { container, sendAction } = mount()
+    it('sends held keys once per landed frame at full speed', () => {
+      const { container, sendAction, controller } = mount()
       key('keydown', 'KeyW')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       expect(container.getAttribute('data-three-branches-last-action')).toBe('90,1,0')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(2)
     })
 
     it('halves the speed while Shift is held', () => {
-      const { sendAction } = mount()
+      const { sendAction, controller } = mount()
       key('keydown', 'ShiftLeft')
       key('keydown', 'ArrowRight')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 0, speed: 0.5, action: 0 })
     })
 
-    it('cancels opposing keys per axis and skips the fully cancelled window', () => {
-      const { sendAction } = mount()
+    it('cancels opposing keys per axis and skips the fully cancelled frame', () => {
+      const { sendAction, controller } = mount()
       key('keydown', 'KeyW')
       key('keydown', 'KeyS')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
       key('keydown', 'KeyD')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 0, speed: 1, action: 0 })
     })
 
     it('stops sending once the key lifts', () => {
-      const { sendAction } = mount()
+      const { sendAction, controller } = mount()
       key('keydown', 'KeyA')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
       key('keyup', 'KeyA')
-      vi.advanceTimersByTime(PACE_MS * 3)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('drops held keys when the window loses focus', () => {
-      const { sendAction } = mount()
+      const { sendAction, controller } = mount()
       key('keydown', 'KeyD')
       window.dispatchEvent(new Event('blur'))
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
     })
 
     it('ignores keys typed into a text field', () => {
-      const { sendAction } = mount()
+      const { sendAction, controller } = mount()
       const field = document.createElement('input')
       document.body.append(field)
       field.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }))
       field.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', bubbles: true }))
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
       field.remove()
     })
@@ -229,15 +238,17 @@ describe('Three Branches visitor input', () => {
 
   describe('joystick', () => {
     it('stays at the bottom left, drives a drag, and returns to idle on release', () => {
-      const { container, surface, sendAction } = mount()
+      const { container, surface, sendAction, controller } = mount()
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
       pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
-      vi.advanceTimersByTime(PACE_MS * 3)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
@@ -256,10 +267,10 @@ describe('Three Branches visitor input', () => {
     })
 
     it('does not engage from outside the fixed pad', () => {
-      const { container, surface, sendAction } = mount()
+      const { container, surface, sendAction, controller } = mount()
       pointer(surface, 'pointerdown', 1, 200, 400)
       pointer(window, 'pointermove', 1, 200, 330)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       expect(sendAction).not.toHaveBeenCalled()
     })
@@ -275,18 +286,18 @@ describe('Three Branches visitor input', () => {
     })
 
     it('keeps a left-button drag engaged through a right-button press and release on the same pointer', () => {
-      const { surface, sendAction } = mount()
+      const { surface, sendAction, controller } = mount()
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
       pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       // The right button rides pointerId 1 too, and must not cancel or stop the engaged drag.
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 2)
       pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 2)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
     })
 
     it('does not claim or disturb the drag from a second, non-primary touch pointer', () => {
-      const { container, surface, sendAction } = mount()
+      const { container, surface, sendAction, controller } = mount()
       const bubbled = vi.fn()
       container.addEventListener('pointerdown', bubbled)
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
@@ -303,16 +314,16 @@ describe('Three Branches visitor input', () => {
       )
       expect(bubbled).toHaveBeenCalledTimes(1)
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
     })
 
     it('engages and releases the joystick from a primary pen press', () => {
-      const { container, surface, sendAction } = mount()
+      const { container, surface, sendAction, controller } = mount()
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 0, 'pen')
       pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
@@ -342,60 +353,213 @@ describe('Three Branches visitor input', () => {
   })
 
   describe('expression palette', () => {
-    it('queues a pressed plate and sends it standing still on the next window', () => {
-      const { container, surface, sendAction } = mount()
+    it('queues a pressed plate and sends it standing still on the next landed frame', () => {
+      const { container, surface, sendAction, controller } = mount()
       const at = plateCenter(emoteRect('wave'))
       pointer(surface, 'pointerdown', 1, at.x, at.y)
       expect(container.getAttribute('data-three-branches-queued')).toBe('wave')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 2 })
       expect(container.getAttribute('data-three-branches-last-action')).toBe('45,0,2')
       expect(container.getAttribute('data-three-branches-queued')).toBe('none')
-      vi.advanceTimersByTime(PACE_MS * 2)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('keeps only the last press in a window', () => {
-      const { surface, sendAction } = mount()
+      const { surface, sendAction, controller } = mount()
       const wave = plateCenter(emoteRect('wave'))
       const sleep = plateCenter(emoteRect('sleep'))
       pointer(surface, 'pointerdown', 1, wave.x, wave.y)
       pointer(window, 'pointerup', 1, wave.x, wave.y)
       pointer(surface, 'pointerdown', 2, sleep.x, sleep.y)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 9 })
     })
 
-    it('sends use from its own plate', () => {
-      const { surface, sendAction } = mount()
+    it('sends use once from its own plate when the target toggles after one flip', () => {
+      const { surface, sendAction, controller } = mount()
       const at = plateCenter(USE_PLATE_RECT)
       pointer(surface, 'pointerdown', 1, at.x, at.y)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 1 })
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('queues from the hotkeys, ignoring auto-repeat', () => {
-      const { container, sendAction } = mount()
+      const { container, sendAction, controller } = mount()
       key('keydown', 'Digit3')
       expect(container.getAttribute('data-three-branches-queued')).toBe('shake_head')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 4 })
       key('keydown', 'Digit0', true)
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
       key('keydown', 'Digit0')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 1 })
     })
 
     it('rides a queued expression on the composed motion', () => {
-      const { sendAction } = mount()
+      const { sendAction, controller } = mount()
       key('keydown', 'KeyD')
       key('keydown', 'Digit1')
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 0, speed: 1, action: 2 })
-      vi.advanceTimersByTime(PACE_MS)
+      controller.handleFrame(false)
       expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 0, speed: 1, action: 0 })
+    })
+  })
+
+  describe('use latch', () => {
+    it('holds use on an occupancy prop across landed frames', () => {
+      const { container, surface, sendAction, controller } = mount({
+        previewTarget: () => 'bench_0',
+        targetTransition: (id) => (id === 'bench_0' ? 'occupancy' : 'toggle'),
+      })
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('bench_0')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 1 })
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('bench_0')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 1 })
+    })
+
+    it('toggles the latch off on a second Use press', () => {
+      const { container, surface, sendAction, controller } = mount({
+        previewTarget: () => 'bench_0',
+        targetTransition: () => 'occupancy',
+      })
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      pointer(surface, 'pointerdown', 2, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+    })
+
+    it('releases the latch when an emote is pressed', () => {
+      const { container, surface, sendAction, controller } = mount({
+        previewTarget: () => 'bench_0',
+        targetTransition: () => 'occupancy',
+      })
+      const use = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, use.x, use.y)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      const wave = plateCenter(emoteRect('wave'))
+      pointer(surface, 'pointerdown', 2, wave.x, wave.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 2 })
+    })
+
+    it('releases the latch when movement begins', () => {
+      const { container, sendAction, controller } = mount({
+        previewTarget: () => 'bench_0',
+        targetTransition: () => 'occupancy',
+      })
+      key('keydown', 'Digit0')
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('bench_0')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      key('keydown', 'KeyW')
+      controller.handleFrame(false)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+    })
+
+    it('releases the latch when the landed frame reports no preview target', () => {
+      let target: string | null = 'bench_0'
+      const { container, surface, sendAction, controller } = mount({
+        previewTarget: () => target,
+        targetTransition: () => 'occupancy',
+      })
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('bench_0')
+      // The visitor then walks out of reach, so the landing pose no longer resolves any prop.
+      target = null
+      controller.handleFrame(false)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      expect(sendAction).not.toHaveBeenCalled()
+    })
+
+    it('releases a none-transition latch after its first send', () => {
+      const { container, surface, sendAction, controller } = mount({
+        previewTarget: () => 'board_0',
+        targetTransition: () => 'none',
+      })
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 1 })
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not latch a Use press while no prop is in reach', () => {
+      const { container, surface, sendAction, controller } = mount({ previewTarget: () => null })
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      expect(sendAction).not.toHaveBeenCalled()
+    })
+
+    it('keeps a queued emote when a Use press finds no prop in reach', () => {
+      const { container, surface, sendAction, controller } = mount({ previewTarget: () => null })
+      const wave = plateCenter(emoteRect('wave'))
+      pointer(surface, 'pointerdown', 1, wave.x, wave.y)
+      expect(container.getAttribute('data-three-branches-queued')).toBe('wave')
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 2, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      expect(container.getAttribute('data-three-branches-queued')).toBe('wave')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 2 })
+    })
+  })
+
+  describe('use while moving', () => {
+    it('ignores a Use press and paints the plate dim while moving', () => {
+      const { container, surface, paletteLayer, sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      const at = plateCenter(USE_PLATE_RECT)
+      pointer(surface, 'pointerdown', 1, at.x, at.y)
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      expect(useLabel(paletteLayer).alpha).toBeLessThan(1)
+    })
+
+    it('ignores the use hotkey while moving', () => {
+      const { container, sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      key('keydown', 'Digit0')
+      expect(container.getAttribute('data-three-branches-use-latch')).toBe('none')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+    })
+
+    it('paints the latched Use plate with the gilt active treatment', () => {
+      const { paletteLayer, controller, targetTransition } = mount({
+        previewTarget: () => 'bench_0',
+        targetTransition: () => 'occupancy',
+      })
+      key('keydown', 'Digit0')
+      expect(useLabel(paletteLayer).style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)
+      void targetTransition
+      controller.handleFrame(false)
     })
   })
 
@@ -440,7 +604,9 @@ describe('Three Branches visitor input', () => {
       expect(padLayer.visible).toBe(false)
       expect(paletteLayer.visible).toBe(false)
       key('keydown', 'KeyS')
-      vi.advanceTimersByTime(PACE_MS * 4)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
       // The camera keeps the whole content area again: nothing claims the left half anymore.
       const bubbled = vi.fn()
@@ -453,8 +619,30 @@ describe('Three Branches visitor input', () => {
       const { sendAction, controller } = mount()
       key('keydown', 'KeyW')
       controller.destroy()
-      vi.advanceTimersByTime(PACE_MS * 2)
+      controller.handleFrame(false)
+      controller.handleFrame(false)
       expect(sendAction).not.toHaveBeenCalled()
+    })
+
+    it('ends the session on a terminal snap frame without sending', () => {
+      const { container, padLayer, paletteLayer, sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      controller.handleFrame(true, false)
+      expect(container.getAttribute('data-three-branches-input')).toBe('ended')
+      expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
+      expect(padLayer.visible).toBe(false)
+      expect(paletteLayer.visible).toBe(false)
+      expect(sendAction).not.toHaveBeenCalled()
+    })
+
+    it('skips the send window on a non-terminal snap frame but stays live', () => {
+      const { container, sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      controller.handleFrame(false, false)
+      expect(container.getAttribute('data-three-branches-input')).toBe('ready')
+      expect(sendAction).not.toHaveBeenCalled()
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(1)
     })
   })
 })

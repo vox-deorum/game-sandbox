@@ -1,14 +1,19 @@
 import { codePointLength } from '@game-sandbox/schema/text'
+import { stableHashParts } from '@renderers/base/math.js'
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
-import { Container, Graphics, type Text } from 'pixi.js'
+import { Container, Graphics, Sprite, type Text, Texture } from 'pixi.js'
 
+import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { CharacterDrawable, FrameScene, SpeechLine } from '../core/types.js'
+import { frameRectangle } from './tint.js'
 
-/** Operations exposed by the retained nameplate and speech bubble layer. */
+/** Operations exposed by the retained nameplate, speech bubble, and expression chip layer. */
 export interface AnnotationLayer {
-  /** Reconcile plates and bubbles toward one frame at one camera zoom. */
+  /** Reconcile plates, chips, and bubbles toward one frame at one camera zoom. */
   reconcile(scene: FrameScene, zoom: number, fittedZoom: number, resolution: number): void
+  /** Slice the expression chip's effects textures into the retained chip nodes. */
+  install(art: ExpressionArt): void
   /** Retain the lines one state delivered, replacing each speaker's previous line. */
   deliver(lines: readonly SpeechLine[]): void
   /** Drop every retained line, as an arbitrary replay seek must. */
@@ -17,17 +22,30 @@ export interface AnnotationLayer {
   advance(dtMs: number): boolean
 }
 
+/** Slice the expression chip's ten pictograms and two shared accent frames. */
+export interface ExpressionArt {
+  /** Per-expression-token pictogram textures, keyed by emote token and 'use'. */
+  icon: Readonly<Record<string, Texture>>
+  /** Shared accent textures, keyed by their effects-page frame name. */
+  accent: Readonly<Record<string, Texture>>
+}
+
 /** A bubble's line and how long it has been retained, aged only by {@link AnnotationLayer.advance}. */
 interface RetainedBubble {
   readonly line: SpeechLine
   readonly ageMs: number
 }
 
-/** The plate and bubble display objects retained for one character, keyed by its stable id. */
+/** The plate, chip, and bubble display objects retained for one character, keyed by its stable id. */
 interface CharacterNode {
   readonly root: Container
   readonly plate: Graphics
   readonly plateLabel: Text
+  readonly chip: Container
+  readonly chipPlate: Graphics
+  readonly chipAccent: Sprite
+  readonly chipIcon: Sprite
+  readonly chipLabel: Text
   readonly bubble: Container
   readonly bubbleBackground: Graphics
   readonly bubbleLabel: Text
@@ -40,6 +58,16 @@ const PLATE_PADDING_Y = 4
 const PLATE_FONT_SIZE = 14
 const PLATE_CHAR_WIDTH = 8.75
 const PLATE_LINE_HEIGHT = 16
+const CHIP_GAP = 6
+const CHIP_PADDING_X = 8
+const CHIP_PADDING_Y = 3
+const CHIP_FONT_SIZE = 12
+const CHIP_CHAR_WIDTH = 7.25
+const CHIP_TEXT_GAP = 6
+const CHIP_ICON_SIZE = 18
+const CHIP_ACCENT_SIZE = 22
+const CHIP_LINE_HEIGHT = 16
+const CHIP_ACCENT_ALPHA = 0.45
 const BUBBLE_GAP = 10
 const BUBBLE_CHARS_PER_LINE = 24
 const BUBBLE_FONT_SIZE = 12
@@ -68,6 +96,7 @@ export function createAnnotationLayer(
   // Every key in the last delivered state, so redrawing a multi-line state never restarts the final
   // bubble. Replacing the set on each delivery keeps memory bounded by one state.
   let lastDeliveryKeys = new Set<string>()
+  let art: ExpressionArt | null = null
 
   return {
     reconcile(scene, zoom, fittedZoom, resolution) {
@@ -95,15 +124,43 @@ export function createAnnotationLayer(
         node.plate.alpha = plateAlpha
         node.plateLabel.alpha = plateAlpha
 
+        // The expression chip appears only where the nameplate is fully opaque, and the bubble
+        // stacks above it when one is drawn, otherwise above the plate.
+        let stackTop = plateTop
+        const chipShown = character.expressionTitle !== null && plateAlpha === 1
+        node.chip.visible = chipShown
+        if (chipShown && character.expressionTitle !== null) {
+          const accentFrame = expressionAccentFrame(
+            character.id,
+            character.expression.type,
+            scene.presentationTick,
+          )
+          stackTop = drawChip(node, character.expressionTitle, plateTop - CHIP_GAP, resolution, art)
+          if (art !== null) {
+            // The retained sprites carry no intrinsic scale: the effects grid frames are 192 by 128
+            // units at 1:1, so each one is scaled down into its reserved chip lane as its texture lands.
+            const icon = art.icon[character.expression.type] ?? Texture.EMPTY
+            const accent = art.accent[accentFrame] ?? Texture.EMPTY
+            node.chipIcon.texture = icon
+            node.chipIcon.scale.set(chipSpriteScale(icon, CHIP_ICON_SIZE))
+            node.chipAccent.texture = accent
+            node.chipAccent.scale.set(chipSpriteScale(accent, CHIP_ACCENT_SIZE))
+          }
+        }
+
         const bubble = bubbles.get(character.id)
         if (bubble === undefined) {
           node.bubble.visible = false
         } else {
           node.bubble.visible = true
-          drawBubble(node, bubble.line, plateTop - BUBBLE_GAP, resolution)
+          drawBubble(node, bubble.line, stackTop - BUBBLE_GAP, resolution)
           node.bubble.alpha = speechAlpha(bubble.ageMs)
         }
       }
+    },
+
+    install(nextArt) {
+      art = nextArt
     },
 
     deliver(lines) {
@@ -202,6 +259,63 @@ export function speechTag(line: SpeechLine): string | null {
   return line.addressee === null ? null : `to ${line.addressee}`
 }
 
+/**
+ * The chip accent's frame at one absolute fractional presentation tick.
+ *
+ * The accent phase is a pure function of player id, expression type, and the fractional tick, so a
+ * live transition, a repeated state, a replay, and a direct seek all resolve the same frame.
+ */
+export function expressionAccentFrame(
+  playerId: string,
+  type: string,
+  fractionalTick: number,
+): string {
+  const { accentFrames, frameRatio } = HEARTHSIDE_STYLE.expressions
+  if (accentFrames.length === 0) return ''
+  const phase = stableHashParts('three-branches-expression-accent', playerId, type)
+  const clock = fractionalTick * frameRatio + (phase / 0xffffffff) * accentFrames.length
+  return accentFrames[Math.floor(clock) % accentFrames.length] ?? accentFrames[0] ?? ''
+}
+
+/** Slice the expression chip's textures from the effects page without changing its source. */
+export function createExpressionArt(atlas: Texture): ExpressionArt {
+  const effects = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'effects')
+  if (effects === undefined || 'layers' in effects) {
+    throw new Error('Three Branches effects atlas is missing.')
+  }
+  const views = Object.fromEntries(
+    effects.frames.names.map((name) => [
+      name,
+      new Texture({ source: atlas.source, frame: frameRectangle(effects.frames, name) }),
+    ]),
+  )
+  const required = (name: string): Texture => {
+    const texture = views[name]
+    if (texture === undefined) throw new Error(`Three Branches effects frame is missing: ${name}`)
+    return texture
+  }
+  return {
+    icon: Object.fromEntries(
+      Object.entries(HEARTHSIDE_STYLE.expressions.frames).map(([token, frame]) => [
+        token,
+        required(frame),
+      ]),
+    ),
+    accent: Object.fromEntries(
+      HEARTHSIDE_STYLE.expressions.accentFrames.map((frame) => [frame, required(frame)]),
+    ),
+  }
+}
+
+/**
+ * The scale that sizes one expression-chip sprite into its reserved layout lane. Effects atlas
+ * frames are 192 by 128 units at 1:1, so each is shrunk by `targetWidth / frameWidth` — preserving
+ * the design's aspect while keeping the artwork inside the pill, whatever frame lands later.
+ */
+function chipSpriteScale(texture: Texture, targetWidth: number): number {
+  return texture.width > 0 ? targetWidth / texture.width : 1
+}
+
 function ellipsize(line: string, charsPerLine: number): string {
   const mark = '…'
   const points = Array.from(line)
@@ -214,7 +328,7 @@ function createCharacterNode(
   id: string,
   createText: RendererTextFactory,
 ): CharacterNode {
-  const bubble = new Container()
+  const bubble = new Container({ label: 'annotation-bubble' })
   const bubbleBackground = new Graphics()
   const bubbleLabel = createText(
     '',
@@ -237,17 +351,96 @@ function createCharacterNode(
     'ui-monospace, monospace',
   )
 
+  // The chip's plate and text exist before any artwork so a pending or failed art load leaves a
+  // readable text-only chip. Artwork only fills the retained pictogram and accent sprites.
+  const chip = new Container({ label: 'annotation-chip' })
+  const chipPlate = new Graphics()
+  const chipAccent = new Sprite({ label: 'annotation-chip-accent', texture: Texture.EMPTY })
+  chipAccent.anchor.set(0.5)
+  chipAccent.visible = false
+  chipAccent.tint = HEARTHSIDE_STYLE.palette.gilt
+  chipAccent.alpha = CHIP_ACCENT_ALPHA
+  const chipIcon = new Sprite({ label: 'annotation-chip-icon', texture: Texture.EMPTY })
+  chipIcon.anchor.set(0.5)
+  chipIcon.visible = false
+  chipIcon.tint = HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.expressions.tint]
+  const chipLabel = createText(
+    '',
+    CHIP_FONT_SIZE,
+    HEARTHSIDE_STYLE.palette.ink,
+    'center',
+    'ui-monospace, monospace',
+  )
+  chip.visible = false
+  chip.addChild(chipPlate, chipAccent, chipIcon, chipLabel)
+
   const root = new Container()
-  root.addChild(bubble, plate, plateLabel)
+  root.addChild(chip, bubble, plate, plateLabel)
   parent.addChild(root)
-  return { root, plate, plateLabel, bubble, bubbleBackground, bubbleLabel }
+  return {
+    root,
+    plate,
+    plateLabel,
+    chip,
+    chipPlate,
+    chipAccent,
+    chipIcon,
+    chipLabel,
+    bubble,
+    bubbleBackground,
+    bubbleLabel,
+  }
 }
 
-/**
- * Paint the pill at its local bottom edge `bottomY` and return the pill's top edge, so a bubble
- * can stack above it. Sizing comes from the character id's length rather than measured text
- * bounds: Pixi can only measure text against a real canvas context, which a headless host does
- * not always provide, and the pill never needs pixel-exact sizing to read clearly.
+/** Paint the chip at `bottomY` and return its top edge, keeping the stack above the nameplate. */
+function drawChip(
+  node: CharacterNode,
+  title: string,
+  bottomY: number,
+  resolution: number,
+  art: ExpressionArt | null,
+): number {
+  node.chipLabel.text = title
+  node.chipLabel.resolution = resolution
+  const textWidth = codePointLength(title) * CHIP_CHAR_WIDTH
+  const width =
+    CHIP_PADDING_X * 2 +
+    CHIP_ACCENT_SIZE +
+    CHIP_TEXT_GAP +
+    CHIP_ICON_SIZE +
+    CHIP_TEXT_GAP +
+    textWidth
+  const height = Math.max(CHIP_ACCENT_SIZE, CHIP_ICON_SIZE, CHIP_LINE_HEIGHT) + CHIP_PADDING_Y * 2
+  const chipLeft = -width / 2
+  const centerY = bottomY - height / 2
+  const accentX = chipLeft + CHIP_PADDING_X + CHIP_ACCENT_SIZE / 2
+  const iconX = chipLeft + CHIP_PADDING_X + CHIP_ACCENT_SIZE + CHIP_TEXT_GAP + CHIP_ICON_SIZE / 2
+  const labelX =
+    chipLeft +
+    CHIP_PADDING_X +
+    CHIP_ACCENT_SIZE +
+    CHIP_TEXT_GAP +
+    CHIP_ICON_SIZE +
+    CHIP_TEXT_GAP +
+    textWidth / 2
+  node.chipPlate
+    .clear()
+    .roundRect(chipLeft, bottomY - height, width, height, height / 2)
+    .fill(HEARTHSIDE_STYLE.palette.parchment)
+    .stroke({ color: HEARTHSIDE_STYLE.palette.timber, width: 1 })
+  node.chipAccent.position.set(accentX, centerY)
+  node.chipIcon.position.set(iconX, centerY)
+  node.chipLabel.position.set(labelX, centerY)
+  // The pictogram and accent only exist once their effects textures are installed.
+  node.chipAccent.visible = art !== null
+  node.chipIcon.visible = art !== null
+  return bottomY - height
+}
+
+/** Paint the pill at its local bottom edge `bottomY` and return the pill's top edge, so a chip
+ * or bubble can stack above it. Sizing comes from the character id's length rather than measured
+ * text bounds: Pixi can only measure text against a real canvas context, which a headless host
+ * does not always provide, and the pill never needs pixel-exact sizing to read clearly.
  */
 function drawPlate(
   node: CharacterNode,

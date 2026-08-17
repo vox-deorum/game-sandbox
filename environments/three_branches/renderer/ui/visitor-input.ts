@@ -1,6 +1,6 @@
 /**
  * The visitor's live input layer: the fixed virtual joystick, the keyboard axes, the
- * expression palette, and the once-per-window send loop.
+ * expression palette, and the once-per-landed-frame send.
  *
  * Everything here exists only while this screen controls `player_0` and the host passed a live
  * `sendAction`. Spectators and replay viewers get an inert controller that wires no listeners and
@@ -18,6 +18,7 @@ import {
   isTextEntry,
   JOYSTICK_RADIUS,
   joystickMotion,
+  keyboardMotion,
   MOVEMENT_KEY_CODES,
   type MotionInput,
   SHIFT_KEY_CODES,
@@ -50,8 +51,6 @@ export interface VisitorInputOptions {
   controlledPlayers: readonly string[]
   /** The live action forwarder, absent outside live human play. */
   sendAction?: (playerId: string, action: unknown) => void
-  /** The environment's input window in milliseconds. */
-  paceMs: number
   /** Fixed layer the floating pad draws in. */
   padLayer: Container
   /** Fixed layer the expression palette draws in. */
@@ -66,6 +65,8 @@ export interface VisitorInputOptions {
   resolution(): number
   /** The prop a use would select from the latest landed pose, or null. */
   previewTarget(): string | null
+  /** The catalog transition of one prop id: toggle, occupancy, timed, or none. */
+  targetTransition(propId: string): string
   /** Show or clear the use-preview highlight on the props layer. */
   onPreview(propId: string | null): void
   /** Repaint the frame after a pad or palette change outside a state update. */
@@ -74,8 +75,12 @@ export interface VisitorInputOptions {
 
 /** The mounted input layer's lifecycle, driven by the renderer. */
 export interface VisitorInputController {
-  /** Observe one landed frame; a terminal frame ends the session's input for good. */
-  handleFrame(terminal: boolean): void
+  /**
+   * Observe one landed frame; a terminal frame ends the session's input for good. `send` gates the
+   * once-per-frame action window, so a snap re-presentation keeps terminal and latch handling while
+   * composing nothing.
+   */
+  handleFrame(terminal: boolean, send?: boolean): void
   /** Release every browser listener and the send loop. */
   destroy(): void
 }
@@ -95,6 +100,9 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
 
   let ended = false
   let queued: string | null = null
+  let latched = false
+  let latchTarget: string | null = null
+  let moving = false
   let useHovered = false
   const heldKeys = new Set<string>()
   let joystick: {
@@ -107,21 +115,65 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   data.threeBranchesLastAction = 'none'
   data.threeBranchesJoystick = `${JOYSTICK_CENTER.x},${JOYSTICK_CENTER.y}`
   data.threeBranchesUsePreview = 'none'
+  data.threeBranchesUseLatch = 'none'
   for (const plate of EMOTE_PLATES) {
     data[emoteProbeKey(plate.token)] = plateProbe(plate.rect)
   }
   data.threeBranchesUseButton = plateProbe(USE_PLATE_RECT)
   paintPad(pad, JOYSTICK_CENTER, JOYSTICK_CENTER)
 
+  /** The window's current motion, mirroring `composeWindow`'s joystick-then-keys resolution. */
+  const windowMotion = (): MotionInput | null =>
+    joystick !== null ? (joystick.motion ?? null) : keyboardMotion(heldKeys)
+
+  /** Repaint the palette when the moving flag changes, and release any use latch the moment it does. */
+  const updateMoving = (): void => {
+    const next = windowMotion() !== null
+    if (next === moving) return
+    moving = next
+    if (next) releaseLatch()
+    paintPalette()
+  }
+
   const paintPalette = (): void => {
-    palette.update(queued, useHovered, options.resolution())
+    palette.update(queued, latched, useHovered, moving, options.resolution())
     options.redraw()
   }
   paintPalette()
 
   const setQueued = (token: string | null): void => {
+    if (latched && token !== null) releaseLatch()
     queued = token
     data.threeBranchesQueued = token ?? 'none'
+    paintPalette()
+  }
+
+  const releaseLatch = (): void => {
+    if (!latched) return
+    latched = false
+    latchTarget = null
+    data.threeBranchesUseLatch = 'none'
+    paintPalette()
+  }
+
+  /** Engage the held use on the currently previewed prop, or toggle a held use back off. */
+  const pressUse = (): void => {
+    if (ended || moving) return
+    if (latched) {
+      releaseLatch()
+      return
+    }
+    // Nothing is in reach, so there is no prop to latch; an unlatchable latch would only paint,
+    // then drop on the next landed frame before a use could ever send.
+    const target = options.previewTarget()
+    if (target === null) return
+    if (queued !== null) {
+      queued = null
+      data.threeBranchesQueued = 'none'
+    }
+    latched = true
+    latchTarget = target
+    data.threeBranchesUseLatch = target
     paintPalette()
   }
 
@@ -141,6 +193,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     if (joystick === null) return
     joystick = null
     paintPad(pad, JOYSTICK_CENTER, JOYSTICK_CENTER)
+    updateMoving()
     options.redraw()
   }
 
@@ -150,7 +203,8 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     const plate = paletteHit(view)
     if (plate !== null) {
       claim(event)
-      setQueued(plate)
+      if (plate === 'use') pressUse()
+      else setQueued(plate)
       return
     }
     if (!inJoystick(view)) return
@@ -158,6 +212,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     if (joystick !== null) return
     joystick = { pointerId: event.pointerId, motion: joystickMotion(JOYSTICK_CENTER, view) }
     paintPad(pad, JOYSTICK_CENTER, view)
+    updateMoving()
     options.redraw()
   }
 
@@ -173,6 +228,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     const view = options.toView({ x: event.clientX, y: event.clientY })
     joystick.motion = joystickMotion(JOYSTICK_CENTER, view)
     paintPad(pad, JOYSTICK_CENTER, view)
+    updateMoving()
     options.redraw()
   }
 
@@ -200,6 +256,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       // Arrows scroll the page by default, and a held key repeats without changing the axes.
       event.preventDefault()
       heldKeys.add(event.code)
+      updateMoving()
       return
     }
     if (SHIFT_KEY_CODES.has(event.code)) {
@@ -209,34 +266,45 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     const expression = hotkeyExpression(event.code)
     if (expression === null || event.repeat) return
     event.preventDefault()
-    setQueued(expression)
+    if (expression === 'use') pressUse()
+    else setQueued(expression)
   }
 
   const onKeyUp = (event: KeyboardEvent): void => {
     heldKeys.delete(event.code)
+    if (MOVEMENT_KEY_CODES.has(event.code)) updateMoving()
   }
 
   /** Keys and pointers can be released outside the window, so losing focus drops them all. */
   const onWindowBlur = (): void => {
     heldKeys.clear()
     releaseJoystick()
+    updateMoving()
   }
 
+  /** Compose and send exactly once per landed frame: motion first, then a held use or queued emote. */
   const sendWindow = (): void => {
     if (ended) return
+    const motion = windowMotion()
+    if (latched && motion !== null) releaseLatch()
     const action = composeWindow({
       joystickEngaged: joystick !== null,
       joystickMotion: joystick?.motion ?? null,
       heldKeys,
-      queuedAction: queued === null ? 0 : expressionActionId(queued),
+      queuedAction: latched ? 1 : queued === null ? 0 : expressionActionId(queued),
       currentHeading: options.currentHeading(),
     })
     if (queued !== null) setQueued(null)
+    // A latch over a toggle or none prop releases itself after its first send, because one flip is
+    // the whole interaction; only occupancy and timed props keep sending use.
+    if (latched && action !== null && action.action === 1) {
+      const transition = latchTarget === null ? 'none' : options.targetTransition(latchTarget)
+      if (transition === 'toggle' || transition === 'none') releaseLatch()
+    }
     if (action === null) return
     sendAction(VISITOR_PLAYER, action)
     data.threeBranchesLastAction = `${round(action.heading, 10)},${round(action.speed, 100)},${action.action}`
   }
-  const timer = setInterval(sendWindow, options.paceMs)
 
   options.container.addEventListener('pointerdown', onPointerDown, { capture: true })
   options.container.addEventListener('dblclick', onDoubleClick, { capture: true })
@@ -250,12 +318,14 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   window.addEventListener('blur', onWindowBlur)
 
   return {
-    handleFrame(terminal) {
+    handleFrame(terminal, send = true) {
       if (ended) return
+      // A terminal frame ends the session's input for good, so it composes nothing.
       if (terminal) {
         ended = true
-        clearInterval(timer)
         releaseJoystick()
+        releaseLatch()
+        moving = false
         options.padLayer.visible = false
         data.threeBranchesJoystick = 'none'
         heldKeys.clear()
@@ -270,11 +340,14 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
         options.redraw()
         return
       }
+      // A latched use drops when the landing pose no longer puts a prop in reach.
+      if (latched && options.previewTarget() === null) releaseLatch()
+      if (send) sendWindow()
       // The landed pose moved, so a held hover re-answers which prop a use would select now.
       if (useHovered) setPreview(options.previewTarget())
     },
     destroy() {
-      clearInterval(timer)
+      ended = true
       options.container.removeEventListener('pointerdown', onPointerDown, { capture: true })
       options.container.removeEventListener('dblclick', onDoubleClick, { capture: true })
       options.container.removeEventListener('pointermove', onHoverMove)

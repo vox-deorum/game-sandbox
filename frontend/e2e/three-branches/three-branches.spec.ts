@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs'
 
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 import {
   activeWindows,
@@ -18,7 +18,7 @@ import {
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 import { stageExampleAgent } from '../support/stage-example-agent.js'
-import { controlCentre, ENV_ID } from './support.js'
+import { controlCentre, ENV_ID, INTERNAL_SIZE } from './support.js'
 
 interface CameraProbe {
   zoom: number
@@ -42,6 +42,47 @@ async function readFrameProbe(host: Locator): Promise<FrameProbe> {
   const visitor = await host.getAttribute('data-three-branches-visitor')
   if (tick === null || visitor === null) throw new Error('Three Branches frame probes are missing')
   return { tick, visitor }
+}
+
+/** The visitor's landed north-up metre position, from the probe the renderer publishes per frame. */
+function parseVisitor(value: string | null): { x: number; y: number } {
+  const match = /^(-?\d+),(-?\d+)$/.exec(value ?? '')
+  if (match === null) throw new Error(`Unexpected Three Branches visitor probe: ${value}`)
+  return { x: Number(match[1]) / 100, y: Number(match[2]) / 100 }
+}
+
+/** A logical renderer point converted to browser canvas pixels through the canvas box. */
+function canvasPoint(
+  canvasBox: { x: number; y: number; width: number; height: number },
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  return {
+    x: canvasBox.x + (x / INTERNAL_SIZE.width) * canvasBox.width,
+    y: canvasBox.y + (y / INTERNAL_SIZE.height) * canvasBox.height,
+  }
+}
+
+/** Press and hold the fixed joystick in one drag direction, in logical renderer units. */
+async function holdJoystick(
+  page: Page,
+  host: Locator,
+  canvasBox: { x: number; y: number; width: number; height: number },
+  dx: number,
+  dy: number,
+): Promise<void> {
+  const probe = await host.getAttribute('data-three-branches-joystick')
+  if (probe === null) throw new Error('Three Branches joystick probe is missing')
+  const [x, y] = probe.split(',').map(Number)
+  if (![x, y].every((value) => Number.isFinite(value))) {
+    throw new Error(`Three Branches joystick probe is invalid: ${probe}`)
+  }
+  const center = canvasPoint(canvasBox, x, y)
+  // Drag well past the dead zone for full speed; the joystick saturates at its ring.
+  const target = canvasPoint(canvasBox, x + dx, y + dy)
+  await page.mouse.move(center.x, center.y)
+  await page.mouse.down()
+  await page.mouse.move(target.x, target.y)
 }
 
 test('watch Three Branches, inspect its camera and collision, then repeat a replay seek', async ({
@@ -197,5 +238,114 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
       await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
     }
     rmSync(stagedDir, { recursive: true, force: true })
+  }
+})
+
+test('a live visitor walks to the shrine, latches Use, and a chip appears and holds above it', async ({
+  page,
+  admin,
+}) => {
+  test.setTimeout(300_000)
+  await authenticateBrowser(page.context(), admin)
+
+  // Replace any windows the previous journey left open with a fresh play season on the same
+  // seed-0 village the workspace fixture replays, so the visitor walks to a known shrine.
+  const originalWindows = await activeWindows(admin, ENV_ID)
+  if (originalWindows.submissionSeasonId !== null) {
+    await closeSubmissions(admin, originalWindows.submissionSeasonId)
+  }
+  if (originalWindows.playSeasonId !== null) {
+    await closePlay(admin, originalWindows.playSeasonId)
+  }
+  const season = await declareSeason(admin, 'Village Life Live', ENV_ID)
+  await setSeasonOverrides(admin, season.id, {
+    parameters: { seat_plan: 'cast_5', daynight: true },
+  })
+  await openSubmissions(admin, season.id)
+  await openPlay(admin, season.id)
+
+  // Three Branches seats the villagers together and the visitor alone: seat_0 is every NPC,
+  // while seat_1 is player_0 and only accepts a human or the scripted_visitor. The admin owns the
+  // human seat, so the browser's authenticated session controls player_0.
+  const sessionId = await startSession(
+    admin,
+    ENV_ID,
+    {
+      seat_0: { kind: 'builtin-agent', name: 'naive' },
+      seat_1: { kind: 'human' },
+    },
+    { seed: 0, seasonId: season.id },
+  )
+
+  try {
+    await page.goto(`/sessions/${sessionId}`)
+    const host = page.locator('.renderer-host')
+    await expect(host).toHaveAttribute('data-three-branches-ground', 'ready')
+    await expect(host).toHaveAttribute('data-three-branches-assets', 'ready')
+    await expect(host).toHaveAttribute('data-three-branches-input', 'ready')
+
+    const canvas = page.locator('canvas.renderer-canvas')
+    const canvasBox = await canvas.boundingBox()
+    if (canvasBox === null) throw new Error('Three Branches canvas has no browser bounds')
+
+    // The visitor spawns on the road at (3.5, 55.5), with shrine_0 standing at cells (20..21, 59..60).
+    // A held-east walk crosses the road and field to just under the shrine's column.
+    await holdJoystick(page, host, canvasBox, 60, 0)
+    await expect
+      .poll(async () => parseVisitor(await host.getAttribute('data-three-branches-visitor')).x, {
+        timeout: 120_000,
+      })
+      .toBeGreaterThanOrEqual(20.2)
+    await page.mouse.up()
+
+    // A held-north walk brings the visitor up to the shrine's south edge, where the body stops.
+    await holdJoystick(page, host, canvasBox, 0, -60)
+    await expect
+      .poll(async () => parseVisitor(await host.getAttribute('data-three-branches-visitor')).y, {
+        timeout: 120_000,
+      })
+      .toBeGreaterThanOrEqual(58)
+    await page.waitForTimeout(1500)
+    await page.mouse.up()
+
+    // Hovering Use previews the shrine now that the visitor stands within reach of it.
+    const useAt = await controlCentre(host, 'data-three-branches-use-button', canvasBox)
+    await page.mouse.move(useAt.x, useAt.y)
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-use-preview'))
+      .toBe('shrine_0')
+
+    // Pressing Use latches the prop, and the chip appears above the visitor. Wanderers may win a
+    // single shrine tick, so the chip (an engine overlay fact) is polled rather than asserted instantly.
+    await page.mouse.click(useAt.x, useAt.y)
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-use-latch'), { timeout: 30_000 })
+      .toBe('shrine_0')
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-expression-chip'), {
+        timeout: 30_000,
+      })
+      .toBe('Tending Shrine')
+
+    // The latch holds across several frames while the visitor stands still.
+    await page.waitForTimeout(1500)
+    await expect(host).toHaveAttribute('data-three-branches-use-latch', 'shrine_0')
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-expression-chip'))
+      .toBe('Tending Shrine')
+
+    // Walking away releases the latch and drops the chip.
+    await holdJoystick(page, host, canvasBox, 60, 0)
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-use-latch'), { timeout: 30_000 })
+      .toBe('none')
+    await page.mouse.up()
+    await expect
+      .poll(async () => host.getAttribute('data-three-branches-expression-chip'))
+      .toBe('none')
+  } finally {
+    if (sessionId !== null) {
+      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
+    }
   }
 })

@@ -76,6 +76,8 @@ The required art adds ten grayscale-alpha pictograms and two shared accent frame
 
 Extend the retained annotation node with the expression chip and install its sliced effects textures after artwork loads. Reconciliation creates the parchment plate and text before artwork is available; a failed or pending art load therefore leaves a readable text-only chip rather than dropping the expression. Installing art adds the retained pictogram and accent children without replacing the node. Selection and accent-phase math stay pure and separately testable.
 
+The `use` chip names the target prop's catalog activity rather than the token: Sitting, Working Pump, Ringing Bell, Tending Shrine, or Reading Board, falling back to `Use` only when the recorded target is absent from the scene. The ten pictograms and two accent frames ship as fully transparent placeholder PNGs; the real art lands later as a pure repaint of those twelve effects-page frames, with no renderer change. The status below stays open until the real art and the owner review land.
+
 #### Final embodied-arm study
 
 The pictogram-and-text treatment above is the required delivery. Only after every required step 5.1 and 5.2 unit has owner sign-off, author one arm-mask pose each for `wave`, `point`, `shrug`, and `sweep`. The chip remains present for all ten expressions. During these four expressions, the trial pose replaces only the arms mask; body and clothing keep their rest or walk frame, details stay fixed, and the complete character keeps its recorded rotation.
@@ -121,7 +123,7 @@ Step 6 implements this specification without further design work. Controls appea
 
 - A permanent virtual joystick sits in the bottom-left of the content area for pointer and touch. A primary press inside its ring engages the fixed pad. Dragging sets heading from the drag angle and relative speed from the drag distance, with a 15 percent dead zone and full speed at the pad ring. Release stops the visitor and returns the knob to the center. Presses outside the pad and expression palette keep the camera gestures, including the double-click or double-tap that resumes visitor follow.
 - Keyboard locomotion uses WASD and the arrow keys for eight-way headings at full speed. Holding Shift halves the speed. Opposing keys cancel on their axis, and cancelling on both axes yields no keyboard heading.
-- Input composes once per 250 millisecond window: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default.
+- Input composes and sends once per landed frame, the environment's 250 millisecond tick cadence: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default.
 
 ### Expression palette
 
@@ -141,7 +143,8 @@ Step 6 implements this specification without further design work. Controls appea
 - A 3 by 3 emote grid sits in the lower right of the content area, in ruleset order, with hotkeys 1 through 9.
 - Use is a separate button beside the grid with hotkey 0.
 - Hovering Use highlights the prop a use would select under the environment's reach-plus-unblocked-line rule. The palette is drawn on the canvas, so pointer hover is the preview affordance and hotkey 0 is the keyboard access to use itself. The preview is informational and never sends. The highlight owns its own layer above the emissives and outside both [step 5.1](5-1-art-style.md#day-phase) world grades, so hovering a prop never shifts its colour.
-- A pressed control sets the expression on the next composed action window. The last press in a window wins, and the window sends no expression when nothing was pressed.
+- A pressed control sets the expression on the next composed action frame. The last press in a frame wins, and the frame sends no expression when nothing was pressed.
+- Use is a latch, not a one-window press: while latched and standing still, every landed frame composes use again until the visitor presses Use or hotkey 0 again, presses any emote, begins moving, or the landing pose drops the selected prop out of reach. A target whose catalog transition is `toggle` or `none` releases itself after its first send, because one flip is the whole interaction; only `occupancy` and `timed` props keep the latch. While the visitor is moving, the Use plate paints dim and ignores presses and hotkey 0. Composing on landed frames instead of a free-running timer guarantees exactly one action per tick, so a missed or doubled window can no longer swallow an emote or skip a held prop for a tick.
 
 ### Chat input
 

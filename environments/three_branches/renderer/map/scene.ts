@@ -3,6 +3,7 @@ import { clamp, interpolateDegrees, lerp } from '@renderers/base/math.js'
 import { groundColor, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type {
   Cell,
+  CharacterExpression,
   FrameScene,
   StaticDrawable,
   StaticScene,
@@ -110,8 +111,27 @@ export function computeScene(
       character.expression.type === 'none'
         ? character.id
         : `${character.id}: ${labelFor(character.expression.type)}`,
+    expressionTitle: expressionTitleFor(staticScene, character.expression),
   }))
   return { static: staticScene, dynamic, presentationTick: dynamic?.tick ?? 0, characters }
+}
+
+/**
+ * Resolve one recorded expression into the chip's title text, or null for none.
+ *
+ * An emote carries its own token. A `use` expression names a prop instead, so its chip reads the
+ * target prop's catalog activity, falling back to "Use" when the target is absent from the scene.
+ */
+export function expressionTitleFor(
+  scene: StaticScene,
+  expression: CharacterExpression,
+): string | null {
+  if (expression.type === 'none') return null
+  if (expression.type !== 'use') return titleFor(expression.type)
+  const target = scene.props.find((prop) => prop.id === expression.target)
+  const kind =
+    target === undefined ? undefined : CATALOG.props.find((item) => item.token === target.type)
+  return titleFor(kind?.activity ?? 'use')
 }
 
 /** Interpolate matching stable-id characters while keeping the target frame authoritative. */

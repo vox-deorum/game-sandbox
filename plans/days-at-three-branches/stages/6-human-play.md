@@ -1,6 +1,6 @@
 # Step 6: Human play, the visitor
 
-Status: complete.
+Status: in progress. Live visitor play, locomotion, palette, preview, and chat are complete; the step 5.2 use latch and expression-chip art await final owner review under the updated one-send-per-landed-frame window.
 
 Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands by implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review both live browser play against a running cast and local play.
 
@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This build-order step puts the visitor seat in
 
 ### Locomotion and expression
 
-Compose pointer and keyboard input into heading and relative speed once per input window. The 250 millisecond cadence is the only move clock. A window whose composition matches the environment default sends nothing; the harness supplies the default action for a silent window, so the result is identical.
+Compose pointer and keyboard input into heading and relative speed once per landed frame, the environment's 250 millisecond tick cadence. The landed frame is the only move clock. A frame whose composition matches the environment default sends nothing; the harness supplies the default action for a silent frame, so the result is identical. Use is a latch held across frames while standing still, released by another Use press, an emote, movement, or a landing pose without the prop, with `toggle` and `none` targets releasing themselves after one send.
 
 Use `ctx.controlledPlayers` as the ownership signal established in step 3. While `player_0` is controlled, visitor movement feeds the existing camera-follow policy. Manual camera gestures suspend follow, and camera reset resumes it. Spectators, replay viewers, and ended sessions never acquire follow through recording attribution alone.
 

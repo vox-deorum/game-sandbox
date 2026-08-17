@@ -5,6 +5,7 @@ import { expectedCharacterIds, RULES, readStatic } from '../ui/overlay.js'
 import {
   buildStaticScene,
   computeScene,
+  expressionTitleFor,
   interpolateScene,
   pointToWorld,
   rectToWorld,
@@ -96,5 +97,31 @@ describe('Three Branches pure scene', () => {
     expect(halfway.presentationTick).toBeCloseTo((from.presentationTick + to.presentationTick) / 2)
     expect(halfway.static).toBe(scene)
     expect(to).toEqual(computeScene(states[1] as (typeof states)[number], scene, roster))
+  })
+})
+
+describe('expressionTitleFor', () => {
+  const { header } = fixtureRecording()
+  const scene = buildStaticScene(readStatic(header))
+
+  it('returns null for none', () => {
+    expect(expressionTitleFor(scene, { type: 'none', target: 'none' })).toBeNull()
+  })
+
+  it('title-cases an emote token', () => {
+    expect(expressionTitleFor(scene, { type: 'wave', target: 'none' })).toBe('Wave')
+    expect(expressionTitleFor(scene, { type: 'shake_head', target: 'none' })).toBe('Shake Head')
+  })
+
+  it('names the target prop activity per prop type', () => {
+    expect(expressionTitleFor(scene, { type: 'use', target: 'bench_0' })).toBe('Sitting')
+    expect(expressionTitleFor(scene, { type: 'use', target: 'pump_0' })).toBe('Working Pump')
+    expect(expressionTitleFor(scene, { type: 'use', target: 'board_0' })).toBe('Reading Board')
+    expect(expressionTitleFor(scene, { type: 'use', target: 'shrine_0' })).toBe('Tending Shrine')
+    expect(expressionTitleFor(scene, { type: 'use', target: 'bell_0' })).toBe('Ringing Bell')
+  })
+
+  it('falls back to Use when the target is absent from the scene', () => {
+    expect(expressionTitleFor(scene, { type: 'use', target: 'missing_0' })).toBe('Use')
   })
 })

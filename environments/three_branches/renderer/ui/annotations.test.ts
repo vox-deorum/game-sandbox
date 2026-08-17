@@ -1,17 +1,19 @@
-import { Container, Text } from 'pixi.js'
+import { Container, type Sprite, Text, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
-import { THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording, testText } from '../core/test-helpers.js'
-import type { FrameScene, SpeechLine } from '../core/types.js'
-import { buildStaticScene, computeScene } from '../map/scene.js'
+import type { CharacterExpression, FrameScene, SpeechLine } from '../core/types.js'
+import { buildStaticScene, computeScene, expressionTitleFor, titleFor } from '../map/scene.js'
 import {
   createAnnotationLayer,
+  createExpressionArt,
+  expressionAccentFrame,
   nameplateAlpha,
   speechAlpha,
   speechTag,
   wrapSpeech,
 } from './annotations.js'
-import { expectedCharacterIds, readStatic } from './overlay.js'
+import { expectedCharacterIds, RULES, readStatic } from './overlay.js'
 
 const { nameplateZoomFactor, nameplateFadeFactor, speechHoldMs, speechFadeMs, speechMaxLines } =
   THREE_BRANCHES_PRESENTATION
@@ -40,6 +42,56 @@ function collectTextNodes(node: Container): Text[] {
     found.push(...collectTextNodes(child as Container))
   }
   return found
+}
+
+/** One frame where the first character carries the given expression and its derived title. */
+function sceneWithExpression(expression: CharacterExpression, moved = 0): FrameScene {
+  const scene = fixtureScene()
+  return {
+    ...scene,
+    characters: scene.characters.map((character, index) =>
+      index === 0
+        ? {
+            ...character,
+            expression,
+            moved,
+            expressionTitle: expressionTitleFor(scene.static, expression),
+          }
+        : character,
+    ),
+  }
+}
+
+/** Find a display object by its retained label, the way the character tests do. */
+function descendant(root: Container, label: string): Container {
+  const pending = [...root.children]
+  while (pending.length > 0) {
+    const child = pending.shift()
+    if (child === undefined) break
+    if ((child as Container).label === label) return child as Container
+    pending.push(...(child as Container).children)
+  }
+  throw new Error(`Missing annotation node: ${label}`)
+}
+
+/** The retained chip node for the fixture's first character, after a reconcile. */
+function chipOf(layer: Container): Container {
+  const root = layer.children[0]
+  if (root === undefined) throw new Error('the annotation layer has no character nodes.')
+  return descendant(root, 'annotation-chip')
+}
+
+/** The chip's ink label text, gathered from inside the chip container. */
+function chipText(chip: Container): string {
+  const label = collectTextNodes(chip).find((node) => node.text.length > 0)
+  return label?.text ?? ''
+}
+
+/** The bubble label's local y, which draws its bottom at the stacked top minus the gap. */
+function bubbleLabelY(bubble: Container): number {
+  const label = bubble.children.find((child): child is Text => child instanceof Text)
+  if (label === undefined) throw new Error('the bubble should carry a text label.')
+  return label.position.y
 }
 
 describe('nameplateAlpha', () => {
@@ -249,5 +301,187 @@ describe('createAnnotationLayer', () => {
     annotations.reconcile(scene, 4, 2, 1)
     const bubbleText = collectText(layer).find((text) => text.includes('word0'))
     expect(bubbleText?.split('\n')).toHaveLength(speechMaxLines)
+  })
+})
+
+describe('expression chips', () => {
+  const fittedZoom = 2
+  // The close view is beyond the full-nameplate zoom, so chips show.
+  const closeZoom = fittedZoom * THREE_BRANCHES_PRESENTATION.nameplateZoomFactor + 1
+
+  it('draws a chip above every emote and a use, and hides it for none', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    for (const token of RULES.emotes) {
+      annotations.reconcile(
+        sceneWithExpression({ type: token, target: 'none' }),
+        closeZoom,
+        fittedZoom,
+        1,
+      )
+      const chip = chipOf(layer)
+      expect(chip.visible).toBe(true)
+      expect(chipText(chip)).toBe(titleFor(token))
+    }
+    annotations.reconcile(
+      sceneWithExpression({ type: 'use', target: 'bench_0' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    expect(chipText(chipOf(layer))).toBe('Sitting')
+    annotations.reconcile(
+      sceneWithExpression({ type: 'none', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    expect(chipOf(layer).visible).toBe(false)
+  })
+
+  it('names a use chip from the target prop activity', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const names: ReadonlyArray<[string, string]> = [
+      ['bench_0', 'Sitting'],
+      ['pump_0', 'Working Pump'],
+      ['board_0', 'Reading Board'],
+      ['shrine_0', 'Tending Shrine'],
+      ['bell_0', 'Ringing Bell'],
+      ['repair_bench_0', 'Working Bench'],
+      ['missing', 'Use'],
+    ]
+    for (const [target, expected] of names) {
+      annotations.reconcile(sceneWithExpression({ type: 'use', target }), closeZoom, fittedZoom, 1)
+      expect(chipText(chipOf(layer))).toBe(expected)
+    }
+  })
+
+  it('draws an expression chip alongside movement', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'wave', target: 'none' }, 0.8),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    const chip = chipOf(layer)
+    expect(chip.visible).toBe(true)
+    expect(chipText(chip)).toBe('Wave')
+  })
+
+  it('hides the chip throughout the nameplate fade band and at fitted zoom, showing it only at full plate opacity', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const scene = sceneWithExpression({ type: 'wave', target: 'none' })
+    const floor =
+      fittedZoom *
+      (THREE_BRANCHES_PRESENTATION.nameplateZoomFactor -
+        THREE_BRANCHES_PRESENTATION.nameplateFadeFactor)
+    const full = fittedZoom * THREE_BRANCHES_PRESENTATION.nameplateZoomFactor
+    for (const zoom of [fittedZoom, floor, floor + (full - floor) / 2, full - 0.01]) {
+      expect(nameplateAlpha(zoom, fittedZoom)).toBeLessThan(1)
+      annotations.reconcile(scene, zoom, fittedZoom, 1)
+      expect(chipOf(layer).visible).toBe(false)
+    }
+    annotations.reconcile(scene, full, fittedZoom, 1)
+    expect(nameplateAlpha(full, fittedZoom)).toBe(1)
+    expect(chipOf(layer).visible).toBe(true)
+  })
+
+  it('stacks a speech bubble above an active chip', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    annotations.deliver([speechLine({ key: 'a', speaker: 'player_0', text: 'hello there' })])
+    const withChip = sceneWithExpression({ type: 'wave', target: 'none' })
+    annotations.reconcile(withChip, closeZoom, fittedZoom, 1)
+    const root = layer.children[0]
+    if (root === undefined) throw new Error('the annotation layer has no character nodes.')
+    const stackedY = bubbleLabelY(descendant(root, 'annotation-bubble'))
+
+    const withoutChip = sceneWithExpression({ type: 'none', target: 'none' })
+    annotations.reconcile(withoutChip, closeZoom, fittedZoom, 1)
+    const plateY = bubbleLabelY(descendant(root, 'annotation-bubble'))
+    // The bubble sits higher on screen (more negative local y) when a chip raises the stack.
+    expect(stackedY).toBeLessThan(plateY)
+  })
+
+  it('keeps the retained chip node and updates its text across reconciles', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'wave', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    const chip = chipOf(layer)
+    expect(chipText(chip)).toBe('Wave')
+    annotations.reconcile(
+      sceneWithExpression({ type: 'nod', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    expect(chipOf(layer)).toBe(chip)
+    expect(chipText(chip)).toBe('Nod')
+  })
+
+  it('shows a text-only chip before install and fills the pictogram and accent after', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'wave', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    const chip = chipOf(layer)
+    expect(chip.visible).toBe(true)
+    expect(chipText(chip)).toBe('Wave')
+    expect(descendant(chip, 'annotation-chip-icon').visible).toBe(false)
+    expect(descendant(chip, 'annotation-chip-accent').visible).toBe(false)
+
+    annotations.install(createExpressionArt(Texture.WHITE))
+    annotations.reconcile(
+      sceneWithExpression({ type: 'wave', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
+    const icon = descendant(chip, 'annotation-chip-icon') as Sprite
+    const accent = descendant(chip, 'annotation-chip-accent') as Sprite
+    expect(icon.visible).toBe(true)
+    expect(accent.visible).toBe(true)
+    // The effects grid frames are 192 units wide, so each sprite is scaled into its reserved 18- and
+    // 22-unit lanes instead of rendering the plate-sized frame at 1:1.
+    expect(icon.scale.x).toBeCloseTo(18 / 192)
+    expect(accent.scale.x).toBeCloseTo(22 / 192)
+    expect(icon.scale.y).toBe(icon.scale.x)
+    expect(accent.scale.y).toBe(accent.scale.x)
+  })
+})
+
+describe('expressionAccentFrame', () => {
+  it('is a pure function of player, type, and absolute tick', () => {
+    for (const tick of [0, 5.25, 12.75, 31.4]) {
+      expect(expressionAccentFrame('player_0', 'wave', tick)).toBe(
+        expressionAccentFrame('player_0', 'wave', tick),
+      )
+    }
+  })
+
+  it('drives both accent frames across a full phase cycle', () => {
+    const { accentFrames } = HEARTHSIDE_STYLE.expressions
+    const seen = new Set<string>()
+    for (let tick = 0; tick < 24; tick++) {
+      const frame = expressionAccentFrame('player_0', 'wave', tick + 0.5)
+      expect(accentFrames).toContain(frame)
+      seen.add(frame)
+    }
+    // The two shared accent frames both appear within the cycle, so a repeat, replay, or seek
+    // cannot freeze on a single frame.
+    expect(seen.size).toBeGreaterThanOrEqual(2)
   })
 })

@@ -67,10 +67,19 @@ export function plateProbe(rect: Rect): string {
   return `${rect.x},${rect.y},${rect.width},${rect.height}`
 }
 
-/** Retained palette drawing, repainted toward the queued expression and the Use hover. */
+/** Retained palette drawing, repainted toward the queued expression and the Use latch. */
 export interface ExpressionPalette {
-  /** Repaint the plates: the queued plate takes the gilt active treatment, a hovered Use a gilt stroke. */
-  update(queued: string | null, useHovered: boolean, resolution: number): void
+  /**
+   * Repaint the plates: the queued emote takes the gilt active treatment, the Use plate the gilt
+   * treatment while latched, a gilt stroke while hovered, and a dim treatment while disabled.
+   */
+  update(
+    queued: string | null,
+    useLatched: boolean,
+    useHovered: boolean,
+    useDisabled: boolean,
+    resolution: number,
+  ): void
   /** Show or hide the whole palette, for the end of the session. */
   setVisible(visible: boolean): void
 }
@@ -85,7 +94,13 @@ export function createExpressionPalette(
   )
   const usePlate = buildPlate(layer, createText, USE_PLATE_RECT, 'Use', '0')
 
-  const paint = (queued: string | null, useHovered: boolean, resolution: number): void => {
+  const paint = (
+    queued: string | null,
+    useLatched: boolean,
+    useHovered: boolean,
+    useDisabled: boolean,
+    resolution: number,
+  ): void => {
     for (const [index, plate] of plates.entries()) {
       paintPlate(
         plate,
@@ -95,13 +110,20 @@ export function createExpressionPalette(
         resolution,
       )
     }
-    paintPlate(usePlate, USE_PLATE_RECT, queued === 'use', useHovered, resolution)
+    paintPlate(
+      usePlate,
+      USE_PLATE_RECT,
+      queued === 'use' || useLatched,
+      useHovered,
+      resolution,
+      useDisabled,
+    )
   }
-  paint(null, false, 1)
+  paint(null, false, false, false, 1)
 
   return {
-    update(queued, useHovered, resolution) {
-      paint(queued, useHovered, resolution)
+    update(queued, useLatched, useHovered, useDisabled, resolution) {
+      paint(queued, useLatched, useHovered, useDisabled, resolution)
     },
     setVisible(visible) {
       layer.visible = visible
@@ -138,19 +160,26 @@ function buildPlate(
 function paintPlate(
   plate: Plate,
   rect: Rect | undefined,
-  queued: boolean,
+  active: boolean,
   hovered: boolean,
   resolution: number,
+  disabled = false,
 ): void {
   if (rect === undefined) return
+  // A disabled plate reads dim: a faded panel and text, with the hover stroke suppressed.
+  plate.panel.alpha = disabled ? 0.45 : 1
+  plate.label.alpha = disabled ? 0.55 : 1
+  plate.hotkey.alpha = disabled ? 0.55 : 0.75
   plate.panel
     .clear()
     .roundRect(rect.x, rect.y, rect.width, rect.height, 7)
-    .fill(queued ? PALETTE.gilt : PALETTE.timber)
-    .stroke(hovered ? { color: PALETTE.gilt, width: 2 } : { color: PALETTE.ink, width: 1 })
-  plate.label.style.fill = queued ? PALETTE.ink : PALETTE.bone
+    .fill(active ? PALETTE.gilt : PALETTE.timber)
+    .stroke(
+      hovered && !disabled ? { color: PALETTE.gilt, width: 2 } : { color: PALETTE.ink, width: 1 },
+    )
+  plate.label.style.fill = active ? PALETTE.ink : PALETTE.bone
   plate.label.resolution = resolution
-  plate.hotkey.style.fill = queued ? PALETTE.ink : PALETTE.bone
+  plate.hotkey.style.fill = active ? PALETTE.ink : PALETTE.bone
   plate.hotkey.resolution = resolution
 }
 

@@ -1,4 +1,4 @@
-import { Container, Text } from 'pixi.js'
+import { Container, Graphics, Text } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { testText } from '../core/test-helpers.js'
@@ -16,6 +16,17 @@ function center(rect: { x: number; y: number; width: number; height: number }) {
 }
 
 const ALL_RECTS = [...EMOTE_PLATES.map((plate) => plate.rect), USE_PLATE_RECT]
+
+/** The retained panel and label of the Use plate, the last plate built into the layer. */
+function usePlate(layer: Container): { panel: Graphics; label: Text } {
+  const panels = layer.children.filter((child): child is Graphics => child instanceof Graphics)
+  const labels = layer.children.filter((child): child is Text => child instanceof Text)
+  const label = labels.find((node) => node.text === 'Use')
+  if (label === undefined) throw new Error('the palette should label the use plate.')
+  const panel = panels.at(-1)
+  if (panel === undefined) throw new Error('the palette should paint the use plate.')
+  return { panel, label }
+}
 
 describe('Three Branches expression palette', () => {
   it('lays out the nine emotes in ruleset order with hotkeys 1 through 9', () => {
@@ -96,15 +107,47 @@ describe('Three Branches expression palette', () => {
         .every((label) => label.style.fontSize === 20),
     ).toBe(true)
 
-    palette.update('wave', false, 2)
+    palette.update('wave', false, false, false, 2)
     expect(waveLabel.style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)
     expect(waveLabel.resolution).toBe(2)
-    palette.update(null, true, 1)
+    palette.update(null, false, true, false, 1)
     expect(waveLabel.style.fill).toBe(HEARTHSIDE_STYLE.palette.bone)
 
     palette.setVisible(false)
     expect(layer.visible).toBe(false)
     palette.setVisible(true)
     expect(layer.visible).toBe(true)
+  })
+
+  it('paints the Use plate gilt while latched and dims it while disabled', () => {
+    const layer = new Container()
+    const palette = createExpressionPalette(layer, testText)
+    const { panel, label } = usePlate(layer)
+
+    palette.update(null, false, false, false, 1)
+    expect(panel.alpha).toBe(1)
+    expect(label.style.fill).toBe(HEARTHSIDE_STYLE.palette.bone)
+
+    palette.update(null, true, false, false, 1)
+    expect(panel.alpha).toBe(1)
+    expect(label.style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)
+
+    palette.update('use', false, false, false, 1)
+    expect(panel.alpha).toBe(1)
+    expect(label.style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)
+  })
+
+  it('dims the Use plate while disabled, even when latched or hovered', () => {
+    const layer = new Container()
+    const palette = createExpressionPalette(layer, testText)
+    const { panel, label } = usePlate(layer)
+
+    palette.update(null, false, false, true, 1)
+    expect(panel.alpha).toBeLessThan(1)
+    expect(label.alpha).toBeLessThan(1)
+
+    palette.update(null, true, true, true, 1)
+    expect(panel.alpha).toBeLessThan(1)
+    expect(label.alpha).toBeLessThan(1)
   })
 })

@@ -190,6 +190,8 @@ export interface CharacterDrawable extends DynamicCharacter {
   fill: string
   /** Human-readable identity and expression label. */
   label: string
+  /** The expression chip's title-cased text, or null when the character has no expression. */
+  expressionTitle: string | null
 }
 
 /**

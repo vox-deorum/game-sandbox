@@ -62,7 +62,7 @@ Helpers that read village state take `observation` first. `action` and `geometry
 
 ### Using props
 
-Return `action.stand(heading, "use")` to use a prop. Use requires speed `0`, a clear line, and being within reach of the prop's collision shape. You never name the prop: `props.usable(observation)` previews the nearest prop the engine would select. Check that preview before using when your behavior needs a particular prop.
+Return `action.stand(heading, "use")` to use a prop. Use requires speed `0`, a clear line, and being within reach of the prop's collision shape. You never name the prop: `props.usable(observation)` previews the nearest prop the engine would select. Check that preview before using when your behavior needs a particular prop. A use lasts one tick and must be repeated every tick to stay engaged, so keep returning `use` while you intend to hold the prop.
 
 ## Season settings and limits
 

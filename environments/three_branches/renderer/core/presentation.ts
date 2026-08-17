@@ -56,10 +56,10 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   unitsPerMetre: 16,
   cameraPadding: 20,
   maxZoomFactor: 16,
-  focusZoomFactor: 3,
+  focusZoomFactor: 4,
   nameplateZoomFactor: 1.5,
   nameplateFadeFactor: 0.5,
-  farMarkZoomFactor: 2.5,
+  farMarkZoomFactor: 3.5,
   speechHoldMs: 4000,
   speechFadeMs: 600,
   speechMaxLines: 4,
@@ -340,6 +340,12 @@ export interface HearthsideStyle {
     count: readonly [number, number]
     frameMs: number
   }
+  expressions: {
+    frames: Readonly<Record<string, string>>
+    tint: HearthsidePaletteKey
+    accentFrames: readonly string[]
+    frameRatio: number
+  }
 }
 
 /** The single validated Hearthside Ink configuration used by artwork and tests. */
@@ -414,6 +420,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'propEffects',
     'emissives',
     'cranes',
+    'expressions',
   ])
   const paletteSource = exactRecord(source.palette, 'presentation.palette', HEARTHSIDE_PALETTE_KEYS)
   const palette = Object.fromEntries(
@@ -643,6 +650,43 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     throw new Error('presentation.cranes.count must be ordered from minimum to maximum.')
   }
 
+  const expressionsSource = exactRecord(source.expressions, 'presentation.expressions', [
+    'frames',
+    'tint',
+    'accentFrames',
+    'frameRatio',
+  ])
+  const expressionTokens = [...RULES.emotes, 'use']
+  const expressionFramesSource = exactRecord(
+    expressionsSource.frames,
+    'presentation.expressions.frames',
+    expressionTokens,
+  )
+  const expressions = {
+    frames: Object.fromEntries(
+      expressionTokens.map((token) => [
+        token,
+        knownText(
+          expressionFramesSource[token],
+          effectsFrames,
+          `presentation.expressions.frames.${token}`,
+        ),
+      ]),
+    ),
+    tint: paletteKey(expressionsSource.tint, paletteNames, 'presentation.expressions.tint'),
+    accentFrames: frameNames(
+      expressionsSource.accentFrames,
+      'presentation.expressions.accentFrames',
+      effectsFrames,
+    ),
+    frameRatio: boundedNumber(
+      expressionsSource.frameRatio,
+      'presentation.expressions.frameRatio',
+      0,
+      1,
+    ),
+  }
+
   return {
     palette,
     transition,
@@ -655,6 +699,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     propEffects,
     emissives,
     cranes,
+    expressions,
   }
 }
 

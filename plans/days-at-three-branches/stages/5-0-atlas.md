@@ -16,7 +16,7 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 | `monuments-atlas.png` | `assets/monuments/<type>/<state>.png` plus `assets/monuments/bell/foundation.png` | 5 |
 | `scenery-atlas.png` | `assets/scenery/` | 4 |
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
-| `effects-atlas.png` | `assets/effects/` | 28 |
+| `effects-atlas.png` | `assets/effects/` | 40 |
 
 The Frames column counts loose files, not frame pixels. Each page's current frame dimensions, count, and names live in `renderer/assets.ts` and change only with the consuming art unit, its loose files, compiled page, source-art metadata, plan facts, and tests in the same change set.
 
@@ -26,7 +26,7 @@ The props frame names in `assets.ts` derive from ordinary catalog tokens and sta
 
 The monument page is the sole authority for the fixed-north pump and bell. Its row-major 3 by 2 grid names `pumpFlowing`, `pumpIdle`, `bellRinging`, `bellSilent`, and `bellFoundation` from matching `assets/monuments/` paths. Each tightly authored runtime frame is 768 by 512 on a 2304 by 1024 page. The renderer divides the configured pump scale by 4 and the bell scale by 8, then anchors each sprite at its configured source pixel so its collision registration and world bounds remain unchanged. The sixth cell is an unnamed trailing cell that the packer fills transparently. Its source page has the same 2304 by 1024 dimensions because the accepted masters need no runtime downsampling.
 
-The effects page is a 7 by 4 grid of 28 runtime frames on a 1344 by 512 page. Its 384 by 256 source cells live on a 2688 by 1024 source page.
+The effects page is a 10 by 4 grid of 40 runtime frames on a 1920 by 512 page. Its 384 by 256 source cells live on a 3840 by 1024 source page.
 
 ## The pipeline
 

@@ -53,7 +53,12 @@ import {
 import { collisionWithPropStates, frameCollision, staticCollision } from './map/collision.js'
 import { type CollisionLayer, createCollisionLayer } from './map/collision-layer.js'
 import { drawMap, drawUpperWalls, type MapLayerView } from './map/map-layer.js'
-import { buildStaticScene, computeScene, interpolateScene } from './map/scene.js'
+import {
+  buildStaticScene,
+  computeScene,
+  expressionTitleFor,
+  interpolateScene,
+} from './map/scene.js'
 import { createWorldArtStack, type WorldArtStack } from './map/world-stack.js'
 
 // props/
@@ -68,7 +73,12 @@ import {
 import { createTerrainArt } from './terrain/terrain-art.js'
 
 // ui/
-import { type AnnotationLayer, createAnnotationLayer } from './ui/annotations.js'
+import {
+  type AnnotationLayer,
+  createAnnotationLayer,
+  createExpressionArt,
+  nameplateAlpha,
+} from './ui/annotations.js'
 import {
   type ChromeLayer,
   COLLISION_TOGGLE_RECT,
@@ -76,7 +86,7 @@ import {
   RECENTER_RECT,
 } from './ui/chrome.js'
 import { isTextEntry } from './ui/input.js'
-import { expectedCharacterIds, readSpeech, readStatic } from './ui/overlay.js'
+import { CATALOG, expectedCharacterIds, readSpeech, readStatic } from './ui/overlay.js'
 import { plateProbe, within } from './ui/palette.js'
 import { propUseShapes, selectUseTarget } from './ui/use-preview.js'
 import { createVisitorInput, type VisitorInputController } from './ui/visitor-input.js'
@@ -216,7 +226,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       container: this.ctx.container,
       controlledPlayers: this.ctx.controlledPlayers,
       sendAction: this.ctx.sendAction,
-      paceMs: this.ctx.meta.pace_interval_ms ?? 250,
       padLayer,
       paletteLayer,
       createText,
@@ -229,6 +238,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           this.propShapes,
           this.landedVisitor?.point ?? this.staticScene.spawn,
         ),
+      targetTransition: (propId) => {
+        const prop = this.staticScene.props.find((item) => item.id === propId)
+        const kind =
+          prop === undefined ? undefined : CATALOG.props.find((item) => item.token === prop.type)
+        return kind?.transition ?? 'none'
+      },
       onPreview: (propId) => {
         this.props.highlight(propId)
         this.redrawCurrentFrame()
@@ -248,7 +263,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     if (landedVisitor !== undefined) {
       this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
     }
-    this.visitorInput?.handleFrame(scene.dynamic?.terminal ?? false)
+    // A snap re-presentation (resize, DPR change, asset redraw) is not a landed transport frame, so
+    // it must not compose or send an action; only real states advance the live input window. The
+    // frame itself always lands, so a terminal frame still ends the session's input.
+    this.visitorInput?.handleFrame(scene.dynamic?.terminal ?? false, options?.snap !== true)
     // A replay-position jump shows only the tick it lands on. Animation-only snaps used for resize
     // and asset redraws retain the current bubble ages.
     if (options?.seek === true) this.annotations.clear()
@@ -484,10 +502,31 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // Plates and bubbles counter-scale against the camera to hold one readable size, so they follow
     // every camera change as well as every frame.
     this.redrawAnnotations()
+    // The expression chip shows only at the full-nameplate zoom, so its probe follows the camera
+    // too, not just the landed states that {@link updateProbes} observes.
+    this.updateExpressionChipProbe()
     if (this.collisionTextZoom !== this.visitorCamera.camera.zoom) {
       this.collisionTextZoom = this.visitorCamera.camera.zoom
       this.redrawAllCollision()
     }
+  }
+
+  /**
+   * The expression chip the annotation layer draws above the visitor, or none while no expression is
+   * shown or the camera sits below the full-nameplate zoom. Zooming back below that threshold hides
+   * the chip, so the probe reports the same visibility the layer draws.
+   */
+  private updateExpressionChipProbe(): void {
+    const visitor = this.presentedScene?.characters.find(
+      (character) => character.id === VISITOR_PLAYER,
+    )
+    const expressionTitle =
+      visitor === undefined ? null : expressionTitleFor(this.staticScene, visitor.expression)
+    this.ctx.container.dataset.threeBranchesExpressionChip =
+      expressionTitle !== null &&
+      nameplateAlpha(this.visitorCamera.camera.zoom, this.cameraLimits.minZoom) === 1
+        ? expressionTitle
+        : 'none'
   }
 
   private redrawAnnotations(): void {
@@ -606,6 +645,17 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
           this.props.install(propArt)
           if (this.presentedScene !== null) this.props.advance(this.presentedScene)
+          this.annotations.install(createExpressionArt(assets.effects))
+          // The expression chip's pictogram and accent textures only resolve once a state named the
+          // character's expression, so reconcile re-applies them to the retained nodes right away.
+          if (this.presentedScene !== null) {
+            this.annotations.reconcile(
+              this.presentedScene,
+              this.visitorCamera.camera.zoom,
+              this.cameraLimits.minZoom,
+              this.textResolution(),
+            )
+          }
 
           const previousMapView = this.mapView
           const previousCharacterLayer = this.characterLayer
@@ -656,6 +706,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       visitor === undefined
         ? 'pending'
         : `${Math.round(visitor.x * 100)},${Math.round(visitor.y * 100)}`
+    this.updateExpressionChipProbe()
   }
 }
 

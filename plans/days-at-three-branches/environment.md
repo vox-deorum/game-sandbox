@@ -134,7 +134,7 @@ The `three-branches-village` renderer draws from the recording overlay and admit
 
 The permanent viewer-toggleable collision overlay appears in watch, replay, and play, off by default and toggled by a chrome button or the C key. It shades impassable ground, draws catalog collision shapes for interactive props and scenery, keeps doorways visibly open, and shows characters as 0.4 m circles with heading tick, id, and expression label. Interactive props show state labels.
 
-On the visitor seat, pointer and keyboard input compose locomotion. The expression palette offers emotes and use, highlighting the prop a use would select without sending an action. The 250 millisecond cadence is the input window. The host-page chat field has a recipient selector: broadcast or one currently permitted addressee, carried as a canonical player id and shown with the host's standard compact label. Spectators and replay viewers have no input.
+On the visitor seat, pointer and keyboard input compose locomotion once per landed frame, the 250 millisecond tick cadence. The expression palette offers emotes and a latching use: a held use keeps composing while standing still until it is pressed again, an emote is pressed, movement begins, or the prop leaves reach, and `toggle` or `none` targets release themselves after one send. The palette also highlights the prop a use would select without sending an action. The host-page chat field has a recipient selector: broadcast or one currently permitted addressee, carried as a canonical player id and shown with the host's standard compact label. Spectators and replay viewers have no input.
 
 ## Recording
 

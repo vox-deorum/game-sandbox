@@ -231,4 +231,38 @@ describe('Hearthside Ink presentation', () => {
       'characters.walk.frameRatio must be greater than 0 and at most 1',
     )
   })
+
+  it('rejects expression frames absent from the effects page and an invalid frame ratio', () => {
+    const badFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    badFrame.expressions.frames.wave = 'missingFrame'
+    expect(() => readHearthsideStyle(badFrame)).toThrow(
+      'presentation.expressions.frames.wave is unknown',
+    )
+
+    const badAccent = structuredClone(HEARTHSIDE_STYLE) as any
+    badAccent.expressions.accentFrames = ['missingAccent', 'expressionAccentB']
+    expect(() => readHearthsideStyle(badAccent)).toThrow(
+      'presentation.expressions.accentFrames[0] is unknown',
+    )
+
+    const zeroRatio = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroRatio.expressions.frameRatio = 0
+    expect(() => readHearthsideStyle(zeroRatio)).toThrow(
+      'expressions.frameRatio must be greater than 0',
+    )
+
+    const excessiveRatio = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveRatio.expressions.frameRatio = 1.01
+    expect(() => readHearthsideStyle(excessiveRatio)).toThrow('expressions.frameRatio')
+  })
+
+  it('rejects an expression frame set that is not exactly the emotes plus use', () => {
+    const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
+    extraKey.expressions.frames.extra = 'expressionWave'
+    expect(() => readHearthsideStyle(extraKey)).toThrow('frames keys do not match')
+
+    const missingToken = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingToken.expressions.frames.sleep
+    expect(() => readHearthsideStyle(missingToken)).toThrow('frames keys do not match')
+  })
 })
