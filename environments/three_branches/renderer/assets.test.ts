@@ -73,7 +73,13 @@ describe('Three Branches asset catalog', () => {
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
     expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(15)
     expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
-      expect.arrayContaining(['pumpFlowing', 'pumpIdle', 'bellRinging', 'bellSilent', 'bellFoundation']),
+      expect.arrayContaining([
+        'pumpFlowing',
+        'pumpIdle',
+        'bellRinging',
+        'bellSilent',
+        'bellFoundation',
+      ]),
     )
 
     const monuments = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'monuments')
@@ -94,14 +100,15 @@ describe('Three Branches asset catalog', () => {
   it('derives nested prop paths from camel-case frame names', () => {
     const props = ATLAS_PAGES.find((page) => page.group === 'props')
     expect(props?.framePaths).toEqual(
-      expect.arrayContaining([
-        'stall/open.png',
-        'lantern/lit.png',
-        'repair_bench/busy.png',
-      ]),
+      expect.arrayContaining(['stall/open.png', 'lantern/lit.png', 'repair_bench/busy.png']),
     )
     expect(props?.framePaths).not.toEqual(
-      expect.arrayContaining(['pump/flowing.png', 'pump/idle.png', 'bell/ringing.png', 'bell/silent.png']),
+      expect.arrayContaining([
+        'pump/flowing.png',
+        'pump/idle.png',
+        'bell/ringing.png',
+        'bell/silent.png',
+      ]),
     )
     const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
     expect(monuments?.framePaths).toEqual([

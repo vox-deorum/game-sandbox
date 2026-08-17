@@ -14,10 +14,33 @@ import { PixiRenderer, type RendererTextFactory } from '@renderers/base/PixiRend
 import type { TiledGround } from '@renderers/base/tiled-ground.js'
 import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, Container, Graphics, Texture } from 'pixi.js'
-import { type AnnotationLayer, createAnnotationLayer } from './annotations.js'
-import { runArtLoad } from './art-loading.js'
+
+// Atlas manifest and art live beside the barrel; the build and the atlas CLI resolve them from the
+// renderer root.
+import thumbnail from './assets/thumbnail.png'
 import { loadThreeBranchesRuntimeAssets } from './assets.js'
-import { drawBuildings } from './buildings.js'
+
+// buildings/
+import { drawBuildings } from './buildings/buildings.js'
+
+// characters/
+import {
+  type CharacterLayer,
+  createCharacterArt,
+  createCharacterLayer,
+} from './characters/characters.js'
+
+// core/
+import { runArtLoad } from './core/art-loading.js'
+import {
+  HEARTHSIDE_STYLE,
+  measureDeliveryGap,
+  THREE_BRANCHES_PRESENTATION,
+  transitionDurationMs,
+} from './core/presentation.js'
+import type { CollisionShape, FrameScene, StaticScene, WorldPoint } from './core/types.js'
+
+// map/
 import {
   advanceVisitorReturn,
   beginVisitorReturn,
@@ -26,34 +49,37 @@ import {
   suspendVisitorFollow,
   updateVisitorCamera,
   type VisitorCameraState,
-} from './camera.js'
-import { type CharacterLayer, createCharacterArt, createCharacterLayer } from './characters.js'
-import { type ChromeLayer, COLLISION_TOGGLE_RECT, createChrome, RECENTER_RECT } from './chrome.js'
-import { collisionWithPropStates, frameCollision, staticCollision } from './collision.js'
-import { type CollisionLayer, createCollisionLayer } from './collision-layer.js'
-import { isTextEntry } from './input.js'
-import { drawMap, drawUpperWalls, type MapLayerView } from './map-layer.js'
-import { expectedCharacterIds, readSpeech, readStatic } from './overlay.js'
-import { plateProbe, within } from './palette.js'
-import {
-  HEARTHSIDE_STYLE,
-  measureDeliveryGap,
-  THREE_BRANCHES_PRESENTATION,
-  transitionDurationMs,
-} from './presentation.js'
+} from './map/camera.js'
+import { collisionWithPropStates, frameCollision, staticCollision } from './map/collision.js'
+import { type CollisionLayer, createCollisionLayer } from './map/collision-layer.js'
+import { drawMap, drawUpperWalls, type MapLayerView } from './map/map-layer.js'
+import { buildStaticScene, computeScene, interpolateScene } from './map/scene.js'
+import { createWorldArtStack, type WorldArtStack } from './map/world-stack.js'
+
+// props/
 import {
   createPropArt,
   createPropLayer,
   hasSustainedPropEffectTransition,
   type PropLayer,
-} from './props-layer.js'
-import { buildStaticScene, computeScene, interpolateScene } from './scene.js'
-import { createTerrainArt } from './terrain-art.js'
-import thumbnail from './thumbnail.png'
-import type { CollisionShape, FrameScene, StaticScene, WorldPoint } from './types.js'
-import { propUseShapes, selectUseTarget } from './use-preview.js'
-import { createVisitorInput, type VisitorInputController } from './visitor-input.js'
-import { createWorldArtStack, type WorldArtStack } from './world-stack.js'
+} from './props/props-layer.js'
+
+// terrain/
+import { createTerrainArt } from './terrain/terrain-art.js'
+
+// ui/
+import { type AnnotationLayer, createAnnotationLayer } from './ui/annotations.js'
+import {
+  type ChromeLayer,
+  COLLISION_TOGGLE_RECT,
+  createChrome,
+  RECENTER_RECT,
+} from './ui/chrome.js'
+import { isTextEntry } from './ui/input.js'
+import { expectedCharacterIds, readSpeech, readStatic } from './ui/overlay.js'
+import { plateProbe, within } from './ui/palette.js'
+import { propUseShapes, selectUseTarget } from './ui/use-preview.js'
+import { createVisitorInput, type VisitorInputController } from './ui/visitor-input.js'
 
 const CONTENT_SIZE = {
   width: THREE_BRANCHES_PRESENTATION.internalSize.width,
@@ -236,7 +262,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
     const durationMs = transitionDurationMs(options, deliveryGapMs)
     const shouldAnimate =
-      durationMs > 0 && this.presentedScene !== null && (charactersMoved(this.presentedScene, scene) || hasSustainedPropEffectTransition(this.presentedScene, scene))
+      durationMs > 0 &&
+      this.presentedScene !== null &&
+      (charactersMoved(this.presentedScene, scene) ||
+        hasSustainedPropEffectTransition(this.presentedScene, scene))
     this.settleRemainingMs = 0
     if (shouldAnimate && this.presentedScene !== null) {
       // Movement always follows the renderer transport. It deliberately does not inspect the

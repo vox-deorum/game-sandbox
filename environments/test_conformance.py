@@ -229,7 +229,11 @@ def test_environment_authoring_shape_is_complete_and_fresh(env_id: str):
     renderer = environment_dir / "renderer"
     assert renderer.is_dir()
     assert (renderer / "index.ts").is_file()
-    thumbnails = [renderer / "thumbnail.svg", renderer / "thumbnail.png"]
+    thumbnails = [
+        renderer / "thumbnail.svg",
+        renderer / "thumbnail.png",
+        renderer / "assets" / "thumbnail.png",
+    ]
     assert sum(thumbnail.is_file() for thumbnail in thumbnails) == 1
     assert (environment_dir / "tests").is_dir()
     template = environment_dir / "template"

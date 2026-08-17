@@ -2,11 +2,11 @@ import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
 
 import catalogDocument from '../catalog.json'
 
-import type { FrameGrid } from './tint.js'
+import type { FrameGrid } from './ui/tint.js'
 
 /** One generated source atlas and its optimized runtime counterpart. */
 interface ThreeBranchesRasterDraft {
-  source: `./source-art/${string}.png`
+  source: `./assets/source-art/${string}.png`
   sourceWidth: number
   sourceHeight: number
   path: `./assets/${string}.png`
@@ -195,7 +195,7 @@ export const EFFECTS_ATLAS_FRAME_NAMES = [
 export const THREE_BRANCHES_ASSET_CATALOG = [
   {
     name: 'terrain',
-    source: './source-art/terrain-atlas-source.png',
+    source: './assets/source-art/terrain-atlas-source.png',
     sourceWidth: 1536,
     sourceHeight: 1024,
     path: './assets/terrain-atlas.png',
@@ -214,7 +214,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   },
   {
     name: 'buildings',
-    source: './source-art/buildings-atlas-source.png',
+    source: './assets/source-art/buildings-atlas-source.png',
     sourceWidth: 1254,
     sourceHeight: 1254,
     path: './assets/buildings-atlas.png',
@@ -233,7 +233,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   },
   {
     name: 'props',
-    source: './source-art/props-atlas-source.png',
+    source: './assets/source-art/props-atlas-source.png',
     sourceWidth: 2304,
     sourceHeight: 1536,
     path: './assets/props-atlas.png',
@@ -241,7 +241,8 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     height: 1536,
     tintable: false,
     format: 'full-color',
-    consumer: 'complete ordinary interactive prop state stills, with separate effects and emissives',
+    consumer:
+      'complete ordinary interactive prop state stills, with separate effects and emissives',
     frames: {
       width: 384,
       height: 256,
@@ -252,7 +253,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   },
   {
     name: 'monuments',
-    source: './source-art/monuments-atlas-source.png',
+    source: './assets/source-art/monuments-atlas-source.png',
     sourceWidth: 2304,
     sourceHeight: 1024,
     path: './assets/monuments-atlas.png',
@@ -271,7 +272,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   },
   {
     name: 'scenery',
-    source: './source-art/scenery-atlas-source.png',
+    source: './assets/source-art/scenery-atlas-source.png',
     sourceWidth: 1254,
     sourceHeight: 1254,
     path: './assets/scenery-atlas.png',
@@ -296,7 +297,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     layers: [
       {
         name: 'body',
-        source: './source-art/characters-body-atlas-source.png',
+        source: './assets/source-art/characters-body-atlas-source.png',
         sourceWidth: 2172,
         sourceHeight: 724,
         path: './assets/characters-body-atlas.png',
@@ -312,7 +313,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
       },
       {
         name: 'clothing',
-        source: './source-art/characters-clothing-atlas-source.png',
+        source: './assets/source-art/characters-clothing-atlas-source.png',
         sourceWidth: 2022,
         sourceHeight: 778,
         path: './assets/characters-clothing-atlas.png',
@@ -328,7 +329,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
       },
       {
         name: 'arms',
-        source: './source-art/characters-arms-atlas-source.png',
+        source: './assets/source-art/characters-arms-atlas-source.png',
         sourceWidth: 2137,
         sourceHeight: 736,
         path: './assets/characters-arms-atlas.png',
@@ -344,7 +345,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
       },
       {
         name: 'details',
-        source: './source-art/characters-details-atlas-source.png',
+        source: './assets/source-art/characters-details-atlas-source.png',
         sourceWidth: 2103,
         sourceHeight: 748,
         path: './assets/characters-details-atlas.png',
@@ -362,7 +363,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   },
   {
     name: 'effects',
-    source: './source-art/effects-atlas-source.png',
+    source: './assets/source-art/effects-atlas-source.png',
     sourceWidth: 2688,
     sourceHeight: 1024,
     path: './assets/effects-atlas.png',
@@ -388,7 +389,9 @@ function flatFramePaths(names: readonly string[]): readonly string[] {
 function catalogPropFramePath(name: string): string {
   for (const prop of catalogDocument.props) {
     const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-    const state = prop.states.find((value) => `${type}${value[0]?.toUpperCase()}${value.slice(1)}` === name)
+    const state = prop.states.find(
+      (value) => `${type}${value[0]?.toUpperCase()}${value.slice(1)}` === name,
+    )
     if (state !== undefined) return `${prop.token}/${state}.png`
   }
   throw new Error(`Three Branches prop frame has no catalog state: ${name}`)
@@ -443,10 +446,10 @@ export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
 
 /** The separate illustrative image used by the environment card. */
 export const THREE_BRANCHES_THUMBNAIL_ASSET = {
-  source: './source-art/thumbnail-source.png',
+  source: './assets/source-art/thumbnail-source.png',
   sourceWidth: 1672,
   sourceHeight: 941,
-  path: './thumbnail.png',
+  path: './assets/thumbnail.png',
   width: 320,
   height: 180,
   format: 'full-color',
@@ -479,18 +482,26 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
     return Promise.resolve(load(source))
   }
-  const [terrain, props, monuments, scenery, body, clothing, arms, details, effects] = await Promise.all([
-    loadPath('./assets/terrain-atlas.png'),
-    loadPath('./assets/props-atlas.png'),
-    loadPath('./assets/monuments-atlas.png'),
-    loadPath('./assets/scenery-atlas.png'),
-    loadPath('./assets/characters-body-atlas.png'),
-    loadPath('./assets/characters-clothing-atlas.png'),
-    loadPath('./assets/characters-arms-atlas.png'),
-    loadPath('./assets/characters-details-atlas.png'),
-    loadPath('./assets/effects-atlas.png'),
-  ])
-  return { terrain, props, monuments, scenery, characters: { body, clothing, arms, details }, effects }
+  const [terrain, props, monuments, scenery, body, clothing, arms, details, effects] =
+    await Promise.all([
+      loadPath('./assets/terrain-atlas.png'),
+      loadPath('./assets/props-atlas.png'),
+      loadPath('./assets/monuments-atlas.png'),
+      loadPath('./assets/scenery-atlas.png'),
+      loadPath('./assets/characters-body-atlas.png'),
+      loadPath('./assets/characters-clothing-atlas.png'),
+      loadPath('./assets/characters-arms-atlas.png'),
+      loadPath('./assets/characters-details-atlas.png'),
+      loadPath('./assets/effects-atlas.png'),
+    ])
+  return {
+    terrain,
+    props,
+    monuments,
+    scenery,
+    characters: { body, clothing, arms, details },
+    effects,
+  }
 }
 
 /** Ask Vite for production URLs without bundling the deferred building atlas page. */

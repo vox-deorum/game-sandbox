@@ -11,7 +11,7 @@ staircase through the reference polyline to the curve the game strokes.
 
 The drawing lands under build/three-branches-contours/. This tool belongs to the terrain work in
 stages/5-1-art-style.md and leaves with it; the measuring and drawing it calls live beside the
-pipeline itself, in environments/three_branches/renderer/contour-debug.ts.
+pipeline itself, in environments/three_branches/renderer/terrain/contour-debug.ts.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = REPO_ROOT / "build" / "three-branches-contours"
-WORKER = "../environments/three_branches/renderer/contour-debug.ts"
+WORKER = "../environments/three_branches/renderer/terrain/contour-debug.ts"
 NPX = "npx.cmd" if sys.platform == "win32" else "npx"
 
 # A script runs with its own directory on the path rather than the repo root, so the environment
