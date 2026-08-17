@@ -371,6 +371,20 @@ def test_every_batch_seed_keeps_lanterns_and_pines(
         assert any(item.type == "pine" for item in layout.scenery), seed
 
 
+def test_pines_ship_a_drawn_visual_size_and_crates_keep_the_default(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """Every planted pine carries its own drawn scale in the configured range; crates stay at one."""
+    low, high = TUNING["accessories"]["pine"]["size"]
+    for seed, (layout, _) in batch.items():
+        for item in layout.scenery:
+            if item.type == "pine":
+                assert low <= item.scale <= high, (seed, item.cell, item.scale)
+            else:
+                assert item.scale == 1.0, (seed, item.cell)
+        assert any(item.type == "pine" and item.scale != 1.0 for item in layout.scenery), seed
+
+
 def test_sites_keep_their_margin_and_are_painted_from_the_catalog(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:

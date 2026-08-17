@@ -105,7 +105,7 @@ The configured prop scale defaults to 0.14, overrides bell to 0.36 for both art 
 | Prop | Still treatment |
 | --- | --- |
 | Market stall | `open` shows a raised awning, displayed goods, and a pale counter; `closed` has a lowered shutter and cleared counter. |
-| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. |
+| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. The flicker and the glow pool both hang from the lantern's `(0, -70)` effect anchor, one tenth of the 384-by-256 prop canvas above center, so the light sits on the lantern while the prop stays anchored to its cell. |
 | Bench | `occupied` has a distinct laid cushion or folded wrap; `empty` leaves the bare slats readable. |
 | Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine under its roof. |
 | Notice board | Its single `none` state is a fixed readable board with pale posted notices. |
@@ -143,7 +143,7 @@ The local manifest is the only asset catalog. Keep only the high-resolution orig
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
 | Props | 384 by 256 cells on one 2304 by 1536 atlas page | Fifteen complete full-colour ordinary prop stills, with transparent cells 15 through 35 |
 | Monuments | 768 by 512 cells on one 2304 by 1024 atlas page | The sole fixed-north pump stills and both bell parts, tightly authored around their configured source-pixel anchors and scale divisors |
-| Scenery | 64 px cells | Three red pine variants and the market crate |
+| Scenery | 64 px cells | Three red pine variants and the market crate; each pine is drawn at a generator-assigned 1.5 to 2 times the base sprite scale, and its solid collision circle scales by the same factor |
 | Characters | 192 by 192 frames | Shared rotatable directly overhead masks for body, clothing, and details, with rest and walk frames, plus shadow and direction marks |
 | Effects and dressing | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses |
 
@@ -163,7 +163,7 @@ Status: complete.
 
 The common layer under every visual step. It has no owner gate: the step 3 solid-colour drawing still renders until art lands, so every existing probe and journey keeps its meaning.
 
-- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `postEffects` (`authoredGrade`, `nightGrade`, and `propContactShadow`), `characters` (clothing tints, details, walk, visitor), `props` (0.14 default still scale, bell, pump, shrine, board, and plot scale overrides, the canonical 384 by 256 effect offsets, and monument density divisors with source-pixel anchors), `scenery` (0.25 default sprite scale with crates at 0.30), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
+- `presentation.json` holds `palette` (the 13 keys), `transition` (natural and settle-grace durations), `terrain` (fills, contour calibration, seam treatments, reed marks, planks, upper wall), `roofs` (clear alpha and fade duration), `postEffects` (`authoredGrade`, `nightGrade`, and `propContactShadow`), `characters` (clothing tints, details, walk, visitor), `props` (0.14 default still scale, bell, pump, shrine, board, and plot scale overrides, the canonical 384 by 256 effect offsets including the lantern's raised `(0, -70)` light anchor, and monument density divisors with source-pixel anchors), `scenery` (0.25 default sprite scale with crates at 0.30, multiplied by each pine's recorded size), `propEffects` (lantern, hearth, shrine, pump, bell), `emissives`, and `cranes`.
 - Each grade carries brightness, contrast, saturation, a palette tint, and a tint mix. Brightness and contrast must be above zero and at most two, saturation zero through two, and tint mix zero through one. The contact shadow carries a palette tint, an opacity, width and height factors above zero and at most two, and a southward offset of zero through a quarter cell.
 - `presentation.ts` validates it in the `overlay.ts` style, cross-checks every frame name against the manifest and every tint against the palette, and exports `HEARTHSIDE_STYLE`. The step 3 canvas and camera numbers stay in TypeScript, and the provisional palette becomes a diagnostic palette kept for chrome, the collision overlay, and the pre-asset fallback.
 - `tint.ts` maps manifest frame grids to rectangles and bakes tinted grayscale masks for the tiled ground in a browser-only canvas, cached per atlas, frame, and tint. Sprites elsewhere tint directly.

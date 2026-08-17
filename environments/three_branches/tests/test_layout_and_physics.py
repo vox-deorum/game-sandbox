@@ -98,6 +98,18 @@ def test_a_prop_footprint_turns_with_an_east_or_west_facing() -> None:
     assert footprint(Scenery("crate", (10, 10))) == (1, 1)
 
 
+def test_circle_scenery_collision_scales_with_its_drawn_size() -> None:
+    """A circular placement's solid grows with its drawn size, so trees collide as big as they look."""
+    layout = build_fixture()
+    small = layout.shape_for(Scenery("pine", (10, 10)))
+    large = layout.shape_for(Scenery("pine", (10, 10), scale=2.0))
+    assert isinstance(small, Circle)
+    assert small.radius == 0.5
+    assert isinstance(large, Circle)
+    assert large.radius == 1.0
+    assert large.radius == small.radius * 2.0
+
+
 def test_physics_holds_still_characters_and_respects_boundaries_and_walls() -> None:
     layout = build_fixture()
     day = Day(layout, 5, False)

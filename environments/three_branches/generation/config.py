@@ -423,6 +423,9 @@ class Pine:
     # How often a pine brings neighbours, and how many it may bring.
     companion_chance: float
     companions: int
+    # Inclusive visual-scale factor each planted pine draws, as a multiple of the base scenery
+    # sprite. Crates stay at 1.0, so a tree reads as the size it grew, not the size of its cell.
+    size: tuple[float, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,6 +675,7 @@ def _accessories(value: Any) -> Accessories:
             positive_int(pine["gap"], "accessories.pine.gap"),
             _fraction(pine["companion_chance"], "accessories.pine.companion_chance"),
             positive_int(pine["companions"], "accessories.pine.companions"),
+            _number_range(pine["size"], "accessories.pine.size"),
         ),
     )
 

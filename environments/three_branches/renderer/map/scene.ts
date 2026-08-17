@@ -75,6 +75,7 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
       label: labelFor(item.type),
       shape: shapeOf(kind.shape),
       collisionScale: 1,
+      scale: item.scale ?? 1,
     })),
   )
   return {

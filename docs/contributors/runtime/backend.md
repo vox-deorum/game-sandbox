@@ -64,7 +64,7 @@ Shared protocol and environment types live in `@game-sandbox/schema`. Browser-sa
 
 ## Configuration
 
-The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, and validates the complete environment without duplicating defaults in code. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required `.env.default` at the repository root defines all concrete runtime defaults. `config/config.ts` loads it once, applies an optional `.env` and parent-process overrides, and validates the complete environment without duplicating defaults in code. A launcher that must not see a machine-local `.env` (the browser e2e suite, which boots its own backend) sets `LOAD_LOCAL_ENV=false` in the process environment, skipping that file so a deployment's `.env` left in the tree cannot leak in. Each service receives `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](../setup/configuration.md) for the full environment-variable reference and deployment notes.
 

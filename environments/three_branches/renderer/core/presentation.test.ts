@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
+  propEffectAnchor,
   readHearthsideStyle,
   type TerrainFillTreatment,
   transitionDurationMs,
@@ -22,6 +23,15 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(offFrame)).toThrow(
       'must be inside a 768 by 512 monument frame',
     )
+  })
+
+  it('anchors the lantern light above the footprint and rejects an out-of-range anchor', () => {
+    expect(propEffectAnchor('lantern').x).toBe(0)
+    expect(propEffectAnchor('lantern').y).toBeLessThan(0)
+
+    const offAnchor = structuredClone(HEARTHSIDE_STYLE) as any
+    offAnchor.props.effectAnchorByType.lantern.y = -129
+    expect(() => readHearthsideStyle(offAnchor)).toThrow('effectAnchorByType.lantern.y')
   })
 
   it('uses explicit host pace and caps unpaced delivery gaps at the natural duration', () => {

@@ -12,6 +12,7 @@ from pettingzoo.utils.env import ParallelEnv
 from .catalog import CATALOG
 from .engine import Day, phase_at, step
 from .generation import build_village
+from .generation.config import GENERATION
 from .perception import can_hear, observe
 from .rules import EMOTES, FRAME, GROUND_BY_CODE, RULES
 
@@ -92,6 +93,10 @@ class ThreeBranchesEnv(ParallelEnv):
         nearby = spaces.Dict({"id": _text(_PLAYER_ID_LENGTH), "position": position})
         prop = spaces.Dict({"prop": _text(16), "state": _text(9)})
         cell = spaces.Dict({"x": spaces.Discrete(FRAME.cells_x), "y": spaces.Discrete(FRAME.cells_y)})
+        # Scenery carries each pine's drawn size, which must fall inside the configured range: the
+        # shared crates sit at 1.0, and pines draw between the generator's own bounds.
+        pine_size = GENERATION.accessories.pine.size
+        scenery_scale = (min(1.0, pine_size[0]), pine_size[1])
         village = spaces.Dict(
             {
                 "size": spaces.Dict(
@@ -111,7 +116,17 @@ class ThreeBranchesEnv(ParallelEnv):
                 "props": spaces.Sequence(
                     spaces.Dict({"id": _text(16), "type": _text(12), "cell": cell, "facing": _text(5)})
                 ),
-                "scenery": spaces.Sequence(spaces.Dict({"type": _text(12), "cell": cell})),
+                "scenery": spaces.Sequence(
+                    spaces.Dict(
+                        {
+                            "type": _text(12),
+                            "cell": cell,
+                            "scale": spaces.Box(
+                                scenery_scale[0], scenery_scale[1], shape=(), dtype=np.float32
+                            ),
+                        }
+                    )
+                ),
                 "spawn": position,
             }
         )

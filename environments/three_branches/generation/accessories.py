@@ -185,9 +185,9 @@ class _Yard:
         self.protected.append((_centre(witness), PROFILE.body_radius))
         return True
 
-    def stand(self, token: str, cell: Cell) -> bool:
+    def stand(self, token: str, cell: Cell, *, scale: float = 1.0) -> bool:
         """Stand one piece of scenery, which is solid but is never used and banks no witness."""
-        item = Scenery(token, cell)
+        item = Scenery(token, cell, scale)
         if not self._footprint_free(item):
             return False
         shape = _shape_for(item)
@@ -361,11 +361,16 @@ def _lanterns(stream: random.Random, yard: _Yard, road: Road, market: float, tun
 def _pines(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) -> None:
     """Plant the pines last, at road stations and scattered over open ground, with companions."""
     pine = tuning.pine
+    low, high = pine.size
     for index, station in enumerate(_posts(road, float(pine.spacing))):
-        _stand_beside(yard, "pine", station, 1 if index % 2 == 0 else -1, tuning)
+        _stand_beside(
+            yard, "pine", station, 1 if index % 2 == 0 else -1, tuning, scale=_pine_scale(stream, low, high)
+        )
     for _ in range(pine.scatter):
         cell = (stream.randrange(FRAME.cells_x), stream.randrange(FRAME.cells_y))
-        if not _spaced(yard, cell, pine.gap) or not yard.stand("pine", cell):
+        if not _spaced(yard, cell, pine.gap):
+            continue
+        if not yard.stand("pine", cell, scale=_pine_scale(stream, low, high)):
             continue
         if stream.random() >= pine.companion_chance:
             continue
@@ -375,7 +380,12 @@ def _pines(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) 
                 cell[1] + stream.randint(-pine.gap, pine.gap),
             )
             if _spaced(yard, near, pine.gap - 1):
-                yard.stand("pine", near)
+                yard.stand("pine", near, scale=_pine_scale(stream, low, high))
+
+
+def _pine_scale(stream: random.Random, low: float, high: float) -> float:
+    """Draw one pine's size. Being drawn at placement, the solid it makes keeps its true radius."""
+    return round(stream.uniform(low, high), 3)
 
 
 def _try(
@@ -399,7 +409,9 @@ def _try(
     return False
 
 
-def _stand_beside(yard: _Yard, token: str, station: Station, side: int, tuning: Accessories) -> bool:
+def _stand_beside(
+    yard: _Yard, token: str, station: Station, side: int, tuning: Accessories, *, scale: float = 1.0
+) -> bool:
     """Set a prop one setback off the road at a station, turned to face the road it serves."""
     kind = PROP_BY_TOKEN.get(token)
     normal = (-station.tangent[1] * side, station.tangent[0] * side)
@@ -410,7 +422,7 @@ def _stand_beside(yard: _Yard, token: str, station: Station, side: int, tuning: 
     away = tuning.setback + max(width, height) / 2 + 1.5
     centre = (station.point[0] + normal[0] * away, station.point[1] + normal[1] * away)
     cell = (int(centre[0] - width / 2), int(centre[1] - height / 2))
-    return yard.place(token, cell, facing) if kind is not None else yard.stand(token, cell)
+    return yard.place(token, cell, facing) if kind is not None else yard.stand(token, cell, scale=scale)
 
 
 def _around(stream: random.Random, yard: _Yard, token: str, centre: Cell, budget: int) -> bool:
@@ -477,6 +489,8 @@ def _shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
     if source.shape == "box":
         return Rect(float(x), float(y), float(width), float(height))
     scale = source.collision_scale if isinstance(source, PropType) else 1.0
+    if isinstance(item, Scenery):
+        scale *= item.scale
     return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
 

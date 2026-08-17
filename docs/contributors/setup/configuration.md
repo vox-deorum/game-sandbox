@@ -6,7 +6,7 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 ## How configuration loads
 
-`loadConfig()` reads configuration once at startup. From the repository root, it loads the required `.env.default` and then an optional `.env`. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. The file paths and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory. See [Data folders](../data/folders.md) to locate the active `DATA_DIR`.
+`loadConfig()` reads configuration once at startup. From the repository root, it loads the required `.env.default` and then an optional `.env`. Variables from the parent process override both files, so the precedence is the process environment, then `.env`, then `.env.default`. Setting `LOAD_LOCAL_ENV=false` in the process environment skips the `.env` file entirely, which a launcher uses when it must boot a backend immune to a machine-local `.env` (the browser e2e suite). The file paths and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory. See [Data folders](../data/folders.md) to locate the active `DATA_DIR`.
 
 Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file: use the Git-ignored `.env` for those and for machine-specific values. Other `.env.*` files are not loaded automatically.
 

@@ -184,7 +184,10 @@
   "props": {
     "defaultScale": 0.14,
     "scaleByType": { "bell": 0.36, "pump": 0.33, "shrine": 0.2, "board": 0.28, "plot": 0.17 },
-    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } },
+    "effectAnchorByType": {
+      "pump": { "x": 31, "y": -61 },
+      "lantern": { "x": 0, "y": -70 }
+    },
     "monumentByType": {
       "pump": {
         "textureDensityDivisor": 4,

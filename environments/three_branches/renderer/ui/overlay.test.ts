@@ -10,6 +10,9 @@ describe('Three Branches recording overlay', () => {
     expect(village.ground).toHaveLength(village.size.cellsY)
     expect(village.ground.every((row) => row.length === village.size.cellsX)).toBe(true)
     expect(village.spawn.x).toBeGreaterThanOrEqual(0)
+    expect(village.scenery.every((item) => (item.scale ?? 1) >= 1 && (item.scale ?? 1) <= 2)).toBe(
+      true,
+    )
     expect(expectedCharacterIds(header)).toEqual(Object.keys(header.players))
   })
 
@@ -44,6 +47,24 @@ describe('Three Branches recording overlay', () => {
     const missingRoster = clonedHeader()
     delete missingRoster.players.player_0
     expect(() => expectedCharacterIds(missingRoster)).toThrow('missing player_0')
+  })
+
+  it('defaults and constrains scenery size before it reaches the drawable', () => {
+    const legacy = clonedHeader()
+    const source = legacy.overlay_static as Record<string, unknown>
+    source.scenery = []
+    const empty = readStatic(legacy)
+    expect(empty.scenery).toEqual([])
+
+    const larger = clonedHeader()
+    const largerSource = larger.overlay_static as Record<string, unknown>
+    largerSource.scenery = [{ type: 'pine', cell: { x: 0, y: 0 }, scale: 3 }]
+    expect(readStatic(larger).scenery[0]?.scale).toBe(3)
+
+    const nonPositive = clonedHeader()
+    const badSource = nonPositive.overlay_static as Record<string, unknown>
+    badSource.scenery = [{ type: 'pine', cell: { x: 0, y: 0 }, scale: -1 }]
+    expect(() => readStatic(nonPositive)).toThrow('must be positive')
   })
 
   it('rejects noncanonical, noncontiguous, and legacy roster ids', () => {

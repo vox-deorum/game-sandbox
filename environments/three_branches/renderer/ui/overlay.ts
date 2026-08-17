@@ -67,9 +67,13 @@ export function readStatic(header: RecordingHeader): VillageStatic {
   })
   const scenery = array(source.scenery, 'overlay_static.scenery').map((item, index) => {
     const value = record(item, `overlay_static.scenery[${index}]`)
+    const scaleName = `overlay_static.scenery[${index}].scale`
+    const scale = value.scale === undefined ? 1 : finiteNumber(value.scale, scaleName)
+    if (scale <= 0) throw new Error(`${scaleName} must be positive.`)
     return {
       type: knownType(value.type, sceneryTypes, `overlay_static.scenery[${index}].type`),
       cell: readCell(value.cell, `overlay_static.scenery[${index}].cell`, size),
+      scale,
     }
   })
   assertUnique(

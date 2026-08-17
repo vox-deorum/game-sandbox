@@ -46,6 +46,8 @@ export interface StaticScenery {
   type: string
   /** South-west origin cell. */
   cell: Cell
+  /** Visual-size factor the generator drew, multiplied over the base scenery scale. */
+  scale?: number
 }
 
 /** Immutable village data carried once in `RecordingHeader.overlay_static`. */
@@ -156,6 +158,8 @@ export interface StaticDrawable {
   rect: WorldRect
   /** Optional cardinal presentation direction. */
   facing?: string
+  /** Optional per-placement visual-size factor, multiplied over the type's base scale. */
+  scale?: number
 }
 
 /** Immutable, mount-scoped scene derived from the recording header and shared JSON. */

@@ -32,6 +32,10 @@ class PlacedProp:
 class Scenery:
     type: str
     cell: Cell
+    # Size factor a circular placement draws. The generator gives each pine one between the
+    # configured bounds, and the engine scales the circle's collision radius by it and the renderer
+    # the sprite by the same value, so a tree's footprint and its look are the same property.
+    scale: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +156,8 @@ class Layout:
         if source.shape == "box":
             return Rect(float(x), float(y), float(width), float(height))
         scale = source.collision_scale if isinstance(source, PropType) else 1.0
+        if isinstance(item, Scenery):
+            scale *= item.scale
         return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
 
     def doorway(self, building_id: str) -> tuple[Cell, ...]:
@@ -227,7 +233,12 @@ class Layout:
                 for item in self.props
             ),
             "scenery": tuple(
-                {"type": item.type, "cell": {"x": item.cell[0], "y": item.cell[1]}} for item in self.scenery
+                {
+                    "type": item.type,
+                    "cell": {"x": item.cell[0], "y": item.cell[1]},
+                    "scale": item.scale,
+                }
+                for item in self.scenery
             ),
             "spawn": {"x": self.spawn[0], "y": self.spawn[1]},
         }

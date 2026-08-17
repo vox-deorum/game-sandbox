@@ -54,7 +54,7 @@ class Model:
     collision_buckets: Mapping[tuple[int, int], tuple[int, ...]]
 
 
-PlacementFingerprint = tuple[str, float, float, bool]
+PlacementFingerprint = tuple[str, float, float, bool, float]
 VillageFingerprint = tuple[
     int,
     int,
@@ -105,6 +105,7 @@ def _placement_fingerprint(item: object) -> PlacementFingerprint:
         float(cell["x"]),
         float(cell["y"]),
         item.get("facing") in {"east", "west"},
+        float(item.get("scale", 1.0)),
     )
 
 
@@ -184,7 +185,7 @@ def _shape(item: PlacementFingerprint, kind: Mapping[str, object], cell_size: fl
     x, y = item[1] * cell_size, item[2] * cell_size
     if kind["shape"] != "circle":
         return Shape("box", x, y, width, height)
-    diameter = min(width, height) * float(kind.get("collision_scale", 1.0))
+    diameter = min(width, height) * float(kind.get("collision_scale", 1.0)) * item[4]
     return Shape("circle", x + (width - diameter) / 2, y + (height - diameter) / 2, diameter, diameter)
 
 

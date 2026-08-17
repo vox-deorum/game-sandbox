@@ -170,14 +170,17 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         const emissive = emissiveSpec(node.item.type, state)
         node.effect.visible = effect !== null
         node.emissive.visible = emissive !== null
+        // The effect anchor is where a prop's generated accent sits on its own artwork. A lantern
+        // hangs its light from the anchor, so both the flicker and the glow pool ride it together
+        // and stay put on the prop instead of floating at the footprint's center.
+        const propScale = propVisualScale(node.item.type)
+        const anchor = propEffectAnchor(node.item.type)
         if (effect !== null) {
           active = true
           node.effect.texture = texture(art.effects, effect.frame)
           node.effect.tint = HEARTHSIDE_STYLE.palette[effect.tint]
           node.effect.alpha = effect.alpha
           node.effect.scale.set(EFFECT_SCALE * effect.scale)
-          const propScale = propVisualScale(node.item.type)
-          const anchor = propEffectAnchor(node.item.type)
           node.effect.position.set(
             centerX(node.item) + anchor.x * propScale + effect.offsetX,
             centerY(node.item) + anchor.y * propScale + effect.offsetY,
@@ -189,7 +192,10 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
           node.emissive.tint = HEARTHSIDE_STYLE.palette[emissive.tint]
           node.emissive.alpha = emissive.alpha
           node.emissive.scale.set(EFFECT_SCALE * emissive.scale)
-          node.emissive.position.set(centerX(node.item), centerY(node.item))
+          node.emissive.position.set(
+            centerX(node.item) + anchor.x * propScale,
+            centerY(node.item) + anchor.y * propScale,
+          )
           node.emissive.rotation = visualFacing(node.item)
         }
       }
@@ -258,16 +264,17 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
   if (!(root instanceof Container)) return
+  const scale = sceneryVisualScale(item.type) * (item.scale ?? 1)
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
-    existing.scale.set(sceneryVisualScale(item.type))
+    existing.scale.set(scale)
     return
   }
   if (existing !== null) return
   const artNode = sprite(
     'scenery-art',
     texture(art.scenery, sceneryFrame(item.type, item.id)),
-    sceneryVisualScale(item.type),
+    scale,
   )
   artNode.tint = HEARTHSIDE_STYLE.palette[item.type === 'pine' ? 'pine' : 'timber']
   root.addChild(artNode)

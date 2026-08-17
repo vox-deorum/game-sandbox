@@ -52,4 +52,25 @@ describe('loadEnvironmentFiles', () => {
       DEFAULT_ONLY: 'value',
     })
   })
+
+  it('skips the local file when the process environment opts out', () => {
+    const directory = root()
+    writeFileSync(join(directory, '.env.default'), 'DEFAULT_ONLY=value\n')
+    writeFileSync(join(directory, '.env'), 'LOCAL_ONLY=value\n')
+
+    expect(loadEnvironmentFiles({ env: { LOAD_LOCAL_ENV: 'false' }, root: directory })).toEqual({
+      DEFAULT_ONLY: 'value',
+      LOAD_LOCAL_ENV: 'false',
+    })
+  })
+
+  it('rejects an unreadable local-file opt-out value', () => {
+    const directory = root()
+    writeFileSync(join(directory, '.env.default'), 'DEFAULT_ONLY=value\n')
+    writeFileSync(join(directory, '.env'), 'LOCAL_ONLY=value\n')
+
+    expect(() =>
+      loadEnvironmentFiles({ env: { LOAD_LOCAL_ENV: 'maybe' }, root: directory }),
+    ).toThrow(/LOAD_LOCAL_ENV/)
+  })
 })

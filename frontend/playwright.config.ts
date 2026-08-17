@@ -88,8 +88,11 @@ function backendEnv(
     // origin, secret, and bootstrap credentials. This loopback e2e server opts into the published
     // development defaults, so the bootstrap admin is `admin@example.com` / `admin-dev-password` (see
     // e2e/support/auth.ts); the loopback origin binds the listener to `127.0.0.1`, matching both the
-    // health-check URL and the project baseURL the browser loads from.
+    // health-check URL and the project baseURL the browser loads from. LOAD_LOCAL_ENV=false makes the
+    // backend skip any repository-root `.env` a local deployment left behind, so that file cannot
+    // override the development credentials above (see backend/src/config/env-files.ts).
     AUTH_ALLOW_INSECURE_DEFAULTS: 'true',
+    LOAD_LOCAL_ENV: 'false',
     PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
     // A short idle window keeps a forgotten session from holding a container across the run.
     SESSION_IDLE_TIMEOUT_MS: '30000',
