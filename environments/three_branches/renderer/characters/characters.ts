@@ -2,7 +2,6 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { CharacterDrawable, FrameScene } from '../core/types.js'
-import { nameplateAlpha } from '../ui/annotations.js'
 import { type FrameGrid, frameRectangle } from '../ui/tint.js'
 import {
   CHARACTER_REST_FRAME,
@@ -195,7 +194,7 @@ function drawCharacter(
 
   node.fallback.visible = false
   const style = characterStyle(character.id)
-  const farView = nameplateAlpha(zoom, fittedZoom) < 1
+  const farView = zoom < fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
   node.farMark.visible = farView
   drawFarMark(node.farMark, character.radius, style.markTint, rotation)
   const shadow = requiredPart(node.shadow, 'shadow')

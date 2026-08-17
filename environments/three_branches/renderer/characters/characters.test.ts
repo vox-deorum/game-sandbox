@@ -4,7 +4,6 @@ import { THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording } from '../core/test-helpers.js'
 import type { FrameScene } from '../core/types.js'
 import { buildStaticScene, computeScene } from '../map/scene.js'
-import { nameplateAlpha } from '../ui/annotations.js'
 import { expectedCharacterIds, readStatic } from '../ui/overlay.js'
 import { type CharacterArt, createCharacterLayer } from './characters.js'
 
@@ -53,7 +52,7 @@ describe('Three Branches retained characters', () => {
     const characters = createCharacterLayer(view)
     const scene = fixtureScene()
     const fittedZoom = 2
-    const closeZoom = fittedZoom * THREE_BRANCHES_PRESENTATION.nameplateZoomFactor
+    const closeZoom = fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
 
     characters.reconcile(scene, closeZoom, fittedZoom)
     const visitorBefore = descendant(view, 'character:player_0')
@@ -82,22 +81,20 @@ describe('Three Branches retained characters', () => {
     expect(view.children.some((child) => child.label === 'character:player_0')).toBe(false)
   })
 
-  it('uses far marks until the shared nameplate readability threshold is fully reached', () => {
+  it('uses far marks below the far-mark zoom and full sprites at and above it', () => {
     const view = new Container()
     const characters = createCharacterLayer(view)
     const scene = fixtureScene()
     const fittedZoom = 2
-    const threshold = fittedZoom * THREE_BRANCHES_PRESENTATION.nameplateZoomFactor
+    const threshold = fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
     characters.install(characterArt())
 
     characters.reconcile(scene, threshold - 0.01, fittedZoom)
     const visitor = descendant(view, 'character:player_0')
-    expect(nameplateAlpha(threshold - 0.01, fittedZoom)).toBeLessThan(1)
     expect(descendant(visitor, 'character-far-mark').visible).toBe(true)
     expect(descendant(visitor, 'character-rotor').visible).toBe(false)
 
     characters.reconcile(scene, threshold, fittedZoom)
-    expect(nameplateAlpha(threshold, fittedZoom)).toBe(1)
     expect(descendant(visitor, 'character-far-mark').visible).toBe(false)
     expect(descendant(visitor, 'character-rotor').visible).toBe(true)
   })

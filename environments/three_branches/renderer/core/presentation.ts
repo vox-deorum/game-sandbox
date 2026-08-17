@@ -39,6 +39,8 @@ export interface ThreeBranchesPresentation {
   nameplateZoomFactor: number
   /** Fitted-zoom multiples spanned by the nameplate fade below that factor. */
   nameplateFadeFactor: number
+  /** Fitted-zoom multiple below which characters draw in the simplified non-texture mode. */
+  farMarkZoomFactor: number
   /** Milliseconds a delivered line holds at full opacity. */
   speechHoldMs: number
   /** Milliseconds a delivered line takes to fade out after its hold. */
@@ -54,9 +56,10 @@ export const THREE_BRANCHES_PRESENTATION: ThreeBranchesPresentation = {
   unitsPerMetre: 16,
   cameraPadding: 20,
   maxZoomFactor: 16,
-  focusZoomFactor: 2,
+  focusZoomFactor: 1.5,
   nameplateZoomFactor: 1.5,
   nameplateFadeFactor: 0.5,
+  farMarkZoomFactor: 2,
   speechHoldMs: 4000,
   speechFadeMs: 600,
   speechMaxLines: 4,
