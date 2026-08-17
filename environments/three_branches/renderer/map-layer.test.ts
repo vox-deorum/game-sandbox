@@ -151,7 +151,7 @@ describe('Three Branches map layer', () => {
     expect(materialLayerAlpha('reeds')).toBe(1)
     expect(materialLayerAlpha('water')).toBe(1)
     expect(materialLayerAlpha('path')).toBe(1)
-    expect(materialLayerAlpha('road')).toBe(0.82)
+    expect(materialLayerAlpha('road')).toBe(1)
   })
 
   it('owns ordered named surfaces at each configured layer alpha', () => {
@@ -169,8 +169,11 @@ describe('Three Branches map layer', () => {
       'terrain-seam-hatch',
       'terrain-seam-cover',
       'terrain-path',
+      'terrain-path-bridge-cutout',
       'terrain-road',
+      'terrain-road-bridge-cutout',
       'terrain-structures',
+      'terrain-planks-shadow',
       'terrain-planks',
     ]
 
@@ -385,7 +388,7 @@ describe('Three Branches map layer', () => {
 
   it('offsets a straight run into an exact parallel line', () => {
     const run = Array.from({ length: 5 }, (_, index) => shorelinePoint(index, 1))
-    expect(offsetPolyline(run, -0.55)).toEqual(run.map((point) => ({ x: point.x, y: -0.55 })))
+    expect(offsetPolyline(run, -0.55)).toEqual([run.map((point) => ({ x: point.x, y: -0.55 }))])
   })
 
   it('keeps the hatch offset its full distance out where the bank bends tighter than the offset', () => {
@@ -396,9 +399,12 @@ describe('Three Branches map layer', () => {
       return { x, y: 4 + 0.6 * Math.cos(x * 2), rawOffset: x, locked: false, shorelineFactor: 1 }
     })
     const offset = 1.05
-    const hatch = offsetPolyline(bank, -offset)
+    const lines = offsetPolyline(bank, -offset)
+    const hatch = lines.flat()
 
-    expect(findCurveCrossings([{ id: 'bank', closed: false, points: hatch }])).toEqual([])
+    for (const [index, line] of lines.entries()) {
+      expect(findCurveCrossings([{ id: `bank-${index}`, closed: false, points: line }])).toEqual([])
+    }
     expect(hatch.length).toBeGreaterThan(60)
     for (const point of hatch) {
       const nearest = Math.min(
@@ -425,17 +431,27 @@ describe('Three Branches map layer', () => {
     const plan = contourPlan(rows)
     const drawn = plan.chains.filter((chain) => chain.shorelineSpans.length > 0)
     const folded: string[] = []
-    expect(drawn.length).toBeGreaterThan(3)
+    // A boundary runs as one chain from junction to junction, so this river network is a couple of
+    // long chains rather than many short ones. Hold the length of what gets swept, since an empty
+    // sweep would report no folds for the wrong reason.
+    expect(drawn.flatMap((chain) => chain.points).length).toBeGreaterThan(200)
     for (const chain of drawn) {
       const sign = chain.leftMaterial === 'water' ? 1 : -1
       for (const offsetCells of HEARTHSIDE_STYLE.terrain.seams.waterHatch.offsetsCells) {
-        const points = offsetPolyline(chain.points, sign * offsetCells)
-        if (points.length < 2) continue
-        for (const [first] of findCurveCrossings([{ id: chain.id, closed: false, points }])) {
-          folded.push(
-            `${chain.id} at ${offsetCells} near ` +
-              `(${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)})`,
-          )
+        for (const points of offsetPolyline(chain.points, sign * offsetCells)) {
+          for (const [first] of findCurveCrossings([{ id: chain.id, closed: false, points }])) {
+            folded.push(
+              `${chain.id} at ${offsetCells} near ` +
+                `(${first.start.x.toFixed(2)}, ${first.start.y.toFixed(2)})`,
+            )
+          }
+          // Each run stops where the offset ran out of room, so none of them carries a chord over
+          // the gap. The samples the runs are built from sit a quarter cell apart.
+          for (let index = 0; index + 1 < points.length; index += 1) {
+            const step = points[index + 1]!
+            const from = points[index]!
+            expect(Math.hypot(step.x - from.x, step.y - from.y)).toBeLessThan(1)
+          }
         }
       }
     }

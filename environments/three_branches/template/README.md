@@ -12,17 +12,17 @@ python -m sandbox eval   # run repeatable automated days
 
 ## Files you will use
 
-| Path                    | Purpose                                                        |
-| ----------------------- | -------------------------------------------------------------- |
-| `agent.py`              | Your `Agent` implementation and starter TODOs.                 |
-| `environment.md`        | Rules, helpers, observations, and local commands.              |
-| `manifest.json`         | Tells Game Sandbox where the agent class lives.                |
-| `season.json`           | Optional local season settings downloaded from My Submissions. |
-| `tests/`                | Checks your submission should pass.                            |
-| `sandbox/`              | Local game, helpers, and types. Do not edit it.                |
-| `requirements.txt`      | Exact Python package versions used by the server.              |
-| `requirements-dev.txt`  | Test dependencies.                                             |
-| `.env.example`          | Example local LLM settings.                                    |
+| Path | Purpose |
+| --- | --- |
+| `agent.py` | Your `Agent` implementation and starter TODOs. |
+| `environment.md` | Rules, helpers, observations, and local commands. |
+| `manifest.json` | Tells Game Sandbox where the agent class lives. |
+| `season.json` | Optional local season settings downloaded from My Submissions. |
+| `tests/` | Checks your submission should pass. |
+| `sandbox/` | Local game, helpers, and types. Do not edit it. |
+| `requirements.txt` | Exact Python package versions used by the server. |
+| `requirements-dev.txt` | Test dependencies. |
+| `.env.example` | Example local LLM settings. |
 
 The starter shows `action.walk`, `action.stand`, an emote, and `use`. Read [`environment.md`](environment.md) before changing it. Begin with one behavior that you can recognize in `watch`, then make it more responsive to the people and props it sees.
 

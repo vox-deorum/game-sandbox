@@ -417,20 +417,19 @@ export function hatchGraphics(plan: TerrainContourPlan, cellSize: number): Graph
       const runs: SeamStrokeRun[] = []
       appendTaperedRuns(runs, chain, 0, chain.rawLength, spec.opacity / (lineIndex + 1), true)
       for (const run of runs) {
-        const points = offsetPolyline(run.points, sign * offsetCells)
-        const first = points[0]
-        if (first === undefined || points.length < 2) continue
-        hatch.moveTo(first.x * cellSize, first.y * cellSize)
-        for (const point of points.slice(1)) {
-          hatch.lineTo(point.x * cellSize, point.y * cellSize)
+        for (const line of offsetPolyline(run.points, sign * offsetCells)) {
+          hatch.moveTo(line[0]!.x * cellSize, line[0]!.y * cellSize)
+          for (const point of line.slice(1)) {
+            hatch.lineTo(point.x * cellSize, point.y * cellSize)
+          }
+          hatch.stroke({
+            color: HEARTHSIDE_STYLE.palette[spec.tint],
+            width: spec.widthCells * cellSize,
+            alpha: run.alpha,
+            cap: 'round',
+            join: 'round',
+          })
         }
-        hatch.stroke({
-          color: HEARTHSIDE_STYLE.palette[spec.tint],
-          width: spec.widthCells * cellSize,
-          alpha: run.alpha,
-          cap: 'round',
-          join: 'round',
-        })
       }
     }
   }
@@ -512,13 +511,16 @@ interface OffsetPoint {
  * bank turns tighter than the offset, that meeting swings past the opposite branch and the line
  * folds into a bowtie, which strokes as a small dark triangle out on the water. Two rules undo
  * that: every point of a true offset stays the full offset away from its source, and a true offset
- * walks its source forward rather than back down it. The survivors join across each gap, which is
- * close to where the two branches of the fold would have met.
+ * walks its source forward rather than back down it.
+ *
+ * What the two rules drop is where the offset has no room to exist, so the result comes back as
+ * separate runs that stop at each gap. A single run joined across them instead, which reads as a
+ * stroke drawn straight over the water wherever a whole inlet or headland went.
  */
 export function offsetPolyline(
   points: readonly TerrainContourPoint[],
   offsetCells: number,
-): readonly ContourCoordinate[] {
+): readonly (readonly ContourCoordinate[])[] {
   const source = withoutRepeats(points)
   if (source.length < 2) return []
   const normals = source.slice(0, -1).map((start, index) => {
@@ -542,7 +544,24 @@ export function offsetPolyline(
     )
   }
   const clear = withoutFolds(moved, source, Math.abs(offsetCells))
-  return onlyAdvancing(clear, source).map((offset) => offset.point)
+  return intoRuns(onlyAdvancing(clear, source))
+}
+
+/** Cut the survivors into runs at the source vertices whose offset points were dropped. */
+function intoRuns(kept: readonly OffsetPoint[]): readonly (readonly ContourCoordinate[])[] {
+  const runs: ContourCoordinate[][] = []
+  let current: ContourCoordinate[] = []
+  let previous: OffsetPoint | undefined
+  for (const offsetPoint of kept) {
+    if (previous !== undefined && offsetPoint.at - previous.at > 1) {
+      runs.push(current)
+      current = []
+    }
+    current.push(offsetPoint.point)
+    previous = offsetPoint
+  }
+  runs.push(current)
+  return runs.filter((run) => run.length > 1)
 }
 
 function displace(

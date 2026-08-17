@@ -92,7 +92,7 @@ const APPROVED_ROUTES = {
     curve: ROAD_CURVE,
     targetWidthCells: 2.1,
     minimumWidthCells: 1.6,
-    opacity: 0.82,
+    opacity: 1,
   },
   path: { curve: PATH_CURVE, widthCells: 0.7, opacity: 1 },
 } as const
@@ -317,9 +317,9 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(unknownTint)).toThrow('reedMarks.tint is unknown')
   })
 
-  it('keeps terrain fills opaque and gives the inset road its own blend', () => {
+  it('keeps every terrain fill and route opaque', () => {
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.opacity).toBe(1)
-    expect(HEARTHSIDE_STYLE.terrain.routes.road.opacity).toBe(0.82)
+    expect(HEARTHSIDE_STYLE.terrain.routes.road.opacity).toBe(1)
     expect(Object.values(HEARTHSIDE_STYLE.terrain.fills).map((fill) => fill.opacity)).toEqual(
       Array(10).fill(1),
     )
