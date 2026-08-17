@@ -18,17 +18,7 @@ Implement the [`sandbox.village` contract](../environment.md#package-and-student
 
 Observation readers and static-map queries take observation first. `action.walk`, `action.stand`, the geometry functions, and the two player-id predicates are pure and take no observation. Student code, chat records, and documentation use `player_0` for the visitor and `player_1` upward for NPCs. Messaging uses the shared raw chat dictionaries without an environment-specific helper or id translation.
 
-The complete public surface is:
-
-- `action`: `EMOTES`, `walk(heading, speed=1.0, expression="none")`, and `stand(heading, expression="none")`.
-- `me`: `player_id`, `position`, `heading`, `moved`, `expression`, `home`, and `rng(observation, session_seed)`.
-- `people`: `seen`, `nearby`, `roster`, `is_visitor(player_id)`, and `is_npc(player_id)`.
-- `props`: `TYPES`, `all`, `seen`, `in_reach`, and `usable`.
-- `layout`: `SPEED_LIMITS`, `frame`, `cell_at`, `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `doorway`, and `spawn`.
-- `geometry`: `BODY_RADIUS`, `VISION_RANGE`, `VISION_DEGREES`, `HEARING_RANGE`, `PROP_REACH`, `distance`, `heading_to`, `wrap`, and `in_cone`.
-- `day`: `tick`, `phase`, `bell_ringing`, and `parameters`.
-
-Provide no map object, module-global layout, controller decision, character/player conversion, or pathfinder. Private immutable normalization may be cached by immutable layout content, but observations and public mutable results never cross observation boundaries. `observation["village"]` provides the full map, while `walkable`, `can_step`, and `ground_at` let students build their own route graph. Build route graphs in `reset(seed, observation)`, where the layout is available before tick one and the cost counts toward the episode budget. Step 8 supplies one worked routing approach.
+Implement the API the [environment contract](../environment.md#package-and-student-materials) lists: the seven namespaces `action`, `me`, `people`, `props`, `layout`, `geometry`, and `day`. Provide no map object, module-global layout, controller decision, character/player conversion, or pathfinder. Build route graphs in `reset(seed, observation)`, where the layout is available before tick one and the cost counts toward the episode budget. Step 8 supplies one worked routing approach. Private immutable normalization may be cached by immutable layout content, but observations and public mutable results never cross observation boundaries.
 
 `me.rng(observation, session_seed)` returns a player-specific `random.Random` stream derived by a stable hash of session seed and player id. `people.is_visitor` accepts only `player_0`; `people.is_npc` accepts only canonical positive ids matching `player_[1-9][0-9]*`. These predicates classify syntax rather than roster membership.
 

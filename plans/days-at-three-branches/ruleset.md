@@ -164,13 +164,4 @@ A match ends at tick 1200. The cast health check is 100 when every NPC instance 
 
 ## Seasons
 
-| Season | Cast | daynight |
-| ------ | ---- | -------- |
-| 1      | 5    | off      |
-| 2      | 10   | off      |
-| 3      | 10   | off      |
-| 4      | 10   | on       |
-| 5      | 10   | on       |
-| 6      | 10   | on       |
-
-Seasons sharing a row differ in course design rather than game parameters. See [pedagogy.md](pedagogy.md).
+The six seasons use cast 5 for Season 1 and cast 10 from Season 2 onward, with `daynight` on from Season 4. Seasons sharing parameters differ in course design rather than game rules. The [environment schedule](environment.md#gameplay-parameters) pins each season as a preset, and [pedagogy.md](pedagogy.md) explains the teaching arc.

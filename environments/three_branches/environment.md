@@ -34,7 +34,7 @@ It does not remember a route or avoid walls. A useful first improvement is to ch
 
 ## A village day
 
-One submission controls the cast seat. The platform makes a separate `Agent` instance for every NPC: `player_1` through `player_5` in `cast_5`, or through `player_10` in `cast_10`. The visitor is `player_0` and is human-controlled in live play or controlled by the scripted visitor in automated runs. `reset(seed, observation)` runs once before a day, so build any route graph there instead of in every `act` call.
+One submission controls the cast seat: `player_1` through `player_5` in `cast_5`, or through `player_10` in `cast_10`. The visitor is `player_0`, human-controlled in live play or run by the scripted visitor in automated runs. `reset(seed, observation)` runs once before a day, so build any route graph there instead of in every `act` call.
 
 One episode is one day of village life, with 1200 simultaneous ticks. Your action is chosen from the current observation, then every character moves, then prop use resolves in character order. Every healthy completed character scores 100. The automated board uses compute time as its tiebreaker, while people judge whether the village feels alive.
 
@@ -66,7 +66,7 @@ Return `action.stand(heading, "use")` to use a prop. Use requires speed `0`, a c
 
 ## Season settings and limits
 
-The first season uses five villagers with day and night off. Later seasons can use ten villagers, day phases, and the optional LLM API. `day.parameters(observation)` shows the resolved settings, and `day.phase(observation)` is `"day"` when day and night is off.
+The first season runs with day and night off; later seasons can use day phases and the optional LLM API. `day.parameters(observation)` shows the resolved settings, and `day.phase(observation)` is `"day"` when day and night is off.
 
 Each `act` call has a 0.25 second limit. A whole day has a 120 second limit. The cast decisions run sequentially, so quick code matters more in `cast_10`. Build durable data in `reset` and keep per-tick work small. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how limits are measured and enforced.
 

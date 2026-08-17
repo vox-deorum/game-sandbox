@@ -6,7 +6,11 @@ Part of [the plan](../README.md). This step replaces the step 2 fixture behind u
 
 ## Correctness, review, and configuration
 
+### Correctness and review
+
 The generator paints cells and places rectangles over step 2 grid types. Engine, environment, recording, and renderer contracts do not change. [village.md](../village.md#generation-order-and-guarantees) and tests define the mechanical guarantees. The owner assesses whether a village looks grown rather than drafted through `npm run play -- three_branches watch --seed N` with the collision overlay enabled. Record each sign-off and its date in this file. No review tooling is added.
+
+### Configuration and data ownership
 
 `generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. Gate A generated the land and padded the rest of the layout with fixture content so the browser still received a complete `Layout`. Gate B generates all of it, and the padding is gone from the generation package. `fixture.py` remains the engine-test map and the input for the engine, physics, and perception tests, which do not build through `build_village`.
 
@@ -20,15 +24,29 @@ A prop carries its catalog rectangle turned to its facing, so an east or west fa
 | Internal report | Trunk and channel masks, the shared fork area and the fork itself, prop witness cells, redraw count, and reset timing as one number, since generation and validation are both what a reset spends. Only the guarantee suite and batch summary consume it. The suite re-derives every guarantee from the layout and reads the report only for the water masks, which no layout publishes |
 | Stable output | Homes are `home_0` through `home_4` in placement order. Props use catalog type order, placement order within type, and contiguous ids, including the single `bell_0` |
 
+### Tuning and budgets
+
 `config.py` owns loading and validating `generation.json` and holds the shared `Retry`, which keeps every stage module free of the others. The shipped frame is 120 by 120 cells. Frame-relative fields use explicit `_percent` names and resolve to integer cells at load time, leaving generator modules on simple cell values. They cover map positions, macro terrain scale, walker travel, and meander wavelengths. Metre-scale widths, clearances, building footprints, and fixed counts remain absolute. Each stage checks its own output as it commits rather than deferring to a separate pass, so `validate.py` owns only the whole-village assembly, ledger, and connectivity flood. A `budget` there is a candidate budget: how many placements a mandatory stage may draw and test before it gives up and the layout is drawn again. A walker's travel budget is not one of those, and optional placement carries no budget at all, because it skips rather than redraws.
+
+### Determinism
 
 The labelled stream remains separate from the scripted visitor's `random.Random(seed)`. Draw order is fixed per code version. Same-build output is exact; committed recordings replay rather than re-simulate.
 
 ## Construction and redraws
 
-The committed order is terrain fields, water, ground classes, district anchors with building sites and painting, the road with its crossings and spawn, footpaths, then accessories. Each construction stage reads the committed output of the ones before it. Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+### Construction order
+
+The committed order is terrain fields, water, ground classes, district anchors with building sites and painting, the road with its crossings and spawn, footpaths, then accessories. Each construction stage reads the committed output of the ones before it.
+
+### Redraws
+
+Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+
+### Reset timing
 
 Reset timing includes generation and validation, reported as the one number a reset spends. The batch summary records it for every seed, including reset-default seed 0 and conformance seed 17. It is reported only, with no timing limit or pass/fail assertion. `pytest` records it as a property and prints it, so a `-s` run of the timing test is the batch summary and no other machinery is needed.
+
+### Noise fields
 
 Two pure-Python fractal value-noise fields, elevation and moisture, are sampled once per cell before construction. A lattice covering the frame plus one ring of nodes uses stream draws, configured octaves, smoothstep-faded bilinear interpolation, and unit normalization. Elevation also takes the configured southward slope bias, which is why the road reads moisture rather than elevation for its dry ground: the bias runs one way across the road band, so elevation would only pin the road to a band edge. Spacing, octave amplitudes, and bias remain `fields` tuning. Fields are generation-only artifacts.
 
@@ -53,13 +71,42 @@ Approved 2026-08-12. The owner browsed `npm run play -- three_branches watch --s
 
 This gate implements [buildings and interiors](../village.md#buildings-and-interiors) and the remaining route, prop, scenery, and connectivity guarantees in [generation order and guarantees](../village.md#generation-order-and-guarantees).
 
-| Construction | Implementation |
-| --- | --- |
-| Sites and buildings | Score committed terrain. Place the well plaza in a clear fork crook; the shed and bell anchor the west third, the market and five catalog stalls with board anchor the middle, and the inn anchors the east, so the west-to-middle-to-east arrangement holds by construction before the road is walked. An anchor is a point inside the road band, and no site or margin ever enters that band, which is what leaves the road a clear run. Place inn and shed beside their anchors, then five homes. A home is not aimed at anything: it draws whole candidate sites across the land south of the fork, since the trunk cannot be bridged, and keeps the one scoring best on configured bank proximity, flatness, dryness, and distance from the homes already up. Scoring a site rather than a point is what makes the ground a home is judged on ground it really stands on. Candidates reserve their rectangle and `sites.margin`, choose a doorway that a footpath could carry back to the band, and never face away from the road, since a site stands wholly north or wholly south of it. |
-| Road, crossings and spawn | Each channel is crossed once, at the band row where a straight east cut is shortest and both banks carry `network.road.apron` of dry ground, preferring the row nearest the crossing before it so the road does not zigzag between channels. District anchors and those crossings form one west to east target list. A walker then carries the road across the frame on a continuous heading that blends momentum, pull toward its next target, a climb toward drier ground, repulsion from water, a push away from the band edges, a per road meander, and wobble, the same way a water course is carved. It runs straight for `network.road.edge_straight_percent` at each frame edge and locks straight through every crossing, so the entry, the exit, and every bridge deck come out at the carved width. It never paints water outside a crossing and never runs back over its own trail, which is what makes one deck per channel and one connected road follow from the walk rather than from a check. The spawn is the configured west inset road cell with configured clearance. |
-| Footpaths | The weighted search from the road and from any path already worn decides what a route joins and where it may cross, and nothing about its shape. Joining a worn path rather than always running back to the road is what makes the footpaths branch instead of running as private spurs, and the targets are taken farthest first so the long route lays the way the short ones join. An ant then walks each route from the doorstep down the plan through the shared walker, blending momentum, a pull toward where it is going, a per path meander, and wobble, the same way the road is carried. It stops the moment it meets a way that already carries people, and crosses water only on the straight run the search proved. A walk with nowhere left to turn, or one that has spent `network.path.walker.step_budget_per_frame_cell`, hands the rest of its leg back to the plan, which is what keeps a doorway the search could reach joined either way. A corner step is painted through one of its sides, so a path is never a dotted diagonal, and it is refused where both sides are blocked. Water crossings stay within the specified bounds, and a channel takes at most one. |
-| Accessories | A road-arc helper supplies positions and facings, skipping the stretches where the road is up on a bridge. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell. Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall. One or two crates sit by each stall; shrines take the sharpest turns of the road centreline and may slide along it to find room. Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets. |
-| Witnesses and validation | Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance. The final prop ledger has every prop and scenery cell without overlap. Flood from spawn uses the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witnesses to join the region. The flood files every shape under the cells it covers first, because asking the whole village per query is what a reset cannot afford. Failure redraws. |
+### Sites and buildings
+
+- Score committed terrain. The well plaza sits in a clear fork crook; the shed and bell anchor the west third, the market with five catalog stalls and the board the middle, and the inn the east, so the west-to-middle-to-east arrangement holds before the road is walked.
+- An anchor is a point inside the road band, and no site or margin enters that band, leaving the road a clear run.
+- Place inn and shed beside their anchors, then five homes. A home draws whole candidate sites across the land south of the fork (the trunk cannot be bridged) and keeps the one scoring best on configured bank proximity, flatness, dryness, and distance from already-placed homes. Scores judge each whole site rather than a point, so a home is judged on the ground it really stands on.
+- Candidates reserve their rectangle and `sites.margin`, choose a doorway a footpath could carry back to the band, and never face away from the road, since a site stands wholly north or south of it.
+
+### Road, crossings, and spawn
+
+- Cross each channel once, at the band row where a straight east cut is shortest and both banks carry `network.road.apron` of dry ground, preferring the row nearest the previous crossing so the road does not zigzag between channels. District anchors and those crossings form one west-to-east target list.
+- A walker carries the road across the frame on a continuous heading that blends momentum, pull toward its next target, a climb toward drier ground, repulsion from water, a push away from the band edges, a per-road meander, and wobble, the same way a water course is carved.
+- It runs straight for `network.road.edge_straight_percent` at each frame edge and locks straight through every crossing, so the entry, the exit, and every bridge deck come out at the carved width.
+- It never paints water outside a crossing and never runs back over its own trail, so one deck per channel and one connected road follow from the walk rather than from a check.
+- The spawn is the configured west inset road cell with configured clearance.
+
+### Footpaths
+
+- The weighted search from the road and from any worn path decides what a route joins and where it may cross, nothing about its shape.
+- Joining a worn path rather than always running back to the road is what makes footpaths branch instead of running as private spurs; targets are taken farthest first so the long route lays the way the short ones join.
+- An ant walks each route from the doorstep down the plan through the shared walker, blending momentum, a pull toward where it is going, a per-path meander, and wobble, the same way the road is carried. It stops the moment it meets a way that already carries people, and crosses water only on the straight run the search proved.
+- A walk with nowhere left to turn, or one that has spent `network.path.walker.step_budget_per_frame_cell`, hands the rest of its leg back to the plan, so a doorway the search could reach stays joined either way.
+- A corner step is painted through one of its sides, so a path is never a dotted diagonal, and it is refused where both sides are blocked. Water crossings stay within the specified bounds, and a channel takes at most one.
+
+### Accessories
+
+- A road-arc helper supplies positions and facings, skipping the stretches where the road is up on a bridge. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell.
+- Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall.
+- One or two crates sit by each stall; shrines take the sharpest turns of the road centreline and may slide along it to find room.
+- Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets.
+
+### Witnesses and validation
+
+- Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance. The final prop ledger holds every prop and scenery cell without overlap.
+- Flood from spawn uses the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witnesses to join the region.
+- The flood files every shape under the cells it covers first, since asking the whole village per query is what a reset cannot afford.
+- Failure redraws.
 
 Gate B tests cover stable features and five homes, site margins and painting, road span and crossing rules, bridge deck shape and aprons, spawn clearance, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and strict connectivity across the full batch. How far apart the homes settle is an owner call in the browser, so no test measures it.
 

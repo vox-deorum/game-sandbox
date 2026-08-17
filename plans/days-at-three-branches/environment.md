@@ -93,7 +93,9 @@ The observation is a plain `Dict` with fixed Gymnasium shapes after parameter re
 
 `moved` is `Box(0.0, 1.0)`, the metres advanced on the latest tick. `nearby` carries presence only; speech is platform messaging. Expressions are `{"type", "target"}` Text fields, where type is none, an emote, or use and target is a prop id or `"none"`. Roster `home` is `Text(max_length=16)`; the visitor's value is `"none"`. Prop entries are `{"prop", "state"}`.
 
-`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with minimum length 1: player-id capacity is derived from the largest supported cast and therefore admits `player_10`; prop and building ids have maximum length 16; prop types 12; states 9; phase 7; expression type 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`. The `tick` field names the tick whose action will play: reset carries tick 1, and the terminal observation keeps tick 1200. The inbox is not an observation field.
+`village` is standing knowledge. Text fields use lowercase letters, digits, and underscores with a minimum length of 1: the player-id capacity derives from the largest supported cast, so it admits `player_10`; prop and building ids cap at 16, prop types at 12, states at 9, phase at 7, and expression type at 10. `parameters` contains `seat_plan` as `Text(max_length=7)` and `daynight` as `Discrete(2)`.
+
+The `tick` field names the tick whose action will play: reset carries tick 1, and the terminal observation keeps tick 1200. The inbox is not an observation field.
 
 ### The village field
 

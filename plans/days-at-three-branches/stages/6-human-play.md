@@ -1,6 +1,6 @@
 # Step 6: Human play, the visitor
 
-Status: in progress. Live visitor play, locomotion, palette, preview, and chat are complete; the step 5.2 use latch and expression-chip art await final owner review under the updated one-send-per-landed-frame window.
+Status: complete.
 
 Part of [the plan](../README.md). This build-order step puts the visitor seat in human hands by implementing the input UI [specified in step 5.2](5-2-hud-interaction-and-camera.md). Review both live browser play against a running cast and local play.
 
