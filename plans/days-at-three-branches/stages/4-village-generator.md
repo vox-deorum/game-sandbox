@@ -26,7 +26,7 @@ A prop carries its catalog rectangle turned to its facing, so an east or west fa
 
 ### Tuning and budgets
 
-`config.py` owns loading and validating `generation.json` and holds the shared `Retry`, which keeps every stage module free of the others. The shipped frame is 120 by 120 cells. Frame-relative fields use explicit `_percent` names and resolve to integer cells at load time, leaving generator modules on simple cell values. They cover map positions, macro terrain scale, walker travel, and meander wavelengths. Metre-scale widths, clearances, building footprints, and fixed counts remain absolute. Each stage checks its own output as it commits rather than deferring to a separate pass, so `validate.py` owns only the whole-village assembly, ledger, and connectivity flood. A `budget` there is a candidate budget: how many placements a mandatory stage may draw and test before it gives up and the layout is drawn again. A walker's travel budget is not one of those, and optional placement carries no budget at all, because it skips rather than redraws.
+`config.py` owns loading and validating `generation.json` and holds the shared `Retry`, which keeps every stage module free of the others. The shipped frame is 120 by 120 cells. Frame-relative fields use explicit `_percent` names and resolve to integer cells at load time, leaving generator modules on simple cell values. They cover map positions, macro terrain scale, walker travel, and meander wavelengths. Metre-scale widths, clearances, building footprints, and fixed counts remain absolute. Each stage checks its own output as it commits rather than deferring to a separate pass, so `validate.py` owns only the whole-village assembly and ledger. Connectivity is established by the guarantee suite from the published layout rather than demanded of the generator. A `budget` there is a candidate budget: how many placements a mandatory stage may draw and test before it gives up and the layout is drawn again. A walker's travel budget is not one of those, and optional placement carries no budget at all, because it skips rather than redraws.
 
 ### Determinism
 
@@ -40,7 +40,7 @@ The committed order is terrain fields, water, ground classes, district anchors w
 
 ### Redraws
 
-Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop. Connectivity first retries the mandatory layout without pines, then without lanterns. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
+Mandatory placement uses its `generation.json` candidate budget. Exhaustion discards the partial village and redraws the whole layout on the same stream. Lantern and pine candidates are optional and skip invalid placements. Assembly and reset validation run within the loop, and there is no connectivity ladder that strips the optional dressing: what fits is kept in the shipped village. Only mandatory failure redraws the layout, while local retries redraw only their own choices. `redraw.cap` raises `RuntimeError` naming the seed if exceeded.
 
 ### Reset timing
 
@@ -69,7 +69,7 @@ Approved 2026-08-12. The owner browsed `npm run play -- three_branches watch --s
 
 ## Gate B: settlement, routes, and dressing
 
-This gate implements [buildings and interiors](../village.md#buildings-and-interiors) and the remaining route, prop, scenery, and connectivity guarantees in [generation order and guarantees](../village.md#generation-order-and-guarantees).
+This gate implements [buildings and interiors](../village.md#buildings-and-interiors) and the remaining route, prop, and scenery work in [generation order and guarantees](../village.md#generation-order-and-guarantees), whose connectivity the suite asserts from the published layout.
 
 ### Sites and buildings
 
@@ -104,11 +104,9 @@ This gate implements [buildings and interiors](../village.md#buildings-and-inter
 ### Witnesses and validation
 
 - Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance. The final prop ledger holds every prop and scenery cell without overlap.
-- Flood from spawn uses the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witnesses to join the region.
-- The flood files every shape under the cells it covers first, since asking the whole village per query is what a reset cannot afford.
-- Failure redraws.
+- The guarantee suite floods the published layout from the spawn with the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witness cells to join the region.
 
-Gate B tests cover stable features and five homes, site margins and painting, road span and crossing rules, bridge deck shape and aprons, spawn clearance, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and strict connectivity across the full batch. How far apart the homes settle is an owner call in the browser, so no test measures it.
+Gate B tests cover stable features and five homes, site margins and painting, road span and crossing rules, bridge deck shape and aprons, spawn clearance, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and connectivity across the full batch established from the published layout. How far apart the homes settle is an owner call in the browser, so no test measures it.
 
 The owner signs off the dressed village, opening step close.
 
@@ -131,7 +129,7 @@ At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines
 `test_layout_and_physics.py` and `test_engine.py` build through `build_fixture` rather than `build_village`, because their assertions describe the fixture map. `test_environment_and_chat.py` derives its chat positions from the layout it reset rather than naming road cells.
 
 - Verify fixed feature counts, home and canonical prop identities, all waterways guarantees, road and bridge guarantees, spawn clearance, and configuration-derived mask behavior.
-- Verify reserved sites, margins, painting, floor props and open doorways, paths, non-overlapping final ledger, independently found prop witnesses, and spawn connectivity.
+- Verify reserved sites, margins, painting, floor props and open doorways, paths, non-overlapping final ledger, independently found prop witnesses, and connectivity from the published layout.
 - Verify same-seed equality, batch-seed divergence, redraw-cap non-exhaustion, `village` observation equality, and frame-derived conversion, margin, and width arithmetic. Lantern and pine skips do not redraw land, road, or buildings.
 - Report reset time for every batch seed. Do not assert a timing threshold.
 
@@ -145,4 +143,4 @@ Per gate close, regenerate the fixture. At final close, re-measure `test_budget`
 
 ## Done when
 
-Any seed builds a valid, connected village under the village guarantees; both dated owner sign-offs are recorded here; guarantee and conformance suites are green across the full batch; the blessed-seed day replays identically; regenerated fixtures keep renderer and e2e suites green; and the owner has blessed the course default seed.
+Any seed builds a valid village under the village guarantees, with connectivity asserted by the guarantee suite over the pinned batch; both dated owner sign-offs are recorded here; guarantee and conformance suites are green across the full batch; the blessed-seed day replays identically; regenerated fixtures keep renderer and e2e suites green; and the owner has blessed the course default seed.

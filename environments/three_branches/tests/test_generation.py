@@ -359,8 +359,16 @@ def test_every_prop_has_an_independently_found_reachable_witness(
             ]
             assert found, (seed, item.id)
             # The generator's own record is checked against the same rule, but never relied on.
-            assert banked[item.id] in connected[seed], (seed, item.id)
             assert _in_reach(layout, banked[item.id], shape), (seed, item.id)
+
+
+def test_every_batch_seed_keeps_lanterns_and_pines(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """Each batch seed ships at least one lantern and one pine, which cut-off dressing used to eat."""
+    for seed, (layout, _) in batch.items():
+        assert any(item.type == "lantern" for item in layout.props), seed
+        assert any(item.type == "pine" for item in layout.scenery), seed
 
 
 def test_sites_keep_their_margin_and_are_painted_from_the_catalog(

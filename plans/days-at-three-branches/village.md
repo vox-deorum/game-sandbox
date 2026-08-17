@@ -36,7 +36,7 @@ Water and wall are impassable. Wall alone blocks sight. Door ground carries sigh
 - The raised road enters from the west, winds across the village past each district anchor, exits east, and uses width `network.road.width`.
 - It runs south of the fork, crosses each channel exactly once at a straight cut no longer than `network.road.crossing_run`, never crosses the trunk, and paints bridge ground over water with `network.road.apron` of bank on each side.
 - Footpaths curve from the road to the well plaza, each home, and each shrine at width `network.path.width`. Routes do not run straight for long. The farthest is worn first, so the nearer ones join it rather than running their own line back to the road.
-- The connectivity flood fill uses the same body clearance as physics.
+- The guarantee suite floods the published layout from the spawn with the same body clearance as physics.
 - The visitor spawns on a road cell `network.spawn.edge_inset` from the west edge, with `network.spawn.clearance` free of every footprint.
 
 ## Districts
@@ -67,11 +67,11 @@ The [canonical catalog](ruleset.md#canonical-catalog) owns interactive types, ac
 - Stalls sit on both market-road sides. Lanterns use road stations, denser at market. Benches go at the well plaza, market, and inn front. Shrines stand where the road turns most sharply, and the notice board is in the market.
 - Garden plots use the home-doorway rule. The hearth and repair bench use their interior placements. The pump is in the well plaza and the bell beside the west road.
 - An interactive prop faces a cardinal direction and reserves its catalog rectangle turned to that facing, so facing east or west trades the rectangle's width and height. It uses its catalog collision shape, stays axis-aligned, and is never angled. Its underlying ground remains unchanged.
-- Every interactive prop has a connected, body-clear standing cell within ruleset reach of its collision shape and an unblocked line to it.
+- Every interactive prop has a body-clear standing cell within ruleset reach of its collision shape and an unblocked line to it. The guarantee suite independently finds each prop a standing cell that is reachable from the spawn on the pinned batch.
 
 ## Scenery
 
-Scenery types are in the [canonical catalog](ruleset.md#canonical-catalog). Red pines occupy road stations and scattered open cells, with optional companions. Market crates sit beside stalls. Scenery is solid but does not break connected walkable ground, doorway approaches, or prop reach.
+Scenery types are in the [canonical catalog](ruleset.md#canonical-catalog). Red pines occupy road stations and scattered open cells, with optional companions. Market crates sit beside stalls. Scenery is solid but never blocks a doorway approach or a prop standing cell; connectivity of the walkable ground is asserted by the guarantee suite from the published layout.
 
 Reed flats and field furrows are ground, not objects. White cranes are renderer ambience with no cell, position, or rule.
 
@@ -82,13 +82,15 @@ Generation consumes the match seed's generation stream in the opening constructi
 Every seed satisfies:
 
 - Stable features appear once: well pump, market, inn, repair shed, and beacon bell.
-- Walkable cells, crossings and building floors included, form one body-clear connected region.
+- The guarantee suite floods the published layout and asserts that walkable cells, crossings and building floors included, form one body-clear connected region.
 - Five homes exist and every doorway run opens onto walkable cells.
-- Every interactive prop has a connected, body-clear standing cell in reach of its collision shape with an unblocked line.
+- Every interactive prop has a body-clear standing cell in reach of its collision shape with an unblocked line, and the suite independently finds each a standing cell reachable from the spawn.
 - Building sites do not overlap sites, water, road, boundary, or placed props. Each keeps `sites.margin` clear cells. Interior props stay on floor, leave doorway runs open, and do not overlap props.
 - Visitor spawn is on the road at `network.spawn.edge_inset`, clear of every footprint.
 - Water enters north inside `water.entry_band_percent` and exits south in exactly three runs at least `water.mouth_separation_percent` apart. Beyond the shared fork and confluence, branches neither self-contact nor contact siblings.
 - The road spans west to east, passes within reach of every district anchor, crosses every channel once and the trunk never. Road and path crossings use bridge ground. A channel has at most one footpath crossing.
+
+The connectivity guarantee is established over the pinned batch alone: the generator no longer floods an arbitrary seed, so an unapproved seed could in principle ship a village with a corner cut off. The suite floods every batch seed independently, so a regression on those seeds is still caught, and the always-on assembly checks cover the rest.
 
 ## Generation tuning
 

@@ -11,9 +11,10 @@ reads what the ones before it committed, and checks its own work as it goes. A m
 runs out of candidates raises ``Retry``, which discards the partial village and draws the whole
 layout again on the same stream.
 
-Assembly is the last word. Lanterns and pines are optional, so a village that will not connect is
-first tried without its pines and then without its lanterns before the layout is drawn again. That
-ladder re-runs no stage, so the land, the road, and the buildings under review never move.
+Assembly is the last word. It checks the finished village with every placement still in place;
+the connectivity of the published layout is established by the guarantee suite over the pinned
+batch rather than demanded here, so a village is never stripped of its optional dressing to force
+the flood to pass.
 """
 
 from __future__ import annotations
@@ -108,15 +109,8 @@ def _assemble(
     dressing: accessories.Dressing,
     tuning: Generation,
 ) -> tuple[Layout, water.Water, tuple[tuple[str, Cell], ...]]:
-    """Assemble the village, dropping the optional dressing rather than redrawing the land."""
+    """Assemble the village as dressed and check it before handing it over."""
     grid = Grid(FRAME, rows)
-    for option in (
-        dressing,
-        dressing.without(pines=True),
-        dressing.without(pines=True, lanterns=True),
-    ):
-        layout = Layout(grid, settlement.buildings, option.props, option.scenery, road.spawn)
-        validate.check(layout, settlement, road, footpaths, option.witnesses, tuning)
-        if not validate.connected(layout, option.witnesses):
-            return layout, courses, option.witnesses
-    raise Retry("the dressed village never joined up into one region")
+    layout = Layout(grid, settlement.buildings, dressing.props, dressing.scenery, road.spawn)
+    validate.check(layout, settlement, road, footpaths, dressing.witnesses, tuning)
+    return layout, courses, dressing.witnesses

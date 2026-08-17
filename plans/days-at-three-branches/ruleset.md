@@ -65,9 +65,9 @@ The wall ring takes a cell off each side, so a site's floor is its cells less tw
 | stall | 2 by 2, solid box filling its rect | 5 | tending the stall | open, closed | closed | toggle |
 | lantern | 1 by 1, solid inscribed circle | road stations and clearance | lighting | lit, unlit | unlit | toggle |
 | bench | 2 by 1, solid box filling its rect | 5 | sitting | occupied, empty | empty | occupancy |
-| shrine | 2 by 2, solid box filling its rect | 2 | tending the shrine | tended, untended | untended | timed, 300 ticks |
-| board | 1 by 1, solid box filling its rect | 1 | reading the board | none | none | none |
-| plot | 3 by 2, solid box filling its rect | 5 | tending the plot | tended, overgrown | overgrown | timed, 600 ticks |
+| shrine | 3 by 3, solid box filling its rect | 2 | tending the shrine | tended, untended | untended | timed, 300 ticks |
+| board | 2 by 2, solid box filling its rect | 1 | reading the board | none | none | none |
+| plot | 4 by 2, solid box filling its rect | 5 | tending the plot | tended, overgrown | overgrown | timed, 600 ticks |
 | hearth | 1 by 1, solid inscribed circle | 1 | tending the hearth | lit, unlit | unlit | toggle |
 | repair_bench | 2 by 1, solid box filling its rect | 1 | working the bench | busy, idle | idle | occupancy |
 | pump | 1 by 1, centered 0.6-cell-diameter solid circle | 1 | working the pump | flowing, idle | idle | timed, 10 ticks |

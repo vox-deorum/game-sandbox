@@ -91,7 +91,7 @@ def build_fixture() -> Layout:
         PlacedProp("bench_4", "bench", (82, 55)),
         PlacedProp("shrine_0", "shrine", (20, 57)),
         PlacedProp("shrine_1", "shrine", (80, 57)),
-        PlacedProp("board_0", "board", (48, 44)),
+        PlacedProp("board_0", "board", (46, 44)),
         PlacedProp("plot_0", "plot", (7, 69)),
         PlacedProp("plot_1", "plot", (7, 85)),
         PlacedProp("plot_2", "plot", (65, 69)),

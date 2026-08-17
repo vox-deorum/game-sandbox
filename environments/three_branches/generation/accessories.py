@@ -11,13 +11,13 @@ it and turned to face the road. The market is the stretch of that centreline nea
 
 Stalls, the board, benches, shrines, gardens, the interior props, the pump, and the bell are
 mandatory: running out of candidates discards the layout. Lanterns and pines are not. They skip a
-blocked spot and carry on, so a crowded village loses a lantern rather than being drawn again.
+blocked spot and carry on, and what fits is kept in the shipped village.
 """
 
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from math import atan2, dist, hypot, pi
 
 from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN, SCENERY_BY_TOKEN, PropType
@@ -52,19 +52,6 @@ class Dressing:
     props: tuple[PlacedProp, ...]
     scenery: tuple[Scenery, ...]
     witnesses: tuple[tuple[str, Cell], ...]
-
-    def without(self, *, pines: bool = False, lanterns: bool = False) -> Dressing:
-        """Drop the optional dressing, which is what the connectivity ladder tries next."""
-        kept = [item for item in self.props if not (lanterns and item.type == "lantern")]
-        scenery = tuple(item for item in self.scenery if not (pines and item.type == "pine"))
-        banked = dict(self.witnesses)
-        renamed = _renumber(tuple(kept))
-        witnesses = tuple(
-            (fresh.id, banked[before.id])
-            for before, fresh in zip(kept, renamed, strict=True)
-            if before.id in banked
-        )
-        return Dressing(renamed, scenery, tuple(sorted(witnesses)))
 
 
 def stations(road: Road, spacing: float) -> tuple[Station, ...]:
@@ -480,17 +467,6 @@ def _interior_spot(site: Site, token: str) -> Cell:
     if facing == "east":
         return (floor[0], floor[1] + (floor[3] - height) // 2)
     return (floor[0] + floor[2] - width, floor[1] + (floor[3] - height) // 2)
-
-
-def _renumber(props: tuple[PlacedProp, ...]) -> tuple[PlacedProp, ...]:
-    """Keep ids contiguous within a type once the optional dressing has been dropped."""
-    seen: dict[str, int] = {}
-    renamed: list[PlacedProp] = []
-    for item in props:
-        index = seen.get(item.type, 0)
-        seen[item.type] = index + 1
-        renamed.append(replace(item, id=f"{item.type}_{index}"))
-    return tuple(renamed)
 
 
 def _shape_for(item: PlacedProp | Scenery) -> Rect | Circle:

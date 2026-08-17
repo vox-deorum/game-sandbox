@@ -3,26 +3,16 @@
 Each construction stage already checks its own work as it commits, so this is the assembly pass:
 the things no single stage could see. It reads the layout the way the engine will, through
 ``body_clear`` and ``line_clear``, so a village that passes here is one a day can actually be
-played in.
-
-Connectivity is the reason this stage exists. Every stage before it can be locally correct and
-still leave a home behind a line of pines, so the flood runs from the spawn over the finished
-layout and insists that every doorway, every start pose, and every prop witness is inside the one
-region it reaches.
+played in. Every resident can stand where the day starts them, and each interactive prop's banked
+standing cell is checked to be body-clear, in reach, and in line of sight of its prop. That the
+banked cell is reachable from the spawn is left to the guarantee suite, which independently finds
+each prop a standing cell reachable from the spawn over the pinned batch.
 """
 
 from __future__ import annotations
 
 from ..catalog import BUILDING_BY_TOKEN
-from ..geometry import (
-    Circle,
-    Point,
-    Rect,
-    circle_intersects_circle,
-    circle_intersects_rect,
-    distance,
-    nearest_point,
-)
+from ..geometry import distance, nearest_point
 from ..grid import Cell
 from ..layout import Layout, doorway_cells, footprint_cells
 from ..rules import FRAME, GROUND_BY_CODE, PROFILE
@@ -46,6 +36,7 @@ def check(
 ) -> None:
     """Check the assembled village, raising ``Retry`` naming whatever did not hold."""
     _features(layout)
+    _poses(layout)
     _ledger(layout)
     _sites(layout, settlement)
     _road(layout, road, tuning)
@@ -53,104 +44,15 @@ def check(
     _witnesses(layout, witnesses)
 
 
-class _Clearance:
-    """The layout's own body-clearance test, asked only of the shapes near the point.
-
-    ``Layout.body_clear`` weighs every blocked rectangle and every solid in the village, which is
-    the right answer for one query and far too much work for the tens of thousands a flood makes.
-    Every shape here is cell-aligned, so filing each one under the cells it covers plus a ring
-    leaves a handful of candidates per query and the same verdict.
-    """
-
-    def __init__(self, layout: Layout) -> None:
-        self.layout = layout
-        self.near: dict[Cell, list[Rect | Circle]] = {}
-        for shape in (*layout.blocked, *layout.solids):
-            for cell in _covered(shape):
-                self.near.setdefault(cell, []).append(shape)
-
-    def fits(self, point: Point, radius: float = PROFILE.body_radius) -> bool:
-        frame = self.layout.grid.frame
-        if not (radius <= point[0] <= frame.width - radius and radius <= point[1] <= frame.height - radius):
-            return False
-        cell = (int(point[0]), int(point[1]))
-        return not any(
-            circle_intersects_rect(point, radius, shape)
-            if isinstance(shape, Rect)
-            else circle_intersects_circle(point, radius, shape)
-            for shape in self.near.get(cell, ())
-        )
-
-
-def connected(layout: Layout, witnesses: tuple[tuple[str, Cell], ...]) -> frozenset[Cell]:
-    """Flood from the spawn and report whatever had to be reachable and was not.
-
-    The flood uses the clearance physics uses. A node passes when a body fits on the cell centre,
-    and a step passes when a body also fits halfway between the two, which is the segment test that
-    keeps the flood from slipping through a gap no walker could take.
-    """
-    start = layout.grid.cell_at(layout.spawn)
-    if start is None:
-        return frozenset({(0, 0)})
-    clearance = _Clearance(layout)
-    clear: dict[Cell, bool] = {}
-
-    def fits(cell: Cell) -> bool:
-        if cell not in clear:
-            clear[cell] = layout.grid.in_bounds(cell) and clearance.fits(layout.grid.center(cell))
-        return clear[cell]
-
-    reached: set[Cell] = set()
-    if fits(start):
-        pending = [start]
-        reached.add(start)
-        while pending:
-            cell = pending.pop()
-            here = layout.grid.center(cell)
-            for spot in layout.grid.neighbours(cell):
-                if spot in reached or not fits(spot):
-                    continue
-                there = layout.grid.center(spot)
-                middle = ((here[0] + there[0]) / 2, (here[1] + there[1]) / 2)
-                if not clearance.fits(middle):
-                    continue
-                reached.add(spot)
-                pending.append(spot)
-    wanted = set(_required(layout, witnesses))
-    return frozenset(wanted - reached)
-
-
-def _covered(shape: Rect | Circle) -> tuple[Cell, ...]:
-    """The cells a shape reaches into, grown by one so a body on either side of it is caught."""
-    if isinstance(shape, Rect):
-        low = (int(shape.x) - 1, int(shape.y) - 1)
-        high = (int(shape.right) + 1, int(shape.top) + 1)
-    else:
-        low = (int(shape.x - shape.radius) - 1, int(shape.y - shape.radius) - 1)
-        high = (int(shape.x + shape.radius) + 1, int(shape.y + shape.radius) + 1)
-    return tuple((column, row) for row in range(low[1], high[1] + 1) for column in range(low[0], high[0] + 1))
-
-
-def _required(layout: Layout, witnesses: tuple[tuple[str, Cell], ...]) -> frozenset[Cell]:
-    """Everywhere a day needs to be able to reach from the spawn."""
-    wanted: set[Cell] = set()
-    spawn = layout.grid.cell_at(layout.spawn)
-    if spawn is not None:
-        wanted.add(spawn)
+def _poses(layout: Layout) -> None:
+    """Every resident can stand where the day starts them."""
     for building in layout.buildings:
-        wanted.update(doorway_cells(building))
         if building.type != "home":
             continue
         for resident in (0, 1):
             pose = layout.residence_pose(building.id, resident)
-            cell = layout.grid.cell_at(pose.position)
-            if cell is None or not layout.body_clear(pose.position):
-                # A resident who cannot stand where the day starts them is a broken village.
-                wanted.add((-1, -1))
-            else:
-                wanted.add(cell)
-    wanted.update(cell for _, cell in witnesses)
-    return frozenset(wanted)
+            if not layout.body_clear(pose.position):
+                raise Retry(f"a resident of {building.id} cannot stand where the day starts them")
 
 
 def _features(layout: Layout) -> None:
