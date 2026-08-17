@@ -237,7 +237,7 @@ describe('terrain route planner', () => {
         { x: 2, y: 2.5 },
         { x: 3, y: 2.5 },
       ],
-      deck: { kind: 'axis', widthCells: 2.1 },
+      deck: { kind: 'axis', widthCells: SETTINGS.road.targetWidthCells },
     })
     expect(bridge.contacts.map((contact) => contact.owner).sort()).toEqual(['path', 'path', 'road'])
   })
@@ -252,7 +252,7 @@ describe('terrain route planner', () => {
       { x: 2.5, y: 2 },
       { x: 2.5, y: 3 },
     ])
-    expect(bridge.deck).toMatchObject({ kind: 'axis', widthCells: 0.7 })
+    expect(bridge.deck).toMatchObject({ kind: 'axis', widthCells: SETTINGS.path.widthCells })
   })
 
   it('uses a centered rounded compact deck for a tied component', () => {
@@ -264,7 +264,7 @@ describe('terrain route planner', () => {
     expect(bridge.portals).toEqual([])
     expect(bridge.deck).toEqual({
       kind: 'compact',
-      widthCells: 0.7,
+      widthCells: SETTINGS.path.widthCells,
       cap: 'round',
       center: { x: 2.5, y: 2.5 },
     })
@@ -314,9 +314,11 @@ describe('terrain route planner', () => {
       roadCell: { column: 2, row: 2 },
       start: { x: 2.5, y: 1.5 },
       end: { x: 2.5, y: 2.95 },
-      widthCells: 0.7,
+      widthCells: SETTINGS.path.widthCells,
     })
-    expect(plan.roadGuide.find((point) => point.column === 2)?.widthCells).toBeCloseTo(1.6)
+    expect(plan.roadGuide.find((point) => point.column === 2)?.widthCells).toBeCloseTo(
+      SETTINGS.road.minimumWidthCells,
+    )
   })
 
   it('uses the rendered segment minimum across a long road-width transition', () => {

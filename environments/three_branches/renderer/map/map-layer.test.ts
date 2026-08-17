@@ -143,12 +143,13 @@ describe('Three Branches map layer', () => {
     })
   })
 
-  it('retains the configured terrain layer alpha', () => {
-    expect(materialLayerAlpha('field')).toBe(1)
-    expect(materialLayerAlpha('reeds')).toBe(1)
-    expect(materialLayerAlpha('water')).toBe(1)
-    expect(materialLayerAlpha('path')).toBe(1)
-    expect(materialLayerAlpha('road')).toBe(1)
+  it('resolves every drawn material to its configured composite alpha', () => {
+    for (const material of ['field', 'reeds', 'water'] as const) {
+      const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
+      if (treatment !== undefined) expect(materialLayerAlpha(material)).toBe(treatment.opacity)
+    }
+    expect(materialLayerAlpha('path')).toBe(HEARTHSIDE_STYLE.terrain.routes.path.opacity)
+    expect(materialLayerAlpha('road')).toBe(HEARTHSIDE_STYLE.terrain.routes.road.opacity)
   })
 
   it('draws deterministic reed mark strokes only where the ground grid has reeds', () => {

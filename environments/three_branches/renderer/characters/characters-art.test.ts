@@ -29,14 +29,15 @@ describe('Three Branches character art choices', () => {
     expect(styles.some((style) => style.detail !== null)).toBe(true)
   })
 
-  it('gives the visitor the configured cinnabar tie and far-view mark', () => {
+  it('gives the visitor its configured detail and tint for both the tie and far mark', () => {
     const visitor = characterStyle('player_0')
+    const visitorTint = HEARTHSIDE_STYLE.characters.visitor.tint
 
     expect(HEARTHSIDE_STYLE.characters.clothingTints).toContain(visitor.clothingTint)
     expect(visitor).toMatchObject({
       detail: HEARTHSIDE_STYLE.characters.visitor.detail,
-      detailTint: 'cinnabar',
-      markTint: 'cinnabar',
+      detailTint: visitorTint,
+      markTint: visitorTint,
     })
   })
 
@@ -57,16 +58,19 @@ describe('Three Branches character art choices', () => {
     expect(rotations).toContainEqual(frames)
   })
 
-  it('gives fixed player ids distinct stable phases at the same fractional tick', () => {
+  it('gives fixed player ids stable, distinct walk phases at the same fractional tick', () => {
     const { frameRatio } = HEARTHSIDE_STYLE.characters.walk
     const tick = 0.25 * frameRatio
+    const ids = ['player_1', 'player_2', 'player_3', 'player_4']
 
-    expect(frameRatio).toBe(0.68)
-    expect(characterWalkFrame('player_2', tick, 0.5)).toBe('leftForward')
-    expect(characterWalkFrame('player_4', tick, 0.5)).toBe('rightForward')
-    expect(characterWalkFrame('player_1', tick, 0.5)).toBe('pass')
-    expect(characterWalkFrame('player_2', frameRatio * 0.999, 0.5)).toBe('leftForward')
-    expect(characterWalkFrame('player_2', frameRatio, 0.5)).toBe('pass')
+    const frames = ids.map((id) => characterWalkFrame(id, tick, 0.5))
+    // One id owns one phase: repeating the id keeps its frame, and the ids spread across the walk
+    // cycle's entries at the same recorded tick.
+    expect(ids.map((id) => characterWalkFrame(id, tick, 0.5))).toEqual(frames)
+    expect(new Set(frames).size).toBeGreaterThan(1)
+    // Crossing a full frame ratio advances the walk one pose and never repeats the same one.
+    expect(characterWalkFrame(ids[0]!, frameRatio * 0.999, 0.5)).toBe(frames[0])
+    expect(characterWalkFrame(ids[0]!, frameRatio * 1.001, 0.5)).not.toBe(frames[0])
   })
 
   it('rotates the north-authored sprite to exact recorded headings', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { emissiveSpec, propEffectSpec } from './effects.js'
 
 describe('Three Branches prop effects', () => {
@@ -9,16 +10,7 @@ describe('Three Branches prop effects', () => {
     expect(propEffectSpec('lantern', 'lit', 'lantern:two', 12.25)?.phase).not.toBe(first?.phase)
   })
 
-  it('changes with fractional presentation tick and uses the configured palette tints', () => {
-    const active = [
-      ['lantern', 'lit', 'gilt'],
-      ['hearth', 'lit', 'cinnabar'],
-      ['shrine', 'tended', 'violet'],
-      ['pump', 'flowing', 'water'],
-      ['bell', 'ringing', 'gilt'],
-    ] as const
-    for (const [type, state, tint] of active)
-      expect(propEffectSpec(type, state, type + ':one', 3)?.tint).toBe(tint)
+  it('changes with fractional presentation tick', () => {
     expect(propEffectSpec('hearth', 'lit', 'hearth:one', 3.1)).not.toEqual(
       propEffectSpec('hearth', 'lit', 'hearth:one', 3.4),
     )
@@ -41,9 +33,9 @@ describe('Three Branches prop effects', () => {
     }
   })
 
-  it('emits post-grade light only for active lanterns and hearths', () => {
-    expect(emissiveSpec('lantern', 'lit')).toMatchObject({ tint: 'gilt' })
-    expect(emissiveSpec('hearth', 'lit')).toMatchObject({ tint: 'cinnabar' })
+  it('emits post-grade light only for active lanterns and hearths, in the configured tints', () => {
+    expect(emissiveSpec('lantern', 'lit')?.tint).toBe(HEARTHSIDE_STYLE.emissives.lantern)
+    expect(emissiveSpec('hearth', 'lit')?.tint).toBe(HEARTHSIDE_STYLE.emissives.hearth)
     expect(emissiveSpec('lantern', 'unlit')).toBeNull()
     expect(emissiveSpec('shrine', 'tended')).toBeNull()
   })

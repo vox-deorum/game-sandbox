@@ -43,6 +43,7 @@ describe('Three Branches terrain art planning', () => {
   })
 
   it('maps bridge components to their semantic plank frames', () => {
+    const routes = HEARTHSIDE_STYLE.terrain.routes
     const roadRoutes = routePlan(['ggggg', 'rrbrr', 'ggpgg'])
     const pathRoutes = routePlan(['rrrrr', 'ggpgg', 'ggbgg', 'ggpgg'])
     const compactRoutes = routePlan(['rrrrr', 'ggpgg', 'gpbpg', 'ggpgg'])
@@ -53,16 +54,16 @@ describe('Three Branches terrain art planning', () => {
     expect(roadBridge).toMatchObject({
       owner: 'road',
       orientation: 'horizontal',
-      deck: { kind: 'axis', widthCells: 2.1 },
+      deck: { kind: 'axis', widthCells: routes.road.targetWidthCells },
     })
     expect(pathBridge).toMatchObject({
       owner: 'path',
       orientation: 'vertical',
-      deck: { kind: 'axis', widthCells: 0.7 },
+      deck: { kind: 'axis', widthCells: routes.path.widthCells },
     })
     expect(compactBridge).toMatchObject({
       orientation: 'compact',
-      deck: { kind: 'compact', widthCells: 0.7, cap: 'round' },
+      deck: { kind: 'compact', widthCells: routes.path.widthCells, cap: 'round' },
     })
     expect(plankRowsFor(roadRoutes)[1]?.[2]).toBe(BRIDGE_PLANK_CODES.horizontal)
     expect(plankRowsFor(pathRoutes)[2]?.[2]).toBe(BRIDGE_PLANK_CODES.vertical)
