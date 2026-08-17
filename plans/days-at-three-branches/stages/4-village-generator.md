@@ -99,11 +99,11 @@ This gate implements [buildings and interiors](../village.md#buildings-and-inter
 - A road-arc helper supplies positions and facings, skipping the stretches where the road is up on a bridge. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell.
 - Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall.
 - One or two crates sit by each stall; shrines take the sharpest turns of the road centreline and may slide along it to find room.
-- Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets.
+- Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions, each drawing a size from `accessories.pine.size` and shrinking to the base size when the drawn solid would not fit. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets.
 
 ### Witnesses and validation
 
-- Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance. The final prop ledger holds every prop and scenery cell without overlap.
+- Each interactive prop banks a body-clear, line-clear witness within reach of its collision shape. Later solids protect witnesses, doorways, and spawn clearance, and no solid overlaps a solid already standing. Every scenery and prop cell is reserved exactly once; a pine whose drawn solid would escape that reservation is planted at its base size instead. `accessories.pine.size` gives the inclusive scale bounds each pine draws between.
 - The guarantee suite floods the published layout from the spawn with the engine's `body_clear` node and segment step tests, requiring all doorway runs, start poses, and witness cells to join the region.
 
 Gate B tests cover stable features and five homes, site margins and painting, road span and crossing rules, bridge deck shape and aprons, spawn clearance, distinct prop cells, doorway and path relationships, footpath crossings, independently re-derived witnesses, and connectivity across the full batch established from the published layout. How far apart the homes settle is an owner call in the browser, so no test measures it.

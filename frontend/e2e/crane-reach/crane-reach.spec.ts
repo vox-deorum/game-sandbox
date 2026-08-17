@@ -337,7 +337,13 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   expect(resizeResult.elapsed).toBeLessThan(1_000)
   expect(resizeResult.host.height).toBeLessThan(beforeResize.host.height)
   expect(resizeResult.canvas.height).toBeLessThan(beforeResize.canvas.height)
-  expect(resizeResult.canvas.pixels).not.toBe(beforeResize.canvas.pixels)
+  // The CSS box reflows with the viewport immediately, but the Pixi backing store only catches up
+  // once the renderer's debounced resize applies (RESIZE_DEBOUNCE_MS in PixiRenderer), which can land
+  // after the sample above. Poll for the backing width to actually change rather than reading the
+  // sampled moment.
+  await expect
+    .poll(async () => (await canvas.getAttribute('width')) ?? null, { timeout: 5_000 })
+    .not.toBe(String(beforeResize.canvas.pixels))
   expect(resizeResult.samples).not.toHaveLength(0)
   expect(resizeResult.samples.every((sample) => sample.phase !== 'idle' || sample.settling)).toBe(
     true,

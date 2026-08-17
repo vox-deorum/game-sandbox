@@ -74,8 +74,9 @@ export function buildStaticScene(village: VillageStatic): StaticScene {
     drawableFor(village, sceneryByType, { ...item, id: `scenery:${index}` }, (kind) => ({
       label: labelFor(item.type),
       shape: shapeOf(kind.shape),
-      collisionScale: 1,
-      scale: item.scale ?? 1,
+      // The placement's drawn size rides the collision scale, so the debug overlay and the sprite
+      // draw one circle: the engine scales a circular scenery solid by the same factor.
+      collisionScale: item.scale,
     })),
   )
   return {

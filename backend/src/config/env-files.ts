@@ -32,14 +32,14 @@ function readEnvironmentFile(path: string, required: boolean): NodeJS.ProcessEnv
 }
 
 /**
- * `LOAD_LOCAL_ENV` reads as the documented Boolean, defaulting to on when the process does not
- * supply it. The opt-out comes from the real process environment, before `.env` is loaded, so the
- * file can never turn itself off.
+ * Resolve one environment variable as the documented Boolean, defaulting when the process does not
+ * supply it. This is the single spelling list the backend reads booleans from; the config module
+ * wraps it in its required-on-unset and error contract, and the loader wraps it for opt-outs.
  */
-function localEnvEnabled(env: NodeJS.ProcessEnv): boolean {
-  const raw = env.LOAD_LOCAL_ENV
+export function booleanEnv(env: NodeJS.ProcessEnv, name: string, defaultValue: boolean): boolean {
+  const raw = env[name]
   if (raw === undefined || raw === '') {
-    return true
+    return defaultValue
   }
   switch (raw.trim().toLowerCase()) {
     case 'false':
@@ -51,8 +51,16 @@ function localEnvEnabled(env: NodeJS.ProcessEnv): boolean {
     case 'yes':
       return true
     default:
-      throw new Error(`LOAD_LOCAL_ENV must be a boolean (true/false), got ${raw}`)
+      throw new Error(`${name} must be a boolean (true/false), got ${raw}`)
   }
+}
+
+/** `LOAD_LOCAL_ENV` reads as the documented Boolean, defaulting to on when the process does not
+ * supply it. The opt-out comes from the real process environment, before `.env` is loaded, so the
+ * file can never turn itself off.
+ */
+function localEnvEnabled(env: NodeJS.ProcessEnv): boolean {
+  return booleanEnv(env, 'LOAD_LOCAL_ENV', true)
 }
 
 /**

@@ -93,10 +93,12 @@ class ThreeBranchesEnv(ParallelEnv):
         nearby = spaces.Dict({"id": _text(_PLAYER_ID_LENGTH), "position": position})
         prop = spaces.Dict({"prop": _text(16), "state": _text(9)})
         cell = spaces.Dict({"x": spaces.Discrete(FRAME.cells_x), "y": spaces.Discrete(FRAME.cells_y)})
-        # Scenery carries each pine's drawn size, which must fall inside the configured range: the
-        # shared crates sit at 1.0, and pines draw between the generator's own bounds.
+        # Scenery carries each placement's drawn size. The shared crates always publish 1.0, so the
+        # Box must hold it on both sides whatever range the pine tuning uses: the low bound falls to
+        # 1.0 when the configured range sits below it, and the high bound rises to 1.0 when it sits
+        # below that too.
         pine_size = GENERATION.accessories.pine.size
-        scenery_scale = (min(1.0, pine_size[0]), pine_size[1])
+        scenery_scale = (min(1.0, pine_size[0]), max(1.0, pine_size[1]))
         village = spaces.Dict(
             {
                 "size": spaces.Dict(

@@ -170,9 +170,11 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         const emissive = emissiveSpec(node.item.type, state)
         node.effect.visible = effect !== null
         node.emissive.visible = emissive !== null
-        // The effect anchor is where a prop's generated accent sits on its own artwork. A lantern
-        // hangs its light from the anchor, so both the flicker and the glow pool ride it together
-        // and stay put on the prop instead of floating at the footprint's center.
+        // The effect anchor is where a prop's generated accent sits on its own artwork. The same
+        // anchor also positions the emissive pool below, so a prop that has both (lantern today)
+        // keeps its flicker and its glow glued to the same point instead of at the footprint's
+        // center. Adding an anchor to another emissive prop (hearth, frame) deliberately moves that
+        // pool too.
         const propScale = propVisualScale(node.item.type)
         const anchor = propEffectAnchor(node.item.type)
         if (effect !== null) {
@@ -264,7 +266,7 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
   if (!(root instanceof Container)) return
-  const scale = sceneryVisualScale(item.type) * (item.scale ?? 1)
+  const scale = sceneryVisualScale(item.type) * item.collisionScale
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
     existing.scale.set(scale)

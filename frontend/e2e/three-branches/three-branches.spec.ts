@@ -134,7 +134,13 @@ test('watch Three Branches, inspect its camera and collision, then repeat a repl
     await expect(canvas).toBeVisible({ timeout: 60_000 })
     await expect(host).toHaveAttribute('data-three-branches-ground', 'ready')
     await expect(host).toHaveAttribute('data-three-branches-assets', 'ready')
-    await expect(host).toHaveAttribute('data-three-branches-visitor', /^-?\d+,-?\d+$/)
+    // The acted session takes a while to produce its first frame: every cast member (the submitted
+    // neighbor agent) rebuilds the whole village graph during its reset, so the recording does not
+    // stream its opening state until that setup finishes. The visitor probe only exists on a landed
+    // frame, so wait for it rather than assuming a frame arrived with the assets.
+    await expect
+      .poll(async () => await host.getAttribute('data-three-branches-visitor'), { timeout: 240_000 })
+      .toMatch(/^-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-camera', /^\d+(?:\.\d+)?@-?\d+,-?\d+$/)
     await expect(host).toHaveAttribute('data-three-branches-collision', 'off')
 

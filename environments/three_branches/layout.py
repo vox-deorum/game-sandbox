@@ -78,6 +78,25 @@ def footprint_cells(item: PlacedProp | Scenery) -> tuple[Cell, ...]:
     return tuple((x + column, y + row) for row in range(height) for column in range(width))
 
 
+def shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
+    """One placement's catalog collision shape, from its footprint alone.
+
+    This is the single source both the generator's placement checks and the published layout's
+    solids consult, so a solid the generator accepts is exactly the solid the engine enforces. A
+    circular placement's radius scales with the placement's drawn size as well as its catalog
+    collision scale, which is what lets a planted pine collide as big as it looks.
+    """
+    source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
+    width, height = footprint(item)
+    x, y = item.cell
+    if source.shape == "box":
+        return Rect(float(x), float(y), float(width), float(height))
+    scale = source.collision_scale if isinstance(source, PropType) else 1.0
+    if isinstance(item, Scenery):
+        scale *= item.scale
+    return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
+
+
 def _rectangles(cells: set[Cell]) -> tuple[Rect, ...]:
     """Coalesce cells deterministically, producing non-overlapping maximal row runs."""
     rectangles: list[Rect] = []
@@ -150,15 +169,7 @@ class Layout:
         return GROUND_BY_CODE[self.grid.value_at(cell)] if cell is not None else None
 
     def shape_for(self, item: PlacedProp | Scenery) -> Rect | Circle:
-        source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
-        width, height = footprint(item)
-        x, y = item.cell
-        if source.shape == "box":
-            return Rect(float(x), float(y), float(width), float(height))
-        scale = source.collision_scale if isinstance(source, PropType) else 1.0
-        if isinstance(item, Scenery):
-            scale *= item.scale
-        return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
+        return shape_for(item)
 
     def doorway(self, building_id: str) -> tuple[Cell, ...]:
         building = next((item for item in self.buildings if item.id == building_id), None)

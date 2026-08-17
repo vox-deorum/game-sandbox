@@ -10,9 +10,7 @@ describe('Three Branches recording overlay', () => {
     expect(village.ground).toHaveLength(village.size.cellsY)
     expect(village.ground.every((row) => row.length === village.size.cellsX)).toBe(true)
     expect(village.spawn.x).toBeGreaterThanOrEqual(0)
-    expect(village.scenery.every((item) => (item.scale ?? 1) >= 1 && (item.scale ?? 1) <= 2)).toBe(
-      true,
-    )
+    expect(village.scenery.every((item) => item.scale >= 1 && item.scale <= 2)).toBe(true)
     expect(expectedCharacterIds(header)).toEqual(Object.keys(header.players))
   })
 
@@ -49,13 +47,15 @@ describe('Three Branches recording overlay', () => {
     expect(() => expectedCharacterIds(missingRoster)).toThrow('missing player_0')
   })
 
-  it('defaults and constrains scenery size before it reaches the drawable', () => {
+  it('defaults missing scenery size and rejects non-positive values only', () => {
     const legacy = clonedHeader()
     const source = legacy.overlay_static as Record<string, unknown>
     source.scenery = []
     const empty = readStatic(legacy)
     expect(empty.scenery).toEqual([])
 
+    // The reader's contract is a positive size factor; the generator owns the upper bound, so a
+    // value above the current tuning range must still parse rather than be re-constrained here.
     const larger = clonedHeader()
     const largerSource = larger.overlay_static as Record<string, unknown>
     largerSource.scenery = [{ type: 'pine', cell: { x: 0, y: 0 }, scale: 3 }]

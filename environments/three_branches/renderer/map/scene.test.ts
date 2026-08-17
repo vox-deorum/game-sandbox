@@ -45,8 +45,8 @@ describe('Three Branches pure scene', () => {
     expect(scene.scenery.map((item) => item.id)).toEqual(
       village.scenery.map((_, index) => `scenery:${index}`),
     )
-    expect(scene.scenery.map((item, index) => item.scale ?? 1)).toEqual(
-      village.scenery.map((item) => item.scale ?? 1),
+    expect(scene.scenery.map((item) => item.collisionScale)).toEqual(
+      village.scenery.map((item) => item.scale),
     )
   })
 

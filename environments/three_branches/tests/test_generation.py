@@ -18,6 +18,7 @@ import json
 import math
 from dataclasses import replace
 from importlib import resources
+from itertools import combinations
 
 import pytest
 
@@ -25,7 +26,14 @@ from three_branches.catalog import BUILDING_BY_TOKEN, CATALOG
 from three_branches.env import make_env
 from three_branches.generation import Report, build_village, carve, generate, grounds
 from three_branches.generation.config import GENERATION
-from three_branches.geometry import Circle, Rect, distance, nearest_point
+from three_branches.geometry import (
+    Circle,
+    Rect,
+    circle_intersects_circle,
+    circle_intersects_rect,
+    distance,
+    nearest_point,
+)
 from three_branches.grid import Cell
 from three_branches.layout import Building, Layout, footprint, footprint_cells
 from three_branches.rules import FRAME, PROFILE
@@ -374,15 +382,37 @@ def test_every_batch_seed_keeps_lanterns_and_pines(
 def test_pines_ship_a_drawn_visual_size_and_crates_keep_the_default(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:
-    """Every planted pine carries its own drawn scale in the configured range; crates stay at one."""
+    """Every pine draws a size in range or shrinks to the base size when the drawn solid would not
+    fit; crates never vary."""
     low, high = TUNING["accessories"]["pine"]["size"]
+    drew_big = False
     for seed, (layout, _) in batch.items():
         for item in layout.scenery:
             if item.type == "pine":
-                assert low <= item.scale <= high, (seed, item.cell, item.scale)
+                assert item.scale == 1.0 or low <= item.scale <= high, (seed, item.cell, item.scale)
+                drew_big = drew_big or item.scale != 1.0
             else:
                 assert item.scale == 1.0, (seed, item.cell)
-        assert any(item.type == "pine" and item.scale != 1.0 for item in layout.scenery), seed
+    assert drew_big, "the randomized pine size must actually grow at least one planted tree"
+
+
+def test_no_two_published_solids_overlap(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """A scaled pine can never cover another object: every pair of published solids is disjoint."""
+    for seed, (layout, _) in batch.items():
+        for first, second in combinations(layout.solids, 2):
+            assert not _solids_overlap(first, second), (seed, first, second)
+
+
+def _solids_overlap(first: Rect | Circle, second: Rect | Circle) -> bool:
+    if isinstance(first, Circle) and isinstance(second, Circle):
+        return circle_intersects_circle((first.x, first.y), first.radius, second)
+    if isinstance(first, Circle) and isinstance(second, Rect):
+        return circle_intersects_rect((first.x, first.y), first.radius, second)
+    if isinstance(first, Rect) and isinstance(second, Circle):
+        return circle_intersects_rect((second.x, second.y), second.radius, first)
+    return first.x < second.right and second.x < first.right and first.y < second.top and second.y < first.top
 
 
 def test_sites_keep_their_margin_and_are_painted_from_the_catalog(

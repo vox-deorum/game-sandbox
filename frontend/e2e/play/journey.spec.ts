@@ -44,6 +44,28 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(page).toHaveURL(/\/sessions\//)
   const sessionId = page.url().split('/').at(-1)
   if (sessionId === undefined) throw new Error('session URL has no id')
+
+  // A paced live game steps in real time from launch, and a flap is latched per step. Keep the bird
+  // aloft for the whole live section with a gentle flap cadence: a page-side interval dispatching the
+  // same window keydown the renderer wires for a human player (see the renderer's input test), started
+  // as soon as the session route is up so the bird is already held up whether or not the container has
+  // begun stepping when we get here. Page-side dispatch skips per-key round-trips, and the harness
+  // latches at most one flap per step, so a 400ms cadence cannot over-flap.
+  await page.evaluate(() => {
+    const patched = window as typeof window & { __flappyAutopilot?: number }
+    if (patched.__flappyAutopilot !== undefined) {
+      window.clearInterval(patched.__flappyAutopilot)
+    }
+    patched.__flappyAutopilot = window.setInterval(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', cancelable: true }))
+    }, 400)
+  })
+  await page.locator('body').focus()
+  await page.keyboard.press('Space')
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('Space')
+  }
+
   await expect
     .poll(async () => (await getSession(admin, sessionId))?.parameters)
     .toEqual({
@@ -52,14 +74,6 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
     })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
 
-  // A paced live game steps in real time from launch, so flap from the first frame to keep the bird
-  // aloft long enough to observe the live UI and exercise the controls.
-  await page.locator('body').focus()
-  await page.keyboard.press('Space')
-  for (let i = 0; i < 3; i++) {
-    await page.keyboard.press('Space')
-  }
-
   // Pause freezes the run; the overlay reflects the echo. Resume clears it.
   await page.getByRole('button', { name: 'Pause' }).click()
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
@@ -67,15 +81,21 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(page.locator('.overlay-banner')).toHaveCount(0)
 
   // Stop ends the session and the bar swaps its controls for the ended state, surfacing the replay
-  // link. The paced game keeps running after resume, so flap once more to keep the bird aloft while we
-  // reach for Stop; if it still falls first the run ends on its own and detaches the live control, so
-  // click Stop only while it is present and assert the ended state either way.
-  await page.keyboard.press('Space')
+  // link. The paced game keeps running after resume, so the autopilot aloft covers the reach for Stop;
+  // if it still falls first the run ends on its own and detaches the live control, so click Stop only
+  // while it is present and assert the ended state either way.
   const stop = page.getByRole('button', { name: 'Stop' })
   if (await stop.isVisible()) {
     await stop.click({ timeout: 5000 }).catch(() => {})
   }
   await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
+  await page.evaluate(() => {
+    const patched = window as typeof window & { __flappyAutopilot?: number }
+    if (patched.__flappyAutopilot !== undefined) {
+      window.clearInterval(patched.__flappyAutopilot)
+      patched.__flappyAutopilot = undefined
+    }
+  })
   const endedSession = await getSession(admin, sessionId)
   if (endedSession?.recording_id === null || endedSession?.recording_id === undefined) {
     throw new Error('ended session has no recording')
@@ -97,7 +117,10 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   const settings = page.getByRole('button', { name: 'Show settings details' })
   await expect(settings).toHaveText('2 settings')
   await settings.hover()
-  const settingsTooltip = page.getByRole('tooltip')
+  // The hover opens the settings bubble, but other tooltips on the page (e.g. the LLM cost details
+  // trigger's) can be open at the same time, so pin this tooltip to the settings one by its content
+  // rather than matching every tooltip on the page.
+  const settingsTooltip = page.getByRole('tooltip', { name: /Pipe gap/ })
   await expect(settingsTooltip).toContainText('Pipe gap')
   await expect(settingsTooltip).toContainText('110')
   await expect(settingsTooltip).toContainText('Seed')

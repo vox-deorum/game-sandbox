@@ -30,6 +30,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
 | `DATA_DIR` | `backend/data` | Repository-relative runtime-data root. Container deployments need identical absolute host and Compose `app` container paths; see [Run the app in Docker](docker.md) and [Data folders](../data/folders.md). |
+| `LOAD_LOCAL_ENV` | `true` | Whether the machine-local Git-ignored `.env` is loaded. `false` skips it entirely, so a launcher (such as the browser e2e suite) can boot immune to a deployment's `.env` left in the tree. |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no viewer in scripted mode, or no owner socket in human mode |
 | `SESSION_MAX_DURATION_MS` | unset | Optional positive chargeable-duration override. When unset, each session derives its limit from its pace and episode rules. |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |

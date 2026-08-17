@@ -20,7 +20,7 @@ function sceneWith(
     ground: rows,
     buildings: [],
     props,
-    scenery: [{ type: 'pine', cell: { x: 9, y: 5 } }],
+    scenery: [{ type: 'pine', cell: { x: 9, y: 5 }, scale: 1 }],
     spawn: { x: 5, y: 3 },
   })
 }

@@ -15,7 +15,7 @@ import {
   MAX_LLM_COST_WEIGHT,
   type ModelAlias,
 } from '../llm/types.js'
-import { loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
+import { booleanEnv, loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
 
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
@@ -225,9 +225,6 @@ const NON_NEGATIVE_INT = z.coerce.number().int().nonnegative()
 const POSITIVE_INT = z.coerce.number().int().positive()
 /** Positive, finite number; floats allowed (e.g. fractional CPU shares). */
 const POSITIVE_NUMBER = z.coerce.number().positive().finite()
-/** The documented boolean spellings, normalized lower-case; anything else throws. */
-const ENV_BOOL = z.stringbool({ truthy: ['true', '1', 'yes'], falsy: ['false', '0', 'no'] })
-
 function requiredStringVar(env: NodeJS.ProcessEnv, name: string): string {
   const raw = env[name]
   if (raw === undefined || raw === '') {
@@ -299,12 +296,13 @@ function listVar(env: NodeJS.ProcessEnv, name: string): string[] {
 }
 
 function boolVar(env: NodeJS.ProcessEnv, name: string): boolean {
-  const raw = requiredStringVar(env, name)
-  const result = ENV_BOOL.safeParse(raw.trim().toLowerCase())
-  if (!result.success) {
-    throw new ConfigError(`${name} must be a boolean (true/false), got ${raw}`)
+  // Presence is required here; the spelling itself is parsed by the one shared Boolean rule.
+  requiredStringVar(env, name)
+  try {
+    return booleanEnv(env, name, false)
+  } catch (error) {
+    throw new ConfigError((error as Error).message)
   }
-  return result.data
 }
 
 function numberVar(env: NodeJS.ProcessEnv, name: string): number {

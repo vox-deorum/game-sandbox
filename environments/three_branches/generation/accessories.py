@@ -20,10 +20,10 @@ import random
 from dataclasses import dataclass
 from math import atan2, dist, hypot, pi
 
-from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN, SCENERY_BY_TOKEN, PropType
+from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN
 from ..geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect, nearest_point
 from ..grid import Cell
-from ..layout import PlacedProp, Scenery, footprint, footprint_cells
+from ..layout import PlacedProp, Scenery, footprint, footprint_cells, shape_for
 from ..rules import FRAME, GROUND_BY_CODE, PROFILE
 from .config import Accessories, Retry
 from .network import Road
@@ -172,7 +172,7 @@ class _Yard:
         item = PlacedProp(f"{token}_{held}", token, cell, facing)
         if not self._footprint_free(item, interior=interior):
             return False
-        shape = _shape_for(item)
+        shape = shape_for(item)
         if not self._keeps_promises(shape):
             return False
         witness = self._witness(item, shape)
@@ -186,17 +186,24 @@ class _Yard:
         return True
 
     def stand(self, token: str, cell: Cell, *, scale: float = 1.0) -> bool:
-        """Stand one piece of scenery, which is solid but is never used and banks no witness."""
-        item = Scenery(token, cell, scale)
-        if not self._footprint_free(item):
+        """Stand one piece of scenery, which is solid but is never used and banks no witness.
+
+        A circular placement is planted at its drawn size; when that solid would overlap a solid
+        already standing or close off a protected point, it shrinks back to the base size instead
+        of leaving the spot empty, since a bare one-cell tree is always legal where its cell is.
+        """
+        if not self._footprint_free(Scenery(token, cell)):
             return False
-        shape = _shape_for(item)
-        if not self._keeps_promises(shape):
-            return False
-        self.scenery.append(item)
-        self.taken.update(footprint_cells(item))
-        self.solids.append(shape)
-        return True
+        for candidate in (scale, 1.0):
+            item = Scenery(token, cell, candidate)
+            shape = shape_for(item)
+            if not self._keeps_promises(shape):
+                continue
+            self.scenery.append(item)
+            self.taken.update(footprint_cells(item))
+            self.solids.append(shape)
+            return True
+        return False
 
     def dressing(self) -> Dressing:
         ordered = tuple(sorted(self.props, key=lambda item: (_ORDER[item.type], _number(item.id))))
@@ -213,8 +220,11 @@ class _Yard:
         return True
 
     def _keeps_promises(self, shape: Rect | Circle) -> bool:
-        """Refuse a solid that would close off the spawn, a doorway, or a banked witness."""
-        return not any(_touches(shape, point, radius) for point, radius in self.protected)
+        """Refuse a solid that would close off the spawn, a doorway, or a banked witness, or overlap
+        a solid already standing, so cell exclusivity stays backed by solid exclusivity."""
+        if any(_touches(shape, point, radius) for point, radius in self.protected):
+            return False
+        return not any(_overlaps(shape, other) for other in self.solids)
 
     def _witness(self, item: PlacedProp, shape: Rect | Circle) -> Cell | None:
         """Find the nearest standing cell in reach of a prop, with a clear line to it."""
@@ -412,7 +422,11 @@ def _try(
 def _stand_beside(
     yard: _Yard, token: str, station: Station, side: int, tuning: Accessories, *, scale: float = 1.0
 ) -> bool:
-    """Set a prop one setback off the road at a station, turned to face the road it serves."""
+    """Set a prop one setback off the road at a station, turned to face the road it serves.
+
+    ``scale`` is a circular scenery's drawn size; only the scenery branch consumes it, so a prop
+    caller passes the default and it is ignored.
+    """
     kind = PROP_BY_TOKEN.get(token)
     normal = (-station.tangent[1] * side, station.tangent[0] * side)
     facing = _facing_of((-normal[0], -normal[1]))
@@ -481,23 +495,28 @@ def _interior_spot(site: Site, token: str) -> Cell:
     return (floor[0] + floor[2] - width, floor[1] + (floor[3] - height) // 2)
 
 
-def _shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
-    """The catalog collision shape, before there is a layout to ask for it."""
-    source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
-    width, height = footprint(item)
-    x, y = item.cell
-    if source.shape == "box":
-        return Rect(float(x), float(y), float(width), float(height))
-    scale = source.collision_scale if isinstance(source, PropType) else 1.0
-    if isinstance(item, Scenery):
-        scale *= item.scale
-    return Circle(x + width / 2, y + height / 2, min(width, height) / 2 * scale)
-
-
 def _touches(shape: Rect | Circle, point: Point, radius: float) -> bool:
     if isinstance(shape, Rect):
         return circle_intersects_rect(point, radius, shape)
     return circle_intersects_circle(point, radius, shape)
+
+
+def _overlaps(first: Rect | Circle, second: Rect | Circle) -> bool:
+    """Whether two placed solids share any interior, using the same strict tests movement uses."""
+    if isinstance(first, Circle) and isinstance(second, Circle):
+        return circle_intersects_circle((first.x, first.y), first.radius, second)
+    if isinstance(first, Circle) and isinstance(second, Rect):
+        return circle_intersects_rect((first.x, first.y), first.radius, second)
+    if isinstance(first, Rect) and isinstance(second, Circle):
+        return circle_intersects_rect((second.x, second.y), second.radius, first)
+    if isinstance(first, Rect) and isinstance(second, Rect):
+        return (
+            first.x < second.right
+            and second.x < first.right
+            and first.y < second.top
+            and second.y < first.top
+        )
+    return False
 
 
 def _facing_of(direction: Point) -> str:
