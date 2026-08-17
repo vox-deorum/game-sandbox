@@ -138,6 +138,10 @@ export const PROPS_ATLAS_FRAME_NAMES = [
   'hearthUnlit',
   'repairBenchBusy',
   'repairBenchIdle',
+] as const
+
+/** Higher-density stills for the fixed north-facing pump and bell monuments. */
+export const MONUMENTS_ATLAS_FRAME_NAMES = [
   'pumpFlowing',
   'pumpIdle',
   'bellRinging',
@@ -187,7 +191,7 @@ export const EFFECTS_ATLAS_FRAME_NAMES = [
   'bellLinesF',
 ] as const
 
-/** The six generated atlases that make up the Hearthside Ink runtime art. */
+/** The seven generated atlases that make up the Hearthside Ink runtime art. */
 export const THREE_BRANCHES_ASSET_CATALOG = [
   {
     name: 'terrain',
@@ -237,13 +241,32 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     height: 1536,
     tintable: false,
     format: 'full-color',
-    consumer: 'complete interactive prop state stills and the fixed bell foundation, with separate effects and emissives',
+    consumer: 'complete ordinary interactive prop state stills, with separate effects and emissives',
     frames: {
       width: 384,
       height: 256,
       columns: 6,
       rows: 6,
       names: PROPS_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'monuments',
+    source: './source-art/monuments-atlas-source.png',
+    sourceWidth: 2304,
+    sourceHeight: 1024,
+    path: './assets/monuments-atlas.png',
+    width: 2304,
+    height: 1024,
+    tintable: false,
+    format: 'full-color',
+    consumer: 'higher-density fixed-north pump and bell stills, including the bell foundation',
+    frames: {
+      width: 768,
+      height: 512,
+      columns: 3,
+      rows: 2,
+      names: MONUMENTS_ATLAS_FRAME_NAMES,
     },
   },
   {
@@ -362,14 +385,17 @@ function flatFramePaths(names: readonly string[]): readonly string[] {
   return names.map((name) => `${name}.png`)
 }
 
-function propsFramePath(name: string): string {
-  if (name === 'bellFoundation') return 'bell/foundation.png'
+function catalogPropFramePath(name: string): string {
   for (const prop of catalogDocument.props) {
     const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
     const state = prop.states.find((value) => `${type}${value[0]?.toUpperCase()}${value.slice(1)}` === name)
     if (state !== undefined) return `${prop.token}/${state}.png`
   }
   throw new Error(`Three Branches prop frame has no catalog state: ${name}`)
+}
+
+function monumentFramePath(name: string): string {
+  return name === 'bellFoundation' ? 'bell/foundation.png' : catalogPropFramePath(name)
 }
 
 function atlasPage(
@@ -392,7 +418,7 @@ function atlasPage(
   }
 }
 
-/** The loose-frame manifests for the nine compiled Three Branches atlas pages. */
+/** The loose-frame manifests for the ten compiled Three Branches atlas pages. */
 export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
   if ('layers' in atlas) {
     return atlas.layers.map((layer) =>
@@ -408,8 +434,10 @@ export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
 
   const framePaths =
     atlas.name === 'props'
-      ? atlas.frames.names.map(propsFramePath)
-      : flatFramePaths(atlas.frames.names)
+      ? atlas.frames.names.map(catalogPropFramePath)
+      : atlas.name === 'monuments'
+        ? atlas.frames.names.map(monumentFramePath)
+        : flatFramePaths(atlas.frames.names)
   return [atlasPage(atlas.name, atlas.format, atlas, `./assets/${atlas.name}`, framePaths)]
 }) satisfies readonly AtlasPageSpec[]
 
@@ -430,6 +458,7 @@ export type ThreeBranchesAtlasName = (typeof THREE_BRANCHES_ASSET_CATALOG)[numbe
 export interface ThreeBranchesRuntimeAssets<T> {
   terrain: T
   props: T
+  monuments: T
   scenery: T
   characters: {
     body: T
@@ -450,9 +479,10 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
     return Promise.resolve(load(source))
   }
-  const [terrain, props, scenery, body, clothing, arms, details, effects] = await Promise.all([
+  const [terrain, props, monuments, scenery, body, clothing, arms, details, effects] = await Promise.all([
     loadPath('./assets/terrain-atlas.png'),
     loadPath('./assets/props-atlas.png'),
+    loadPath('./assets/monuments-atlas.png'),
     loadPath('./assets/scenery-atlas.png'),
     loadPath('./assets/characters-body-atlas.png'),
     loadPath('./assets/characters-clothing-atlas.png'),
@@ -460,7 +490,7 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     loadPath('./assets/characters-details-atlas.png'),
     loadPath('./assets/effects-atlas.png'),
   ])
-  return { terrain, props, scenery, characters: { body, clothing, arms, details }, effects }
+  return { terrain, props, monuments, scenery, characters: { body, clothing, arms, details }, effects }
 }
 
 /** Ask Vite for production URLs without bundling the deferred building atlas page. */
@@ -469,6 +499,7 @@ function threeBranchesRuntimeAssetUrls(): Record<string, string> {
     [
       './assets/terrain-atlas.png',
       './assets/props-atlas.png',
+      './assets/monuments-atlas.png',
       './assets/scenery-atlas.png',
       './assets/characters-body-atlas.png',
       './assets/characters-clothing-atlas.png',

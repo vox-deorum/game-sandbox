@@ -7,6 +7,7 @@ import {
   HEARTHSIDE_STYLE,
   PALETTE,
   propEffectAnchor,
+  propMonumentTreatment,
   propVisualScale,
   sceneryVisualScale,
 } from './presentation.js'
@@ -16,11 +17,11 @@ import { frameRectangle } from './tint.js'
 import type { FrameScene, StaticDrawable, StaticScene } from './types.js'
 
 const EFFECT_SCALE = 0.25
-const FIXED_MONUMENT_TYPES = new Set(['pump', 'bell'])
 
 /** Pages that become artwork for props, scenery, and their effects. */
 export interface PropAtlasTextures {
   props: Texture
+  monuments: Texture
   scenery: Texture
   effects: Texture
 }
@@ -28,6 +29,7 @@ export interface PropAtlasTextures {
 /** Named frame views shared by retained scenery, prop, and accent nodes. */
 export interface PropArt {
   props: Readonly<Record<string, Texture>>
+  monuments: Readonly<Record<string, Texture>>
   scenery: Readonly<Record<string, Texture>>
   effects: Readonly<Record<string, Texture>>
 }
@@ -56,6 +58,7 @@ interface PropNode {
 export function createPropArt(atlases: PropAtlasTextures): PropArt {
   return {
     props: framesFor('props', atlases.props),
+    monuments: framesFor('monuments', atlases.monuments),
     scenery: framesFor('scenery', atlases.scenery),
     effects: framesFor('effects', atlases.effects),
   }
@@ -105,9 +108,14 @@ export function createPropLayer(
     node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
     const foundationFrame = propFoundationFrame(node.item.type)
     node.foundation.visible = shipped && foundationFrame !== null
-    node.foundation.texture = foundationFrame === null ? Texture.EMPTY : texture(art.props, foundationFrame)
+    node.foundation.texture =
+      foundationFrame === null ? Texture.EMPTY : texture(propFrames(art, node.item.type), foundationFrame)
     node.still.visible = shipped
-    node.still.texture = shipped ? texture(art.props, propTreatment(node.item.type, state).frame) : Texture.EMPTY
+    node.still.texture = shipped
+      ? texture(propFrames(art, node.item.type), propTreatment(node.item.type, state).frame)
+      : Texture.EMPTY
+    syncPropSprite(node.still, node.item, 'still')
+    if (foundationFrame !== null) syncPropSprite(node.foundation, node.item, 'foundation')
   }
 
   return {
@@ -196,7 +204,7 @@ function createPropNode(item: StaticDrawable): PropNode {
   root.rotation = visualFacing(item)
   const shadow = propShadow(item)
   const fallbackNode = fallback(item, true)
-  const artScale = propVisualScale(item.type)
+  const artScale = propArtScale(item)
   const foundation = propSprite('prop-foundation', Texture.EMPTY, artScale)
   foundation.visible = false
   const still = propSprite('prop-still', Texture.EMPTY, artScale)
@@ -272,14 +280,39 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
 }
 
 function syncArtScale(node: Pick<PropNode, 'item' | 'foundation' | 'still'>): void {
-  const scale = propVisualScale(node.item.type)
+  const scale = propArtScale(node.item)
   node.foundation.scale.set(scale)
   node.still.scale.set(scale)
 }
 
+function syncPropSprite(
+  node: Sprite,
+  item: StaticDrawable,
+  role: 'still' | 'foundation',
+): void {
+  const monument = propMonumentTreatment(item.type)
+  if (monument === null) {
+    node.anchor.set(0.5)
+    return
+  }
+  const anchor = monument.sourceAnchorByRole[role]
+  if (anchor === undefined) {
+    throw new Error(`Three Branches monument source anchor is missing: ${item.type}.${role}`)
+  }
+  node.anchor.set(anchor.x / node.texture.width, anchor.y / node.texture.height)
+}
+
 function centerX(item: StaticDrawable): number { return item.rect.x + item.rect.width / 2 }
 function centerY(item: StaticDrawable): number { return item.rect.y + item.rect.height / 2 }
-function isFixedMonument(item: StaticDrawable): boolean { return FIXED_MONUMENT_TYPES.has(item.type) }
+function propArtScale(item: StaticDrawable): number {
+  const monument = propMonumentTreatment(item.type)
+  return propVisualScale(item.type) / (monument?.textureDensityDivisor ?? 1)
+}
+function propFrames(art: PropArt, type: string): Readonly<Record<string, Texture>> {
+  return isFixedMonumentType(type) ? art.monuments : art.props
+}
+function isFixedMonument(item: StaticDrawable): boolean { return isFixedMonumentType(item.type) }
+function isFixedMonumentType(type: string): boolean { return propMonumentTreatment(type) !== null }
 function visualFacing(item: StaticDrawable): number { return isFixedMonument(item) ? 0 : facing(item.facing) }
 function facing(value: string | undefined): number {
   return ({ north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 } as Record<string, number>)[value ?? 'north'] ?? 0
@@ -294,7 +327,10 @@ function texture(frames: Readonly<Record<string, Texture>>, name: string): Textu
   if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${name}`)
   return value
 }
-function framesFor(name: 'props' | 'scenery' | 'effects', atlasTexture: Texture): Readonly<Record<string, Texture>> {
+function framesFor(
+  name: 'props' | 'monuments' | 'scenery' | 'effects',
+  atlasTexture: Texture,
+): Readonly<Record<string, Texture>> {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) throw new Error(`Three Branches ${name} atlas is missing.`)
   return Object.fromEntries(atlas.frames.names.map((frame) => [frame, new Texture({ source: atlasTexture.source, frame: frameRectangle(atlas.frames, frame) })]))
@@ -311,9 +347,9 @@ function preflightArt(art: PropArt): void {
   for (const prop of CATALOG.props) {
     if (!isShippedPropType(prop.token)) continue
     const foundationFrame = propFoundationFrame(prop.token)
-    if (foundationFrame !== null) texture(art.props, foundationFrame)
+    if (foundationFrame !== null) texture(propFrames(art, prop.token), foundationFrame)
     for (const state of prop.states) {
-      texture(art.props, propTreatment(prop.token, state).frame)
+      texture(propFrames(art, prop.token), propTreatment(prop.token, state).frame)
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
       const emissive = emissiveSpec(prop.token, state)
       if (emissive !== null) texture(art.effects, emissive.frame)

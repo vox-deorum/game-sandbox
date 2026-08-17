@@ -308,16 +308,12 @@ export interface ContourCoordinate {
   readonly y: number
 }
 
-/** Corner-cut reference polyline that contour shaping and validation measure against. */
+/** Reference polyline that contour shaping and validation measure against. */
 export interface ContourReference {
   /** Reference vertices in traversal order, without a repeated seam point. */
   readonly points: readonly ContourCoordinate[]
   /** Raw arc offset of each vertex, strictly increasing from zero. */
-  readonly rawOffsets: readonly number[]
-  /** Reference arc offset of each vertex, accumulated exactly as curve resampling does. */
   readonly offsets: readonly number[]
-  /** Total reference arc length, including the seam segment of a closed chain. */
-  readonly length: number
   /** Whether each vertex sits inside locked geometry. */
   readonly locked: readonly boolean[]
 }

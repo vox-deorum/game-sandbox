@@ -7,14 +7,21 @@ import { expectedCharacterIds, readStatic } from './overlay.js'
 import { buildStaticScene, computeScene } from './scene.js'
 import { fixtureRecording } from './test-helpers.js'
 
-function frameMap(name: 'props' | 'scenery' | 'effects'): Readonly<Record<string, Texture>> {
+function frameMap(
+  name: 'props' | 'monuments' | 'scenery' | 'effects',
+): Readonly<Record<string, Texture>> {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) throw new Error(`Missing ${name} atlas.`)
   return Object.fromEntries(atlas.frames.names.map((frame) => [frame, Texture.WHITE]))
 }
 
 function art(): PropArt {
-  return { props: frameMap('props'), scenery: frameMap('scenery'), effects: frameMap('effects') }
+  return {
+    props: frameMap('props'),
+    monuments: frameMap('monuments'),
+    scenery: frameMap('scenery'),
+    effects: frameMap('effects'),
+  }
 }
 
 function scene() {
@@ -39,14 +46,48 @@ describe('Three Branches retained props', () => {
   it('slices named views over their atlas source with manifest rectangles', () => {
     const source = Texture.WHITE.source
     const props = new Texture({ source, frame: new Rectangle(0, 0, 2304, 1536) })
+    const monuments = new Texture({ source, frame: new Rectangle(0, 0, 2304, 1024) })
     const scenery = new Texture({ source, frame: new Rectangle(0, 0, 128, 128) })
     const effects = new Texture({ source, frame: new Rectangle(0, 0, 1344, 512) })
-    const views = createPropArt({ props, scenery, effects })
+    const views = createPropArt({ props, monuments, scenery, effects })
     expect(views.props.stallOpen?.source).toBe(source)
     expect(views.props.stallOpen?.frame).toMatchObject({ x: 0, y: 0, width: 384, height: 256 })
-    expect(views.props.bellFoundation?.frame).toMatchObject({ x: 384, y: 768, width: 384, height: 256 })
+    expect(views.props.bellFoundation).toBeUndefined()
+    expect(views.monuments.bellFoundation?.frame).toMatchObject({ x: 768, y: 512, width: 768, height: 512 })
     expect(views.scenery.marketCrate?.frame).toMatchObject({ x: 64, y: 64, width: 64, height: 64 })
+    expect(views.monuments.pumpFlowing?.frame).toMatchObject({ x: 0, y: 0, width: 768, height: 512 })
     expect(views.effects.flameA?.frame).toMatchObject({ x: 768, y: 0, width: 192, height: 128 })
+  })
+
+  it('anchors tightly authored monuments at their collision points without changing world scale', () => {
+    const frame = scene()
+    const scenery = new Container()
+    const props = new Container()
+    const upper = new Container()
+    const layer = createPropLayer(scenery, props, upper, new Container(), frame.static)
+    const source = Texture.WHITE.source
+    const installed = createPropArt({
+      props: new Texture({ source, frame: new Rectangle(0, 0, 2304, 1536) }),
+      monuments: new Texture({ source, frame: new Rectangle(0, 0, 2304, 1024) }),
+      scenery: new Texture({ source, frame: new Rectangle(0, 0, 128, 128) }),
+      effects: new Texture({ source, frame: new Rectangle(0, 0, 1344, 512) }),
+    })
+    layer.install(installed)
+
+    const bell = frame.static.props.find((item) => item.type === 'bell')
+    const pump = frame.static.props.find((item) => item.type === 'pump')
+    if (bell === undefined || pump === undefined) throw new Error('Fixture needs bell and pump.')
+    const bellStill = spriteNode(node(upper, `prop:${bell.id}`), 'prop-still')
+    const pumpStill = spriteNode(node(upper, `prop:${pump.id}`), 'prop-still')
+    const foundation = props.children.find((child) => child.label === 'prop-foundation')
+    if (!(foundation instanceof Sprite)) throw new Error('Fixture has no bell foundation.')
+
+    expect(bellStill.scale.x).toBe(0.36 / 8)
+    expect(bellStill.anchor).toMatchObject({ x: 0.5, y: 480 / 512 })
+    expect(foundation.scale.x).toBe(0.36 / 8)
+    expect(foundation.anchor).toMatchObject({ x: 0.5, y: 0.5 })
+    expect(pumpStill.scale.x).toBe(0.33 / 4)
+    expect(pumpStill.anchor).toMatchObject({ x: 344 / 768, y: 0.75 })
   })
 
   it('retains state nodes and leaves fallback untouched when complete art preflight fails', () => {

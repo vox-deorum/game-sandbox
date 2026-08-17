@@ -12,7 +12,8 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 | --- | --- | --- |
 | `terrain-atlas.png` | `assets/terrain/` | 64 |
 | `buildings-atlas.png` | `assets/buildings/` | 16 |
-| `props-atlas.png` | `assets/props/<type>/<state>.png` plus `assets/props/bell/foundation.png` | 20 |
+| `props-atlas.png` | `assets/props/<type>/<state>.png` for ordinary props | 15 |
+| `monuments-atlas.png` | `assets/monuments/<type>/<state>.png` plus `assets/monuments/bell/foundation.png` | 5 |
 | `scenery-atlas.png` | `assets/scenery/` | 4 |
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 28 |
@@ -21,7 +22,9 @@ The Frames column counts loose files, not frame pixels. Each page's current fram
 
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
 
-The props frame names in `assets.ts` derive from catalog tokens and states, followed by the fixed bell foundation. Slots 0 through 18 name complete prop states in catalog order, from `stallOpen` through `bellSilent`; slot 19 is `bellFoundation` from `props/bell/foundation.png`. The remaining 16 cells are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling.
+The props frame names in `assets.ts` derive from ordinary catalog tokens and states. Slots 0 through 14 name complete states in catalog order, from `stallOpen` through `repairBenchIdle`; slots 15 through 35 are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling. `assets/props/` contains no pump or bell files.
+
+The monument page is the sole authority for the fixed-north pump and bell. Its row-major 3 by 2 grid names `pumpFlowing`, `pumpIdle`, `bellRinging`, `bellSilent`, and `bellFoundation` from matching `assets/monuments/` paths. Each tightly authored runtime frame is 768 by 512 on a 2304 by 1024 page. The renderer divides the configured pump scale by 4 and the bell scale by 8, then anchors each sprite at its configured source pixel so its collision registration and world bounds remain unchanged. The sixth cell is an unnamed trailing cell that the packer fills transparently. Its source page has the same 2304 by 1024 dimensions because the accepted masters need no runtime downsampling.
 
 The effects page is a 7 by 4 grid of 28 runtime frames on a 1344 by 512 page. Its 384 by 256 source cells live on a 2688 by 1024 source page.
 
@@ -45,22 +48,22 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 ## Incremental runtime loading
 
-`assets.ts` keeps the six-group catalog, page paths, grids, dimensions, and runtime load function. The runtime glob names only pages with shipped consumers: terrain, props, scenery, the four character layers, and effects. Buildings and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets.ts` keeps the seven-group catalog, page paths, grids, dimensions, and runtime load function. The runtime glob names only pages with shipped consumers: terrain, props, monuments, scenery, the four character layers, and effects. Buildings and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 The road pilot retains its four native 1254 by 1254 colour sources in `renderer/source-art/road-material-source.png`, ordered `roadA roadB / roadC roadD`. The terrain source page keeps grayscale 192 by 128 previews of those sources in slots 4 through 7; loose runtime frames remain the packer's editable input.
 
 ## Migration
 
-Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` layer pages into 116 loose frames. Pack `props` from its 19 loose state files, leaving the remaining trailing cells transparent. Commit loose frames and compiled pages together.
+Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` layer pages into 116 loose frames. Pack `props` from its 15 ordinary loose files and `monuments` from its five pump and bell frames. Remove the duplicate `assets/props/pump/` and `assets/props/bell/` directories before packing, because undeclared loose PNGs are rejected as strays. Rebuild the props source page with cells 15 through 35 transparent and leave the sixth monument cell transparent. Commit loose frames and compiled pages together.
 
 ## Tests
 
 - Pure packer tests in `frontend/test/atlas.test.ts` run on small synthetic images: name derivation for flat, nested, and underscored paths, a split-then-pack pixel round trip, and one failure case each for a missing frame, a stray PNG, a mis-sized frame, a non-gray pixel on a grayscale-alpha page, and bad grid arithmetic.
-- `assets.test.ts` checks catalog completeness, the nontrivial nested props paths, and the exact runtime page set for terrain, the four character layers, and effects.
+- `assets.test.ts` checks catalog completeness, the nontrivial nested prop and monument paths, and the exact runtime page set for terrain, props, monuments, scenery, the four character layers, and effects.
 - A freshness test in `environments/three_branches/renderer/atlas.test.ts` packs every page from its committed loose frames and compares pixels against the committed page, and checks each page's PNG header against its declared dimensions.
 
 All three ride the existing vitest include globs, so `scripts/ci.py` needs no change.
 
 ## Done when
 
-All nine declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 20 loose prop frames with transparent unnamed trailing cells, `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
+All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.

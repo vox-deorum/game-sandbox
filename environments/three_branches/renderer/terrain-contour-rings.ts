@@ -1,4 +1,5 @@
 import { coordinateKey, samePoint } from './terrain-contour-graph.js'
+import { rotate } from './terrain-helpers.js'
 import type { ComponentRecord } from './terrain-contour-grid.js'
 import type { DirectedSegment, GraphNode, GraphSegment, SideRecord, WorkingChain } from './terrain-contour-graph.js'
 import type { ContourCoordinate, TerrainContourUse } from './types.js'
@@ -76,10 +77,6 @@ export function buildRings(
     }
   }
   return rings
-}
-
-function rotate<T>(items: readonly T[], index: number): T[] {
-  return [...items.slice(index), ...items.slice(0, index)]
 }
 
 function directedKey(segmentId: number, reversed: boolean): string {

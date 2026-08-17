@@ -1,19 +1,17 @@
-import { distance, stableHashParts } from '@renderers/base/math.js'
+import { stableHashParts } from '@renderers/base/math.js'
 
-import { cellKey, EPSILON, projectToSegment } from './terrain-helpers.js'
+import { EPSILON } from './terrain-helpers.js'
 import {
   buildContourReference,
   nearestIntervalDistance,
   normalizedOffset,
   offsetLocked,
-  rawOffsetAtReferenceOffset,
   rawPointAt,
   referenceOf,
 } from './terrain-contour-reference.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
 import type { OffsetInterval } from './terrain-contour-reference.js'
 import type {
-  ContourCoordinate,
   TerrainContourPoint,
   TerrainContourSettings,
   TerrainContourSpan,
@@ -29,8 +27,8 @@ interface ContourSpanIndex {
 }
 
 /**
- * Shape one chain. The corner-cut reference supplies the source polyline, junction tangents and
- * fixed spans stay locked on raw geometry, and the deviation cap bounds smoothing and noise alike.
+ * Shape one chain. The reference supplies the source polyline, junction tangents and fixed spans
+ * stay locked on raw geometry, and the deviation cap bounds smoothing and noise alike.
  */
 function shapeContourChain(
   chain: WorkingChain,
@@ -55,13 +53,10 @@ function shapeContourChain(
     stableHashParts('terrain-contour-shape', layoutHash, chain.pairKey),
     () => settings.maxDeviationCells,
   )
+  // The reference carries every raw corner, so the arc the curve engine resamples along is the raw
+  // arc and a sample offset needs only to be brought into range.
   return shaped.map((point): TerrainContourPoint => {
-    const rawOffset = rawOffsetAtReferenceOffset(
-      reference,
-      chain.closed,
-      chain.rawLength,
-      point.sourceOffset,
-    )
+    const rawOffset = normalizedOffset(point.sourceOffset, chain.rawLength, chain.closed)
     const shorelineFactor = shorelineFactorAt(
       rawOffset,
       spanIndex,
@@ -121,80 +116,9 @@ function shorelineFactorAt(
   return Math.min(1, distance / taperCells)
 }
 
-/** A reference-polyline segment used by curve validation. */
-export interface RawPolylineSegment {
-  readonly start: ContourCoordinate
-  readonly end: ContourCoordinate
-}
-
-/** A cell-bucketed index of polyline segments. */
-export interface RawPolylineIndex {
-  readonly segments: readonly RawPolylineSegment[]
-  readonly buckets: ReadonlyMap<string, readonly RawPolylineSegment[]>
-}
-
-/** Index polyline segments by cell so local contour adjustments avoid full-chain scans. */
-export function indexRawPolyline(points: readonly ContourCoordinate[]): RawPolylineIndex {
-  const segments = points.slice(0, -1).map((start, index) => ({ start, end: points[index + 1]! }))
-  const buckets = new Map<string, RawPolylineSegment[]>()
-  for (const segment of segments) {
-    const minimumX = Math.floor(Math.min(segment.start.x, segment.end.x))
-    const maximumX = Math.floor(Math.max(segment.start.x, segment.end.x))
-    const minimumY = Math.floor(Math.min(segment.start.y, segment.end.y))
-    const maximumY = Math.floor(Math.max(segment.start.y, segment.end.y))
-    for (let y = minimumY; y <= maximumY; y += 1) {
-      for (let x = minimumX; x <= maximumX; x += 1) {
-        const key = cellKey(x, y)
-        const bucket = buckets.get(key) ?? []
-        bucket.push(segment)
-        buckets.set(key, bucket)
-      }
-    }
-  }
-  return { segments, buckets }
-}
-
-export function projectToPolyline(
-  point: ContourCoordinate,
-  index: RawPolylineIndex,
-): { point: ContourCoordinate; distance: number } {
-  const nearby = nearbyRawSegments(point, index)
-  const candidates = nearby.length === 0 ? index.segments : nearby
-  let nearest: ContourCoordinate = candidates[0]?.start ?? point
-  let nearestDistance = Number.POSITIVE_INFINITY
-  for (const segment of candidates) {
-    const projected = projectToSegment(point, segment.start, segment.end)
-    const candidateDistance = distance(point, projected)
-    if (candidateDistance < nearestDistance) {
-      nearest = projected
-      nearestDistance = candidateDistance
-    }
-  }
-  return { point: nearest, distance: nearestDistance }
-}
-
-/** Return indexed segments in the point cell and its eight neighbors, without duplicate probes. */
-function nearbyRawSegments(
-  point: ContourCoordinate,
-  index: RawPolylineIndex,
-): readonly RawPolylineSegment[] {
-  const column = Math.floor(point.x)
-  const row = Math.floor(point.y)
-  const segments = new Set<RawPolylineSegment>()
-  for (let y = row - 1; y <= row + 1; y += 1) {
-    for (let x = column - 1; x <= column + 1; x += 1) {
-      for (const segment of index.buckets.get(cellKey(x, y)) ?? []) segments.add(segment)
-    }
-  }
-  return [...segments]
-}
-
 /**
- * Build the reference of every chain.
- *
- * Every reference leaves its raw boundary by the same drift bound, so two banks of a thin band
- * shed the same staircase and travel together, keeping the width between them. That is what holds
- * a corridor open.
+ * Build the reference of every chain. A reference traces its raw boundary exactly, so the two
+ * banks of a thin band keep the raw width between them and a corridor stays open.
  */
 export function buildContourReferences(
   chains: readonly WorkingChain[],

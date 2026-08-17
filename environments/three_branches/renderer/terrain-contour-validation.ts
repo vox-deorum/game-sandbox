@@ -10,16 +10,14 @@
 
 import { distance } from '@renderers/base/math.js'
 
-import { EPSILON } from './terrain-helpers.js'
+import { cellKey, EPSILON, projectToSegment } from './terrain-helpers.js'
 import { samePoint } from './terrain-contour-graph.js'
-import { referenceOf, referencePointAtRawOffset } from './terrain-contour-reference.js'
-import { indexRawPolyline, projectToPolyline } from './terrain-contour-shaping.js'
+import { rawPointAt } from './terrain-contour-reference.js'
 import type { ComponentRecord } from './terrain-contour-grid.js'
 import type { WorkingChain } from './terrain-contour-graph.js'
 import type { WorkingRing } from './terrain-contour-rings.js'
 import type { ContourCoordinate, TerrainContourUse } from './types.js'
 
-const CURVE_BUCKET_SIZE_CELLS = 1
 const TUBE_SAMPLE_SPACING_CELLS = 0.05
 
 /** The chain fields the curve sweeps read, shared by working chains and planned ones. */
@@ -84,11 +82,9 @@ export function findCurveCrossings<Chain extends CurveChainView>(
  * Where the reference turns a corner tighter than the displacement the curve spends there,
  * neighbouring samples move inward along converging normals, swap order along the boundary, and
  * the chords between them cross. Every crossing over the layout suite has that shape: two chords
- * two to six samples apart, about a tenth of a cell across. Clearance cannot catch it, since the
- * geometry it would have to see is the same curve a few samples along, which self-exclusion has
- * to ignore for any boundary to smooth at all. Repair it directly instead: pull the points of
- * every crossing piece halfway toward their reference positions and sweep again. The corner-cut
- * reference is planar, so the halving always converges without reintroducing staircase corners.
+ * two to six samples apart, about a tenth of a cell across. Repair them directly: pull the points
+ * of every crossing piece halfway toward their reference positions and sweep again. The reference
+ * is the raw boundary, which is planar, so the halving always converges.
  */
 const INTERSECTION_REPAIR_PASSES = 12
 
@@ -110,11 +106,12 @@ export function repairCurveGraph(chains: readonly WorkingChain[]): void {
       for (const index of indexes) {
         const point = points[index]
         if (point === undefined || point.locked) continue
-        const anchor = referencePointAtRawOffset(
-          referenceOf(chain),
-          chain.closed,
-          chain.rawLength,
+        const anchor = rawPointAt(
           point.rawOffset,
+          chain.rawPoints,
+          chain.spans,
+          chain.rawLength,
+          chain.closed,
         )
         points[index] = {
           ...point,
@@ -127,13 +124,64 @@ export function repairCurveGraph(chains: readonly WorkingChain[]): void {
   }
 }
 
+/** One reference chord, held in a cell-bucketed index so projection avoids full-chain scans. */
+interface ReferenceSegment {
+  readonly start: ContourCoordinate
+  readonly end: ContourCoordinate
+}
+
+interface ReferenceIndex {
+  readonly segments: readonly ReferenceSegment[]
+  readonly buckets: ReadonlyMap<string, readonly ReferenceSegment[]>
+}
+
+function indexReferencePolyline(points: readonly ContourCoordinate[]): ReferenceIndex {
+  const segments = points.slice(0, -1).map((start, index) => ({ start, end: points[index + 1]! }))
+  const buckets = new Map<string, ReferenceSegment[]>()
+  for (const segment of segments) {
+    for (const key of cellBucketKeys(segment.start, segment.end)) {
+      const bucket = buckets.get(key) ?? []
+      bucket.push(segment)
+      buckets.set(key, bucket)
+    }
+  }
+  return { segments, buckets }
+}
+
+/** The nearest position on a reference polyline, searched through the point cell and its ring. */
+function projectToPolyline(
+  point: ContourCoordinate,
+  index: ReferenceIndex,
+): { readonly point: ContourCoordinate; readonly distance: number } {
+  const column = Math.floor(point.x)
+  const row = Math.floor(point.y)
+  const nearby = new Set<ReferenceSegment>()
+  for (let y = row - 1; y <= row + 1; y += 1) {
+    for (let x = column - 1; x <= column + 1; x += 1) {
+      for (const segment of index.buckets.get(cellKey(x, y)) ?? []) nearby.add(segment)
+    }
+  }
+  const candidates = nearby.size === 0 ? index.segments : [...nearby]
+  let nearest: ContourCoordinate = candidates[0]?.start ?? point
+  let nearestDistance = Number.POSITIVE_INFINITY
+  for (const segment of candidates) {
+    const projected = projectToSegment(point, segment.start, segment.end)
+    const candidateDistance = distance(point, projected)
+    if (candidateDistance < nearestDistance) {
+      nearest = projected
+      nearestDistance = candidateDistance
+    }
+  }
+  return { point: nearest, distance: nearestDistance }
+}
+
 /** The worst distance from a drawn curve to the reference polyline it was shaped from. */
 export function maxCurveTubeDeviation(
   chains: readonly (CurveChainView & { readonly referencePoints: readonly ContourCoordinate[] })[],
 ): { readonly cells: number; readonly chainId: string; readonly at: ContourCoordinate } {
   let worst = { cells: 0, chainId: '', at: { x: 0, y: 0 } }
   for (const chain of chains) {
-    const reference = indexRawPolyline(closedPolyline(chain.referencePoints, chain.closed))
+    const reference = indexReferencePolyline(closedPolyline(chain.referencePoints, chain.closed))
     const points = closedPolyline(chain.points, chain.closed)
     for (const [index, start] of points.slice(0, -1).entries()) {
       const end = points[index + 1]!
@@ -162,7 +210,7 @@ function spatialCurvePairs<Chain extends CurveChainView>(
   const seen = new Set<string>()
   for (let index = 0; index < pieces.length; index += 1) {
     const piece = pieces[index]!
-    for (const key of curveBucketKeys(piece)) {
+    for (const key of cellBucketKeys(piece.start, piece.end)) {
       const bucket = buckets.get(key) ?? []
       for (const earlier of bucket) {
         const pairKey = `${indexes.get(earlier)!}:${index}`
@@ -177,17 +225,15 @@ function spatialCurvePairs<Chain extends CurveChainView>(
   return pairs
 }
 
-function curveBucketKeys(piece: {
-  readonly start: ContourCoordinate
-  readonly end: ContourCoordinate
-}): readonly string[] {
-  const minimumX = Math.floor(Math.min(piece.start.x, piece.end.x) / CURVE_BUCKET_SIZE_CELLS)
-  const maximumX = Math.floor(Math.max(piece.start.x, piece.end.x) / CURVE_BUCKET_SIZE_CELLS)
-  const minimumY = Math.floor(Math.min(piece.start.y, piece.end.y) / CURVE_BUCKET_SIZE_CELLS)
-  const maximumY = Math.floor(Math.max(piece.start.y, piece.end.y) / CURVE_BUCKET_SIZE_CELLS)
+/** The keys of every one-cell bucket a segment passes through. */
+function cellBucketKeys(start: ContourCoordinate, end: ContourCoordinate): readonly string[] {
+  const minimumX = Math.floor(Math.min(start.x, end.x))
+  const maximumX = Math.floor(Math.max(start.x, end.x))
+  const minimumY = Math.floor(Math.min(start.y, end.y))
+  const maximumY = Math.floor(Math.max(start.y, end.y))
   const keys: string[] = []
   for (let y = minimumY; y <= maximumY; y += 1) {
-    for (let x = minimumX; x <= maximumX; x += 1) keys.push(`${x}:${y}`)
+    for (let x = minimumX; x <= maximumX; x += 1) keys.push(cellKey(x, y))
   }
   return keys
 }

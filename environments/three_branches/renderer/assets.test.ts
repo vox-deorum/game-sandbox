@@ -47,11 +47,12 @@ function readPngHeader(relativePath: string): PngHeader {
 }
 
 describe('Three Branches asset catalog', () => {
-  it('catalogs the six approved atlas groups with named frame prefixes', () => {
+  it('catalogs the seven approved atlas groups with named frame prefixes', () => {
     expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
       'terrain',
       'buildings',
       'props',
+      'monuments',
       'scenery',
       'characters',
       'effects',
@@ -70,7 +71,19 @@ describe('Three Branches asset catalog', () => {
     }
 
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
-    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(20)
+    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(15)
+    expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
+      expect.arrayContaining(['pumpFlowing', 'pumpIdle', 'bellRinging', 'bellSilent', 'bellFoundation']),
+    )
+
+    const monuments = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'monuments')
+    expect(monuments && !('layers' in monuments) ? monuments.frames.names : []).toEqual([
+      'pumpFlowing',
+      'pumpIdle',
+      'bellRinging',
+      'bellSilent',
+      'bellFoundation',
+    ])
 
     const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
     expect(
@@ -85,9 +98,19 @@ describe('Three Branches asset catalog', () => {
         'stall/open.png',
         'lantern/lit.png',
         'repair_bench/busy.png',
-        'bell/ringing.png',
       ]),
     )
+    expect(props?.framePaths).not.toEqual(
+      expect.arrayContaining(['pump/flowing.png', 'pump/idle.png', 'bell/ringing.png', 'bell/silent.png']),
+    )
+    const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
+    expect(monuments?.framePaths).toEqual([
+      'pump/flowing.png',
+      'pump/idle.png',
+      'bell/ringing.png',
+      'bell/silent.png',
+      'bell/foundation.png',
+    ])
   })
 
   it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
@@ -105,19 +128,21 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads terrain, prop, scenery, character, and effects pages while keeping buildings deferred', async () => {
+  it('loads terrain, prop, monument, scenery, character, and effects pages while keeping buildings deferred', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(8)
+    expect(load).toHaveBeenCalledTimes(9)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
     expect(assets.characters.arms).toMatch(/characters-arms-atlas\.png/)
     expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
+    expect(assets.monuments).toMatch(/monuments-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /buildings/.test(source))).toBe(false)
   })

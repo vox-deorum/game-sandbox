@@ -168,7 +168,20 @@
   "props": {
     "defaultScale": 0.14,
     "scaleByType": { "bell": 0.36, "pump": 0.33 },
-    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } }
+    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } },
+    "monumentByType": {
+      "pump": {
+        "textureDensityDivisor": 4,
+        "sourceAnchorByRole": { "still": { "x": 344, "y": 384 } }
+      },
+      "bell": {
+        "textureDensityDivisor": 8,
+        "sourceAnchorByRole": {
+          "still": { "x": 384, "y": 480 },
+          "foundation": { "x": 384, "y": 256 }
+        }
+      }
+    }
   },
   "scenery": { "defaultScale": 0.25, "scaleByType": { "crate": 0.3 } },
   "propEffects": {

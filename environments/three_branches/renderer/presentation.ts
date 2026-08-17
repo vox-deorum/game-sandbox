@@ -6,7 +6,7 @@ import presentationDocument from './presentation.json'
 import { smoothingPassesFor } from './terrain-curves.js'
 import { mixedTint } from './tint.js'
 import type { TerrainCurveProfile } from './types.js'
-import { array, finiteNumber, nonnegativeInteger, positiveNumber } from './validation.js'
+import { array, finiteNumber, nonnegativeInteger, positiveInteger, positiveNumber } from './validation.js'
 
 /** Logical dimensions exposed to the renderer host. */
 export interface RendererSize {
@@ -264,8 +264,23 @@ export interface SourceAnchor {
   y: number
 }
 
+/** An absolute pixel position inside a complete monument source frame. */
+export interface SourcePixelAnchor {
+  x: number
+  y: number
+}
+
+type MonumentSpriteRole = 'still' | 'foundation'
+
+/** Higher-density monument calibration that preserves collision registration. */
+export interface MonumentVisualTreatment {
+  textureDensityDivisor: number
+  sourceAnchorByRole: Readonly<Partial<Record<MonumentSpriteRole, SourcePixelAnchor>>>
+}
+
 interface PropVisualTreatment extends VisualScaleTreatment {
   effectAnchorByType: Readonly<Record<string, SourceAnchor>>
+  monumentByType: Readonly<Record<string, MonumentVisualTreatment>>
 }
 
 export interface HearthsideStyle {
@@ -355,6 +370,11 @@ export function propVisualScale(type: string): number {
 /** Resolve an effect anchor measured from the center of a complete prop source canvas. */
 export function propEffectAnchor(type: string): SourceAnchor {
   return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
+}
+
+/** Resolve fixed-north monument density and collision anchors, when a prop has them. */
+export function propMonumentTreatment(type: string): MonumentVisualTreatment | null {
+  return HEARTHSIDE_STYLE.props.monumentByType[type] ?? null
 }
 
 /** Resolve one scenery sprite scale from the validated visual calibration. */
@@ -643,13 +663,19 @@ function propVisualTreatment(
   name: string,
   knownTypes: readonly string[],
 ): PropVisualTreatment {
-  const source = exactRecord(value, name, ['defaultScale', 'scaleByType', 'effectAnchorByType'])
+  const source = exactRecord(value, name, [
+    'defaultScale',
+    'scaleByType',
+    'effectAnchorByType',
+    'monumentByType',
+  ])
   const scales = visualScaleTreatment(
     { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
     name,
     knownTypes,
   )
   const anchors = recordWithOptional(source.effectAnchorByType, `${name}.effectAnchorByType`, [], knownTypes)
+  const monuments = exactRecord(source.monumentByType, `${name}.monumentByType`, ['pump', 'bell'])
   return {
     ...scales,
     effectAnchorByType: Object.fromEntries(
@@ -664,7 +690,48 @@ function propVisualTreatment(
         ]
       }),
     ),
+    monumentByType: Object.fromEntries(
+      Object.entries(monuments).map(([type, value]) => [
+        type,
+        monumentVisualTreatment(value, `${name}.monumentByType.${type}`, type === 'bell'),
+      ]),
+    ),
   }
+}
+
+function monumentVisualTreatment(
+  value: unknown,
+  name: string,
+  hasFoundation: boolean,
+): MonumentVisualTreatment {
+  const source = exactRecord(value, name, ['textureDensityDivisor', 'sourceAnchorByRole'])
+  const divisor = positiveInteger(source.textureDensityDivisor, `${name}.textureDensityDivisor`)
+  if (divisor > 8) {
+    throw new Error(`${name}.textureDensityDivisor must be at most eight.`)
+  }
+  const roles = recordWithOptional(
+    source.sourceAnchorByRole,
+    `${name}.sourceAnchorByRole`,
+    hasFoundation ? ['still', 'foundation'] : ['still'],
+    [],
+  )
+  return {
+    textureDensityDivisor: divisor,
+    sourceAnchorByRole: Object.fromEntries(
+      Object.entries(roles).map(([role, anchor]) => [
+        role,
+        sourcePixelAnchor(anchor, `${name}.sourceAnchorByRole.${role}`),
+      ]),
+    ) as Partial<Record<MonumentSpriteRole, SourcePixelAnchor>>,
+  }
+}
+
+function sourcePixelAnchor(value: unknown, name: string): SourcePixelAnchor {
+  const source = exactRecord(value, name, ['x', 'y'])
+  const x = nonnegativeInteger(source.x, `${name}.x`)
+  const y = nonnegativeInteger(source.y, `${name}.y`)
+  if (x > 768 || y > 512) throw new Error(`${name} must be inside a 768 by 512 monument frame.`)
+  return { x, y }
 }
 
 function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {

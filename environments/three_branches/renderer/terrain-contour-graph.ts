@@ -1,7 +1,7 @@
 import { distance } from '@renderers/base/math.js'
 
 import { FIXED_MATERIALS, TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
-import { cellAt, compareCells, EPSILON } from './terrain-helpers.js'
+import { cellAt, EPSILON, rotate } from './terrain-helpers.js'
 import type {
   ContourCoordinate,
   ContourReference,
@@ -82,13 +82,13 @@ export function buildGraph(
   const addSegment = (
     start: GraphNode,
     end: GraphNode,
-    leftCells: readonly CellRecord[],
-    rightCells: readonly CellRecord[],
+    leftCell: CellRecord | undefined,
+    rightCell: CellRecord | undefined,
   ): void => {
     if (samePoint(start, end))
       throw new Error('Terrain contour contains a zero-length source edge.')
-    const left = sideFromCells(leftCells, componentKeyForCell)
-    const right = sideFromCells(rightCells, componentKeyForCell)
+    const left = sideFromCell(leftCell, componentKeyForCell)
+    const right = sideFromCell(rightCell, componentKeyForCell)
     if (left.material === right.material) {
       throw new Error('Terrain contour source edge does not separate two materials.')
     }
@@ -108,12 +108,7 @@ export function buildGraph(
       const north = cellAt(cells, width, height, x, y - 1)
       const south = cellAt(cells, width, height, x, y)
       if ((north?.material ?? TERRAIN_EXTERIOR) !== (south?.material ?? TERRAIN_EXTERIOR)) {
-        addSegment(
-          node(x, y),
-          node(x + 1, y),
-          south === undefined ? [] : [south],
-          north === undefined ? [] : [north],
-        )
+        addSegment(node(x, y), node(x + 1, y), south, north)
       }
     }
   }
@@ -122,12 +117,7 @@ export function buildGraph(
       const west = cellAt(cells, width, height, x - 1, y)
       const east = cellAt(cells, width, height, x, y)
       if ((west?.material ?? TERRAIN_EXTERIOR) !== (east?.material ?? TERRAIN_EXTERIOR)) {
-        addSegment(
-          node(x, y),
-          node(x, y + 1),
-          west === undefined ? [] : [west],
-          east === undefined ? [] : [east],
-        )
+        addSegment(node(x, y), node(x, y + 1), west, east)
       }
     }
   }
@@ -138,12 +128,12 @@ export function buildGraph(
   }
 }
 
-function sideFromCells(
-  cells: readonly CellRecord[],
+/** Describe the one cell lying on a side of a source edge, or the exterior beyond the map. */
+function sideFromCell(
+  cell: CellRecord | undefined,
   componentKeyForCell: ReadonlyMap<number, string>,
 ): SideRecord {
-  const first = cells[0]
-  if (first === undefined) {
+  if (cell === undefined) {
     return {
       material: TERRAIN_EXTERIOR,
       semantics: [TERRAIN_EXTERIOR],
@@ -151,12 +141,12 @@ function sideFromCells(
       componentKey: TERRAIN_EXTERIOR,
     }
   }
-  const componentKey = componentKeyForCell.get(first.index)
+  const componentKey = componentKeyForCell.get(cell.index)
   if (componentKey === undefined) throw new Error('Terrain contour source cell has no component.')
   return {
-    material: first.material,
-    semantics: [...new Set(cells.map((cell) => cell.semantic))].sort(),
-    cells: [...cells].sort(compareCells),
+    material: cell.material,
+    semantics: [cell.semantic],
+    cells: [cell],
     componentKey,
   }
 }
@@ -269,10 +259,6 @@ function atomEnd(atom: ChainAtom): GraphNode {
 
 function reverseAtoms(atoms: readonly ChainAtom[]): ChainAtom[] {
   return [...atoms].reverse().map((atom) => ({ segment: atom.segment, reversed: !atom.reversed }))
-}
-
-function rotate<T>(items: readonly T[], index: number): T[] {
-  return [...items.slice(index), ...items.slice(0, index)]
 }
 
 function compareCoordinates(first: ContourCoordinate, second: ContourCoordinate): number {

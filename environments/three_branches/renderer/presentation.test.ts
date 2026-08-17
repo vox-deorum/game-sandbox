@@ -6,6 +6,8 @@ import {
   measureDeliveryGap,
   type PhaseGrade,
   phaseGrade,
+  propEffectAnchor,
+  propMonumentTreatment,
   readHearthsideStyle,
   type TerrainFillTreatment,
   transitionDurationMs,
@@ -109,6 +111,31 @@ describe('Hearthside Ink presentation', () => {
     expect(HEARTHSIDE_STYLE.palette).toEqual(APPROVED_PALETTE)
   })
 
+  it('keeps monument texture density and source anchors separate from canonical effect offsets', () => {
+    expect(propMonumentTreatment('pump')).toEqual({
+      textureDensityDivisor: 4,
+      sourceAnchorByRole: { still: { x: 344, y: 384 } },
+    })
+    expect(propMonumentTreatment('bell')).toEqual({
+      textureDensityDivisor: 8,
+      sourceAnchorByRole: {
+        still: { x: 384, y: 480 },
+        foundation: { x: 384, y: 256 },
+      },
+    })
+    expect(propMonumentTreatment('stall')).toBeNull()
+    expect(propEffectAnchor('pump')).toEqual({ x: 31, y: -61 })
+  })
+
+  it('rejects incomplete or out-of-frame monument calibration', () => {
+    const missingFoundation = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingFoundation.props.monumentByType.bell.sourceAnchorByRole.foundation
+    expect(() => readHearthsideStyle(missingFoundation)).toThrow('sourceAnchorByRole keys')
+
+    const offFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    offFrame.props.monumentByType.pump.sourceAnchorByRole.still.x = 769
+    expect(() => readHearthsideStyle(offFrame)).toThrow('must be inside a 768 by 512 monument frame')
+  })
   it('keeps day neutral and configures every graded rules phase', () => {
     expect(Object.keys(HEARTHSIDE_STYLE.phaseGrades)).toEqual([
       'dawn',

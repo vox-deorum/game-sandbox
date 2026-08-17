@@ -44,6 +44,11 @@ export function cellKey(column: number, row: number): string {
   return `${column}:${row}`
 }
 
+/** Rotate a list to start at one index, carrying the head round to the tail. */
+export function rotate<Item>(items: readonly Item[], index: number): Item[] {
+  return [...items.slice(index), ...items.slice(0, index)]
+}
+
 /** Sort terrain cells from north to south, then west to east. */
 export function compareCells(first: GridCell, second: GridCell): number {
   return first.row - second.row || first.column - second.column
