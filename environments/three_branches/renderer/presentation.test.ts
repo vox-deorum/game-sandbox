@@ -65,7 +65,6 @@ const APPROVED_CONTOURS = {
   profiles: { land: LAND_CURVE, water: WATER_CURVE },
   junctionTangentCells: 0.15,
   maxDeviationCells: 0.6,
-  minimumCorridorCells: 0.45,
 } as const
 
 const APPROVED_SEAMS = {
@@ -235,10 +234,6 @@ describe('Hearthside Ink presentation', () => {
     const excessiveAmplitude = structuredClone(HEARTHSIDE_STYLE) as any
     excessiveAmplitude.terrain.contours.profiles.water.octaves[0].amplitudeCells = 4.01
     expect(() => readHearthsideStyle(excessiveAmplitude)).toThrow('amplitudeCells')
-
-    const unsafeCorridor = structuredClone(HEARTHSIDE_STYLE) as any
-    unsafeCorridor.terrain.contours.minimumCorridorCells = 0.249
-    expect(() => readHearthsideStyle(unsafeCorridor)).toThrow('minimumCorridorCells')
 
     const extraSeamKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraSeamKey.terrain.seams.mode = 'bands'

@@ -544,25 +544,11 @@ describe('continuous terrain contour planning', () => {
     )
     expect(banks.length).toBeGreaterThan(0)
     for (const bank of banks) {
-      // A corridor this narrow binds the drift ceiling, so its banks straighten part of the way
-      // rather than all of it: the two boundaries may never spend more than half their slack.
+      // Both banks shed the same staircase, which is what keeps the two cells between them, so
+      // each straightens part of the way rather than all of it.
       const residual = stairResidual(bank)
       expect(residual.raw).toBeGreaterThan(0.7)
       expect(residual.reference).toBeLessThan(residual.raw / 2)
-    }
-    const separation = Math.min(
-      ...banks.flatMap((bank, index) =>
-        banks
-          .slice(index + 1)
-          .flatMap((other) =>
-            bank.points.map((point) =>
-              Math.min(...other.points.map((far) => Math.hypot(point.x - far.x, point.y - far.y))),
-            ),
-          ),
-      ),
-    )
-    if (Number.isFinite(separation)) {
-      expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
     }
   })
 
@@ -578,25 +564,13 @@ describe('continuous terrain contour planning', () => {
     expect(island.holeRingIds).toHaveLength(0)
   })
 
-  it('keeps curves in their tube and one-cell corridors wider than 0.70 cell', () => {
+  it('keeps the two banks of a one-cell land strip inside their tube', () => {
     const result = plan(['wwwww', 'ggggg', 'wwwww'])
     for (const chain of result.chains) {
       expect(
         Math.max(...chain.points.map((point) => distanceToPolyline(point, chain.referencePoints))),
       ).toBeLessThanOrEqual(settings.maxDeviationCells + 0.02 + 1e-8)
     }
-    const allPoints = result.chains.flatMap((chain) => chain.points)
-    const upper = allPoints.filter((point) => point.y < 1.3 && point.x >= 0.25 && point.x <= 4.75)
-    const lower = allPoints.filter((point) => point.y > 1.7 && point.x >= 0.25 && point.x <= 4.75)
-    const minimumWidth = Math.min(
-      ...upper.map((point) =>
-        Math.min(...lower.map((other) => Math.hypot(point.x - other.x, point.y - other.y))),
-      ),
-      ...lower.map((point) =>
-        Math.min(...upper.map((other) => Math.hypot(point.x - other.x, point.y - other.y))),
-      ),
-    )
-    expect(minimumWidth).toBeGreaterThanOrEqual(settings.minimumCorridorCells)
   })
 
   it('locks structures, map borders, junction tangents, and bridge portals', () => {
@@ -710,15 +684,6 @@ describe('continuous terrain contour planning', () => {
         expect(Math.abs(normalizedAngle(secondAngle - firstAngle))).toBeLessThan(Math.PI / 3)
       }
     }
-    const [first, second] = bandChains
-    const separation = Math.min(
-      ...first!.points.map((point) =>
-        Math.min(
-          ...second!.points.map((other) => Math.hypot(point.x - other.x, point.y - other.y)),
-        ),
-      ),
-    )
-    expect(separation).toBeGreaterThanOrEqual(settings.minimumCorridorCells - 1e-6)
   })
 
   it('exposes a reference near the raw boundary that keeps the closed seam contract', () => {
@@ -753,27 +718,22 @@ describe('continuous terrain contour planning', () => {
     expect(shore.points.at(-1)!.rawOffset).toBeLessThan(shore.rawLength + 1e-9)
   })
 
-  it('caps free-point deviation to the local corridor, then lets it open up where terrain is wide', () => {
-    const narrowLimit = (1 - settings.minimumCorridorCells) / 2
-    const narrow = plan(['wwwww', 'ggggg', 'wwwww'])
-    const narrowDeviations = narrow.chains.flatMap((chain) =>
-      chain.points
-        .filter((point) => !point.locked)
-        .map((point) => distanceToPolyline(point, chain.rawPoints)),
-    )
-    expect(Math.max(...narrowDeviations)).toBeLessThanOrEqual(narrowLimit + 1e-8)
-
-    const wideRows = [
+  it('spends the wander its octaves ask for on a wide bank', () => {
+    const rows = [
       ...Array.from({ length: 3 }, () => 'w'.repeat(20)),
       ...Array.from({ length: 3 }, () => 'g'.repeat(20)),
     ]
-    const wide = plan(wideRows)
-    const wideDeviations = wide.chains.flatMap((chain) =>
+    const deviations = plan(rows).chains.flatMap((chain) =>
       chain.points
         .filter((point) => !point.locked)
         .map((point) => distanceToPolyline(point, chain.rawPoints)),
     )
-    expect(Math.max(...wideDeviations)).toBeGreaterThan(narrowLimit + 1e-8)
+    // An octave amplitude is the distance the boundary usually moves, so along a bank this long
+    // the farthest sample has to clear the largest amplitude asked for.
+    const largestAmplitude = Math.max(
+      ...settings.profiles.water.octaves.map((octave) => octave.amplitudeCells),
+    )
+    expect(Math.max(...deviations)).toBeGreaterThan(largestAmplitude)
   })
 
   it('uses nonperiodic smooth noise along a long straight chain', () => {

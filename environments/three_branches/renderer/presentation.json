@@ -82,8 +82,7 @@
         }
       },
       "junctionTangentCells": 0.15,
-      "maxDeviationCells": 0.6,
-      "minimumCorridorCells": 0.45
+      "maxDeviationCells": 0.6
     },
     "seams": {
       "pooling": { "widthCells": 0.45, "darken": 0.16, "opacity": 0.28 },

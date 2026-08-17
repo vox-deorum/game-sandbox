@@ -335,12 +335,6 @@ export interface TerrainContourSettings {
   readonly junctionTangentCells: number
   /** Maximum displacement from a reference boundary, in cells. */
   readonly maxDeviationCells: number
-  /**
-   * Minimum visual corridor between competing boundaries, in cells. One-cell corridors that run
-   * diagonally floor a little lower, near 0.6 cells, because the corner-cut reference renders a
-   * one-cell staircase band as a diagonal band of that natural width.
-   */
-  readonly minimumCorridorCells: number
 }
 
 /** One authored cell that contributes provenance to a contour side. */

@@ -381,13 +381,13 @@ function assembleReference(
 }
 
 /** One reference segment index paired with how far along it a lookup landed. */
-export interface ReferenceInterval {
+interface ReferenceInterval {
   readonly startIndex: number
   readonly amount: number
 }
 
 /** Locate one reference-arc offset on the reference polyline. */
-export function referenceIntervalAt(
+function referenceIntervalAt(
   reference: ContourReference,
   closed: boolean,
   referenceOffset: number,
@@ -559,7 +559,7 @@ export function contourOffsetKey(offset: number): string {
 }
 
 /** Arc distance from one offset to an interval, wrapping around closed chains. */
-export function circularDistanceToInterval(
+function circularDistanceToInterval(
   offset: number,
   start: number,
   end: number,
