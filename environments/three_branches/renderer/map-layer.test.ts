@@ -204,19 +204,23 @@ describe('Three Branches map layer', () => {
         ).alpha,
       ).toBe(materialLayerAlpha(material))
     }
-    expect(
-      required(terrain.view.getChildByLabel('terrain-path'), 'Path layer is missing.').alpha,
-    ).toBe(materialLayerAlpha('path'))
-
-    const road = required(
-      terrain.view.getChildByLabel('terrain-road'),
-      'Road layer is missing.',
-    ) as Graphics
-    expect(road.alpha).toBe(1)
-    const roadFilters = (road.filters ?? []) as AlphaFilter[]
-    expect(roadFilters).toHaveLength(1)
-    expect(roadFilters[0]).toBeInstanceOf(AlphaFilter)
-    expect(roadFilters[0]?.alpha).toBe(materialLayerAlpha('road'))
+    // Routes are drawn as concentric fade layers, so the material alpha lives in the source-over
+    // accumulation of their AlphaFilters rather than on the container itself.
+    for (const material of ['path', 'road'] as const) {
+      const route = required(
+        terrain.view.getChildByLabel(`terrain-${material}`),
+        `${material} layer is missing.`,
+      )
+      expect(route.children.length).toBeGreaterThan(0)
+      let composite = 0
+      for (const child of route.children) {
+        const filters = (child.filters ?? []) as AlphaFilter[]
+        expect(filters).toHaveLength(1)
+        expect(filters[0]).toBeInstanceOf(AlphaFilter)
+        composite += (1 - composite) * (filters[0]?.alpha ?? 0)
+      }
+      expect(composite).toBeCloseTo(materialLayerAlpha(material))
+    }
     terrain.destroy()
   })
 

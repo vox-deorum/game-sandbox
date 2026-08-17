@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 from sandbox.llm import BackgroundLLM
 from sandbox.village import people
@@ -73,11 +74,11 @@ class Dialogue:
     def _messages(self, visitor_line: str) -> list[dict[str, str]]:
         observation = self.latest
         assert observation is not None
-        self_record = observation["self"]
+        position = cast(Mapping[str, float], cast(Mapping[str, object], observation["self"])["position"])
         visible = ", ".join(str(person["id"]) for person in people.seen(observation)) or "nobody"
         state = (
             f"You are {self.persona}. It is {observation['phase']}. You are at "
-            f"({float(self_record['position']['x']):.1f}, {float(self_record['position']['y']):.1f}). "
+            f"({position['x']:.1f}, {position['y']:.1f}). "
             f"You can see {visible}. Reply in one short in-character sentence using only this state."
         )
         return [{"role": "system", "content": state}, {"role": "user", "content": visitor_line}]

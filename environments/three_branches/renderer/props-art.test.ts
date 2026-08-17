@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { CATALOG } from './overlay.js'
-import { PROPS_ATLAS_FRAME_NAMES, EFFECTS_ATLAS_FRAME_NAMES } from './assets.js'
-import { HEARTHSIDE_STYLE } from './presentation.js'
+import { EFFECTS_ATLAS_FRAME_NAMES, MONUMENTS_ATLAS_FRAME_NAMES, PROPS_ATLAS_FRAME_NAMES } from './assets.js'
+import { HEARTHSIDE_STYLE, propMonumentTreatment } from './presentation.js'
 import { propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 
 function camelType(token: string): string {
@@ -21,11 +21,13 @@ describe('Three Branches prop art treatments', () => {
 
   it('keeps every treatment, foundation, and configured effect frame in its atlas manifest', () => {
     for (const prop of CATALOG.props) {
+      const frames =
+        propMonumentTreatment(prop.token) !== null ? MONUMENTS_ATLAS_FRAME_NAMES : PROPS_ATLAS_FRAME_NAMES
       for (const state of prop.states) {
-        expect(PROPS_ATLAS_FRAME_NAMES).toContain(propTreatment(prop.token, state).frame)
+        expect(frames).toContain(propTreatment(prop.token, state).frame)
       }
       const foundation = propFoundationFrame(prop.token)
-      if (foundation !== null) expect(PROPS_ATLAS_FRAME_NAMES).toContain(foundation)
+      if (foundation !== null) expect(frames).toContain(foundation)
     }
     Object.values(HEARTHSIDE_STYLE.propEffects)
       .flatMap((effect) => effect.frames)

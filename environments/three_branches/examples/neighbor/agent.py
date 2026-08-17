@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import cast
 
 import dialogue
 import routines
@@ -178,15 +179,15 @@ class Agent:
 
 def assign(observation: Mapping[str, object], memory: dict[str, object]) -> tuple[str, object]:
     """The Season 4 design seam: a static role table that students are meant to replace."""
-    slot = int(memory["slot"])
-    job_offset = int(memory.get("job_offset", slot))
+    slot = cast(int, memory["slot"])
+    job_offset = cast(int, memory.get("job_offset", slot))
     role = str(memory["role"])
     home = memory["home"]
     phase = day.phase(observation)
     return_home_tick = SLOT_RETURN_HOME_TICKS[slot]
     if phase == "night":
         return "sleep_at", home
-    if phase == "evening" and int(observation["tick"]) >= return_home_tick:
+    if phase == "evening" and day.tick(observation) >= return_home_tick:
         return "go_to", memory.get("home_point", home)
     visitor_nearby = any(person["id"] == "player_0" for person in people.nearby(observation))
     if visitor_nearby and not memory.get("visitor_handled"):
@@ -215,6 +216,6 @@ def assign(observation: Mapping[str, object], memory: dict[str, object]) -> tupl
 def _schedule_mark(observation: Mapping[str, object]) -> tuple[str, int]:
     """Split evening so every resident visibly returns home before the night phase."""
     phase = day.phase(observation)
-    tick = int(observation["tick"])
+    tick = day.tick(observation)
     reached = max((boundary for boundary in SLOT_RETURN_HOME_TICKS if tick >= boundary), default=0)
     return phase, reached if phase == "evening" else 0

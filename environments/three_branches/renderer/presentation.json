@@ -45,7 +45,7 @@
       "doorway": { "frames": ["doorway"], "tint": "bone", "opacity": 1 },
       "field": {
         "frames": ["furrowA", "furrowB", "furrowC", "furrowD"],
-        "tint": "silt",
+        "tint": "gilt",
         "opacity": 1
       },
       "reeds": {
