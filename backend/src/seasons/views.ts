@@ -69,11 +69,12 @@ function decodeSnapshot(run: SeasonRun): AgentRef[] {
 }
 
 /** A season row with its `config` column decoded into the structured {@link SeasonConfig}. */
-export type SeasonView = Omit<Season, 'config'> & { config: SeasonConfig }
+export type SeasonView = Omit<Season, 'config' | 'template_source'> & { config: SeasonConfig }
 
-/** Decode a season's `config` JSON for the wire. */
+/** Decode a season's `config` JSON for the wire; the seed's provenance marker stays off it. */
 export function seasonView(season: Season): SeasonView {
-  return { ...season, config: decodeSeasonConfig(season.config) }
+  const { template_source: _template_source, ...rest } = season
+  return { ...rest, config: decodeSeasonConfig(season.config) }
 }
 
 /** The public season-list shape, intentionally excluding config and rating prompts. */

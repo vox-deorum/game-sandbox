@@ -28,6 +28,8 @@ export {
   type ParameterValidation,
   type ParameterValue,
   type PlayerBoundsLayout,
+  type PresetOverrides,
+  presetOverrides,
   type ResolvedLayout,
   type ResolvedParameters,
   type ResolvedSeat,
@@ -38,6 +40,7 @@ export {
   type SeatPlansLayout,
   validateCompleteParameters,
   validateParameterValue,
+  visibleParameters,
 } from './environment.js'
 export type { LlmModelUsage, LlmUsageByModel, ModelAlias } from './llm.js'
 export {
@@ -65,7 +68,13 @@ export type {
   StepState,
   StepTiming,
 } from './schemas/step-state.js'
-export { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from './seasons.js'
+export {
+  normalizeSeasonDescription,
+  RATING_PROMPT_MAX,
+  SEASON_DESCRIPTION_MAX,
+  type SeasonDescriptionViolation,
+  seasonDescriptionViolation,
+} from './seasons.js'
 // The code-point counter for the messaging cap, shared by the relay pre-gate and the panel counter.
 export { codePointLength } from './text.js'
 // The schema version lives in a dependency-free module so the browser can import it without zod.

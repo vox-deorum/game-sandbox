@@ -8,10 +8,12 @@ import {
   type EnvParameter,
   isEnvironmentMeta,
   isEnvParameter,
+  presetOverrides,
   resolveLayout,
   resolveParameters,
   validateCompleteParameters,
   validateParameterValue,
+  visibleParameters,
 } from '../src/index.js'
 
 const FIXTURE_PATH = join(
@@ -467,5 +469,84 @@ describe('resolveLayout', () => {
     for (const testCase of LAYOUT_FIXTURES.invalid) {
       expect(isEnvironmentMeta({ ...VALID, layout: testCase.layout }), testCase.name).toBe(false)
     }
+  })
+})
+
+describe('visibleParameters', () => {
+  const declarations: EnvParameter[] = [
+    {
+      name: 'terrain',
+      title: 'Terrain',
+      description: 'Enables terrain.',
+      type: 'bool',
+      default: false,
+    },
+    {
+      name: 'players',
+      title: 'Players',
+      description: 'Fixed player count.',
+      type: 'int',
+      default: 2,
+      min: 2,
+      max: 2,
+    },
+    {
+      name: 'powerups',
+      title: 'Powerups',
+      description: 'Singleton choice.',
+      type: 'choice',
+      default: 'none',
+      choices: [{ value: 'none', label: 'None' }],
+    },
+    {
+      name: 'weather',
+      title: 'Weather',
+      description: 'Pick one.',
+      type: 'choice',
+      default: 'clear',
+      choices: [
+        { value: 'clear', label: 'Clear' },
+        { value: 'rain', label: 'Rain' },
+      ],
+    },
+  ]
+
+  it('drops fixed-value numerics and single-option choices, keeping usable controls', () => {
+    expect(visibleParameters(declarations).map((parameter) => parameter.name)).toEqual([
+      'terrain',
+      'weather',
+    ])
+  })
+})
+
+describe('presetOverrides', () => {
+  it('builds the parameter and LLM layers a preset asks for', () => {
+    expect(
+      presetOverrides({
+        name: 'season_2',
+        title: 'Season 2: The Band',
+        values: { terrain: true, weather: 'rain' },
+        llm: true,
+      }),
+    ).toEqual({
+      parameters: { terrain: true, weather: 'rain' },
+      llm: { enabled: true },
+    })
+  })
+
+  it('omits the LLM layer when the preset does not flag it', () => {
+    expect(
+      presetOverrides({
+        name: 'season_1',
+        title: 'Season 1: The Walk',
+        values: { weather: 'clear' },
+      }),
+    ).toEqual({ parameters: { weather: 'clear' } })
+  })
+
+  it('is undefined for a preset that sets neither values nor the LLM flag', () => {
+    expect(presetOverrides({ name: 'defaults', title: 'Environment defaults', values: {} })).toBe(
+      undefined,
+    )
   })
 })

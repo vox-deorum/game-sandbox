@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import type { EnvParameter, EnvPreset, ParameterValue } from '@game-sandbox/schema/environment'
+import {
+  type EnvParameter,
+  type EnvPreset,
+  type ParameterValue,
+  visibleParameters,
+} from '@game-sandbox/schema/environment'
 import { computed, ref, watch } from 'vue'
 
-import { initializeParameters, validateParameters, visibleParameters } from '../lib/parameters.js'
+import { initializeParameters, validateParameters } from '../lib/parameters.js'
 import UiCheckboxGroup from './ui/UiCheckboxGroup.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'

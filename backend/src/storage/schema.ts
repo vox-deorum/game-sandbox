@@ -258,6 +258,25 @@ export interface SeasonsTable {
   created_at: string
   /** Stamped on first release, for history ordering; null while unreleased. */
   released_at: string | null
+  /**
+   * The season seed's provenance marker: `'playground'` for the ensure-open row, `template:<preset
+   * name>` for a hidden template, null for operator-made seasons. The seed keeps its own rows apart
+   * from operator configuration with this; it stays off the public wire. `PLAYGROUND_SOURCE` and
+   * `templateSourceFor` in `storage/index.ts` are the one definition of the two shapes.
+   */
+  template_source: string | null
+}
+
+/**
+ * The per-environment seed bookkeeping: one row once the seed has planted an environment's
+ * template arc. The seed consults `templates_planted` to distinguish an operator deletion of a
+ * template (leave it alone) from an unfinished first batch (complete it), and a deployment update
+ * clears the row so the next release's arc is planted.
+ */
+export interface SeasonSeedFlagsTable {
+  env_id: string
+  /** SQLite has no boolean: 0 until the arc is planted, 1 after. */
+  templates_planted: number
 }
 
 /**
@@ -508,6 +527,7 @@ export interface Database {
   recordings: RecordingsTable
   recording_cleanup_queue: RecordingCleanupQueueTable
   seasons: SeasonsTable
+  season_seed_flags: SeasonSeedFlagsTable
   submissions: SubmissionsTable
   session_submissions: SessionSubmissionsTable
   submission_checks: SubmissionChecksTable

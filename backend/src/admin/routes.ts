@@ -25,8 +25,9 @@ import {
   resolveLayout,
 } from '@game-sandbox/schema/environment'
 import {
+  normalizeSeasonDescription,
   RATING_PROMPT_MAX,
-  SEASON_DESCRIPTION_MAX,
+  seasonDescriptionViolation,
   TEMPLATE_REPO_URL_MAX,
 } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
@@ -524,20 +525,17 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             })
           }
 
-          const normalized =
-            parsed.data.markdown === null
-              ? null
-              : parsed.data.markdown
-                  .replace(/\r\n?/g, '\n')
-                  .replace(/[\u2028\u2029\v\f]/g, ' ')
-                  .trim() || null
-          if (normalized !== null && /\n[ \t]*\n/.test(normalized)) {
+          // The same normalize-and-validate rules the season seed's generated text satisfies, so an
+          // operator can always save what the seed wrote.
+          const normalized = normalizeSeasonDescription(parsed.data.markdown)
+          const violation = seasonDescriptionViolation(normalized)
+          if (violation === 'multiple_paragraphs') {
             return reply.code(400).send({
               error: 'season description must be one paragraph',
               code: 'season_description_multiple_paragraphs',
             })
           }
-          if (normalized !== null && normalized.length > SEASON_DESCRIPTION_MAX) {
+          if (violation === 'too_long') {
             return reply.code(400).send({
               error: 'season description too long',
               code: 'season_description_too_long',

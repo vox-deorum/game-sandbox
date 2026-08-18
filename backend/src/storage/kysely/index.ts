@@ -68,6 +68,7 @@ import * as recordings from './recordings.js'
 import * as retention from './retention.js'
 import * as runs from './runs.js'
 import * as seasons from './seasons.js'
+import * as seeding from './seeding.js'
 import * as sessions from './sessions.js'
 import * as submissions from './submissions.js'
 
@@ -157,6 +158,15 @@ export class KyselyStorage implements Storage {
   createSeason(input: CreateSeasonInput): Promise<Season> {
     return seasons.createSeason(this.db, input)
   }
+  ensureTemplateSeason(input: CreateSeasonInput): Promise<Season> {
+    return seasons.ensureTemplateSeason(this.db, input)
+  }
+  getTemplateArcPlanted(envId: string): Promise<boolean> {
+    return seeding.getTemplateArcPlanted(this.db, envId)
+  }
+  setTemplateArcPlanted(envId: string, planted: boolean): Promise<void> {
+    return seeding.setTemplateArcPlanted(this.db, envId, planted)
+  }
   deleteSeason(id: string): Promise<DeleteSeasonResult> {
     return seasons.deleteSeason(this.db, id)
   }
@@ -197,7 +207,7 @@ export class KyselyStorage implements Storage {
   ): Promise<Season | undefined> {
     return seasons.setSeasonTemplateRepoUrl(this.db, seasonId, templateRepoUrl)
   }
-  setSeasonLabel(seasonId: string, label: string | null): Promise<void> {
+  setSeasonLabel(seasonId: string, label: string | null): Promise<Season | undefined> {
     return seasons.setSeasonLabel(this.db, seasonId, label)
   }
 

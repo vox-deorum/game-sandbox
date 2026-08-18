@@ -115,7 +115,25 @@ const initialSchema: Migration = {
       .addColumn('rating_prompt', 'text')
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('released_at', 'text')
+      .addColumn(
+        // `'playground'` for the seed-ensured open row, `template:<preset name>` for a seed
+        // template, null for operator-made seasons. The season seed uses it to keep its own rows
+        // apart from operator configuration; it never leaves the backend over the public wire.
+        'template_source',
+        'text',
+      )
       .execute()
+    // One season per environment may accept submissions, and one may be the default public-play
+    // target. Partial unique indexes are raw SQL (not in Kysely's schema builder).
+    // The seed grounds its template creates on this unique (env_id, template_source) key, so a
+    // racing boot cannot double the arc. Binary partial indexes are the house style for one-winner
+    // per-environment invariants; operator rows (NULL) and the single Playground marker stay out,
+    // so closing and re-supplying an open Playground remains possible.
+    await sql`
+      CREATE UNIQUE INDEX seasons_template_source_unique
+      ON seasons (env_id, template_source)
+      WHERE template_source IS NOT NULL AND template_source <> 'playground'
+    `.execute(db)
     // One season per environment may accept submissions, and one may be the default public-play
     // target. Partial unique indexes are raw SQL (not in Kysely's schema builder).
     await sql`
@@ -128,6 +146,11 @@ const initialSchema: Migration = {
       ON seasons (env_id)
       WHERE play_status = 'open'
     `.execute(db)
+    await db.schema
+      .createTable('season_seed_flags')
+      .addColumn('env_id', 'text', (col) => col.primaryKey())
+      .addColumn('templates_planted', 'integer', (col) => col.notNull().defaultTo(0))
+      .execute()
 
     // --- submissions: one row per submitted agent. ---
     await db.schema

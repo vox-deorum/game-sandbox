@@ -137,8 +137,8 @@ export interface NewRecordingInput {
   created_at: string
   /**
    * The producing run's termination reason, for a recording with no session to carry it (an automated
-   * season run). Omit (or null) for a session-produced recording — the listing reads the session's
-   * reason — and for a non-completed automated game.
+   * season run). Omit (or null) for a session-produced recording (the listing reads the session's
+   * reason) and for a non-completed automated game.
    */
   termination_reason?: TerminationReason | null
   llm_scope_id?: string | null
@@ -192,6 +192,17 @@ export type SubmissionFailureStatus = Exclude<SubmissionStatus, 'pending' | 'rea
 /** Any terminal submission status the validation/build worker can write. */
 export type SubmissionTerminalStatus = Exclude<SubmissionStatus, 'pending'>
 
+/** The provenance marker the seed writes on the Playground row it ensures (see {@link SeasonsTable}). */
+export const PLAYGROUND_SOURCE = 'playground'
+
+/**
+ * The provenance marker a template row carries, namespaced under a prefix so a preset program id
+ * can never collide with the reserved Playground marker (see {@link SeasonsTable}).
+ */
+export function templateSourceFor(presetName: string): string {
+  return `template:${presetName}`
+}
+
 /** The fields the admin "declare season" action provides. Config (incl. deps) defaults internally. */
 export interface CreateSeasonInput {
   env_id: string
@@ -203,6 +214,13 @@ export interface CreateSeasonInput {
   description_markdown?: string | null
   /** Optional parameter and capability overrides, folded into the default config at creation. */
   overrides?: Overrides
+  /**
+   * The seed's provenance marker for the rows it creates: `'playground'` for the ensure-open row,
+   * or `template:<preset name>` for a hidden template, built by {@link templateSourceFor}. Null for
+   * operator-declared seasons, which is how the seed tells its own rows apart from operator-made
+   * ones.
+   */
+  template_source?: string | null
 }
 
 /**
@@ -411,7 +429,7 @@ export interface Storage {
   createRecording(input: NewRecordingInput): Promise<void>
   /** Every recording row, newest first; backs the merged listing and the eviction sweep. */
   listRecordings(): Promise<Recording[]>
-  /** One recording row by id, or `undefined` (a directory with no row — foreign debris). */
+  /** One recording row by id, or `undefined` (a directory with no row, foreign debris). */
   getRecording(id: string): Promise<Recording | undefined>
   /** Set or clear a recording's pinned flag. */
   setRecordingPinned(id: string, pinned: boolean): Promise<boolean>
@@ -459,6 +477,20 @@ export interface Storage {
    */
   createSeason(input: CreateSeasonInput): Promise<Season>
   /**
+   * The seed's template create: same as {@link createSeason}, but a concurrent boot that wins the
+   * unique `(env_id, template_source)` index races here too, so a racing insert resolves to the
+   * row the other backend already wrote instead of raising and doubling the arc.
+   */
+  ensureTemplateSeason(input: CreateSeasonInput): Promise<Season>
+  /**
+   * Whether the seed has planted this environment's template arc. Planted once the arc is complete
+   * for a release cycle; while planted, a missing template is an operator deletion the seed leaves
+   * alone rather than recreating. A deployment update clears it so the next release's arc plants.
+   */
+  getTemplateArcPlanted(envId: string): Promise<boolean>
+  /** Record whether the seed planted (or cleared) this environment's template arc. */
+  setTemplateArcPlanted(envId: string, planted: boolean): Promise<void>
+  /**
    * Remove a season only while both public windows are closed, it is unreleased, and no activity
    * has ever been associated with it. The check and delete share one transaction.
    */
@@ -466,7 +498,7 @@ export interface Storage {
   /**
    * Replace the whole {@link SeasonConfig} (including `deps_version`). With no runs and no
    * `deps_version` change it just writes; otherwise it needs `force`, which first deletes the
-   * season's runs, and — when `deps_version` changed and submissions exist — its submissions.
+   * season's runs, and (when `deps_version` changed and submissions exist) its submissions.
    * Returns a typed conflict when a write is refused for want of `force`.
    */
   updateSeasonConfig(
@@ -490,9 +522,9 @@ export interface Storage {
   getReleasedSeason(envId: string): Promise<Season | undefined>
   /**
    * Seasons newest first, with public activity counts, optionally narrowed to one environment. The
-   * `scope` sets visibility: `'released'` (public boards/history), `'public'` (any public-facing flag
-   * — `released`, submission-`open`, or play-`open`), or `'all'` (every season, including
-   * fully-private unreleased ones — gated to operators at the route boundary).
+   * `scope` sets visibility: `'released'` (public boards/history), `'public'` (any public-facing flag:
+   * `released`, submission-`open`, or play-`open`), or `'all'` (every season, including
+   * fully-private unreleased ones, gated to operators at the route boundary).
    */
   listSeasons(options?: { envId?: string; scope?: SeasonScope }): Promise<PublicSeason[]>
   /** Attribute an existing session to a season (the alternative to passing it at create time). */
@@ -508,7 +540,7 @@ export interface Storage {
     templateRepoUrl: string | null,
   ): Promise<Season | undefined>
   /** Rename a season (or clear its label with `null`); editable anytime, never gated by the config rules. */
-  setSeasonLabel(seasonId: string, label: string | null): Promise<void>
+  setSeasonLabel(seasonId: string, label: string | null): Promise<Season | undefined>
 
   /**
    * Snapshot the season's config (incl. deps) and the eligible submitted-agent roster into a new

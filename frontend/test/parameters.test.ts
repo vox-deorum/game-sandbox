@@ -1,12 +1,14 @@
-import type { EnvParameter } from '@game-sandbox/schema/environment'
+import {
+  type EnvParameter,
+  formatParameterValue,
+  visibleParameters,
+} from '@game-sandbox/schema/environment'
 import { describe, expect, it } from 'vitest'
 
 import {
   describeParameters,
-  formatParameterValue,
   initializeParameters,
   validateParameters,
-  visibleParameters,
 } from '../src/lib/parameters.js'
 
 const PARAMETERS: EnvParameter[] = [

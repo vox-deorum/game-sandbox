@@ -65,6 +65,8 @@ class EnvParameterChoice:
             raise ValueError("parameter choice value must be a non-empty string")
         if not _is_nonempty_string(self.label):
             raise ValueError("parameter choice label must be a non-empty string")
+        if _has_blank_line(self.label):
+            raise ValueError("parameter choice label must not contain a blank line")
 
     def to_json(self) -> dict[str, str]:
         """Return the public wire representation."""
@@ -92,6 +94,8 @@ class EnvParameter:
             raise ValueError(f"{self.name!r} is reserved for the synthesized layout parameter")
         if not _is_nonempty_string(self.title):
             raise ValueError("parameter title must be a non-empty string")
+        if _has_blank_line(self.title):
+            raise ValueError("parameter title must not contain a blank line")
         if not _is_nonempty_string(self.description):
             raise ValueError("parameter description must be a non-empty string")
         if self.type not in {"int", "float", "string", "bool", "choice", "multi_choice"}:
@@ -208,6 +212,8 @@ class EnvPreset:
             raise ValueError("preset name must be a snake_case identifier")
         if not _is_nonempty_string(self.title):
             raise ValueError("preset title must be a non-empty string")
+        if _has_blank_line(self.title):
+            raise ValueError("preset title must not contain a blank line")
         if not isinstance(cast("object", self.values), Mapping):
             raise ValueError("preset values must be a parameter-value mapping")
         if not isinstance(cast("object", self.llm), bool):
@@ -220,6 +226,16 @@ class EnvPreset:
 
 def _is_nonempty_string(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value)
+
+
+def _has_blank_line(value: str) -> bool:
+    """Whether a short human-facing string would split a description into paragraphs.
+
+    The backend's generated season descriptions (the template and Playground prose) must stay one
+    paragraph, so any of the strings they embed, such as a preset title or a parameter title, must
+    not contain a blank line. Matches the API's ``multiple_paragraphs`` rule (`\\n[ \\t]*\\n`).
+    """
+    return re.search(r"\n[ \t]*\n", value) is not None
 
 
 def _is_parameter_name(value: object) -> TypeGuard[str]:
@@ -486,7 +502,6 @@ class EnvironmentMeta:
                 raise ValueError(
                     f"environment preset {preset.name!r} has invalid parameter values: {error}"
                 ) from error
-        for preset in self.presets:
             if preset.llm and not self.llm:
                 raise ValueError(
                     f"environment {self.env_id!r} preset {preset.name!r} enables the LLM "
@@ -878,6 +893,8 @@ def _validate_layout(env_id: str, layout: object, builtin_names: frozenset[str])
         keys.add(plan.key)
         if not _is_nonempty_string(plan.title):
             raise ValueError(f"environment {env_id!r} plan {plan.key!r} title must be non-empty")
+        if _has_blank_line(plan.title):
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} title must not contain a blank line")
         if not plan.seats:
             raise ValueError(f"environment {env_id!r} plan {plan.key!r} must contain at least one seat")
         indices: list[int] = []

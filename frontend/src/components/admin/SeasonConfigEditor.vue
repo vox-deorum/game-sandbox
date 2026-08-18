@@ -31,6 +31,7 @@ import {
   type ParameterValue,
   resolveLayout,
 } from '@game-sandbox/schema/environment'
+import { formatParameterValue, presetOverrides } from '@game-sandbox/schema/environment'
 import { MODEL_ALIASES } from '@game-sandbox/schema/llm'
 import {
   projectSchedule,
@@ -49,7 +50,7 @@ import {
   type MatchConfig,
   type SeatSpec,
 } from '../../api/client.js'
-import { formatParameterValue, initializeParameters, validateParameters } from '../../lib/parameters.js'
+import { initializeParameters, validateParameters } from '../../lib/parameters.js'
 import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
@@ -362,18 +363,27 @@ function applyParameterPreset(name: string): void {
   if (preset === undefined) return
 
   appliedParameterPreset.value = name
+  // A preset means the same override block in the seed and here: its named parameter values and,
+  // when flagged, LLM enablement. Applying it fills every row from that one definition, so a preset
+  // that does not set a field returns that field to its default just as it drops the override. A
+  // preset can only express LLM enablement or leave it unset, never an explicit off, so a hand-set
+  // "Explicitly disabled" stays put when a preset is applied for its parameter values.
+  const overrides = presetOverrides(preset)
+  const presetParameters = overrides?.parameters ?? {}
   const declarations = environmentParameters.value
   const before = layoutKey.value
   parameterModes.value = Object.fromEntries(
     declarations.map((parameter) => [
       parameter.name,
-      Object.hasOwn(preset.values, parameter.name) ? 'override' : 'inherit',
+      Object.hasOwn(presetParameters, parameter.name) ? 'override' : 'inherit',
     ]),
   )
-  parameterValues.value = initializeParameters(declarations, preset.values)
-  // A preset may also declare that its season enables the LLM API; applying it flips the tri-state
-  // to "on" and leaves the operator's hand set otherwise.
-  if (preset.llm === true) llmEnabled.value = 'on'
+  parameterValues.value = initializeParameters(declarations, presetParameters)
+  if (overrides?.llm?.enabled === true) {
+    llmEnabled.value = 'on'
+  } else if (llmEnabled.value !== 'off') {
+    llmEnabled.value = 'default'
+  }
   if (layoutKey.value !== before) conformLayout()
 }
 

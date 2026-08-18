@@ -16,6 +16,7 @@ import type {
   SetSubmissionStatusResult,
   UpdateSeasonConfigResult,
 } from '../index.js'
+import { PLAYGROUND_SOURCE } from '../index.js'
 import type {
   Database,
   PublicSeason,
@@ -106,6 +107,7 @@ export async function ensureOpenSeason(
         rating_prompt: null,
         created_at: now,
         released_at: release === 'released' ? now : null,
+        template_source: PLAYGROUND_SOURCE,
       })
       .returningAll()
       .executeTakeFirstOrThrow()
@@ -149,14 +151,43 @@ export async function createSeason(
       template_repo_url: null,
       config: encodeSeasonConfig({
         ...emptySeasonConfig(input.deps_version),
-        ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
+        overrides: input.overrides,
       }),
       rating_prompt: null,
       created_at: new Date().toISOString(),
       released_at: null,
+      template_source: input.template_source ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow()
+}
+
+/**
+ * The seed's template create. The unique `(env_id, template_source)` index rejects a second,
+ * racing backend that tried to plant the same template first; catch that violation and resolve to
+ * the row the winner wrote instead of raising (the mirror of `ensureOpenSeason`'s race handling).
+ */
+export async function ensureTemplateSeason(
+  db: Kysely<Database>,
+  input: CreateSeasonInput,
+): Promise<Season> {
+  try {
+    return await createSeason(db, input)
+  } catch (error) {
+    const raced =
+      input.template_source !== undefined && isUniqueConstraintViolation(error)
+        ? await db
+            .selectFrom('seasons')
+            .selectAll()
+            .where('env_id', '=', input.env_id)
+            .where('template_source', '=', input.template_source)
+            .executeTakeFirst()
+        : undefined
+    if (raced !== undefined) {
+      return raced
+    }
+    throw error
+  }
 }
 
 /**
@@ -494,6 +525,11 @@ export async function setSeasonLabel(
   db: Kysely<Database>,
   seasonId: string,
   label: string | null,
-): Promise<void> {
-  await db.updateTable('seasons').set({ label }).where('id', '=', seasonId).execute()
+): Promise<Season | undefined> {
+  return await db
+    .updateTable('seasons')
+    .set({ label })
+    .where('id', '=', seasonId)
+    .returningAll()
+    .executeTakeFirst()
 }

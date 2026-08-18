@@ -484,7 +484,7 @@ describe('AdminConsolePage', () => {
     expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
     expect(screen.getByLabelText('Extras')).toHaveDisplayValue('Override')
     expect(preset).toHaveDisplayValue('Night rules')
-    // A preset without the LLM flag leaves the operator's LLM tri-state alone.
+    // A preset without the LLM flag leaves the tri-state at its default (no LLM override).
     expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Not set (disabled)')
     await fireEvent.update(screen.getByRole('spinbutton', { name: 'Pipe gap override' }), '80')
 
@@ -520,6 +520,80 @@ describe('AdminConsolePage', () => {
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
     expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm).toEqual({
       enabled: true,
+    })
+  })
+
+  it('returns the LLM tri-state to default when a later preset does not flag it', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([
+      configurableMeta({
+        presets: [
+          {
+            name: 'llm_rules',
+            title: 'LLM rules',
+            values: { pipe_gap: 75 },
+            llm: true,
+          },
+          {
+            name: 'plain_rules',
+            title: 'Plain rules',
+            values: { pipe_gap: 80 },
+          },
+        ],
+      }),
+    ])
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    const preset = await screen.findByRole('combobox', { name: 'Preset' })
+    await fireEvent.update(preset, 'llm_rules')
+    expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Enabled')
+
+    // Applying a non-LLM preset mirrors the parameter rows: fields it does not cover return to their
+    // default rather than keeping a stale hand set, so no LLM override survives in the saved config.
+    await fireEvent.update(preset, 'plain_rules')
+    expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Not set (disabled)')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm).toBeUndefined()
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
+      pipe_gap: 80,
+    })
+  })
+
+  it('keeps a hand-set explicit LLM off when a preset is applied for its parameters', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([
+      configurableMeta({
+        presets: [
+          {
+            name: 'plain_rules',
+            title: 'Plain rules',
+            values: { pipe_gap: 80 },
+          },
+        ],
+      }),
+    ])
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    // An operator defeats a permissive deployment default with an explicit off. Presets can never
+    // express an off, so applying one purely for its parameter values must not drop the hand-set
+    // choice back onto the default.
+    const preset = await screen.findByRole('combobox', { name: 'Preset' })
+    const llm = screen.getByLabelText('LLM enablement')
+    await fireEvent.update(llm, 'off')
+    expect(llm).toHaveDisplayValue('Explicitly disabled')
+
+    await fireEvent.update(preset, 'plain_rules')
+    expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Explicitly disabled')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm).toEqual({
+      enabled: false,
+    })
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
+      pipe_gap: 80,
     })
   })
 

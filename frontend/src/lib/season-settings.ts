@@ -1,8 +1,12 @@
-import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  formatParameterValue,
+  type ParameterValue,
+  visibleParameters,
+} from '@game-sandbox/schema/environment'
 
 import type { ResolvedSeasonSettings, SeasonSettings } from '../api/client.js'
 import { formatDuration } from './format.js'
-import { formatParameterValue, visibleParameters } from './parameters.js'
 
 export interface SeasonChange {
   label: string

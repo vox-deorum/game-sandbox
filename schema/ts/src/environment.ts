@@ -37,7 +37,7 @@ export type {
   SeatPlansLayout,
 } from './schemas/environment.js'
 
-import type { EnvironmentMeta, EnvParameter } from './schemas/environment.js'
+import type { EnvironmentMeta, EnvParameter, EnvPreset } from './schemas/environment.js'
 
 // -- Dynamic, hand-written here -------------------------------------------------------------------
 //
@@ -212,6 +212,48 @@ export function formatParameterValue(parameter: EnvParameter, value: ParameterVa
       .join(', ')
   }
   return String(value)
+}
+
+/**
+ * Parameters that need a control in player-facing forms. Fixed-value numeric parameters (min equals
+ * max, e.g. a synthesized seat count) and single-option choices have no meaningful choice, so
+ * surfaces that ask students for settings hide them.
+ */
+export function visibleParameters(declarations: readonly EnvParameter[]): EnvParameter[] {
+  return declarations.filter((parameter) => {
+    if (
+      (parameter.type === 'int' || parameter.type === 'float') &&
+      parameter.min === parameter.max
+    ) {
+      return false
+    }
+    return parameter.type !== 'choice' || parameter.choices.length > 1
+  })
+}
+
+/** The override block one environment preset stands up with during seeding. */
+export type PresetOverrides = {
+  /** The preset's named parameter values, present when it sets any. */
+  parameters?: Record<string, ParameterValue>
+  /** Explicit LLM enablement, present only when the preset asks for it. */
+  llm?: { enabled: true }
+}
+
+/**
+ * Convert an environment preset into the season override block its template season starts with:
+ * its named parameter values, plus an explicit LLM enablement when the preset asks for it. Undefined
+ * when the preset sets neither, so the template season has no override layer at all. Shared by the
+ * backend seed and the admin console so "what a preset means" is a single definition.
+ */
+export function presetOverrides(preset: EnvPreset): PresetOverrides | undefined {
+  const overrides: PresetOverrides = {}
+  if (Object.keys(preset.values).length > 0) {
+    overrides.parameters = { ...preset.values }
+  }
+  if (preset.llm === true) {
+    overrides.llm = { enabled: true }
+  }
+  return Object.keys(overrides).length === 0 ? undefined : overrides
 }
 
 /**

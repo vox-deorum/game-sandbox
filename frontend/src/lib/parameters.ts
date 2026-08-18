@@ -4,24 +4,8 @@ import {
   type ParameterValue,
   resolveParameters,
   validateCompleteParameters,
+  visibleParameters,
 } from '@game-sandbox/schema/environment'
-
-// The value formatter moved into the shared schema package so the backend seed and every frontend
-// surface format resolved values the same way; it is re-exported here so existing imports keep working.
-export { formatParameterValue }
-
-/** Parameters that need a control in player-facing forms. */
-export function visibleParameters(declarations: readonly EnvParameter[]): EnvParameter[] {
-  return declarations.filter((parameter) => {
-    if (
-      (parameter.type === 'int' || parameter.type === 'float') &&
-      parameter.min === parameter.max
-    ) {
-      return false
-    }
-    return parameter.type !== 'choice' || parameter.choices.length > 1
-  })
-}
 
 /**
  * Start from a complete prefill map, filling any missing or rejected value with its declaration

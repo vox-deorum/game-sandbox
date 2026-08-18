@@ -31,7 +31,7 @@ import {
 } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
-import { visibleParameters } from '../lib/parameters.js'
+import { visibleParameters } from '@game-sandbox/schema/environment'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
