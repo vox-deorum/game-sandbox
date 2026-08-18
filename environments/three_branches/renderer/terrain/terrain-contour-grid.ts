@@ -57,10 +57,8 @@ export function buildCells(
   const cells: CellRecord[] = []
   for (let row = 0; row < height; row += 1) {
     for (let column = 0; column < width; column += 1) {
-      const code = rows[row]?.[column]
-      const semantic = code === undefined ? undefined : groundNameForCode[code]
-      if (semantic === undefined)
-        throw new Error('Terrain contour cell is missing its ground name.')
+      const code = rows[row]![column]!
+      const semantic = groundNameForCode[code]!
       cells.push({
         index: row * width + column,
         column,

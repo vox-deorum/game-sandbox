@@ -20,20 +20,3 @@ export async function runArtLoad<T>(lifecycle: ArtLoadLifecycle<T>): Promise<voi
     lifecycle.report(error)
   }
 }
-
-/** Build and redraw a replacement before releasing its fallback, rolling back on failure. */
-export function replaceFallback<T extends { destroy(): void }>(
-  fallback: T,
-  build: () => T,
-  redraw: () => void,
-): T {
-  const replacement = build()
-  try {
-    redraw()
-    fallback.destroy()
-    return replacement
-  } catch (error) {
-    replacement.destroy()
-    throw error
-  }
-}

@@ -1,6 +1,5 @@
 import type { TerrainRouteCell, TerrainRouteSettings } from '../core/types.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
-import { required } from './terrain-helpers.js'
 
 /** One validated route-grid cell with its original code and material. */
 export interface CellRecord extends TerrainRouteCell {
@@ -91,11 +90,8 @@ export function buildCells(
   const cells: CellRecord[] = []
   for (let row = 0; row < height; row += 1) {
     for (let column = 0; column < width; column += 1) {
-      const code = required(rows[row]?.[column], 'Validated terrain route cell is missing.')
-      const material = required(
-        groundNameForCode[code],
-        'Validated terrain route material is missing.',
-      )
+      const code = rows[row]![column]!
+      const material = groundNameForCode[code]!
       cells.push({
         column,
         row,

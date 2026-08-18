@@ -505,13 +505,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.visitorCamera = beginVisitorReturn(this.visitorCamera)
       this.cameraReturnRequested = false
     }
-    const elapsedMs = Number.isFinite(dtMs) ? Math.max(0, dtMs) : 0
     const previous = cameraProbeValue(this.visitorCamera.camera)
     this.visitorCamera = advanceVisitorReturn(
       this.visitorCamera,
       this.cameraLimits,
       CONTENT_SIZE,
-      elapsedMs,
+      dtMs,
     )
     if (previous !== cameraProbeValue(this.visitorCamera.camera)) this.applyCamera()
   }

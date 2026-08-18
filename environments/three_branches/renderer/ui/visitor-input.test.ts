@@ -552,14 +552,12 @@ describe('Three Branches visitor input', () => {
     })
 
     it('paints the latched Use plate with the gilt active treatment', () => {
-      const { paletteLayer, controller, targetTransition } = mount({
+      const { paletteLayer } = mount({
         previewTarget: () => 'bench_0',
         targetTransition: () => 'occupancy',
       })
       key('keydown', 'Digit0')
       expect(useLabel(paletteLayer).style.fill).toBe(HEARTHSIDE_STYLE.palette.ink)
-      void targetTransition
-      controller.handleFrame(false)
     })
   })
 

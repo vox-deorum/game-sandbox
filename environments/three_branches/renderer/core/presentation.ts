@@ -72,12 +72,8 @@ export const HUD_FONT_SIZE = 20
 export interface ThreeBranchesPalette {
   /** Canvas backdrop. */
   backdrop: string
-  /** Fixed chrome surface. */
-  chrome: string
   /** Primary label color. */
   text: string
-  /** Secondary label and border color. */
-  muted: string
   /** Ordinary ground. */
   ground: string
   /** Road ground. */
@@ -121,9 +117,7 @@ export interface ThreeBranchesPalette {
 /** Diagnostic palette retained when artwork is unavailable and for ungraded renderer chrome. */
 export const PALETTE: ThreeBranchesPalette = {
   backdrop: '#17211f',
-  chrome: '#202b29',
   text: '#f5f3ea',
-  muted: '#b8c7c4',
   ground: '#718760',
   road: '#b58a5a',
   path: '#c4aa78',

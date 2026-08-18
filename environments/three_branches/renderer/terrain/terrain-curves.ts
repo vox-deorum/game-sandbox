@@ -184,13 +184,9 @@ function validateInputs(
   profile: TerrainCurveProfile,
   seed: number,
 ): SourceIndex {
-  if (typeof closed !== 'boolean') throw new Error('Terrain curve closed must be a boolean.')
   const minimumPoints = closed ? 3 : 2
-  if (!Array.isArray(source) || source.length < minimumPoints) {
+  if (source.length < minimumPoints) {
     throw new Error(`Terrain curve requires at least ${minimumPoints} source points.`)
-  }
-  if (!Number.isFinite(seed) || !Number.isInteger(seed)) {
-    throw new Error('Terrain curve seed must be a finite integer.')
   }
   bounded(profile.sampleSpacingCells, 0, 4, 'sample spacing')
   bounded(profile.cornerRadiusCells, 0, 4, 'corner radius', true)
@@ -207,13 +203,6 @@ function validateInputs(
   let totalLength = 0
   for (let pointIndex = 0; pointIndex < source.length; pointIndex += 1) {
     const point = required(source[pointIndex], 'Validated terrain curve point is missing.')
-    if (
-      !Number.isFinite(point.x) ||
-      !Number.isFinite(point.y) ||
-      typeof point.locked !== 'boolean'
-    ) {
-      throw new Error(`Terrain curve source point ${pointIndex} is invalid.`)
-    }
     if (pointIndex === 0) continue
     const length = distance(
       required(source[pointIndex - 1], 'Previous terrain curve point is missing.'),

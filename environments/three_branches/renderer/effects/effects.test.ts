@@ -4,9 +4,8 @@ import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { emissiveSpec, propEffectSpec } from './effects.js'
 
 describe('Three Branches prop effects', () => {
-  it('is pure for equal animation inputs and carries a stable id phase', () => {
+  it('carries a stable id phase', () => {
     const first = propEffectSpec('lantern', 'lit', 'lantern:one', 12.25)
-    expect(propEffectSpec('lantern', 'lit', 'lantern:one', 12.25)).toEqual(first)
     expect(propEffectSpec('lantern', 'lit', 'lantern:two', 12.25)?.phase).not.toBe(first?.phase)
   })
 

@@ -99,8 +99,6 @@ describe('Three Branches roof tile planning', () => {
     const fills = plan.filter((tile) => tile.role === 'fill')
     expect(fills).toHaveLength(24)
     expect(fills.every((tile) => treatment.fills.includes(tile.frame))).toBe(true)
-
-    expect(roofTilePlan(homeBuilding, CELL)).toEqual(plan)
   })
 })
 

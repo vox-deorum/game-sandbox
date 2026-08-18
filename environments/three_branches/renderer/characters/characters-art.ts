@@ -53,7 +53,7 @@ export function characterWalkFrame(
   if (moved <= 0) return CHARACTER_REST_FRAME
   const elapsedFrames = Math.floor(fractionalTick / HEARTHSIDE_STYLE.characters.walk.frameRatio)
   const playerPhase = stableHashParts('character-walk', playerId) % CHARACTER_WALK_CYCLE.length
-  return CHARACTER_WALK_CYCLE[(elapsedFrames + playerPhase) % CHARACTER_WALK_CYCLE.length] ?? 'pass'
+  return CHARACTER_WALK_CYCLE[(elapsedFrames + playerPhase) % CHARACTER_WALK_CYCLE.length]!
 }
 
 /** Turn a north-authored sprite to an exact environment heading in Pixi screen axes. */

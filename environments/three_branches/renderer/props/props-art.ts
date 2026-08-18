@@ -99,7 +99,7 @@ export function sceneryFrame(type: string, id: string): string {
   if (type === 'crate') return 'marketCrate'
   if (type === 'pine') {
     const variants = ['pineA', 'pineB', 'pineC'] as const
-    return variants[stableHashParts('three-branches-scenery', id) % variants.length] ?? 'pineA'
+    return variants[stableHashParts('three-branches-scenery', id) % variants.length]!
   }
   throw new Error(`Three Branches scenery type has no art frame: ${type}`)
 }

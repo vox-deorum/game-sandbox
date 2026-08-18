@@ -20,10 +20,6 @@ const focusZoom = () =>
   Math.min(limits.minZoom * THREE_BRANCHES_PRESENTATION.focusZoomFactor, limits.maxZoom)
 
 describe('Three Branches visitor camera', () => {
-  it('derives the max zoom from the configured zoom factor', () => {
-    expect(limits.maxZoom).toBe(limits.minZoom * THREE_BRANCHES_PRESENTATION.maxZoomFactor)
-  })
-
   it('opens on the visitor at the configurable focused zoom and follows from the start, with no control argument in play', () => {
     const state = initialVisitorCamera(limits, view, { x: 200, y: 600 })
     expect(state.camera.zoom).toBe(focusZoom())

@@ -139,5 +139,5 @@ function requiredFrames(frames: readonly string[] | undefined): readonly string[
 }
 
 function frameAt(frames: readonly string[], elapsed: number): string {
-  return frames[elapsed % frames.length] ?? frames[0] ?? 'glow'
+  return frames[elapsed % frames.length]!
 }

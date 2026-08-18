@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { type ArtLoadLifecycle, replaceFallback, runArtLoad } from './art-loading.js'
+import { type ArtLoadLifecycle, runArtLoad } from './art-loading.js'
 
 function deferred<T>(): {
   promise: Promise<T>
@@ -58,29 +58,6 @@ describe('Three Branches art loading', () => {
     expect(hooks.install).not.toHaveBeenCalled()
     expect(hooks.status).toHaveBeenCalledWith('error')
     expect(hooks.report).toHaveBeenCalledWith(failure)
-  })
-
-  it('destroys a failed replacement and retains the fallback when redraw fails', async () => {
-    const fallback = { destroy: vi.fn() }
-    const replacement = { destroy: vi.fn() }
-    const redrawFailure = new Error('redraw failed')
-    const hooks = lifecycle(() => Promise.resolve('art'))
-    hooks.install.mockImplementation(() => {
-      replaceFallback(
-        fallback,
-        () => replacement,
-        () => {
-          throw redrawFailure
-        },
-      )
-    })
-
-    await runArtLoad(hooks)
-
-    expect(replacement.destroy).toHaveBeenCalledOnce()
-    expect(fallback.destroy).not.toHaveBeenCalled()
-    expect(hooks.status).toHaveBeenCalledWith('error')
-    expect(hooks.report).toHaveBeenCalledWith(redrawFailure)
   })
 
   it('does nothing when its renderer is destroyed while loading', async () => {

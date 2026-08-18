@@ -84,13 +84,8 @@ export function buildGraph(
     leftCell: CellRecord | undefined,
     rightCell: CellRecord | undefined,
   ): void => {
-    if (samePoint(start, end))
-      throw new Error('Terrain contour contains a zero-length source edge.')
     const left = sideFromCell(leftCell, componentKeyForCell)
     const right = sideFromCell(rightCell, componentKeyForCell)
-    if (left.material === right.material) {
-      throw new Error('Terrain contour source edge does not separate two materials.')
-    }
     const fixed =
       FIXED_MATERIALS.has(left.material) ||
       FIXED_MATERIALS.has(right.material) ||

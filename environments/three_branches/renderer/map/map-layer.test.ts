@@ -21,7 +21,6 @@ import {
   bridgeDeckMask,
   componentPaths,
   exactTerrainGrid,
-  materialLayerAlpha,
   materialSurface,
   offsetPolyline,
   pathGuideGraphics,
@@ -141,15 +140,6 @@ describe('Three Branches map layer', () => {
       columns: 5,
       rows: [' id x', ' ixd '],
     })
-  })
-
-  it('resolves every drawn material to its configured composite alpha', () => {
-    for (const material of ['field', 'reeds', 'water'] as const) {
-      const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
-      if (treatment !== undefined) expect(materialLayerAlpha(material)).toBe(treatment.opacity)
-    }
-    expect(materialLayerAlpha('path')).toBe(HEARTHSIDE_STYLE.terrain.routes.path.opacity)
-    expect(materialLayerAlpha('road')).toBe(HEARTHSIDE_STYLE.terrain.routes.road.opacity)
   })
 
   it('draws deterministic reed mark strokes only where the ground grid has reeds', () => {

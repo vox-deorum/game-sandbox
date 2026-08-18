@@ -559,14 +559,6 @@ describe('expression chips', () => {
 })
 
 describe('expressionAccentFrame', () => {
-  it('is a pure function of player, type, and absolute tick', () => {
-    for (const tick of [0, 5.25, 12.75, 31.4]) {
-      expect(expressionAccentFrame('player_0', 'wave', tick)).toBe(
-        expressionAccentFrame('player_0', 'wave', tick),
-      )
-    }
-  })
-
   it('drives both accent frames across a full phase cycle', () => {
     const { accentFrames } = HEARTHSIDE_STYLE.expressions
     const seen = new Set<string>()

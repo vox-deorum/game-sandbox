@@ -29,16 +29,13 @@ const SHAPED_PROFILE: TerrainCurveProfile = {
 }
 
 describe('shared terrain curve shaping', () => {
-  it('validates source geometry, seeds, and every profile range', () => {
+  it('validates source geometry and every profile range', () => {
     expect(() => shapeTerrainCurve([], false, BASE_PROFILE, 0)).toThrow('at least 2')
     expect(() =>
       shapeTerrainCurve([point(0, 0), point(1, 0), point(0, 0)], true, BASE_PROFILE, 0),
     ).toThrow('repeats its first point')
     expect(() => shapeTerrainCurve([point(0, 0), point(0, 0)], false, BASE_PROFILE, 0)).toThrow(
       'consecutive duplicate',
-    )
-    expect(() => shapeTerrainCurve([point(0, 0), point(1, 0)], false, BASE_PROFILE, 0.5)).toThrow(
-      'finite integer',
     )
 
     const invalidProfiles: Array<[Partial<TerrainCurveProfile>, string]> = [

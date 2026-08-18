@@ -278,7 +278,6 @@ function installScenery(layer: Container, item: StaticDrawable, art: PropArt): v
     existing.scale.set(scale)
     return
   }
-  if (existing !== null) return
   const artNode = sprite(
     'scenery-art',
     texture(art.scenery, sceneryFrame(item.type, item.id)),

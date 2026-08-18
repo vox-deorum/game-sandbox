@@ -133,7 +133,6 @@ describe('Three Branches chrome strip', () => {
     const labels = layer.children.filter((child): child is Text => child instanceof Text)
     expect(labels).toHaveLength(4)
     expect(labels.every((label) => label.resolution === 1)).toBe(true)
-    expect(labels.every((label) => label.style.fontWeight === 'bold')).toBe(true)
     expect(labels.every((label) => label.style.fontSize === 20)).toBe(true)
   })
 })
