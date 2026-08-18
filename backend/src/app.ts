@@ -5,11 +5,12 @@
  * request identity, registers those modules in dependency order, and installs the production SPA
  * fallback last.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
@@ -21,6 +22,7 @@ import { registerConfigRoutes } from './config/routes.js'
 import { registerDocsRoutes } from './docs/routes.js'
 import type { EnvironmentRegistry } from './environments/registry.js'
 import { registerEnvironmentRoutes } from './environments/routes.js'
+import { injectGoogleAnalytics } from './frontend/analytics.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
 import type { DevelopmentKeyService } from './llm/development-keys.js'
 import { registerDevelopmentLlmRoutes } from './llm/development-routes.js'
@@ -83,6 +85,8 @@ export interface AppDeps {
    * exists. Development and tests omit it.
    */
   frontendDir?: string
+  /** Optional Google Analytics 4 measurement ID; when set, the served `index.html` reports to it. */
+  googleAnalyticsId?: string
   /** The documentation root containing shared student guides. */
   docsDir?: string
   /** The package root containing canonical environment guides. */
@@ -199,10 +203,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // Keep the production SPA fallback on the root instance and after every API route.
   if (deps.frontendDir !== undefined && existsSync(deps.frontendDir)) {
-    await app.register(fastifyStatic, { root: deps.frontendDir, wildcard: false })
+    // The SPA entrypoint, read once at startup. The optional Google Analytics snippet is injected
+    // here, not baked into the bundle, so enabling tracking needs no frontend rebuild.
+    const indexHtml = injectGoogleAnalytics(
+      readFileSync(join(deps.frontendDir, 'index.html'), 'utf8'),
+      deps.googleAnalyticsId,
+    )
+    const sendIndexPage = (_request: FastifyRequest, reply: FastifyReply) =>
+      reply.type('text/html').send(indexHtml)
+
+    app.route({ method: ['GET', 'HEAD'], url: '/', handler: sendIndexPage })
+
+    // fastifyStatic serves the hashed assets; the index page is served from the cached string above
+    // (and the fallback below) so the analytics injection holds for the root, `/index.html`, and SPA
+    // deep links alike.
+    await app.register(fastifyStatic, {
+      root: deps.frontendDir,
+      wildcard: false,
+      index: false,
+      globIgnore: ['index.html'],
+    })
     app.setNotFoundHandler((request, reply) => {
       if (request.method === 'GET' && !request.url.startsWith('/api/')) {
-        return reply.sendFile('index.html')
+        return sendIndexPage(request, reply)
       }
       return reply.code(404).send({ error: 'not found' })
     })

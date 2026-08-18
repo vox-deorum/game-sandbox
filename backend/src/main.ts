@@ -236,6 +236,7 @@ async function main(): Promise<void> {
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner,
     frontendDir: config.frontendDir,
+    googleAnalyticsId: config.googleAnalyticsId,
     docsDir: config.docsDir,
     docsIndexFile: config.docsIndexFile,
     storage,

@@ -97,6 +97,12 @@ describe('loadConfig', () => {
     expect(load({ DOCS_INDEX_FILE: '' }).docsIndexFile).toBeUndefined()
   })
 
+  it('leaves Google Analytics unset by default and parses an explicit id', () => {
+    expect(load({}).googleAnalyticsId).toBeUndefined()
+    expect(load({ GOOGLE_ANALYTICS_ID: 'G-ABC123' }).googleAnalyticsId).toBe('G-ABC123')
+    expect(load({ GOOGLE_ANALYTICS_ID: '' }).googleAnalyticsId).toBeUndefined()
+  })
+
   it('parses the retention overrides', () => {
     const config = load({
       RECORDING_RETENTION_DAYS: '7',

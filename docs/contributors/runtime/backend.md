@@ -93,6 +93,7 @@ When `FRONTEND_DIST` exists, the backend serves it through `@fastify/static`.
 - Root `npm start` builds `frontend/dist/` first.
 - Non-API GET 404s return `index.html` for client-side routing.
 - `/api` routes keep JSON 404 responses.
+- When `GOOGLE_ANALYTICS_ID` is configured, the served `index.html` includes the gtag.js loader; the snippet is injected once at startup, so enabling analytics needs no frontend rebuild.
 - Vite development and tests without a built bundle are unchanged.
 
 ## Storage

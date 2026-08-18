@@ -188,6 +188,12 @@ export interface Config {
    */
   frontendDir?: string
   /**
+   * An optional Google Analytics 4 measurement ID, e.g. `G-XXXXXXXXXX`. When set, the served
+   * `index.html` carries the gtag.js loader (injected at startup before `</head>`, never baked into
+   * the bundle), so every page load reports to the property. Unset leaves the bundle untouched.
+   */
+  googleAnalyticsId?: string
+  /**
    * The documentation root the backend reads shared in-app student guides from at runtime. The
    * default resolves to the repo's `docs/` regardless of the process working directory (the backend
    * already runs from the checkout, the same assumption `frontendDir` makes). Override with
@@ -676,6 +682,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET'),
     overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS'),
     frontendDir: repoPathVar(env, 'FRONTEND_DIST'),
+    googleAnalyticsId: optionalStringVar(env, 'GOOGLE_ANALYTICS_ID'),
     docsDir: repoPathVar(env, 'DOCS_DIR'),
     docsIndexFile: optionalRepoPathVar(env, 'DOCS_INDEX_FILE'),
     sandbox: {

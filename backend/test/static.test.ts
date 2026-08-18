@@ -40,6 +40,11 @@ describe('serving the built frontend', () => {
     expect(res.body).toContain('built-bundle-marker')
   })
 
+  it('serves index.html verbatim without an analytics id', async () => {
+    const res = await app.inject({ method: 'GET', url: '/' })
+    expect(res.body).not.toContain('googletagmanager.com')
+  })
+
   it('serves a hashed asset by its path', async () => {
     const res = await app.inject({ method: 'GET', url: '/assets/app.js' })
     expect(res.statusCode).toBe(200)
@@ -64,5 +69,46 @@ describe('serving the built frontend', () => {
     expect(res.statusCode).toBe(404)
     expect(res.headers['content-type']).toContain('application/json')
     expect(res.body).not.toContain('built-bundle-marker')
+  })
+})
+
+describe('serving the built frontend with Google Analytics', () => {
+  let app: FastifyInstance
+  let fixture: TestApp
+  let frontendDir: string
+
+  beforeEach(async () => {
+    frontendDir = mkdtempSync(join(tmpdir(), 'gs-dist-'))
+    writeFileSync(join(frontendDir, 'index.html'), INDEX_HTML)
+    mkdirSync(join(frontendDir, 'assets'))
+    writeFileSync(join(frontendDir, 'assets', 'app.js'), ASSET_JS)
+
+    fixture = await openTestApp({ frontendDir, googleAnalyticsId: 'G-G98YR1FFWX' })
+    app = fixture.app
+  })
+
+  afterEach(async () => {
+    await fixture.close()
+    rmSync(frontendDir, { recursive: true, force: true })
+  })
+
+  it.each([
+    '/',
+    '/index.html',
+    '/environments/flappy_bird',
+  ])('injects the gtag loader into the %s page', async (url) => {
+    const res = await app.inject({ method: 'GET', url })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.body).toContain('https://www.googletagmanager.com/gtag/js?id=G-G98YR1FFWX')
+    expect(res.body).toContain("gtag('config', 'G-G98YR1FFWX');")
+    expect(res.body).toContain('built-bundle-marker')
+  })
+
+  it('leaves hashed assets unchanged', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/app.js' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe(ASSET_JS)
+    expect(res.body).not.toContain('googletagmanager.com')
   })
 })

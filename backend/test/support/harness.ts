@@ -79,6 +79,7 @@ export interface OpenTestAppOptions {
   templateRepoUrl?: string
   githubAuth?: boolean
   frontendDir?: string
+  googleAnalyticsId?: string
   docsDir?: string
   docsIndexFile?: string
   llmDevelopment?: AppDeps['llmDevelopment']
@@ -146,6 +147,9 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     templateRepoUrl: options.templateRepoUrl ?? config.templateRepoUrl,
     ...(options.githubAuth === undefined ? {} : { githubAuth: options.githubAuth }),
     ...(options.frontendDir === undefined ? {} : { frontendDir: options.frontendDir }),
+    ...(options.googleAnalyticsId === undefined
+      ? {}
+      : { googleAnalyticsId: options.googleAnalyticsId }),
     ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
     ...(options.docsIndexFile === undefined ? {} : { docsIndexFile: options.docsIndexFile }),
     knownDepsVersions: options.knownDepsVersions ?? submissionDeps.knownDepsVersions,

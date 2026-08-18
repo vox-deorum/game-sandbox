@@ -64,6 +64,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `DOCKER_LLM_RELAY_NETWORK` | unset | Existing Docker network used by the relay in `compose-network` mode; required in that mode and forbidden in `host-gateway` mode |
 | `DOCKER_LLM_RELAY_HOST` | unset | Backend DNS hostname used by the relay in `compose-network` mode; required in that mode and forbidden in `host-gateway` mode |
 | `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
+| `GOOGLE_ANALYTICS_ID` | unset | Optional Google Analytics 4 measurement ID, such as `G-G98YR1FFWX`. When set, the served `index.html` carries the gtag.js loader, so it is applied at startup with no frontend rebuild; unset leaves the bundle untouched |
 | `DOCS_DIR` | `docs` | Documentation root for shared in-app student guides; only its `students/` subtree is served |
 | `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
 | `TEMPLATE_REPO_URL` | `https://github.com/vox-deorum/game-agent-template` | Published student template repository used when a season has no repository URL. When this fallback is used, the setup dialog selects its `templates/<environment>` branch. A season-specific URL uses its default branch. |
