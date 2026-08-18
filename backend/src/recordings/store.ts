@@ -23,6 +23,25 @@ const RECORDING_FILE = 'recording.jsonl'
 /** Read recordings in bounded chunks so a listing never loads a whole file at once. */
 const READ_CHUNK_SIZE = 64 * 1024
 
+/**
+ * Recording ids are `<env_id>-<uuid>`; only these characters may ever reach the filesystem. Any
+ * other input (path separators, `..` segments, URL-encoded traversal) is refused so an id can
+ * never climb out of the recordings root.
+ */
+const RECORDING_ID_SAFE = /^[A-Za-z0-9_-]+$/
+
+/** Whether a recording id is a plain `<env_id>-<uuid>`-shaped value safe to touch the filesystem. */
+export function isSafeRecordingId(id: string): boolean {
+  return RECORDING_ID_SAFE.test(id)
+}
+
+/** Throw when an id is not safe to resolve inside the recordings root. */
+export function assertSafeRecordingId(id: string): void {
+  if (!isSafeRecordingId(id)) {
+    throw new Error(`unsafe recording id: ${id}`)
+  }
+}
+
 export interface RecordingSummary {
   id: string
   header: RecordingHeader
@@ -44,7 +63,8 @@ export class RecordingsStore {
     }
     const summaries: RecordingSummary[] = []
     for (const entry of entries) {
-      if (!entry.isDirectory()) {
+      if (!entry.isDirectory() || !isSafeRecordingId(entry.name)) {
+        // A stray directory must not be probed as a recording (it could be anything on the volume).
         continue
       }
       const header = await this.readHeader(entry.name)
@@ -91,10 +111,12 @@ export class RecordingsStore {
    * rather than throwing. The retention sweep removes the directory here, then the row.
    */
   async delete(id: string): Promise<void> {
+    assertSafeRecordingId(id)
     await rm(join(this.root, id), { recursive: true, force: true })
   }
 
   private filePath(id: string): string {
+    assertSafeRecordingId(id)
     return join(this.root, id, RECORDING_FILE)
   }
 

@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -249,7 +250,7 @@ describe('orchestrator', () => {
     source: SubmissionSource,
     onIssue: (input: IssueOfficialGrantsInput) => void,
   ): Orchestrator {
-    const config = makeConfig({ recordingsDir })
+    const config = makeConfig({ recordingsDir, dataDir: recordingsDir })
     return new Orchestrator({
       driver,
       storage,
@@ -342,7 +343,7 @@ describe('orchestrator', () => {
     })
 
     it('issues keys only for agent players and emits the exact live LLM launch block', async () => {
-      const config = makeConfig({ recordingsDir })
+      const config = makeConfig({ recordingsDir, dataDir: recordingsDir })
       let issued: IssueOfficialGrantsInput | undefined
       const orch = new Orchestrator({
         driver,
@@ -373,19 +374,108 @@ describe('orchestrator', () => {
         seats: heartsSeats({ seat_0: { kind: 'human' } }),
       })
       expect(issued?.agentPlayers).toEqual(['player_1', 'player_2', 'player_3'])
+      // The keys themselves leave the container argv; only the mount path travels in the config.
       expect(launched.config.llm).toEqual({
         base_url: `http://llm-proxy:${config.llm.internalPort}/v1`,
         tick_url: `http://llm-proxy:${config.llm.internalPort}/internal/tick`,
         inflight_url: `http://llm-proxy:${config.llm.internalPort}/internal/inflight`,
-        keys: {
-          player_1: 'key-player_1',
-          player_2: 'key-player_2',
-          player_3: 'key-player_3',
-        },
+        keys_file: '/run/llm-keys.json',
       })
       expect(driver.lastLaunch()?.spec.sandbox.network).toBe('llm')
+      expect(driver.lastLaunch()?.spec.sandbox.mounts).toContainEqual(
+        expect.objectContaining({ containerPath: '/run/llm-keys.json', readOnly: true }),
+      )
       expect(await storage.getSession(launched.id)).toMatchObject({ llm_enabled: 1 })
+      const keysPath = join(config.dataDir, 'llm-keys', `${launched.id}.json`)
+      await expect(stat(keysPath)).resolves.toBeDefined()
       await orch.stop(launched.id, 'alice')
+      // Stopping the session tears the lease down and removes the staged keys file.
+      await expect(stat(keysPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    })
+
+    it('revokes the issued lease when staging the keys file fails', async () => {
+      // A dataDir leaf that is a file makes the keys-file write fail deterministically, after the
+      // official lease has already been issued — the write failure must not strand a live grant.
+      const blocker = join(recordingsDir, 'keys-blocker')
+      writeFileSync(blocker, 'occupied')
+      const config = makeConfig({ recordingsDir, dataDir: blocker })
+      let revoked = 0
+      const orch = new Orchestrator({
+        driver,
+        storage,
+        environments: makeEnvironments(),
+        config,
+        resolveLiveLlm: () => ({
+          enabled: true,
+          models: { small: { upstream: 'upstream-small', costWeight: 1 } },
+          official: { tokenBudget: 1_000, requestsPerMinute: 5 },
+          development: { tokenBudget: 2_000, requestsPerMinute: 10 },
+        }),
+        officialGrantIssuer: {
+          issue: (input) =>
+            Promise.resolve({
+              keys: Object.fromEntries(
+                input.agentPlayers.map((playerId) => [playerId, `key-${playerId}`]),
+              ),
+              revoke: () => {
+                revoked += 1
+                return Promise.resolve()
+              },
+            }),
+        },
+      })
+
+      await expect(orch.start(startRequest())).rejects.toThrow(
+        /failed to issue official LLM grants/,
+      )
+      // The lease was issued but its keys could not be staged: revoke it so a chargeable official
+      // grant is not left outstanding on a session that never launched.
+      expect(revoked).toBe(1)
+      // No session row and no container: the failure happened before either.
+      expect(await storage.listSessions()).toEqual([])
+      expect(driver.lastLaunch()).toBeUndefined()
+    })
+
+    it('revokes the lease and removes the staged keys file when the session row fails to insert', async () => {
+      const config = makeConfig({ recordingsDir, dataDir: recordingsDir })
+      let sessionId: string | undefined
+      let revoked = 0
+      const orch = new Orchestrator({
+        driver,
+        storage,
+        environments: makeEnvironments(),
+        config,
+        resolveLiveLlm: () => ({
+          enabled: true,
+          models: { small: { upstream: 'upstream-small', costWeight: 1 } },
+          official: { tokenBudget: 1_000, requestsPerMinute: 5 },
+          development: { tokenBudget: 2_000, requestsPerMinute: 10 },
+        }),
+        officialGrantIssuer: {
+          issue: (input) => {
+            sessionId = input.sessionId
+            return Promise.resolve({
+              keys: Object.fromEntries(
+                input.agentPlayers.map((playerId) => [playerId, `key-${playerId}`]),
+              ),
+              revoke: () => {
+                revoked += 1
+                return Promise.resolve()
+              },
+            })
+          },
+        },
+      })
+      // A durable-write failure after the keys file was staged must tear the lease down and remove
+      // the staged key file, not leave either behind.
+      const createSession = vi.spyOn(storage, 'createSession')
+      createSession.mockRejectedValue(new Error('durable write failed'))
+
+      await expect(orch.start(startRequest())).rejects.toThrow(/durable write failed/)
+      expect(revoked).toBe(1)
+      const keysPath = join(config.dataDir, 'llm-keys', `${sessionId}.json`)
+      await expect(stat(keysPath)).rejects.toMatchObject({ code: 'ENOENT' })
+      createSession.mockRestore()
     })
 
     it('inserts a starting row and launches with the sandbox profile and config argv', async () => {
@@ -597,7 +687,7 @@ describe('orchestrator', () => {
       const launchConfig = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
         player_bindings: Record<string, unknown>
         players: Record<string, unknown>
-        llm: { keys: Record<string, string> }
+        llm: { keys_file?: string }
       }
       expect(launchConfig.player_bindings).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
@@ -627,13 +717,14 @@ describe('orchestrator', () => {
         player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       })
       expect(issued?.agentPlayers).toEqual(['player_0', 'player_2', 'player_3', 'player_1'])
-      expect(launchConfig.llm.keys).toEqual({
-        player_0: 'key-player_0',
-        player_2: 'key-player_2',
-        player_3: 'key-player_3',
-        player_1: 'key-player_1',
-      })
+      // Official keys are handed to the harness out-of-band through a read-only mounted file; the
+      // session config argv carries only the mount path, never the key material.
+      expect(launchConfig.llm.keys_file).toBe('/run/llm-keys.json')
+      expect(launchConfig.llm).not.toHaveProperty('keys')
       expect(launch?.spec.sandbox.memoryMb).toBe(608)
+      expect(launch?.spec.sandbox.mounts).toContainEqual(
+        expect.objectContaining({ containerPath: '/run/llm-keys.json', readOnly: true }),
+      )
       expect(source.fetchCount).toBe(1)
       expect(source.disposed).toBe(1)
       expect(
@@ -672,7 +763,7 @@ describe('orchestrator', () => {
       const launchConfig = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
         player_bindings: Record<string, unknown>
         players: Record<string, unknown>
-        llm: { keys: Record<string, string> }
+        llm: { keys_file?: string }
       }
       expect(launchConfig.player_bindings).toEqual({
         player_0: { kind: 'external' },
@@ -697,11 +788,8 @@ describe('orchestrator', () => {
         player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
       })
       expect(issued?.agentPlayers).toEqual(['player_2', 'player_3', 'player_1'])
-      expect(launchConfig.llm.keys).toEqual({
-        player_2: 'key-player_2',
-        player_3: 'key-player_3',
-        player_1: 'key-player_1',
-      })
+      expect(launchConfig.llm.keys_file).toBe('/run/llm-keys.json')
+      expect(launchConfig.llm).not.toHaveProperty('keys')
       expect(launch?.spec.sandbox.memoryMb).toBe(608)
       expect(source.fetchCount).toBe(1)
       expect(source.disposed).toBe(1)
@@ -743,9 +831,8 @@ describe('orchestrator', () => {
       })
       expect(config.external_chat_player).toBe('player_0')
       expect(issued?.agentPlayers).toEqual(['player_1'])
-      expect((config.llm as { keys: Record<string, string> }).keys).toEqual({
-        player_1: 'key-player_1',
-      })
+      expect((config.llm as { keys_file?: string }).keys_file).toBe('/run/llm-keys.json')
+      expect(config.llm as object).not.toHaveProperty('keys')
       await orch.stop(id, 'alice')
     })
 

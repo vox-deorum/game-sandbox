@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -158,7 +158,7 @@ def test_parse_config_accepts_strict_llm_block_with_exact_agent_key_coverage():
     )
 
 
-def test_parse_config_matches_backend_llm_launch_fixture_exactly():
+def test_parse_config_matches_backend_llm_launch_fixture_exactly(tmp_path: Path):
     fixture_path = (
         Path(__file__).resolve().parents[2] / "backend" / "test" / "fixtures" / "llm-launch-config.json"
     )
@@ -172,17 +172,39 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
         "player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"},
         "player_1": {"kind": "human", "label": "Human"},
     }
-    payload.update(fixture)
+    # The backend hands keys to the container out-of-band through the mounted file named in the
+    # fixture, so point the harness at a real file for this agent player.
+    keys_file = tmp_path / "llm-keys.json"
+    keys_file.write_text(json.dumps({"player_0": "official-key"}), encoding="utf-8")
+    llm_block = cast("dict[str, Any]", dict(fixture["llm"]))
+    llm_block["keys_file"] = str(keys_file)
+    payload["llm"] = llm_block
 
     config = parse_config([json.dumps(payload)])
 
     assert config.llm is not None
-    assert {
-        "base_url": config.llm.base_url,
-        "tick_url": config.llm.tick_url,
-        "inflight_url": config.llm.inflight_url,
-        "keys": config.llm.keys,
-    } == fixture["llm"]
+    assert config.llm.base_url == fixture["llm"]["base_url"]
+    assert config.llm.tick_url == fixture["llm"]["tick_url"]
+    assert config.llm.inflight_url == fixture["llm"]["inflight_url"]
+    assert config.llm.keys == {"player_0": "official-key"}
+
+
+def test_parse_config_reads_keys_from_a_keys_file(tmp_path: Path):
+    keys_file = tmp_path / "keys.json"
+    keys_file.write_text(
+        json.dumps({"player_0": "key-0", "player_1": "key-1"}),
+        encoding="utf-8",
+    )
+    llm = _llm_block()
+    llm.pop("keys")
+    llm["keys_file"] = str(keys_file)
+    config = parse_config([json.dumps(_payload(llm))])
+    assert config.llm == LlmConfig(
+        base_url="http://proxy.example/v1",
+        tick_url="http://marker.example/internal/tick",
+        inflight_url="http://marker.example/internal/inflight",
+        keys={"player_0": "key-0", "player_1": "key-1"},
+    )
 
 
 @pytest.mark.parametrize(
@@ -233,9 +255,39 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
             "keys": {"player_0": "a", "player_1": "b"},
             "derived_tick": True,
         },
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
+            "keys": {"player_0": "a", "player_1": "b"},
+            "keys_file": "/run/llm-keys.json",
+        },
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
+            "keys_file": "",
+        },
     ],
 )
 def test_parse_config_rejects_malformed_llm_blocks(llm: object):
+    with pytest.raises(LiveConfigError):
+        parse_config([json.dumps(_payload(llm))])
+
+
+def test_parse_config_rejects_an_unreadable_or_empty_keys_file(tmp_path: Path):
+    missing = tmp_path / "missing.json"
+    llm = _llm_block()
+    llm.pop("keys")
+    llm["keys_file"] = str(missing)
+    with pytest.raises(LiveConfigError):
+        parse_config([json.dumps(_payload(llm))])
+
+    empty = tmp_path / "empty.json"
+    empty.write_text("not json", encoding="utf-8")
+    llm = _llm_block()
+    llm.pop("keys")
+    llm["keys_file"] = str(empty)
     with pytest.raises(LiveConfigError):
         parse_config([json.dumps(_payload(llm))])
 

@@ -22,12 +22,22 @@ import {
   SourceError,
   tokenizedUrl,
 } from '../../src/submission/source/index.js'
+import type { HostResolver } from '../../src/submission/source/url-safety.js'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'sources')
 const LOCAL_BASIC = join(FIXTURES, 'local-basic')
 
 const SHA_A = 'a'.repeat(40)
 const SHA_B = 'b'.repeat(40)
+
+/** A fixed public answer so the SSRF resolution check stays hermetic (no real DNS in unit tests). */
+const PUBLIC_RESOLVER: HostResolver = {
+  lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+}
+/** A resolver whose answer lands in a private range, for the SSRF refusal tests. */
+const PRIVATE_RESOLVER: HostResolver = {
+  lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+}
 
 /** A programmable git CLI stub: the handler maps an invocation's argv to its captured result. */
 class FakeGitRunner implements GitRunner {
@@ -108,7 +118,10 @@ describe('git source resolution', () => {
       expect(args).toContain('--symref')
       return ok(`ref: refs/heads/main\tHEAD\n${SHA_A}\tHEAD\n`)
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const resolved = await source.resolve({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -126,7 +139,10 @@ describe('git source resolution', () => {
 
   it('pins a branch ref to its advertised commit', async () => {
     const runner = new FakeGitRunner(() => ok(`${SHA_A}\trefs/heads/dev\n`))
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const resolved = await source.resolve({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -137,12 +153,36 @@ describe('git source resolution', () => {
     expect(resolved.ref).toBe('dev')
   })
 
+  it('never adopts a server-advertised option-like branch name as a fetch target', async () => {
+    // A hostile git server answers the `--symref HEAD` probe with an option-like branch. The
+    // default-branch resolver strips `refs/heads/` and must refuse the label instead of handing
+    // it to `git fetch`, where it would be parsed as an option (argument injection).
+    const runner = new FakeGitRunner(() =>
+      ok(`ref: refs/heads/--upload-pack=/tmp/pwned\tHEAD\n${SHA_A}\tHEAD\n`),
+    )
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
+    const resolved = await source.resolve({
+      kind: 'git',
+      repoUrl: 'https://example.com/alice/agent.git',
+      ref: null,
+    })
+    // The commit is still pinned; the unsafe label is dropped, so the tree fetch pins by SHA.
+    expect(resolved.commitSha).toBe(SHA_A)
+    expect(resolved.resolvedRef).toBeNull()
+  })
+
   it('prefers the peeled target of an annotated tag', async () => {
     const runner = new FakeGitRunner(() =>
       // The tag object SHA, then the peeled commit it points at.
       ok(`${SHA_B}\trefs/tags/v1.0\n${SHA_A}\trefs/tags/v1.0^{}\n`),
     )
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const resolved = await source.resolve({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -156,7 +196,10 @@ describe('git source resolution', () => {
     const runner = new FakeGitRunner(() => {
       throw new Error('ls-remote must not run for an explicit SHA')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const resolved = await source.resolve({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -169,7 +212,10 @@ describe('git source resolution', () => {
 
   it('surfaces a non-resolving ref as ref_not_found', async () => {
     const runner = new FakeGitRunner(() => ok(''))
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({ kind: 'git', repoUrl: 'https://example.com/alice/agent.git', ref: 'nope' }),
     ).rejects.toMatchObject({ failure: 'ref_not_found' })
@@ -181,7 +227,10 @@ describe('git source resolution', () => {
       stdout: '',
       stderr: 'fatal: could not resolve host: example.com',
     }))
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({ kind: 'git', repoUrl: 'https://example.com/alice/agent.git', ref: null }),
     ).rejects.toMatchObject({ failure: 'unreachable' })
@@ -193,7 +242,10 @@ describe('git source resolution', () => {
       stdout: '',
       stderr: "fatal: Authentication failed for 'https://example.com/alice/agent.git/'",
     }))
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({ kind: 'git', repoUrl: 'https://example.com/alice/agent.git', ref: null }),
     ).rejects.toMatchObject({ failure: 'auth_required' })
@@ -201,7 +253,10 @@ describe('git source resolution', () => {
 
   it('maps a git timeout to a timeout failure', async () => {
     const runner = new FakeGitRunner(() => Promise.reject(new GitTimeoutError(15_000)))
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({ kind: 'git', repoUrl: 'https://example.com/alice/agent.git', ref: null }),
     ).rejects.toMatchObject({ failure: 'timeout' })
@@ -211,7 +266,10 @@ describe('git source resolution', () => {
     const runner = new FakeGitRunner(() => {
       throw new Error('the runner must not run for an option-like ref')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({
         kind: 'git',
@@ -234,10 +292,119 @@ describe('git source resolution', () => {
     const runner = new FakeGitRunner(() => {
       throw new Error('the runner must not run for an invalid URL')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     await expect(
       source.resolve({ kind: 'git', repoUrl: 'git@github.com:alice/agent.git', ref: null }),
     ).rejects.toMatchObject({ failure: 'invalid_input' })
+    expect(runner.calls).toHaveLength(0)
+  })
+})
+
+describe('git source SSRF and URL admission', () => {
+  const GIT_INPUT = {
+    kind: 'git' as const,
+    repoUrl: 'https://example.com/alice/agent.git',
+    ref: null as string | null,
+  }
+
+  it('rejects a URL with embedded credentials before shelling out', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for an unsafe URL')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
+    await expect(
+      source.resolve({
+        kind: 'git',
+        repoUrl: 'https://user:secret@example.com/alice/agent.git',
+        ref: null,
+      }),
+    ).rejects.toMatchObject({ failure: 'invalid_input' })
+    expect(
+      await source.verifyReachable({
+        kind: 'git',
+        repoUrl: 'https://user:secret@example.com/alice/agent.git',
+        ref: null,
+      }),
+    ).toMatchObject({ reachable: false, failure: 'invalid_input' })
+    expect(runner.calls).toHaveLength(0)
+  })
+
+  it('rejects URLs with a query or fragment before shelling out', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for an unsafe URL')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
+    await expect(
+      source.resolve({ ...GIT_INPUT, repoUrl: 'https://example.com/repo.git?next=/etc' }),
+    ).rejects.toMatchObject({ failure: 'invalid_input' })
+    await expect(
+      source.resolve({ ...GIT_INPUT, repoUrl: 'https://example.com/repo.git#frag' }),
+    ).rejects.toMatchObject({ failure: 'invalid_input' })
+    expect(runner.calls).toHaveLength(0)
+  })
+
+  it('rejects internal hostnames by name', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for an internal host')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
+    for (const repoUrl of [
+      'http://localhost/repo.git',
+      'http://127.0.0.1/repo.git',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://host.docker.internal/repo.git',
+      'http://backend.internal/repo.git',
+      'http://metadata.google.internal/repo.git',
+    ]) {
+      await expect(source.resolve({ ...GIT_INPUT, repoUrl })).rejects.toMatchObject({
+        failure: 'invalid_input',
+      })
+    }
+    expect(runner.calls).toHaveLength(0)
+  })
+
+  it('rejects a host that resolves to a private address', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for a private-resolving host')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PRIVATE_RESOLVER,
+      gitRunner: runner,
+    })
+    // `example.com` here resolves to 10.0.0.1 through the injected resolver.
+    await expect(source.resolve(GIT_INPUT)).rejects.toMatchObject({ failure: 'invalid_input' })
+    expect(await source.verifyReachable(GIT_INPUT)).toMatchObject({
+      reachable: false,
+      failure: 'invalid_input',
+    })
+    expect(runner.calls).toHaveLength(0)
+  })
+
+  it('reports an unresolvable hostname as unreachable rather than running git', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for an unresolvable host')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: { lookup: async () => Promise.reject(new Error('ENOTFOUND')) },
+      gitRunner: runner,
+    })
+    await expect(source.resolve(GIT_INPUT)).rejects.toMatchObject({ failure: 'unreachable' })
+    expect(await source.verifyReachable(GIT_INPUT)).toMatchObject({
+      reachable: false,
+      failure: 'unreachable',
+    })
     expect(runner.calls).toHaveLength(0)
   })
 })
@@ -248,6 +415,7 @@ describe('git source credentials', () => {
     const clean = 'https://github.com/alice/agent.git'
     const runner = new FakeGitRunner(() => ok(`ref: refs/heads/main\tHEAD\n${SHA_A}\tHEAD\n`))
     const source = createSubmissionSource(config({ githubToken: token }), {
+      hostResolver: PUBLIC_RESOLVER,
       gitRunner: runner,
       githubClient: fakeGitHubClient({ reachable: true }),
     })
@@ -267,6 +435,7 @@ describe('git source credentials', () => {
       stderr: `fatal: unable to access 'https://x-access-token:${token}@github.com/alice/agent.git/'`,
     }))
     const source = createSubmissionSource(config({ githubToken: token }), {
+      hostResolver: PUBLIC_RESOLVER,
       gitRunner: runner,
       githubClient: fakeGitHubClient({ reachable: true }),
     })
@@ -286,6 +455,7 @@ describe('git source reachability', () => {
       return ok(`ref: refs/heads/main\tHEAD\n${SHA_A}\tHEAD\n`)
     })
     const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
       gitRunner: runner,
       githubClient: client,
     })
@@ -302,6 +472,7 @@ describe('git source reachability', () => {
   it('short-circuits github reachability when the REST client rejects the repo', async () => {
     const client = fakeGitHubClient({ reachable: false, failure: 'auth_required' })
     const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
       gitRunner: unusedRunner,
       githubClient: client,
     })
@@ -319,7 +490,10 @@ describe('git source reachability', () => {
       expect(args[0]).toBe('ls-remote')
       return ok(`${SHA_A}\tHEAD\n`)
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const result = await source.verifyReachable({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -339,7 +513,10 @@ describe('git source reachability', () => {
       ])
       return ok('')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const result = await source.verifyReachable({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -357,7 +534,10 @@ describe('git source fetchTree', () => {
       }
       return ok('')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     const handle = await source.fetchTree({
       kind: 'git',
       repoUrl: 'https://example.com/alice/agent.git',
@@ -367,13 +547,47 @@ describe('git source fetchTree', () => {
       localPath: null,
     })
     expect(existsSync(handle.path)).toBe(true)
-    // It fetched at depth 1 by the resolved ref name, not the bare SHA.
+    // It fetched at depth 1 by the resolved ref name, not the bare SHA, with the `--` separator so
+    // the ref can never be parsed as an option.
     const fetchCall = runner.calls.find((call) => call.args[0] === 'fetch')
-    expect(fetchCall?.args).toEqual(expect.arrayContaining(['--depth', '1', 'main']))
+    expect(fetchCall?.args).toEqual(expect.arrayContaining(['--depth', '1', '--', 'main']))
     await handle.dispose()
     expect(existsSync(handle.path)).toBe(false)
     // dispose is idempotent.
     await expect(handle.dispose()).resolves.toBeUndefined()
+  })
+
+  it('fetches by the pinned SHA when a resolvedRef is unsafe, never as an option', async () => {
+    const runner = new FakeGitRunner((args) => {
+      if (args[0] === 'rev-parse') {
+        return ok(`${SHA_A}\n`)
+      }
+      return ok('')
+    })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
+    // A crafted ResolvedSource carrying an option-like ref label (as if a hostile ls-remote answer
+    // had slipped through every upstream guard) still cannot reach git as an option.
+    await source.fetchTree({
+      kind: 'git',
+      repoUrl: 'https://example.com/alice/agent.git',
+      commitSha: SHA_A,
+      ref: 'dev',
+      resolvedRef: '--upload-pack=/tmp/pwned',
+      localPath: null,
+    })
+    const fetchCall = runner.calls.find((call) => call.args[0] === 'fetch')
+    expect(fetchCall?.args).toEqual([
+      'fetch',
+      '--depth',
+      '1',
+      'https://example.com/alice/agent.git',
+      '--',
+      SHA_A,
+    ])
+    expect(JSON.stringify(fetchCall?.args)).not.toContain('upload-pack')
   })
 
   it('fails and cleans up when the fetched HEAD does not match the pinned commit', async () => {
@@ -383,7 +597,10 @@ describe('git source fetchTree', () => {
       }
       return ok('')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     let capturedPath: string | undefined
     const original = runner.run.bind(runner)
     runner.run = async (args, opts) => {
@@ -418,7 +635,10 @@ describe('git source fetchTree', () => {
       }
       return ok('')
     })
-    const source = createSubmissionSource(config(), { gitRunner: runner })
+    const source = createSubmissionSource(config(), {
+      hostResolver: PUBLIC_RESOLVER,
+      gitRunner: runner,
+    })
     let capturedPath: string | undefined
     const original = runner.run.bind(runner)
     runner.run = async (args, opts) => {

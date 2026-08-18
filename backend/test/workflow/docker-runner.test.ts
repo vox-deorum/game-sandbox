@@ -614,7 +614,7 @@ describe('Docker-backed workflow runner', () => {
         parameters: Record<string, number | string>
         player_bindings: Record<string, { kind: string; path?: string }>
         players: Record<string, unknown>
-        llm: { keys: Record<string, string> }
+        llm: { keys_file?: string }
       }
       expect(config.player_bindings).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
@@ -622,7 +622,12 @@ describe('Docker-backed workflow runner', () => {
         player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
         player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
       })
-      expect(config.llm.keys).toEqual(keys)
+      // Official keys ride in a read-only mounted file, never in the argv the container exposes.
+      expect(config.llm.keys_file).toBe('/run/llm-keys.json')
+      expect(config.llm).not.toHaveProperty('keys')
+      expect(launch.spec.sandbox.mounts).toContainEqual(
+        expect.objectContaining({ containerPath: '/run/llm-keys.json', readOnly: true }),
+      )
       expect(launch.spec.sandbox.memoryMb).toBe(608)
       emitWideRecording(launch.process, config)
     }

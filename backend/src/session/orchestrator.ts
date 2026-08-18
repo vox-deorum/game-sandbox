@@ -9,7 +9,7 @@
  * resolves attach and stop against the registry.
  */
 import { randomInt, randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import {
   type ParameterValue,
@@ -34,14 +34,15 @@ import {
   submissionSeatPath,
 } from '../submission/submission-image.js'
 import { optionalField } from '../util/optional-field.js'
-import { assembleLaunch, assembleLlmLaunchConfig, type SeatBinding } from './launch-config.js'
+import { assembleLaunch, type LlmKeysFileConfig, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
   type ClientSocket,
   ensureRecordingsDir,
   LiveSession,
 } from './live-session.js'
-import type { OfficialGrantIssuer, OfficialGrantLease } from './official-grants.js'
+import { LlmLeaseHandle } from './llm-lease.js'
+import type { OfficialGrantIssuer } from './official-grants.js'
 import { SessionRegistry } from './registry.js'
 import { resolveSessionMaxDurationMs } from './session-duration.js'
 
@@ -318,22 +319,30 @@ export class Orchestrator {
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
     const createdAt = new Date().toISOString()
-    let llmLease: OfficialGrantLease | undefined
+    // The lease and its staged keys file are one unit: every early-return path below needs just the
+    // single teardown call, so a catch can never strand a live grant or a key file on its own.
+    const llmHandle = new LlmLeaseHandle()
     if (llm.enabled) {
       if (this.officialGrantIssuer === undefined) {
         throw new OrchestratorError(500, 'official LLM grants are not configured')
       }
       try {
-        llmLease = await this.officialGrantIssuer.issue({
-          sessionId: id,
-          scopeId: id,
-          agentPlayers: layout.seats.flatMap((seat) =>
-            seat.players.filter((playerId) => !externalPlayers.includes(playerId)),
-          ),
-          models: llm.models,
-          limits: llm.official,
-        })
+        await llmHandle.stage(
+          this.officialGrantIssuer,
+          {
+            sessionId: id,
+            scopeId: id,
+            agentPlayers: layout.seats.flatMap((seat) =>
+              seat.players.filter((playerId) => !externalPlayers.includes(playerId)),
+            ),
+            models: llm.models,
+            limits: llm.official,
+          },
+          this.llmKeysDir(),
+          id,
+        )
       } catch (error) {
+        await llmHandle.teardown()
         this.deleteUnusedLlmScope(id)
         throw new OrchestratorError(500, `failed to issue official LLM grants: ${String(error)}`)
       }
@@ -360,7 +369,7 @@ export class Orchestrator {
         created_at: createdAt,
       })
     } catch (error) {
-      await llmLease?.revoke()
+      await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       throw error
     }
@@ -368,15 +377,18 @@ export class Orchestrator {
     let sandbox: ReturnType<typeof buildSandboxProfile>
     let sessionConfig: Record<string, unknown>
     try {
+      // An LLM-enabled session exposes its staged keys file to the container as an extra read-only
+      // mount; the config argv then carries only the keys_file path, never the keys themselves.
+      const llmBlock = llmHandle.block(this.config.llm.internalPort)
       sandbox = buildSandboxProfile(
         sandboxResourcesForPlayers(this.config.sandbox, layout.playerCount),
-        [
+        llmHandle.withKeysMount([
           {
             hostPath: this.recordingsHostDir(),
             containerPath: CONTAINER_RECORDINGS_DIR,
             readOnly: false,
           },
-        ],
+        ]),
         llm.enabled ? 'llm' : 'none',
       )
       sessionConfig = await this.sessionConfig(
@@ -391,11 +403,11 @@ export class Orchestrator {
         resolvedParameters.values,
         messaging,
         externalChatPlayer,
-        llmLease?.keys ?? {},
+        llmBlock,
       )
       await ensureRecordingsDir(this.recordingsHostDir())
     } catch (error) {
-      await llmLease?.revoke()
+      await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to prepare session launch: ${String(error)}`)
@@ -413,7 +425,7 @@ export class Orchestrator {
       // The row exists but no container does; mark it failed so it never looks active. No
       // session_submissions rows have been written yet (they land only after a successful launch,
       // below), so a launch that never started leaves no phantom "recent run" on any submission.
-      await llmLease?.revoke()
+      await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
@@ -429,7 +441,7 @@ export class Orchestrator {
     } catch (error) {
       // The post-launch writes (attribution rows) failed, but the container is running. Kill it and
       // mark the session ended so it never looks active and no LiveSession will try to manage it.
-      await llmLease?.revoke()
+      await llmHandle.teardown()
       try {
         await process.kill(KILL_GRACE_MS)
       } catch {
@@ -460,8 +472,8 @@ export class Orchestrator {
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs,
         killGraceMs: KILL_GRACE_MS,
-        revokeLlm: () => llmLease?.revoke() ?? Promise.resolve(),
-        llmBlockingInFlightMs: () => llmLease?.blockingInFlightMs?.() ?? 0,
+        revokeLlm: () => llmHandle.teardown(),
+        llmBlockingInFlightMs: () => llmHandle.lease?.blockingInFlightMs?.() ?? 0,
         deleteLlmScope: this.deleteLlmScope,
       },
     })
@@ -740,6 +752,11 @@ export class Orchestrator {
     return resolve(this.config.recordingsDir)
   }
 
+  /** The host directory staging per-session LLM keys files, under the deployment data dir. */
+  private llmKeysDir(): string {
+    return join(this.config.dataDir, 'llm-keys')
+  }
+
   /**
    * Build the session config the container reads from argv from the validated seat assignments. Each
    * player maps to its seat: a connected human (driven by the transport), a built-in agent, or a
@@ -761,7 +778,7 @@ export class Orchestrator {
     parameters: Record<string, ParameterValue>,
     messaging: { enabled: boolean; cap: number | null },
     externalChatPlayer: string | null,
-    llmKeys: Readonly<Record<string, string>>,
+    llmBlock: LlmKeysFileConfig | Record<string, never>,
   ): Promise<Record<string, unknown>> {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
     // submission owner, one batched lookup. Names are cosmetic — the label falls back to the stable id —
@@ -825,7 +842,7 @@ export class Orchestrator {
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
       external_chat_player: externalChatPlayer,
-      ...assembleLlmLaunchConfig(this.config.llm.internalPort, llmKeys),
+      ...llmBlock,
       step_timeout_ms: seasonRules.step_timeout_ms,
       episode_timeout_ms: seasonRules.episode_timeout_ms,
     }

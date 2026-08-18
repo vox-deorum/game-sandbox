@@ -22,13 +22,31 @@ import {
   type SourceFailureKind,
   type TreeHandle,
 } from './types.js'
+import { assertSafeGitTarget, defaultHostResolver, type HostResolver } from './url-safety.js'
 
 /** A full (unabbreviated) commit SHA, which `ls-remote` will not advertise as a ref. */
 const FULL_SHA = /^[0-9a-f]{40}$/i
 
+/** The only characters a real branch/tag/ref name from a git server may contain here. */
+const RESOLVED_REF_SAFE = /^[0-9A-Za-z._/+-]+$/
+
 /** Drop the `refs/heads/` or `refs/tags/` prefix from a resolved ref name for the stored label. */
 function stripRefPrefix(ref: string): string {
   return ref.replace(/^refs\/(heads|tags)\//, '')
+}
+
+/**
+ * Reduce a server-advertised ref to the label git may receive as a positional argv, or null when
+ * the label is not safe. The advertised ref is server-controlled, so unlike {@link assertSafeRef}
+ * (which guards the participant's own input) it must also reject anything that strayed from a real
+ * ref's character set — a malicious server can advertise `refs/heads/--upload-pack=…` which, after
+ * the prefix is stripped, git would parse as an option (argument injection).
+ */
+function safeResolvedRef(ref: string): string | null {
+  if (ref.startsWith('-') || ref.includes('..') || !RESOLVED_REF_SAFE.test(ref)) {
+    return null
+  }
+  return ref
 }
 
 /**
@@ -79,14 +97,21 @@ function namedRefPatterns(ref: string): string[] {
   return Array.from(new Set([ref, `refs/heads/${ref}`, `refs/tags/${ref}`]))
 }
 
-/** Parse advertised refs from `git ls-remote` output. */
+/** Parse advertised refs from `git ls-remote` output, dropping any ref git must not name. */
 function parseLsRemoteMatches(stdout: string): Array<{ sha: string; ref: string }> {
   const matches: Array<{ sha: string; ref: string }> = []
   for (const line of stdout.split('\n')) {
     const match = line.match(/^([0-9a-f]{40})\s+(\S+)$/i)
-    if (match?.[1] !== undefined && match[2] !== undefined) {
-      matches.push({ sha: match[1], ref: match[2] })
+    if (match?.[1] === undefined || match[2] === undefined) {
+      continue
     }
+    // Drop server-advertised refs that cannot name a real fetch target after their peeled `^{}`
+    // marker (and the refs/heads|tags prefix stripped later) are removed, so a hostile server
+    // cannot slip an option-like label such as `refs/heads/--upload-pack=…` into the fetch argv.
+    if (safeResolvedRef(match[2].replace(/\^\{\}$/, '')) === null) {
+      continue
+    }
+    matches.push({ sha: match[1], ref: match[2] })
   }
   return matches
 }
@@ -96,22 +121,26 @@ export class GitSource {
     private readonly runner: GitRunner,
     private readonly github: GitHubClient,
     private readonly token: string | undefined,
+    private readonly hostResolver: HostResolver = defaultHostResolver,
   ) {}
 
   async verifyReachable(input: GitSourceInput): Promise<ReachabilityResult> {
-    if (!this.isHttpUrl(input.repoUrl)) {
-      return {
-        reachable: false,
-        failure: 'invalid_input',
-        detail: 'only http(s) git URLs are supported',
-      }
-    }
     if (input.ref?.startsWith('-')) {
       return {
         reachable: false,
         failure: 'invalid_input',
         detail: 'a git ref must not begin with a dash',
       }
+    }
+    try {
+      // Refuse structurally-unsafe URLs (credentials, query/fragment, non-http) and hosts that
+      // resolve to internal/private addresses before git touches the network.
+      await assertSafeGitTarget(input.repoUrl, this.hostResolver)
+    } catch (error) {
+      if (error instanceof SourceError) {
+        return { reachable: false, failure: error.failure, detail: error.message }
+      }
+      throw error
     }
     const github = parseGitHubRepo(input.repoUrl)
     if (github !== null) {
@@ -171,8 +200,8 @@ export class GitSource {
   }
 
   async resolve(input: GitSourceInput): Promise<ResolvedSource> {
-    this.assertHttpUrl(input.repoUrl)
     assertSafeRef(input.ref)
+    await assertSafeGitTarget(input.repoUrl, this.hostResolver)
     const url = this.fetchUrl(input.repoUrl)
     if (input.ref === null) {
       return await this.resolveDefaultBranch(input.repoUrl, url)
@@ -213,9 +242,11 @@ export class GitSource {
     try {
       await this.gitOrThrow(['init', '--quiet', dir])
       // Fetch exactly the resolved commit at depth 1 — no history, no other branches. Fetching by the
-      // resolved ref name is more widely permitted than fetching an arbitrary SHA, so prefer it.
-      const fetchTarget = resolved.resolvedRef ?? resolved.commitSha
-      await this.gitOrThrow(['fetch', '--depth', '1', url, fetchTarget], dir)
+      // resolved ref name is more widely permitted than fetching an arbitrary SHA, so prefer it. Any
+      // ref git names arrives here only through `safeResolvedRef`, and the SCP-style `--` separator
+      // makes even a future regression parse the remaining arg as a ref rather than an option.
+      const fetchTarget = safeResolvedRef(resolved.resolvedRef ?? '') ?? resolved.commitSha
+      await this.gitOrThrow(['fetch', '--depth', '1', url, '--', fetchTarget], dir)
       await this.gitOrThrow(['checkout', '--quiet', '--detach', 'FETCH_HEAD'], dir)
       const head = await this.gitOrThrow(['rev-parse', 'HEAD'], dir)
       if (head.stdout.trim().toLowerCase() !== resolved.commitSha) {
@@ -231,21 +262,6 @@ export class GitSource {
   /** The per-invocation URL git actually uses: tokenized for private github.com, clean otherwise. */
   private fetchUrl(repoUrl: string): string {
     return tokenizedUrl(repoUrl, this.token)
-  }
-
-  private isHttpUrl(repoUrl: string): boolean {
-    try {
-      const url = new URL(repoUrl)
-      return url.protocol === 'https:' || url.protocol === 'http:'
-    } catch {
-      return false
-    }
-  }
-
-  private assertHttpUrl(repoUrl: string): void {
-    if (!this.isHttpUrl(repoUrl)) {
-      throw new SourceError('invalid_input', 'only http(s) git URLs are supported')
-    }
   }
 
   /** Run git and turn a non-zero exit or a timeout into a typed {@link SourceError}. */
@@ -291,7 +307,7 @@ export class GitSource {
       repoUrl: cleanUrl,
       commitSha: sha.toLowerCase(),
       ref: null,
-      resolvedRef: branch !== null ? stripRefPrefix(branch) : null,
+      resolvedRef: branch === null ? null : safeResolvedRef(stripRefPrefix(branch)),
       localPath: null,
     }
   }
@@ -316,7 +332,7 @@ export class GitSource {
       repoUrl: cleanUrl,
       commitSha: chosen.sha.toLowerCase(),
       ref,
-      resolvedRef: stripRefPrefix(chosen.ref.replace(/\^\{\}$/, '')),
+      resolvedRef: safeResolvedRef(stripRefPrefix(chosen.ref.replace(/\^\{\}$/, ''))),
       localPath: null,
     }
   }

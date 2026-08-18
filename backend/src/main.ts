@@ -39,6 +39,7 @@ import {
 import { Retention, reclaimOrphanedOfficialTelemetry } from './recordings/retention.js'
 import { RecordingsStore } from './recordings/store.js'
 import { seedOpenSeasons } from './seasons/seed.js'
+import { removeAllLlmKeysFiles } from './session/llm-keys-file.js'
 import { createOfficialGrantIssuer } from './session/official-grants.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { DevelopmentLedgerStore, ExecutionTelemetryStore } from './storage/llm/index.js'
@@ -177,6 +178,9 @@ async function main(): Promise<void> {
   await reconcileInterruptedRuns(storage, log)
   await reconcileCompletedRunPlacements(storage, log)
   await reclaimOrphanedOfficialTelemetry(storage, officialTelemetry, log)
+  // No live session/run can reference a keys file at startup: clear any staged from a previous
+  // process, so an abrupt stop never leaves per-player LLM keys on disk.
+  await removeAllLlmKeysFiles(resolve(config.dataDir, 'llm-keys'))
   const workflowRunner = createWorkflowRunner({
     driver,
     storage,
@@ -185,6 +189,7 @@ async function main(): Promise<void> {
     snapshots,
     sandbox: config.sandbox,
     recordingsDir: resolve(config.recordingsDir),
+    llmKeysDir: resolve(config.dataDir, 'llm-keys'),
     imagePolicy: config.docker.imagePolicy,
     userDirectory,
     llmInternalPort: llmConfigured ? config.llm.internalPort : undefined,

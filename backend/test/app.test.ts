@@ -523,6 +523,30 @@ describe('HTTP API', () => {
     expect((await app.inject({ method: 'GET', url: '/api/recordings/nope' })).statusCode).toBe(404)
   })
 
+  it('refuses path-traversal recording ids before touching the filesystem', async () => {
+    // URL-encoded traversal inside a single path segment reaches the handler as a climbing id; it
+    // must be refused outright rather than resolved under the recordings root.
+    for (const path of [
+      '/api/recordings/..%2F..%2Fetc',
+      '/api/recordings/%2e%2e%2f%2e%2e%2fetc',
+      '/api/recordings/%2e%2e%2F..%2Fetc',
+      '/api/recordings/x..%2fy',
+    ]) {
+      const res = await app.inject({ method: 'GET', url: path })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({ code: 'invalid_request' })
+    }
+    // A well-formed but unknown id still 404s (its value is shape-safe).
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/api/recordings/flappy_bird-00000000-0000-0000-0000-000000000000',
+        })
+      ).statusCode,
+    ).toBe(404)
+  })
+
   it('lets the owner delete a session but forbids a stranger', async () => {
     const created = await app.inject({
       method: 'POST',

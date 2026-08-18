@@ -416,37 +416,54 @@ def _parse_players(
 
 
 def _parse_llm(raw: object, player_bindings: dict[str, PlayerBinding]) -> LlmConfig | None:
-    """Validate the optional LLM launch block and its agent-player key coverage."""
+    """Validate the optional LLM launch block and its agent-player key coverage.
+
+    Keys arrive either inline (``keys`` — the local-play path) or out-of-band through a
+    read-only mounted file (``keys_file`` — the container path, which keeps the key material out
+    of the container's argv/process metadata). Exactly one of the two must be present.
+    """
     if raw is None:
         return None
     if not isinstance(raw, dict):
         raise LiveConfigError("config 'llm' must be an object or null")
     llm = cast("dict[str, Any]", raw)
-    expected_fields = {"base_url", "tick_url", "inflight_url", "keys"}
-    if set(llm) != expected_fields:
-        missing = sorted(expected_fields - set(llm))
-        unknown = sorted(set(llm) - expected_fields)
+    required_fields = {"base_url", "tick_url", "inflight_url"}
+    known_fields = required_fields | {"keys", "keys_file"}
+    if not required_fields <= set(llm) or not set(llm) <= known_fields:
+        missing = sorted(required_fields - set(llm))
+        unknown = sorted(set(llm) - known_fields)
         details: list[str] = []
         if missing:
             details.append(f"missing {missing!r}")
         if unknown:
             details.append(f"unknown {unknown!r}")
         raise LiveConfigError(
-            "config 'llm' must contain exactly base_url, tick_url, inflight_url, and keys "
-            f"({'; '.join(details)})"
+            "config 'llm' must contain base_url, tick_url, inflight_url, and exactly one of "
+            f"'keys' or 'keys_file' ({'; '.join(details)})"
         )
 
     for field_name in ("base_url", "tick_url", "inflight_url"):
         value = llm[field_name]
         if not isinstance(value, str) or not value:
             raise LiveConfigError(f"config 'llm' {field_name!r} must be a non-empty string")
-    raw_keys = llm["keys"]
-    if not isinstance(raw_keys, dict):
-        raise LiveConfigError("config 'llm' 'keys' must be an object keyed by agent player id")
-    keys = cast("dict[str, Any]", raw_keys)
-    for player_id, key in keys.items():
-        if not isinstance(key, str) or not key:
-            raise LiveConfigError(f"config 'llm' key for {player_id!r} must be a non-empty string")
+
+    has_keys = "keys" in llm
+    has_keys_file = "keys_file" in llm
+    if has_keys == has_keys_file:
+        raise LiveConfigError(
+            "config 'llm' must provide exactly one of 'keys' or 'keys_file' "
+            f"(currently {'both' if has_keys else 'neither'})"
+        )
+    if has_keys_file:
+        keys = _read_keys_file(llm["keys_file"])
+    else:
+        raw_keys = llm["keys"]
+        if not isinstance(raw_keys, dict):
+            raise LiveConfigError("config 'llm' 'keys' must be an object keyed by agent player id")
+        keys = cast("dict[str, Any]", raw_keys)
+        for player_id, key in keys.items():
+            if not isinstance(key, str) or not key:
+                raise LiveConfigError(f"config 'llm' key for {player_id!r} must be a non-empty string")
 
     agent_players = {
         player_id for player_id, binding in player_bindings.items() if binding.kind == "builtin-agent"
@@ -470,6 +487,29 @@ def _parse_llm(raw: object, player_bindings: dict[str, PlayerBinding]) -> LlmCon
         inflight_url=cast("str", llm["inflight_url"]),
         keys=cast("dict[str, str]", dict(keys)),
     )
+
+
+def _read_keys_file(path: object) -> dict[str, str]:
+    """Read a per-session LLM keys file (the out-of-band container handoff) into a player-id map."""
+    if not isinstance(path, str) or not path:
+        raise LiveConfigError("config 'llm' 'keys_file' must be a non-empty path")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except OSError as error:
+        raise LiveConfigError(f"config 'llm' 'keys_file' could not be read: {error}") from error
+    except json.JSONDecodeError as error:
+        raise LiveConfigError("config 'llm' 'keys_file' must contain a JSON object") from error
+    if not isinstance(raw, dict):
+        raise LiveConfigError("config 'llm' 'keys_file' must contain a JSON object")
+    keys: dict[str, str] = {}
+    for player_id, key in raw.items():
+        if not isinstance(player_id, str) or not isinstance(key, str) or not key:
+            raise LiveConfigError(
+                "config 'llm' 'keys_file' must map player ids to non-empty key strings"
+            )
+        keys[player_id] = key
+    return keys
 
 
 class _LlmExecutionScope:

@@ -25,10 +25,16 @@ export type { GitHubClient, GitHubRepo } from './github.js'
 export { createGitHubClient, parseGitHubRepo, tokenizedUrl } from './github.js'
 export * from './types.js'
 
+import type { HostResolver } from './url-safety.js'
+
+export { defaultHostResolver, isPrivateAddress, unsafeGitUrlReason } from './url-safety.js'
+export type { HostResolver }
+
 /** Test seam: inject fakes for the `git` CLI and the GitHub HTTP client. */
 export interface SubmissionSourceDeps {
   gitRunner?: GitRunner
   githubClient?: GitHubClient
+  hostResolver?: HostResolver
 }
 
 /**
@@ -42,7 +48,7 @@ export function createSubmissionSource(
 ): SubmissionSource {
   const runner = deps.gitRunner ?? createGitRunner(config.gitTimeoutMs)
   const githubClient = deps.githubClient ?? createGitHubClient(config.githubToken)
-  const git = new GitSource(runner, githubClient, config.githubToken)
+  const git = new GitSource(runner, githubClient, config.githubToken, deps.hostResolver)
   const local = config.allowLocalSubmissions ? new LocalSource() : null
 
   return {

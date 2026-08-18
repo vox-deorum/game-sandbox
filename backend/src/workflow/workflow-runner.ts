@@ -26,6 +26,9 @@
  * the container's diagnostic lines, a game-finished line, each game's status transition, and the run's
  * terminal verdict. The stream is live-only; persisted per-game statuses cover a late subscriber.
  */
+
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   classifyOutbound,
   type ParsedRecording,
@@ -49,10 +52,11 @@ import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/type
 import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
   assembleLaunch,
-  assembleLlmLaunchConfig,
+  type LlmKeysFileConfig,
   type SeatBinding,
 } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
+import { LlmLeaseHandle } from '../session/llm-lease.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
 import { coerceResultReason } from '../session/result-reason.js'
 import { decodeSeasonConfig, type LlmUsageByModel, type Storage } from '../storage/index.js'
@@ -106,6 +110,11 @@ export interface WorkflowRunnerDeps {
   sandbox: SandboxDefaults
   /** The recordings volume root, mounted into each match container and read back after it exits. */
   recordingsDir: string
+  /**
+   * The host directory staging per-game LLM keys files, mounted read-only into matches. Defaults to
+   * a process-scoped temp directory (used by tests) when a deployment does not pin it.
+   */
+  llmKeysDir?: string
   /** The driver's reuse-vs-rebuild policy, threaded into overlay resolution. */
   imagePolicy: ImagePolicy
   /** Internal proxy port emitted into the shared harness launch block. */
@@ -183,6 +192,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
     this.log = deps.log ?? ((): void => {})
     this.killGraceMs = deps.killGraceMs ?? DEFAULT_KILL_GRACE_MS
     this.gameWatchdogGraceMs = deps.gameWatchdogGraceMs ?? DEFAULT_GAME_WATCHDOG_GRACE_MS
+  }
+
+  /** The keys-file staging root; tests without an explicit dir get a process-scoped temp path. */
+  private llmKeysDir(): string {
+    if (this.deps.llmKeysDir !== undefined) {
+      return this.deps.llmKeysDir
+    }
+    return join(tmpdir(), `gs-llm-keys-${process.pid}`)
   }
 
   enqueue(runId: string): void {
@@ -453,8 +470,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
 
     const recordingId = `${envId}-${game.id}`
-    let llmLease: OfficialGrantLease | undefined
     let process: SessionProcess | undefined
+    // The lease and its staged keys file are one unit, torn down in a single teardown call: the
+    // finally below (and every cancel/error path) can never strand a grant or a key file separately.
+    const llmHandle = new LlmLeaseHandle()
     try {
       if (llmPolicy.enabled) {
         // A missing issuer or port is a deployment-wide misconfiguration: fail the run, not one
@@ -471,24 +490,31 @@ class DockerWorkflowRunner implements WorkflowRunner {
           )
         }
         try {
-          llmLease = await this.deps.officialGrantIssuer.issue({
-            sessionId: game.id,
-            scopeId: runId,
-            agentPlayers: layout.seats.flatMap((seat) => seat.players),
-            models: policyModels(llmPolicy),
-            limits: policyLimits(llmPolicy),
-          })
-          this.inFlightLlm.set(runId, llmLease)
+          const lease = await llmHandle.stage(
+            this.deps.officialGrantIssuer,
+            {
+              sessionId: game.id,
+              scopeId: runId,
+              agentPlayers: layout.seats.flatMap((seat) => seat.players),
+              models: policyModels(llmPolicy),
+              limits: policyLimits(llmPolicy),
+            },
+            this.llmKeysDir(),
+            game.id,
+          )
+          this.inFlightLlm.set(runId, lease)
         } catch (error) {
+          await llmHandle.teardown()
           await this.infraFault(runId, game, `LLM grant issuance failed: ${errorText(error)}`)
           return
         }
         if (this.cancelRequested.has(runId)) {
-          await llmLease.revoke()
+          await llmHandle.teardown()
           await this.markGameCancelled(runId, game)
           return
         }
       }
+      const llmBlock = llmHandle.block(this.deps.llmInternalPort as number)
       const sessionConfig = await this.sessionConfig(
         meta,
         game.seed,
@@ -497,10 +523,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
         seasonRules,
         parameters,
         layout,
-        llmLease?.keys ?? {},
+        llmBlock,
       )
       if (this.cancelRequested.has(runId)) {
-        await llmLease?.revoke()
+        await llmHandle.teardown()
         await this.markGameCancelled(runId, game)
         return
       }
@@ -511,13 +537,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
           argv: [JSON.stringify(sessionConfig)],
           sandbox: buildSandboxProfile(
             sandboxResourcesForPlayers(this.deps.sandbox, layout.playerCount),
-            [
+            llmHandle.withKeysMount([
               {
                 hostPath: this.deps.recordingsDir,
                 containerPath: CONTAINER_RECORDINGS_DIR,
                 readOnly: false,
               },
-            ],
+            ]),
             llmPolicy.enabled ? 'llm' : 'none',
           ),
           sessionId: game.id,
@@ -534,10 +560,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // below, and the post-exit cancel check records the game `cancelled`. Revoke and cleanup are
       // memoized, so the repeated calls on that path are no-ops.
       if (this.cancelRequested.has(runId)) {
-        await llmLease?.revoke()
+        await llmHandle.teardown()
         await this.cleanupProcess(process)
       }
-      const watchdog = this.startGameWatchdog(runId, game, process, watchdogMs, llmLease)
+      const watchdog = this.startGameWatchdog(runId, game, process, watchdogMs, llmHandle.lease)
 
       // Drain stderr as live log lines, and stdout for the recording stream and the final result
       // envelope. Both must finish before the recording is read so no line is missed.
@@ -573,7 +599,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       watchdog.stop()
       await stdout
       await diagnostics
-      await llmLease?.revoke()
+      await llmHandle.teardown()
       // Natural exit only reports termination for an LLM container. Revoke and drain before this
       // explicit cleanup disconnects the relay and removes the two per-session networks.
       await this.cleanupProcess(process)
@@ -714,7 +740,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       )
     } finally {
       try {
-        await llmLease?.revoke()
+        await llmHandle.teardown()
       } finally {
         if (process !== undefined) await this.cleanupProcess(process)
         this.inFlight.delete(runId)
@@ -812,7 +838,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     layout: ReturnType<typeof resolveLayout>,
-    llmKeys: Readonly<Record<string, string>>,
+    llmBlock: LlmKeysFileConfig | Record<string, never>,
   ): Promise<Record<string, unknown>> {
     // Snapshot each submission owner's display name for the recording header at launch time, one
     // batched lookup. Names are cosmetic — the label falls back to the stable id — so a directory
@@ -855,7 +881,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       parameters,
       headless: true,
       players,
-      ...assembleLlmLaunchConfig(this.deps.llmInternalPort ?? 1, llmKeys),
+      ...llmBlock,
       step_timeout_ms: seasonRules.step_timeout_ms,
       episode_timeout_ms: seasonRules.episode_timeout_ms,
       messaging_enabled: seasonRules.messaging_enabled,

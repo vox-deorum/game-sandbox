@@ -7,7 +7,7 @@ import type { UserDirectory } from '../auth/users.js'
 import type { Storage } from '../storage/index.js'
 import { optionalField } from '../util/optional-field.js'
 import type { PinResult, Retention } from './retention.js'
-import type { RecordingsStore } from './store.js'
+import { isSafeRecordingId, type RecordingsStore } from './store.js'
 import { isBlindRecording, maskPlayers, replaceHeaderLine } from './view.js'
 
 export interface RecordingRouteDeps {
@@ -70,6 +70,9 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
   })
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id', async (request, reply) => {
+    if (!isSafeRecordingId(request.params.id)) {
+      return reply.code(400).send({ error: 'invalid recording id', code: 'invalid_request' })
+    }
     if (!(await deps.recordings.exists(request.params.id))) {
       return reply.code(404).send({ error: 'no such recording' })
     }

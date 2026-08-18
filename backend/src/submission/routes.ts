@@ -12,6 +12,7 @@ import { type Storage, SubmissionConflictError } from '../storage/index.js'
 import { optionalField } from '../util/optional-field.js'
 import { zodReason } from '../util/zod-error.js'
 import type { SourceInput, SubmissionSource } from './source/index.js'
+import { unsafeGitUrlReason } from './source/index.js'
 import type { SubmissionEnqueuer } from './worker.js'
 
 /** Everything the public submission routes need. */
@@ -24,9 +25,20 @@ export interface SubmissionRouteDeps {
   userDirectory: UserDirectory
 }
 
+/**
+ * A repository URL that passes the source seam's structural admission: bare http(s), no embedded
+ * credentials, and no query or fragment. Rejected at the wire so credentials pasted into a URL are
+ * never persisted to a submission row (which the public agent profile serves back verbatim) or
+ * handed to git. The DNS/private-address layer still runs later in the source seam.
+ */
+const RepoUrlSchema = z
+  .string()
+  .refine((url) => unsafeGitUrlReason(url) === null, 'repository URL is not acceptable')
+  .optional()
+
 /** The source fields shared by the reachability pre-check and the submit body. */
 const SOURCE_PROPERTIES = {
-  repo_url: z.string().optional(),
+  repo_url: RepoUrlSchema,
   ref: z.string().nullable().optional(),
   local_path: z.string().optional(),
 }

@@ -74,36 +74,40 @@ export interface AssembledLaunch {
   players: Record<string, PlayerAttribution>
 }
 
-/** The exact LLM block shared by live and workflow session argv. */
-export interface LlmLaunchConfig {
+/** The container KPI LLM block: the same endpoints, but keys arrive through a read-only mount. */
+export interface LlmKeysFileConfig {
   llm: {
     base_url: string
     tick_url: string
     inflight_url: string
-    keys: Record<string, string>
+    keys_file: string
+  }
+}
+
+/** The internal URLs the harness-facing LLM block is built from. */
+function llmEndpoints(internalPort: number): {
+  base_url: string
+  tick_url: string
+  inflight_url: string
+} {
+  return {
+    base_url: `http://llm-proxy:${internalPort}/v1`,
+    tick_url: `http://llm-proxy:${internalPort}/internal/tick`,
+    inflight_url: `http://llm-proxy:${internalPort}/internal/inflight`,
   }
 }
 
 /**
- * Assemble the one harness-facing LLM shape. Keeping the internal URLs explicit is intentional: the
- * tick-marker and in-flight endpoints are not below the OpenAI-compatible `/v1` path, so callers
- * must never derive either from `base_url`. An empty key map is not useful and is represented by no
- * block at all.
+ * The launch block that points the harness at a read-only mounted per-session keys file instead of
+ * embedding the keys. The file is written by the launch owner before container creation; the
+ * harness reads it at startup and uses it exactly as it would the inline map.
  */
-export function assembleLlmLaunchConfig(
+export function assembleLlmKeysFileConfig(
   internalPort: number,
-  keys: Readonly<Record<string, string>>,
-): LlmLaunchConfig | Record<string, never> {
-  if (Object.keys(keys).length === 0) {
-    return {}
-  }
+  keysFile: string,
+): LlmKeysFileConfig {
   return {
-    llm: {
-      base_url: `http://llm-proxy:${internalPort}/v1`,
-      tick_url: `http://llm-proxy:${internalPort}/internal/tick`,
-      inflight_url: `http://llm-proxy:${internalPort}/internal/inflight`,
-      keys: { ...keys },
-    },
+    llm: { ...llmEndpoints(internalPort), keys_file: keysFile },
   }
 }
 

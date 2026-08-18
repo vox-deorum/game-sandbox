@@ -166,6 +166,38 @@ describe('submission API', () => {
     expect(enqueued).toEqual([])
   })
 
+  it('refuses a repo_url that embeds credentials or a query/fragment before persisting it', async () => {
+    await build()
+    const alice = await users.headersFor('alice')
+    const httpless = await app.inject({
+      method: 'POST',
+      url: '/api/submissions/reachability',
+      headers: alice,
+      payload: { repo_url: 'https://user:pass@example.test/repo', ref: 'main' },
+    })
+    expect(httpless.statusCode).toBe(400)
+
+    await storage.ensureOpenSeason(ENV_ID, 1)
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/submissions',
+      headers: alice,
+      payload: { env_id: ENV_ID, repo_url: 'https://user:ghtoken@example.test/repo' },
+    })
+    expect(submit.statusCode).toBe(400)
+    expect(enqueued).toEqual([])
+    // Nothing was persisted that could later be served back to anonymous visitors.
+    expect((await storage.listSubmissionsByUser(users.idOf('alice'))).length).toBe(0)
+
+    const frag = await app.inject({
+      method: 'POST',
+      url: '/api/submissions',
+      headers: alice,
+      payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo.git#frag' },
+    })
+    expect(frag.statusCode).toBe(400)
+  })
+
   it('creates a pending submission under the resolved identity without running the pipeline', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)
