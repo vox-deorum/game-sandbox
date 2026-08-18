@@ -38,7 +38,7 @@ A routine is `decide(observation, memory, goal)`: return a helper-built action D
 
 **Budget and reporting rules:** Build the graph once in `reset`, where step 1 provides the layout before tick one. Later `act` calls search the cached graph. Measure and report reset and per-tick costs separately. The graph resolution remains an explicit example choice that students may change.
 
-The shipped example uses one graph node for every walkable cell. The village helpers cache their model by immutable layout content and use a spatial collision index, so repeated cell and segment checks reuse exact static geometry without rescanning every collision shape.
+The shipped example uses one graph node for every walkable cell. The village helpers reuse a model by observation identity, fall back to a content-keyed cache by immutable layout content, and use a spatial collision index, so repeated cell and segment checks reuse exact static geometry without rescanning every collision shape.
 
 ### Routine menu
 

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 
 from ._model import (
     GROUND_BY_CODE,
-    body_clear,
+    Model,
     cell,
     center,
     ground,
@@ -45,15 +45,11 @@ def ground_at(observation: Mapping[str, object], cell_value: Mapping[str, object
 def walkable(observation: Mapping[str, object], cell_value: Mapping[str, object]) -> bool:
     """Return whether a character can stand on a cell: its ground is passable and a body the size
     of a villager clears it (no wall, water, or blocking prop)."""
-    village_model = model(observation)
-    point = center(village_model, cell_value)
-    item = ground(village_model, cell_value)
-    return (
-        point is not None
-        and item is not None
-        and bool(item["passable"])
-        and body_clear(village_model, point, BODY_RADIUS)
-    )
+    return _walkable(model(observation), cell_value)
+
+
+def _walkable(village_model: Model, cell_value: Mapping[str, object]) -> bool:
+    return (int(cell_value["x"]), int(cell_value["y"])) in village_model.walkable_cells
 
 
 def can_step(
@@ -70,8 +66,8 @@ def can_step(
     if abs(start_x - end_x) + abs(start_y - end_y) != 1:
         return False
     return (
-        walkable(observation, start_cell)
-        and walkable(observation, end_cell)
+        _walkable(village_model, start_cell)
+        and _walkable(village_model, end_cell)
         and segment_clear(village_model, start, end, BODY_RADIUS)
     )
 

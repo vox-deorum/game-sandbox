@@ -83,6 +83,7 @@ def test_static_helpers_reuse_models_for_unchanged_or_equal_village_mappings():
     observation = copy.deepcopy(observations["player_1"])
     equal_observation = copy.deepcopy(observation)
     village_model._model.cache_clear()
+    village_model._IDENTITY_CACHE.clear()
 
     first = village_model.model(observation)
     assert layout.cell_at(observation, me.position(observation)) is not None
@@ -97,10 +98,35 @@ def test_static_helpers_reuse_models_for_unchanged_or_equal_village_mappings():
     assert village_model.model(observation) is first
 
 
+def test_identity_cache_reuses_one_model_and_rebuilds_on_wholesale_replacement():
+    _env, observations = _observations()
+    observation = copy.deepcopy(observations["player_1"])
+    village_model._model.cache_clear()
+    village_model._IDENTITY_CACHE.clear()
+
+    first = village_model.model(observation)
+    assert village_model.model(observation) is first
+
+    previous_props = observation["village"]["props"]
+    observation["village"]["props"] = tuple(
+        {
+            "id": prop["id"],
+            "type": prop["type"],
+            "cell": {"x": prop["cell"]["x"] + 1, "y": prop["cell"]["y"]},
+            "facing": prop["facing"],
+        }
+        for prop in previous_props
+    )
+    second = village_model.model(observation)
+    assert second is not first
+    assert village_model.model(observation) is second
+
+
 def test_content_cache_distinguishes_dropped_equal_and_variant_village_mappings():
     _env, observations = _observations()
     source = observations["player_1"]["village"]
     village_model._model.cache_clear()
+    village_model._IDENTITY_CACHE.clear()
     expected: dict[bool, village_model.Model] = {}
 
     for index in range(200):

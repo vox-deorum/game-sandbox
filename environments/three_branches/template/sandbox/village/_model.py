@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from math import floor, hypot
 from pathlib import Path
@@ -21,6 +21,10 @@ DOORWAY_CODE = next(item["code"] for item in RULES["grounds"] if item["name"] ==
 PROP_BY_TYPE = {item["token"]: item for item in CATALOG["props"]}
 SCENERY_BY_TYPE = {item["token"]: item for item in CATALOG["scenery"]}
 BUILDING_BY_TYPE = {item["token"]: item for item in CATALOG["buildings"]}
+
+# geometry.BODY_RADIUS cannot be imported here: geometry imports RULES from this module, so the
+# reverse import would cycle. It is the same static profile constant either way.
+_BODY_RADIUS = float(RULES["profile"]["body_radius"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +56,7 @@ class Model:
     scenery_shapes: tuple[Shape, ...]
     collision_shapes: tuple[Shape, ...]
     collision_buckets: Mapping[tuple[int, int], tuple[int, ...]]
+    walkable_cells: frozenset[tuple[int, int]]
 
 
 PlacementFingerprint = tuple[str, float, float, bool, float]
@@ -65,19 +70,53 @@ VillageFingerprint = tuple[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class _IdentityEntry:
+    village: Mapping[str, object]
+    size: Mapping[str, object]
+    ground: str | tuple[str, ...]
+    props: tuple[Mapping[str, object], ...]
+    scenery: tuple[Mapping[str, object], ...]
+    model: Model
+
+
+_IDENTITY_CACHE_LIMIT = 8
+_IDENTITY_CACHE: dict[int, _IdentityEntry] = {}
+
+
 def model(observation: Mapping[str, object]) -> Model:
-    """Return the cached immutable calculation model for one observation's village."""
+    """Return the cached immutable calculation model for one observation's village.
+
+    A same-observation query reuses the stored model by object identity. The village
+    sub-mappings are therefore expected to be replaced wholesale, never mutated in place;
+    in-place leaf mutation followed by a same-object re-query would return a stale model.
+    """
     village = observation["village"]
     assert isinstance(village, Mapping)
+    entry = _IDENTITY_CACHE.get(id(village))
+    if (
+        entry is not None
+        and entry.village is village
+        and entry.size is village["size"]
+        and entry.ground is village["ground"]
+        and entry.props is village["props"]
+        and entry.scenery is village["scenery"]
+    ):
+        return entry.model
     size, ground, props, scenery = village["size"], village["ground"], village["props"], village["scenery"]
     assert isinstance(size, Mapping)
-    fingerprint = _fingerprint(
-        size,
-        cast("str | tuple[str, ...]", ground),
-        cast("tuple[Mapping[str, object], ...]", props),
-        cast("tuple[Mapping[str, object], ...]", scenery),
+    result = _model(
+        _fingerprint(
+            size,
+            cast("str | tuple[str, ...]", ground),
+            cast("tuple[Mapping[str, object], ...]", props),
+            cast("tuple[Mapping[str, object], ...]", scenery),
+        )
     )
-    return _model(fingerprint)
+    _IDENTITY_CACHE[id(village)] = _IdentityEntry(village, size, ground, props, scenery, result)
+    if len(_IDENTITY_CACHE) > _IDENTITY_CACHE_LIMIT:
+        _IDENTITY_CACHE.pop(next(iter(_IDENTITY_CACHE)), None)
+    return result
 
 
 def _fingerprint(
@@ -125,7 +164,7 @@ def _model(fingerprint: VillageFingerprint) -> Model:
     prop_shapes = tuple(_shape(item, PROP_BY_TYPE[item[0]], cell_size) for item in props)
     scenery_shapes = tuple(_shape(item, SCENERY_BY_TYPE[item[0]], cell_size) for item in scenery)
     collision_shapes = (*blocked, *prop_shapes, *scenery_shapes)
-    return Model(
+    partial = Model(
         cells_x,
         cells_y,
         cell_size,
@@ -136,6 +175,20 @@ def _model(fingerprint: VillageFingerprint) -> Model:
         scenery_shapes,
         collision_shapes,
         _collision_buckets(collision_shapes, cells_x, cells_y, cell_size),
+        frozenset(),
+    )
+    return replace(partial, walkable_cells=_walkable_cells(partial))
+
+
+def _walkable_cells(partial: Model) -> frozenset[tuple[int, int]]:
+    """Return every cell whose ground is passable and whose centre a body clears, matching the
+    semantics of the public ``layout.walkable`` helper."""
+    return frozenset(
+        (x, y)
+        for y in range(partial.cells_y)
+        for x in range(partial.cells_x)
+        if GROUND_BY_CODE[partial.ground[y][x]]["passable"]
+        and body_clear(partial, ((x + 0.5) * partial.cell_size, (y + 0.5) * partial.cell_size), _BODY_RADIUS)
     )
 
 
