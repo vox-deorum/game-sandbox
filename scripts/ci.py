@@ -331,6 +331,14 @@ def job_compose_smoke() -> None:
         raise SystemExit(
             "compose-smoke needs a Linux Docker daemon; run it under WSL or from the Actions tab."
         )
+    if os.getuid() == 0:
+        # The entrypoint remaps the app account to APP_UID/APP_GID with usermod, which rejects
+        # uid/gid 0 since root already owns them (no free account to move it onto). Running this
+        # job as root also defeats its own point: the DATA_DIR reown below only matters for handing
+        # a non-root account write access to it.
+        raise SystemExit(
+            "compose-smoke must run as a non-root user; it sets APP_UID/APP_GID from the caller's ids."
+        )
     env_path = REPO_ROOT / ".env"
     if env_path.exists():
         raise SystemExit(".env already exists; compose-smoke writes a throwaway one. Move yours aside first.")
@@ -344,6 +352,9 @@ def job_compose_smoke() -> None:
     internal_network = f"{project_name}-internal"
     outbound_network = f"{project_name}-outbound"
     compose = ["docker", "compose", "--project-name", project_name]
+    # Run the app as the CI runner's own uid/gid so the entrypoint re-owns the fresh temp DATA_DIR
+    # to an account that both the app and this process can write; DOCKER_GID stays unset and the
+    # entrypoint auto-detects it from the mounted socket, so the job relies on no host-specific gid.
     env_path.write_text(
         "\n".join(
             [
@@ -358,6 +369,8 @@ def job_compose_smoke() -> None:
                 "ADMIN_NAME=Compose Smoke",
                 "AUTH_ALLOW_INSECURE_DEFAULTS=false",
                 f"DATA_DIR={data_dir}",
+                f"APP_UID={os.getuid()}",
+                f"APP_GID={os.getgid()}",
             ]
         )
         + "\n",

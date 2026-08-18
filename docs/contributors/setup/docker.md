@@ -25,7 +25,7 @@ The repository setup script automates server setup, including the certificate di
    LOCAL_HTTPS_PORT=8443
    ```
 
-   `PUBLIC_ORIGIN` must be exactly `https://` followed by an ASCII multi-label DNS hostname. Do not include a port, path, trailing slash, trailing dot, or IP address. `LOCAL_HTTPS_PORT` may be changed, but it cannot be `443`, which is reserved for public HTTPS.
+   `PUBLIC_ORIGIN` must be exactly `https://` followed by an ASCII multi-label DNS hostname. Do not include a port, path, trailing slash, trailing dot, or IP address. `LOCAL_HTTPS_PORT` may be changed, but it cannot be `443`, which is reserved for public HTTPS. `APP_UID`, `APP_GID`, and `DOCKER_GID` are optional overrides described in [Configuration](configuration.md); the defaults fit most hosts.
 
 2. Create the host data directory and private certificate directory before the containers start:
 
@@ -34,7 +34,7 @@ The repository setup script automates server setup, including the certificate di
    mkdir -m 700 .tls
    ```
 
-   The proxy generates `.tls/current/origin.crt` and `.tls/current/origin.key` on first start. `current` is an atomic link to a complete pair. The proxy validates the pair at startup and checks it daily while running. It renews when fewer than 30 days remain, reloads nginx, and retains one `previous` pair. These files are ignored by Git. [Data folders](../data/folders.md) describes the proxy mount and other local storage. Back up the whole `.tls` directory if local clients trust the certificate.
+   The app container takes ownership of `DATA_DIR` at startup, so the directory does not need to belong to any particular account beforehand. The proxy generates `.tls/current/origin.crt` and `.tls/current/origin.key` on first start. `current` is an atomic link to a complete pair. The proxy validates the pair at startup and checks it daily while running. It renews when fewer than 30 days remain, reloads nginx, and retains one `previous` pair. These files are ignored by Git. [Data folders](../data/folders.md) describes the proxy mount and other local storage. Back up the whole `.tls` directory if local clients trust the certificate.
 
 3. Build with current base images and start the stack:
 
@@ -68,13 +68,13 @@ The manually triggered Compose smoke workflow rehearses this deployment on a Lin
 
 ## How the container is set up
 
-`compose.yaml` mounts `/var/run/docker.sock` into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The Compose `app` container joins an outbound network for GitHub and model providers and the `game-sandbox-internal` network. nginx joins both of those networks. It needs the outbound one only to be reachable at all: Docker binds a published port through a container's endpoint on a non-internal network, and the internal network is gateway-free, so an nginx attached to that network alone leaves every published port unbound on the host. nginx addresses the app by the `app-internal` alias, which the app carries only on the internal network, so traffic to the app never crosses the outbound one.
+`compose.yaml` mounts `/var/run/docker.sock` (read-only) into the Compose `app` container, so its backend starts sibling session containers on the host daemon. The app image bakes a non-root app account at uid/gid `1001`; its entrypoint starts as root just long enough to remap that account to the host's `APP_UID`/`APP_GID` (which must be the numeric owner of the bind-mounted `DATA_DIR`), join it to a group matching the socket's gid, and chown `DATA_DIR`, then it drops to the app account and execs the backend. No host-specific gid is pinned in Compose, and `APP_UID`/`APP_GID`/`DOCKER_GID` changes never require an image rebuild; the defaults match the `exouser` account this deployment uses. The Compose `app` container joins an outbound network for GitHub and model providers and the `game-sandbox-internal` network. nginx joins both of those networks. It needs the outbound one only to be reachable at all: Docker binds a published port through a container's endpoint on a non-internal network, and the internal network is gateway-free, so an nginx attached to that network alone leaves every published port unbound on the host. nginx addresses the app by the `app-internal` alias, which the app carries only on the internal network, so traffic to the app never crosses the outbound one.
 
 The Compose `app` container publishes no host ports. nginx publishes public port 443 and binds `${LOCAL_HTTPS_PORT:-8443}` to IPv4 loopback. It forwards HTTP and WebSocket traffic to the Compose `app` container through Docker DNS, including after that container is recreated.
 
 Session containers bind-mount `<DATA_DIR>/recordings`, so `DATA_DIR` must be an existing absolute path that is identical on the host and in the Compose `app` container. `compose.yaml` binds the configured path at itself. See [Data folders](../data/folders.md).
 
-Mounting the Docker socket grants full control of the host's Docker daemon, so treat the host as single-tenant for this app.
+Mounting the Docker socket grants full control of the host's Docker daemon, so treat the host as single-tenant for this app. The read-only mount and non-root backend are hardening, not containment: a compromised backend still has the daemon's authority.
 
 A containerized backend must be the only backend using its Docker daemon because namespace-local process IDs make another backend's live sessions look orphaned. Host-process backends see shared process IDs and can share a daemon safely.
 

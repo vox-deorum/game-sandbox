@@ -80,6 +80,10 @@ describe('LlmLeaseHandle', () => {
       },
     ])
     await expect(stat(join(keysDir, 'sess-1.json'))).resolves.toBeDefined()
+    // The staged file must be world-readable (remembered as `r` for other): the container's root
+    // runs with CAP_DAC_READ_SEARCH dropped, so it honors mode bits and could not open a 0600 file
+    // owned by the backend's uid (see writeLlmKeysFile). Privacy is the 0700 staging directory.
+    await expect(stat(join(keysDir, 'sess-1.json'))).resolves.toMatchObject({ mode: 0o100644 })
   })
 
   it('teardown removes the staged keys file and revokes the lease together', async () => {

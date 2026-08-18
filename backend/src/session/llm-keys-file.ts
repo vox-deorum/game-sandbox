@@ -5,9 +5,11 @@
  * the container through a read-only bind mount. The session config argv carries only the fixed
  * mount path (`keys_file`), so the key material never appears in `docker inspect`, in
  * `/proc/<pid>/cmdline`, or in container process metadata. The file is session-scoped, written
- * with 0600 permissions, and removed by the launch owner when the session/run is torn down.
+ * world-readable for the container's root user (which drops `CAP_DAC_READ_SEARCH`, so it honors
+ * mode bits and cannot read a file owned by the backend's uid), protected by the 0700 staging
+ * directory described below, and removed by the launch owner when the session/run is torn down.
  */
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { MountSpec } from '../driver/index.js'
@@ -32,6 +34,11 @@ export interface LlmKeysFileHandoff {
  * expose). The caller adds {@link LlmKeysFileHandoff.mount} to the sandbox profile and passes the
  * handoff's `keysFile` path through {@link assembleLlmKeysFileConfig} so the argv carries only the
  * path, never the keys.
+ *
+ * The 0700 directory keeps the key material private on the host (only the backend may traverse it),
+ * while the file itself must be world-readable: it is bind-mounted into a container whose root user
+ * runs with `CAP_DAC_READ_SEARCH` dropped, so it follows the file's mode bits and cannot open a
+ * 0600 file owned by the backend's uid, which would fail every LLM-enabled session with EACCES.
  */
 export async function writeLlmKeysFile(
   rootDir: string,
@@ -43,7 +50,10 @@ export async function writeLlmKeysFile(
   }
   await mkdir(rootDir, { recursive: true, mode: 0o700 })
   const hostPath = join(rootDir, `${sessionId}.json`)
-  await writeFile(hostPath, JSON.stringify(keys), { mode: 0o600 })
+  // writeFile's `mode` is reduced by the process umask, which a stricter deployment could tighten
+  // back to unreadable-by-the-container; chmod pins the file at the mode the mount needs.
+  await writeFile(hostPath, JSON.stringify(keys), { mode: 0o644 })
+  await chmod(hostPath, 0o644)
   return {
     hostPath,
     mount: {

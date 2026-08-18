@@ -307,6 +307,33 @@ def test_proxy_origin_contract_matches_setup(origin: str, accepted: bool):
     assert (result.returncode == 0) is accepted, result.stderr
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="the app entrypoint runs under Linux sh")
+@pytest.mark.parametrize(
+    ("overrides", "accepted"),
+    [
+        ({}, True),
+        ({"APP_UID": "1002", "APP_GID": "1002", "DOCKER_GID": "127"}, True),
+        ({"APP_UID": "not-a-number"}, False),
+        ({"APP_GID": "not-a-number"}, False),
+        ({"DOCKER_GID": "docker"}, False),
+        ({"DOCKER_GID": "1x"}, False),
+    ],
+)
+def test_app_entrypoint_rejects_non_numeric_ids(overrides: dict[str, str], accepted: bool):
+    """The numeric-id contract is validated at the entrypoint, not in compose, so a group name in
+    DOCKER_GID (which Docker would resolve against the container's own /etc/group) fails loudly."""
+    result = subprocess.run(
+        ["sh", "deploy/app/entrypoint.sh", "--validate"],
+        cwd=setup.REPO_ROOT,
+        env=os.environ | overrides,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode == 0) is accepted, result.stderr
+
+
 def test_host_plan_does_not_write_the_docker_local_https_port():
     planned = setup.plan_env("host", deployment_answers(), {"AUTH_SECRET": "a" * 32})
 

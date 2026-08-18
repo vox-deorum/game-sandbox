@@ -121,6 +121,16 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 
 `DATA_DIR` also contains the submission snapshot directory at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Data folders](../data/folders.md) for locations and [Backend](../runtime/backend.md) for the pipeline.
 
+## Container deployment
+
+The app image runs the backend as a non-root account. Its entrypoint starts as root only long enough to remap that account to the `APP_UID`/`APP_GID` below, join it to the host docker group, and chown the bind-mounted `DATA_DIR`; it then drops to the account and execs the backend. Because the ids are resolved at container start from these variables, changing them never requires an image rebuild. All three are Docker/Compose values, not backend configuration: the backend does not read them. See [Run the app in Docker](docker.md).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `APP_UID` | `1001` | Account uid for the non-root backend process. It and `APP_GID` must be the numeric owner of the bind-mounted host `DATA_DIR`; the entrypoint changes the account's ids and re-owns `DATA_DIR` to match. Must be a numeric uid. |
+| `APP_GID` | `1001` | Account gid for the non-root backend process, matching the host `DATA_DIR` group. Must be a numeric gid. |
+| `DOCKER_GID` | detected at startup | gid of the host docker group whose socket (`/var/run/docker.sock`, mode `0660`) the backend must open. The entrypoint reads the mounted socket's gid automatically; set this only to override that detection. Must be a numeric gid, never a group name. |
+
 ## Deployment notes
 
 To run the whole app in a container on a Linux daemon, see [Run the app in Docker](docker.md); every rule below applies there too.

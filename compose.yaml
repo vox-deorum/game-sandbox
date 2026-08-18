@@ -12,6 +12,8 @@
 
 services:
   app:
+    # The image bakes a fixed 1001:1001 app account; the entrypoint remaps it to APP_UID/APP_GID at
+    # runtime and takes ownership of the bind-mounted DATA_DIR, so a host change never needs a build.
     build: .
     image: game-sandbox/app
     restart: unless-stopped
@@ -28,7 +30,11 @@ services:
     hostname: app
     stop_grace_period: 2m
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only for the socket node itself: dockerode still drives the daemon over it, but a
+      # compromised backend cannot unlink or replace the socket the host daemon listens on. The app
+      # entrypoint joins its user to a group matching the socket's gid at startup, so no group_add
+      # or host-specific docker gid is pinned here (DOCKER_GID overrides detection when needed).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${DATA_DIR:-/srv/game-sandbox/data}:${DATA_DIR:-/srv/game-sandbox/data}
     # The internal network is gateway-free, so app-outbound is the app's only default-route
     # candidate and carries all outbound traffic without an explicit gateway priority.
