@@ -61,6 +61,8 @@ The configuration applies no filter of its own. Hiding `@slow` by default would 
 
 `playwright.config.ts` starts the main backend on port 8090 and the loopback local-play bridge on port 8091. The suite uses the bootstrap admin as its operator and creates owners, judges, and spectators as real member accounts through `e2e/support/fixtures.ts`.
 
+The fresh backend's startup seed stands up, per environment, an open, unreleased Playground season, and for the preset-declaring environments (Skirmish at Crane Reach and Days at Three Branches) six hidden template seasons as well, so their admin season lists have seven rows. The public Seasons page reads `scope: public`, so the hidden templates never appear there; season-selection locators on the admin console target the declared season by its unique label.
+
 Every group project depends on the `season-fixture` setup project, which gives the retained Playground season its local settings before any journey creates activity. Playwright runs a setup project once per run rather than once per dependent project, so selecting several groups still pays for it once. Do not pass `--no-deps`: the `play` group asserts against exactly those settings.
 
 Keep shared helpers in `e2e/support/` and submission fixtures in `e2e/fixtures/`, so specs reach them through `../support/` and `../fixtures/`. Neither directory belongs in a group.

@@ -186,6 +186,12 @@ The canonical registry lives in Python. `scripts/generate.py` writes committed `
 
 `environments/registry.ts` parses the generated metadata file once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
 
+## Season seeding
+
+At startup the backend runs `src/seasons/seed.ts`, which defines what a fresh deployment starts with. It ensures one submission- and play-open, unreleased "Playground" season per registered environment at the current dependency-set version. An environment whose metadata declares presets then also receives one hidden template season per preset in declaration order, each submission-closed, play-closed, and unreleased, with the preset title as its label, the preset's parameter and (when flagged) LLM overrides folded into its config, and a description naming the settings it stands up. The Playground season gets a description naming the opening settings when a preset describes those defaults.
+
+The seed is idempotent across restarts, and its template pass runs only while an environment's sole season is the Playground row it just ensured; once any other season exists, the deployment has been configured and the seed leaves the environment alone.
+
 ## Submission pipeline
 
 ```text

@@ -80,7 +80,7 @@ export type {
   WindowStatus,
 } from './schema.js'
 
-import type { SeasonConfig } from './season-config.js'
+import type { Overrides, SeasonConfig } from './season-config.js'
 
 export type {
   MatchConfig,
@@ -199,6 +199,10 @@ export interface CreateSeasonInput {
   deps_version: number
   /** An optional operator-facing label. */
   label?: string | null
+  /** An optional display-only Season description, written at creation (the seed's templates carry one). */
+  description_markdown?: string | null
+  /** Optional parameter and capability overrides, folded into the default config at creation. */
+  overrides?: Overrides
 }
 
 /**

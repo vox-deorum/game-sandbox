@@ -64,7 +64,7 @@ The environment owns its display state. Test that every overlay field exists and
 
 The harness checks the constructed environment against `stepping` after receiving the resolved parameters. A simultaneous environment has no separate `human_timeout_ms` and must declare a positive `pace_interval_ms`.
 
-Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels. Declare common partial configurations with `EnvPreset`; preset names must be unique, and every value must satisfy its parameter declaration.
+Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels. Declare common partial configurations with `EnvPreset`; preset names must be unique, every value must satisfy its parameter declaration, and a preset may set `llm=True` only when the environment itself declares `llm=True`. A preset's `llm` flag records that a season standing up that preset should enable the LLM API.
 
 Use `effective_parameters(meta)` when a consumer needs declarations including the synthesized layout parameter, and `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
 

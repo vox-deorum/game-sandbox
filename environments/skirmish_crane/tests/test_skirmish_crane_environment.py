@@ -718,6 +718,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_1",
             "Season 1: The Skirmish",
+            False,
             {
                 "seat_plan": "skirmish",
                 "field_extent": 7,
@@ -730,6 +731,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_2",
             "Season 2: The March",
+            False,
             {
                 "seat_plan": "skirmish",
                 "field_extent": 7,
@@ -742,6 +744,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_3",
             "Season 3: The Army",
+            False,
             {
                 "seat_plan": "army",
                 "field_extent": 10,
@@ -754,6 +757,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_4",
             "Season 4: The Commander",
+            False,
             {
                 "seat_plan": "army",
                 "field_extent": 10,
@@ -766,6 +770,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_5",
             "Season 5: The General",
+            False,
             {
                 "seat_plan": "army",
                 "field_extent": 10,
@@ -778,6 +783,7 @@ def test_season_presets_match_the_published_schedule():
         (
             "season_6",
             "Season 6: The Rivals",
+            False,
             {
                 "seat_plan": "army",
                 "field_extent": 10,
@@ -793,6 +799,7 @@ def test_season_presets_match_the_published_schedule():
             (
                 preset.name,
                 preset.title,
+                preset.llm,
                 {
                     name: resolve_parameters(META, preset.values)[name]
                     for name in (

@@ -318,11 +318,13 @@
     ],
     "presets": [
       {
+        "llm": false,
         "name": "season_1",
         "title": "Season 1: The Skirmish",
         "values": {}
       },
       {
+        "llm": false,
         "name": "season_2",
         "title": "Season 2: The March",
         "values": {
@@ -330,6 +332,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_3",
         "title": "Season 3: The Army",
         "values": {
@@ -340,6 +343,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_4",
         "title": "Season 4: The Commander",
         "values": {
@@ -351,6 +355,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_5",
         "title": "Season 5: The General",
         "values": {
@@ -362,6 +367,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_6",
         "title": "Season 6: The Rivals",
         "values": {
@@ -590,11 +596,13 @@
     ],
     "presets": [
       {
+        "llm": false,
         "name": "season_1",
         "title": "Season 1: Village routines",
         "values": {}
       },
       {
+        "llm": false,
         "name": "season_2",
         "title": "Season 2: A larger village",
         "values": {
@@ -602,6 +610,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_3",
         "title": "Season 3: Village relationships",
         "values": {
@@ -609,6 +618,7 @@
         }
       },
       {
+        "llm": false,
         "name": "season_4",
         "title": "Season 4: Day and night",
         "values": {
@@ -617,6 +627,7 @@
         }
       },
       {
+        "llm": true,
         "name": "season_5",
         "title": "Season 5: Village dialogue",
         "values": {
@@ -625,6 +636,7 @@
         }
       },
       {
+        "llm": true,
         "name": "season_6",
         "title": "Season 6: Living village",
         "values": {

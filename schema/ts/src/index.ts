@@ -23,6 +23,7 @@ export {
   type EnvParameter,
   type EnvParameterChoice,
   type EnvParameterType,
+  formatParameterValue,
   type ParameterIssue,
   type ParameterValidation,
   type ParameterValue,

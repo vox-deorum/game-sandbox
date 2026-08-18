@@ -109,7 +109,7 @@ The harness reads and validates this optional mapping once when the environment 
 
 An environment may declare gameplay parameters beside its metadata. Each declaration has a stable snake_case name, a friendly title and description, a type, and an environment default. Integer and float parameters may set inclusive bounds. Choice and multi-choice parameters declare nonempty string values with friendly labels.
 
-An environment may also declare named presets as partial parameter maps. Each preset has a stable name and a friendly title. The website and local launchers use a preset to fill the parameter controls, where the player may still change individual values before starting a session.
+An environment may also declare named presets as partial parameter maps. Each preset has a stable name and a friendly title. The website and local launchers use a preset to fill the parameter controls, where the player may still change individual values before starting a session. A preset may also declare that the season it stands up enables the LLM API, which is only coherent when the environment itself declares LLM support.
 
 ### Parameter types
 

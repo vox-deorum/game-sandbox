@@ -297,6 +297,16 @@ describe('admin API', () => {
         error: 'season_not_empty',
         code: 'season_not_empty',
       })
+
+      // A Season description is display-only metadata, so it never blocks deletion on its own.
+      const described = await declare()
+      await storage.setSeasonDescription(described, 'A seeded Season description.')
+      const describedSeason = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${described}`,
+        headers: OPERATOR,
+      })
+      expect(describedSeason.statusCode).toBe(204)
     })
   })
 

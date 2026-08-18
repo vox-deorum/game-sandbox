@@ -196,6 +196,24 @@ export function resolveParameters(
   return { values, issues }
 }
 
+/** A compact, user-facing representation for a resolved parameter value. */
+export function formatParameterValue(parameter: EnvParameter, value: ParameterValue): string {
+  if (parameter.type === 'bool') return value ? 'On' : 'Off'
+  if (parameter.type === 'choice') {
+    return parameter.choices.find((choice) => choice.value === value)?.label ?? String(value)
+  }
+  if (parameter.type === 'multi_choice') {
+    if (!Array.isArray(value) || value.length === 0) return 'None'
+    return value
+      .map(
+        (selected) =>
+          parameter.choices.find((choice) => choice.value === selected)?.label ?? selected,
+      )
+      .join(', ')
+  }
+  return String(value)
+}
+
 /**
  * Validate and normalize a fully resolved parameter map. Every declaration must have one value,
  * and values for names outside the declarations are rejected.

@@ -198,12 +198,6 @@ describe('storage on :memory:', () => {
       {
         add: (seasonId) =>
           storage
-            .setSeasonDescription(seasonId, 'Read the Season instructions.')
-            .then(() => undefined),
-      },
-      {
-        add: (seasonId) =>
-          storage
             .rotateDevelopmentKey({
               seasonId,
               userId: `developer-${seasonId}`,
@@ -224,6 +218,20 @@ describe('storage on :memory:', () => {
       })
       expect(await storage.getSeason(season.id)).toBeDefined()
     }
+  })
+
+  it('deletes a described season but not one carrying a rating prompt', async () => {
+    const described = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+    await storage.setSeasonDescription(described.id, 'A seeded Season description.')
+    expect(await storage.deleteSeason(described.id)).toEqual({ ok: true })
+
+    const prompted = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+    await storage.setSeasonRatingPrompt(prompted.id, 'Evaluate every agent fairly.')
+    expect(await storage.deleteSeason(prompted.id)).toEqual({
+      ok: false,
+      reason: 'season_not_empty',
+    })
+    expect(await storage.getSeason(prompted.id)).toBeDefined()
   })
 
   it('sets, replaces, and clears a Season description', async () => {

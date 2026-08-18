@@ -484,6 +484,8 @@ describe('AdminConsolePage', () => {
     expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
     expect(screen.getByLabelText('Extras')).toHaveDisplayValue('Override')
     expect(preset).toHaveDisplayValue('Night rules')
+    // A preset without the LLM flag leaves the operator's LLM tri-state alone.
+    expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Not set (disabled)')
     await fireEvent.update(screen.getByRole('spinbutton', { name: 'Pipe gap override' }), '80')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
@@ -491,6 +493,33 @@ describe('AdminConsolePage', () => {
     expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
       pipe_gap: 80,
       extras: ['night'],
+    })
+  })
+
+  it('applies the LLM flag when an environment preset sets it', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([
+      configurableMeta({
+        presets: [
+          {
+            name: 'night_rules',
+            title: 'Night rules',
+            values: { pipe_gap: 75 },
+            llm: true,
+          },
+        ],
+      }),
+    ])
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    const preset = await screen.findByRole('combobox', { name: 'Preset' })
+    await fireEvent.update(preset, 'night_rules')
+    expect(screen.getByLabelText('LLM enablement')).toHaveDisplayValue('Enabled')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.llm).toEqual({
+      enabled: true,
     })
   })
 

@@ -371,6 +371,9 @@ function applyParameterPreset(name: string): void {
     ]),
   )
   parameterValues.value = initializeParameters(declarations, preset.values)
+  // A preset may also declare that its season enables the LLM API; applying it flips the tri-state
+  // to "on" and leaves the operator's hand set otherwise.
+  if (preset.llm === true) llmEnabled.value = 'on'
   if (layoutKey.value !== before) conformLayout()
 }
 

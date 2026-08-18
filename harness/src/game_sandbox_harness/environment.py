@@ -190,11 +190,18 @@ class EnvParameter:
 
 @dataclass(frozen=True)
 class EnvPreset:
-    """One named partial parameter configuration an environment recommends."""
+    """One named partial parameter configuration an environment recommends.
+
+    ``llm`` records whether the season this preset stands up should enable the LLM API. It
+    defaults to ``False`` and is validated against the environment's own ``llm`` flag in
+    ``EnvironmentMeta.__post_init__``, so a template can never ask for LLM access the
+    environment cannot serve.
+    """
 
     name: str
     title: str
     values: Mapping[str, ParameterValue]
+    llm: bool = False
 
     def __post_init__(self) -> None:
         if not _is_parameter_name(self.name):
@@ -203,10 +210,12 @@ class EnvPreset:
             raise ValueError("preset title must be a non-empty string")
         if not isinstance(cast("object", self.values), Mapping):
             raise ValueError("preset values must be a parameter-value mapping")
+        if not isinstance(cast("object", self.llm), bool):
+            raise ValueError("preset llm must be a bool")
 
     def to_json(self) -> dict[str, Any]:
         """Return the public wire representation."""
-        return {"name": self.name, "title": self.title, "values": dict(self.values)}
+        return {"name": self.name, "title": self.title, "values": dict(self.values), "llm": self.llm}
 
 
 def _is_nonempty_string(value: object) -> TypeGuard[str]:
@@ -477,6 +486,12 @@ class EnvironmentMeta:
                 raise ValueError(
                     f"environment preset {preset.name!r} has invalid parameter values: {error}"
                 ) from error
+        for preset in self.presets:
+            if preset.llm and not self.llm:
+                raise ValueError(
+                    f"environment {self.env_id!r} preset {preset.name!r} enables the LLM "
+                    "but the environment declares llm=False"
+                )
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""

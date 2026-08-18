@@ -280,6 +280,9 @@
       "additionalProperties": false,
       "description": "A named set of parameter values an environment offers as a convenient starting point.",
       "properties": {
+        "llm": {
+          "type": "boolean"
+        },
         "name": {
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"

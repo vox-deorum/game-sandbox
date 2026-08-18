@@ -64,8 +64,12 @@ META = EnvironmentMeta(
         EnvPreset("season_2", "Season 2: A larger village", {"seat_plan": "cast_10"}),
         EnvPreset("season_3", "Season 3: Village relationships", {"seat_plan": "cast_10"}),
         EnvPreset("season_4", "Season 4: Day and night", {"seat_plan": "cast_10", "daynight": True}),
-        EnvPreset("season_5", "Season 5: Village dialogue", {"seat_plan": "cast_10", "daynight": True}),
-        EnvPreset("season_6", "Season 6: Living village", {"seat_plan": "cast_10", "daynight": True}),
+        EnvPreset(
+            "season_5", "Season 5: Village dialogue", {"seat_plan": "cast_10", "daynight": True}, llm=True
+        ),
+        EnvPreset(
+            "season_6", "Season 6: Living village", {"seat_plan": "cast_10", "daynight": True}, llm=True
+        ),
     ),
 )
 

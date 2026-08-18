@@ -191,6 +191,7 @@ export const EnvPresetSchema = z
       z.string(),
       z.union([z.boolean(), z.number(), z.string(), z.array(z.string())]),
     ),
+    llm: z.boolean().optional(),
   })
   .meta({
     id: 'env_preset',

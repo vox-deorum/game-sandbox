@@ -145,9 +145,12 @@ export async function createSeason(
       play_status: 'closed',
       release_status: 'unreleased',
       label: input.label ?? null,
-      description_markdown: null,
+      description_markdown: input.description_markdown ?? null,
       template_repo_url: null,
-      config: encodeSeasonConfig(emptySeasonConfig(input.deps_version)),
+      config: encodeSeasonConfig({
+        ...emptySeasonConfig(input.deps_version),
+        ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
+      }),
       rating_prompt: null,
       created_at: new Date().toISOString(),
       released_at: null,
@@ -165,13 +168,7 @@ export async function deleteSeason(db: Kysely<Database>, id: string): Promise<De
   return await db.transaction().execute(async (trx) => {
     const season = await trx
       .selectFrom('seasons')
-      .select([
-        'submission_status',
-        'play_status',
-        'release_status',
-        'description_markdown',
-        'rating_prompt',
-      ])
+      .select(['submission_status', 'play_status', 'release_status', 'rating_prompt'])
       .where('id', '=', id)
       .executeTakeFirst()
     if (season === undefined) {
@@ -204,7 +201,7 @@ export async function deleteSeason(db: Kysely<Database>, id: string): Promise<De
     if (activity.some((row) => row !== undefined)) {
       return { ok: false, reason: 'season_not_empty' }
     }
-    if (season.description_markdown !== null || season.rating_prompt !== null) {
+    if (season.rating_prompt !== null) {
       return { ok: false, reason: 'season_not_empty' }
     }
 

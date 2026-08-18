@@ -77,7 +77,15 @@ def test_preset_to_json_round_trips():
         "name": "small_game",
         "title": "Small game",
         "values": {"players": 1},
+        "llm": False,
     }
+
+
+def test_preset_serializes_llm_and_rejects_non_bool():
+    preset = EnvPreset("llm_season", "LLM season", {}, llm=True)
+    assert preset.to_json()["llm"] is True
+    with pytest.raises(ValueError, match="llm must be a bool"):
+        EnvPreset("bad", "Bad", {}, llm="yes")  # type: ignore[arg-type]
 
 
 def test_preset_rejects_non_mapping_values():
@@ -95,9 +103,25 @@ def test_meta_serializes_and_resolves_presets():
         }
     )
     assert meta.to_json()["presets"] == [
-        {"name": "duel", "title": "Duel", "values": {"players": 2, "terrain": True}}
+        {"name": "duel", "title": "Duel", "values": {"players": 2, "terrain": True}, "llm": False}
     ]
     assert resolve_parameters(meta, meta.presets[0].values) == {"players": 2, "terrain": True}
+
+
+def test_meta_rejects_preset_llm_when_environment_declares_llm_false():
+    with pytest.raises(ValueError, match=r"enables the LLM "):
+        EnvironmentMeta(**{**_meta().__dict__, "presets": (EnvPreset("duel", "Duel", {}, llm=True),)})
+
+
+def test_meta_accepts_preset_llm_when_environment_declares_llm_true():
+    meta = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "llm": True,
+            "presets": (EnvPreset("duel", "Duel", {}, llm=True),),
+        }
+    )
+    assert meta.presets[0].llm is True
 
 
 def test_preset_values_looks_up_by_name():

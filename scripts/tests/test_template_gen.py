@@ -147,8 +147,11 @@ def test_rendered_metadata_imports_and_preserves_preset_tuples() -> None:
     rendered = template_gen._render_sandbox_init("example", spec, meta)
 
     assert "    EnvPreset," in rendered
-    assert "\"presets\": (EnvPreset(name='starter', title='Starter', values={}), EnvPreset(" in rendered
-    assert "name='faster', title='Faster', values={'players': 2}" in rendered
+    assert (
+        "\"presets\": (EnvPreset(name='starter', title='Starter', values={}, llm=False), EnvPreset("
+        in rendered
+    )
+    assert "name='faster', title='Faster', values={'players': 2}, llm=False" in rendered
 
 
 def test_render_declaration_tuple_uses_evaluable_dataclass_representation() -> None:
