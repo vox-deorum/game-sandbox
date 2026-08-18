@@ -274,7 +274,12 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
     const canvasBox = canvas.getBoundingClientRect()
     return {
       host: { width: hostBox.width, height: hostBox.height },
-      canvas: { width: canvasBox.width, height: canvasBox.height, pixels: canvas.width },
+      canvas: {
+        width: canvasBox.width,
+        height: canvasBox.height,
+        pixels: canvas.width,
+        pixelsHeight: canvas.height,
+      },
     }
   })
   await page.evaluate(() => {
@@ -339,11 +344,13 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   expect(resizeResult.canvas.height).toBeLessThan(beforeResize.canvas.height)
   // The CSS box reflows with the viewport immediately, but the Pixi backing store only catches up
   // once the renderer's debounced resize applies (RESIZE_DEBOUNCE_MS in PixiRenderer), which can land
-  // after the sample above. Poll for the backing width to actually change rather than reading the
-  // sampled moment.
+  // after the sample above. Poll for the backing height to actually change rather than reading the
+  // sampled moment: in the replay's beside layout the same height-only viewport shave moves the width
+  // by only a couple of rounding-level pixels, but the height changes reliably, so it is the honest
+  // signal that the backing store resized in place.
   await expect
-    .poll(async () => (await canvas.getAttribute('width')) ?? null, { timeout: 5_000 })
-    .not.toBe(String(beforeResize.canvas.pixels))
+    .poll(async () => (await canvas.getAttribute('height')) ?? null, { timeout: 5_000 })
+    .not.toBe(String(beforeResize.canvas.pixelsHeight))
   expect(resizeResult.samples).not.toHaveLength(0)
   expect(resizeResult.samples.every((sample) => sample.phase !== 'idle' || sample.settling)).toBe(
     true,

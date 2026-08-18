@@ -122,6 +122,41 @@ function northRowGeometry(cardCount: number): { startX: number; step: number; y:
   }
 }
 
+/** The longest a self-controlled click may hunt before giving up. Kept under humanTimeoutMs so an
+ *  inert scene fails the test instead of racing the timeout's default action and passing off a
+ *  defaulted bid/play as the human's own. */
+const SELF_CONTROLLED_CLICK_WINDOW_MS = 20_000
+/** How many times one card target may be re-clicked in `tryPlayLegalCard` before moving on. */
+const CARD_CLICK_RETRIES = 3
+
+/**
+ * Click one canvas point and wait for its player's decision row to gain exactly one row. The turn is
+ * read from the live progress socket, which can outrun the renderer's pace pump, so a click can land
+ * on the previous turn's inert controls and be silently dropped. Retrying idempotently heals that: an
+ * inert click changes nothing, and once the click is accepted the turn advances past the controlled
+ * hand so the same point is inert again. The bounded window guarantees a real failure still surfaces.
+ */
+async function clickUntilDecision(
+  canvas: Locator,
+  position: { x: number; y: number },
+  decisions: Locator,
+  before: number,
+  windowMs: number,
+): Promise<void> {
+  const deadline = Date.now() + windowMs
+  for (;;) {
+    await canvas.click({ position })
+    try {
+      await expect(decisions).toHaveCount(before + 1, { timeout: 3_000 })
+      return
+    } catch {
+      if (Date.now() >= deadline) {
+        throw new Error('no decision row after repeated clicks on the same target')
+      }
+    }
+  }
+}
+
 /** Click the bid-1 chip in the Spades renderer's fixed 960 by 720 internal coordinate space. */
 async function bidOne(page: Page, canvas: Locator): Promise<void> {
   const box = await canvas.boundingBox()
@@ -131,13 +166,13 @@ async function bidOne(page: Page, canvas: Locator): Promise<void> {
   }
   const humanDecisions = humanDecisionRows(page)
   const before = await humanDecisions.count()
-  await canvas.click({
-    position: {
-      x: (372 / 960) * box.width,
-      y: (330 / 720) * box.height,
-    },
-  })
-  await expect(humanDecisions).toHaveCount(before + 1, { timeout: 30_000 })
+  await clickUntilDecision(
+    canvas,
+    { x: (372 / 960) * box.width, y: (330 / 720) * box.height },
+    humanDecisions,
+    before,
+    30_000,
+  )
 }
 
 /** Bid one for whichever self-controlled partnership hand is currently on turn. */
@@ -154,13 +189,13 @@ async function bidOneForSelfControlledHand(
   }
   const decisions = playerDecisionRows(page, player)
   const before = await decisions.count()
-  await canvas.click({
-    position: {
-      x: (372 / 960) * box.width,
-      y: (330 / 720) * box.height,
-    },
-  })
-  await expect(decisions).toHaveCount(before + 1, { timeout: 30_000 })
+  await clickUntilDecision(
+    canvas,
+    { x: (372 / 960) * box.width, y: (330 / 720) * box.height },
+    decisions,
+    before,
+    SELF_CONTROLLED_CLICK_WINDOW_MS,
+  )
   return player
 }
 
@@ -186,17 +221,21 @@ async function tryPlayLegalCard(
 
   for (let index = 0; index < cardCount; index += 1) {
     const cardWidth = player === 0 ? CARD_W : SMALL_W
-    await canvas.click({
-      position: {
-        x: ((startX + index * step + cardWidth / 2) / WIDTH) * box.width,
-        y: (y / 720) * box.height,
-      },
-    })
-    try {
-      await expect(decisions).toHaveCount(before + 1, { timeout: 800 })
-      return true
-    } catch {
-      // This card is illegal. Try the next target.
+    const position = {
+      x: ((startX + index * step + cardWidth / 2) / WIDTH) * box.width,
+      y: (y / 720) * box.height,
+    }
+    // Re-click the same target a few times before treating it as illegal: a click dropped because the
+    // renderer had not yet applied this turn is inert and harmless to repeat, but a single miss must
+    // not be mistaken for an illegal card (see clickUntilDecision).
+    for (let attempt = 0; attempt < CARD_CLICK_RETRIES; attempt += 1) {
+      await canvas.click({ position })
+      try {
+        await expect(decisions).toHaveCount(before + 1, { timeout: 1_500 })
+        return true
+      } catch {
+        // Inert or illegal; retry the same card, then move to the next target.
+      }
     }
   }
   return false
