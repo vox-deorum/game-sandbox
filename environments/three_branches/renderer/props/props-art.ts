@@ -69,6 +69,14 @@ export function isShippedPropType(type: string): boolean {
   return SHIPPED_PROP_TYPES.includes(type as (typeof SHIPPED_PROP_TYPES)[number])
 }
 
+/** Symmetric prop art types whose recorded facing is ignored: they always draw facing north. */
+const FIXED_FACING_PROP_TYPES = new Set(['lantern', 'shrine'])
+
+/** Whether a prop type draws fixed north, ignoring its recorded facing. */
+export function isFixedFacingPropType(type: string): boolean {
+  return FIXED_FACING_PROP_TYPES.has(type)
+}
+
 /** Resolve a complete prop treatment, failing clearly for an unsupported catalog value. */
 export function propTreatment(type: string, state: string): PropTreatment {
   const byState = TREATMENTS[type]

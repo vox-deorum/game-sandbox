@@ -19,7 +19,13 @@ import {
 } from '../effects/effects.js'
 import { CATALOG } from '../ui/overlay.js'
 import { frameRectangle } from '../ui/tint.js'
-import { isShippedPropType, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
+import {
+  isFixedFacingPropType,
+  isShippedPropType,
+  propFoundationFrame,
+  propTreatment,
+  sceneryFrame,
+} from './props-art.js'
 
 const EFFECT_SCALE = 0.25
 
@@ -320,7 +326,10 @@ function propShadow(item: StaticDrawable, cellSize: number): Sprite {
 }
 
 function localFootprint(item: StaticDrawable): { width: number; height: number } {
-  const turned = item.facing === 'east' || item.facing === 'west'
+  const turned =
+    !isFixedMonument(item) &&
+    !isFixedFacingPropType(item.type) &&
+    (item.facing === 'east' || item.facing === 'west')
   return {
     width: turned ? item.rect.height : item.rect.width,
     height: turned ? item.rect.width : item.rect.height,
@@ -375,8 +384,8 @@ function isFixedMonument(item: StaticDrawable): boolean {
 function isFixedMonumentType(type: string): boolean {
   return propMonumentTreatment(type) !== null
 }
-function visualFacing(item: StaticDrawable): number {
-  return isFixedMonument(item) ? 0 : facing(item.facing)
+export function visualFacing(item: StaticDrawable): number {
+  return isFixedMonument(item) || isFixedFacingPropType(item.type) ? 0 : facing(item.facing)
 }
 function facing(value: string | undefined): number {
   return (

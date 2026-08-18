@@ -2,9 +2,10 @@ import { Rectangle, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
+import type { StaticDrawable } from '../core/types.js'
 import type { FrameGrid } from '../ui/tint.js'
 import { frameRectangle } from '../ui/tint.js'
-import { createPropArt } from './props-layer.js'
+import { createPropArt, visualFacing } from './props-layer.js'
 
 type PageName = 'props' | 'monuments' | 'scenery' | 'effects'
 
@@ -47,5 +48,37 @@ describe('Three Branches prop art views', () => {
       frameRectangle(frameGrid('monuments'), 'pumpFlowing'),
     )
     expect(views.effects.flameA?.frame).toEqual(frameRectangle(frameGrid('effects'), 'flameA'))
+  })
+})
+
+describe('Three Branches prop visual facing', () => {
+  const drawable = (type: string, facing?: string): StaticDrawable => ({
+    id: `${type}-test`,
+    type,
+    label: type,
+    shape: 'box',
+    collisionScale: 1,
+    rect: { x: 0, y: 0, width: 1, height: 1 },
+    facing,
+  })
+
+  it('turns an east-facing bench by a quarter turn', () => {
+    expect(visualFacing(drawable('bench', 'east'))).toBe(Math.PI / 2)
+  })
+
+  it('keeps an east-facing lantern fixed north', () => {
+    expect(visualFacing(drawable('lantern', 'east'))).toBe(0)
+  })
+
+  it('keeps an east-facing shrine fixed north', () => {
+    expect(visualFacing(drawable('shrine', 'east'))).toBe(0)
+  })
+
+  it('keeps an east-facing monument fixed north', () => {
+    expect(visualFacing(drawable('pump', 'east'))).toBe(0)
+  })
+
+  it('defaults an undefined facing to north', () => {
+    expect(visualFacing(drawable('bench'))).toBe(0)
   })
 })

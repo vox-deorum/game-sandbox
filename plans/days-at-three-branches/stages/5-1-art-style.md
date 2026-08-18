@@ -92,7 +92,7 @@ Build characters from shared north-facing grayscale-alpha masks in a conventiona
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
-Every ordinary catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. Each ordinary prop uses a 384 by 256 runtime canvas that centers that footprint with at least two transparent pixels at its edge.
+Every ordinary catalog state has one distinct complete north-facing still across its catalog footprint, turned to its facing. The lantern post and roadside shrine are symmetric and always draw fixed north, ignoring their recorded facing. Each ordinary prop uses a 384 by 256 runtime canvas that centers that footprint with at least two transparent pixels at its edge.
 
 The canvas usable area is 380 by 252 px, which at the 0.14 default scale carries at most 3.36 by 2.24 cells. The board fits the canvas at the default scale, so its 0.28 override is interim: re-author `board/none.png` at 229 by 229 px and delete the override to restore the full 114 pixels per cell. The shrine and the plot do not fit at 0.14, so their overrides are permanent until an atlas re-cut: re-author targets at their new scales, shrine 240 by 240 px at 0.20 (80 px per cell) and plot 377 by 188 px at 0.17 (94 px per cell). A 512 by 512 props cell would hold a 3 by 3 shrine and a 4 by 2 plot at 114 pixels per cell with no overrides; that atlas re-cut is deliberately not part of this change. The shrine's incense effect does not scale with the prop, so the smoke reads slightly smaller over the bigger shrine; that is a re-author concern, not a renderer one.
 
@@ -105,9 +105,9 @@ The configured prop scale defaults to 0.14, overrides bell to 0.36 for both art 
 | Prop | Still treatment |
 | --- | --- |
 | Market stall | `open` shows a raised awning, displayed goods, and a pale counter; `closed` has a lowered shutter and cleared counter. |
-| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. The flicker and the glow pool both hang from the lantern's `(0, -70)` effect anchor, one tenth of the 384-by-256 prop canvas above center, so the light sits on the lantern while the prop stays anchored to its cell. |
+| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. The flicker and the glow pool both hang from the lantern's `(0, -70)` effect anchor, one tenth of the 384-by-256 prop canvas above center, so the light sits on the lantern while the prop stays anchored to its cell. Draws fixed north, ignoring facing. |
 | Bench | `occupied` has a distinct laid cushion or folded wrap; `empty` leaves the bare slats readable. |
-| Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine under its roof. |
+| Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine under its roof. Draws fixed north, ignoring facing. |
 | Notice board | Its single `none` state is a fixed readable board with pale posted notices. |
 | Garden plot | `tended` has ordered dark furrows and young green rows; `overgrown` has irregular pine-green growth that does not hide the fence. |
 | Inn hearth | `lit` has a gilt-and-cinnabar coal core; `unlit` has cool ash and stacked dark wood. |
@@ -272,7 +272,7 @@ Pending. The owner reviews the cast in watch sessions and records the date here.
 
 `props-art.ts` resolves every catalog type and state to one complete north-facing state still. Ordinary props use 384 by 256 canvases. The pump and both bell parts use dedicated 768 by 512 monument canvases as their sole frames. `props-layer.ts` divides the pump scale by 4 and the bell scale by 8, applying their configured source-pixel still or foundation anchor to the texture so tight masters preserve collision-centered world bounds. `SHIPPED_PROP_TYPES` enables all ten complete prop still types. The pump ignores placement facing, keeps its centered shadow below characters, and draws its mechanically registered complete still and water effect in the upper character layer. Its water anchor remains in the presentation configuration's original 384 by 256 coordinate system and is multiplied by the configured pump scale. The bell adds its state-independent foundation to the prop layer below characters, while its fixed-north upper still and effect stay in the upper character layer. `effects.ts` holds the five sustained animations and emissive specs as pure functions of fractional tick, prop id, state, and stable hash phase. Effect configuration objects own their frames and `frameRate`. `props-layer.ts` applies the configured 0.25 scenery baseline with a 0.30 crate override, validates the shipped still and needed accent frames before installation, and installs art atomically.
 
-After visual acceptance, tests cover every catalog state mapping, enabled-type preflight, excluded-type fallback, fixed scaling, centered placement, facing rotation, and deterministic animation. The owner then reviews every state in [the treatment table](#characters-props-and-dressing), the pines and crates, and the emissives.
+After visual acceptance, tests cover every catalog state mapping, enabled-type preflight, excluded-type fallback, fixed scaling, centered placement, facing rotation, the fixed-north lantern, shrine, and monument types that ignore it, and deterministic animation. The owner then reviews every state in [the treatment table](#characters-props-and-dressing), the pines and crates, and the emissives.
 
 ### Prop sign-off
 
