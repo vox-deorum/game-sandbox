@@ -177,18 +177,6 @@ export async function activeWindows(
   return { submissionSeasonId: body.submission_season_id, playSeasonId: body.play_season_id }
 }
 
-/** Save, replace, or clear a Season description without changing its run configuration. */
-export async function setSeasonDescription(
-  admin: APIRequestContext,
-  seasonId: string,
-  markdown: string | null,
-): Promise<void> {
-  const res = await admin.put(`/api/admin/seasons/${seasonId}/description`, {
-    data: { markdown },
-  })
-  expect(res.status(), await res.text()).toBe(200)
-}
-
 /** Set the operator's season-wide rating prompt (display-only guidance shown to every rater). */
 export async function setSeasonRatingPrompt(
   admin: APIRequestContext,
@@ -381,42 +369,6 @@ export async function getRecordingHeader(
   return JSON.parse(firstLine) as {
     parameters: Record<string, boolean | number | string | string[]>
   }
-}
-
-/**
- * Start an all-agent (scripted) multi-seat session from an explicit per-seat assignment and let it run
- * itself to completion, returning the finalized recording id. Unlike {@link finishedScriptedSession}
- * this never stops the session — a scripted Hearts hand ends on its own once all thirteen tricks are
- * played, so waiting yields a complete, trick-by-trick recording the replay viewer can walk. The seats
- * must name no human seat (a human seat would block waiting for input that never comes).
- */
-export async function finishedSeatedSession(
-  actor: APIRequestContext,
-  envId: string,
-  seats: Record<string, SeatAssignment>,
-  overrides: StartOverrides = {},
-): Promise<string> {
-  const sessionId = await startSession(actor, envId, seats, overrides)
-  let recordingId: string | null = null
-  await expect
-    .poll(
-      async () => {
-        const session = await getSession(actor, sessionId)
-        if (session?.status === 'ended' && session.recording_id !== null) {
-          recordingId = session.recording_id
-          return 'ready'
-        }
-        return 'waiting'
-      },
-      // A full four-seat container hand (52 plays) takes longer than a single-agent watch, so the
-      // window is wider than finishedScriptedSession's; still well inside the spec's own test timeout.
-      { timeout: 120_000, intervals: [1000, 2000, 3000] },
-    )
-    .toBe('ready')
-  if (recordingId === null) {
-    throw new Error('session ended without a recording')
-  }
-  return recordingId
 }
 
 /**

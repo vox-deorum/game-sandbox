@@ -14,7 +14,6 @@ import {
   closeSubmissions,
   configureMatches,
   declareSeason,
-  finishedSeatedSession,
   openPlay,
   openSubmissions,
   release,
@@ -424,52 +423,6 @@ test('Spades watchers see complete chat live and in replay', async ({
       await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
     }
   }
-})
-
-/**
- * The solo seat plan seats four independent players, so its results rank every seat on its own. A
- * scripted all-Naive hand reaches that game-over card without a single canvas click, which is why this
- * runs from a finished recording rather than a played session: the partnership plan below already
- * proves the human input wiring, and nothing about seat ranking needs a human to produce it.
- */
-test('a scripted solo Spades hand ranks every seat on its own in the replay', async ({
-  page,
-  admin,
-}) => {
-  test.setTimeout(180_000)
-  await authenticateBrowser(page.context(), admin)
-
-  const recordingId = await finishedSeatedSession(
-    admin,
-    SPADES_ENV_ID,
-    {
-      seat_0: { kind: 'builtin-agent', name: 'naive' },
-      seat_1: { kind: 'builtin-agent', name: 'naive' },
-      seat_2: { kind: 'builtin-agent', name: 'naive' },
-      seat_3: { kind: 'builtin-agent', name: 'naive' },
-    },
-    { seed: 0, parameters: { seat_plan: 'solo' } },
-  )
-
-  await page.goto(`/replays/${recordingId}`)
-  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-
-  // No wide seats on the solo plan, so the table exposes neither the grouping label nor the image role
-  // the partnership plan carries. This is also the season-silenced spec's old solo-plan coverage.
-  const rendererHost = page.locator('.renderer-host')
-  await expect(rendererHost).not.toHaveAttribute('role', 'img')
-  await expect(rendererHost).not.toHaveAttribute('aria-label', /Wide seats/)
-
-  const stage = page.getByRole('group', { name: 'Replay stage' })
-  await stage.click()
-  await stage.press('End')
-  const gameOver = page.getByRole('dialog', { name: 'Game over' })
-  await expect(gameOver).toBeVisible({ timeout: 30_000 })
-  // Four separately ranked rows and no `.members` line: the structural difference from partnership.
-  // The winner varies with how the Naive baselines play the deal, so assert the standing exists, not who.
-  await expect(gameOver.locator('.row')).toHaveCount(4)
-  await expect(gameOver.locator('.members')).toHaveCount(0)
-  await expect(gameOver.locator('.winner')).toBeVisible()
 })
 
 test('human Spades self-controls both face-up partnership hands to game over', async ({

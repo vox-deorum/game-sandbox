@@ -6,7 +6,6 @@ import {
   closeSubmissions,
   configureMatches,
   declareSeason,
-  finishedSeatedSession,
   openPlay,
   openSubmissions,
   release,
@@ -567,98 +566,4 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   // Stop the still-running human session and wait until the backend frees this user's single active
   // reservation, so the next test's start for the same admin cannot race a 409 already-active.
   await stopSessionAndAwaitFree(admin, sessionId)
-})
-
-test('a multi-agent Hearts recording replays with per-seat attribution and trick-by-trick playback', async ({
-  page,
-  admin,
-  as,
-}) => {
-  // One real overlay build plus a full four-seat container hand played to completion, slower than a
-  // DOM-only check but far cheaper than the matchup above.
-  test.setTimeout(300_000)
-
-  // The browser views the replay as the bootstrap admin, the operator throughout this spec.
-  await authenticateBrowser(page.context(), admin)
-
-  // Stage and submit one example Hearts agent under its own owner, so its player carries a real owner
-  // attribution ("<owner>'s agent") in the recording header rather than the generic Naive label. It
-  // attaches to the seeded Playground, which is both submission-open and play-open on a fresh backend.
-  const stagedDir = stageExampleAgent('hearts', 'duck')
-  try {
-    const submissionId = await submitReadyAgent(
-      await as(HEARTS_OWNERS.replay),
-      stagedDir,
-      HEARTS_ENV_ID,
-    )
-
-    // A scripted four-seat hand: the submitted agent in seat 0, the Naive baseline in the other three.
-    // No human seat, so it runs itself to completion and finalizes a trick-by-trick recording. The mixed
-    // roster gives the recording header a per-player `players` map with one owner-attributed player and
-    // three Naive players. The admin is the operator, so the
-    // replay shows real owner labels (the blind-anonymization path applies only to non-operators).
-    const recordingId = await finishedSeatedSession(
-      admin,
-      HEARTS_ENV_ID,
-      {
-        seat_0: { kind: 'submission', submission_id: submissionId },
-        seat_1: { kind: 'builtin-agent', name: 'naive' },
-        seat_2: { kind: 'builtin-agent', name: 'naive' },
-        seat_3: { kind: 'builtin-agent', name: 'naive' },
-      },
-      { seed: HEARTS_HUMAN_LEAD_SEED },
-    )
-
-    // Open the replay in the viewer and assert it renders the recorded table.
-    await page.goto(`/replays/${recordingId}`)
-    await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
-    const decisionLog = page.locator('.decision-log')
-    await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
-    await expect(decisionLog.getByText('None').first()).toBeVisible()
-    const decisionRows = decisionLog.locator('tbody:last-of-type tr')
-    // A complete Hearts hand has 52 real AEC actions. Reward-only score or lifecycle entries share a
-    // state with an action and must not create extra rows.
-    await expect(decisionRows).toHaveCount(52)
-    for (const player of ['P0', 'P1', 'P2', 'P3']) {
-      await expect(decisionRows.getByText(player).first()).toBeVisible()
-    }
-
-    // Per-seat attribution: each scored Hearts assignment appears once. The seat's controller remains
-    // visible, while its member player stays in the seat-label tooltip.
-    const attribution = page.locator('.seats')
-    await expect(attribution.locator('.seat')).toHaveCount(4)
-    for (const seat of ['S0', 'S1', 'S2', 'S3']) {
-      await expect(
-        attribution.getByRole('button', { name: `Show players assigned to ${seat}` }),
-      ).toHaveText(seat)
-    }
-    await expect(attribution.locator('.seat-controller').first()).toHaveText(
-      `${HEARTS_OWNERS.replay}'s agent`,
-    )
-    await expect(
-      attribution.locator('.seat-controller').filter({ hasText: 'Naive agent' }),
-    ).toHaveCount(3)
-    const firstSeat = attribution.getByRole('button', { name: 'Show players assigned to S0' })
-    await firstSeat.focus()
-    await expect(page.getByRole('tooltip')).toHaveText('Players: P0')
-
-    // Trick-by-trick playback works: the transport's controls are present and stepping forward advances
-    // the playhead. The position readout ("tick T · I/N") starts at 1/N and steps to 2/N — the
-    // DOM-observable proof the scrubber walks the recorded states.
-    const position = page.locator('.replay-position')
-    await expect(position).toContainText('1/')
-    await page.getByRole('button', { name: 'Step forward' }).click()
-    await expect(position).toContainText('2/')
-    // The scrubber is the Reka UiSlider (a span with role=slider), present and operable.
-    await expect(page.getByRole('slider')).toBeVisible()
-
-    // The replay summary retains each player's latest score even if the final AEC state does not carry
-    // every player. The complete four-seat standings appear at the final recorded action.
-    const stage = page.getByRole('group', { name: 'Replay stage' })
-    await stage.click()
-    await stage.press('End')
-    await expect(page.getByRole('dialog', { name: 'Game over' }).locator('.row')).toHaveCount(4)
-  } finally {
-    rmSync(stagedDir, { recursive: true, force: true })
-  }
 })

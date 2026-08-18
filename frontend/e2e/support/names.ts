@@ -20,7 +20,7 @@ export const HEARTS_ENV_ID = 'hearts'
 export const HEARTS_SEASON = 'Black Lady Open'
 
 /**
- * The Hearts agent owners used by the matchup and replay journeys. The owner id is
+ * The Hearts agent owners used by the matchup journey. The owner id is
  * the public agent identity (the scoreboard row links to it), so these read like real handles and are
  * distinct from the flappy {@link OWNERS}. Each maps to an `environments/hearts/examples/<name>/` agent, with
  * Oracle also exercising the season's LLM policy.
@@ -30,12 +30,6 @@ export const HEARTS_OWNERS = {
   oracle: 'margaret-hamilton',
   /** environments/hearts/examples/moonshot: tries to win every trick and shoot the moon. */
   moonshot: 'mae-jemison',
-  /**
-   * The owner of the single submitted player in the per-player replay-attribution test. Kept distinct
-   * from the matchup owners above so its `players` line in that recording is unambiguous and the
-   * agent profile it leaves behind shows exactly this one submission.
-   */
-  replay: 'annie-easley',
 } as const
 
 /** A second participant for the Hearts season's LLM development-access checks. */
