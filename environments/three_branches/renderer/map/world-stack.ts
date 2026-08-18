@@ -18,6 +18,8 @@ export interface WorldArtStack {
   readonly characters: Container
   /** The initial upper-wall container. A successful art load swaps a replacement into its slot. */
   readonly upper: Container
+  /** Retained semantic roof containers, inside the authored composite between upper walls and effects. */
+  readonly roofs: Container
   readonly effects: Container
   readonly emissives: Container
   readonly highlight: Container
@@ -44,6 +46,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const props = new Container({ label: 'props' })
   const characters = new Container({ label: 'characters' })
   const upper = new Container({ label: 'upper' })
+  const roofs = new Container({ label: 'roofs' })
   const effects = new Container({ label: 'effects' })
   const emissives = new Container({ label: 'emissives' })
   const highlight = new Container({ label: 'prop-highlight-layer' })
@@ -65,7 +68,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
 
   natural.addChild(mapView.naturalView)
   authored.filters = [authoredFilter]
-  authored.addChild(mapView.architectureView, scenery, shadows, props, characters, upper, effects)
+  authored.addChild(mapView.architectureView, scenery, shadows, props, characters, upper, roofs, effects)
   worldArt.addChild(natural, authored)
   root.addChild(worldArt, emissives, highlight, annotations, collision)
 
@@ -78,6 +81,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
     props,
     characters,
     upper,
+    roofs,
     effects,
     emissives,
     highlight,

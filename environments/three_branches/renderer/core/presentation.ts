@@ -272,6 +272,18 @@ export interface PropContactShadowTreatment {
   offsetYCells: number
 }
 
+/** Roof tile frame roles for one semantic building type. */
+export interface RoofFramesTreatment {
+  /** Hash-picked interior fill frames, including the alternate variants. */
+  fills: readonly string[]
+  /** Perimeter edge frame between corners. */
+  edge: string
+  /** Corner frame, quarter-rotated to each canonical corner. */
+  corner: string
+  /** Ridge frame across the middle row's interior columns. */
+  ridge: string
+}
+
 /** Validated art and motion calibration owned by presentation.json. */
 interface VisualScaleTreatment {
   defaultScale: number
@@ -317,7 +329,7 @@ export interface HearthsideStyle {
   roofs: {
     clearAlpha: number
     fadeMs: number
-    frames: Readonly<Record<string, readonly string[]>>
+    frames: Readonly<Record<string, RoofFramesTreatment>>
   }
   postEffects: {
     authoredGrade: ColorGradeTreatment
@@ -495,11 +507,11 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'fadeMs',
     'frames',
   ])
-  const roofFramesSource = exactRecord(roofsSource.frames, 'presentation.roofs.frames', [
-    'home',
-    'inn',
-    'shed',
-  ])
+  const roofFramesSource = exactRecord(
+    roofsSource.frames,
+    'presentation.roofs.frames',
+    CATALOG.buildings.map((building) => building.token),
+  )
   const buildingFrames = framesFor('buildings')
   const roofs = {
     clearAlpha: unitNumber(roofsSource.clearAlpha, 'presentation.roofs.clearAlpha'),
@@ -507,7 +519,11 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     frames: Object.fromEntries(
       Object.entries(roofFramesSource).map(([name, frameValue]) => [
         name,
-        frameNames(frameValue, `presentation.roofs.frames.${name}`, buildingFrames),
+        roofFramesTreatment(
+          frameValue,
+          `presentation.roofs.frames.${name}`,
+          buildingFrames,
+        ),
       ]),
     ),
   }
@@ -743,6 +759,20 @@ function propContactShadowTreatment(
     widthFactor: boundedNumber(source.widthFactor, `${name}.widthFactor`, 0, 2),
     heightFactor: boundedNumber(source.heightFactor, `${name}.heightFactor`, 0, 2),
     offsetYCells: boundedNumber(source.offsetYCells, `${name}.offsetYCells`, 0, 0.25, true),
+  }
+}
+
+function roofFramesTreatment(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+): RoofFramesTreatment {
+  const source = exactRecord(value, name, ['fills', 'edge', 'corner', 'ridge'])
+  return {
+    fills: frameNames(source.fills, `${name}.fills`, knownFrames),
+    edge: knownText(source.edge, knownFrames, `${name}.edge`),
+    corner: knownText(source.corner, knownFrames, `${name}.corner`),
+    ridge: knownText(source.ridge, knownFrames, `${name}.ridge`),
   }
 }
 

@@ -147,9 +147,9 @@
     "clearAlpha": 0.18,
     "fadeMs": 220,
     "frames": {
-      "home": ["homeFill", "homeEdge", "homeCorner", "homeRidge"],
-      "inn": ["innFill", "innEdge", "innCorner", "innRidge"],
-      "shed": ["shedFill", "shedEdge", "shedCorner", "shedRidge"]
+      "home": { "fills": ["homeFill", "homeFillAlt"], "edge": "homeEdge", "corner": "homeCorner", "ridge": "homeRidge" },
+      "inn": { "fills": ["innFill", "innFillAlt"], "edge": "innEdge", "corner": "innCorner", "ridge": "innRidge" },
+      "shed": { "fills": ["shedFill", "shedFillAlt"], "edge": "shedEdge", "corner": "shedCorner", "ridge": "shedRidge" }
     }
   },
   "postEffects": {

@@ -158,6 +158,35 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(unknownTint)).toThrow('reedMarks.tint is unknown')
   })
 
+  it('rejects malformed role-keyed roof frames', () => {
+    const unknownRole = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownRole.roofs.frames.home.mode = 'gable'
+    expect(() => readHearthsideStyle(unknownRole)).toThrow('roofs.frames.home keys do not match')
+
+    const unknownFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownFrame.roofs.frames.inn.edge = 'missingFrame'
+    expect(() => readHearthsideStyle(unknownFrame)).toThrow(
+      'roofs.frames.inn.edge is unknown',
+    )
+
+    const emptyFills = structuredClone(HEARTHSIDE_STYLE) as any
+    emptyFills.roofs.frames.shed.fills = []
+    expect(() => readHearthsideStyle(emptyFills)).toThrow(
+      'roofs.frames.shed.fills must contain at least one frame',
+    )
+
+    const extraBuilding = structuredClone(HEARTHSIDE_STYLE) as any
+    extraBuilding.roofs.frames.barn = {
+      fills: ['homeFill', 'homeFillAlt'],
+      edge: 'homeEdge',
+      corner: 'homeCorner',
+      ridge: 'homeRidge',
+    }
+    expect(() => readHearthsideStyle(extraBuilding)).toThrow(
+      'roofs.frames keys do not match its contract',
+    )
+  })
+
   it('keeps every terrain fill and route opaque', () => {
     expect(HEARTHSIDE_STYLE.terrain.fills.road?.opacity).toBe(1)
     expect(HEARTHSIDE_STYLE.terrain.routes.road.opacity).toBe(1)

@@ -21,7 +21,12 @@ import thumbnail from './assets/thumbnail.png'
 import { loadThreeBranchesRuntimeAssets } from './assets.js'
 
 // buildings/
-import { drawBuildings } from './buildings/buildings.js'
+import {
+  createRoofArt,
+  createRoofLayer,
+  type RoofLayer,
+  drawBuildings,
+} from './buildings/buildings.js'
 
 // characters/
 import {
@@ -121,6 +126,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private buildingOutlines!: Container
   private collision!: CollisionLayer
   private props!: PropLayer
+  private roofs!: RoofLayer
+  private lastRoofTick: number | null = null
   private characters!: CharacterLayer
   private annotations!: AnnotationLayer
   private chrome!: ChromeLayer
@@ -180,6 +187,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     root.addChild(backdrop, contentMask, this.worldRoot, inputLayer, chromeLayer)
 
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
+    this.roofs = createRoofLayer(this.world.roofs, this.staticScene)
     this.props = createPropLayer(
       {
         scenery: this.world.scenery,
@@ -258,6 +266,16 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     if (landedVisitor !== undefined) {
       this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
     }
+    // A connection that re-delivers the current recorded tick re-presents the same frame, so the
+    // roof snaps to its occupancy rather than replaying the fade.
+    const dynamicTick = scene.dynamic?.tick
+    const snapRoofs =
+      options?.snap === true ||
+      options?.seek === true ||
+      this.presentedScene === null ||
+      (dynamicTick !== undefined && dynamicTick === this.lastRoofTick)
+    if (dynamicTick !== undefined) this.lastRoofTick = dynamicTick
+    this.roofs.setTargets(scene, snapRoofs)
     // A snap re-presentation (resize, DPR change, asset redraw) is not a landed transport frame, so
     // it must not compose or send an action; only real states advance the live input window. The
     // frame itself always lands, so a terminal frame still ends the session's input.
@@ -307,6 +325,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   /** Advance character interpolation, the visitor camera, and the speech bubbles' hold and fade. */
   protected override onFrame(dtMs: number): boolean {
+    const roofsFading = this.roofs.advance(dtMs)
     const speaking = this.annotations.advance(dtMs)
     const wasSpeaking = this.wasSpeaking
     this.wasSpeaking = speaking
@@ -327,7 +346,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         this.cameraReturnRequested ||
         this.visitorCamera.returning ||
         this.settleRemainingMs > 0 ||
-        speaking
+        speaking ||
+        roofsFading
       )
     }
     this.advanceCameraReturn(dtMs, false)
@@ -343,7 +363,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.cameraReturnRequested ||
       this.visitorCamera.returning ||
       this.settleRemainingMs > 0 ||
-      speaking
+      speaking ||
+      roofsFading
     )
   }
 
@@ -618,6 +639,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           assets.terrain,
           assets.props,
           assets.monuments,
+          assets.buildings,
           assets.scenery,
           assets.characters.body,
           assets.characters.clothing,
@@ -655,6 +677,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
           this.props.install(propArt)
           if (this.presentedScene !== null) this.props.advance(this.presentedScene)
+          this.roofs.install(createRoofArt(assets.buildings))
+          if (this.presentedScene !== null) this.roofs.setTargets(this.presentedScene, true)
           this.annotations.install(createExpressionArt(assets.effects))
           // The expression chip's pictogram and accent textures only resolve once a state named the
           // character's expression, so reconcile re-applies them to the retained nodes right away.

@@ -135,12 +135,12 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads terrain, prop, monument, scenery, character, and effects pages while keeping buildings deferred', async () => {
+  it('loads every shipped runtime page including the buildings atlas', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(9)
+    expect(load).toHaveBeenCalledTimes(10)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
@@ -148,9 +148,10 @@ describe('Three Branches asset catalog', () => {
     expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
+    expect(assets.buildings).toMatch(/buildings-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
-    expect(sources.some((source) => /buildings/.test(source))).toBe(false)
+    expect(sources.some((source) => /buildings/.test(source))).toBe(true)
   })
 })
