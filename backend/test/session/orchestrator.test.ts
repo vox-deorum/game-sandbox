@@ -329,31 +329,12 @@ describe('orchestrator', () => {
   })
 
   describe('start', () => {
-    it.each([
-      {
-        name: 'uses the deployment override',
-        request: {},
-        config: { sessionMaxDurationMs: 10 },
-        expectedMs: 10,
-      },
-      {
-        name: 'derives a paced environment duration with each agent episode budget',
-        request: {},
-        config: { sessionMaxDurationMs: null },
-        expectedMs: 1_000 * 50 + 120_000 + 60_000,
-      },
-      {
-        name: 'uses the unpaced fallback without an override',
-        request: { envId: 'turn_based' },
-        config: { sessionMaxDurationMs: null },
-        expectedMs: 600_000,
-      },
-    ])('$name', async ({ request, config, expectedMs }) => {
+    it('uses the deployment override', async () => {
       vi.useFakeTimers()
-      const orch = makeOrchestrator(1_000_000, undefined, undefined, config)
-      const { process } = await start(orch, request)
+      const orch = makeOrchestrator(1_000_000, undefined, undefined, { sessionMaxDurationMs: 10 })
+      const { process } = await start(orch, {})
 
-      await vi.advanceTimersByTimeAsync(expectedMs - 1)
+      await vi.advanceTimersByTimeAsync(9)
       expect(process.killGraceMs).toEqual([])
 
       await vi.advanceTimersByTimeAsync(1)

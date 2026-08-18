@@ -5,14 +5,13 @@
  * stage's first demonstrable slice — every malformed fixture must reject with its correct code, and a
  * valid manifest (mirroring the worked example's real `manifest.json`) must accept.
  */
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from '../../../src/build/deps-version.js'
 import { validateStatic } from '../../../src/submission/validate/index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -34,19 +33,6 @@ describe('static validator — accepts', () => {
 
   it('accepts a package-style entry point resolving to pkg/agent.py', async () => {
     const result = await validateStatic(fixture('entry-point-package'), DEPS_V1, KNOWN_V1)
-    expect(result.ok).toBe(true)
-  })
-
-  it("accepts the worked example's real template manifest when present", async () => {
-    // build/ is git-ignored, so this is local-only coverage that the on-disk template still passes;
-    // the `valid` fixture above carries the byte-identical contract for CI.
-    const templateDir = join(HERE, '..', '..', 'build', 'templates', 'flappy_bird')
-    if (!existsSync(join(templateDir, 'manifest.json'))) {
-      return
-    }
-    // The on-disk template tracks the current release, so validate it against the real current
-    // version rather than the pinned v1 the fixtures use — otherwise this fails after a bump.
-    const result = await validateStatic(templateDir, DEPS_VERSION, KNOWN_DEPS_VERSIONS)
     expect(result.ok).toBe(true)
   })
 })

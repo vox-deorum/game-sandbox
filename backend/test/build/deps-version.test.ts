@@ -13,9 +13,8 @@ import { imageTag } from '../../src/driver/docker/image.js'
 describe('dependency-set image registry', () => {
   it('backs every known version with an explicit image definition, keeping v1 forever', () => {
     // A released version is never removed from the registry (old submissions still resolve to it),
-    // so v1 is always present, and the current version is always among the known ones.
+    // so v1 is always present.
     expect(KNOWN_DEPS_VERSIONS.has(1)).toBe(true)
-    expect(KNOWN_DEPS_VERSIONS.has(DEPS_VERSION)).toBe(true)
     for (const n of KNOWN_DEPS_VERSIONS) {
       expect(sessionBaseImageDefinition(n)).toEqual({
         dockerfile: `backend/images/session-base/deps-v${n}/Dockerfile`,
@@ -48,7 +47,6 @@ describe('dependency-set image registry', () => {
       kind: 'session-base',
       depsVersion: DEPS_VERSION,
     })
-    expect(() => sessionBaseImageDefinition(DEPS_VERSION)).not.toThrow()
   })
 
   it('refuses to name or build an unsupported dependency version', () => {

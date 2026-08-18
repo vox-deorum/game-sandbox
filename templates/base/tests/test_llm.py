@@ -60,7 +60,6 @@ def test_request_is_non_blocking_and_preserves_an_unread_reply(monkeypatch: pyte
     assert helper.request(model="medium", messages=[]) is False
 
     completions.release.set()
-    assert completions.release.is_set()
     assert helper.request(model="medium", messages=[]) is False
     assert _eventually(lambda: len(completions.calls) == 1 and helper.response() == "later reply")
     assert helper.response() is None

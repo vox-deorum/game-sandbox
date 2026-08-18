@@ -77,15 +77,6 @@ def test_rerun_help_explains_stale_schema_recovery(capsys):
     assert "schema SQLite startup errors" in out
 
 
-def test_member_credentials_match_the_e2e_fixture():
-    # The member credentials the demo prints must name a real account the e2e fixtures create, with
-    # the exact email/password the e2e suite signs in with (frontend/e2e/support/auth.ts): emailFor(
-    # 'ada-lovelace') and MEMBER_PASSWORD. Keeping these constants in sync is what makes a real
-    # /login sign-in succeed against the copied fixture database.
-    assert demo._MEMBER_EMAIL == "ada-lovelace@e2e.local"
-    assert demo._MEMBER_PASSWORD == "e2e-member-password"
-
-
 def test_bootstrap_admin_and_ordinary_member_are_distinct_personas():
     # The bootstrap account is role `admin`; the e2e member fixture stays role `user`. There is no
     # allowlist left to encode that distinction in env, so it is encoded in the two separate

@@ -89,7 +89,7 @@ import type {
 /** Where the recordings volume is mounted inside every match container (lockstep with the harness). */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
 /** Grace given to an in-flight container to stop politely before the driver hard-kills it (cancel). */
-const DEFAULT_KILL_GRACE_MS = 5_000
+export const DEFAULT_KILL_GRACE_MS = 5_000
 /** Extra wall-clock slack over the episode compute budget before a workflow game is killed. */
 const DEFAULT_GAME_WATCHDOG_GRACE_MS = 5_000
 

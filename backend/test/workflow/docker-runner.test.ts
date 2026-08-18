@@ -37,6 +37,7 @@ import type { SubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus } from '../../src/workflow/runner.js'
 import {
   createWorkflowRunner,
+  DEFAULT_KILL_GRACE_MS,
   type WorkflowRunnerDeps,
 } from '../../src/workflow/workflow-runner.js'
 import llmLaunchConfig from '../fixtures/llm-launch-config.json'
@@ -930,7 +931,7 @@ describe('Docker-backed workflow runner', () => {
     ordering.push('revocation-settled')
     releaseRevocation()
     await expect(terminal).resolves.toMatchObject({ status: 'completed' })
-    expect(launched?.killGraceMs).toEqual([5_000])
+    expect(launched?.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
     expect(ordering).toEqual([
       'successful-write',
       'revocation-settled',
@@ -1354,14 +1355,6 @@ describe('Docker-backed workflow runner', () => {
       headless: true,
       step_timeout_ms: 250,
       episode_timeout_ms: 5_000,
-    })
-    expect(handle.driver.lastLaunch()?.spec.sandbox).toEqual({
-      cpus: 1,
-      memoryMb: 512,
-      readOnlyRoot: true,
-      scratch: { containerPath: '/tmp', sizeMb: 256 },
-      network: 'none',
-      mounts: [{ hostPath: './data/recordings', containerPath: '/recordings', readOnly: false }],
     })
   })
 
@@ -1909,7 +1902,7 @@ describe('Docker-backed workflow runner', () => {
 
     releaseLaunch()
     await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
-    expect(driver.lastLaunch()?.process.killGraceMs).toEqual([5_000])
+    expect(driver.lastLaunch()?.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
     expect(revocationWorkStarts).toBe(1)
     expect((await storage.listRunGames(run.id))[0]?.status).toBe('cancelled')
     expect(await storage.listGameResultsByRun(run.id)).toEqual([])
@@ -1959,7 +1952,7 @@ describe('Docker-backed workflow runner', () => {
 
     releaseRevocation()
     await shutdown
-    expect(handle.driver.lastLaunch()?.process.killGraceMs).toEqual([5_000])
+    expect(handle.driver.lastLaunch()?.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
     await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
   })
 

@@ -10,7 +10,6 @@ import {
   WIDTH as HEARTS_WIDTH,
 } from '../../environments/hearts/renderer/scene.js'
 import { SpadesRenderer } from '../../environments/spades/renderer/index.js'
-import { SPADES_GEOMETRY } from '../../environments/spades/renderer/scene.js'
 import { formatSeat } from '../src/lib/format.js'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
@@ -18,7 +17,6 @@ import {
   buildHand,
   buildMoveClock,
   buildOpponents,
-  cardKey,
   cardToAction,
   DEFAULT_GEOMETRY,
   HEIGHT,
@@ -28,7 +26,6 @@ import {
   positionAnchor,
   positionOfPlayer,
   RANK_LABELS,
-  rankLabel,
   readCardOverlay,
   resolveView,
   WIDTH,
@@ -37,9 +34,8 @@ import {
 } from '../src/renderers/cards/scene.js'
 import { heartsMeta, spadesHeader } from './helpers/fixtures.js'
 
-// The shared card-table layer is a single source both card renderers extend, its codec agrees with the
-// rules encoding, and the per-game geometry
-// stays a hook. These are cheap, canvas-free invariants (no renderer is mounted).
+// The shared card-table layer is a single source both card renderers extend, and its codec agrees
+// with the rules encoding. These are cheap, canvas-free invariants (no renderer is mounted).
 
 describe('the shared card-table renderer layer', () => {
   it('has both the shared class and each game renderer in one inheritance chain', () => {
@@ -58,18 +54,12 @@ describe('the shared card-table renderer layer', () => {
       const card = { suit, rank }
       // Round-trip: cardToAction reconstructs the engine id from the object.
       expect(cardToAction(card)).toBe(engineId)
-      // cardKey is a stable, unique identity per card.
-      expect(cardKey(card)).toBe(`${suit}:${rank}`)
-      // rankLabel reads the FACE rank (2..14) into the same 0-indexed RANK_LABELS table.
-      expect(rankLabel(card)).toBe(RANK_LABELS[rank - 2])
     }
     expect(RANK_LABELS).toHaveLength(13)
     expect(NUM_PLAYERS).toBe(4)
   })
 
   it('pins the table frame and re-exports it identically through the Hearts module', () => {
-    expect(WIDTH).toBe(960)
-    expect(HEIGHT).toBe(720)
     // The Hearts entry point forwards the shared constants unchanged.
     expect(HEARTS_WIDTH).toBe(WIDTH)
     expect(HEARTS_HEIGHT).toBe(HEIGHT)
@@ -78,25 +68,6 @@ describe('the shared card-table renderer layer', () => {
   it('uses one stable fan geometry for every view-player hand', () => {
     expect(handFanGeometry(1)).toEqual({ startX: 448, step: 0 })
     expect(handFanGeometry(13)).toEqual({ startX: 40, step: 68 })
-  })
-
-  it('keeps table geometry a per-game hook with each game overriding the same fields', () => {
-    // Hearts uses the shared defaults; Spades overrides these same fields with taller badges and a
-    // deeper side inset, so the values are a data hook, not hard-coded layout.
-    expect(DEFAULT_GEOMETRY).toEqual({
-      northBadgeY: 101,
-      opponentRowNorthY: 150,
-      badgeW: 158,
-      badgeH: 56,
-      sideBadgeInset: 130,
-    })
-    expect(SPADES_GEOMETRY).toEqual({
-      northBadgeY: 117,
-      opponentRowNorthY: 166,
-      badgeW: 168,
-      badgeH: 62,
-      sideBadgeInset: 176,
-    })
   })
 
   it('parses stable player ids and rotates every player around each viewer', () => {

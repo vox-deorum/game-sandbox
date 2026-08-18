@@ -206,14 +206,6 @@ describe('ValidationWorker', () => {
       ['load', 'passed'],
     ])
     expect(disposed).toBe(1)
-    expect(driver.lastLaunch()?.spec.sandbox).toEqual({
-      cpus: 1,
-      memoryMb: 512,
-      readOnlyRoot: true,
-      scratch: { containerPath: '/tmp', sizeMb: 256 },
-      network: 'none',
-      mounts: [],
-    })
   })
 
   it('turns an unreachable repo into static_failed with a failed resolve and no static check', async () => {

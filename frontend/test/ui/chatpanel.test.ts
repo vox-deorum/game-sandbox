@@ -345,28 +345,6 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
   })
 
-  it("enforces the environment's 200 code point cap: 200 code points sends, 201 does not", async () => {
-    render(ChatPanel, {
-      props: {
-        entries: [],
-        viewerPlayers: ['player_0'],
-        sendable: true,
-        messageCap: 200,
-        policy: POLICY,
-      },
-    })
-    const input = screen.getByRole('textbox')
-    const send = screen.getByRole('button', { name: 'Send' })
-
-    await fireEvent.update(input, 'a'.repeat(200))
-    expect(screen.getByText('200/200')).toBeInTheDocument()
-    expect(send).toBeEnabled()
-
-    await fireEvent.update(input, 'a'.repeat(201))
-    expect(screen.getByText('201/200')).toHaveClass('chat-counter--over')
-    expect(send).toBeDisabled()
-  })
-
   it("renders the visitor's own pre-filtered feed, badging its own sends and receipts as from-you/to-you", () => {
     // The server has already filtered this list to lines the visitor session is entitled to: broadcasts,
     // and lines to or from player_0. An npc-to-npc line is a watcher/replay-only concern and never

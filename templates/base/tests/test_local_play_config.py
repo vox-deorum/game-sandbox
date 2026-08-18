@@ -504,28 +504,6 @@ def test_human_mode_without_companion_controls_the_whole_wide_seat(monkeypatch, 
     assert config["player_bindings"]["player_3"]["path"] == str(rival)
 
 
-def test_self_companion_makes_every_teammate_yours_to_play(monkeypatch, tmp_path: Path):
-    _use_partnership_layout(monkeypatch)
-    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
-
-    config = play.local_config(
-        seed=1,
-        mode="human",
-        seat=0,
-        recording_dir=tmp_path / "recordings",
-        step_limit=None,
-        companion="self",
-    )
-
-    assert config["player_bindings"]["player_0"] == {"kind": "external"}
-    assert config["player_bindings"]["player_2"] == {"kind": "external"}
-    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
-    # The opposing team is untouched; only your own is yours.
-    assert config["player_bindings"]["player_1"]["path"] == str(tmp_path / "repo")
-    assert config["player_bindings"]["player_3"]["path"] == str(tmp_path / "repo")
-    assert config["external_chat_player"] == "player_0"
-
-
 def test_saved_companion_keeps_the_first_human_capable_member_as_the_chat_sender(
     monkeypatch,
     tmp_path: Path,

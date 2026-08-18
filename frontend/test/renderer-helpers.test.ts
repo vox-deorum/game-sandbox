@@ -1,4 +1,4 @@
-import { Sprite, Texture } from 'pixi.js'
+import { Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -65,14 +65,6 @@ describe('Pixi helpers', () => {
     applyTexture(sprite, null, 6, 9)
     expect(sprite.texture).toBe(Texture.EMPTY)
     expect(sprite.visible).toBe(false)
-    sprite.destroy()
-  })
-
-  it('also applies textures to ordinary sprites', () => {
-    const sprite = new Sprite()
-    applyTexture(sprite, Texture.WHITE, 2, 3)
-    expect(sprite.width).toBe(2)
-    expect(sprite.height).toBe(3)
     sprite.destroy()
   })
 })

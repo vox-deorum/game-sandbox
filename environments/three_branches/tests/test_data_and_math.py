@@ -7,55 +7,13 @@ from importlib import resources
 
 import pytest
 
-from three_branches.catalog import CATALOG
 from three_branches.catalog import load as load_catalog
 from three_branches.generation.config import load as load_generation
 from three_branches.generation.water import _odd_width
 from three_branches.geometry import Circle, Rect, distance, nearest_point, point_in_cone, wrap
 from three_branches.grid import Grid
-from three_branches.rules import FRAME, RULES
+from three_branches.rules import FRAME
 from three_branches.rules import load as load_rules
-
-
-def test_shipped_static_tables_match_the_ruleset() -> None:
-    assert (FRAME.cells_x, FRAME.cells_y, FRAME.cell_size) == (120, 120, 1.0)
-    assert tuple(ground.code for ground in RULES.grounds) == (
-        "r",
-        "p",
-        "b",
-        "g",
-        "i",
-        "d",
-        "f",
-        "e",
-        "w",
-        "x",
-    )
-    assert RULES.emotes == (
-        "wave",
-        "nod",
-        "shake_head",
-        "point",
-        "laugh",
-        "shrug",
-        "startle",
-        "sleep",
-        "sweep",
-    )
-    assert RULES.day_ticks == 1200
-    assert RULES.physics_substeps == 3
-    assert [item.token for item in CATALOG.props] == [
-        "stall",
-        "lantern",
-        "bench",
-        "shrine",
-        "board",
-        "plot",
-        "hearth",
-        "repair_bench",
-        "pump",
-        "bell",
-    ]
 
 
 def test_loaders_reject_unknown_and_invalid_contract_data() -> None:

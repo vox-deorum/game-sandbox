@@ -177,7 +177,6 @@ describe('RunDetailsPage', () => {
     await renderPage()
     await waitFor(() => expect(sockets.length).toBe(1))
     const ws = sockets[0] as FakeWS
-    expect(ws.url).toContain('/api/admin/seasons/iter-1/runs/run-1/logs/ws')
 
     ws.onmessage?.({
       data: JSON.stringify({

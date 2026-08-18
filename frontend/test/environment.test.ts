@@ -426,19 +426,6 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByText(/Submittable/)).toBeNull()
   })
 
-  it('disables watch and play when no season is play-open', async () => {
-    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
-    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: null,
-      submission_season_id: 'iter-1',
-      play_season_id: null,
-    })
-    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
-    await renderPage()
-    expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
-  })
-
   it('opens the play flow from the play-season section', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([

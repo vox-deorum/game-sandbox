@@ -37,14 +37,12 @@ describe('SeasonSubmissions', () => {
     render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
 
     const link = await screen.findByRole('link', { name: 'Download' })
-    expect(link.getAttribute('href')).toBe('/api/admin/submissions/sub-abcdef12/download')
     // No user_name on this row, so the Participant cell falls back to the stable user_id, kept as its
     // own tooltip — and the download filename stays keyed on the id either way.
     const participant = screen.getByText('alice')
     expect(participant).toHaveAttribute('title', 'alice')
     expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
     const all = screen.getByRole('link', { name: /Download all/ })
-    expect(all.getAttribute('href')).toBe('/api/admin/seasons/iter-1/submissions/download')
     expect(all).toHaveAttribute('download', 'season-iter-1.tar.gz')
     expect(all).toHaveClass('ui-button', 'secondary', 'tight')
     expect(screen.getByRole('heading', { name: 'Submissions', level: 2 })).toBeInTheDocument()

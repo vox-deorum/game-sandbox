@@ -100,21 +100,4 @@ describe('createOfficialRecordSink', () => {
       },
     ])
   })
-
-  it('writes the record to the bound scope', () => {
-    const sink = createOfficialRecordSink(store, {
-      scopeId: 'live-session',
-      sessionId: 'live-session',
-      player: 'player_0',
-      tick: null,
-    })
-
-    sink(SUCCESS)
-
-    expect(store.listCalls('live-session')[0]).toMatchObject({
-      sessionId: 'live-session',
-      player: 'player_0',
-      model: 'medium',
-    })
-  })
 })

@@ -15,6 +15,7 @@ import game_sandbox_harness.clock as clock_module
 from game_sandbox_harness.clock import ManualClock, SystemClock
 from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.live_io import (
+    CHAT_QUEUE_LIMIT,
     PausableClock,
     ProtocolStream,
     SessionControl,
@@ -230,14 +231,14 @@ def test_chat_rejects_an_unauthorized_sender_before_allocating_a_queue(capsys: A
     assert "the designated sender is 'player_0'" in diagnostic
 
 
-def test_seventeenth_chat_frame_is_dropped_and_sixteen_survive(capsys: Any):
+def test_one_chat_frame_beyond_the_queue_limit_is_dropped(capsys: Any):
     control = SessionControl()
     control.configure_chat("player_0")
-    for i in range(17):
+    for i in range(CHAT_QUEUE_LIMIT + 1):
         control.handle_line(f'{{"kind":"chat","player":"player_0","to":null,"text":"m{i}"}}')
     queued = control.take_chat("player_0")
-    assert len(queued) == 16
-    assert [m["text"] for m in queued] == [f"m{i}" for i in range(16)]
+    assert len(queued) == CHAT_QUEUE_LIMIT
+    assert [m["text"] for m in queued] == [f"m{i}" for i in range(CHAT_QUEUE_LIMIT)]
     assert "queue full" in capsys.readouterr().err
 
 

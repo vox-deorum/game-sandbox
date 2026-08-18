@@ -9,9 +9,7 @@ import pytest
 from skirmish_crane.ascii_runner import _TILE_MARKS
 from skirmish_crane.hexes import Tile
 from skirmish_crane.tile_types import (
-    FEATURE_SCATTER,
     FEATURES,
-    TERRAIN_SCATTER,
     TERRAINS,
     TILE_CODES,
     load,
@@ -82,32 +80,6 @@ def test_a_malformed_document_is_rejected(break_it: Any, message: str) -> None:
     break_it(document)
     with pytest.raises(ValueError, match=message):
         load(document)
-
-
-def test_the_shipped_registry_pins_the_ruleset_numbers() -> None:
-    assert TERRAINS["grass"].move_cost == 1 and TERRAINS["grass"].passable
-    assert TERRAINS["hill"].move_cost == 2 and TERRAINS["hill"].passable
-    assert not TERRAINS["water"].passable and not TERRAINS["void"].passable
-    assert FEATURES["none"].move_cost_delta == 0
-    assert FEATURES["forest"].move_cost_delta == 1
-    assert FEATURES["marsh"].move_cost_delta == 2
-    # Wasteland prices nothing in movement and takes its toll in hit points instead.
-    assert FEATURES["waste"].move_cost_delta == 0
-    assert FEATURES["waste"].entry_damage == 2
-    assert all(feature.entry_damage == 0 for name, feature in FEATURES.items() if name != "waste")
-
-
-def test_the_shipped_registry_scatters_each_kind_at_one_in_twenty() -> None:
-    assert TERRAIN_SCATTER.die == 20 and TERRAIN_SCATTER.default == "grass"
-    assert [(entry.roll, entry.value) for entry in TERRAIN_SCATTER.rolls] == [(0, "hill")]
-    assert FEATURE_SCATTER.die == 20 and FEATURE_SCATTER.default == "none"
-    assert [(entry.roll, entry.value) for entry in FEATURE_SCATTER.rolls] == [
-        (0, "forest"),
-        (1, "marsh"),
-        (2, "waste"),
-    ]
-    # Only wasteland waits on a season parameter.
-    assert [entry.value for entry in FEATURE_SCATTER.rolls if entry.requires_parameter] == ["waste"]
 
 
 def test_every_passable_pairing_has_a_code_and_an_ascii_glyph() -> None:

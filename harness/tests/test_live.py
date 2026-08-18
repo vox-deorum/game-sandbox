@@ -32,6 +32,7 @@ from game_sandbox_harness.environment import (
     resolve_parameters,
 )
 from game_sandbox_harness.live import (
+    DEFAULT_BUILTIN_AGENT_BASE,
     UNSET_TIMEOUT,
     LiveConfig,
     LiveConfigError,
@@ -697,7 +698,7 @@ def test_build_players_builtin_agent_without_path_resolves_the_named_env_default
         {"players": 1},
     )
     players = build_players(cfg, entry, control, clock, sleeper)
-    assert captured == ["/opt/agents/builtin/hearts/cautious"]
+    assert captured == [f"{DEFAULT_BUILTIN_AGENT_BASE}/hearts/cautious"]
     assert isinstance(players["player_0"], AgentPlayer)
 
 

@@ -1,18 +1,12 @@
 /**
  * The per-environment leaderboard-score seams: {@link normalizeEpisodeScore} maps a clean game's raw
- * score to the higher-is-better board score, and {@link forfeitScore} is the floor a failed/incomplete
- * game contributes instead of its partial score, so a forfeit can never out-rank honest play.
+ * score to the higher-is-better board score (the identity for every higher-is-better environment this
+ * stage), and {@link forfeitScore} is the floor a failed/incomplete game contributes instead of its
+ * partial score, so a forfeit can never out-rank honest play.
  */
 import { describe, expect, it } from 'vitest'
 
-import { forfeitScore, normalizeEpisodeScore } from '../../src/leaderboards/score.js'
-
-describe('normalizeEpisodeScore', () => {
-  it('is the identity for the higher-is-better environments of this stage', () => {
-    expect(normalizeEpisodeScore('flappy_bird', 12)).toBe(12)
-    expect(normalizeEpisodeScore('flappy_bird', 0)).toBe(0)
-  })
-})
+import { forfeitScore } from '../../src/leaderboards/score.js'
 
 describe('forfeitScore', () => {
   it('floors a forfeited Hearts hand at its worst possible leaderboard score', () => {

@@ -340,7 +340,7 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         "Bearer key-1",
         *(f"Bearer key-{tick % 2}" for tick in range(4)),
     ]
-    assert all(event[4] == 2.0 for event in markers)
+    assert all(event[4] == live._MARKER_TIMEOUT_SECONDS for event in markers)
 
     participant_events = [event for event in events if event[0] in {"load", "construct", "hook"}]
     for event in participant_events:
