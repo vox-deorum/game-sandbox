@@ -146,18 +146,19 @@ watch(requestedSeasonId, load, { immediate: true })
   <section class="leaderboards">
     <header class="leaderboards-header">
       <h1>Leaderboards</h1>
-      <h2 v-if="season !== null" class="leaderboards-sub">
-        Season: {{ formatSeasonName(season) }}
-        <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
+      <div v-if="season !== null" class="leaderboards-season-head">
+        <div class="leaderboards-season-title">
+          <h2 class="leaderboards-sub">Season: {{ formatSeasonName(season) }}</h2>
+          <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
+        </div>
         <UiButton
           v-if="isAdmin(me.me)"
-          variant="secondary"
           size="tight"
           :to="`/environments/${envId}/admin?season=${season.id}`"
         >
           Manage season
         </UiButton>
-      </h2>
+      </div>
       <p v-if="releasedText !== null || currentCounts !== undefined" class="leaderboards-metadata">
         <span v-if="releasedText !== null">{{ releasedText }}</span>
         <template v-if="currentCounts !== undefined">
@@ -238,11 +239,23 @@ watch(requestedSeasonId, load, { immediate: true })
 </template>
 
 <style scoped>
-.leaderboards-sub {
+.leaderboards-season-head {
   display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+}
+
+.leaderboards-season-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.leaderboards-sub {
+  margin: 0;
 }
 
 .leaderboards-metadata {
