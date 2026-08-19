@@ -365,6 +365,56 @@ describe('ReplayPage', () => {
     expect(drawn.at(-1)?.tick).toBe(0)
   })
 
+  it('enters fullscreen and drives the transport from the floating bar', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter full screen' }))
+    // The canvas owns the viewport: the page's controls row hides and the same transport moves to the
+    // floating fullscreen bar, the only slider left.
+    expect(view.container.querySelector('.replay-controls')).toBeNull()
+    const bar = view.container.querySelector('.fullscreen-controls')
+    expect(bar).not.toBeNull()
+    if (bar === null) throw new Error('fullscreen transport bar was missing')
+    expect(bar.querySelectorAll('button')).toHaveLength(3)
+    expect(bar.querySelector('.scrubber')).not.toBeNull()
+    expect(screen.getAllByRole('slider')).toHaveLength(1)
+
+    // The bar's transport drives the playhead exactly like the page row's.
+    await fireEvent.click(screen.getByRole('button', { name: 'Step forward' }))
+    expect(drawn.at(-1)?.tick).toBe(1)
+
+    // Escape returns the page row and dismisses the bar.
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    expect(view.container.querySelector('.fullscreen-controls')).toBeNull()
+    expect(view.container.querySelector('.replay-controls')).not.toBeNull()
+    expect(await screen.findByRole('button', { name: 'Step back' })).toBeInTheDocument()
+  })
+
+  it('leaves control-focused keys with the controls during fullscreen', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+
+    // Fullscreen floats the transport bar inside the stage, so a keydown on one of its controls
+    // bubbles to the stage transport. The keys belong to the control, not the transport.
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter full screen' }))
+    const bar = view.container.querySelector('.fullscreen-controls')
+    expect(bar).not.toBeNull()
+    if (bar === null) throw new Error('fullscreen transport bar was missing')
+    const stepForward = bar.querySelector<HTMLElement>('button[aria-label="Step forward"]')
+    expect(stepForward).not.toBeNull()
+    if (stepForward === null) throw new Error('fullscreen Step forward button was missing')
+
+    // Space would toggle play and ArrowRight would step if the stage transport stole them; the guard
+    // lets the focused control keep them, so the playhead stays put (no click is dispatched here).
+    await fireEvent.keyDown(stepForward, { key: ' ' })
+    expect(drawn.at(-1)?.tick).toBe(0)
+    await fireEvent.keyDown(stepForward, { key: 'ArrowRight' })
+    expect(drawn.at(-1)?.tick).toBe(0)
+  })
+
   it('seeks on load from a ?t= deep link', async () => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay('/replays/rec-1?t=2')

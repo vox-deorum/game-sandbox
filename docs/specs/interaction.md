@@ -12,7 +12,7 @@ Per-step state → renderer → game frame
              live play and replay
 ```
 
-The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, replay transport, and the chat panel when messaging is enabled.
+The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, full-screen presentation, replay transport, and the chat panel when messaging is enabled.
 
 Live play and replay use the same renderer. See [Recording](recording.md).
 

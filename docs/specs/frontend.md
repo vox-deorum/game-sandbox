@@ -29,8 +29,8 @@ An [**operator**](overview.md) is an authenticated user with `admin` status who 
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
 | My Agents | Signed-in user's current season submission state and recent submitted-season results across environments |
 | Replays | Sortable environment recording list |
-| Replay viewer | Renderer, transport, seat attribution, chat, episode settings, public LLM summaries |
-| Live session | Renderer, shared controls, decision log, result, pinning, ratings |
+| Replay viewer | Renderer, transport, seat attribution, chat, episode settings, public LLM summaries, and full-screen presentation |
+| Live session | Renderer, shared controls, decision log, result, pinning, ratings, and full-screen presentation |
 | Leaderboards | Automated and human-feedback boards for one environment and season |
 | Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
 | Documentation | Student guides, rendered in-app with a section navigation |

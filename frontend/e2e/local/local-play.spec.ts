@@ -25,6 +25,22 @@ async function expectBackingDensity(canvas: Locator): Promise<void> {
     .toBeLessThanOrEqual(1)
 }
 
+async function expectSettledCanvas(canvas: Locator): Promise<void> {
+  // The renderer's resize observer rebuilds the canvas a moment after the host settles, so a single
+  // read can still catch it mid-resize; "settled" means two consecutive reads agree on the width.
+  let previous = -1
+  await expect
+    .poll(async () => {
+      const current = Math.round((await readCanvasDensity(canvas)).cssWidth)
+      if (current === previous) {
+        return true
+      }
+      previous = current
+      return false
+    })
+    .toBe(true)
+}
+
 /**
  * The local browser journey runs against the loopback-only Python relay and standalone Vite bundle.
  * The scripted runner makes input forwarding deterministic while exercising the same JSON-lines and
@@ -108,4 +124,51 @@ test('local play starts, reconnects while paused, and reaches a stopped terminal
   await page.getByRole('button', { name: 'Stop' }).click()
   await expect(page.getByText('Stopped')).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Game over' })).toHaveCount(0)
+})
+
+test('fullscreen presents the stage at full screen and exits on Escape', async ({ page }) => {
+  await page.goto(LOCAL_PLAY_URL)
+  await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
+  const canvas = page.locator('canvas.renderer-canvas')
+
+  // A portrait stage beside its log pins the canvas column at 22rem (352px), so fullscreen is strictly
+  // larger. Settle on that capped layout before capturing the pre-fullscreen baseline, so the growth
+  // assertions below compare against a stable size.
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await expectSettledCanvas(canvas)
+  const before = await readCanvasDensity(canvas)
+
+  await page.getByRole('button', { name: 'Enter full screen' }).click()
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.fullscreenElement?.classList.contains('stage-canvas') ?? false),
+    )
+    .toBe(true)
+  // The stage letterboxes to its aspect ratio at full screen: both dimensions grow past the cap.
+  await expect
+    .poll(async () => (await readCanvasDensity(canvas)).cssWidth)
+    .toBeGreaterThan(before.cssWidth)
+  await expect
+    .poll(async () => (await readCanvasDensity(canvas)).cssHeight)
+    .toBeGreaterThan(before.cssHeight)
+  await expectBackingDensity(canvas)
+
+  // Browser-initiated exit returns to the capped layout. Headless Chromium does not run the browser
+  // chrome Escape handler that releases native fullscreen (even via CDP raw dispatch), so after the
+  // press (a no-op here, and a real exit on a browser that honors it) release programmatically.
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => document.exitFullscreen())
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.fullscreenElement?.classList.contains('stage-canvas') ?? false),
+    )
+    .toBe(false)
+  // The capped portrait layout returns asynchronously; wait until the width is back at/below the
+  // pre-fullscreen value before asserting the exact sizes match.
+  await expect
+    .poll(async () => (await readCanvasDensity(canvas)).cssWidth)
+    .toBeLessThanOrEqual(before.cssWidth + 1)
+  const after = await readCanvasDensity(canvas)
+  expect(Math.abs(after.cssWidth - before.cssWidth)).toBeLessThanOrEqual(1)
+  expect(Math.abs(after.cssHeight - before.cssHeight)).toBeLessThanOrEqual(1)
 })

@@ -137,6 +137,21 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   // Pin the recording (the viewer owns it).
   await page.getByRole('button', { name: 'Pin recording' }).click()
   await expect(page.getByRole('button', { name: 'Pinned ✓' })).toBeVisible()
+
+  // Fullscreen presents the stage alone; the floating bar keeps the transport operable.
+  await page.getByRole('button', { name: 'Enter full screen' }).click()
+  await expect(page.locator('.stage-canvas.is-fullscreen')).toBeVisible()
+  await expect(page.locator('.replay-controls')).toBeHidden()
+  const bar = page.locator('.fullscreen-controls')
+  await expect(bar).toBeVisible()
+  await bar.getByRole('button', { name: 'Step forward' }).click()
+  await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  // Headless Chromium does not run the browser-chrome Escape handler that releases native fullscreen,
+  // so release programmatically and confirm the stage and the controls row return.
+  await page.evaluate(() => document.exitFullscreen())
+  await expect(page.locator('.stage-canvas.is-fullscreen')).toHaveCount(0)
+  await expect(page.locator('.replay-controls')).toBeVisible()
 })
 
 test('shows submission-season changes and downloads its local setup file', async ({

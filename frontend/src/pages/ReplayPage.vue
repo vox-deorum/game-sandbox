@@ -29,12 +29,12 @@ import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import GameThread from '../components/GameThread.vue'
+import ReplayTransport from '../components/ReplayTransport.vue'
 import SeatAttribution from '../components/SeatAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
-import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
@@ -95,6 +95,9 @@ const seasonPlayable = ref<boolean | null>(null)
 const anonymousNumbers = ref<Record<string, number>>({})
 
 const hostEl = ref<HTMLElement | null>(null)
+// Whether the stage is currently shown fullscreen (bound to StageFrame's `v-model:fullscreen`); the
+// controls row and the transport underneath hide while the canvas takes over the viewport.
+const stageFullscreen = ref(false)
 
 const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
@@ -153,12 +156,6 @@ const statusLabel = computed(() =>
     : 'Replay',
 )
 
-// The scrubber's value is the transport index; setting it (drag or keyboard) seeks the transport.
-const scrubIndex = computed({
-  get: () => replayState.value.index,
-  set: (i) => transport.value?.seek(i),
-})
-
 // What this episode was played with: the visible parameters the recording header carries, resolved
 // against the environment's declarations, plus the seed. The seed no longer has a row of its own in
 // the strip; it is the last of these settings, since it configures the run like the rest of them.
@@ -198,6 +195,11 @@ const metadataItems = computed(() => [
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
 ])
 
+// A key pressed on a control inside the stage (the fullscreen toggle or the floating transport bar)
+// belongs to that control's own handler, not the stage transport: buttons and the scrubber thumb
+// manage their own Space/Arrow presses. Only the stage region itself owns the transport keys.
+const STAGE_INTERACTIVE_SELECTOR = 'button, input, textarea, select, [role="button"], [role="slider"]'
+
 // While the game-over card is up it owns the keyboard, so the transport stands down: a stray Space
 // shouldn't restart playback behind the card. Escape from the stage still dismisses it (the card's own
 // handler covers Escape when focus is within the card).
@@ -206,6 +208,10 @@ function onStageKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       gameOverDismissed.value = true
     }
+    return
+  }
+  const target = event.target as HTMLElement | null
+  if (target !== null && target.closest(STAGE_INTERACTIVE_SELECTOR) !== null) {
     return
   }
   onKeydown(event)
@@ -339,39 +345,10 @@ onMounted(async () => {
       :anonymous-numbers="anonymousNumbers"
     />
 
-    <div v-if="transport !== null" class="replay-controls">
-      <UiButton
-        variant="secondary"
-        size="tight"
-        aria-label="Step back"
-        :disabled="replayState.index === 0"
-        @click="transport?.stepBack()"
-      >
-        <span aria-hidden="true">←</span>
-      </UiButton>
-      <UiButton size="tight" @click="transport?.toggle()">
-        {{ replayState.playing ? 'Pause' : 'Play' }}
-      </UiButton>
-      <UiButton
-        variant="secondary"
-        size="tight"
-        aria-label="Step forward"
-        :disabled="replayState.index >= replayState.total - 1"
-        @click="transport?.stepForward()"
-      >
-        <span aria-hidden="true">→</span>
-      </UiButton>
-      <div class="scrubber">
-        <UiSlider
-          v-model="scrubIndex"
-          :max="Math.max(0, replayState.total - 1)"
-          label="Replay position"
-        />
-      </div>
-      <span class="replay-position">
-        tick {{ replayState.tick ?? 0 }} ·
-        {{ replayState.index + 1 }}/{{ replayState.total }}
-      </span>
+    <!-- Hidden while fullscreen: the canvas owns the viewport then, with the transport in the
+         fullscreen bar below it. -->
+    <div v-if="transport !== null && !stageFullscreen" class="replay-controls">
+      <ReplayTransport :state="replayState" :transport="transport" />
       <UiButton
         v-if="owned"
         variant="secondary"
@@ -393,6 +370,7 @@ onMounted(async () => {
     </UiEmptyState>
 
     <StageFrame
+      v-model:fullscreen="stageFullscreen"
       :aspect-ratio="aspectRatio"
       :log-beside="logBeside"
       :loading="stageLoading"
@@ -419,6 +397,11 @@ onMounted(async () => {
         <UiEmptyState v-if="noRenderer"
           >No renderer is registered for this environment.</UiEmptyState
         >
+      </template>
+      <!-- Fullscreen shows the canvas alone with the transport in a floating bar at its foot, so the
+           same control set renders here; the pin stays with the page's controls row. -->
+      <template #fullscreen-controls>
+        <ReplayTransport v-if="transport !== null" :state="replayState" :transport="transport" />
       </template>
       <!-- A replay scrubs the whole game, so the decision log and chat merge into one thread: every
            tick's decision (the whole game, ahead-of-scrubber ticks dimmed) with its messages woven in
@@ -522,21 +505,6 @@ onMounted(async () => {
   gap: var(--space-2);
   max-width: 640px;
   margin: var(--space-3) 0;
-}
-
-.scrubber {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-}
-
-.replay-position {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  font-family: var(--font-mono);
-  white-space: nowrap;
 }
 
 @media (max-width: 768px) {

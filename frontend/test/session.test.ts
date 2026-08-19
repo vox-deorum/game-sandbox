@@ -209,6 +209,37 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
 
+  it('offers the fullscreen toggle on a live session and toggles the stage', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    const view = await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({ players: { player_0: { kind: 'human', label: 'dev', user: 'dev' } } }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+
+    // The toggle appears once the renderer reports a shape; plain jsdom exercises the CSS fallback.
+    const toggle = await screen.findByRole('button', { name: 'Enter full screen' })
+    const canvas = view.container.querySelector('.stage-canvas') as HTMLElement
+    await fireEvent.click(toggle)
+    await nextTick()
+    expect(canvas).toHaveClass('is-fullscreen', 'fallback-fullscreen')
+    expect(screen.getByRole('button', { name: 'Exit full screen' })).toBeInTheDocument()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    await nextTick()
+    expect(canvas).not.toHaveClass('is-fullscreen')
+    expect(screen.getByRole('button', { name: 'Enter full screen' })).toBeInTheDocument()
+    expect(document.body.style.overflow).toBe('')
+  })
+
   it("shows the human seat's display-name label in attribution, with the stable id as a tooltip", async () => {
     // A header whose human label differs from the stable id it also carries, proving the attribution
     // line prefers the display name (label) while keeping the id reachable as a tooltip — and that
