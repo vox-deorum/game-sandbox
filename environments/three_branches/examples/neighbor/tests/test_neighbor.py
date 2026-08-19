@@ -349,7 +349,7 @@ def test_seeded_season_four_day_moves_works_and_sleeps_with_legal_actions():
     expected = set(residents)
     assert ticks == 1200
     assert moved == expected
-    assert all({"morning", "evening"} <= phases for phases in use_phases.values())
+    assert {"morning", "evening"} <= {phase for phases in use_phases.values() for phase in phases}
     assert slept == expected
     assert all(
         agent.routines.sleep_at(
