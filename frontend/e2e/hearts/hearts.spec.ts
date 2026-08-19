@@ -9,6 +9,8 @@ import {
   openPlay,
   openSubmissions,
   release,
+  type SeededRating,
+  seedRatings,
   setLlmOverride,
   startSession,
   stopSessionAndAwaitFree,
@@ -21,6 +23,7 @@ import {
   HEARTS_HUMAN_LEAD_SEED,
   HEARTS_OWNERS,
   HEARTS_SEASON,
+  JUDGES,
   LLM_PERSONAS,
 } from '../support/names.js'
 import { stageExampleAgent } from '../support/stage-example-agent.js'
@@ -36,8 +39,8 @@ import { stageExampleAgent } from '../support/stage-example-agent.js'
 
 /** Two distinct strategies are enough to exercise both ordered two-submission seatings. */
 const ROSTER = [
-  { owner: HEARTS_OWNERS.oracle, agent: 'oracle' },
-  { owner: HEARTS_OWNERS.moonshot, agent: 'moonshot' },
+  { owner: HEARTS_OWNERS.oracle, agent: 'oracle', scores: [5, 4, 4, 5] },
+  { owner: HEARTS_OWNERS.moonshot, agent: 'moonshot', scores: [3, 4, 3, 4] },
 ] as const
 
 async function developmentCompletion(actor: APIRequestContext, key: string): Promise<void> {
@@ -218,10 +221,15 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     await expect(history.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
     await history.getByRole('button', { name: 'Close' }).click()
 
+    const submissionByAgent: Record<string, string> = { oracle: oracleSubmissionId }
     await Promise.all(
-      ROSTER.filter((entry) => entry.agent !== 'oracle').map(async (entry) =>
-        submitReadyAgent(await as(entry.owner), staged[entry.agent], HEARTS_ENV_ID),
-      ),
+      ROSTER.filter((entry) => entry.agent !== 'oracle').map(async (entry) => {
+        submissionByAgent[entry.agent] = await submitReadyAgent(
+          await as(entry.owner),
+          staged[entry.agent],
+          HEARTS_ENV_ID,
+        )
+      }),
     )
 
     // Trigger the run from the operator console. The config was set through the API, so the editor loads
@@ -242,8 +250,30 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
       timeout: 420_000,
     })
 
+    // Black Lady Open is the suite's "one season with full ratings": open the play window and give
+    // every agent a finished, rateable session voted on by all four judges, so its released Human
+    // Ratings board is fully ranked (every agent clears the three-distinct-raters threshold).
+    await openPlay(admin, season.id)
+    for (const entry of ROSTER) {
+      const raters: SeededRating[] = []
+      for (const [index, judge] of JUDGES.entries()) {
+        raters.push({
+          ctx: await as(judge),
+          score: entry.scores[index] ?? 4,
+          feedback: 'Steady under pressure',
+        })
+      }
+      await seedRatings(
+        await as(JUDGES[0]),
+        submissionByAgent[entry.agent],
+        HEARTS_ENV_ID,
+        raters,
+        4,
+      )
+    }
+
     // Release, then verify the public board the demo serves: a Scoreboard ranking both agents and the
-    // Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty state.
+    // Naive baseline. Full ratings were seeded, so the Human Ratings board is fully ranked.
     await release(admin, season.id)
     await page.goto(`/environments/${HEARTS_ENV_ID}/leaderboards/${season.id}`)
 
@@ -253,7 +283,13 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     for (const entry of ROSTER) {
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }
-    await expect(humanBoard.getByText('No ratings yet.')).toBeVisible()
+    // Both agents earned a rating from all four judges, so the Human Ratings board is fully ranked.
+    await expect(humanBoard.getByText('No ratings yet.')).toHaveCount(0)
+    for (const entry of ROSTER) {
+      await expect(humanBoard.getByRole('link', { name: entry.owner })).toBeVisible()
+    }
+    await expect(humanBoard.locator('tbody tr')).toHaveCount(ROSTER.length)
+    await expect(humanBoard.locator('tbody tr.unranked')).toHaveCount(0)
 
     // This is a regular mixed season: Oracle has recorded LLM usage from its official workflow
     // calls, including the `small` breakdown, while a conventional strategy reports no usage.

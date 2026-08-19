@@ -2,18 +2,22 @@ import { rmSync } from 'node:fs'
 
 import {
   activeWindows,
+  closePlay,
   closeSubmissions,
   configureMatches,
   declareSeason,
+  openPlay,
   openSubmissions,
   release,
+  type SeededRating,
+  seedRatings,
   startSession,
   stopSessionAndAwaitFree,
   submitReadyAgent,
 } from '../support/api.js'
 import { authenticateBrowser } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
-import { CRANE_OWNERS } from '../support/names.js'
+import { CRANE_OWNERS, JUDGES } from '../support/names.js'
 import { stageExampleAgent } from '../support/stage-example-agent.js'
 
 const ENV_ID = 'skirmish_crane'
@@ -455,14 +459,20 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
   const staged = stageExampleAgent(ENV_ID, EXAMPLE_AGENT)
 
   let submissionSeasonId: string | null = null
+  let playSeasonId: string | null = null
   let temporarySeasonId: string | null = null
   try {
-    // Free only the submission window. The seeded play window remains open for the human-order test
-    // below, and this temporary season never needs to replace it.
+    // Free both submission and play windows: the temporary season opens play so its agent gets a
+    // rateable session below, then the finally hands both windows back to the seeded Playground for
+    // the human-order test that follows.
     const originalWindows = await activeWindows(admin, ENV_ID)
     submissionSeasonId = originalWindows.submissionSeasonId
+    playSeasonId = originalWindows.playSeasonId
     if (submissionSeasonId !== null) {
       await closeSubmissions(admin, submissionSeasonId)
+    }
+    if (playSeasonId !== null) {
+      await closePlay(admin, playSeasonId)
     }
     const season = await declareSeason(admin, SEASON_LABEL, ENV_ID)
     temporarySeasonId = season.id
@@ -470,7 +480,7 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
     // The example submits under its own owner, so the scoreboard row links to a real agent identity.
     // Building it runs the real validate-and-build pipeline over a multi-file agent (banner keeps its
     // tactical blocks in a second module), which nothing else in the suite submits.
-    await submitReadyAgent(await as(CRANE_OWNERS.banner), staged, ENV_ID)
+    const submissionId = await submitReadyAgent(await as(CRANE_OWNERS.banner), staged, ENV_ID)
 
     await configureMatches(admin, season.id, [
       {
@@ -516,11 +526,30 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
       timeout: 600_000,
     })
 
+    // Open the play window and give the banner a finished, rateable session with a couple of early
+    // peer ratings (two of the four judges), so the released season's Human Ratings board carries the
+    // suite's "some ratings" data without clearing the three-distinct-raters rank threshold.
+    await openPlay(admin, season.id)
+    const raters: SeededRating[] = []
+    for (const [index, judge] of JUDGES.slice(0, 2).entries()) {
+      raters.push({
+        ctx: await as(judge),
+        score: 4 + index,
+        feedback: 'Steady under pressure',
+      })
+    }
+    await seedRatings(await as(JUDGES[0]), submissionId, ENV_ID, raters, 2)
+
     await release(admin, season.id)
     await page.goto(`/environments/${ENV_ID}/leaderboards/${season.id}`)
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
     await expect(scoreboard.getByText('naive')).toBeVisible()
     await expect(scoreboard.getByRole('link', { name: CRANE_OWNERS.banner })).toBeVisible()
+    const humanBoard = page.locator('section.board', { hasText: 'Human Ratings' })
+    await expect(humanBoard.getByText('No ratings yet.')).toHaveCount(0)
+    await expect(humanBoard.getByRole('link', { name: CRANE_OWNERS.banner })).toBeVisible()
+    // Two distinct raters (< 3) leaves the posted agent present but unranked.
+    await expect(humanBoard.locator('tbody tr.unranked')).toHaveCount(1)
 
     const matchups = page.getByRole('region', { name: 'Matchups' })
     const game = matchups.getByTestId('game-row').first()
@@ -561,6 +590,7 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
     try {
       if (temporarySeasonId !== null) {
         await closeSubmissions(admin, temporarySeasonId)
+        await closePlay(admin, temporarySeasonId)
       }
     } finally {
       try {
@@ -568,7 +598,13 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
           await openSubmissions(admin, submissionSeasonId)
         }
       } finally {
-        rmSync(staged, { recursive: true, force: true })
+        try {
+          if (playSeasonId !== null) {
+            await openPlay(admin, playSeasonId)
+          }
+        } finally {
+          rmSync(staged, { recursive: true, force: true })
+        }
       }
     }
   }

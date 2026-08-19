@@ -60,7 +60,7 @@ const MAIN_USE = {
  * The long season arcs carry a `@slow` tag rather than living in a project or a file suffix, so each
  * stays beside its siblings in the environment it belongs to. Drop them with `--grep-invert @slow`.
  * This config deliberately applies no filter of its own: a default that hid `@slow` would make a bare
- * `npm run e2e` quietly produce a run missing every released season.
+ * `npm run e2e` quietly produce a run missing every season arc the demo fixture needs.
  *
  * `crane-reach` is named after its spec, not its `skirmish_crane` environment id, so every group name
  * matches the file it contains.

@@ -177,6 +177,24 @@ export async function activeWindows(
   return { submissionSeasonId: body.submission_season_id, playSeasonId: body.play_season_id }
 }
 
+/**
+ * Resolve a public season's display label through the seasons list, so a spec can name whatever
+ * season currently holds a window by reading the same data the pages do (the alternative — hardcoding
+ * a label — would couple a spec to which season holds a window, which the arcs change).
+ */
+export async function publicSeasonLabel(
+  actor: APIRequestContext,
+  envId: string,
+  seasonId: string,
+): Promise<string> {
+  const res = await actor.get(`/api/seasons?envId=${encodeURIComponent(envId)}`)
+  expect(res.ok(), await res.text()).toBe(true)
+  const seasons = (await res.json()) as { id: string; label: string | null }[]
+  const match = seasons.find((season) => season.id === seasonId)
+  if (match === undefined) throw new Error(`no public season ${seasonId} in ${envId}`)
+  return match.label ?? seasonId
+}
+
 /** Set the operator's season-wide rating prompt (display-only guidance shown to every rater). */
 export async function setSeasonRatingPrompt(
   admin: APIRequestContext,
@@ -391,19 +409,32 @@ export async function stopSessionAndAwaitFree(
     .toMatch(/ended|missing/)
 }
 
+/** The full seat assignment for a scripted watch of one submission, filling the rest with naive. */
+function watchSeats(submissionId: string, seatCount: number): Record<string, SeatAssignment> {
+  const seats: Record<string, SeatAssignment> = {
+    seat_0: { kind: 'submission', submission_id: submissionId },
+  }
+  for (let i = 1; i < seatCount; i += 1) {
+    seats[`seat_${i}`] = { kind: 'builtin-agent', name: 'naive' }
+  }
+  return seats
+}
+
 /**
  * Run a submitted agent in a scripted watch session and drive it to a finalized recording: start it as
  * the `watcher` context, let it come up, stop it (the agent may also end the game on its own first),
  * then wait for the ended state with a recording. The returned session id is rateable. Used to seed the
- * agents' post-session ratings without going through the browser for each.
+ * agents' post-session ratings without going through the browser for each. `seatCount` is the
+ * environment's seat plan (1 for Flappy Bird; a multi-seat game fills its other seats with the Naive
+ * baseline, matching how the arcs schedule a lone submission).
  */
 export async function finishedScriptedSession(
   watcher: APIRequestContext,
   submissionId: string,
+  envId: string = ENV_ID,
+  seatCount = 1,
 ): Promise<string> {
-  const sessionId = await startSession(watcher, ENV_ID, {
-    seat_0: { kind: 'submission', submission_id: submissionId },
-  })
+  const sessionId = await startSession(watcher, envId, watchSeats(submissionId, seatCount))
 
   // Wait until it is past `starting` so a stop is accepted, then stop it (ignoring the case where the
   // game already ended on its own — the ended-state poll below is the real gate either way).
@@ -442,4 +473,35 @@ export async function rateSession(
     },
   })
   expect(res.status(), await res.text()).toBe(200)
+}
+
+/** One rater's scheduled vote in the {@link seedRatings} helper. */
+export interface SeededRating {
+  ctx: APIRequestContext
+  score: number
+  feedback: string
+}
+
+/**
+ * Watch `submissionId` in a finished scripted session as `watcher`, then record every rater's vote
+ * against that session (all in `envId`'s play-open season). This is the one seed the @slow season
+ * arcs share: it turns a built agent into a rateable peer-review target without driving the browser
+ * for each rater. How many raters a caller lists decides how full the agent's rating set lands — one
+ * rater leaves it well short of the three-distinct-rater rank threshold, the full four-judge set
+ * earns it a rank on the Human Ratings board. `seatCount` is the environment's seat plan (see
+ * {@link finishedScriptedSession}).
+ */
+export async function seedRatings(
+  watcher: APIRequestContext,
+  submissionId: string,
+  envId: string,
+  raters: SeededRating[],
+  seatCount = 1,
+): Promise<void> {
+  const sessionId = await finishedScriptedSession(watcher, submissionId, envId, seatCount)
+  await Promise.all(
+    raters.map(({ ctx, score, feedback }) =>
+      rateSession(ctx, sessionId, submissionId, score, feedback),
+    ),
+  )
 }

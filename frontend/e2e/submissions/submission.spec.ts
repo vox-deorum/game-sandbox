@@ -2,20 +2,14 @@ import { fileURLToPath } from 'node:url'
 
 import {
   activeWindows,
-  setAuthorPrompt,
+  publicSeasonLabel,
   setSeasonRatingPrompt,
   submitLocal,
   waitForTerminal,
 } from '../support/api.js'
 import { authenticateBrowser, userIdOf } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
-import {
-  AUTHOR_RATING_PROMPT,
-  ENV_ID,
-  JUDGES,
-  OPERATOR_RATING_PROMPT,
-  OWNERS,
-} from '../support/names.js'
+import { ENV_ID, JUDGES, OPERATOR_RATING_PROMPT, OWNERS } from '../support/names.js'
 
 /**
  * The submission journey (Stage 5). It needs a Docker daemon — building an overlay and running the
@@ -53,8 +47,9 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   expect(row.status, JSON.stringify(row.checks)).toBe('ready')
   const windows = await activeWindows(admin)
   expect(windows.playSeasonId).not.toBeNull()
+  // The season the play window points at changes through the day (the leaderboards arc leaves its own
+  // season play-open), so apply the operator's rating guidance to whichever season is rateable now.
   await setSeasonRatingPrompt(admin, windows.playSeasonId as string, OPERATOR_RATING_PROMPT)
-  await setAuthorPrompt(ownerCtx, windows.playSeasonId as string, AUTHOR_RATING_PROMPT)
 
   // Browse as the owner so both student-facing season summaries are exercised with the real row.
   await authenticateBrowser(page.context(), ownerCtx)
@@ -93,22 +88,29 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // is exercised end to end.
   await authenticateBrowser(page.context(), await as(JUDGES[1]))
 
-  // The season section names the play target, while the watch picker lists the ready agent
-  // anonymously under that season's name and highlights that it still needs a rating.
+  // The season section names the play target, while the watch picker lists the play season's ready
+  // agents anonymously and highlights the unrated one with the Not rated / Rate affordance. The whole
+  // browser half of this journey targets whichever season holds the open play window today (the
+  // leaderboards arc leaves its own season play-open), so the label comes from the same public read
+  // the pages use rather than a hardcoded name.
+  const playLabel = await publicSeasonLabel(admin, ENV_ID, windows.playSeasonId as string)
   await page.goto(`/environments/${ENV_ID}`)
   await expect(
-    page.getByRole('heading', { name: 'Open for Play: Playground', exact: true }),
+    page.getByRole('heading', { name: `Open for Play: ${playLabel}`, exact: true }),
   ).toBeVisible()
   const playSection = page.locator('section#play')
   await expect(
-    playSection.getByRole('heading', { name: 'Play and Rate: Playground' }),
+    playSection.getByRole('heading', { name: `Play and Rate: ${playLabel}` }),
   ).toBeVisible()
-  const row0 = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
-  await expect(row0).toBeVisible()
-  await expect(row0.getByText('Not rated')).toBeVisible()
-  await expect(row0.getByText(owner)).toHaveCount(0)
-  await expect(row0.locator('code')).toHaveCount(0)
-  await row0.getByRole('button', { name: 'Rate' }).click()
+  const unratedRow = page.locator('.agent-row').filter({
+    has: page.getByText('Not rated', { exact: true }),
+  })
+  await expect(unratedRow).toBeVisible()
+  // The unrated play-season agent is someone else's submission, shown anonymously to this judge: no
+  // owner handle and no source chip.
+  await expect(unratedRow.getByText(OWNERS.drifter)).toHaveCount(0)
+  await expect(unratedRow.locator('code')).toHaveCount(0)
+  await unratedRow.getByRole('button', { name: 'Rate' }).click()
   const rateDialog = page.getByRole('dialog', { name: /Rate Flappy Bird/ })
   await expect(rateDialog.getByRole('spinbutton', { name: 'Pipe gap' })).toBeDisabled()
   await expect(rateDialog.getByRole('combobox', { name: 'Seat 1' })).toBeDisabled()
@@ -130,9 +132,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   const ratingsPanel = page.locator('.ratings-reveal')
   await expect(ratingsPanel).toBeVisible()
   await expect(ratingsPanel).toHaveCSS('transition-property', /grid-template-rows/)
-  await expect(ratingsPanel.getByText('Agent 1')).toBeVisible()
   await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
-  await expect(ratingsPanel.getByText(AUTHOR_RATING_PROMPT)).toBeVisible()
   const panelBox = await ratingsPanel.boundingBox()
   const canvasBox = await page.locator('canvas.renderer-canvas').boundingBox()
   expect(panelBox).not.toBeNull()
@@ -145,10 +145,13 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
   await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
 
+  // Back on the environment page, the same anonymous row now reads Rated with the Watch again action.
   await page.goto(`/environments/${ENV_ID}`)
-  const ratedRow = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
-  await expect(ratedRow.getByText('Rated')).toBeVisible()
-  await expect(ratedRow.getByRole('button', { name: 'Watch again' })).toBeVisible()
+  const ratedRow = page.locator('.agent-row').filter({
+    has: page.getByText('Rated', { exact: true }),
+  })
+  await expect(ratedRow.first()).toBeVisible()
+  await expect(ratedRow.first().getByRole('button', { name: 'Watch again' })).toBeVisible()
 })
 
 test('an agent that passes static but fails the load check shows the failed stage on its profile', async ({

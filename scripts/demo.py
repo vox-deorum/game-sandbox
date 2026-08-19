@@ -27,9 +27,9 @@ credentials for two example accounts to sign in with:
   shows the full surface including the admin console.
 - A fixed ordinary member (the "student" view): the e2e fixture's ``ada-lovelace`` (the glider
   owner, the most data-rich member: a submitted agent, an author rating prompt, watch recordings,
-  and competition placements). Signing in as them shows the member experience with real data behind
-  every page, and the admin console stays correctly locked. Their Better Auth role is ``user``,
-  never promoted to ``admin``.
+  and a live ready-for-peer-rating season to rate peers in). Signing in as them shows the member
+  experience with real data behind every page, and the admin console stays correctly locked. Their
+  Better Auth role is ``user``, never promoted to ``admin``.
 
 If the backend reports a stale-schema SQLite error during startup, run
 ``npm run demo -- --rerun-e2e`` to rebuild the fixture.
@@ -61,10 +61,11 @@ _ADMIN_PASSWORD = "admin-dev-password"
 # ada-lovelace, the ordinary member (the "student" view) whose credentials the demo prints
 # alongside the admin's: a fixed e2e fixture account chosen as the most data-rich non-admin so the
 # most member-facing features have real content: a submitted agent (My Agents / agent profile), an
-# author rating prompt, watch recordings, and competition placements all attach to it (see
-# frontend/e2e/support/names.ts). The e2e suite's fixtures create this as a real Better Auth account
-# with role `user`, never promoted to `admin`, so it stays an ordinary member here too. Must match
-# frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')` and `MEMBER_PASSWORD`.
+# author rating prompt, watch recordings, and a live open ready-for-peer-rating season to rate
+# peers in all attach to it (see frontend/e2e/support/names.ts). The e2e suite's fixtures create
+# this as a real Better Auth account with role `user`, never promoted to `admin`, so it stays an
+# ordinary member here too. Must match frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')`
+# and `MEMBER_PASSWORD`.
 _MEMBER_EMAIL = "ada-lovelace@e2e.local"
 _MEMBER_PASSWORD = "e2e-member-password"
 

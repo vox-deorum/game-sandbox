@@ -6,12 +6,11 @@ import {
   configureMatches,
   declareSeason,
   deleteSeason,
-  finishedScriptedSession,
   getSeasonConfig,
   openPlay,
   openSubmissions,
-  rateSession,
-  release,
+  type SeededRating,
+  seedRatings,
   setAuthorPrompt,
   setSeasonRatingPrompt,
   submitReadyAgent,
@@ -159,20 +158,24 @@ test('operator season configuration exposes and validates LLM controls', async (
 })
 
 /**
- * The whole leaderboards arc against real data: an operator opens a season, three differently-behaved
- * agents from three owners submit and build, the operator runs the automated workflow over them, four
- * judges rate them after watch sessions, and the released season shows a populated Scoreboard and a
- * fully ranked Human Ratings board. This is the suite's richest fixture — it is what the demo site
- * serves (see scripts/demo.py) — so it does several real container builds plus a multi-agent run and
- * needs a wide timeout. It borrows the env's single open submission/play windows from the seeded
- * Playground season and restores them at the end so the rest of the suite still sees the default world.
+ * The peer-rating arc against real data: an operator opens a season, three differently-behaved agents
+ * from three owners submit and build, the operator runs the automated workflow over them, then the
+ * play window opens and every agent gets a finished, rateable watch session. The season is left
+ * unreleased with play open — the glider fully rated by every judge plus the operator, the flapper
+ * partially rated, the drifter unrated — so Updraft Open is the demo site's live "ready for peer
+ * rating" season (see scripts/demo.py). A peer's written feedback, the agent profiles, and the
+ * operator console's Peer Ratings tables are all verified against that state. It is the suite's
+ * richest fixture, so it does several real container builds plus a multi-agent run and needs a wide
+ * timeout. It borrows the env's single open submission/play windows from the seeded Playground season;
+ * at the end it hands the submission window back to Playground but leaves the play window on Updraft
+ * Open, which is what the demo serves.
  *
  * Before the field settles, the glider owner (the account `npm run demo` prints for sign-in) submits a
  * first entry that their final agent supersedes, so one profile carries an in-season iteration. That
  * history is verified on the agent profiles at the end. The superseded entry is inactive, so it never
  * runs, places, or changes the boards.
  */
-test('a full season: submissions, an automated run, several judges rate, then release', {
+test('a full season: submissions, an automated run, then left open for peer rating', {
   tag: '@slow',
 }, async ({ page, admin, as }) => {
   // Four real container builds: the glider owner's superseded first entry plus the three that compete.
@@ -190,6 +193,9 @@ test('a full season: submissions, an automated run, several judges rate, then re
   if (original.playSeasonId !== null) {
     await closePlay(admin, original.playSeasonId)
   }
+  // True once this season's play window opens; the finally leaves play open on it (the ready-for-peer
+  // -rating end state) only when we got that far, and otherwise puts Playground's play window back.
+  let playOpened = false
 
   const season = await declareSeason(admin, SEASONS.competition)
   try {
@@ -197,10 +203,13 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await setSeasonRatingPrompt(admin, season.id, OPERATOR_RATING_PROMPT)
 
     // Three owners submit agents with distinct flight behaviours, so the boards span a real range.
+    // The `raters` count decides how many of the four judges seed each agent: the glider earns the
+    // suite's full set, the flapper earns most of one, and the drifter is left unrated so the open
+    // season still offers a peer-ratable "Not rated" row.
     const roster = [
-      { owner: OWNERS.glider, fixture: 'glider', scores: [5, 5, 4, 5] },
-      { owner: OWNERS.flapper, fixture: 'flapper', scores: [4, 3, 4, 3] },
-      { owner: OWNERS.drifter, fixture: 'good', scores: [2, 2, 3, 2] },
+      { owner: OWNERS.glider, fixture: 'glider', scores: [5, 5, 4, 5], raters: JUDGES.length },
+      { owner: OWNERS.flapper, fixture: 'flapper', scores: [4, 3, 4, 3], raters: 2 },
+      { owner: OWNERS.drifter, fixture: 'good', scores: [2, 2, 3, 2], raters: 0 },
     ]
 
     // A first round the field later replaced. Only the glider owner (the data-rich member the demo
@@ -241,22 +250,22 @@ test('a full season: submissions, an automated run, several judges rate, then re
       timeout: 420_000,
     })
 
-    // Open the play window so finished sessions become rateable, then seed each agent's ratings from
-    // all four judges (≥3 distinct raters is what earns an agent a rank on the Human Ratings board).
+    // Open the play window so finished sessions become rateable, then give each agent its seeded
+    // rating set (a finished session per agent, voted on by the first `raters` judges). The one with
+    // an empty set still gets its finished session — that is what makes the season ready for a peer
+    // to come rate it live.
     await openPlay(admin, season.id)
+    playOpened = true
     for (const submission of submissions) {
-      const sessionId = await finishedScriptedSession(await as(JUDGES[0]), submission.id)
-      await Promise.all(
-        JUDGES.map(async (judge, index) =>
-          rateSession(
-            await as(judge),
-            sessionId,
-            submission.id,
-            submission.scores[index] ?? 3,
-            'Steady under pressure',
-          ),
-        ),
-      )
+      const raters: SeededRating[] = []
+      for (let index = 0; index < submission.raters; index += 1) {
+        raters.push({
+          ctx: await as(JUDGES[index]),
+          score: submission.scores[index] ?? 3,
+          feedback: 'Steady under pressure',
+        })
+      }
+      await seedRatings(await as(JUDGES[0]), submission.id, ENV_ID, raters)
     }
 
     // One rating through the browser, exercising the post-session panel and both rating prompts. The
@@ -285,27 +294,6 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await ratingsPanel.locator('textarea').first().fill('Best run all round')
     await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
     await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
-
-    // Release, then verify the public boards the demo serves: a populated Scoreboard and a fully
-    // ranked Human Ratings board with the glider on top (its mean rating is the highest).
-    await release(admin, season.id)
-    await page.goto(`/environments/${ENV_ID}/leaderboards/${season.id}`)
-
-    const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
-    const humanBoard = page.locator('section.board', { hasText: 'Human Ratings' })
-    await expect(scoreboard.getByRole('columnheader', { name: 'LLM usage' })).toBeVisible()
-    await expect(scoreboard.getByText('None').first()).toBeVisible()
-    await expect(humanBoard.getByRole('columnheader', { name: 'LLM usage' })).toHaveCount(0)
-    await expect(scoreboard.getByText('naive')).toBeVisible()
-    for (const owner of [OWNERS.glider, OWNERS.flapper, OWNERS.drifter]) {
-      await expect(scoreboard.getByRole('link', { name: owner })).toBeVisible()
-      await expect(humanBoard.getByRole('link', { name: owner })).toBeVisible()
-    }
-    await expect(humanBoard.locator('tbody tr')).toHaveCount(3)
-    await expect(humanBoard.locator('tbody tr.unranked')).toHaveCount(0)
-    // The glider has the highest mean rating, so it holds rank 1 on the Human Ratings board.
-    const gliderHumanRow = humanBoard.locator('tbody tr', { hasText: OWNERS.glider })
-    await expect(gliderHumanRow.locator('td').first()).toHaveText('1')
 
     // The glider owner is the member the demo mocks, so close the arc on their agent profile: it now
     // carries the richer history this fixture seeds — several submissions in the season, the current
@@ -345,65 +333,50 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await ratingsDialog.getByRole('button', { name: 'Close' }).click()
     await expect(ratingsDialog).toHaveCount(0)
 
-    // Peer feedback is owner-only, so flip the browser to the glider owner's account and confirm the
-    // anonymous comments they received on the released season render on their profile.
-    await authenticateBrowser(page.context(), await as(OWNERS.glider))
-    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.glider))}`)
-    await expect(page.getByRole('heading', { name: 'Peer Feedback' })).toBeVisible()
-    await expect(page.locator('.feedback-text', { hasText: 'Best run all round' })).toBeVisible()
-    await expect(page.locator('.feedback-peer').first()).toHaveText('Anonymous peer')
-    await expect(page.getByText('Steady under pressure').first()).toBeVisible()
-
-    // Restore Playground before checking the glider owner's cross-season index. Updraft Open is now
-    // released history, so its successful status stripe must remain visually distinct from the
-    // dedicated current-Season stripe on the submission-open Playground row.
-    await closeSubmissions(admin, season.id).catch(() => {})
-    await closePlay(admin, season.id).catch(() => {})
-    if (original.submissionSeasonId !== null) {
-      await openSubmissions(admin, original.submissionSeasonId)
-    }
-    if (original.playSeasonId !== null) {
-      await openPlay(admin, original.playSeasonId)
-    }
-    await authenticateBrowser(page.context(), await as(OWNERS.glider))
-    await page.goto('/my/agents')
-    const environmentGroup = page.locator('.environment-group').filter({ hasText: 'Flappy Bird' })
-    const currentRow = environmentGroup
-      .getByRole('link', { name: /Current season Playground/ })
-      .locator('..')
-      .locator('.season-row')
-    const releasedRow = environmentGroup
-      .getByRole('link', { name: /Updraft Open ready to compete/ })
-      .locator('..')
-      .locator('.season-row')
-    await expect(currentRow).toHaveClass(/status-current/)
-    await expect(releasedRow).toHaveClass(/status-success/)
-    const [currentStripe, releasedStripe] = await Promise.all([
-      currentRow.evaluate((element) => getComputedStyle(element).borderLeftColor),
-      releasedRow.evaluate((element) => getComputedStyle(element).borderLeftColor),
-    ])
-    const semanticColors = await page.evaluate(() => {
-      const probe = document.createElement('span')
-      document.body.append(probe)
-      probe.style.color = 'var(--color-current)'
-      const current = getComputedStyle(probe).color
-      probe.style.color = 'var(--color-success)'
-      const success = getComputedStyle(probe).color
-      probe.remove()
-      return { current, success }
+    // The season is not released: it stays open for play, ready for peer rating. A plain member (not
+    // the operator) sees the Play and Rate section name Updraft Open, with the fully rated glider and
+    // the partially rated flapper reading as Rated / Watch again while the unrated drifter still
+    // offers the Rate affordance a peer acts on to leave written feedback.
+    await authenticateBrowser(page.context(), await as(JUDGES[1]))
+    await page.goto(`/environments/${ENV_ID}`)
+    await expect(
+      page.getByRole('heading', {
+        name: `Open for Play: ${SEASONS.competition}`,
+        exact: true,
+      }),
+    ).toBeVisible()
+    const playSection = page.locator('section#play')
+    await expect(
+      playSection.getByRole('heading', {
+        name: `Play and Rate: ${SEASONS.competition}`,
+      }),
+    ).toBeVisible()
+    const unratedRow = page.locator('.agent-row').filter({
+      has: page.getByText('Not rated', { exact: true }),
     })
-    expect(currentStripe).toBe(semanticColors.current)
-    expect(releasedStripe).toBe(semanticColors.success)
-    expect(currentStripe).not.toBe(releasedStripe)
+    await expect(unratedRow).toBeVisible()
+    await expect(unratedRow.getByRole('button', { name: 'Rate' })).toBeVisible()
+    await expect(
+      page
+        .locator('.agent-row')
+        .filter({ has: page.getByText('Rated', { exact: true }) })
+        .first(),
+    ).toBeVisible()
   } finally {
-    // Restore the seeded Playground as the env's open submission+play season for the other specs.
+    // Leave Updraft Open as the environment's play-open season — submissions in, play open,
+    // unreleased, ready for peer rating — which is the state the demo serves. The submission window
+    // goes back to the seeded Playground so Set Up Locally and the submissions group keep their
+    // default, while the play window stays on Updraft Open; only if the test never reached openPlay
+    // is Playground's play window restored instead.
     await closeSubmissions(admin, season.id).catch(() => {})
-    await closePlay(admin, season.id).catch(() => {})
     if (original.submissionSeasonId !== null) {
       await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
     }
-    if (original.playSeasonId !== null) {
-      await openPlay(admin, original.playSeasonId).catch(() => {})
+    if (!playOpened) {
+      await closePlay(admin, season.id).catch(() => {})
+      if (original.playSeasonId !== null) {
+        await openPlay(admin, original.playSeasonId).catch(() => {})
+      }
     }
   }
 })

@@ -82,7 +82,7 @@ export const CRANE_OWNERS = {
 
 /** Season labels — short, no year, themed on flight. One per spec/test that declares a season. */
 export const SEASONS = {
-  /** The leaderboards arc: a full competition (submissions → run → ratings → release). */
+  /** The peer-rating arc: submissions → run → play open, left unreleased and ready for peer rating. */
   competition: 'Updraft Open',
 } as const
 
@@ -97,7 +97,7 @@ export const OWNERS = {
   glider: 'ada-lovelace',
   /** Flaps eagerly (leaderboards arc). */
   flapper: 'grace-hopper',
-  /** Never flaps — the lowest-rated of the three (leaderboards arc). */
+  /** Never flaps — the lowest scorer, left unrated so the open season stays ready for peer rating. */
   drifter: 'alan-turing',
   /**
    * The submission-pipeline detail test's good agent. Kept distinct from the arc owners above so the

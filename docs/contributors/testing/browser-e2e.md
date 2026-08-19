@@ -39,7 +39,7 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | --- | --- | --- |
 | `auth` | Sign in, sign out, roster creation, the pending gate, and the ban lifecycle. | `LoginPage.vue`, `ProfilePage.vue`, `AccountMenu.vue`, `me.ts`, `auth.ts` |
 | `play` | Live Flappy Bird play, pause and resume, stop, replay, pin, and the season-settings download. | `SessionPage.vue`, `ReplayPage.vue`, `StageFrame.vue`, `useSessionSocket.ts`, `api/socket.ts` |
-| `seasons` | Operator season configuration, the LLM controls, and a complete competition workflow. | `LeaderboardsPage.vue`, `SeasonsPage.vue`, `components/admin/`, `lib/standings.ts` |
+| `seasons` | Operator season configuration, the LLM controls, and the competition arc through ready-for-peer-rating. | `LeaderboardsPage.vue`, `SeasonsPage.vue`, `components/admin/`, `lib/standings.ts` |
 | `submissions` | The resolve, static, build, and load pipeline: a ready agent watched, and a load failure. | `SubmitAgentForm.vue`, `SubmissionStageTimeline.vue`, `MyAgentsPage.vue`, `AgentProfilePage.vue` |
 | `local` | The standalone local bundle against the loopback bridge, with canvas device-pixel-ratio and resize behavior. | `src/local/`, `vite.local.config.ts` |
 | `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey, human seat play, and replay attribution. | `environments/hearts/renderer/` |
@@ -53,9 +53,9 @@ Do not add a test to the `submissions` group if it submits a ready agent to the 
 
 ## The slow tier
 
-Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them.
+Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them. The leaderboards arc leaves its flappy season unreleased with the play window open (ready for peer rating), while the Hearts, Spades, and Crane Reach arcs each end released so the demo serves a mix of live and historical seasons.
 
-The configuration applies no filter of its own. Hiding `@slow` by default would make a complete run omit the released seasons the demo fixture needs.
+The configuration applies no filter of its own. Hiding `@slow` by default would make a complete run omit the season arcs the demo fixture needs.
 
 ## Suite setup
 
@@ -84,7 +84,7 @@ GitHub OAuth depends on an external provider, so the frontend Vitest suite cover
 
 ## The demo source fixture
 
-The e2e suite creates the demo source fixture, including recordings, submissions, and real sign-in accounts. After changing journey-created data, run `npm run demo -- --rerun-e2e` before starting the demo.
+The e2e suite creates the demo source fixture, including recordings, submissions, real sign-in accounts, and a spread of peer ratings: the flappy leaderboards arc leaves Updraft Open play-open and unreleased ("ready for peer rating"), the Hearts arc seeds a full rating set, and the Spades and Crane Reach arcs seed part of one. After changing journey-created data, run `npm run demo -- --rerun-e2e` before starting the demo.
 
 The bare unrestricted helper run rebuilds `main/` by default. Narrowed and direct runs cannot replace it by default, which protects the complete demo fixture from a partial run.
 

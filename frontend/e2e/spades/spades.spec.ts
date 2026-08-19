@@ -17,6 +17,8 @@ import {
   openPlay,
   openSubmissions,
   release,
+  type SeededRating,
+  seedRatings,
   startSession,
   stopSessionAndAwaitFree,
   submitReadyAgent,
@@ -24,6 +26,7 @@ import {
 import { authenticateBrowser, displayNameOf } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 import {
+  JUDGES,
   SPADES_ENV_ID,
   SPADES_OWNERS,
   SPADES_SEASON,
@@ -497,8 +500,8 @@ test('human Spades self-controls both face-up partnership hands to game over', a
  * different: counter bids its hand honestly, signaler talks to its partner through bid and early play.
  */
 const ROSTER = [
-  { owner: SPADES_OWNERS.counter, agent: 'counter' },
-  { owner: SPADES_OWNERS.signaler, agent: 'signaler' },
+  { owner: SPADES_OWNERS.counter, agent: 'counter', scores: [4, 4, 3, 4] },
+  { owner: SPADES_OWNERS.signaler, agent: 'signaler', scores: [4, 3, 4, 3] },
 ] as const
 
 test('a Spades season: two example agents, a scheduled partnership matchup, then release', {
@@ -540,10 +543,15 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
 
     // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
     // a real container per agent.
+    const submissionByAgent: Record<string, string> = {}
     await Promise.all(
-      ROSTER.map(async (entry) =>
-        submitReadyAgent(await as(entry.owner), staged[entry.agent], SPADES_ENV_ID),
-      ),
+      ROSTER.map(async (entry) => {
+        submissionByAgent[entry.agent] = await submitReadyAgent(
+          await as(entry.owner),
+          staged[entry.agent],
+          SPADES_ENV_ID,
+        )
+      }),
     )
 
     // The matchup assigns submissions to both partnership seats. Each assignment controls the two
@@ -578,9 +586,31 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
       timeout: 420_000,
     })
 
+    // Open the play window and give each agent a finished, rateable session with a couple of early
+    // peer ratings (two of the four judges), so the released Human Ratings board carries the suite's
+    // "some ratings" data without clearing the three-distinct-raters rank threshold.
+    await openPlay(admin, season.id)
+    for (const entry of ROSTER) {
+      const raters: SeededRating[] = []
+      for (const [index, judge] of JUDGES.slice(0, 2).entries()) {
+        raters.push({
+          ctx: await as(judge),
+          score: entry.scores[index] ?? 4,
+          feedback: 'Steady under pressure',
+        })
+      }
+      await seedRatings(
+        await as(JUDGES[0]),
+        submissionByAgent[entry.agent],
+        SPADES_ENV_ID,
+        raters,
+        2,
+      )
+    }
+
     // Release, then verify the public board the demo serves: a Scoreboard ranking both agents and the
-    // Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty
-    // state.
+    // Naive baseline. Some ratings were seeded, so the Human Ratings board lists both agents, still
+    // unranked until a third distinct rater weighs in.
     await release(admin, season.id)
     await page.goto(`/environments/${SPADES_ENV_ID}/leaderboards/${season.id}`)
 
@@ -590,7 +620,13 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
     for (const entry of ROSTER) {
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }
-    await expect(humanBoard.getByText('No ratings yet.')).toBeVisible()
+    await expect(humanBoard.getByText('No ratings yet.')).toHaveCount(0)
+    for (const entry of ROSTER) {
+      await expect(humanBoard.getByRole('link', { name: entry.owner })).toBeVisible()
+    }
+    // Two distinct raters per agent (< 3) keeps every row present but unranked.
+    await expect(humanBoard.locator('tbody tr')).toHaveCount(ROSTER.length)
+    await expect(humanBoard.locator('tbody tr.unranked')).toHaveCount(ROSTER.length)
 
     // The season's activity counter reflects the automated games the run produced.
     await expect(page.getByText(/[1-9]\d* games run/)).toBeVisible()

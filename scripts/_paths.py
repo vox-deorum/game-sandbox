@@ -26,10 +26,10 @@ BACKEND_ENVIRONMENTS_JSON = BACKEND_GENERATED_DIR / "environments.json"
 TEMPLATES_DIR = REPO_ROOT / "templates"
 BUILD_DIR = REPO_ROOT / "build"
 
-# The frontend-e2e job leaves a populated SQLite database (submissions, recordings, released
-# seasons) under its "main" backend's data dir; `npm run demo` (scripts/demo.py) reuses that
-# instead of seeding fresh, snapshotting it into a sibling demo/ dir on every launch. The whole
-# .data/ tree is gitignored.
+# The frontend-e2e job leaves a populated SQLite database (submissions, recordings, seasons both
+# released and open for play) under its "main" backend's data dir; `npm run demo` (scripts/demo.py)
+# reuses that instead of seeding fresh, snapshotting it into a sibling demo/ dir on every launch. The
+# whole .data/ tree is gitignored.
 E2E_DIR = REPO_ROOT / "frontend" / "e2e"
 E2E_DATA_DIR = E2E_DIR / ".data"
 # Which subdirectory of .data/ a browser-suite run owns. The backend wipes whichever one it is
