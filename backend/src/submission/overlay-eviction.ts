@@ -13,13 +13,16 @@
  * a pinned recording. Everything else is a superseded or failed submission's image the picker can
  * never launch, so reclaiming it is pure win — oldest-first, down to the budget.
  *
- * Composed session overlays are single-use: the orchestrator and workflow runner release one as soon
- * as its session ends, so any tag still present is a not-yet-ended session, a crashed release, or a
- * `-stage` build intermediate the concurrent-build race leaked. They are reclaimed here age-first —
- * each is rebuildable from stored snapshots, so eviction is always safe. The one ring to avoid
- * breaking is the instant between composing and launching an image, so session overlays newer than
- * {@link OverlayEvictionConfig.sessionOverlayReclaimAgeMs} are kept; everything else fills the
- * session budget newest-first, and `-stage` intermediates are always reclaimable debris.
+ * Composed session overlays are single-use: the orchestrator and workflow runner release one on
+ * **every** path — when its session ends naturally, when a cancelled run or failed launch backs out,
+ * and even on the pre-launch failure branches — so any tag still present is a never-ended session, a
+ * release that failed, crashed, or never ran, or a `-stage` build intermediate the concurrent-build
+ * race leaked. Each is rebuildable from stored snapshots, so eviction is always safe. The only ring
+ * to avoid breaking is the instant between composing and launching an image, so session overlays
+ * newer than {@link OverlayEvictionConfig.sessionOverlayReclaimAgeMs} are kept; **anything older is
+ * reclaimed outright** — age alone forces eviction, so even a single under-budget leaked image is
+ * eventually swept, never stranded by a small retained set. `-stage` intermediates are always
+ * reclaimable debris.
  *
  * It enumerates the daemon's **actual** overlay images (through the driver), not storage rows, so a
  * crash between building an image and writing its row leaves only an orphan the sweep reclaims as
@@ -34,8 +37,6 @@ import { SweepTimer } from '../util/sweep-timer.js'
 export interface OverlayEvictionConfig {
   /** Max overlay images retained; active-`ready` images count toward it but are never evicted. */
   overlayImageBudget: number
-  /** Max composed session overlays retained, newest first; a release normally keeps this near zero. */
-  sessionOverlayImageBudget: number
   /** Session overlays younger than this are never evicted (protects a compose about to launch). */
   sessionOverlayReclaimAgeMs: number
   /** How often the sweep runs on its own timer (it also runs at startup and after each build). */
@@ -70,11 +71,11 @@ export class OverlayEviction {
   /**
    * The eviction sweep: keep every active-`ready` image plus the newest non-exempt images that fit
    * the remaining budget, and remove the rest oldest-first. Session overlays are kept only while
-   * younger than the reclaim-age window or while they fit the session budget, newest first; `-stage`
-   * intermediates (and anything the session release missed, crashed on, or never ran for) are
-   * reclaimed as debris. Safe to call concurrently with itself — {@link OverlayImageManager.removeImage}
-   * tolerates an already-absent image. Also the hook the worker calls after each successful overlay
-   * build, the other moment the image set grows.
+   * younger than the reclaim-age window (a compose may still be mid-build); everything older — and
+   * every `-stage` intermediate — is reclaimed, so a leaked image is never stranded just because the
+   * deployment stays under some retained set. Safe to call concurrently with itself —
+   * {@link OverlayImageManager.removeImage} tolerates an already-absent image. Also the hook the
+   * worker calls after each successful overlay build, the other moment the image set grows.
    */
   async sweep(): Promise<void> {
     let images: Awaited<ReturnType<OverlayImageManager['listOverlayImages']>>
@@ -128,23 +129,16 @@ export class OverlayEviction {
 
   private trackSessionImages(images: OverlayImage[]): string[] {
     const now = Date.now()
-    // A `-stage<i>` build intermediate is pure overhead after its round ends; always reclaim it,
-    // whether or not the final composition is kept. Final compositions younger than the reclaim age
-    // may still be between compose and launch, so exempt them the way active-`ready` submissions
-    // are exempt: kept, and counted toward the budget. The rest trim to the session budget
-    // newest-first (a released session leaves nothing here; these are debris between composes).
+    // A `-stage<i>` build intermediate is pure overhead after its round ends; always reclaim it.
+    // Final compositions younger than the reclaim age are kept: they may be between compose and
+    // launch. Anything at or past the reclaim age is, by construction, debris — its session ended a
+    // long while ago (releasing the image) or it never launched — so age alone forces its eviction;
+    // there is no retained set that could strand a low-count leak.
     const staged = images.filter((image) => image.staged === true)
-    const finals = images.filter((image) => image.staged !== true)
-    const fresh = finals.filter(
-      (image) => now - image.createdAtMs < this.config.sessionOverlayReclaimAgeMs,
+    const aged = images.filter(
+      (image) =>
+        image.staged !== true && now - image.createdAtMs >= this.config.sessionOverlayReclaimAgeMs,
     )
-    const evictable = finals
-      .filter((image) => now - image.createdAtMs >= this.config.sessionOverlayReclaimAgeMs)
-      .sort((a, b) => b.createdAtMs - a.createdAtMs)
-    const capacity = Math.max(0, this.config.sessionOverlayImageBudget - fresh.length)
-    return [
-      ...staged.map((image) => image.ref),
-      ...evictable.slice(capacity).map((image) => image.ref),
-    ]
+    return [...staged.map((image) => image.ref), ...aged.map((image) => image.ref)]
   }
 }

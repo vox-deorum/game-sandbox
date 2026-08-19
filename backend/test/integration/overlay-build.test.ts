@@ -210,7 +210,6 @@ describe('overlay caching and eviction (Docker)', () => {
       { listActiveReadySubmissionIds: () => Promise.resolve(['it-evict-active']) },
       {
         overlayImageBudget: 1,
-        sessionOverlayImageBudget: 20,
         sessionOverlayReclaimAgeMs: 3_600_000,
         overlayImageSweepIntervalMs: 3_600_000,
       },
@@ -285,13 +284,12 @@ describe('composed session overlays (Docker)', () => {
     const b = await d.ensureImage(composedSpec(['sub-sw-b']))
     builtRefs.push({ d, ref: a.ref }, { d, ref: b.ref })
 
-    // A zero reclaim window makes both instantly evictable; a zero session budget keeps neither.
+    // A zero reclaim window makes both instantly evictable; age alone forces their reclamation.
     const eviction = new OverlayEviction(
       d,
       { listActiveReadySubmissionIds: () => Promise.resolve([]) },
       {
         overlayImageBudget: 50,
-        sessionOverlayImageBudget: 0,
         sessionOverlayReclaimAgeMs: 0,
         overlayImageSweepIntervalMs: 3_600_000,
       },

@@ -55,10 +55,12 @@ export interface SubmissionOverlayImageSpec {
  * A multi-agent session's composed image: the base image for {@link depsVersion} with every
  * participating submission's code copied into its own per-seat directory under
  * `/opt/agents/submissions`, so one container hosts several submitted agents in isolation. Unlike
- * {@link SubmissionOverlayImageSpec} it is session-scoped, not a per-submission cache entry, so it
- * sits outside the overlay-eviction pool. The same submission may fill more than one seat, each staged
- * independently. The Docker driver composes it by chaining one single-seat overlay per seat onto the
- * base; a Kubernetes driver would map the same spec to its own build.
+ * {@link SubmissionOverlayImageSpec} it is session-scoped, not a per-submission cache entry: the
+ * session or game that launches it releases it when it ends, and the eviction sweep reclaims any
+ * tag left behind (a failed release, a cancelled build, or a `-stage` intermediate) by age. The
+ * same submission may fill more than one seat, each staged independently. The Docker driver composes
+ * it by chaining one single-seat overlay per seat onto the base; a Kubernetes driver would map the
+ * same spec to its own build.
  */
 export interface SessionOverlayImageSpec {
   kind: 'session-overlay'

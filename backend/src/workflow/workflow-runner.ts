@@ -471,6 +471,17 @@ class DockerWorkflowRunner implements WorkflowRunner {
       return
     }
     if (this.cancelRequested.has(runId)) {
+      // A composed session-overlay image is single-use; a cancel landing in the window after the
+      // build completed but before launch must not silently leak it. Release it here because the
+      // try/finally below (the normal release point) never runs on this path. The driver no-ops on
+      // base and per-submission refs, so this is safe for every image kind.
+      await this.deps.driver
+        .releaseSessionOverlay(image.ref)
+        .catch((error) =>
+          this.log(
+            `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+          ),
+        )
       await this.markGameCancelled(runId, game)
       return
     }

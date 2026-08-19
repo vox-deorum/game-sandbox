@@ -47,15 +47,11 @@ describe('loadConfig', () => {
     expect(config.recordingSweepIntervalMs).toBe(3_600_000)
   })
 
-  it('parses the session-overlay eviction knobs alongside the submission-overlay budget', () => {
-    expect(load({}).sessionOverlayImageBudget).toBe(20)
+  it('parses the session-overlay eviction knob alongside the submission-overlay budget', () => {
     expect(load({}).sessionOverlayReclaimAgeMs).toBe(3_600_000)
-    const config = load({
-      SESSION_OVERLAY_IMAGE_BUDGET: '5',
-      SESSION_OVERLAY_RECLAIM_AGE_MS: '60000',
-    })
-    expect(config.sessionOverlayImageBudget).toBe(5)
-    expect(config.sessionOverlayReclaimAgeMs).toBe(60_000)
+    expect(load({ SESSION_OVERLAY_RECLAIM_AGE_MS: '60000' }).sessionOverlayReclaimAgeMs).toBe(
+      60_000,
+    )
     expect(() => load({ SESSION_OVERLAY_RECLAIM_AGE_MS: 'soon' })).toThrow(ConfigError)
   })
 

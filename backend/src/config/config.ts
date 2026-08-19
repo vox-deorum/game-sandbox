@@ -183,15 +183,11 @@ export interface Config {
   /** How often the overlay-image sweep runs (it also runs at startup and after each overlay build). */
   overlayImageSweepIntervalMs: number
   /**
-   * Max composed session-overlay images retained, newest first. The orchestrator and workflow runner
-   * release one right after its session ends, so this budget only ever holds images whose release
-   * failed, crashed, or never ran, plus fresh composes still younger than
-   * {@link Config.sessionOverlayReclaimAgeMs}.
-   */
-  sessionOverlayImageBudget: number
-  /**
    * A composed session overlay younger than this is never evicted: it may be the image a session is
-   * composing at this instant, so evicting it would break the compose-to-launch gap.
+   * composing at this instant, so evicting it would break the compose-to-launch gap. The orchestrator
+   * and workflow runner release a composed image on every path once its session ends, so anything
+   * older than this window is necessarily a release that failed, crashed, or never ran, and the sweep
+   * reclaims it outright — age alone forces its eviction.
    */
   sessionOverlayReclaimAgeMs: number
   /**
@@ -695,7 +691,6 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS'),
     overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET'),
     overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS'),
-    sessionOverlayImageBudget: intVar(env, 'SESSION_OVERLAY_IMAGE_BUDGET'),
     sessionOverlayReclaimAgeMs: intVar(env, 'SESSION_OVERLAY_RECLAIM_AGE_MS'),
     frontendDir: repoPathVar(env, 'FRONTEND_DIST'),
     googleAnalyticsId: optionalStringVar(env, 'GOOGLE_ANALYTICS_ID'),

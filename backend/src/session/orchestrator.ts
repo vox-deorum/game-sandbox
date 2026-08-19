@@ -355,6 +355,14 @@ export class Orchestrator {
     let submissionBindings: SubmissionBinding[]
     try {
       ;({ image, submissionBindings } = await this.resolveImage(resolvedSeats, playSeason))
+    } catch (error) {
+      // resolveImage threw before returning a ref, so there is no launch image to release; a partial
+      // build left behind is debris the eviction sweep reclaims. No session row exists to clean up.
+      await llmHandle.teardown()
+      this.deleteUnusedLlmScope(id)
+      throw error
+    }
+    try {
       await this.storage.createSession({
         id,
         user_id: request.userId,
@@ -370,6 +378,9 @@ export class Orchestrator {
         created_at: createdAt,
       })
     } catch (error) {
+      // The image is already built but no session will ever launch from it; release a composed
+      // session overlay now (a base or per-submission ref is a no-op).
+      await this.releaseComposedImage(image)
       await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       throw error
@@ -411,6 +422,7 @@ export class Orchestrator {
       )
       await ensureRecordingsDir(this.sessionRecordingsDir(id))
     } catch (error) {
+      await this.releaseComposedImage(image)
       await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
@@ -429,6 +441,7 @@ export class Orchestrator {
       // The row exists but no container does; mark it failed so it never looks active. No
       // session_submissions rows have been written yet (they land only after a successful launch,
       // below), so a launch that never started leaves no phantom "recent run" on any submission.
+      await this.releaseComposedImage(image)
       await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
@@ -451,6 +464,8 @@ export class Orchestrator {
       } catch {
         // Best-effort kill; the process may have already exited.
       }
+      // The container that used it is gone, so the composed image has no remaining purpose.
+      await this.releaseComposedImage(image)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       this.deleteUnusedLlmScope(id)
       throw new OrchestratorError(500, `failed to record session attribution: ${String(error)}`)
@@ -499,6 +514,16 @@ export class Orchestrator {
     } catch (error) {
       this.log(`session ${scopeId}: deleting unused LLM scope failed: ${String(error)}`)
     }
+  }
+
+  /**
+   * Release a composed session-overlay image on a path that bails out before {@link LiveSession}
+   * takes ownership of it (its teardown is the normal release point). Best-effort: the driver no-ops
+   * for base and per-submission refs, and a release failure must not mask the path's own error — the
+   * eviction sweep reclaims whatever this leaves behind.
+   */
+  private async releaseComposedImage(image: ImageRef): Promise<void> {
+    await this.driver.releaseSessionOverlay(image.ref).catch(() => undefined)
   }
 
   /** Validate an assignment against the resolver's exact ordered seat set and derive session mode. */

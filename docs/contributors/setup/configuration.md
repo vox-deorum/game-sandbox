@@ -119,8 +119,7 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 | `SUBMISSION_MAX_SIZE_MB` | `25` | Maximum checked-out submission source size, in MB, measured after dropping VCS history, dependency and virtual-environment directories, tool caches, compiled bytecode, and build or dist output; a submission's own `data/` directory counts. A per-season `overrides.submission_max_size_mb` takes precedence. `0` rejects every submission |
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
-| `SESSION_OVERLAY_IMAGE_BUDGET` | `20` | Maximum composed session overlays kept, newest first; released after each session, so only crash leftovers fill it |
-| `SESSION_OVERLAY_RECLAIM_AGE_MS` | `3600000` | A session overlay younger than this is never evicted (a compose may still be mid-build) |
+| `SESSION_OVERLAY_RECLAIM_AGE_MS` | `3600000` | A session overlay younger than this is never evicted (a compose may still be mid-build); anything older is reclaimed outright |
 
 `DATA_DIR` also contains the submission snapshot directory at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Data folders](../data/folders.md) for locations and [Backend](../runtime/backend.md) for the pipeline.
 

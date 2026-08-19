@@ -380,7 +380,7 @@ describe('AdminConsolePage', () => {
     vi.mocked(listAdminLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
     await renderConsole()
 
-    expect(await screen.findByRole('heading', { name: 'Development usage' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Development Usage' })).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('250 units')).toBeInTheDocument()
     expect(screen.getByText('750 units')).toBeInTheDocument()
