@@ -197,6 +197,7 @@ describe('admin API', () => {
         ['GET', `/api/admin/seasons/${id}/runs/whatever`],
         ['GET', `/api/admin/seasons/${id}/submissions`],
         ['GET', `/api/admin/seasons/${id}/submissions/download`],
+        ['GET', `/api/admin/seasons/${id}/ratings`],
         ['GET', `/api/admin/submissions/whatever/download`],
       ]
       for (const [method, url] of routes) {
@@ -448,6 +449,155 @@ describe('admin API', () => {
       expect(materialized).toHaveLength(2)
       expect(materialized).toEqual(expect.arrayContaining([buildFailed.id, loadFailed.id]))
       expect(materialized).not.toContain(staticFailed.id)
+    })
+  })
+
+  describe('season ratings', () => {
+    it('reports ratings grouped by rated agent and by rater, with names resolved', async () => {
+      const seasonId = await declare()
+      // carol is minted in build() already; resolve her id and her agent's row.
+      const carolId = users.idOf('carol')
+      const carol = await seedSubmission(seasonId, carolId, { withSnapshot: false })
+      const bob = await seedSubmission(seasonId, 'bob', { withSnapshot: false })
+      // dave submits too but rates nobody, so a minted zero-count participant resolves by name below.
+      await users.headersFor('dave')
+      const daveId = users.idOf('dave')
+      await seedSubmission(seasonId, daveId, { withSnapshot: false })
+      const carolAgent = agentRef(carol)
+      const bobAgent = agentRef(bob)
+      // Carol rates bob's agent and the Naive baseline; sam and tam (unminted ids, so no user rows)
+      // rate carol's agent. The own-agent rule means carol cannot rate her own submission, so a
+      // minted rater name and an absent one are each proven against a different agent's row.
+      await storage.upsertRating({
+        season_id: seasonId,
+        env_id: ENV_ID,
+        rater_user_id: carolId,
+        agent: bobAgent,
+        score: 3,
+        feedback: 'Meh',
+      })
+      await storage.upsertRating({
+        season_id: seasonId,
+        env_id: ENV_ID,
+        rater_user_id: carolId,
+        agent: { kind: 'builtin', name: 'naive' },
+        score: 2,
+        feedback: 'Bland',
+      })
+      await storage.upsertRating({
+        season_id: seasonId,
+        env_id: ENV_ID,
+        rater_user_id: 'sam',
+        agent: carolAgent,
+        score: 5,
+        feedback: 'Great',
+      })
+      await storage.upsertRating({
+        season_id: seasonId,
+        env_id: ENV_ID,
+        rater_user_id: 'tam',
+        agent: carolAgent,
+        score: 4,
+        feedback: 'Nice',
+      })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/ratings`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as {
+        by_agent: Array<{
+          agent: Record<string, unknown>
+          mean: number
+          count: number
+          ratings: Array<{
+            score: number
+            feedback: string
+            rater_user_id: string
+            rater_name?: string
+          }>
+        }>
+        by_rater: Array<{
+          rater_user_id: string
+          rater_name?: string
+          count: number
+          ratings: Array<{ agent: Record<string, unknown> }>
+        }>
+      }
+
+      // Every rated agent appears, ordered by mean descending: carol's agent (4.5), bob's (3), Naive.
+      expect(body.by_agent).toHaveLength(3)
+      expect(body.by_agent.map((row) => row.mean)).toEqual([4.5, 3, 2])
+
+      const carolRow = body.by_agent.find((row) => row.agent.submission_id === carol.id)
+      expect(carolRow?.agent).toEqual({ ...carolAgent, user_name: 'carol' })
+      expect(carolRow?.count).toBe(2)
+      expect(carolRow?.ratings).toHaveLength(2)
+      const samRating = carolRow?.ratings.find((r) => r.rater_user_id === 'sam')
+      expect(samRating).toMatchObject({ score: 5, feedback: 'Great', rater_user_id: 'sam' })
+      const tamRating = carolRow?.ratings.find((r) => r.rater_user_id === 'tam')
+      expect(tamRating).toMatchObject({ score: 4, feedback: 'Nice', rater_user_id: 'tam' })
+      // sam and tam have no user rows, so the rater name is omitted, not blank.
+      expect(samRating).not.toHaveProperty('rater_name')
+      expect(tamRating).not.toHaveProperty('rater_name')
+
+      const bobRow = body.by_agent.find((row) => row.agent.submission_id === bob.id)
+      expect(bobRow?.agent).toEqual(bobAgent)
+      expect(bobRow?.agent).not.toHaveProperty('user_name')
+      expect(bobRow?.count).toBe(1)
+      expect(bobRow?.ratings[0]).toMatchObject({
+        score: 3,
+        feedback: 'Meh',
+        rater_user_id: carolId,
+        rater_name: 'carol',
+      })
+
+      const naiveRow = body.by_agent.find((row) => row.agent.kind === 'builtin')
+      expect(naiveRow?.agent).toEqual({ kind: 'builtin', name: 'naive', label: 'Naive agent' })
+      expect(naiveRow?.mean).toBe(2)
+
+      // by_rater covers every participant with a submission plus every rater, count ascending with
+      // zero-rating participants first: bob and dave submitted but never rated anyone. A minted
+      // zero-count participant resolves by name, an unminted one falls back to the stable id.
+      expect(body.by_rater).toHaveLength(5)
+      expect(body.by_rater.map((row) => row.count).sort()).toEqual([0, 0, 1, 1, 2])
+      expect(body.by_rater[0]?.count).toBe(0)
+      const zeroRows = body.by_rater.filter((row) => row.count === 0)
+      expect(zeroRows).toHaveLength(2)
+      const bobZero = zeroRows.find((row) => row.rater_user_id === 'bob')
+      expect(bobZero).toMatchObject({ rater_user_id: 'bob', count: 0, ratings: [] })
+      expect(bobZero).not.toHaveProperty('rater_name')
+      const daveRater = body.by_rater.find((row) => row.rater_user_id === daveId)
+      expect(daveRater).toMatchObject({ rater_name: 'dave', count: 0, ratings: [] })
+      const carolRater = body.by_rater.find((row) => row.rater_user_id === carolId)
+      expect(carolRater?.rater_name).toBe('carol')
+      expect(carolRater?.count).toBe(2)
+      expect(carolRater?.ratings.find((r) => r.agent.submission_id === bob.id)).toMatchObject({
+        agent: bobAgent,
+      })
+      for (const rater of ['sam', 'tam']) {
+        const row = body.by_rater.find((r) => r.rater_user_id === rater)
+        expect(row?.count).toBe(1)
+        expect(row).not.toHaveProperty('rater_name')
+      }
+
+      // The single operator-gate covers this read like every other admin route.
+      const stranger = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/ratings`,
+        headers: STRANGER,
+      })
+      expect(stranger.statusCode).toBe(403)
+      expect(stranger.json()).toMatchObject({ code: 'not_operator' })
+
+      const anon = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/ratings`,
+      })
+      expect(anon.statusCode).toBe(401)
+      expect(anon.json()).toMatchObject({ code: 'auth_required' })
     })
   })
 

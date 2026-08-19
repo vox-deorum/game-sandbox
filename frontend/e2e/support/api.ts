@@ -427,15 +427,19 @@ export async function finishedScriptedSession(
   return sessionId
 }
 
-/** Post one rater's 1-5 score for a submitted agent on a finished, rateable session, as `judge`. */
+/** Post one rater's 1-5 score (and written comment) for a submitted agent on a finished, rateable
+ * session, as `judge`. */
 export async function rateSession(
   judge: APIRequestContext,
   sessionId: string,
   submissionId: string,
   score: number,
+  feedback: string,
 ): Promise<void> {
   const res = await judge.post(`/api/sessions/${sessionId}/ratings`, {
-    data: { ratings: [{ agent: { kind: 'submission', submission_id: submissionId }, score }] },
+    data: {
+      ratings: [{ agent: { kind: 'submission', submission_id: submissionId }, score, feedback }],
+    },
   })
   expect(res.status(), await res.text()).toBe(200)
 }

@@ -182,8 +182,8 @@ describe('rating API', () => {
       headers: BOB,
       payload: {
         ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 4 },
-          { agent: { kind: 'builtin', name: 'cautious' }, score: 5 },
+          { agent: { kind: 'submission', submission_id: subId }, score: 4, feedback: 'good dodge' },
+          { agent: { kind: 'builtin', name: 'cautious' }, score: 5, feedback: 'steady' },
         ],
       },
     })
@@ -195,6 +195,17 @@ describe('rating API', () => {
       user_id: aliceId,
     })
     expect(submittedRating?.score).toBe(4)
+    expect(submittedRating?.feedback).toBe('good dodge')
+    // The write response round-trips the caller's comment back per agent.
+    const body = res.json() as {
+      agents: Array<{
+        agent: { kind: string; submission_id?: string }
+        your_feedback: string | null
+      }>
+    }
+    expect(body.agents.find((a) => a.agent.kind === 'submission')).toMatchObject({
+      your_feedback: 'good dodge',
+    })
     const aggregate = await storage.aggregateRatingsByAgent(season.id)
     expect(aggregate.find((row) => row.agent.kind === 'builtin')).toEqual({
       agent: { kind: 'builtin', name: 'cautious' },
@@ -217,19 +228,22 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent, score: 2 }] },
+      payload: { ratings: [{ agent, score: 2, feedback: 'first take' }] },
     })
     const second = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent, score: 5 }] },
+      payload: { ratings: [{ agent, score: 5, feedback: 'revised take' }] },
     })
     expect(second.statusCode).toBe(200)
     expect(await storage.listRatingsBySeason(season.id)).toHaveLength(1)
     expect(
       (second.json() as { agents: Array<{ your_rating: number | null }> }).agents[0]?.your_rating,
     ).toBe(5)
+    // The overwrite replaces both the score and the written comment.
+    const [stored] = await storage.listRatingsBySeason(season.id)
+    expect(stored?.feedback).toBe('revised take')
   })
 
   it('rejects a rating write from a pending (not-yet-active) user with not_active', async () => {
@@ -245,7 +259,9 @@ describe('rating API', () => {
       url: `/api/sessions/${sessionId}/ratings`,
       headers: await users.headersFor('mallory', { status: 'pending' }),
       payload: {
-        ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 5 }],
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'eager' },
+        ],
       },
     })
 
@@ -265,7 +281,11 @@ describe('rating API', () => {
     const write = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
-      payload: { ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 5 }] },
+      payload: {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'anon' },
+        ],
+      },
     })
     expect(write.statusCode).toBe(401)
     expect((write.json() as { code: string }).code).toBe('auth_required')
@@ -290,8 +310,8 @@ describe('rating API', () => {
       headers: BOB,
       payload: {
         ratings: [
-          { agent: { kind: 'builtin', name: 'naive' }, score: 4 },
-          { agent: { kind: 'submission', submission_id: subId }, score: 9 },
+          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'fine' },
+          { agent: { kind: 'submission', submission_id: subId }, score: 9, feedback: 'wrong' },
         ],
       },
     })
@@ -299,6 +319,172 @@ describe('rating API', () => {
     expect((res.json() as { code: string }).code).toBe('invalid_score')
     // The valid Naive score in the same payload was not written.
     expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
+  })
+
+  it('requires a written comment within the code-point cap for every rating', async () => {
+    const season = await playOpenSeason()
+    const subId = await submissionFor(season.id, aliceId)
+    const recId = await writeRecording('flappy_bird-comment', {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+    })
+    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+
+    // Whitespace-only feedback is blank after trim, so the whole payload is rejected before any write.
+    const blank = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+      payload: {
+        ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: '   ' }],
+      },
+    })
+    expect(blank.statusCode).toBe(400)
+    expect(blank.json()).toMatchObject({ code: 'empty_feedback' })
+
+    const tooLong = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+      payload: {
+        ratings: [
+          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'x'.repeat(1_001) },
+        ],
+      },
+    })
+    expect(tooLong.statusCode).toBe(400)
+    expect(tooLong.json()).toMatchObject({ code: 'feedback_too_long' })
+    // Neither rejected comment was written.
+    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
+
+    // Exactly the cap in code points is accepted...
+    const maxLength = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+      payload: {
+        ratings: [
+          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'x'.repeat(1_000) },
+        ],
+      },
+    })
+    expect(maxLength.statusCode).toBe(200)
+
+    // ...and an emoji is one code point, so a thousand of them fit while a thousand and one do not.
+    const emoji = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+      payload: {
+        ratings: [
+          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: '😀'.repeat(1_000) },
+        ],
+      },
+    })
+    expect(emoji.statusCode).toBe(200)
+    const emojiTooLong = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+      payload: {
+        ratings: [
+          {
+            agent: { kind: 'submission', submission_id: subId },
+            score: 5,
+            feedback: '😀'.repeat(1_001),
+          },
+        ],
+      },
+    })
+    expect(emojiTooLong.statusCode).toBe(400)
+    expect(emojiTooLong.json()).toMatchObject({ code: 'feedback_too_long' })
+  })
+
+  it('serves the owner feedback read for released seasons only, gated to the owner', async () => {
+    // Alice owns a submission in both a released and an unreleased season; only the released one may
+    // surface, no matter how many ratings pile onto the hidden season.
+    const released = await storage.createSeason({ env_id: ENV_ID, deps_version: 1 })
+    await storage.setReleaseStatus(released.id, 'released')
+    const releasedSub = await submissionFor(released.id, aliceId)
+    const unreleased = await storage.createSeason({ env_id: ENV_ID, deps_version: 1 })
+    const unreleasedSub = await submissionFor(unreleased.id, aliceId)
+    await users.headersFor('carol')
+    const carolId = users.idOf('carol')
+    for (const [rater, score, comment] of [
+      [bobId, 5, 'Held the gap'],
+      [carolId, 3, 'Nice recovery'],
+    ] as const) {
+      await storage.upsertRating({
+        season_id: released.id,
+        env_id: ENV_ID,
+        rater_user_id: rater,
+        agent: { kind: 'submission', submission_id: releasedSub, user_id: aliceId },
+        score,
+        feedback: comment,
+      })
+    }
+    await storage.upsertRating({
+      season_id: unreleased.id,
+      env_id: ENV_ID,
+      rater_user_id: bobId,
+      agent: { kind: 'submission', submission_id: unreleasedSub, user_id: aliceId },
+      score: 1,
+      feedback: 'Hidden behind release',
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/agents/${aliceId}/feedback`,
+      headers: ALICE,
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as {
+      env_id: string
+      owner_id: string
+      seasons: Array<{
+        season_id: string
+        season_label: string | null
+        mean: number
+        count: number
+        ratings: Array<{ score: number; feedback: string; rated_at: string }>
+      }>
+    }
+    expect(body.env_id).toBe(ENV_ID)
+    expect(body.owner_id).toBe(aliceId)
+    expect(body.seasons).toHaveLength(1)
+    const group = body.seasons[0]
+    expect(group?.season_id).toBe(released.id)
+    expect(group?.season_label).toBeNull()
+    // (5 + 3) / 2 across the two raters.
+    expect(group?.mean).toBe(4)
+    expect(group?.count).toBe(2)
+    expect(group?.ratings.map((r) => r.feedback).sort()).toEqual(['Held the gap', 'Nice recovery'])
+    // Rater identity never leaves the server, on any row.
+    for (const rating of group?.ratings ?? []) {
+      expect(rating).toHaveProperty('score')
+      expect(rating).toHaveProperty('feedback')
+      expect(rating).toHaveProperty('rated_at')
+      expect(rating).not.toHaveProperty('rater_user_id')
+      expect(rating).not.toHaveProperty('rater_name')
+      expect(rating).not.toHaveProperty('user_name')
+    }
+
+    // A non-owner cannot read someone else's feedback.
+    const stranger = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/agents/${aliceId}/feedback`,
+      headers: BOB,
+    })
+    expect(stranger.statusCode).toBe(403)
+    expect(stranger.json()).toMatchObject({ code: 'not_your_agent' })
+
+    // Anonymous callers are refused before any season lookup.
+    const anon = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/agents/${aliceId}/feedback`,
+    })
+    expect(anon.statusCode).toBe(401)
+    expect(anon.json()).toMatchObject({ code: 'auth_required' })
   })
 
   it('rejects rating an agent that did not take part in the session', async () => {
@@ -312,7 +498,11 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent: { kind: 'submission', submission_id: 'ghost' }, score: 3 }] },
+      payload: {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: 'ghost' }, score: 3, feedback: 'who' },
+        ],
+      },
     })
     expect(res.statusCode).toBe(400)
     expect((res.json() as { code: string }).code).toBe('agent_not_in_session')
@@ -332,7 +522,11 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: ALICE,
-      payload: { ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 5 }] },
+      payload: {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'me' },
+        ],
+      },
     })
     expect(res.statusCode).toBe(400)
     expect((res.json() as { code: string }).code).toBe('own_agent')
@@ -360,7 +554,9 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4 }] },
+      payload: {
+        ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'shrug' }],
+      },
     })
     expect(res.statusCode).toBe(409)
     expect((res.json() as { code: string }).code).toBe('session_not_finished')
@@ -400,7 +596,11 @@ describe('rating API', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 3 }] },
+      payload: {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 3, feedback: 'late' },
+        ],
+      },
     })
     expect(write.statusCode).toBe(409)
     expect((write.json() as { code: string }).code).toBe('play_closed')
@@ -426,12 +626,16 @@ describe('rating API', () => {
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
-    // Pre-rate the submitted agent so the read pre-fills the prior value.
+    // Pre-rate the submitted agent so the read pre-fills the prior value and its written comment.
     await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
-      payload: { ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 4 }] },
+      payload: {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 4, feedback: 'Bold dives' },
+        ],
+      },
     })
 
     const res = await app.inject({
@@ -460,6 +664,7 @@ describe('rating API', () => {
       display_name: 'Agent 1',
       author_prompt: 'Judge my dodging',
       your_rating: 4,
+      your_feedback: 'Bold dives',
       is_own: false,
     })
     const naive = body.agents.find((a) => a.agent.kind === 'builtin')
@@ -467,6 +672,7 @@ describe('rating API', () => {
       display_name: 'Naive agent',
       author_prompt: null,
       your_rating: null,
+      your_feedback: null,
     })
   })
 

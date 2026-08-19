@@ -18,10 +18,12 @@ import { RouterLink, useRoute } from 'vue-router'
 import { ChevronDown, ChevronRight, Clock, FolderOpen, GitCommit, Play, Trophy } from '@lucide/vue'
 
 import {
+  type AgentFeedback,
   type AgentPlacements,
   type AgentPlacementView,
   type AgentProfile,
   type AgentProfileSubmission,
+  getAgentFeedback,
   getLlmDevelopmentSummary,
   getAgentPlacements,
   getAgentProfile,
@@ -81,6 +83,9 @@ const failed = ref(false)
 // The agent's released leaderboard placements (Stage 6.7), read from the public placements route. A
 // failed read leaves the list empty rather than failing the whole profile.
 const placements = ref<AgentPlacements | null>(null)
+// The owner's anonymous peer feedback, grouped by released season (Stage 6.6 amendment). Owner-only
+// and read from its own route; a failed read leaves the profile usable, same as placements.
+const feedback = ref<AgentFeedback | null>(null)
 
 // A form acceptance refresh can overlap the later terminal refresh. Only the newest request may
 // replace the page state, so a slower pending response cannot overwrite the terminal submission.
@@ -364,6 +369,33 @@ const keyBusy = ref(false)
 const keyError = ref<string | null>(null)
 const rotateConfirmOpen = ref(false)
 
+const feedbackRequest = useLatestRequest()
+// The anonymous peer feedback is owner-only (the route refuses anyone else), so fetch it once the
+// viewer identity resolves, never for a visitor of someone else's profile.
+watch(
+  () => isOwner(),
+  async (owner) => {
+    const isCurrent = feedbackRequest.begin()
+    feedback.value = null
+    if (!owner) {
+      return
+    }
+    try {
+      const data = await getAgentFeedback(envId, ownerId)
+      if (isCurrent()) {
+        feedback.value = data
+      }
+    } catch {
+      // Feedback is owner-only presentation, so a failed read falls back to an empty list like the
+      // placements read does rather than leaving the section stuck loading.
+      if (isCurrent()) {
+        feedback.value = { env_id: envId, owner_id: ownerId, seasons: [] }
+      }
+    }
+  },
+  { immediate: true },
+)
+
 async function requestDevelopmentKey(): Promise<void> {
   const access = developmentAccess.value
   if (access === null) {
@@ -467,6 +499,7 @@ onUnmounted(() => {
   seasonMetadataRequest.invalidate()
   submissionSettingsRequest.invalidate()
   developmentRequest.invalidate()
+  feedbackRequest.invalidate()
   historyRequest.invalidate()
 })
 
@@ -852,6 +885,42 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
       </table>
     </section>
 
+    <section v-if="isOwner()" class="agent-section">
+      <h2>Peer Feedback</h2>
+      <UiEmptyState v-if="feedback === null">Loading…</UiEmptyState>
+      <template v-else>
+        <UiEmptyState v-if="feedback.seasons.length === 0">
+          No released seasons to show feedback for yet.
+        </UiEmptyState>
+        <div v-else class="feedback-groups">
+          <div v-for="season in feedback.seasons" :key="season.season_id" class="feedback-season">
+            <h3 class="feedback-season-head">
+              {{ seasonLabel(season.season_label, season.season_id) }}
+              <span v-if="season.count === 0" class="feedback-none">· no ratings yet</span>
+              <span v-else>
+                · Avg ★ {{ formatRating(season.mean) }} from {{ season.count }}
+                {{ season.count === 1 ? 'peer' : 'peers' }}
+              </span>
+            </h3>
+            <UiCard v-if="season.count > 0" :padded="false" class="feedback-card">
+              <div
+                v-for="(row, index) in season.ratings"
+                :key="`${season.season_id}-${index}`"
+                class="feedback-row"
+              >
+                <div class="feedback-row-head">
+                  <span class="feedback-score">★ {{ row.score }}</span>
+                  <span class="feedback-peer">Anonymous peer</span>
+                  <span class="feedback-date">{{ formatDate(row.rated_at) }}</span>
+                </div>
+                <p class="feedback-text">{{ row.feedback }}</p>
+              </div>
+            </UiCard>
+          </div>
+        </div>
+      </template>
+    </section>
+
     <UiDialog
       v-model:open="rotateConfirmOpen"
       title="Rotate development key?"
@@ -1176,6 +1245,75 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
 .submission-anchor {
   font-family: var(--font-mono);
   color: var(--color-accent);
+}
+
+/* The owner-only peer-feedback section: one card per released season, hairline-separated rows. */
+.feedback-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.feedback-season {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.feedback-season-head {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.feedback-none {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.feedback-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.feedback-row + .feedback-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.feedback-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.feedback-score {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.feedback-peer {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.feedback-date {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.feedback-text {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  white-space: pre-wrap;
 }
 
 </style>

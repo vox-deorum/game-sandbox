@@ -184,6 +184,7 @@ describe('storage on :memory:', () => {
             env_id: 'flappy_bird',
             rater_user_id: `rater-${seasonId}`,
             agent: { kind: 'builtin', name: 'naive' },
+            feedback: 'nice run',
             score: 5,
           })
         },

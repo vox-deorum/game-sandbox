@@ -248,7 +248,13 @@ test('a full season: submissions, an automated run, several judges rate, then re
       const sessionId = await finishedScriptedSession(await as(JUDGES[0]), submission.id)
       await Promise.all(
         JUDGES.map(async (judge, index) =>
-          rateSession(await as(judge), sessionId, submission.id, submission.scores[index] ?? 3),
+          rateSession(
+            await as(judge),
+            sessionId,
+            submission.id,
+            submission.scores[index] ?? 3,
+            'Steady under pressure',
+          ),
         ),
       )
     }
@@ -274,6 +280,9 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
     await expect(ratingsPanel.getByText(AUTHOR_RATING_PROMPT)).toBeVisible()
     await ratingsPanel.getByRole('button', { name: '5', exact: true }).first().click()
+    // Every rating needs a written comment, so the save stays disabled until the comment box (ui-textarea)
+    // is filled for the watched glider.
+    await ratingsPanel.locator('textarea').first().fill('Best run all round')
     await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
     await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
 
@@ -316,6 +325,34 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.flapper))}`)
     await expect(page.locator('.submission-item')).toHaveCount(1)
     await expect(page.getByText('superseded', { exact: true })).toHaveCount(0)
+
+    // The operator sees the season's peer ratings on the console: both summary tables plus the
+    // by-agent drill-in, which names the raters behind each comment. The glider's mean rating is the
+    // highest, so its row is the first to open and carries the browser-typed comment above.
+    await page.goto(`/environments/${ENV_ID}/admin`)
+    await page.getByRole('button', { name: new RegExp(SEASONS.competition) }).click()
+    await expect(page.getByRole('heading', { name: `Season ${SEASONS.competition}` })).toBeVisible()
+    await expect(page.getByText('Peer Ratings')).toBeVisible()
+    const ratingsTables = page.locator('.ratings-tables')
+    await expect(ratingsTables).toBeVisible()
+    await expect(ratingsTables.getByRole('heading', { name: 'By agent' })).toBeVisible()
+    await expect(ratingsTables.getByRole('heading', { name: 'By rater' })).toBeVisible()
+    await ratingsTables.locator('.row-open-button').first().click()
+    const ratingsDialog = page.getByRole('dialog')
+    await expect(ratingsDialog).toBeVisible()
+    await expect(ratingsDialog.getByText('Best run all round')).toBeVisible()
+    await expect(ratingsDialog.getByText(JUDGES[0], { exact: true })).toBeVisible()
+    await ratingsDialog.getByRole('button', { name: 'Close' }).click()
+    await expect(ratingsDialog).toHaveCount(0)
+
+    // Peer feedback is owner-only, so flip the browser to the glider owner's account and confirm the
+    // anonymous comments they received on the released season render on their profile.
+    await authenticateBrowser(page.context(), await as(OWNERS.glider))
+    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.glider))}`)
+    await expect(page.getByRole('heading', { name: 'Peer Feedback' })).toBeVisible()
+    await expect(page.locator('.feedback-text', { hasText: 'Best run all round' })).toBeVisible()
+    await expect(page.locator('.feedback-peer').first()).toHaveText('Anonymous peer')
+    await expect(page.getByText('Steady under pressure').first()).toBeVisible()
 
     // Restore Playground before checking the glider owner's cross-season index. Updraft Open is now
     // released history, so its successful status stripe must remain visually distinct from the

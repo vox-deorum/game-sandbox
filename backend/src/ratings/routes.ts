@@ -15,13 +15,14 @@
  * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
 import { agentRefKey } from '@game-sandbox/schema/board'
-import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
+import { RATING_FEEDBACK_MAX, RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
+import { codePointLength } from '@game-sandbox/schema/text'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import type { AuthUser, RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import type { RecordingsStore } from '../recordings/store.js'
-import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
+import type { AgentRef, Rating, Season, Session, Storage } from '../storage/index.js'
 import { agentKey } from '../storage/kysely/shared.js'
 import { optionalField } from '../util/optional-field.js'
 
@@ -43,9 +44,18 @@ const AgentWireSchema = z.discriminatedUnion('kind', [
 ])
 type AgentWire = z.infer<typeof AgentWireSchema>
 
-/** One submitted score: the agent wire form and the 1-5 value (range checked in the handler). */
+/** One submitted score: the agent wire form, the 1-5 value (range checked in the handler), and the
+ * required written comment (required-ness and length checked in `validatePayload`). */
 const RateBodySchema = z.strictObject({
-  ratings: z.array(z.strictObject({ agent: AgentWireSchema, score: z.number().int() })).min(1),
+  ratings: z
+    .array(
+      z.strictObject({
+        agent: AgentWireSchema,
+        score: z.number().int(),
+        feedback: z.string(),
+      }),
+    )
+    .min(1),
 })
 
 /** The author-prompt body: a string to set, or null/empty to clear. */
@@ -64,6 +74,8 @@ interface RateableAgentView {
   author_prompt: string | null
   /** The caller's current effective rating, or null when they have not rated this agent. */
   your_rating: number | null
+  /** The caller's current written comment for this agent, or null when they have not rated it. */
+  your_feedback: string | null
 }
 
 /** The rating read/write payload: the season's prompt and a per-agent view, read-only when closed. */
@@ -254,10 +266,11 @@ async function buildRatingView(
   const anonymousNumbers = new Map(
     activeSubmissions.map((submission, index) => [submission.id, index + 1]),
   )
-  const ratings = new Map(seasonRatings.map((rating) => [agentKey(rating), rating.score]))
+  const ratings = new Map(seasonRatings.map((rating) => [agentKey(rating), rating]))
   const prompts = new Map(seasonPrompts.map((prompt) => [prompt.user_id, prompt.prompt]))
   const agentViews = agents.map((agent): RateableAgentView => {
     const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
+    const prior = isOwn ? undefined : ratings.get(agentRefKey(agent.wire))
     return {
       agent: agent.wire,
       display_name: displayName(
@@ -271,7 +284,8 @@ async function buildRatingView(
       is_own: isOwn,
       author_prompt:
         agent.ref.kind === 'submission' ? emptyToNull(prompts.get(agent.ref.user_id)) : null,
-      your_rating: isOwn ? null : (ratings.get(agentRefKey(agent.wire)) ?? null),
+      your_rating: prior?.score ?? null,
+      your_feedback: prior?.feedback ?? null,
     }
   })
   return {
@@ -360,12 +374,14 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
       }
       // Validation passed for every rating; only now write, so nothing partially saves.
       for (const accepted of validated.accepted) {
+        const key = agentRefKey(toWire(accepted))
         await deps.storage.upsertRating({
           season_id: context.season.id,
           env_id: context.season.env_id,
           rater_user_id: callerId,
           agent: accepted,
-          score: validated.scores.get(agentRefKey(toWire(accepted))) ?? 0,
+          score: validated.scores.get(key) ?? 0,
+          feedback: validated.feedback.get(key) ?? '',
         })
       }
       return reply.code(200).send(await buildRatingView(deps, context, user))
@@ -435,26 +451,88 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
       })
     },
   )
+
+  // The agent author reads the written feedback their agent received, grouped by released season.
+  // Gated to the owner themselves (403 otherwise): rater identity never leaves the server, so each
+  // row is anonymous. It lives here rather than with the public placements route, which is
+  // deliberately unauthenticated. Only released seasons appear, matching the placement-read rule.
+  app.get<{ Params: { envId: string; ownerId: string } }>(
+    '/api/environments/:envId/agents/:ownerId/feedback',
+    async (request, reply) => {
+      const user = await deps.identity.requireUser(request, reply)
+      if (user === undefined) {
+        return
+      }
+      const { envId, ownerId } = request.params
+      if (ownerId !== user.id) {
+        return reply.code(403).send({
+          error: 'you can read feedback only for your own agent',
+          code: 'not_your_agent',
+        })
+      }
+      // The owner's released-season participation is the group set: a season they entered appears even
+      // before anyone rated their agent, so the profile can show the "no ratings yet" placeholder.
+      const [releasedSeasons, submissions, ratings] = await Promise.all([
+        deps.storage.listSeasons({ envId, scope: 'released' }),
+        deps.storage.listSubmissionsByUser(ownerId, envId),
+        deps.storage.listRatingsForAgentOwner(envId, ownerId),
+      ])
+      const releasedIds = new Set(releasedSeasons.map((season) => season.id))
+      const participatedReleases = releasedSeasons.filter((season) =>
+        submissions.some((submission) => submission.season_id === season.id),
+      )
+      const ratingsBySeason = new Map<string, Rating[]>()
+      for (const rating of ratings) {
+        if (!releasedIds.has(rating.season_id)) {
+          continue
+        }
+        const rows = ratingsBySeason.get(rating.season_id) ?? []
+        rows.push(rating)
+        ratingsBySeason.set(rating.season_id, rows)
+      }
+      const seasons = participatedReleases.map((season) => {
+        const rows = ratingsBySeason.get(season.id) ?? []
+        const sum = rows.reduce((acc, row) => acc + row.score, 0)
+        return {
+          season_id: season.id,
+          season_label: season.label,
+          mean: rows.length === 0 ? 0 : sum / rows.length,
+          count: rows.length,
+          // `listRatingsForAgentOwner` returns newest first, so the newest comment leads each group.
+          ratings: rows.map((rating) => ({
+            score: rating.score,
+            feedback: rating.feedback,
+            rated_at: rating.updated_at,
+          })),
+        }
+      })
+      return reply.code(200).send({ env_id: envId, owner_id: ownerId, seasons })
+    },
+  )
 }
 
-/** The outcome of validating the whole rate payload: the resolved refs and scores, or the first error. */
+/** The outcome of validating the whole rate payload: the resolved refs, scores, and comments, or
+ * the first error. The comment is required for every rating (`empty_feedback` when blank after trim)
+ * and capped at {@link RATING_FEEDBACK_MAX} code points (`feedback_too_long`). */
 type PayloadValidation =
-  | { ok: true; accepted: AgentRef[]; scores: Map<string, number> }
+  | { ok: true; accepted: AgentRef[]; scores: Map<string, number>; feedback: Map<string, string> }
   | { ok: false; code: string; error: string }
 
 /**
  * Validate every submitted rating against the session's involved agents before any write. Rejects an
- * out-of-range score, an agent not in the session, and the caller's own submitted agent (resolved
- * server-side). Returns the resolved refs (carrying the server-resolved owner) and their scores.
+ * out-of-range score, an agent not in the session, the caller's own submitted agent (resolved
+ * server-side), and a blank or over-cap comment. Returns the resolved refs (carrying the server-
+ * resolved owner), their scores, and their trimmed comments.
  */
 function validatePayload(
-  ratings: ReadonlyArray<{ agent: AgentWire; score: number }>,
+  ratings: ReadonlyArray<{ agent: AgentWire; score: number; feedback: string }>,
   context: RatingContext,
   callerId: string,
 ): PayloadValidation {
   const byKey = new Map(context.agents.map((agent) => [agentRefKey(agent.wire), agent]))
   const accepted: AgentRef[] = []
   const scores = new Map<string, number>()
+  const feedback = new Map<string, string>()
   for (const rating of ratings) {
     if (!Number.isInteger(rating.score) || rating.score < 1 || rating.score > 5) {
       return { ok: false, code: 'invalid_score', error: 'a score must be an integer from 1 to 5' }
@@ -475,10 +553,26 @@ function validatePayload(
         error: 'you cannot rate your own submitted agent',
       }
     }
+    const comment = rating.feedback.trim()
+    if (comment === '') {
+      return {
+        ok: false,
+        code: 'empty_feedback',
+        error: 'every rating needs a written comment',
+      }
+    }
+    if (codePointLength(comment) > RATING_FEEDBACK_MAX) {
+      return {
+        ok: false,
+        code: 'feedback_too_long',
+        error: 'the comment exceeds the length limit',
+      }
+    }
     accepted.push(match.ref)
     scores.set(key, rating.score)
+    feedback.set(key, comment)
   }
-  return { ok: true, accepted, scores }
+  return { ok: true, accepted, scores, feedback }
 }
 
 /** Send a typed context failure as its HTTP status with a stable `code`. */

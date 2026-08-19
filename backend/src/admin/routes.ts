@@ -19,6 +19,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
+import { agentRefKey } from '@game-sandbox/schema/board'
 import {
   type EnvironmentMeta,
   type ResolvedLayout,
@@ -65,7 +66,8 @@ import {
   seasonView,
 } from '../seasons/views.js'
 import type { ClientSocket } from '../session/live-session.js'
-import type { Storage, Submission } from '../storage/index.js'
+import type { Rating, Storage, Submission } from '../storage/index.js'
+import { agentKey, agentRefFromColumns } from '../storage/kysely/shared.js'
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import { type MatchConfig, SeasonConfigSchema, type SeatSpec } from '../storage/season-config.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -259,6 +261,84 @@ function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDep
       })),
     )
     return reply.code(200).send(rows)
+  })
+
+  // The season's peer ratings, grouped both by rated agent and by rater in one read that feeds both
+  // tables on the console. A comment is required with every rating, so the count is the note count.
+  // Every participant with a submission appears in `by_rater`, including at zero, so the operator sees
+  // who skipped the peer review. Raters and owners are resolved by name in one batched lookup.
+  admin.get<{ Params: { id: string } }>('/seasons/:id/ratings', async (request, reply) => {
+    const season = await deps.storage.getSeason(request.params.id)
+    if (season === undefined) {
+      return reply.code(404).send({ error: 'no such season' })
+    }
+    const [aggregates, allRatings, active] = await Promise.all([
+      deps.storage.aggregateRatingsByAgent(season.id),
+      deps.storage.listRatingsBySeason(season.id),
+      deps.storage.listActiveSubmissionsBySeason(season.id),
+    ])
+    const newestFirst = (rows: Rating[]): Rating[] =>
+      [...rows].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    const ratingsByAgent = new Map<string, Rating[]>()
+    const ratingsByRater = new Map<string, Rating[]>()
+    for (const rating of allRatings) {
+      const byAgentRows = ratingsByAgent.get(agentKey(rating)) ?? []
+      byAgentRows.push(rating)
+      ratingsByAgent.set(agentKey(rating), byAgentRows)
+      const byRaterRows = ratingsByRater.get(rating.rater_user_id) ?? []
+      byRaterRows.push(rating)
+      ratingsByRater.set(rating.rater_user_id, byRaterRows)
+    }
+    const meta = deps.environments.get(season.env_id)
+    // One batched lookup covering raters, rated owners, and every participant with a submission: a
+    // participant who rated nobody still appears in `by_rater` by name, which is the zero-count row
+    // the operator relies on to see who skipped the peer review.
+    const names = await deps.userDirectory.namesFor([
+      ...new Set(
+        [
+          ...allRatings.map((rating) => rating.agent_user_id),
+          ...allRatings.map((rating) => rating.rater_user_id),
+          ...active.map((submission) => submission.user_id),
+        ].filter((id): id is string => id !== null),
+      ),
+    ])
+
+    const byAgent = aggregates
+      .map((row) => ({
+        agent: enrichAgentRef(row.agent, names, meta),
+        mean: row.mean,
+        count: row.count,
+        ratings: newestFirst(ratingsByAgent.get(agentRefKey(row.agent)) ?? []).map((rating) => ({
+          score: rating.score,
+          feedback: rating.feedback,
+          rated_at: rating.updated_at,
+          rater_user_id: rating.rater_user_id,
+          ...optionalField('rater_name', names.get(rating.rater_user_id)),
+        })),
+      }))
+      .sort((a, b) => b.mean - a.mean)
+
+    const raterUserIds = [
+      ...new Set([
+        ...active.map((submission) => submission.user_id),
+        ...allRatings.map((rating) => rating.rater_user_id),
+      ]),
+    ]
+    const byRater = raterUserIds
+      .map((raterUserId) => ({
+        rater_user_id: raterUserId,
+        ...optionalField('rater_name', names.get(raterUserId)),
+        count: ratingsByRater.get(raterUserId)?.length ?? 0,
+        ratings: newestFirst(ratingsByRater.get(raterUserId) ?? []).map((rating) => ({
+          score: rating.score,
+          feedback: rating.feedback,
+          rated_at: rating.updated_at,
+          agent: enrichAgentRef(agentRefFromColumns(rating), names, meta),
+        })),
+      }))
+      .sort((a, b) => a.count - b.count)
+
+    return reply.code(200).send({ by_agent: byAgent, by_rater: byRater })
   })
 
   // Download one submission's source as the stored `.tar.gz` (the filtered checkout, no `.git`).

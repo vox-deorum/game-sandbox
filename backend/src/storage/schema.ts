@@ -418,6 +418,8 @@ export interface RatingsTable {
   agent_user_id: string | null
   /** Integer 1-5. */
   score: number
+  /** The rater's written comment; required with every rating, trimmed and capped before the write. */
+  feedback: string
   /** ISO-8601 UTC timestamps. */
   created_at: string
   updated_at: string

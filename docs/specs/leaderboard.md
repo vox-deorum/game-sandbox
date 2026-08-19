@@ -49,11 +49,13 @@ Each match runs in its own sandboxed session container. See [Execution](executio
 
 ## Human-feedback board
 
-The human-feedback board shows each agent's mean rating, population standard deviation, and rating count. An agent needs at least three ratings to be ranked, so a single early rating cannot rank it. If the agent's author has set a rating prompt, the board shows a shortened version beneath the agent's name and the full text on hover.
+The human-feedback board shows each agent's mean rating, population standard deviation, and rating count. An agent needs at least three ratings to be ranked, so a single early rating cannot rank it. If the agent's author has set a rating prompt, the board shows a shortened version beneath the agent's name and the full text on hover. These three statistics are all the board shows; the written comments never appear on it. They are private to the agent's owner once the season is released and to the operator. See [Frontend](frontend.md) and [Seasons](seasons.md#public-gates).
 
-Ratings use a 1 to 5 scale. Two optional prompts may guide one rating:
+Each rating combines a score on a 1 to 5 scale with a required written comment of up to 1,000 Unicode code points. Two optional prompts may guide the score:
 
 - The operator's season prompt, applied to every agent.
 - The author's prompt, applied only to that agent.
+
+The prompts only guide the score; the comment is the rater's own words.
 
 Users cannot rate their own submitted agents. A named builtin is rateable only in a session that also contains a submitted agent. Each builtin keeps a separate rating identity through its stable name. See [Frontend](frontend.md).

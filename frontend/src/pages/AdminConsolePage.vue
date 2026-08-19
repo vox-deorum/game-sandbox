@@ -43,6 +43,7 @@ import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls
 import RunActions from '../components/admin/RunActions.vue'
 import RunsList from '../components/admin/RunsList.vue'
 import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
+import SeasonRatings from '../components/admin/SeasonRatings.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
@@ -529,6 +530,10 @@ onUnmounted(() => {
                   </p>
                 </OperatorSeasonTextEditor>
               </UiCard>
+            </section>
+
+            <section class="admin-section">
+              <SeasonRatings :season-id="view.season.id" />
             </section>
 
             <section class="admin-section">

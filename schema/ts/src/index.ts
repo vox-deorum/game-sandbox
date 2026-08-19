@@ -70,6 +70,7 @@ export type {
 } from './schemas/step-state.js'
 export {
   normalizeSeasonDescription,
+  RATING_FEEDBACK_MAX,
   RATING_PROMPT_MAX,
   SEASON_DESCRIPTION_MAX,
   type SeasonDescriptionViolation,

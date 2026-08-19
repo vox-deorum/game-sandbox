@@ -120,7 +120,7 @@ Migration history remains flat while there is no deployed data to preserve. For 
 | Submissions | `submissions`, `submission_checks`, `session_submissions` | Pinned source, validation timeline, session attribution |
 | Seasons and runs | `seasons`, `season_runs`, `season_run_games` | Public gates, frozen run snapshot, schedule |
 | Results | `game_results`, `automated_placements` | Per-seat outcomes and published automated board |
-| Feedback | `ratings`, `agent_rating_prompts` | Effective ratings and author guidance |
+| Feedback | `ratings`, `agent_rating_prompts` | Effective ratings with their required written comment, and author guidance |
 
 Important invariants are enforced in storage:
 
@@ -128,6 +128,7 @@ Important invariants are enforced in storage:
 - One play-open season per environment.
 - One active submission per user and season.
 - One effective rating per user, agent, and season.
+- Every rating carries a required written comment, trimmed and capped at 1,000 Unicode code points.
 - Reruns preserve the latest completed board until a newer run completes.
 
 Season configuration is one strict JSON document because it is authored and frozen as a unit. Run results are normalized because leaderboards aggregate them by agent.
@@ -268,10 +269,12 @@ Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and
 | `/api/recordings` | List, stream, pin, and unpin recordings |
 | `/api/submissions` | Capabilities, reachability, submit, poll, history |
 | `/api/environments/:envId/agents` | Agent profiles and placements |
+| `/api/environments/:envId/agents/:ownerId/feedback` | Agent owner's anonymous peer feedback |
 | `/api/seasons` | Public season index |
 | `/api/environments/:envId/leaderboards` | Current and historical released boards |
 | `/api/sessions/:sessionId/ratings` | Read and write session ratings |
 | `/api/seasons/:seasonId/agent-rating-prompt` | Author prompt |
+| `/api/admin/seasons/:id/ratings` | Season peer ratings grouped by agent and rater |
 | `/api/llm-development/seasons` and `/api/seasons/:seasonId/llm-development*` | Development-key eligibility, usage, call history, and key rotation |
 | `/api/llm/v1/chat/completions` | OpenAI-compatible development completion endpoint |
 | `/api/recordings/:id/llm` | Official recording LLM usage and authorized call bodies |
@@ -285,6 +288,7 @@ All `/api/admin` routes pass one operator guard. They support:
 - Declaring seasons.
 - Replacing validated configuration.
 - Setting the season rating prompt.
+- Reading a season's peer ratings (written comments) grouped by agent and by rater.
 - Opening and closing submission and play windows.
 - Releasing and unreleasing results.
 - Triggering and cancelling runs.
@@ -298,9 +302,11 @@ Unreleased board data is available only through operator-gated routes. Public bo
 
 The recording header's `players` map is the authority for which agents took part. The backend resolves submission ownership from storage and ignores human entries.
 
-Rating writes validate the full batch before saving anything and reject any batch that breaks the [leaderboard specification's](../../specs/leaderboard.md) rating rules: score range, session membership, self-rating, unfinished or unattributed sessions, and a closed play window.
+Rating writes validate the full batch before saving anything and reject any batch that breaks the [leaderboard specification's](../../specs/leaderboard.md) rating rules: score range, session membership, self-rating, unfinished or unattributed sessions, and a closed play window. Each rating also carries a required written comment, validated with the shared `codePointLength` helper: it is trimmed, blank-after-trim is refused (`empty_feedback`), and a comment over 1,000 code points is refused (`feedback_too_long`).
 
-Rerating upserts the existing value. Closed play returns a read-only view with prior ratings and prompts.
+Rerating upserts both the score and the comment. The rating read returns the caller's prior score and comment so the panel prefills, and closed play returns a read-only view with prior ratings and prompts.
+
+Two read surfaces expose the comments beyond the rater's own prior comment on the rating read. `GET /api/environments/:envId/agents/:ownerId/feedback` serves an agent owner the comments their agent received, anonymized so no rater identity leaves the server and gated to the owner and to released seasons. `GET /api/admin/seasons/:id/ratings` serves an operator the whole season's comments grouped by rated agent and by rater, with rater names and zero-count participants included.
 
 ## Workflow runner
 

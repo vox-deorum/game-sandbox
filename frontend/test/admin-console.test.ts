@@ -42,6 +42,9 @@ vi.mock('../src/api/client.js', () => ({
   adminSubmissionDownloadUrl: vi.fn(() => '#'),
   listAdminLlmDevelopmentUsers: vi.fn(async () => []),
   listAdminLlmDevelopmentCalls: vi.fn(async () => ({ calls: [], next_cursor: null })),
+  // The console's Peer Ratings section mounts SeasonRatings, which lists ratings on mount; default it
+  // to an empty read so the section renders its empty states without a real fetch.
+  listSeasonRatings: vi.fn(async () => ({ by_agent: [], by_rater: [] })),
 }))
 
 import {
@@ -54,6 +57,7 @@ import {
   listAdminLlmDevelopmentCalls,
   listAdminLlmDevelopmentUsers,
   listRuns,
+  listSeasonRatings,
   listSeasons,
   openPlay,
   openSubmissions,
@@ -1435,5 +1439,151 @@ describe('AdminConsolePage', () => {
   it('disables the board link before any run has computed a board', async () => {
     await renderConsole()
     expect(await screen.findByRole('button', { name: 'Check leaderboard' })).toBeDisabled()
+  })
+
+  it('renders both peer-ratings tables with agent and rater aggregates', async () => {
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [
+        {
+          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
+          mean: 4,
+          count: 2,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              rater_user_id: 'r1',
+              rater_name: 'Kim Lee',
+            },
+          ],
+        },
+      ],
+      by_rater: [
+        { rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] },
+        {
+          rater_user_id: 'r1',
+          rater_name: 'Kim Lee',
+          count: 1,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              agent: {
+                kind: 'submission',
+                submission_id: 's1',
+                user_id: 'u1',
+                user_name: 'Dana Wu',
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await renderConsole()
+
+    expect(await screen.findByRole('heading', { name: 'Peer Ratings' })).toBeInTheDocument()
+    const byAgent = (await screen.findByRole('heading', { name: 'By agent' })).closest('section')
+    const byRater = (await screen.findByRole('heading', { name: 'By rater' })).closest('section')
+    expect(byAgent).not.toBeNull()
+    expect(byRater).not.toBeNull()
+    expect(within(byAgent as HTMLElement).getByText('Dana Wu')).toBeInTheDocument()
+    expect(within(byAgent as HTMLElement).getByText('4.0')).toBeInTheDocument()
+    expect(within(byAgent as HTMLElement).getByText('2')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('Kim Lee')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('1')).toBeInTheDocument()
+    // A rater who graded nobody still sorts into the table, muted, with a footnote naming them.
+    expect(within(byRater as HTMLElement).getByText('Ana Roy')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('0')).toBeInTheDocument()
+    expect(screen.getByText('Ana Roy has not rated anyone.')).toBeInTheDocument()
+  })
+
+  it('opens the by-agent drill-in dialog with the named raters', async () => {
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [
+        {
+          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
+          mean: 4,
+          count: 2,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              rater_user_id: 'r1',
+              rater_name: 'Kim Lee',
+            },
+          ],
+        },
+      ],
+      by_rater: [],
+    })
+    await renderConsole()
+
+    const byAgentSection = (await screen.findByRole('heading', { name: 'By agent' })).closest(
+      'section',
+    ) as HTMLElement
+    await fireEvent.click(within(byAgentSection).getByRole('button', { name: 'Dana Wu' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Dana Wu · 2 ratings' })
+    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Kim Lee')).toBeInTheDocument()
+    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+  })
+
+  it('opens the by-rater drill-in dialog with the rated agent', async () => {
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [],
+      by_rater: [
+        {
+          rater_user_id: 'r1',
+          rater_name: 'Kim Lee',
+          count: 1,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              agent: {
+                kind: 'submission',
+                submission_id: 's1',
+                user_id: 'u1',
+                user_name: 'Dana Wu',
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await renderConsole()
+
+    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
+      'section',
+    ) as HTMLElement
+    await fireEvent.click(within(byRaterSection).getByText('Kim Lee'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Kim Lee · rated 1 agent' })
+    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Dana Wu')).toBeInTheDocument()
+    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+  })
+
+  it('keeps a zero-count rater row non-clickable', async () => {
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [],
+      by_rater: [{ rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] }],
+    })
+    await renderConsole()
+
+    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
+      'section',
+    ) as HTMLElement
+    const zeroRow = byRaterSection.querySelector('tr.zero') as HTMLElement
+    expect(zeroRow).not.toBeNull()
+    expect(within(byRaterSection).getByText('Ana Roy')).toBeInTheDocument()
+    await fireEvent.click(within(byRaterSection).getByText('Ana Roy'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText('Ana Roy · rated 0 agents')).toBeNull()
   })
 })

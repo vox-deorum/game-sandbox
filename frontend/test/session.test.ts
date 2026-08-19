@@ -799,6 +799,7 @@ describe('SessionPage', () => {
             is_own: false,
             author_prompt: 'Judge smoothness.',
             your_rating: null,
+            your_feedback: null,
           },
         ],
       },

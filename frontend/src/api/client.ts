@@ -740,6 +740,8 @@ export interface RateableAgent {
   author_prompt: string | null
   /** The caller's current effective rating, or null when they have not rated this agent. */
   your_rating: number | null
+  /** The caller's current written comment, or null when they have not rated this agent. */
+  your_feedback: string | null
 }
 
 /** The rating read/write payload for one session: the season prompt and the per-agent view. */
@@ -775,12 +777,23 @@ export async function getSessionRatings(sessionId: string): Promise<SessionRatin
 /** Submitting (or overwriting) ratings: the saved view, or a typed refusal the UI surfaces inline. */
 export type SubmitRatingsResult =
   | { ok: true; ratings: SessionRatings }
-  | { ok: false; reason: 'play_closed' | 'not_rateable' | 'not_finished' | 'invalid' | 'failed' }
+  | {
+      ok: false
+      reason:
+        | 'play_closed'
+        | 'not_rateable'
+        | 'not_finished'
+        | 'invalid'
+        | 'empty_feedback'
+        | 'feedback_too_long'
+        | 'failed'
+    }
 
-/** Submit a batch of `{ agent, score }` ratings for a session. The whole batch saves or none does. */
+/** Submit a batch of `{ agent, score, feedback }` ratings for a session. The whole batch saves or
+ * none does; the comment is required with every score. */
 export async function submitRatings(
   sessionId: string,
-  ratings: ReadonlyArray<{ agent: AgentRefWire; score: number }>,
+  ratings: ReadonlyArray<{ agent: AgentRefWire; score: number; feedback: string }>,
 ): Promise<SubmitRatingsResult> {
   const res = await request(`/sessions/${encodeURIComponent(sessionId)}/ratings`, {
     method: 'POST',
@@ -799,6 +812,12 @@ export async function submitRatings(
   }
   if (body.code === 'session_not_finished') {
     return { ok: false, reason: 'not_finished' }
+  }
+  if (body.code === 'empty_feedback') {
+    return { ok: false, reason: 'empty_feedback' }
+  }
+  if (body.code === 'feedback_too_long') {
+    return { ok: false, reason: 'feedback_too_long' }
   }
   if (res.status === 400) {
     return { ok: false, reason: 'invalid' }
@@ -1206,6 +1225,43 @@ export async function getAgentPlacements(envId: string, ownerId: string): Promis
   )) as AgentPlacements
 }
 
+/** One written comment a submitted agent received in a released season, anonymous to the owner. */
+export interface AgentFeedbackRow {
+  score: number
+  /** The named header sits above it; a long comment never ties a rater to an identity. */
+  feedback: string
+  /** ISO date the rating was last updated. */
+  rated_at: string
+}
+
+/** One released season grouping of feedback: a season the owner entered appears even with no ratings. */
+export interface AgentFeedbackSeason {
+  season_id: string
+  season_label: string | null
+  /** Mean of the owner's received scores that season (0 with none). */
+  mean: number
+  count: number
+  /** Newest-first comments. */
+  ratings: AgentFeedbackRow[]
+}
+
+/** The owner's anonymous peer feedback for one environment's agent, grouped by released season. */
+export interface AgentFeedback {
+  env_id: string
+  owner_id: string
+  seasons: AgentFeedbackSeason[]
+}
+
+/** Read the owner's anonymous peer feedback for their own agent, grouped by released season. */
+export async function getAgentFeedback(envId: string, ownerId: string): Promise<AgentFeedback> {
+  return (await json(
+    await request(
+      `/environments/${encodeURIComponent(envId)}/agents/${encodeURIComponent(ownerId)}/feedback`,
+    ),
+    'GET /environments/:envId/agents/:ownerId/feedback',
+  )) as AgentFeedback
+}
+
 // --- Operator admin console (gated server-side under /api/admin) ------------------------------
 
 /** The full admin view of one season: config, gates, latest run, and both (possibly unreleased) boards. */
@@ -1246,6 +1302,54 @@ export async function listSeasonSubmissions(seasonId: string): Promise<AdminSubm
     await request(`/admin/seasons/${encodeURIComponent(seasonId)}/submissions`),
     'GET /api/admin/seasons/:id/submissions',
   )) as AdminSubmissionRow[]
+}
+
+/** One rating row as the operator season-ratings view returns it: the comment with its rater. */
+export interface AdminAgentRatingRow {
+  score: number
+  feedback: string
+  rated_at: string
+  rater_user_id: string
+  /** The rater's display name when the directory has one; absent falls back to `rater_user_id`. */
+  rater_name?: string
+}
+
+/** One rating row in the by-rater drill-in, carrying the rated agent instead of the rater. */
+export interface AdminRaterRatingRow {
+  score: number
+  feedback: string
+  rated_at: string
+  agent: BoardAgentRef
+}
+
+/** One rated agent's aggregate in the operator's by-agent table. */
+export interface AdminSeasonAgentRatings {
+  agent: BoardAgentRef
+  mean: number
+  count: number
+  ratings: AdminAgentRatingRow[]
+}
+
+/** One participant's aggregate in the operator's by-rater table, including a 0-rating participant. */
+export interface AdminSeasonRaterRatings {
+  rater_user_id: string
+  rater_name?: string
+  count: number
+  ratings: AdminRaterRatingRow[]
+}
+
+/** A season's peer ratings under both views, for the operator console's Peer Ratings section. */
+export interface AdminSeasonRatings {
+  by_agent: AdminSeasonAgentRatings[]
+  by_rater: AdminSeasonRaterRatings[]
+}
+
+/** A season's peer ratings grouped by agent and by rater, one read feeding both operator tables. */
+export async function listSeasonRatings(seasonId: string): Promise<AdminSeasonRatings> {
+  return (await json(
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/ratings`),
+    'GET /api/admin/seasons/:id/ratings',
+  )) as AdminSeasonRatings
 }
 
 /**

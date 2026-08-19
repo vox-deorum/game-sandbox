@@ -574,6 +574,7 @@ describe('leaderboard storage on :memory:', () => {
       env_id: ENV,
       rater_user_id: 'bob',
       agent: aliceAgent,
+      feedback: 'nice run',
       score: 4,
     })
     expect(first).toMatchObject({ ok: true })
@@ -582,6 +583,7 @@ describe('leaderboard storage on :memory:', () => {
       env_id: ENV,
       rater_user_id: 'bob',
       agent: aliceAgent,
+      feedback: 'nice run',
       score: 2,
     })
     expect(overwrite).toMatchObject({ ok: true })
@@ -593,6 +595,7 @@ describe('leaderboard storage on :memory:', () => {
       env_id: ENV,
       rater_user_id: 'alice',
       agent: aliceAgent,
+      feedback: 'nice run',
       score: 5,
     })
     expect(own).toEqual({ ok: false, reason: 'own_agent' })
@@ -602,6 +605,7 @@ describe('leaderboard storage on :memory:', () => {
       env_id: ENV,
       rater_user_id: 'bob',
       agent: NAIVE,
+      feedback: 'nice run',
       score: 9,
     })
     expect(badScore).toEqual({ ok: false, reason: 'invalid_score' })
@@ -612,6 +616,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: 'alice',
         agent: NAIVE,
+        feedback: 'nice run',
         score: 4,
       }),
     ).toMatchObject({ ok: true })
@@ -621,6 +626,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: 'bob',
         agent: NAIVE,
+        feedback: 'nice run',
         score: 2,
       }),
     ).toMatchObject({ ok: true })
@@ -628,6 +634,56 @@ describe('leaderboard storage on :memory:', () => {
     const naiveAgg = agg.find((row) => row.agent.kind === 'builtin')
     // Ratings 4 and 2: mean 3, population std 1.
     expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, std: 1, count: 2 })
+  })
+
+  it('listRatingsForAgentOwner returns only one owner ratings, newest first', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const aliceAgent: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
+
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV,
+      rater_user_id: 'bob',
+      agent: aliceAgent,
+      score: 4,
+      feedback: 'A',
+    })
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV,
+      rater_user_id: 'carol',
+      agent: aliceAgent,
+      score: 5,
+      feedback: 'B',
+    })
+    // Ratings of another owner's agent and of the Naive baseline never surface in alice's owner read.
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV,
+      rater_user_id: 'bob',
+      agent: { kind: 'submission', submission_id: 's2', user_id: 'dave' },
+      score: 2,
+      feedback: 'other owner',
+    })
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV,
+      rater_user_id: 'bob',
+      agent: NAIVE,
+      score: 3,
+      feedback: 'baseline',
+    })
+
+    const rows = await storage.listRatingsForAgentOwner(ENV, 'alice')
+    expect(rows).toHaveLength(2)
+    // Both rows are the bob/carol ratings of alice's own agent, carrying their comments.
+    expect(
+      rows.every((row) => row.agent_user_id === 'alice' && row.agent_submission_id === 's1'),
+    ).toBe(true)
+    expect(rows.map((row) => row.feedback).sort()).toEqual(['A', 'B'])
+    // Newest updated_at first; both writes usually share a millisecond, so presence beats strict order.
+    const stamps = rows.map((row) => row.updated_at)
+    expect([...stamps].sort().reverse()).toEqual(stamps)
   })
 
   it('keeps ratings for two named builtins distinct within one season', async () => {
@@ -642,6 +698,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: 'rater',
         agent,
+        feedback: 'nice run',
         score,
       })
     }
@@ -670,6 +727,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: rater,
         agent: ranked,
+        feedback: 'nice run',
         score,
       })
     }
@@ -679,6 +737,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: rater,
         agent: NAIVE,
+        feedback: 'nice run',
         score: 5,
       })
     }
@@ -689,6 +748,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: rater,
         agent: thin,
+        feedback: 'nice run',
         score: 5,
       })
     }
@@ -754,6 +814,7 @@ describe('leaderboard storage on :memory:', () => {
         env_id: ENV,
         rater_user_id: rater,
         agent: rated,
+        feedback: 'nice run',
         score: 4,
       })
     }
@@ -782,6 +843,7 @@ describe('leaderboard storage on :memory:', () => {
           env_id: ENV,
           rater_user_id: rater,
           agent,
+          feedback: 'nice run',
           score: 4,
         })
       }

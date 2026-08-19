@@ -329,6 +329,8 @@ export interface UpsertRatingInput {
   agent: AgentRef
   /** Integer 1-5; validated before the write. */
   score: number
+  /** The rater's written comment; trimmed and capped before the write. */
+  feedback: string
 }
 
 /**
@@ -621,6 +623,8 @@ export interface Storage {
   listRatingsBySeason(seasonId: string): Promise<Rating[]>
   /** One rater's ratings in a season, for bounded request assembly. */
   listRatingsByRater(seasonId: string, raterUserId: string): Promise<Rating[]>
+  /** Every rating of one owner's submitted agents in an environment, newest first (agent feedback). */
+  listRatingsForAgentOwner(envId: string, ownerUserId: string): Promise<Rating[]>
   /** Mean score and count per agent for a season's human board. */
   aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]>
   /**

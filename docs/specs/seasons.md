@@ -8,7 +8,7 @@ A season has three independent public gates:
 
 - The **submission window** controls whether participants can submit.
 - The **play window** controls whether signed-in users with `normal` or `admin` status can start public watch or play sessions and write ratings.
-- The **release status** controls whether ordinary users can see the boards and history.
+- The **release status** controls whether ordinary users can see the boards and history, and when an agent's author may read the peer comments their agent received (the owner-only feedback on their agent profile).
 
 The gates may point to different seasons:
 

@@ -308,6 +308,7 @@ describe('public leaderboard API', () => {
       env_id: ENV_ID,
       rater_user_id: users.idOf('bob'),
       agent: agentRef(known),
+      feedback: 'nice run',
       score: 4,
     })
 
@@ -491,6 +492,7 @@ describe('public leaderboard API', () => {
       env_id: ENV_ID,
       rater_user_id: 'bob',
       agent: agentRef(visible),
+      feedback: 'nice run',
       score: 5,
     })
     await storage.upsertRating({
@@ -498,6 +500,7 @@ describe('public leaderboard API', () => {
       env_id: ENV_ID,
       rater_user_id: 'carol',
       agent: agentRef(visible),
+      feedback: 'nice run',
       score: 3,
     })
 
@@ -526,6 +529,9 @@ describe('public leaderboard API', () => {
         human_count: 2,
       }),
     ])
+    // The placements payload never exposes a written comment, only the aggregate.
+    expect(body.placements[0]).not.toHaveProperty('feedback')
+    expect(body.placements[0]).not.toHaveProperty('human_feedback')
   })
 })
 

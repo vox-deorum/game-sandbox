@@ -350,6 +350,7 @@ const initialSchema: Migration = {
       .addColumn('agent_submission_id', 'text')
       .addColumn('agent_user_id', 'text')
       .addColumn('score', 'integer', (col) => col.notNull())
+      .addColumn('feedback', 'text', (col) => col.notNull())
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('updated_at', 'text', (col) => col.notNull())
       .execute()
@@ -357,6 +358,13 @@ const initialSchema: Migration = {
       .createIndex('ratings_season_agent')
       .on('ratings')
       .columns(['season_id', 'agent_kind', 'agent_builtin_name', 'agent_submission_id'])
+      .execute()
+    // The owner-feedback read on the agent profile lists one owner's ratings across seasons, so keep
+    // that request on an owner-bounded index rather than scanning every season's ratings.
+    await db.schema
+      .createIndex('ratings_env_agent_user')
+      .on('ratings')
+      .columns(['env_id', 'agent_user_id'])
       .execute()
     // Rating uniqueness: one effective rating per user per agent per season.
     await sql`

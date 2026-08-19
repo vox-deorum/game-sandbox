@@ -18,6 +18,9 @@ vi.mock('../src/api/client.js', () => ({
     owner_id: 'eve',
     placements: [],
   })),
+  // The owner-only Peer Feedback section reads anonymous comments; default it to an empty response so
+  // owner renders do not depend on this secondary read resolving a payload.
+  getAgentFeedback: vi.fn(async () => ({ env_id: 'flappy_bird', owner_id: 'eve', seasons: [] })),
   // The owner-only submit form prefills the rating prompt from the submission season on mount; default
   // it to an unset prompt. setAuthorPrompt only fires after a submission is accepted.
   getAuthorPrompt: vi.fn(async () => ({ season_id: 'flappy_bird-iter-1', prompt: null })),
@@ -37,6 +40,7 @@ vi.mock('../src/api/client.js', () => ({
 import type { AgentPlacementView } from '../src/api/client.js'
 import {
   checkReachability,
+  getAgentFeedback,
   getAgentPlacements,
   getAgentProfile,
   getAuthorPrompt,
@@ -839,5 +843,70 @@ describe('AgentProfilePage', () => {
     expect(github).toHaveAttribute('href', 'https://github.com/eve-dev')
     expect(github).toHaveAttribute('target', '_blank')
     expect(github).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('shows the owner anonymous peer feedback grouped by released season', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(getAgentFeedback).mockResolvedValue({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      seasons: [
+        {
+          season_id: 'iter-released',
+          season_label: 'Spring Iteration',
+          mean: 4,
+          count: 2,
+          ratings: [
+            { score: 5, feedback: 'Held the gap well', rated_at: '2026-06-14T00:00:00Z' },
+            { score: 3, feedback: 'Survives but never commits', rated_at: '2026-06-13T00:00:00Z' },
+          ],
+        },
+      ],
+    })
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
+
+    expect(await screen.findByRole('heading', { name: 'Peer Feedback' })).toBeInTheDocument()
+    const seasonHead = screen.getByRole('heading', { name: /Spring Iteration/ })
+    expect(seasonHead).toHaveTextContent('Spring Iteration')
+    expect(seasonHead).toHaveTextContent('Avg ★ 4.0 from 2 peers')
+    // Both comments render, scored and anonymous, never named to the owner.
+    expect(screen.getByText('Held the gap well')).toBeInTheDocument()
+    expect(screen.getByText('Survives but never commits')).toBeInTheDocument()
+    expect(screen.getAllByText('Anonymous peer')).toHaveLength(2)
+    expect(screen.getByText('★ 5')).toBeInTheDocument()
+    expect(screen.getByText('★ 3')).toBeInTheDocument()
+    expect(screen.queryByText(/Kim/i)).toBeNull()
+  })
+
+  it('hides peer feedback from a non-owner viewer', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
+
+    await screen.findByRole('heading', { name: "eve's Submissions" })
+    expect(screen.queryByRole('heading', { name: 'Peer Feedback' })).toBeNull()
+    expect(vi.mocked(getAgentFeedback)).not.toHaveBeenCalled()
+  })
+
+  it('renders a per-season no-ratings line without a comment card', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(getAgentFeedback).mockResolvedValue({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      seasons: [
+        {
+          season_id: 'iter-released',
+          season_label: 'Spring Iteration',
+          mean: 0,
+          count: 0,
+          ratings: [],
+        },
+      ],
+    })
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
+
+    expect(await screen.findByRole('heading', { name: 'Peer Feedback' })).toBeInTheDocument()
+    expect(screen.getByText('· no ratings yet')).toBeInTheDocument()
+    expect(screen.queryByText('Avg ★ 0.0 from 0 peers')).toBeNull()
+    expect(screen.queryByText('Anonymous peer')).toBeNull()
   })
 })

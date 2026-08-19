@@ -18,6 +18,7 @@ function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): Rat
     is_own: false,
     author_prompt: null,
     your_rating: null,
+    your_feedback: null,
     ...overrides,
   }
 }
@@ -167,11 +168,17 @@ describe('SessionRatings', () => {
     // The prior rating (3) pre-fills, marked pressed.
     expect(within(group).getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'true')
 
-    // Change to 5 and save.
+    // Change to 5, add the now-required comment, and save.
     await fireEvent.click(within(group).getByRole('button', { name: '5' }))
+    await fireEvent.update(
+      screen.getByPlaceholderText('Tell the author what you thought'),
+      'Still strong',
+    )
     await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
 
-    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [{ agent: NAIVE, score: 5 }])
+    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
+      { agent: NAIVE, score: 5, feedback: 'Still strong' },
+    ])
     expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
     // The reflected saved state marks 5 as pressed.
     await waitFor(() =>
@@ -185,14 +192,19 @@ describe('SessionRatings', () => {
   it('keeps the panel read-only with no save control when the play window is closed', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
-      ratings: view([agent({ agent: NAIVE, your_rating: 4 })], { read_only: true }),
+      ratings: view(
+        [agent({ agent: NAIVE, your_rating: 4, your_feedback: 'Steady under pressure' })],
+        { read_only: true },
+      ),
     })
     renderPanel()
 
     expect(await screen.findByText(/Rating for this round has closed/)).toBeInTheDocument()
-    // The prior rating still shows, but the controls are disabled and there is no save button.
-    const group = screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })
-    expect(within(group).getByRole('button', { name: '4' })).toBeDisabled()
+    // The prior rating and comment render as text, with no controls and no save button.
+    expect(screen.getByText('★ 4')).toBeInTheDocument()
+    expect(screen.getByText('Steady under pressure')).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeNull()
+    expect(screen.queryByPlaceholderText('Tell the author what you thought')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save ratings' })).toBeNull()
   })
 
@@ -206,8 +218,103 @@ describe('SessionRatings', () => {
 
     const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
     await fireEvent.click(within(group).getByRole('button', { name: '2' }))
+    await fireEvent.update(screen.getByPlaceholderText('Tell the author what you thought'), 'Meh')
     await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/closed/)
+  })
+
+  it('keeps Save ratings disabled until every scored agent has a comment', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-a' },
+          display_name: 'Agent 1',
+        }),
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-b' },
+          display_name: 'Agent 2',
+        }),
+      ]),
+    })
+    renderPanel()
+
+    await screen.findByText('Rate the Agents')
+    const save = screen.getByRole('button', { name: 'Save ratings' })
+    expect(save).toBeDisabled()
+
+    // Agent 1 gets a score and its comment, so it is complete on its own...
+    const firstGroup = screen.getByRole('radiogroup', { name: /Rate Agent 1/ })
+    await fireEvent.click(within(firstGroup).getByRole('button', { name: '5' }))
+    const textareas = screen.getAllByPlaceholderText('Tell the author what you thought')
+    await fireEvent.update(textareas[0] as HTMLElement, 'Steady under pressure')
+
+    // ...but Agent 2 has a score with no comment, so the batch still cannot save.
+    const secondGroup = screen.getByRole('radiogroup', { name: /Rate Agent 2/ })
+    await fireEvent.click(within(secondGroup).getByRole('button', { name: '4' }))
+    expect(save).toBeDisabled()
+    expect(screen.getByText('Add a comment before saving.')).toBeInTheDocument()
+
+    await fireEvent.update(textareas[1] as HTMLElement, 'Leaves the gap open')
+    expect(save).toBeEnabled()
+  })
+
+  it('submits the typed comment with its score in the batch', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE })]),
+    })
+    vi.mocked(submitRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE, your_rating: 5 })]),
+    })
+    renderPanel()
+
+    const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
+    await fireEvent.click(within(group).getByRole('button', { name: '5' }))
+    await fireEvent.update(
+      screen.getByPlaceholderText('Tell the author what you thought'),
+      'Steady under pressure',
+    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
+
+    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
+      { agent: NAIVE, score: 5, feedback: 'Steady under pressure' },
+    ])
+    expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
+  })
+
+  it('tracks the comment length live and flags an overlong comment', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE })]),
+    })
+    renderPanel()
+
+    await screen.findByText('Rate the Agents')
+    const textarea = screen.getByPlaceholderText('Tell the author what you thought')
+    await fireEvent.update(textarea, 'twelve chars')
+    // Twelve written characters count up against the 1000 cap.
+    const counter = screen.getByText('12 / 1000')
+    expect(counter).toBeInTheDocument()
+    expect(counter).not.toHaveClass('over')
+
+    await fireEvent.update(textarea, 'x'.repeat(1001))
+    expect(screen.getByText('1001 / 1000')).toHaveClass('over')
+    expect(screen.getByText('Too long by 1 characters.')).toBeInTheDocument()
+  })
+
+  it('reopens with a prior comment prefilled in the textarea', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE, your_rating: 3, your_feedback: 'prior comment' })]),
+    })
+    renderPanel()
+
+    await screen.findByText('Rate the Agents')
+    expect(screen.getByPlaceholderText('Tell the author what you thought')).toHaveValue(
+      'prior comment',
+    )
   })
 })

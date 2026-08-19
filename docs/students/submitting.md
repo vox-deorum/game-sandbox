@@ -83,7 +83,7 @@ A **season** is one competition round for one environment. It fixes opponents or
 Here is what to know about the season's boards and official matches:
 
 - The **automated board** ranks the average official match score. Higher is always better on this board. See [Leaderboards](../specs/leaderboard.md) for how runs are scored and how tied scores are broken.
-- The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games. See [Leaderboards](../specs/leaderboard.md) for the full rating rules.
+- The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games, plus a written feedback. See [Leaderboards](../specs/leaderboard.md) for the full rating rules.
 - Official matches run on the server's schedule, and you can watch their replays on the website.
 - While the season's play window is open, watch, play, and rating surfaces show anonymized agents under neutral numbered labels. See [Frontend](../specs/frontend.md) for the exact rule.
 

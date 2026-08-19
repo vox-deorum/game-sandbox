@@ -550,6 +550,7 @@ describe('submission API', () => {
       env_id: ENV_ID,
       rater_user_id: users.idOf('carol'),
       agent: { kind: 'submission', submission_id: alice.id, user_id: aliceId },
+      feedback: 'nice run',
       score: 4,
     })
 

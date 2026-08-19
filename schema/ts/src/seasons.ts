@@ -4,6 +4,9 @@
  */
 export const RATING_PROMPT_MAX = 2_000
 
+/** The rater's written comment, required beside every 1-5 score and counted in Unicode code points. */
+export const RATING_FEEDBACK_MAX = 1_000
+
 /** The public Season description remains one short inline Markdown paragraph. */
 export const SEASON_DESCRIPTION_MAX = 2_000
 

@@ -132,7 +132,9 @@ Signed-in users with `normal` or `admin` status may run one session at a time. E
 
 Every session is recorded, and the owner may pin the replay.
 
-A session can be rated only while its season's play window remains open. A user has one effective rating from 1 to 5 for each agent in each season. A later rating replaces the earlier one.
+A session can be rated only while its season's play window remains open. A user has one effective rating from 1 to 5 for each agent in each season. A later rating replaces both the earlier score and the earlier comment.
+
+Every rating also carries a required written comment of up to 1,000 Unicode code points, counted as code points like the [messaging cap](communication.md#messages), so an emoji counts as one. The comment is trimmed, and a blank comment is refused along with one over the cap.
 
 The interface prevents:
 
@@ -140,8 +142,8 @@ The interface prevents:
 - Rating after play closes.
 - Rating a builtin-only session.
 
-A named builtin may be rated in a mixed session. Ratings affect only the human-feedback board.
+A named builtin may be rated in a mixed session. Ratings affect only the human-feedback board, which shows only mean, population standard deviation, and count and never the written comments. See [Leaderboards](leaderboard.md#human-feedback-board).
 
-The rating panel appears after the session ends. It may show the **season rating prompt** set by the operator and the agent rating prompt set by the agent's author. Both guide the same score.
+The rating panel appears after the session ends. It shows a comment box for each rateable agent with a live counter of that comment's length, and Save stays disabled until every scored agent has a non-blank comment. Reopening the panel after rating again prefills the prior score and comment. It may show the **season rating prompt** set by the operator and the agent rating prompt set by the agent's author. Both guide the same score; the comment is the rater's own words.
 
-The author sets the agent rating prompt in the submission form. It is season metadata, not part of the pinned submission. The same prompt also appears beneath the agent on the human-feedback board and once for each season in the agent profile's submission history.
+The author sets the agent rating prompt in the submission form. It is season metadata, not part of the pinned submission. The same prompt also appears beneath the agent on the human-feedback board and once for each season in the agent profile's submission history. Once a season is released, the agent's owner sees a **Peer Feedback** section on their own agent profile listing the comments their agent received, grouped by released season with the newest season first. The comments are anonymous to the author, who never sees a rater's name or id. See [Seasons](seasons.md#public-gates) for the release rule.

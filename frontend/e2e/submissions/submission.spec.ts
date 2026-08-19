@@ -140,6 +140,8 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   expect(panelBox?.y).toBeLessThan(canvasBox?.y ?? 0)
 
   await ratingsPanel.getByRole('button', { name: '5', exact: true }).click()
+  // Every rating needs a written comment, so Save stays disabled until the comment box is filled.
+  await ratingsPanel.locator('textarea').first().fill('Steady under pressure')
   await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
   await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
 

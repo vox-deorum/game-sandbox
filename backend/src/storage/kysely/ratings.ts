@@ -28,7 +28,7 @@ export async function upsertRating(
   if (existing !== undefined) {
     const updated = await db
       .updateTable('ratings')
-      .set({ score: input.score, updated_at: now })
+      .set({ score: input.score, feedback: input.feedback, updated_at: now })
       .where('id', '=', existing.id)
       .returningAll()
       .executeTakeFirstOrThrow()
@@ -43,6 +43,7 @@ export async function upsertRating(
       rater_user_id: input.rater_user_id,
       ...agentColumns(input.agent),
       score: input.score,
+      feedback: input.feedback,
       created_at: now,
       updated_at: now,
     })
@@ -92,6 +93,25 @@ export async function listRatingsByRater(
     .selectAll()
     .where('season_id', '=', seasonId)
     .where('rater_user_id', '=', raterUserId)
+    .execute()
+}
+
+/**
+ * Every rating of one owner's submitted agents in one environment, newest first. The owner-feedback
+ * read on the agent profile uses this, filtering the returned seasons by release status at the route
+ * so the storage query itself stays a flat owner-bounded scan.
+ */
+export async function listRatingsForAgentOwner(
+  db: Kysely<Database>,
+  envId: string,
+  ownerUserId: string,
+): Promise<Rating[]> {
+  return await db
+    .selectFrom('ratings')
+    .selectAll()
+    .where('env_id', '=', envId)
+    .where('agent_user_id', '=', ownerUserId)
+    .orderBy('updated_at', 'desc')
     .execute()
 }
 

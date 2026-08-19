@@ -367,6 +367,9 @@ export class KyselyStorage implements Storage {
   listRatingsByRater(seasonId: string, raterUserId: string): Promise<Rating[]> {
     return ratings.listRatingsByRater(this.db, seasonId, raterUserId)
   }
+  listRatingsForAgentOwner(envId: string, ownerUserId: string): Promise<Rating[]> {
+    return ratings.listRatingsForAgentOwner(this.db, envId, ownerUserId)
+  }
   aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]> {
     return ratings.aggregateRatingsByAgent(this.db, seasonId)
   }

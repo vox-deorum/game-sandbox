@@ -7,6 +7,7 @@ import {
   configureSeason,
   declareSeason,
   deleteSeason,
+  getAgentFeedback,
   getAuthorPrompt,
   getEnvironmentLeaderboards,
   getEnvironments,
@@ -24,6 +25,7 @@ import {
   listAdminLlmDevelopmentUsers,
   listLlmDevelopmentCalls,
   listLlmDevelopmentSeasons,
+  listSeasonRatings,
   listSeasons,
   listWatchAgents,
   openSubmissions,
@@ -404,7 +406,9 @@ describe('api client', () => {
         agents: [],
       }),
     )
-    const batch = [{ agent: { kind: 'builtin' as const, name: 'naive' }, score: 4 }]
+    const batch = [
+      { agent: { kind: 'builtin' as const, name: 'naive' }, score: 4, feedback: 'good' },
+    ]
     expect((await submitRatings('s1', batch)).ok).toBe(true)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/sessions/s1/ratings')
@@ -414,6 +418,46 @@ describe('api client', () => {
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'play_closed' }, 409))
     expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'play_closed' })
+  })
+
+  it('maps the empty-feedback and overlong-comment refusals onto their typed reasons', async () => {
+    const batch = [{ agent: { kind: 'builtin' as const, name: 'naive' }, score: 4, feedback: '' }]
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'empty_feedback' }, 400))
+    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'empty_feedback' })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'feedback_too_long' }, 400))
+    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'feedback_too_long' })
+  })
+
+  it("reads an owner's anonymous peer feedback from the environment agent route", async () => {
+    const payload = {
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      seasons: [
+        {
+          season_id: 'iter-released',
+          season_label: 'Spring Iteration',
+          mean: 4,
+          count: 2,
+          ratings: [
+            { score: 5, feedback: 'Held the gap well', rated_at: '2026-06-14T00:00:00Z' },
+            { score: 3, feedback: 'Survives but never commits', rated_at: '2026-06-13T00:00:00Z' },
+          ],
+        },
+      ],
+    }
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await getAgentFeedback('flappy_bird', 'eve')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy_bird/agents/eve/feedback')
+  })
+
+  it("reads a season's peer ratings through the admin prefix", async () => {
+    const payload = { by_agent: [], by_rater: [] }
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await listSeasonRatings('iter-1')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/admin/seasons/iter-1/ratings')
   })
 
   it('reads and sets the author prompt, mapping the no-agent refusal', async () => {
