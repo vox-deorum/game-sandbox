@@ -226,15 +226,18 @@ describe('DecisionLog', () => {
     expect(screen.getByText(/move\?/)).toBeInTheDocument()
     expect(screen.getByText(/left/)).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    // The header X is the dialog's universal close; the inspector also keeps a bottom Close, so
+    // target the header explicitly to avoid the ambiguous name.
+    const closeHeader = () => document.querySelector<HTMLElement>('.ui-dialog-close')
+    await fireEvent.click(closeHeader() as HTMLElement)
     await waitFor(() => expect(trigger).toHaveFocus())
     await fireEvent.keyDown(trigger, { key: 'Enter' })
     expect(screen.getByRole('dialog', { name: 'Inspect request and response' })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await fireEvent.click(closeHeader() as HTMLElement)
     await waitFor(() => expect(trigger).toHaveFocus())
     await fireEvent.keyDown(trigger, { key: ' ' })
     expect(screen.getByRole('dialog', { name: 'Inspect request and response' })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await fireEvent.click(closeHeader() as HTMLElement)
     await view.rerender({
       entries: [{ tick: 5, player: 'player_0', action: 0 }],
       llmCalls: [call()],

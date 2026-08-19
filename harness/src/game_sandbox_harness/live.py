@@ -485,7 +485,7 @@ def _parse_llm(raw: object, player_bindings: dict[str, PlayerBinding]) -> LlmCon
         base_url=cast("str", llm["base_url"]),
         tick_url=cast("str", llm["tick_url"]),
         inflight_url=cast("str", llm["inflight_url"]),
-        keys=cast("dict[str, str]", dict(keys)),
+        keys=keys,
     )
 
 
@@ -502,8 +502,9 @@ def _read_keys_file(path: object) -> dict[str, str]:
         raise LiveConfigError("config 'llm' 'keys_file' must contain a JSON object") from error
     if not isinstance(raw, dict):
         raise LiveConfigError("config 'llm' 'keys_file' must contain a JSON object")
+    raw_keys = cast("dict[object, object]", raw)
     keys: dict[str, str] = {}
-    for player_id, key in raw.items():
+    for player_id, key in raw_keys.items():
         if not isinstance(player_id, str) or not isinstance(key, str) or not key:
             raise LiveConfigError("config 'llm' 'keys_file' must map player ids to non-empty key strings")
         keys[player_id] = key

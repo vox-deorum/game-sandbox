@@ -61,7 +61,6 @@ function formatDate(value: string): string {
   <UiDialog v-model:open="open" :title="title">
     <div class="dialog-actions">
       <UiButton v-if="selected" variant="ghost" size="tight" @click="back">Back</UiButton>
-      <UiButton variant="ghost" size="tight" @click="open = false">Close</UiButton>
     </div>
     <div v-if="selected" class="call-detail">
       <dl class="token-detail">
@@ -121,10 +120,6 @@ function formatDate(value: string): string {
   justify-content: flex-end;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
-}
-
-.dialog-actions > :first-child:not(:only-child) {
-  margin-right: auto;
 }
 
 .call-list-viewport {

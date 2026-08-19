@@ -70,7 +70,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiCard` | A bordered surface (optional padding, optional interactive hover). The `info` variant gives short guidance and summaries a stronger border and background. Layout inside is the caller's. |
 | `UiField` + `UiInput` + `UiTextarea` | Labelled single-line and multiline fields with automatic `id`/`aria-describedby` wiring for hint and error text. |
 | `UiSelect` | A native `<select>` styled to match `UiInput`, paired with `UiField` for label wiring. Options render through the default slot. |
-| `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |
+| `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. Its header line always carries an `X` close button (`aria-label="Close"`) at the far right, so a dialog needs no separate close control unless the control also does something else, such as a `Back` or `Cancel` action. |
 | `UiDialogActions` | The shared right-aligned, wrapping footer for dialog actions. Use it for confirmations, with the consequential action first and a ghost Cancel control second. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiTabs` | A single-select tab strip for filters and section switches that are not routes, following the WAI-ARIA roving-tabindex pattern. |
@@ -81,7 +81,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 
 Simple primitives are local Vue components; the dialog and slider instead wrap Reka UI (a headless Vue component library, used only where accessible focus and keyboard handling are hard to hand-roll).
 
-Confirmation dialogs state the consequence in `UiDialog` and put their actions in `UiDialogActions`. Keep the action text specific, make irreversible actions `danger`, leave cancellation as a ghost button, and preserve any loading or error state in the feature component.
+Confirmation dialogs state the consequence in `UiDialog` and put their actions in `UiDialogActions`. Keep the action text specific, make irreversible actions `danger`, leave cancellation as a ghost button, and preserve any loading or error state in the feature component. Every dialog header already carries the universal `X` close button, so do not add a top-right text `Close`; a `Cancel` button stays only where it reads as the paired "no" to a consequential action.
 
 ### Add a variant
 
@@ -119,7 +119,7 @@ This is the checklist the responsive-and-accessibility audit walks for every pag
 
 - **Focus is visible everywhere.** `base.css` defines one global `:focus-visible` outline on `--color-focus-ring`; no component removes an outline without replacing it.
 - **Color is never the sole indicator.** Status pairs a dot with a text label (`UiStatusBadge`); badges carry text; the pin marker is a labelled badge, not a glyph; error and success colors always accompany words.
-- **Interactive controls are labelled.** Form fields get automatic label and `aria-describedby` wiring through `UiField`; icon-only affordances carry an `aria-label` or visually hidden text. The dialog traps focus, closes on escape, and restores focus to its trigger.
+- **Interactive controls are labelled.** Form fields get automatic label and `aria-describedby` wiring through `UiField`; icon-only affordances carry an `aria-label` or visually hidden text. The dialog traps focus, closes on escape or its header `X`, and restores focus to its trigger.
 - **The replay transport is fully keyboard operable.** Space toggles play, the arrows step, Home and End jump, and the scrubber announces its position (`aria-valuenow` against the tick count). The keyboard map lives in `useReplayTransport` and is tested.
 - **Touch targets** on the replay transport controls clear a 44px minimum.
 

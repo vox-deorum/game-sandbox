@@ -54,4 +54,13 @@ describe('UiDialog', () => {
     await fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' })
     expect(openRef.value).toBe(false)
   })
+
+  it('renders a header X close button and closes when it is clicked', async () => {
+    const { Harness, openRef } = makeHarness(true)
+    render(Harness)
+    const close = await screen.findByRole('button', { name: 'Close' })
+    expect(close).toHaveClass('ui-dialog-close')
+    await fireEvent.click(close)
+    expect(openRef.value).toBe(false)
+  })
 })

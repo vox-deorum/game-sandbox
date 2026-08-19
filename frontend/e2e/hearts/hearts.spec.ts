@@ -431,7 +431,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     const inspector = page.getByRole('dialog', { name: 'Inspect request and response' })
     await expect(inspector.getByRole('heading', { name: 'Request', exact: true })).toBeVisible()
     await expect(inspector.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
-    await inspector.getByRole('button', { name: 'Close' }).click()
+    await inspector.locator('.ui-dialog-close').click()
 
     // Operators retain the same body-inspection capability on the workflow replay UI.
     await authenticateBrowser(page.context(), admin)
@@ -448,7 +448,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     await expect(
       operatorInspector.getByRole('heading', { name: 'Response', exact: true }),
     ).toBeVisible()
-    await operatorInspector.getByRole('button', { name: 'Close' }).click()
+    await operatorInspector.locator('.ui-dialog-close').click()
 
     // A logged-out reader retains cost metadata but gets no request or response inspection action.
     await page.context().clearCookies()

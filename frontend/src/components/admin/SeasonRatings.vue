@@ -18,7 +18,6 @@ import {
   listSeasonRatings,
 } from '../../api/client.js'
 import { formatDate, formatRating } from '../../lib/format.js'
-import UiButton from '../ui/UiButton.vue'
 import UiDialog from '../ui/UiDialog.vue'
 import UiEmptyState from '../ui/UiEmptyState.vue'
 
@@ -183,9 +182,6 @@ watch(
     </template>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
-      <div class="dialog-actions">
-        <UiButton variant="ghost" size="tight" @click="closeDialog">Close</UiButton>
-      </div>
       <div v-if="selectedAgent !== null" class="ratings-list">
         <div v-for="(rating, index) in selectedAgent.ratings" :key="index" class="rating-row">
           <div class="rating-row-head">
@@ -285,12 +281,6 @@ watch(
   margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--space-3);
 }
 
 .ratings-list {
