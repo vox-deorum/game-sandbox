@@ -37,6 +37,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SANDBOX_MEMORY_MB` | `512` | Base session memory quota |
 | `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |
 | `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
+| `SANDBOX_PIDS_LIMIT` | `512` | Per-container pid ceiling, so a fork bomb cannot exhaust the shared host pid table |
 
 `LOCAL_HTTPS_PORT` is a Docker setup and Compose value, not a backend listener. It defaults to `8443`, cannot use the public HTTPS port `443`, and publishes the proxy's local HTTPS listener on `127.0.0.1` only. [Run the app in Docker](docker.md) describes the two proxy listeners.
 

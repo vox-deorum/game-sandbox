@@ -123,11 +123,20 @@ function buildContext(sourceTreePath: string, dockerfile: string): NodeJS.Readab
  * The overlay Dockerfile. `COPY tree <dest>` lays the submission's repo root into its seat
  * directory; the `chmod -R a+rX` mirrors the base image's normalization so a tree packed from a host
  * without Unix execute bits (a Windows checkout) still has the directory search bit a CapDrop-ALL
- * container needs to stat the manifest.
+ * container needs to stat the manifest. The base image runs as the non-root `sandbox` user, so the
+ * build steps up to root for the normalization (which the non-owner cannot perform) and back down
+ * again: sessions, and the next chained overlay round, then run as `sandbox`.
  */
 function overlayDockerfile(baseTag: string, seatId: string): string {
   const dest = `${SUBMISSION_SEAT_BASE}/${seatId}`
-  return [`FROM ${baseTag}`, `COPY tree ${dest}`, `RUN chmod -R a+rX ${dest}`, ''].join('\n')
+  return [
+    `FROM ${baseTag}`,
+    `COPY tree ${dest}`,
+    'USER root',
+    `RUN chmod -R a+rX ${dest}`,
+    'USER sandbox',
+    '',
+  ].join('\n')
 }
 
 /** Run the build stream to completion, rejecting on a build-step error or the configured timeout. */

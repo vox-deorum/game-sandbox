@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 
 import type { Container, ContainerCreateOptions, Network } from 'dockerode'
 import Docker from 'dockerode'
@@ -60,6 +61,22 @@ function isProcessAlive(pid: number): boolean {
     // ESRCH means no such process (a true orphan); EPERM means it exists but we may not signal it.
     return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
+}
+
+/**
+ * The backend process's own container id, read from its cgroup path when it runs inside Docker
+ * (compose attaches this container to the internal network, whose inspect data keys endpoints by
+ * container id). `undefined` when the process is not containerized under a 64-hex-id cgroup (the
+ * host-process dev mode), which is exactly when the caller should not rely on the internal network.
+ */
+async function ownContainerId(): Promise<string | undefined> {
+  let cgroup: string
+  try {
+    cgroup = await readFile('/proc/self/cgroup', 'utf-8')
+  } catch {
+    return undefined
+  }
+  return /(?:docker|containerd)[-/]([0-9a-f]{64})/i.exec(cgroup)?.[1]
 }
 
 export class DockerDriver implements ExecutionDriver {
@@ -131,6 +148,29 @@ export class DockerDriver implements ExecutionDriver {
     }
   }
 
+  /**
+   * The interface the internal LLM listener should bind to for the configured relay topology. A
+   * compose-network relay reaches the backend over the shared internal network, so the listener
+   * binds that network's interface only, never the outbound or host-facing ones. The host-gateway
+   * relay (dev / host process) must stay reachable through the docker gateway, so it binds all
+   * interfaces. Returns `undefined` when the internal interface cannot be discovered; the caller
+   * logs loudly and falls back to all interfaces rather than silently breaking LLM.
+   */
+  async llmListenHost(): Promise<string | undefined> {
+    if (this.options.llmRelay.mode === 'host-gateway') {
+      return '0.0.0.0'
+    }
+    const ownId = await ownContainerId()
+    if (ownId === undefined) return undefined
+    const network = await this.docker
+      .getNetwork(this.options.llmRelay.network)
+      .inspect()
+      .catch(() => undefined)
+    const endpoint = network?.Containers?.[ownId]
+    const host = endpoint?.IPv4Address?.split('/')[0]
+    return host === undefined || host === '' ? undefined : host
+  }
+
   /** Create one agent-only bridge and connect its relay through the configured fixed topology. */
   private async createLlmNetwork(sessionId: string): Promise<LlmNetworkResources> {
     if (this.llmInternalPort === undefined) {
@@ -195,6 +235,7 @@ export class DockerDriver implements ExecutionDriver {
           ReadonlyRootfs: true,
           CapDrop: ['ALL'],
           SecurityOpt: ['no-new-privileges:true'],
+          PidsLimit: 64,
         },
         NetworkingConfig: {
           EndpointsConfig: { [relayNetwork]: {} },
@@ -261,10 +302,20 @@ export class DockerDriver implements ExecutionDriver {
         // Swap equal to memory means the quota is hard: the kernel cannot soften an overage onto swap.
         MemorySwap: memoryBytes,
         ReadonlyRootfs: sandbox.readOnlyRoot,
-        Tmpfs: { [sandbox.scratch.containerPath]: `rw,nosuid,size=${sandbox.scratch.sizeMb}m` },
+        // `mode=1777` keeps the scratch writable by the non-root session user; `nodev`/`nosuid` keep a
+        // device or setuid helper out of the only writable path. `exec` stays on: /tmp also serves as
+        // the student run directory.
+        Tmpfs: {
+          [sandbox.scratch.containerPath]:
+            `rw,nosuid,nodev,mode=1777,size=${sandbox.scratch.sizeMb}m`,
+        },
         NetworkMode: networkMode,
         Binds: binds.length > 0 ? binds : undefined,
         CapDrop: ['ALL'],
+        // Blocks setuid-binary privilege gain inside the container even before the non-root user.
+        SecurityOpt: ['no-new-privileges:true'],
+        // A fork bomb may not drain the shared host pid table.
+        PidsLimit: sandbox.pids,
       },
     }
   }

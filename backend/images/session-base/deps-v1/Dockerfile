@@ -13,9 +13,13 @@ FROM python:3.12-slim
 
 # Read-only-root friendly: avoid bytecode writes onto the root filesystem. Stdout is the protocol
 # channel; the runner flushes every line itself, and unbuffered mode keeps diagnostics prompt.
+# HOME is the tmpfs scratch, the only writable path besides the mounted /recordings, so a session
+# runs as the non-root `sandbox` user with somewhere writable and never picks up a userspace pip.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HOME=/tmp \
+    PYTHONNOUSERSITE=1
 
 WORKDIR /opt/src
 
@@ -44,8 +48,9 @@ RUN pip install --no-cache-dir ./harness \
 #    /opt/agents/builtin/<the session's env_id>/<builtin name> (see harness `build_players`). Keeping the versioned copy
 #    here avoids composing from a later template whose requirements could upgrade the v1 set.
 #
-#    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with
-#    CapDrop ALL, so it loses CAP_DAC_READ_SEARCH and is subject to the real mode bits. A build
+#    `chmod a+rX` normalizes the tree's permissions: a session container runs as the non-root
+#    `sandbox` user (see below), so it has no CAP_DAC_READ_SEARCH or override and is subject to the
+#    real mode bits. A build
 #    context coming from a host that does not carry Unix execute bits (a Windows checkout) can leave
 #    the copied directories without their search bit, which makes even root unable to stat the
 #    manifest inside — a session-time PermissionError that a Linux-built image never shows. `a+rX`
@@ -61,6 +66,16 @@ RUN chmod -R a+rX /opt/agents/builtin \
 RUN python -c "import game_sandbox_harness, flappy_bird, hearts, skirmish_crane, spades, three_branches" \
     && python -c "from game_sandbox_harness.environment import load_environment; from game_sandbox_harness.manifest import load_agent; [load_agent(f'/opt/agents/builtin/{env_id}/{builtin.name}') for env_id in ('flappy_bird', 'hearts', 'skirmish_crane', 'spades', 'three_branches') for builtin in load_environment(env_id).meta.builtin_agents]"
 
+# Apply the `a+rX` normalization to the rest of the tree too (harness, environments, and agents get
+# COPY'd from a build context that may lack execute bits), so the non-root `sandbox` user can read
+# them. Then add the fixed non-root account as the session and load-check identity: an escape from
+# untrusted student code lands as this unprivileged user, never as root.
+RUN chmod -R a+rX /opt/src /opt/agents \
+    && addgroup --gid 10001 sandbox \
+    && useradd --no-create-home --uid 10001 --gid 10001 --home-dir /tmp sandbox
+
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element
 # by the orchestrator. The recordings volume is mounted at /recordings and named in that config.
+# Overlay images keep this user: they only COPY student code (world-readable, 0o644/0o755) on top.
+USER sandbox
 ENTRYPOINT ["python", "-m", "game_sandbox_harness.live"]

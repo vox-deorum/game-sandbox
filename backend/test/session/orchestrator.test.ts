@@ -502,10 +502,12 @@ describe('orchestrator', () => {
         readOnlyRoot: true,
         network: 'none',
         scratch: { containerPath: '/tmp', sizeMb: 256 },
+        pids: 512,
       })
       expect(launch?.spec.sandbox.mounts).toEqual([
         {
-          hostPath: recordingsDir,
+          // Each session mounts only its own recordings directory (per-session isolation).
+          hostPath: join(recordingsDir, 'sessions', id),
           containerPath: '/recordings',
           readOnly: false,
         },

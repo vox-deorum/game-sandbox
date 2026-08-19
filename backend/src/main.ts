@@ -281,8 +281,18 @@ async function main(): Promise<void> {
   }
 
   if (llmListener !== undefined) {
-    await llmListener.listen({ port: config.llm.internalPort, host: '0.0.0.0' })
-    log(`internal LLM proxy listening on 0.0.0.0:${config.llm.internalPort}`)
+    // Bind the internal LLM proxy to the internal-network interface only (the relay's own network),
+    // so the outbound network and host-facing interfaces never expose it. A failed interface lookup
+    // degrades to all interfaces with a loud warning rather than silently breaking LLM features.
+    const llmListenHost = await driver.llmListenHost()
+    if (config.docker.llmRelay.mode === 'compose-network' && llmListenHost === undefined) {
+      log(
+        'WARNING: could not resolve the internal LLM listener interface; binding 0.0.0.0 (all interfaces). ' +
+          'Correct the compose relay network so the proxy is confined to the internal network.',
+      )
+    }
+    await llmListener.listen({ port: config.llm.internalPort, host: llmListenHost ?? '0.0.0.0' })
+    log(`internal LLM proxy listening on ${llmListenHost ?? '0.0.0.0'}:${config.llm.internalPort}`)
   }
   await app.listen({ port: config.port, host: config.listenHost })
   log(`backend listening on ${config.listenHost}:${config.port}`)

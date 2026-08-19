@@ -51,6 +51,11 @@ export interface LiveSessionDeps {
    * just-grown data. Fire-and-forget; the orchestrator wires it to the retention sweep.
    */
   onFinalized?: (id: string) => void
+  /**
+   * Promote this session's recording from its isolated directory into the shared flat store, awaited
+   * before the end is announced so a replay request arriving right after can already find it.
+   */
+  settleRecording?: (recordingId: string) => Promise<void> | void
   /** Backend logger, tagged by the caller with the session id. */
   log: (message: string) => void
   idleTimeoutMs: number
@@ -582,6 +587,14 @@ export class LiveSession {
         // Fail safe: an uncertain association keeps the scope for startup recovery.
         this.deps.log(`session ${this.id}: LLM scope cleanup failed: ${String(error)}`)
       }
+    }
+
+    // Promote this session's recording out of its isolated directory into the shared flat store
+    // before announcing the end, so a client that reopens the replay immediately can find it.
+    try {
+      await this.deps.settleRecording?.(this.recordingId)
+    } catch (error) {
+      this.deps.log(`session ${this.id}: settling recording failed: ${String(error)}`)
     }
 
     this.broadcast(sessionEnvelope('ended', reason))

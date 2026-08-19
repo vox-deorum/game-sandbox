@@ -26,6 +26,7 @@ function profile(overrides: Partial<SandboxProfile> = {}): SandboxProfile {
     scratch: { containerPath: '/tmp', sizeMb: 64 },
     network: 'none',
     mounts: [],
+    pids: 512,
     ...overrides,
   }
 }

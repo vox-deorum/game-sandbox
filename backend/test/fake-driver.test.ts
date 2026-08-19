@@ -16,6 +16,7 @@ function launchSpec(overrides: Partial<LaunchSpec> = {}): LaunchSpec {
       scratch: { containerPath: '/scratch', sizeMb: 256 },
       network: 'none',
       mounts: [{ hostPath: '/data/recordings', containerPath: '/recordings', readOnly: false }],
+      pids: 512,
     },
     sessionId: 'sess-1',
     ...overrides,

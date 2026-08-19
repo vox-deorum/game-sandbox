@@ -90,7 +90,7 @@ describe('workflow run end to end (Docker)', () => {
         submissionMaxSizeBytes: 25 * 1024 * 1024,
       }),
       snapshots: new SubmissionSnapshotStore(resolve(join(recordingsDir, 'submissions'))),
-      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
       recordingsDir: resolve(recordingsDir),
       imagePolicy: 'reuse',
       log: (message) => runnerLogs.push(message),

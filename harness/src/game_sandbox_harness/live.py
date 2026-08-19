@@ -505,9 +505,7 @@ def _read_keys_file(path: object) -> dict[str, str]:
     keys: dict[str, str] = {}
     for player_id, key in raw.items():
         if not isinstance(player_id, str) or not isinstance(key, str) or not key:
-            raise LiveConfigError(
-                "config 'llm' 'keys_file' must map player ids to non-empty key strings"
-            )
+            raise LiveConfigError("config 'llm' 'keys_file' must map player ids to non-empty key strings")
         keys[player_id] = key
     return keys
 

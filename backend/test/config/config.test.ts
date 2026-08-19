@@ -36,6 +36,7 @@ describe('loadConfig', () => {
       memoryMb: 512,
       memoryPerPlayerMb: 32,
       scratchMb: 256,
+      pids: 512,
     })
     // The db and recordings paths are derived from the data dir.
     expect(config.dbPath.endsWith('sandbox.db')).toBe(true)

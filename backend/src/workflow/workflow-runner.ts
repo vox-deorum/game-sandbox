@@ -49,6 +49,7 @@ import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/regis
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/types.js'
+import { sessionRecordingsScopeDir, settleSessionRecording } from '../recordings/settle.js'
 import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
   assembleLaunch,
@@ -200,6 +201,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
       return this.deps.llmKeysDir
     }
     return join(tmpdir(), `gs-llm-keys-${process.pid}`)
+  }
+
+  /** This game's isolated recordings directory, mounted into its container and settled afterward. */
+  private sessionRecordingsDir(scope: string): string {
+    return sessionRecordingsScopeDir(this.deps.recordingsDir, scope)
   }
 
   enqueue(runId: string): void {
@@ -532,6 +538,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
 
       try {
+        // Each game mounts only its own recordings directory (see settle.ts), so one game's
+        // container cannot read or overwrite another's; the recording is promoted into the shared
+        // flat store after the game exits (settled below).
+        await ensureRecordingsDir(this.sessionRecordingsDir(game.id))
         process = await this.deps.driver.launch({
           image,
           argv: [JSON.stringify(sessionConfig)],
@@ -539,7 +549,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
             sandboxResourcesForPlayers(this.deps.sandbox, layout.playerCount),
             llmHandle.withKeysMount([
               {
-                hostPath: this.deps.recordingsDir,
+                hostPath: this.sessionRecordingsDir(game.id),
                 containerPath: CONTAINER_RECORDINGS_DIR,
                 readOnly: false,
               },
@@ -746,6 +756,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
         this.inFlight.delete(runId)
         this.inFlightLlm.delete(runId)
       }
+      // Promote the game's recording out of its isolated session directory into the shared flat
+      // store on every exit path (natural, cancelled, or error), then drop the empty session dir.
+      await settleSessionRecording(this.deps.recordingsDir, game.id, recordingId).catch((error) =>
+        this.log(`run ${runId} game ${game.id}: settling recording failed: ${String(error)}`),
+      )
     }
   }
 

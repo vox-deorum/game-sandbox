@@ -146,6 +146,8 @@ export interface SandboxProfile {
   scratch: ScratchSpec
   network: SandboxNetwork
   mounts: MountSpec[]
+  /** Per-container pid ceiling, mapped by the Docker driver onto `HostConfig.PidsLimit`. */
+  pids: number
 }
 
 /** Everything needed to launch one session container. */

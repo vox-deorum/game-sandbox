@@ -21,6 +21,7 @@ const SANDBOX: SandboxProfile = {
   scratch: { containerPath: '/tmp', sizeMb: 64 },
   network: 'none',
   mounts: [],
+  pids: 512,
 }
 
 function envelope(payload: Record<string, unknown>): string {

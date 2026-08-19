@@ -237,7 +237,7 @@ function makeRunner(
     environments: environments ?? makeEnvironments(playerCount, stepping),
     source: source ?? unusedSource,
     snapshots: unusedSnapshots,
-    sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
+    sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
     recordingsDir: './data/recordings',
     imagePolicy: 'reuse',
     ...runnerOptions,

@@ -30,5 +30,6 @@ export function buildSandboxProfile(
     scratch: { containerPath: SCRATCH_CONTAINER_PATH, sizeMb: resources.scratchMb },
     network,
     mounts: [...mounts],
+    pids: resources.pids,
   }
 }

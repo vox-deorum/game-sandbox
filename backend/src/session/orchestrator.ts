@@ -24,6 +24,7 @@ import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandb
 import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
+import { sessionRecordingsScopeDir, settleSessionRecording } from '../recordings/settle.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -384,7 +385,10 @@ export class Orchestrator {
         sandboxResourcesForPlayers(this.config.sandbox, layout.playerCount),
         llmHandle.withKeysMount([
           {
-            hostPath: this.recordingsHostDir(),
+            // Each session mounts only its own recordings directory (see settle.ts), so one
+            // session's container cannot read or overwrite another's; the recording is promoted into
+            // the shared flat store after the session finalizes.
+            hostPath: this.sessionRecordingsDir(id),
             containerPath: CONTAINER_RECORDINGS_DIR,
             readOnly: false,
           },
@@ -405,7 +409,7 @@ export class Orchestrator {
         externalChatPlayer,
         llmBlock,
       )
-      await ensureRecordingsDir(this.recordingsHostDir())
+      await ensureRecordingsDir(this.sessionRecordingsDir(id))
     } catch (error) {
       await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
@@ -468,6 +472,10 @@ export class Orchestrator {
         storage: this.storage,
         onEnd: (endedId) => this.registry.remove(endedId),
         onFinalized: (endedId) => this.onSessionFinalized(endedId),
+        // Promote this session's recording into the shared flat store before the end is announced;
+        // tolerate a recording that never landed (the leftover session dir is cleaned up anyway).
+        settleRecording: (recordingId) =>
+          settleSessionRecording(this.recordingsHostDir(), id, recordingId),
         log: this.log,
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs,
@@ -750,6 +758,11 @@ export class Orchestrator {
 
   private recordingsHostDir(): string {
     return resolve(this.config.recordingsDir)
+  }
+
+  /** This session's isolated recordings directory, mounted into its container and settled afterward. */
+  private sessionRecordingsDir(id: string): string {
+    return sessionRecordingsScopeDir(this.recordingsHostDir(), id)
   }
 
   /** The host directory staging per-session LLM keys files, under the deployment data dir. */

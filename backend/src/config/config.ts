@@ -34,6 +34,8 @@ export interface SandboxDefaults {
   memoryMb: number
   memoryPerPlayerMb: number
   scratchMb: number
+  /** Per-container pid ceiling, so a fork bomb cannot hit the shared host pid table. */
+  pids: number
 }
 
 /** Options specific to the local Docker driver. */
@@ -690,6 +692,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB'),
       memoryPerPlayerMb: intVar(env, 'SANDBOX_MEMORY_PER_PLAYER_MB'),
       scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB'),
+      pids: positiveIntVar(env, 'SANDBOX_PIDS_LIMIT'),
     },
     executionDriver: 'docker',
     docker: loadDockerOptions(env),
