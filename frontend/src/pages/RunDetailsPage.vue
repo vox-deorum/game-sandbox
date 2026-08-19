@@ -145,7 +145,9 @@ onUnmounted(() => {
 
     <template v-else>
       <p class="back">
-        <RouterLink :to="`/environments/${envId}/admin`">← Back to console</RouterLink>
+        <RouterLink :to="`/environments/${envId}/admin?season=${seasonId}`">
+          ← Back to console
+        </RouterLink>
       </p>
 
       <UiEmptyState v-if="loadState === 'loading'">Loading run…</UiEmptyState>

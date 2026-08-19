@@ -42,9 +42,6 @@ vi.mock('../src/api/client.js', () => ({
   adminSubmissionDownloadUrl: vi.fn(() => '#'),
   listAdminLlmDevelopmentUsers: vi.fn(async () => []),
   listAdminLlmDevelopmentCalls: vi.fn(async () => ({ calls: [], next_cursor: null })),
-  // The console's Peer Ratings section mounts SeasonRatings, which lists ratings on mount; default it
-  // to an empty read so the section renders its empty states without a real fetch.
-  listSeasonRatings: vi.fn(async () => ({ by_agent: [], by_rater: [] })),
 }))
 
 import {
@@ -57,7 +54,6 @@ import {
   listAdminLlmDevelopmentCalls,
   listAdminLlmDevelopmentUsers,
   listRuns,
-  listSeasonRatings,
   listSeasons,
   openPlay,
   openSubmissions,
@@ -187,7 +183,7 @@ function runningRun(): RunView {
   }
 }
 
-async function renderConsole() {
+async function renderConsole(path = '/environments/flappy_bird/admin') {
   const router = memoryRouter([
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
@@ -200,7 +196,7 @@ async function renderConsole() {
       component: { template: '<div />' },
     },
   ])
-  router.push('/environments/flappy_bird/admin')
+  router.push(path)
   await router.isReady()
   return Object.assign(renderWithMe(router), { router })
 }
@@ -700,9 +696,11 @@ describe('AdminConsolePage', () => {
 
   it('declares a new season through the admin API', async () => {
     vi.mocked(declareSeason).mockResolvedValue(season({ id: 'iter-2', label: 'Week 2' }))
-    await renderConsole()
+    const { router } = await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Declare season' }))
     expect(vi.mocked(declareSeason)).toHaveBeenCalledWith('flappy_bird', {})
+    // The declared season becomes the selection, which the URL reflects.
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
   })
 
   it('opens deletion confirmation without sending a request and cancels cleanly', async () => {
@@ -728,7 +726,7 @@ describe('AdminConsolePage', () => {
       .mockResolvedValueOnce(adminView())
       .mockResolvedValueOnce(adminView({ season: replacement }))
     vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
-    await renderConsole()
+    const { router } = await renderConsole()
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
@@ -739,12 +737,14 @@ describe('AdminConsolePage', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(vi.mocked(listSeasons)).toHaveBeenCalledTimes(2)
     expect(vi.mocked(getAdminSeason)).toHaveBeenLastCalledWith('iter-2')
+    // The newly retained season is the selection, reflected in the URL.
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
   })
 
   it('clears selected detail state when deleting the final season', async () => {
     vi.mocked(listSeasons).mockResolvedValueOnce([pickerSeason()]).mockResolvedValueOnce([])
     vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
-    await renderConsole()
+    const { router } = await renderConsole()
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
@@ -754,6 +754,8 @@ describe('AdminConsolePage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Season Week 1' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Run Configuration' })).toBeNull()
+    // With no season left the URL stops naming one.
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBeUndefined())
   })
 
   it('keeps deletion confirmation open with a useful conflict message', async () => {
@@ -1441,149 +1443,76 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByRole('button', { name: 'Check leaderboard' })).toBeDisabled()
   })
 
-  it('renders both peer-ratings tables with agent and rater aggregates', async () => {
-    vi.mocked(listSeasonRatings).mockResolvedValue({
-      by_agent: [
-        {
-          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
-          mean: 4,
-          count: 2,
-          ratings: [
-            {
-              score: 5,
-              feedback: 'Held the gap',
-              rated_at: '2026-06-12T00:00:00Z',
-              rater_user_id: 'r1',
-              rater_name: 'Kim Lee',
-            },
-          ],
-        },
-      ],
-      by_rater: [
-        { rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] },
-        {
-          rater_user_id: 'r1',
-          rater_name: 'Kim Lee',
-          count: 1,
-          ratings: [
-            {
-              score: 5,
-              feedback: 'Held the gap',
-              rated_at: '2026-06-12T00:00:00Z',
-              agent: {
-                kind: 'submission',
-                submission_id: 's1',
-                user_id: 'u1',
-                user_name: 'Dana Wu',
-              },
-            },
-          ],
-        },
-      ],
-    })
+  it('shows a View leaderboard link from the season header', async () => {
     await renderConsole()
-
-    expect(await screen.findByRole('heading', { name: 'Peer Ratings' })).toBeInTheDocument()
-    const byAgent = (await screen.findByRole('heading', { name: 'By agent' })).closest('section')
-    const byRater = (await screen.findByRole('heading', { name: 'By rater' })).closest('section')
-    expect(byAgent).not.toBeNull()
-    expect(byRater).not.toBeNull()
-    expect(within(byAgent as HTMLElement).getByText('Dana Wu')).toBeInTheDocument()
-    expect(within(byAgent as HTMLElement).getByText('4.0')).toBeInTheDocument()
-    expect(within(byAgent as HTMLElement).getByText('2')).toBeInTheDocument()
-    expect(within(byRater as HTMLElement).getByText('Kim Lee')).toBeInTheDocument()
-    expect(within(byRater as HTMLElement).getByText('1')).toBeInTheDocument()
-    // A rater who graded nobody still sorts into the table, muted, with a footnote naming them.
-    expect(within(byRater as HTMLElement).getByText('Ana Roy')).toBeInTheDocument()
-    expect(within(byRater as HTMLElement).getByText('0')).toBeInTheDocument()
-    expect(screen.getByText('Ana Roy has not rated anyone.')).toBeInTheDocument()
+    const link = await screen.findByRole('link', { name: 'View leaderboard' })
+    expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-1')
   })
 
-  it('opens the by-agent drill-in dialog with the named raters', async () => {
-    vi.mocked(listSeasonRatings).mockResolvedValue({
-      by_agent: [
-        {
-          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
-          mean: 4,
-          count: 2,
-          ratings: [
-            {
-              score: 5,
-              feedback: 'Held the gap',
-              rated_at: '2026-06-12T00:00:00Z',
-              rater_user_id: 'r1',
-              rater_name: 'Kim Lee',
-            },
-          ],
-        },
-      ],
-      by_rater: [],
-    })
-    await renderConsole()
+  it('preselects the season named by the ?season query on load', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
+    ])
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: season({ id: 'iter-2', label: 'Week 2' }) }),
+    )
+    await renderConsole('/environments/flappy_bird/admin?season=iter-2')
 
-    const byAgentSection = (await screen.findByRole('heading', { name: 'By agent' })).closest(
-      'section',
-    ) as HTMLElement
-    await fireEvent.click(within(byAgentSection).getByRole('button', { name: 'Dana Wu' }))
-
-    const dialog = await screen.findByRole('dialog', { name: 'Dana Wu · 2 ratings' })
-    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
-    expect(within(dialog).getByText('Kim Lee')).toBeInTheDocument()
-    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Season Week 2' })).toBeInTheDocument()
+    expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-2')
   })
 
-  it('opens the by-rater drill-in dialog with the rated agent', async () => {
-    vi.mocked(listSeasonRatings).mockResolvedValue({
-      by_agent: [],
-      by_rater: [
-        {
-          rater_user_id: 'r1',
-          rater_name: 'Kim Lee',
-          count: 1,
-          ratings: [
-            {
-              score: 5,
-              feedback: 'Held the gap',
-              rated_at: '2026-06-12T00:00:00Z',
-              agent: {
-                kind: 'submission',
-                submission_id: 's1',
-                user_id: 'u1',
-                user_name: 'Dana Wu',
-              },
-            },
-          ],
-        },
-      ],
-    })
-    await renderConsole()
+  it('syncs the ?season query when a season is selected', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
+    ])
+    vi.mocked(getAdminSeason).mockImplementation(async (id) =>
+      adminView({ season: season({ id, label: id === 'iter-2' ? 'Week 2' : 'Week 1' }) }),
+    )
+    const { router } = await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
 
-    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
-      'section',
-    ) as HTMLElement
-    await fireEvent.click(within(byRaterSection).getByText('Kim Lee'))
+    await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Kim Lee · rated 1 agent' })
-    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
-    expect(within(dialog).getByText('Dana Wu')).toBeInTheDocument()
-    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
   })
 
-  it('keeps a zero-count rater row non-clickable', async () => {
-    vi.mocked(listSeasonRatings).mockResolvedValue({
-      by_agent: [],
-      by_rater: [{ rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] }],
-    })
-    await renderConsole()
+  it('re-selects the default season when an external navigation clears the query', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
+    ])
+    vi.mocked(getAdminSeason).mockImplementation(async (id) =>
+      adminView({ season: season({ id, label: id === 'iter-2' ? 'Week 2' : 'Week 1' }) }),
+    )
+    const { router } = await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
 
-    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
-      'section',
-    ) as HTMLElement
-    const zeroRow = byRaterSection.querySelector('tr.zero') as HTMLElement
-    expect(zeroRow).not.toBeNull()
-    expect(within(byRaterSection).getByText('Ana Roy')).toBeInTheDocument()
-    await fireEvent.click(within(byRaterSection).getByText('Ana Roy'))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.queryByText('Ana Roy · rated 0 agents')).toBeNull()
+    // The Manage tab links to the route without the query; the URL stays authoritative, so the
+    // selection falls back to the default and the query reflects it again.
+    await router.push('/environments/flappy_bird/admin')
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-1'))
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
+  })
+
+  it('normalizes an unknown ?season id back to the shown season', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
+    ])
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: season({ id: 'iter-1', label: 'Week 1' }) }),
+    )
+    const { router } = await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
+
+    // A mid-session deep link to a season the list does not know keeps the shown season but rewrites
+    // the URL to it, so a stale shareable id never survives.
+    await router.push('/environments/flappy_bird/admin?season=iter-secret')
+    await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-1'))
   })
 })

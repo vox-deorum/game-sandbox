@@ -1,10 +1,11 @@
 <!--
-  The season's peer ratings on the operator console, shown beside the Human Rating Prompt so the
-  operator's guidance and the answers it produced sit together. One read feeds two summary tables:
-  "By agent" answers what people thought of each agent (baselines included, mean descending), and
-  "By rater" answers whether everyone did the peer review (every participant with a submission,
-  including a zero count, ascending so the people who did nothing sort to the top). Each row opens
-  the shared drill-in dialog, named with the rater on one side and the agent on the other.
+  The season's peer ratings on the leaderboards page, in the operator-only section just below the
+  boards (before Matchups), so the public boards and the peer ratings that produced them sit together.
+  One read feeds two summary tables: "By agent" answers what people thought of each agent (baselines
+  included, mean descending), and "By rater" answers whether everyone did the peer review (every
+  participant with a submission, including a zero count, ascending so the people who did nothing sort
+  to the top). Each row opens the shared drill-in dialog, named with the rater on one side and the
+  agent on the other.
 -->
 <script setup lang="ts">
 import { agentRefKey } from '@game-sandbox/schema/board'

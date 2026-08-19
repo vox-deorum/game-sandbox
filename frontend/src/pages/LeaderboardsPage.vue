@@ -27,7 +27,9 @@ import {
 import GamesTable from '../components/GamesTable.vue'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import SeasonChanges from '../components/SeasonChanges.vue'
+import SeasonRatings from '../components/admin/SeasonRatings.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
+import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName } from '../lib/format.js'
@@ -147,6 +149,14 @@ watch(requestedSeasonId, load, { immediate: true })
       <h2 v-if="season !== null" class="leaderboards-sub">
         Season: {{ formatSeasonName(season) }}
         <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
+        <UiButton
+          v-if="isAdmin(me.me)"
+          variant="secondary"
+          size="tight"
+          :to="`/environments/${envId}/admin?season=${season.id}`"
+        >
+          Manage season
+        </UiButton>
       </h2>
       <p v-if="releasedText !== null || currentCounts !== undefined" class="leaderboards-metadata">
         <span v-if="releasedText !== null">{{ releasedText }}</span>
@@ -179,6 +189,10 @@ watch(requestedSeasonId, load, { immediate: true })
         :rating-prompt="season?.rating_prompt ?? null"
       />
     </main>
+
+    <section v-if="isAdmin(me.me) && season !== null" class="leaderboards-ratings">
+      <SeasonRatings :season-id="season.id" />
+    </section>
 
     <!-- The matchup table: every game of the latest completed run, so a reader can reach each game of a
          multi-seat matchup, where the boards link only one representative replay per agent. Static (no
@@ -240,6 +254,7 @@ watch(requestedSeasonId, load, { immediate: true })
   margin-top: var(--space-2);
 }
 
+.leaderboards-ratings,
 .leaderboards-matchups,
 .leaderboards-history {
   margin-top: var(--space-4);

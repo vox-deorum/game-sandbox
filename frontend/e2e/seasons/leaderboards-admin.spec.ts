@@ -314,13 +314,16 @@ test('a full season: submissions, an automated run, then left open for peer rati
     await expect(page.locator('.submission-item')).toHaveCount(1)
     await expect(page.getByText('superseded', { exact: true })).toHaveCount(0)
 
-    // The operator sees the season's peer ratings on the console: both summary tables plus the
-    // by-agent drill-in, which names the raters behind each comment. The glider's mean rating is the
-    // highest, so its row is the first to open and carries the browser-typed comment above.
+    // The console's "View leaderboard" header action jumps to the unreleased season's boards through
+    // the operator preview, where the peer ratings now live right below the boards. Both summary
+    // tables plus the by-agent drill-in are verified on the leaderboard page: the glider's mean
+    // rating is the highest, so its row is the first to open and carries the browser-typed comment.
     await page.goto(`/environments/${ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SEASONS.competition) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SEASONS.competition}` })).toBeVisible()
-    await expect(page.getByText('Peer Ratings')).toBeVisible()
+    await page.getByRole('link', { name: 'View leaderboard' }).click()
+    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}`))
+    await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
     const ratingsTables = page.locator('.ratings-tables')
     await expect(ratingsTables).toBeVisible()
     await expect(ratingsTables.getByRole('heading', { name: 'By agent' })).toBeVisible()
@@ -332,6 +335,12 @@ test('a full season: submissions, an automated run, then left open for peer rati
     await expect(ratingsDialog.getByText(JUDGES[0], { exact: true })).toBeVisible()
     await ratingsDialog.getByRole('button', { name: 'Close' }).click()
     await expect(ratingsDialog).toHaveCount(0)
+
+    // The "Manage season" link lands back on the console, which reads the season from the URL and
+    // preselects the same season.
+    await page.getByRole('link', { name: 'Manage season' }).click()
+    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/admin\\?season=${season.id}`))
+    await expect(page.getByRole('heading', { name: `Season ${SEASONS.competition}` })).toBeVisible()
 
     // The season is not released: it stays open for play, ready for peer rating. A plain member (not
     // the operator) sees the Play and Rate section name Updraft Open, with the fully rated glider and

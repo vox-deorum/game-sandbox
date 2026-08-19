@@ -12,8 +12,8 @@
   opening public play, and releasing results visibly separate.
 -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter, type LocationQueryValue } from 'vue-router'
 
 import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 
@@ -43,7 +43,6 @@ import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls
 import RunActions from '../components/admin/RunActions.vue'
 import RunsList from '../components/admin/RunsList.vue'
 import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
-import SeasonRatings from '../components/admin/SeasonRatings.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
@@ -56,6 +55,7 @@ import { formatLlmCost } from '../lib/llm.js'
 import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
+const router = useRouter()
 const me = useMe()
 const envId = String(route.params.envId)
 const { meta } = useEnvironmentMeta(envId)
@@ -92,6 +92,25 @@ const deleteError = ref<string | null>(null)
 // season must never replace the controls for the season the sidebar now highlights.
 const detailRequest = useLatestRequest()
 
+/** The season id the URL query names, or null when it is absent (non-string, array, or empty). */
+function queryToId(raw: LocationQueryValue | LocationQueryValue[] | undefined): string | null {
+  return typeof raw === 'string' && raw !== '' ? raw : null
+}
+
+/** Keep the URL's `season` query naming the selected season, making console selection shareable. */
+function syncSeasonQuery(): void {
+  if (queryToId(route.query.season) === selectedId.value) {
+    return
+  }
+  const query = { ...route.query }
+  if (selectedId.value === null) {
+    delete query.season
+  } else {
+    query.season = selectedId.value
+  }
+  void router.replace({ path: route.path, query })
+}
+
 onMounted(async () => {
   // The console route is operator-only. Wait for the single /api/me answer, then gate. The backend
   // admin routes enforce the same gate, so a non-operator who forces the URL still gets nothing.
@@ -102,12 +121,16 @@ onMounted(async () => {
   }
   access.value = 'ready'
   await loadSeasons()
+  syncSeasonQuery()
 })
 
 async function loadSeasons(): Promise<void> {
   seasons.value = await listSeasons(envId, { includeUnreleased: true })
   if (selectedId.value === null && seasons.value.length > 0) {
-    selectedId.value = seasons.value[0]!.id
+    const requested = queryToId(route.query.season)
+    const named =
+      requested === null ? undefined : seasons.value.find((season) => season.id === requested)
+    selectedId.value = named?.id ?? seasons.value[0]!.id
   }
   if (selectedId.value !== null) {
     await loadDetail()
@@ -156,8 +179,34 @@ async function select(id: string): Promise<void> {
   historyOpen.value = false
   closeDevelopmentHistory()
   renaming.value = false
+  syncSeasonQuery()
   await loadDetail()
 }
+
+// The URL is the selection's source of truth, so an external navigation that reaches the console —
+// the Manage tab (which links to the route without the query), back/forward, or a shared link —
+// represelects the season the query names; an absent or unknown id falls back to the first season.
+// Selection changes write the query the other way (syncSeasonQuery), and the two converge, so the
+// watcher is a no-op for the console's own writes.
+watch(
+  () => route.query.season,
+  (raw) => {
+    const requested = queryToId(raw)
+    if (requested === selectedId.value) {
+      return
+    }
+    const named =
+      requested === null ? undefined : seasons.value.find((season) => season.id === requested)
+    const target = named?.id ?? seasons.value[0]?.id
+    if (target !== undefined && target !== selectedId.value) {
+      void select(target)
+    } else if (requested !== null && target !== undefined) {
+      // The URL names a season the list does not know while its fallback is already selected:
+      // normalize the URL to the season actually shown rather than keep a dead id shareable.
+      syncSeasonQuery()
+    }
+  },
+)
 
 /** Reload both the picker (labels/gates may have changed) and the selected season's detail. */
 async function refresh(updated?: SeasonView): Promise<void> {
@@ -175,6 +224,7 @@ async function declare(): Promise<void> {
     const season = await declareSeason(envId, label === '' ? {} : { label })
     newLabel.value = ''
     selectedId.value = season.id
+    syncSeasonQuery()
     await loadSeasons()
   } finally {
     declaring.value = false
@@ -260,6 +310,7 @@ async function confirmDelete(): Promise<void> {
       deleteOpen.value = false
       clearSelectedSeason()
       await loadSeasons()
+      syncSeasonQuery()
       return
     }
     deleteError.value =
@@ -452,6 +503,13 @@ onUnmounted(() => {
                 <template v-else>
                   <h2>{{ seasonHeading(view.season) }}</h2>
                   <div class="section-actions">
+                    <UiButton
+                      variant="secondary"
+                      size="tight"
+                      :to="`/environments/${envId}/leaderboards/${view.season.id}`"
+                    >
+                      View leaderboard
+                    </UiButton>
                     <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
                       Rename
                     </UiButton>
@@ -511,6 +569,15 @@ onUnmounted(() => {
             </section>
 
             <section class="admin-section">
+              <h2>Archived Runs</h2>
+              <RunsList :runs="runs" :env-id="envId" :season-id="view.season.id" />
+            </section>
+
+            <section class="admin-section">
+              <SeasonSubmissions :season-id="view.season.id" />
+            </section>
+
+            <section class="admin-section">
               <h2>Human Rating Prompt</h2>
               <UiCard class="admin-card">
                 <OperatorSeasonTextEditor
@@ -530,10 +597,6 @@ onUnmounted(() => {
                   </p>
                 </OperatorSeasonTextEditor>
               </UiCard>
-            </section>
-
-            <section class="admin-section">
-              <SeasonRatings :season-id="view.season.id" />
             </section>
 
             <section class="admin-section">
@@ -580,15 +643,6 @@ onUnmounted(() => {
                   </tbody>
                 </table>
               </div>
-            </section>
-
-            <section class="admin-section">
-              <SeasonSubmissions :season-id="view.season.id" />
-            </section>
-
-            <section class="admin-section">
-              <h2>Archived Runs</h2>
-              <RunsList :runs="runs" :env-id="envId" :season-id="view.season.id" />
             </section>
           </template>
         </main>

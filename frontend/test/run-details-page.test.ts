@@ -133,6 +133,12 @@ describe('RunDetailsPage', () => {
     expect(requester).toHaveAttribute('title', 'dev-user')
   })
 
+  it('links back to the console on the run season', async () => {
+    await renderPage()
+    const back = await screen.findByRole('link', { name: /Back to console/ })
+    expect(back).toHaveAttribute('href', '/environments/flappy_bird/admin?season=iter-1')
+  })
+
   it('prefers user_name over the stable id in the games table and the requester metadata', async () => {
     vi.mocked(getRun).mockResolvedValue(
       runView({

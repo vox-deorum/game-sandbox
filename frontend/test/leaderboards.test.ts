@@ -28,6 +28,9 @@ vi.mock('../src/api/client.js', () => ({
   getSeasonLeaderboards: vi.fn(),
   getAdminSeason: vi.fn(),
   listSeasons: vi.fn(),
+  // The leaderboards page mounts SeasonRatings for an operator, which lists ratings on mount; default
+  // it to an empty read so the section renders its empty states without a real fetch.
+  listSeasonRatings: vi.fn(async () => ({ by_agent: [], by_rater: [] })),
 }))
 
 import {
@@ -36,6 +39,7 @@ import {
   getEnvironments,
   getMe,
   getSeasonLeaderboards,
+  listSeasonRatings,
   listSeasons,
 } from '../src/api/client.js'
 import LeaderboardsPage from '../src/pages/LeaderboardsPage.vue'
@@ -131,6 +135,7 @@ async function renderAt(path: string) {
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: AgentStub },
     { path: '/environments/:envId/leaderboards/:seasonId?', component: LeaderboardsPage },
+    { path: '/environments/:envId/admin', component: { template: '<div />' } },
     { path: '/replays/:id', component: ReplayStub },
   ])
   router.push(path)
@@ -478,5 +483,202 @@ describe('LeaderboardsPage', () => {
     await renderAt('/environments/flappy_bird/leaderboards')
 
     await waitFor(() => expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird'))
+  })
+
+  it('shows a Manage season link to the console for an operator', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const link = await screen.findByRole('link', { name: 'Manage season' })
+    expect(link).toHaveAttribute('href', '/environments/flappy_bird/admin?season=iter-1')
+  })
+
+  it('hides the peer-ratings section and the Manage season link from a non-operator', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
+    expect(screen.queryByText('Peer Ratings')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Manage season' })).toBeNull()
+    expect(vi.mocked(listSeasonRatings)).not.toHaveBeenCalled()
+  })
+
+  it('renders both peer-ratings tables for an operator, below the boards', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [
+        {
+          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
+          mean: 4,
+          count: 2,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              rater_user_id: 'r1',
+              rater_name: 'Kim Lee',
+            },
+          ],
+        },
+      ],
+      by_rater: [
+        { rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] },
+        {
+          rater_user_id: 'r1',
+          rater_name: 'Kim Lee',
+          count: 1,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              agent: {
+                kind: 'submission',
+                submission_id: 's1',
+                user_id: 'u1',
+                user_name: 'Dana Wu',
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    expect(await screen.findByRole('heading', { name: 'Peer Ratings' })).toBeInTheDocument()
+    const byAgent = (await screen.findByRole('heading', { name: 'By agent' })).closest('section')
+    const byRater = (await screen.findByRole('heading', { name: 'By rater' })).closest('section')
+    expect(byAgent).not.toBeNull()
+    expect(byRater).not.toBeNull()
+    expect(within(byAgent as HTMLElement).getByText('Dana Wu')).toBeInTheDocument()
+    expect(within(byAgent as HTMLElement).getByText('4.0')).toBeInTheDocument()
+    expect(within(byAgent as HTMLElement).getByText('2')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('Kim Lee')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('1')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('Ana Roy')).toBeInTheDocument()
+    expect(within(byRater as HTMLElement).getByText('0')).toBeInTheDocument()
+    expect(screen.getByText('Ana Roy has not rated anyone.')).toBeInTheDocument()
+  })
+
+  it('opens the by-agent drill-in dialog for an operator with the named raters', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [
+        {
+          agent: { kind: 'submission', submission_id: 's1', user_id: 'u1', user_name: 'Dana Wu' },
+          mean: 4,
+          count: 2,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              rater_user_id: 'r1',
+              rater_name: 'Kim Lee',
+            },
+          ],
+        },
+      ],
+      by_rater: [],
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const byAgentSection = (await screen.findByRole('heading', { name: 'By agent' })).closest(
+      'section',
+    ) as HTMLElement
+    await fireEvent.click(within(byAgentSection).getByRole('button', { name: 'Dana Wu' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Dana Wu · 2 ratings' })
+    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Kim Lee')).toBeInTheDocument()
+    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+  })
+
+  it('opens the by-rater drill-in dialog for an operator with the rated agent', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [],
+      by_rater: [
+        {
+          rater_user_id: 'r1',
+          rater_name: 'Kim Lee',
+          count: 1,
+          ratings: [
+            {
+              score: 5,
+              feedback: 'Held the gap',
+              rated_at: '2026-06-12T00:00:00Z',
+              agent: {
+                kind: 'submission',
+                submission_id: 's1',
+                user_id: 'u1',
+                user_name: 'Dana Wu',
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
+      'section',
+    ) as HTMLElement
+    await fireEvent.click(within(byRaterSection).getByText('Kim Lee'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Kim Lee · rated 1 agent' })
+    expect(within(dialog).getByText('★ 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Dana Wu')).toBeInTheDocument()
+    expect(within(dialog).getByText('Held the gap')).toBeInTheDocument()
+  })
+
+  it('keeps a zero-count rater row non-clickable for an operator', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), settings: settings(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    vi.mocked(listSeasonRatings).mockResolvedValue({
+      by_agent: [],
+      by_rater: [{ rater_user_id: 'r0', rater_name: 'Ana Roy', count: 0, ratings: [] }],
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const byRaterSection = (await screen.findByRole('heading', { name: 'By rater' })).closest(
+      'section',
+    ) as HTMLElement
+    const zeroRow = byRaterSection.querySelector('tr.zero') as HTMLElement
+    expect(zeroRow).not.toBeNull()
+    expect(within(byRaterSection).getByText('Ana Roy')).toBeInTheDocument()
+    await fireEvent.click(within(byRaterSection).getByText('Ana Roy'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText('Ana Roy · rated 0 agents')).toBeNull()
   })
 })
