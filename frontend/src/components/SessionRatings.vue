@@ -324,11 +324,12 @@ function errorMessage(
 .agent {
   border-top: 1px solid;
   border-color: var(--color-text-muted);
-  padding: var(--space-1) 0 var(--space-1) 0;
+  margin: var(--space-1) 0;
+  padding: var(--space-1) 0;
 }
 
 .agent .prompt {
-  margin: var(--space-1) 0 var(--space-1) 0;
+  margin: var(--space-1) 0;
 }
 
 .agent-list {
@@ -337,7 +338,6 @@ function errorMessage(
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
 }
 
 .agent-head {
@@ -376,7 +376,6 @@ function errorMessage(
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-top: var(--space-3);
 }
 
 .ratings-saved {
@@ -405,8 +404,8 @@ function errorMessage(
 
 .comment-count {
   position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-1);
+  right: var(--space-5);
+  bottom: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-text-muted);

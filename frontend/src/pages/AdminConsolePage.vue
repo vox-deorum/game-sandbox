@@ -537,7 +537,7 @@ onUnmounted(() => {
             </section>
 
             <section class="admin-section">
-              <h2>Development usage</h2>
+              <h2>Development Usage</h2>
               <UiEmptyState v-if="developmentUsers === null">Loading…</UiEmptyState>
               <UiEmptyState v-else-if="developmentUsersError" tone="danger">
                 Could not load development usage.
