@@ -121,12 +121,14 @@ The runner claims the protocol stdout before importing participant code and redi
 
 The overlay image sweep runs at startup, on its timer, and after a successful build. It:
 
-1. Lists overlay images through the driver.
+1. Lists overlay images through the driver, from both the `submission-overlay` and `session-overlay` repositories.
 2. Protects active ready submissions.
 3. Counts protected images toward the budget.
 4. Deletes remaining images oldest first until within `OVERLAY_IMAGE_BUDGET`.
 
 Removal is best-effort because every overlay image is reproducible.
+
+Composed `session-overlay` images are single-use: the orchestrator and workflow runner release one as soon as its session or game ends. Anything still present after that is a fresh compose, a crashed release, or a leaked `-stage` build intermediate. So the sweep gives session overlays a separate, age-first pass: images younger than `SESSION_OVERLAY_RECLAIM_AGE_MS` are never evicted (a compose can be mid-build at the sweep), the rest are trimmed newest-first to `SESSION_OVERLAY_IMAGE_BUDGET`, and `-stage` intermediates are always reclaimed.
 
 ## Container transport
 

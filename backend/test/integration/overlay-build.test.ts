@@ -13,7 +13,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver, type DockerDriver } from '../../src/driver/docker/index.js'
-import type { SandboxProfile, SubmissionOverlayImageSpec } from '../../src/driver/index.js'
+import type {
+  SandboxProfile,
+  SessionOverlayImageSpec,
+  SubmissionOverlayImageSpec,
+} from '../../src/driver/index.js'
 import { OverlayEviction } from '../../src/submission/overlay-eviction.js'
 import { runLoadCheck } from '../../src/submission/validate/load-check.js'
 import { DEPS_VERSION, TAG_PREFIX } from './support/base-image.js'
@@ -204,7 +208,12 @@ describe('overlay caching and eviction (Docker)', () => {
     const eviction = new OverlayEviction(
       d,
       { listActiveReadySubmissionIds: () => Promise.resolve(['it-evict-active']) },
-      { overlayImageBudget: 1, overlayImageSweepIntervalMs: 3_600_000 },
+      {
+        overlayImageBudget: 1,
+        sessionOverlayImageBudget: 20,
+        sessionOverlayReclaimAgeMs: 3_600_000,
+        overlayImageSweepIntervalMs: 3_600_000,
+      },
     )
     await eviction.sweep()
 
@@ -212,5 +221,85 @@ describe('overlay caching and eviction (Docker)', () => {
     const refs = new Set(remaining.map((i) => i.ref))
     expect(refs.has(active.ref)).toBe(true)
     expect(refs.has(superseded.ref)).toBe(false)
+  })
+})
+
+describe('composed session overlays (Docker)', () => {
+  const trees: string[] = []
+  const builtRefs: Array<{ d: DockerDriver; ref: string }> = []
+
+  afterEach(async () => {
+    for (const tree of trees.splice(0)) {
+      rmSync(tree, { recursive: true, force: true })
+    }
+    for (const { d, ref } of builtRefs.splice(0)) {
+      await d.removeImage(ref).catch(() => undefined)
+    }
+  })
+
+  function composedSpec(submissionIds: string[]): SessionOverlayImageSpec {
+    return {
+      kind: 'session-overlay',
+      depsVersion: DEPS_VERSION,
+      seats: submissionIds.map((id, i) => ({
+        seatId: `seat_${i}`,
+        submissionId: id,
+        sourceTreePath: trees[0] as string,
+      })),
+    }
+  }
+
+  it('builds a composed session overlay and lists it as a session overlay with no submission id', async () => {
+    const d = await driver()
+    const tree = writeTree({})
+    trees.push(tree)
+    const image = await d.ensureImage(composedSpec(['sub-a', 'sub-b']))
+    builtRefs.push({ d, ref: image.ref })
+
+    const entry = (await d.listOverlayImages()).find((i) => i.ref === image.ref)
+    expect(entry).toMatchObject({ kind: 'session', submissionId: null })
+  })
+
+  it('releaseSessionOverlay removes a composed tag but leaves the shared per-submission overlay intact', async () => {
+    const d = await driver('reuse')
+    const tree = writeTree({})
+    trees.push(tree)
+    const composed = await d.ensureImage(composedSpec(['sub-rel']))
+    builtRefs.push({ d, ref: composed.ref })
+    const sub = await d.ensureImage(overlaySpec('it-release-noop', tree))
+
+    await d.releaseSessionOverlay(composed.ref) // a composed image is single-use: removed
+    await d.releaseSessionOverlay(sub.ref) // a shared per-submission cache entry: no-op
+    builtRefs.push({ d, ref: sub.ref })
+
+    const remaining = (await d.listOverlayImages()).map((i) => i.ref)
+    expect(remaining).not.toContain(composed.ref)
+    expect(remaining).toContain(sub.ref)
+  })
+
+  it('the eviction sweep reclaims stale composed session overlays past the reclaim window', async () => {
+    const d = await driver()
+    const tree = writeTree({})
+    trees.push(tree)
+    const a = await d.ensureImage(composedSpec(['sub-sw-a']))
+    const b = await d.ensureImage(composedSpec(['sub-sw-b']))
+    builtRefs.push({ d, ref: a.ref }, { d, ref: b.ref })
+
+    // A zero reclaim window makes both instantly evictable; a zero session budget keeps neither.
+    const eviction = new OverlayEviction(
+      d,
+      { listActiveReadySubmissionIds: () => Promise.resolve([]) },
+      {
+        overlayImageBudget: 50,
+        sessionOverlayImageBudget: 0,
+        sessionOverlayReclaimAgeMs: 0,
+        overlayImageSweepIntervalMs: 3_600_000,
+      },
+    )
+    await eviction.sweep()
+
+    const refs = new Set((await d.listOverlayImages()).map((i) => i.ref))
+    expect(refs.has(a.ref)).toBe(false)
+    expect(refs.has(b.ref)).toBe(false)
   })
 })

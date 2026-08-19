@@ -66,6 +66,8 @@ Session containers have:
 - No general internet access, so an agent cannot outsource decisions or reach an unmetered service.
 - Access only to the backend's internal LLM proxy when enabled, which is budgeted and logged.
 
+The recordings volume is the one writable host path: each session mounts its own isolated directory from `DATA_DIR/recordings` at `/recordings`, written by the same non-root user the submitted agent runs as. Unlike the size-capped scratch, it is unbounded, so a hostile or faulty submission could fill the `DATA_DIR` filesystem mid-session. Isolation already prevents cross-session tampering, and retention reclaims the recording after the session finalizes; a filesystem quota on the mount is the clean mitigation if disk exhaustion is a real threat for a deployment.
+
 Container memory and the automated-match watchdog scale with player count rather than seat count, because a wide seat may load one agent instance per player and each agent-controlled player has its own episode budget. A positive `SESSION_MAX_DURATION_MS` overrides the chargeable-duration limit for every live session. Without an override, a positive pace interval derives the limit as the recommended episode ticks multiplied by that interval, plus one episode timeout for each agent-controlled player, plus 60 seconds for platform overhead. An unpaced session uses a 600-second fallback. Verified LLM proxy time is excluded from the limit, as [LLM API](llm.md#determinism-and-timing) defines.
 
 Agents in a multi-agent session share one container and may interfere with one another. The platform does not isolate participants from their opponents inside the same match.

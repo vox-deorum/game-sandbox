@@ -761,6 +761,16 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await settleSessionRecording(this.deps.recordingsDir, game.id, recordingId).catch((error) =>
         this.log(`run ${runId} game ${game.id}: settling recording failed: ${String(error)}`),
       )
+      // The container is gone, so a composed session-overlay image has served its single purpose.
+      // Release it best-effort (the driver no-ops on base and per-submission refs; the eviction
+      // sweep remains the backstop if this fails or never runs).
+      await this.deps.driver
+        .releaseSessionOverlay(image.ref)
+        .catch((error) =>
+          this.log(
+            `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+          ),
+        )
     }
   }
 

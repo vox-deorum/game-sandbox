@@ -80,13 +80,24 @@ export interface SessionOverlaySeat {
 
 /**
  * One overlay image the driver manages, as the eviction sweep (Stage 5.4) sees it: an opaque
- * {@link ref} to pass to {@link OverlayImageManager.removeImage}, the {@link submissionId} recovered
- * from its deterministic tag (so the sweep can exempt active-`ready` submissions without parsing tags
- * itself), and a creation timestamp for oldest-first eviction.
+ * {@link ref} to pass to {@link OverlayImageManager.removeImage}, its {@link kind}, the
+ * {@link submissionId} recovered from its deterministic tag when it is a per-submission overlay (so
+ * the sweep can exempt active-`ready` submissions without parsing tags itself), and a creation
+ * timestamp for oldest-first eviction. A {@link kind} of `session` is a composed multi-agent session
+ * image (or one of its `-stage` build intermediates); it has no single owner submission, so its
+ * {@link submissionId} is null and it is never active-`ready`-exempt.
  */
 export interface OverlayImage {
   ref: string
-  submissionId: string
+  kind: 'submission' | 'session'
+  /** The owning submission id for `submission` overlays; always null for `session` overlays. */
+  submissionId: string | null
+  /**
+   * True only for session overlays that are a `-stage` build intermediate of a composed image
+   * rather than the final composition. The sweep always reclaims these; the tag is pure overhead
+   * once its build round is over. Undefined for submission overlays.
+   */
+  staged?: boolean
   /** Epoch milliseconds the image was created, for oldest-first eviction. */
   createdAtMs: number
 }
@@ -214,4 +225,11 @@ export interface ExecutionDriver extends OverlayImageManager {
   ensureImage(spec: ImageSpec): Promise<ImageRef>
   /** Launch one session container and return its {@link SessionProcess}. */
   launch(spec: LaunchSpec): Promise<SessionProcess>
+  /**
+   * Release a session-scoped composed image once the session that launched it has ended. A
+   * per-submission overlay or base image ref is a no-op — a composed session image is single-use
+   * (it was built for exactly this seating), while a submission overlay is a shared cache entry
+   * managed by the eviction sweep. Best-effort: a failure to remove must not break session teardown.
+   */
+  releaseSessionOverlay(ref: string): Promise<void>
 }

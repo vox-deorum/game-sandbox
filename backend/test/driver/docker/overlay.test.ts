@@ -11,6 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   ensureSessionOverlayImage,
+  listOverlayImages,
+  parseSessionOverlayTag,
+  releaseSessionOverlayImage,
   removeImage,
   sessionOverlayImageTag,
 } from '../../../src/driver/docker/overlay.js'
@@ -89,6 +92,140 @@ describe('overlay removeImage', () => {
     await expect(removeImage(dockerRemoveRejects(error), 'overlay:stuck')).rejects.toThrow(
       'daemon is unhappy',
     )
+  })
+})
+
+describe('parseSessionOverlayTag', () => {
+  const PREFIX = 'gs-test'
+
+  it('parses a final completed composition into its key, not staged', () => {
+    const tag = sessionOverlayImageTag(PREFIX, 3, [
+      { seatId: 'seat_0', submissionId: 'sub-a', sourceTreePath: '/tmp/x' },
+    ])
+    const parsed = parseSessionOverlayTag(PREFIX, tag)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.staged).toBe(false)
+    expect(parsed?.key).toMatch(/^3-[0-9a-f]{32}$/)
+  })
+
+  it('parses a -stage scratch intermediate of the same composition as staged', () => {
+    const tag = sessionOverlayImageTag(PREFIX, 3, [
+      { seatId: 'seat_0', submissionId: 'sub-a', sourceTreePath: '/tmp/x' },
+    ])
+    const parsed = parseSessionOverlayTag(PREFIX, `${tag}-stage1`)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.staged).toBe(true)
+  })
+
+  it('rejects tags from the per-submission repo and unrelated ones', () => {
+    expect(
+      parseSessionOverlayTag(PREFIX, `${PREFIX}/submission-overlay:deps-v3-some-id`),
+    ).toBeNull()
+    expect(parseSessionOverlayTag(PREFIX, `${PREFIX}/session-overlay:not-ours`)).toBeNull()
+    expect(parseSessionOverlayTag(PREFIX, 'busybox:latest')).toBeNull()
+    // A stage suffix on a non-session repo is not ours either.
+    expect(
+      parseSessionOverlayTag(PREFIX, `${PREFIX}/submission-overlay:deps-v3-x-stage0`),
+    ).toBeNull()
+  })
+})
+
+describe('listOverlayImages', () => {
+  const PREFIX = 'gs-test'
+
+  it('enumerates both overlay repositories with their kind and stage flag', async () => {
+    const sessionTag = sessionOverlayImageTag(PREFIX, 1, [
+      { seatId: 'seat_0', submissionId: 'sub-a', sourceTreePath: '/tmp/x' },
+    ])
+    const docker = {
+      listImages: () =>
+        Promise.resolve([
+          { Created: 100, RepoTags: [`${PREFIX}/submission-overlay:deps-v1-sub-a`] },
+          { Created: 200, RepoTags: [sessionTag] },
+          { Created: 300, RepoTags: [`${sessionTag}-stage0`] },
+          { Created: 400, RepoTags: ['node:22-bookworm-slim', 'busybox:latest'] },
+        ]),
+    } as unknown as Docker
+
+    const images = await listOverlayImages(docker, PREFIX)
+
+    expect(images).toEqual([
+      {
+        ref: `${PREFIX}/submission-overlay:deps-v1-sub-a`,
+        kind: 'submission',
+        submissionId: 'sub-a',
+        createdAtMs: 100_000,
+      },
+      {
+        ref: sessionTag,
+        kind: 'session',
+        submissionId: null,
+        staged: false,
+        createdAtMs: 200_000,
+      },
+      {
+        ref: `${sessionTag}-stage0`,
+        kind: 'session',
+        submissionId: null,
+        staged: true,
+        createdAtMs: 300_000,
+      },
+    ])
+  })
+})
+
+describe('releaseSessionOverlayImage', () => {
+  const PREFIX = 'gs-test'
+
+  it('removes a composed session-overlay tag', async () => {
+    const docker = {
+      getImage: (ref: string) => ({
+        remove: () => {
+          expect(ref).toContain('/session-overlay:')
+          return Promise.resolve()
+        },
+      }),
+    } as unknown as Docker
+
+    await expect(
+      releaseSessionOverlayImage(
+        docker,
+        PREFIX,
+        `${PREFIX}/session-overlay:deps-v1-abcdef0123456789abcdef0123456789`,
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('is a no-op for a per-submission overlay (a shared cache entry) and a base image', async () => {
+    let removed = 0
+    const docker = {
+      getImage: () => ({
+        remove: () => {
+          removed += 1
+          return Promise.resolve()
+        },
+      }),
+    } as unknown as Docker
+
+    await releaseSessionOverlayImage(docker, PREFIX, `${PREFIX}/submission-overlay:deps-v1-sub-a`)
+    await releaseSessionOverlayImage(docker, PREFIX, 'node:22-bookworm-slim')
+    expect(removed).toBe(0)
+  })
+
+  it('tolerates an already-absent session tag', async () => {
+    const docker = {
+      getImage: () => ({
+        remove: () => Promise.reject({ statusCode: 404 }),
+      }),
+    } as unknown as Docker
+
+    await expect(
+      releaseSessionOverlayImage(
+        docker,
+        PREFIX,
+        `${PREFIX}/session-overlay:deps-v1-abcdef0123456789abcdef0123456789`,
+      ),
+    ).resolves.toBeUndefined()
   })
 })
 

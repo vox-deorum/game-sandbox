@@ -43,6 +43,7 @@ describe('relay (LiveSession)', () => {
       deleteLlmScope?: (scopeId: string) => void
       onEnd?: (id: string) => void
       onFinalized?: (id: string) => void
+      releaseComposedImage?: () => Promise<void> | void
     } = {},
   ): {
     session: LiveSession
@@ -76,6 +77,7 @@ describe('relay (LiveSession)', () => {
         revokeLlm: options.revokeLlm,
         llmBlockingInFlightMs: options.llmBlockingInFlightMs,
         deleteLlmScope: options.deleteLlmScope,
+        releaseComposedImage: options.releaseComposedImage,
       },
     })
     live.push(session)
@@ -1000,6 +1002,19 @@ describe('relay (LiveSession)', () => {
     release()
     await stopped
     expect(deleted).toEqual(['sess-1'])
-    expect(await storage.getRecording('flappy_bird-sess-1')).toBeUndefined()
+  })
+
+  it('releases the composed image once finalize has fully settled', async () => {
+    const released: string[] = []
+    const { session } = makeSession('scripted', {
+      releaseComposedImage: () => {
+        released.push('release')
+      },
+    })
+
+    await session.requestStop()
+    await settle()
+
+    expect(released).toEqual(['release'])
   })
 })

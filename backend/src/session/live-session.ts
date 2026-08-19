@@ -56,6 +56,12 @@ export interface LiveSessionDeps {
    * before the end is announced so a replay request arriving right after can already find it.
    */
   settleRecording?: (recordingId: string) => Promise<void> | void
+  /**
+   * Release this session's composed session-overlay image after teardown, so a single-use composed
+   * image does not accumulate on the daemon. The driver no-ops for base or per-submission refs;
+   * failure is best-effort and logged.
+   */
+  releaseComposedImage?: () => Promise<void> | void
   /** Backend logger, tagged by the caller with the session id. */
   log: (message: string) => void
   idleTimeoutMs: number
@@ -595,6 +601,15 @@ export class LiveSession {
       await this.deps.settleRecording?.(this.recordingId)
     } catch (error) {
       this.deps.log(`session ${this.id}: settling recording failed: ${String(error)}`)
+    }
+
+    // The container is gone, so a composed session-overlay image has served its single purpose;
+    // release it now rather than leaving it for the eviction sweep. Best-effort: the sweep remains
+    // the backstop for a failed release, and the driver no-ops on non-session refs.
+    try {
+      await this.deps.releaseComposedImage?.()
+    } catch (error) {
+      this.deps.log(`session ${this.id}: releasing composed image failed: ${String(error)}`)
     }
 
     this.broadcast(sessionEnvelope('ended', reason))

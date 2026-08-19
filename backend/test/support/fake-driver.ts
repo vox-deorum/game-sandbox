@@ -171,6 +171,8 @@ export class FakeDriver implements ExecutionDriver {
   readonly overlayImages = new Map<string, OverlayImage>()
   /** Every {@link removeImage} ref, in order. */
   readonly removedImages: string[] = []
+  /** Every {@link releaseSessionOverlay} session-overlay ref, in order (non-session refs no-op). */
+  readonly releasedSessionOverlays: string[] = []
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
     this.imageRequests.push(spec)
@@ -184,6 +186,19 @@ export class FakeDriver implements ExecutionDriver {
 
   removeImage(ref: string): Promise<void> {
     this.removedImages.push(ref)
+    this.overlayImages.delete(ref)
+    return Promise.resolve()
+  }
+
+  /**
+   * Release a composed session-overlay ref once its session ends. Mirrors the real driver's
+   * no-op contract: only a ref that names a session-overlay image is recorded and removed.
+   */
+  releaseSessionOverlay(ref: string): Promise<void> {
+    if (!ref.includes('session-overlay')) {
+      return Promise.resolve()
+    }
+    this.releasedSessionOverlays.push(ref)
     this.overlayImages.delete(ref)
     return Promise.resolve()
   }

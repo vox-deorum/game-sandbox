@@ -644,6 +644,8 @@ describe('Docker-backed workflow runner', () => {
     expect(telemetryPlayers).toEqual(['player_0', 'player_2', 'player_1', 'player_3'])
     const composed = driver.imageRequests.filter((request) => request.kind === 'session-overlay')
     expect(composed).toHaveLength(1)
+    // A composed session image is single-use: it is released once its game ends.
+    expect(driver.releasedSessionOverlays).toEqual(['fake-image:session-overlay:deps-v1'])
     const [composedImage] = composed
     expect(composedImage?.kind === 'session-overlay' ? composedImage.seats : []).toEqual([
       expect.objectContaining({
@@ -1998,6 +2000,7 @@ describe('Docker-backed workflow runner', () => {
     })
     driver.overlayImages.set('overlay-ref', {
       ref: 'overlay-ref',
+      kind: 'submission',
       submissionId: submission.id,
       createdAtMs: 1,
     })
@@ -2020,6 +2023,8 @@ describe('Docker-backed workflow runner', () => {
     await runToTerminal(handle, run.id)
     // The launch used the cached overlay ref, not the base image.
     expect(handle.driver.lastLaunch()?.spec.image.ref).toBe('overlay-ref')
+    // A shared per-submission overlay is never released when the game ends; only composed images are.
+    expect(handle.driver.releasedSessionOverlays).toEqual([])
 
     const [result] = await storage.listGameResultsByRun(run.id)
     expect(result?.agent_kind).toBe('submission')
@@ -2049,6 +2054,7 @@ describe('Docker-backed workflow runner', () => {
       })
       driver.overlayImages.set(`overlay-${owner}`, {
         ref: `overlay-${owner}`,
+        kind: 'submission',
         submissionId: submission.id,
         createdAtMs: 1,
       })

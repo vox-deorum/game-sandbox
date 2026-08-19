@@ -39,7 +39,7 @@ See [Browser end-to-end tests](../testing/browser-e2e.md) for the rationale and 
 
 ## Other local storage
 
-Compose keeps its Git-ignored `.tls/` directory at the repository root and mounts it at `/tls` in the proxy. It contains the current certificate pair and, after renewal, an optional previous pair. Docker images are stored by the Docker daemon, not in `DATA_DIR`. A session container's `/tmp` is a `tmpfs` limited by `SANDBOX_SCRATCH_MB` and disappears with the container. Local play uses the operating system temporary directory and its scratch disappears after the command.
+Compose keeps its Git-ignored `.tls/` directory at the repository root and mounts it at `/tls` in the proxy. It contains the current certificate pair and, after renewal, an optional previous pair. Docker images are stored by the Docker daemon, not in `DATA_DIR`. A session container's `/tmp` is a `tmpfs` limited by `SANDBOX_SCRATCH_MB` and disappears with the container. Its `/recordings` bind mount, by contrast, is an unbounded writable path into the host `DATA_DIR`, isolated per session; [Execution](../../specs/execution.md#sandboxing) states the consequence. Local play uses the operating system temporary directory and its scratch disappears after the command.
 
 ## Generated folders
 

@@ -1265,6 +1265,7 @@ describe('orchestrator', () => {
       const overlayRef = `game-sandbox/submission-overlay:deps-v1-${submission.id}`
       driver.overlayImages.set(overlayRef, {
         ref: overlayRef,
+        kind: 'submission',
         submissionId: submission.id,
         createdAtMs: 1,
       })
@@ -1395,6 +1396,7 @@ describe('orchestrator', () => {
       const overlayRef = `game-sandbox/submission-overlay:deps-v1-${submission.id}`
       driver.overlayImages.set(overlayRef, {
         ref: overlayRef,
+        kind: 'submission',
         submissionId: submission.id,
         createdAtMs: 1,
       })

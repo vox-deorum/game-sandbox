@@ -33,10 +33,12 @@ import type {
 /** The Docker repository (the part before `:`) every per-submission overlay tag lives under. */
 const OVERLAY_REPO_SUFFIX = 'submission-overlay'
 /**
- * The repository every composed multi-agent session image lives under. Deliberately distinct from
- * {@link OVERLAY_REPO_SUFFIX}, since {@link listOverlayImages} enumerates only the per-submission
- * overlay repo: a composed session image is session-scoped and never returned to the eviction sweep,
- * exactly as the driver interface promises.
+ * The repository every composed multi-agent session image lives under, plus the `-stage<i>` scratch
+ * tags its chained build uses. Deliberately distinct from {@link OVERLAY_REPO_SUFFIX}, but
+ * {@link listOverlayImages} enumerates **both** repositories: the per-submission overlays feed the
+ * sweep's active-`ready` exemption, while the session overlays are reclaimed age-first in the same
+ * sweep (they are single-use builds released when their session ends, so any tag left behind is
+ * debris), exactly as the driver interface promises.
  */
 const SESSION_OVERLAY_REPO_SUFFIX = 'session-overlay'
 
@@ -85,6 +87,41 @@ async function imageExists(docker: Docker, tag: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * What a session-overlay tag names after parsing: a complete composed image (its canonical
+ * {@link key}) or one of the `-stage<i>` scratch intermediates its chained build staged under.
+ */
+export interface ParsedSessionOverlayTag {
+  /** The canonical composition identity `<depsVersion>-<hash>` shared by a tag and its stages. */
+  key: string
+  /** Whether the tag is a `-stage<i>` build intermediate rather than the final composed image. */
+  staged: boolean
+}
+
+/** The canonical shape of a session-overlay tag: `…:deps-v<N>-<32-hex-hash>`, optionally `-stage<i>`. */
+const SESSION_OVERLAY_TAG = /^deps-v(\d+)-([0-9a-f]{32})(?:-stage(\d+))?$/
+
+/**
+ * Recover the composition key from a session-overlay tag, or null when the tag is not one of ours
+ * (a base image, a per-submission overlay, or an unrelated image). Also recognizes the `-stage<i>`
+ * scratch intermediates from the chained build, so the eviction sweep can reclaim a scratch tag the
+ * build's own cleanup raced out of existence on.
+ */
+export function parseSessionOverlayTag(
+  prefix: string,
+  tag: string,
+): ParsedSessionOverlayTag | null {
+  const marker = `${sessionOverlayRepo(prefix)}:`
+  if (!tag.startsWith(marker)) {
+    return null
+  }
+  const match = SESSION_OVERLAY_TAG.exec(tag.slice(marker.length))
+  if (match === null) {
+    return null
+  }
+  return { key: `${match[1]}-${match[2]}`, staged: match[3] !== undefined }
 }
 
 interface BuildProgress {
@@ -326,9 +363,12 @@ export async function ensureSessionOverlayImage(
 }
 
 /**
- * Enumerate the overlay images this driver manages: every image carrying a tag under the overlay
- * repository, paired with the submission id recovered from that tag and the image's creation time.
- * Base images and unrelated images are never returned (they carry no overlay tag).
+ * Enumerate the overlay images this driver manages: every image carrying a tag under the
+ * per-submission overlay repository (paired with the submission id recovered from its tag and the
+ * image's creation time) or under the composed session-overlay repository (tagged as session
+ * overlays, with no submission id). Base images and unrelated images are never returned (they carry
+ * no overlay tag). A session-overlay `-stage` scratch intermediate is listed too, so the eviction
+ * sweep can reclaim it; {@link parseSessionOverlayTag} distinguishes it from the final composition.
  */
 export async function listOverlayImages(docker: Docker, prefix: string): Promise<OverlayImage[]> {
   const images = await docker.listImages()
@@ -338,11 +378,40 @@ export async function listOverlayImages(docker: Docker, prefix: string): Promise
     for (const tag of image.RepoTags ?? []) {
       const submissionId = parseOverlayTag(prefix, tag)
       if (submissionId !== null) {
-        overlays.push({ ref: tag, submissionId, createdAtMs })
+        overlays.push({ ref: tag, kind: 'submission', submissionId, createdAtMs })
+        continue
+      }
+      const session = parseSessionOverlayTag(prefix, tag)
+      if (session !== null) {
+        overlays.push({
+          ref: tag,
+          kind: 'session',
+          submissionId: null,
+          staged: session.staged,
+          createdAtMs,
+        })
       }
     }
   }
   return overlays
+}
+
+/**
+ * Release a composed session-overlay image now that its session has ended. A ref that is not a
+ * session-overlay tag — a base image, a per-submission overlay (a shared cache entry the eviction
+ * sweep manages), or an unrelated image — is a no-op. Best-effort removal: an already-absent tag is
+ * tolerated, and a real failure is the caller's to log; the eviction sweep remains the backstop for
+ * anything this misses.
+ */
+export async function releaseSessionOverlayImage(
+  docker: Docker,
+  prefix: string,
+  ref: string,
+): Promise<void> {
+  if (parseSessionOverlayTag(prefix, ref) === null) {
+    return
+  }
+  await removeImage(docker, ref)
 }
 
 /** Remove one image by ref, tolerating an already-absent image (a racing sweep or manual cleanup). */

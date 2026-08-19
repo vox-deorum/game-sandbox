@@ -89,8 +89,14 @@ chown -R "$target_uid:$target_gid" "$app_home"
 
 data_dir=${DATA_DIR:-/srv/game-sandbox/data}
 mkdir -p "$data_dir"
-# Recursive: an upgrade from a prior fully-root image leaves nested content (recordings,
-# submissions, the sqlite db, llm-keys) root-owned, and the non-root backend needs to write it too.
-chown -R "$target_uid:$target_gid" "$data_dir"
+# Take ownership of the bind-mounted DATA_DIR, but only when the top level is not already ours.
+# The recursive walk exists solely for an upgrade from a fully-root image, whose nested content
+# (recordings, submissions, the sqlite db, llm-keys) is root-owned; once the top level is
+# target-owned the nested content was already re-owned by the walk that fixed it, so the common
+# restart path is O(1) instead of walking tens of thousands of files every time.
+current_owner=$(stat -c '%u:%g' "$data_dir" 2>/dev/null || printf '')
+if [ -z "$current_owner" ] || [ "$current_owner" != "$target_uid:$target_gid" ]; then
+    chown -R "$target_uid:$target_gid" "$data_dir"
+fi
 
 exec setpriv --reuid "$target_uid" --regid "$target_gid" --init-groups -- "$@"

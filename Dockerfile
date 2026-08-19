@@ -18,8 +18,15 @@ RUN groupadd --gid 1001 appuser \
 WORKDIR /app
 # The full source tree stays in the image: the backend runs from source via tsx, and it builds
 # the session-base image from the repo root at runtime.
+# Dependencies first: only the manifests and the lockfile are needed for `npm ci`, so the heavy
+# install layer is cached across deploys and only the source copy after it is invalidated.
+COPY package.json package-lock.json ./
+COPY schema/ts/package.json schema/ts/package.json
+COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
+RUN npm ci
 COPY . .
-RUN npm ci && npm run build --workspace @game-sandbox/frontend
+RUN npm run build --workspace @game-sandbox/frontend
 # The official node image leaves HOME=/root, which appuser cannot write; point it at the app user's
 # writable home so git (submission clones) can write its per-user configuration. The entrypoint
 # keeps that home owned by whichever uid it drops to.

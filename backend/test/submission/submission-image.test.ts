@@ -157,7 +157,12 @@ describe('resolveSubmissionLaunchImage seat routing', () => {
   /** Seed a warm per-submission overlay (built for the canonical seat) the reuse path can find by id. */
   function seedWarmOverlay(driver: FakeDriver, id: string): string {
     const ref = `game-sandbox/submission-overlay:deps-v1-${id}`
-    driver.overlayImages.set(ref, { ref, submissionId: id, createdAtMs: 1 })
+    driver.overlayImages.set(ref, {
+      ref,
+      kind: 'submission',
+      submissionId: id,
+      createdAtMs: 1,
+    })
     return ref
   }
 

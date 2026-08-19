@@ -9,7 +9,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import type { NetworkInterfaceInfo } from 'node:os'
+import { networkInterfaces } from 'node:os'
 
 import type { Container, ContainerCreateOptions, Network } from 'dockerode'
 import Docker from 'dockerode'
@@ -29,6 +30,7 @@ import {
   ensureOverlayImage,
   ensureSessionOverlayImage,
   listOverlayImages,
+  releaseSessionOverlayImage,
   removeImage,
 } from './overlay.js'
 import { DockerSessionProcess } from './session-process.js'
@@ -64,19 +66,72 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * The backend process's own container id, read from its cgroup path when it runs inside Docker
- * (compose attaches this container to the internal network, whose inspect data keys endpoints by
- * container id). `undefined` when the process is not containerized under a 64-hex-id cgroup (the
- * host-process dev mode), which is exactly when the caller should not rely on the internal network.
+ * An IPv4 dotted-quad to its 32-bit integer, or null for anything else (a non-IP, an IPv6 literal).
+ * Bit math on the raw octets avoids a dependency; subnets are IPv4 bridge subnets, which is all the
+ * relay topology uses or needs.
  */
-async function ownContainerId(): Promise<string | undefined> {
-  let cgroup: string
-  try {
-    cgroup = await readFile('/proc/self/cgroup', 'utf-8')
-  } catch {
-    return undefined
+function ipv4ToInt(host: string): number | null {
+  const parts = host.split('.')
+  if (parts.length !== 4) {
+    return null
   }
-  return /(?:docker|containerd)[-/]([0-9a-f]{64})/i.exec(cgroup)?.[1]
+  let value = 0
+  for (const part of parts) {
+    const octet = Number.parseInt(part, 10)
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) {
+      return null
+    }
+    value = (value << 8) | octet
+  }
+  return value >>> 0
+}
+
+/**
+ * The local interface address that sits on one of `cidrs` (the relay network's IPv4 subnets), or
+ * `undefined` when the process has no interface on them. The backend is attached to the compose
+ * internal network, so its interface on that network's subnet is exactly the address the LLM
+ * listener should bind — the relay's only route to it. Resolving that by matching
+ * `os.networkInterfaces()` against the network's own IPAM subnets (rather than parsing a container
+ * id out of `/proc/self/cgroup`, which cgroup v2 makes empty) works on any cgroup version and
+ * degrades cleanly: `undefined` when the process is not on the network, which the caller takes as
+ * "fall back to all interfaces with a warning". Extracted from `llmListenHost` so the subnet math
+ * is provable without a daemon.
+ */
+export function resolveLlmListenHost(
+  cidrs: readonly string[],
+  interfaces: Iterable<NetworkInterfaceInfo>,
+): string | undefined {
+  const local = new Map<string, number>()
+  for (const info of interfaces) {
+    if (info.family === 'IPv4') {
+      const value = ipv4ToInt(info.address)
+      if (value !== null) {
+        local.set(info.address, value)
+      }
+    }
+  }
+  for (const cidr of cidrs) {
+    const [host, bitsRaw] = cidr.split('/')
+    if (host === undefined || bitsRaw === undefined) {
+      continue
+    }
+    const bits = Number.parseInt(bitsRaw, 10)
+    if (!Number.isInteger(bits) || bits < 0 || bits > 32) {
+      continue
+    }
+    const base = ipv4ToInt(host)
+    if (base === null) {
+      continue
+    }
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0
+    const network = (base & mask) >>> 0
+    for (const [address, value] of local) {
+      if ((value & mask) >>> 0 === network) {
+        return address
+      }
+    }
+  }
+  return undefined
 }
 
 export class DockerDriver implements ExecutionDriver {
@@ -132,6 +187,11 @@ export class DockerDriver implements ExecutionDriver {
     return removeImage(this.docker, ref)
   }
 
+  /** Release a composed session-overlay image once its session ends; a no-op for any other ref. */
+  releaseSessionOverlay(ref: string): Promise<void> {
+    return releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+  }
+
   async launch(spec: LaunchSpec): Promise<SessionProcess> {
     let llm: LlmNetworkResources | undefined
     try {
@@ -160,15 +220,20 @@ export class DockerDriver implements ExecutionDriver {
     if (this.options.llmRelay.mode === 'host-gateway') {
       return '0.0.0.0'
     }
-    const ownId = await ownContainerId()
-    if (ownId === undefined) return undefined
     const network = await this.docker
       .getNetwork(this.options.llmRelay.network)
       .inspect()
       .catch(() => undefined)
-    const endpoint = network?.Containers?.[ownId]
-    const host = endpoint?.IPv4Address?.split('/')[0]
-    return host === undefined || host === '' ? undefined : host
+    const subnets = (network?.IPAM?.Config ?? [])
+      .map((config) => config.Subnet)
+      .filter((subnet): subnet is string => subnet !== undefined && subnet !== '')
+    if (subnets.length === 0) {
+      return undefined
+    }
+    // Find our own interface on one of the relay network's subnets: the address the relay's only
+    // route to us terminates on, regardless of cgroup version.
+    const interfaces = Object.values(networkInterfaces() ?? {}).flatMap((list) => list ?? [])
+    return resolveLlmListenHost(subnets, interfaces)
   }
 
   /** Create one agent-only bridge and connect its relay through the configured fixed topology. */

@@ -476,6 +476,9 @@ export class Orchestrator {
         // tolerate a recording that never landed (the leftover session dir is cleaned up anyway).
         settleRecording: (recordingId) =>
           settleSessionRecording(this.recordingsHostDir(), id, recordingId),
+        // A composed session-overlay image is single-use; drop it once the session ends. The driver
+        // no-ops when the image is the base or a shared per-submission overlay.
+        releaseComposedImage: () => this.driver.releaseSessionOverlay(image.ref),
         log: this.log,
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs,
