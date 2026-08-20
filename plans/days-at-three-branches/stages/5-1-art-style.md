@@ -123,7 +123,7 @@ White cranes are renderer dressing, not layout or game data. Derive count, start
 
 ### Day phase
 
-The current baseline runs two pure-colour grades. [Step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade) replaces the always-on authored grade with approved direct-colour assets and retains the night grade.
+The current baseline runs two pure-colour grades. [Step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repaint-and-no-daytime-authored-grade) repaints the retained grayscale-alpha terrain masks while preserving the existing runtime tint bake, cache, and pattern renderer, removes the always-on authored grade, and retains the night grade.
 
 The authored-art grade is always on. It pulls generated objects and architecture toward the quieter terrain palette by desaturating, easing contrast so ink edges lift off pure black, and mixing a little parchment. Natural terrain and routes stay out of it and remain the daytime reference.
 
@@ -254,11 +254,11 @@ The owner reviews the terrain: parchment ground, water and banks, reeds, fields,
 
 ### Terrain sign-off
 
-Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade), which separates source-sheet approval from integrated-scene approval.
+Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repaint-and-no-daytime-authored-grade), which separates source-sheet approval from integrated-scene approval.
 
 ### Material board and road pilot sign-off
 
-Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade). Retain this acceptance rubric when reviewing that unit: inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daylight, plus one night view. Accept only if the road stays one stable warm material over ground, field, reeds, and bridge approaches, with no substrate bleed, fuzzy double grain, cell grid, visible four-by-four repeat, directional texture, or curve seams. Confirm that the path remains lighter and narrower, routes remain below characters and props, collision corridors remain plausible, and the board reads as the intended midpoint. Confirm that no road, path, or fade texture is visible under bridge planks, plank gaps reveal shadowed water, the light south-offset shadow reads as a small height cue, and axis cutouts and planks end at the water portals without extending along the land approach.
+Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repaint-and-no-daytime-authored-grade). Retain this acceptance rubric when reviewing that unit: inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daylight, plus one night view. Accept only if the road stays one stable warm material over ground, field, reeds, and bridge approaches, with no substrate bleed, fuzzy double grain, cell grid, visible four-by-four repeat, directional texture, or curve seams. Confirm that the path remains lighter and narrower, routes remain below characters and props, collision corridors remain plausible, and the board reads as the intended midpoint. Confirm that no road, path, or fade texture is visible under bridge planks, plank gaps reveal shadowed water, the light south-offset shadow reads as a small height cue, and axis cutouts and planks end at the water portals without extending along the land approach.
 
 ## Characters
 
@@ -300,7 +300,7 @@ Record the acceptance date and screenshots under the matching step 5.3 unit. If 
 
 ## Phase, cranes, and cadence
 
-- Day phase: in the current baseline, the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade. Step 5.3 unit 1 removes that daytime authored grade.
+- Day phase: in the current baseline, the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade. [Step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repaint-and-no-daytime-authored-grade) removes that daytime authored grade.
 - `cranes.ts` derives count, routes, and per-tick states from the static-layout key, drawn north-facing and rotated to the route tangent.
 - Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over the gap capped at the natural duration. The frame loop stays alive for a short grace after settling.
 - The 320 by 180 thumbnail lands here.

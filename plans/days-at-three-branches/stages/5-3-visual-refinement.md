@@ -10,7 +10,7 @@ The goal is a clear hierarchy at the fitted village view and a rewarding close i
 
 This stage covers:
 
-- direct-colour terrain, finished scenery, ordinary props, the dedicated lantern, roof tiles, cast art, monument and effect art, HUD art, and a fitted-view district representation;
+- tintable terrain, finished scenery, ordinary props, the dedicated lantern, roof tiles, cast art, monument and effect art, HUD art, and a fitted-view district representation;
 - the atlas declarations, source art, loose frames, runtime pages, presentation calibration, renderer installation, and tests needed by those assets;
 - owner review of each source sheet and integrated scene at fitted, middle, and close scales, including night where the unit is visible at night.
 
@@ -47,7 +47,7 @@ Gate B accepts the integrated visual result and the unchanged contracts around i
 
 | Unit | Gate A sheet review | Gate B integrated review | Required mechanical evidence |
 | --- | --- | --- | --- |
-| 1. Terrain | Ground, water, road, path, wall, bridge, and seam cells on real direct colour | Fixture and generated villages across terrain classes and day phases | Atlas freshness, direct-colour loading, deterministic terrain ownership |
+| 1. Terrain | Exact grayscale-alpha runtime mask, named-cell guide, intended tints, and transparency crops for every terrain role | Fixture and generated villages at day and night, including every authored child affected by daytime grade removal | Atlas freshness, source-to-runtime pixel equality, grayscale and tint-path checks, deterministic terrain ownership |
 | 2. Scenery | Six pine base and canopy pairs plus crate | Occlusion after characters, collision overlay, fitted massing | Frame completeness, canopy order, stable placement |
 | 3. Props and lantern | Ordinary prop states and both lantern cells with anchor guide | Every prop state, lantern light and shadow, unchanged 1 by 1 collision | Catalog mapping, anchor and effect placement, state reconciliation |
 | 4. Roofs | Home, inn, and shed 128 px roof roles | Roof fade while a character enters and leaves each building | Tile plan, retained install, fade and seek semantics |
@@ -70,17 +70,25 @@ Each accepted unit amends the factual inventory in [step 5.0](5-0-atlas.md) in t
 
 ## Ordered units
 
-### 1. Direct-colour terrain and no daytime authored grade
+### 1. Tintable terrain repaint and no daytime authored grade
 
-Repaint the existing 8 by 8 terrain page as direct-colour 128 px cells on a 1024 by 1024 page. Preserve the declared terrain frame names and the terrain consumer's cell-to-world mapping. The page is no longer a grayscale-alpha tint mask. `terrain-art.ts` should use the authored direct-colour frames without a per-material tint bake. Keep the contour, seam, route, reed, bridge, upper-wall, and map-ownership contracts from 5.1 intact.
+Repaint or regenerate the terrain textures offline as a tintable grayscale-alpha mask. Keep the existing 1024 by 1024 page, 8 by 8 grid, 128 px cells, all 64 declared frame names, and every frame-to-world mapping. Every pixel keeps equal red, green, and blue channels. Preserve the established alpha topology, opaque matching fill borders, water-visible bridge gaps, shallow upper-wall profiles, and the edge, corner, shoulder, seam, route, reed, bridge, and contour roles from 5.1.
 
-Remove `postEffects.authoredGrade` from the presentation contract and from the daytime world stack. Daylight colour comes from the accepted terrain and the other approved direct-colour or tintable assets. Retain `postEffects.nightGrade` and its existing phase lifecycle. Retain contact shadows and emissives. The terrain is world art, so it remains inside the night grade; HUD, nameplates, speech, and expression annotations do not.
+Preserve the complete terrain rendering pipeline. `terrain-art.ts` continues to bake the authored mask with the selected material tint and to use the existing texture caches, four-cell pattern composition, deterministic variants, loading fallback, successful replacement lifecycle, and map ownership. Add no new runtime texture-generation path. Freeze contour shaping, intentional seams, reed marks, route curves and widths, bridge masks and placement, pattern offsets, frame assignments, texture bleed, sprite opacity, and layer order.
 
-Gate A reviews all terrain roles together, including intentional seams and transparent or edge cells. Gate B checks that the direct-colour page loads, fallback behaviour remains useful while loading fails or is pending, and the fixture plus generated seeds keep their same geometry and deterministic terrain plan. Test that the removed daytime grade cannot be selected, that night still selects the night grade, and that direct-colour terrain does not enter the tint-cache path. Update the terrain entry and tintability facts in 5.0 only with this landed unit.
+Terrain calibration may change only through the existing fill tint, `tintMix`, `detailShift`, plank tint, upper-wall tint, and bridge shadow opacity controls. Keep every palette hex value, bridge shadow offset, geometry value, and other opacity fixed. A calibration change must not introduce a new control or rendering path.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: direct-colour loading and removal of the daytime authored grade.
+Gate A reviews the exact final 1024 by 1024 grayscale-alpha sheet at runtime size, its 64-cell named guide, intended tinted previews, and crops that expose transparent bounds, edge cells, matching borders, upper walls, and bridge gaps. The accepted `terrain-atlas-source.png` supplies the exact pixels for all 64 loose frames and the packed runtime page. Preserve `road-material-source.png` as the road family's offline reference provenance. Prove pixel equality between the accepted source master, the assembled loose frames, and the packed runtime page.
 
-Common failures: leaving a daytime filter active after colouring the page, tinting a direct-colour frame a second time, moving route or contour geometry while pursuing a visual seam, and allowing a failed atlas installation to discard the existing fallback.
+Remove `postEffects.authoredGrade` from presentation JSON, its validated type, strict parsing, and the daytime world stack. Keep the existing `authored` container for draw order, with no daytime filter. Retain one `postEffects.nightGrade` filter and its existing phase lifecycle on the same shared world-art parent. Do not reparent or split terrain, architecture, scenery, props, characters, roofs, shadows, effects, emissives, annotations, or collision layers. Retain contact shadows and emissives. Terrain remains world art inside the night grade, while HUD, nameplates, speech, and expression annotations remain outside it.
+
+Gate B checks the pinned fixture and generated seeds 0, 17, and 37 at fitted, middle, and close views in day and night. Review every terrain role, deterministic terrain plan, and all authored children affected by daytime grade removal, including scenery, props, characters, roofs, shadows, and effects. Confirm that pending or failed loading keeps the useful fallback, successful loading keeps the existing replacement lifecycle, and geometry, opacity, ordering, and map ownership do not drift. If removing the daytime grade makes non-terrain art unacceptable, reject the unit for an explicit owner decision. Do not tune scenery, props, characters, roofs, effects, or other later-unit assets under Unit 1.
+
+Keep the existing raster checks for grayscale enforcement, opaque matching borders, bridge transparency, water-visible plank gaps, shallow upper walls, and tinted composition. Add checks for the 1024 by 1024 source dimensions and source-to-runtime pixel equality. Presentation tests must accept the two-field `postEffects` contract containing `nightGrade` and `propContactShadow`, reject missing required fields, and reject the legacy `authoredGrade` field. World-stack tests must prove that daytime installs no filter, night installs the same retained night filter only once, root and child ordering remains unchanged, repeated phase changes are stable, and destruction remains idempotent. Update 5.0 only when this unit lands, recording the 1024 by 1024 terrain source and retained road-family provenance. Its tintability, grayscale-alpha format, page dimensions, names, mappings, and runtime loading facts remain unchanged.
+
+Approval record: Gate A pending. Gate B pending. Expected integration work: accepted mask, loose-frame, and atlas replacement; any approved bounded terrain calibration; source-to-runtime equality coverage; and removal of the daytime authored grade. The tint bake, caches, pattern composition, fallback, replacement lifecycle, and ownership require no redesign.
+
+Common failures: embedding colour in the mask, changing alpha topology or matching borders during repainting, bypassing the tint cache, changing terrain geometry to pursue a visual seam, leaving a daytime filter active, grading HUD or annotations, reparenting world children while removing the grade, silently tuning a later unit's art, or allowing a failed atlas installation to discard the existing fallback.
 
 ### 2. Split pines and market crate
 
@@ -198,8 +206,8 @@ uv run python scripts/ci.py frontend-e2e --group three-branches --fast
 uv run python scripts/ci.py frontend-e2e
 ```
 
-Run focused renderer tests throughout implementation, including the relevant `assets`, atlas freshness, presentation, terrain, props, buildings, characters, effects, UI, and LOD tests. The bare full browser command is the handoff check. Do not stage changes.
+Run focused renderer tests throughout implementation. Unit 1 must include `assets`, atlas freshness, source-to-runtime pixel equality, presentation, terrain, and world-stack coverage. Later units add the relevant props, buildings, characters, effects, UI, and LOD tests. The bare full browser command is the handoff check. Do not stage changes.
 
 ## Done when
 
-All eight units have dated Gate A and Gate B owner approvals. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, district LOD, and HUD. The fitted village reads through the district representation at or below 1.25 times fitted zoom, crossfades to detailed art through 1.5 times fitted zoom, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner's final acceptance date.
+All eight units have dated Gate A and Gate B owner approvals. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The terrain page remains a tintable 1024 by 1024 grayscale-alpha mask whose accepted source, loose frames, and packed page are pixel-identical, and its established runtime tint and composition pipeline remains intact. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, district LOD, and HUD. The fitted village reads through the district representation at or below 1.25 times fitted zoom, crossfades to detailed art through 1.5 times fitted zoom, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner's final acceptance date.
