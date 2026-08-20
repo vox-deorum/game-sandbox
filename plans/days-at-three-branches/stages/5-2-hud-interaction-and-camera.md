@@ -78,7 +78,7 @@ The required art adds ten grayscale-alpha pictograms and two shared accent frame
 
 Extend the retained annotation node with the expression chip and install its sliced effects textures after artwork loads. Reconciliation creates the parchment plate and text before artwork is available; a failed or pending art load therefore leaves a readable text-only chip rather than dropping the expression. Installing art adds the retained pictogram and accent children without replacing the node. Selection and accent-phase math stay pure and separately testable.
 
-The `use` chip names the target prop's catalog activity rather than the token: Sitting, Working Pump, Ringing Bell, Tending Shrine, or Reading Board, falling back to `Use` only when the recorded target is absent from the scene. The ten pictograms and two accent frames ship as fully transparent placeholder PNGs; the real art lands later as a pure repaint of those twelve effects-page frames, with no renderer change. The status below stays open until the real art and the owner review land.
+The `use` chip names the target prop's catalog activity rather than the token: Sitting, Working Pump, Ringing Bell, Tending Shrine, or Reading Board, falling back to `Use` only when the recorded target is absent from the scene. The ten pictograms and two accent frames ship as fully transparent placeholder PNGs. [Step 5.3 unit 6](5-3-visual-refinement.md#6-monument-and-effect-completion) owns their real-art repaint and both owner gates, with no renderer change when the current frame contract remains intact.
 
 #### Character asset handoff
 

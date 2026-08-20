@@ -4,6 +4,8 @@ Status: functional baseline implemented. The owner approved Hearthside Ink on 20
 
 Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). [Step 5.3](5-3-visual-refinement.md) revises this visual baseline without changing those functional contracts. Its atlas art flows through the [step 5.0](5-0-atlas.md) pipeline. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
+The implementation descriptions below record the current 5.1 baseline. When a 5.3 unit lands, its replacement contract becomes authoritative and the corresponding 5.0 atlas facts change in the same change set.
+
 ## The design: Hearthside Ink
 
 Hearthside Ink is a peaceful domestic sibling to Estuary Ink: natural ink wash, flatter woodblock value grouping, parchment ground, quiet water and reeds, warm timber, and deliberate small marks. The game uses an exact 90 degree top-down-shooter plan view. Each tile is one village cell, with no perspective, isometric face, or separate interiors.
@@ -105,7 +107,7 @@ The configured prop scale defaults to 0.14, overrides bell to 0.36 for both art 
 | Prop | Still treatment |
 | --- | --- |
 | Market stall | `open` shows a raised awning, displayed goods, and a pale counter; `closed` has a lowered shutter and cleared counter. |
-| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. The flicker and the glow pool both hang from the lantern's `(0, -70)` effect anchor, one tenth of the 384-by-256 prop canvas above center, so the light sits on the lantern while the prop stays anchored to its cell. Draws fixed north, ignoring facing. |
+| Lantern post | `lit` has a gilt core and small post-grade pool; `unlit` has a dark empty lantern. The current flicker and glow pool hang from the lantern's `(0, -70)` effect anchor on its 384-by-256 prop canvas. [Step 5.3 unit 3](5-3-visual-refinement.md#3-ordinary-props-and-a-dedicated-lantern-page) replaces this canvas and registration while preserving the cell footprint. Draws fixed north, ignoring facing. |
 | Bench | `occupied` has a distinct laid cushion or folded wrap; `empty` leaves the bare slats readable. |
 | Roadside shrine | `tended` has a fresh paper offering and incense bowl; `untended` has only the weathered shrine under its roof. Draws fixed north, ignoring facing. |
 | Notice board | Its single `none` state is a fixed readable board with pale posted notices. |
@@ -113,7 +115,7 @@ The configured prop scale defaults to 0.14, overrides bell to 0.36 for both art 
 | Inn hearth | `lit` has a gilt-and-cinnabar coal core; `unlit` has cool ash and stacked dark wood. |
 | Repair bench | `busy` has a laid-out tool and bright workpiece; `idle` has a cleared top and stored tools. |
 | Well pump | `flowing` shows a visible pale water stream and wet basin mark; `idle` a dry basin and upright handle. Registry: idle alpha bounds `x=256..512`, `y=32..480`; flowing `x=256..508`, `y=32..480`; source anchor `(344, 384)`, scale divisor 4; configured `(31, -61)` effect anchor in the centered 384 by 256 prop coordinate system, multiplied only by the configured pump scale; spout stays registered at `(468, 140)` at 4x master density without another renderer offset. |
-| Beacon bell | `ringing` tilts the bell and exposes the clapper; `silent` hangs plumb, with no triangular frame and true alpha around the bell. Registry: upper alpha bounds `x=192..576`, `y=24..488`, source anchor `(384, 480)`; foundation bounds `x=192..576`, `y=80..424`, source anchor `(384, 256)`; scale divisor 8. Gate 1 awaits owner review. |
+| Beacon bell | `ringing` tilts the bell and exposes the clapper; `silent` hangs plumb, with no triangular frame and true alpha around the bell. Registry: upper alpha bounds `x=192..576`, `y=24..488`, source anchor `(384, 480)`; foundation bounds `x=192..576`, `y=80..424`, source anchor `(384, 256)`; scale divisor 8. [Step 5.3 unit 6](5-3-visual-refinement.md#6-monument-and-effect-completion) owns both remaining approval gates. |
 
 Animate only lantern flicker, hearth fire, shrine incense, pump water, and bell swing. Each animation is a seek-safe function of fractional playback tick, prop id, current state, and a stable hash phase. A new prop type needs no renderer change only when it reuses a placement token, art treatment, and transition mechanism.
 
@@ -121,7 +123,7 @@ White cranes are renderer dressing, not layout or game data. Derive count, start
 
 ### Day phase
 
-Two grades run, and both are pure colour: they change wash and contrast, never geometry, state meaning, or palette identity.
+The current baseline runs two pure-colour grades. [Step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade) replaces the always-on authored grade with approved direct-colour assets and retains the night grade.
 
 The authored-art grade is always on. It pulls generated objects and architecture toward the quieter terrain palette by desaturating, easing contrast so ink edges lift off pure black, and mixing a little parchment. Natural terrain and routes stay out of it and remain the daytime reference.
 
@@ -141,9 +143,9 @@ The local manifest is the only asset catalog. Keep only the high-resolution orig
 | --- | --- | --- |
 | Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, retained compatibility masks, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
-| Props | 384 by 256 cells on one 2304 by 1536 atlas page | Fifteen complete full-colour ordinary prop stills, with transparent cells 15 through 35 |
+| Props | 384 by 256 cells on one 2304 by 1536 atlas page | Current baseline: fifteen complete full-colour ordinary prop stills, with transparent cells 15 through 35. Step 5.3 unit 3 extracts the two lantern frames. |
 | Monuments | 768 by 512 cells on one 2304 by 1024 atlas page | The sole fixed-north pump stills and both bell parts, tightly authored around their configured source-pixel anchors and scale divisors |
-| Scenery | 64 px cells | Three red pine variants and the market crate; each pine is drawn at a generator-assigned 1.5 to 2 times the base sprite scale, and its solid collision circle scales by the same factor |
+| Scenery | 64 px cells | Current baseline: three red pine variants and the market crate. Step 5.3 unit 2 replaces these with six split base-and-canopy variants and preserves the collision contract. |
 | Characters | 192 by 192 frames | Shared rotatable directly overhead masks for body, clothing, and details, with rest and walk frames, plus shadow and direction marks |
 | Effects and dressing | 64 by 64 through 192 by 128 | Glow, flame, smoke, pump water, bell lines, and two white crane poses |
 
@@ -294,11 +296,11 @@ Deferred to the matching units in [step 5.3](5-3-visual-refinement.md). Inspect 
 
 Accept only if natural terrain and routes retain their daytime colours, generated artwork and architecture read as part of the same restrained palette, every prop state stays immediately distinguishable, ink edges and transparent apertures stay crisp, contact shadows ground props without reading as dark decals, night darkens terrain and authored artwork together, lantern and hearth emissives keep clean warmth, highlighting and annotations and collision and controls are unchanged, maximum-zoom panning and animated effects stay smooth, and no halos, filter seams, clipping, added blur, or muddy shadows appear. The likely dials are grade contrast, tint mix, and shadow opacity.
 
-Record the acceptance date and screenshots here. If the scene still reads as digitally separate after this gate, plan a separate world-space paper-grain pilot rather than adding grain to this work.
+Record the acceptance date and screenshots under the matching step 5.3 unit. If the scene still reads as digitally separate after that gate, plan a separate world-space paper-grain pilot rather than adding grain to this work.
 
 ## Phase, cranes, and cadence
 
-- Day phase: the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade.
+- Day phase: in the current baseline, the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade. Step 5.3 unit 1 removes that daytime authored grade.
 - `cranes.ts` derives count, routes, and per-tick states from the static-layout key, drawn north-facing and rotated to the route tangent.
 - Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over the gap capped at the natural duration. The frame loop stays alive for a short grace after settling.
 - The 320 by 180 thumbnail lands here.
