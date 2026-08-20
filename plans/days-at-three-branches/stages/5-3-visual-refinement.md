@@ -1,6 +1,6 @@
 # Step 5.3: Visual refinement and fitted-view hierarchy
 
-Status: planned. This is owner-gated work. No unit begins its runtime integration before its Gate A asset-sheet approval, and no unit is complete before its Gate B integrated approval.
+Status: planned. This is owner-gated work. The owner starts one unit at a time by sending the current unit. No unit proceeds beyond its first comparison batch before the owner reviews it, no unit begins runtime integration before its Gate A asset-sheet approval, and no unit is complete before its Gate B integrated approval.
 
 Part of [the plan](../README.md). This stage follows [step 5.1](5-1-art-style.md) and [step 5.2](5-2-hud-interaction-and-camera.md), and uses [step 5.0](5-0-atlas.md) for every raster asset. It refines the finished Hearthside Ink presentation without changing the village generator, camera behaviour, simulation, collision, or visitor-input rules.
 
@@ -27,15 +27,23 @@ Keep the existing night grade, prop contact shadows, and emissives. Unit 1 remov
 
 Every unit uses the same two gates. The owner is the sole approver of visual quality. Automated tests protect contracts and do not substitute for either gate.
 
+### Per-unit kickoff and first comparison batch
+
+Wait for the owner to send the current unit before doing any work for it. Work to renovate (or redesign) that unit. At its kickoff, reread the complete unit in this stage, the relevant contracts and acceptance guidance linked from [step 5.1](5-1-art-style.md), and the approved conceptual art itself. The conceptual-art review always includes the [Hearthside Ink approval mockup](../art/hearthside-ink-approval.png) and [Hearthside Ink material board](../art/hearthside-ink-material-board.png). Character work also includes the [approved top-down shooter direction](../art/top-down-shooter-direction.png). Before generating, state which references were reread, which asset roles the batch will compare, their intended runtime display sizes, and the unit contracts that the comparison must preserve.
+
+Generate only the first comparison batch. It is a direction-setting comparison, not Gate A unless it already covers the unit's complete Gate A sheet contract. Include the source alternatives needed for a useful comparison, exact runtime-size reductions when the source is larger, and a labelled comparison board on the intended tint or ground. Keep this batch under `plans/days-at-three-branches/art/review/<unit>/`, outside ignored build output, so every added or modified artifact is visible in `git status`. Leave the entire working tree unstaged and do not run `git add`.
+
+Present the first comparison batch with `git status --short`, then stop. Do not generate another option, refine the batch, complete a partial sheet, replace runtime assets, or begin Gate A integration work until the owner reviews it and explicitly asks to continue. The owner may select a direction, request a replacement first batch, or redirect the unit. A replacement remains the first-batch checkpoint and requires the same stop. Permission to continue releases only the current unit and does not start a later unit.
+
 ### Gate A: asset sheet
 
-Prepare each candidate sheet under the ignored path `build/three-branches-art-review/<unit>/`. Include the full sheet at its intended runtime dimensions, its named-cell guide, and practical crops that make transparent bounds, anchors, and overlap legible. For a higher-resolution source, include both the editable master and the exact mechanically downsampled runtime sheet. The owner approves the runtime pixels as well as the source quality. Show tintable pages on their intended tints and full-colour pages against the intended world ground. Do not merge candidate art into committed runtime assets.
+After the owner releases the first-comparison checkpoint, prepare each later candidate sheet under the ignored path `build/three-branches-art-review/<unit>/`. Include the full sheet at its intended runtime dimensions, its named-cell guide, and practical crops that make transparent bounds, anchors, and overlap legible. For a higher-resolution source, include both the editable master and the exact mechanically downsampled runtime sheet. The owner approves the runtime pixels as well as the source quality. Show tintable pages on their intended tints and full-colour pages against the intended world ground. Do not merge candidate art into committed runtime assets.
 
 The owner approves the sheet's role coverage, readability, composition, transparent bounds, and the parts that must survive the intended fitted, middle, and close views. Gate A can ask for another candidate. It cannot silently change a behavioural or geometric contract: raise that as a plan or specification question.
 
 An accepted Gate A runtime sheet supplies the exact pixels exported to runtime. Complete any downsampling before Gate A. Do not repaint, scale, filter, crop, or reconstruct an accepted runtime sheet between approval and the committed loose frames or atlas page. Slice those pixels into the 5.0 loose-frame layout, use the same pixels for the compiled atlas, and preserve the approved high-resolution master in `assets/source-art/` with its source-art metadata. The approved runtime page can be the accepted sheet where its grid is already the runtime grid.
 
-Commit the accepted sheet or approved source, source-art metadata, every loose frame, the compiled atlas page, the manifest update, and the approval date recorded in this stage in one change. Run `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` before Gate B. The ignored review directory is not a source of truth and is never committed.
+Commit the accepted sheet or approved source, source-art metadata, every loose frame, the compiled atlas page, the manifest update, and the approval date recorded in this stage in one change. Run `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` before Gate B. The ignored review directory is not a source of truth and is never committed. Keep the Git-visible first comparison batch unstaged until the owner decides whether it is durable art evidence or disposable review material.
 
 ### Gate B: integrated scene
 
@@ -86,7 +94,7 @@ Gate B checks the pinned fixture and generated seeds 0, 17, and 37 at fitted, mi
 
 Keep the existing raster checks for grayscale enforcement, opaque matching borders, bridge transparency, water-visible plank gaps, shallow upper walls, and tinted composition. Add checks for the 1024 by 1024 source dimensions and source-to-runtime pixel equality. Presentation tests must accept the two-field `postEffects` contract containing `nightGrade` and `propContactShadow`, reject missing required fields, and reject the legacy `authoredGrade` field. World-stack tests must prove that daytime installs no filter, night installs the same retained night filter only once, root and child ordering remains unchanged, repeated phase changes are stable, and destruction remains idempotent. Update 5.0 only when this unit lands, recording the 1024 by 1024 terrain source and retained road-family provenance. Its tintability, grayscale-alpha format, page dimensions, names, mappings, and runtime loading facts remain unchanged.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: accepted mask, loose-frame, and atlas replacement; any approved bounded terrain calibration; source-to-runtime equality coverage; and removal of the daytime authored grade. The tint bake, caches, pattern composition, fallback, replacement lifecycle, and ownership require no redesign.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: accepted mask, loose-frame, and atlas replacement; any approved bounded terrain calibration; source-to-runtime equality coverage; and removal of the daytime authored grade. The tint bake, caches, pattern composition, fallback, replacement lifecycle, and ownership require no redesign.
 
 Common failures: embedding colour in the mask, changing alpha topology or matching borders during repainting, bypassing the tint cache, changing terrain geometry to pursue a visual seam, leaving a daytime filter active, grading HUD or annotations, reparenting world children while removing the grade, silently tuning a later unit's art, or allowing a failed atlas installation to discard the existing fallback.
 
@@ -98,7 +106,7 @@ The pines remain tintable grayscale-alpha masks. Use the approved tint palette t
 
 Gate A must make the base-to-canopy pairing and alpha apertures clear. Gate B reviews dense and sparse stands, a character crossing beneath every canopy, crate placement, fitted readability, and the collision overlay. Add tests for all 13 named frames, transparent trailing cells, stable pine selection, and canopy-after-character order. Land the 4 by 4, 1024 by 1024, 13-frame scenery facts in 5.0 with the source, loose frames, compiled page, and runtime manifest change.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: expanded atlas names, deterministic six-variant selection, and the front-canopy layer after characters.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: expanded atlas names, deterministic six-variant selection, and the front-canopy layer after characters.
 
 Common failures: treating canopy as a world-shadow layer, drawing it before characters, using a dynamic tick to choose a pine variant, or letting the larger 256 px art change a scenery collision footprint.
 
@@ -114,7 +122,7 @@ Add the lantern page to `assets.ts`, its direct runtime loader, atlas freshness 
 
 Gate A supplies an anchor guide, ordinary state coverage, and both lantern states. Gate B tests every ordinary prop state, lit and unlit lanterns, effect cadence, contact shadows, the 1 by 1 collision overlay, and visitor use transitions. Tests cover catalog-to-frame mapping, lantern page dimensions, anchors, density divisor, effect placement, unchanged collision, light-state reconciliation, and fallback preservation. Update 5.0 when accepted with the added lantern page and its runtime-count fact.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: a dedicated page, source-anchor registration, and effect placement without a catalog or collision change.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: a dedicated page, source-anchor registration, and effect placement without a catalog or collision change.
 
 Common failures: leaving lantern cells declared in the props atlas, anchoring a 512 by 768 image by its transparent page bounds, applying the divisor twice, using visual bounds as collision, or placing the glow after a canopy or HUD layer.
 
@@ -126,7 +134,7 @@ Replace the building page with a full-colour 4 by 4 `buildings-atlas.png`, 512 b
 
 Gate A checks the role grid and repeatable fill alternatives. Gate B checks the home, inn, and shed with a character entering, standing inside, leaving, replay seeking, and installing art after a pending fallback. Tests assert the 4 by 4, 512 px page and 128 px frame dimensions, complete role mapping, tile-plan selection, retained-layer identity, fade targets, easing, and snap. Record the new building-page facts in 5.0 at landing.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: updated atlas dimensions and manifest-derived frame scale, with roof behaviour unchanged.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: updated atlas dimensions and manifest-derived frame scale, with roof behaviour unchanged.
 
 Common failures: treating `eaveShadow` as a required visible tile before a consumer needs it, re-creating roof containers on every tick, using a visual roof edge to alter a semantic building boundary, or letting an atlas replacement replay a fade during a seek.
 
@@ -140,7 +148,7 @@ The optional embodied-arm study from 5.2 is retired. Do not add arm-expression f
 
 Gate A reviews all four identities in each layer and pose, including the visitor's cinnabar distinction. Gate B checks rest, movement, turning, expressions, speech, nameplates, fitted far marks, and replay seeks for visitor and all villager variants. Tests cover the 4 by 4, 768 px, sixteen-frame pages, exact identity-and-pose lookup, deterministic villager assignment, visitor cinnabar selection, unchanged walk timing, retained-node lifecycle, and absence of arm-study paths. Update 5.0's three character-layer facts at acceptance. The details page remains four frames.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: identity-and-pose frame selection for the three layered cast pages.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: identity-and-pose frame selection for the three layered cast pages.
 
 Common failures: multiplying the visitor tint on already-specific art, choosing villager art from transient array position, making walk animation depend on browser frame time, replacing the character node while swapping art, or restoring the retired optional arm study.
 
@@ -152,7 +160,7 @@ Finish all forty tintable grayscale-alpha effect frames on the 10 by 4 `effects-
 
 Gate A reviews the five monument cells and all forty effect cells as complete sheets. Gate B exercises pump, bell, lantern, hearth, shrine, crane, character, and every expression state. Review the result under the retained night grade. Contact shadows stay below their props and emissives retain their existing layer and phase behaviour. Tests cover named frame completeness, monument anchors and role mappings, all effect consumers, animation frame selection, phase determinism, and the retained night-grade lifecycle. Amend only the 5.0 facts that actually change with the accepted source or page material.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: no code change required when accepted repaints preserve all current names, dimensions, anchors, and mappings.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: no code change required when accepted repaints preserve all current names, dimensions, anchors, and mappings.
 
 Common failures: changing a monument anchor while trimming alpha, treating a bell effect as part of the fixed monument image, forgetting one expression frame because its text fallback remains readable, grading a HUD or annotation effect, or removing the night grade with the daytime authored grade.
 
@@ -168,7 +176,7 @@ The district plan is derived once from the existing static village drawables and
 
 Gate A checks the nine cells as a hierarchy at fitted scale. Gate B checks the pinned fixture and seeds 0, 17, and 37 at 1.25 times fitted zoom, several values in the transition band, and 1.5 times fitted zoom, with a moving character, collision overlay, roof state, and night. Tests cover exact frame names and dimensions, factor validation, alpha endpoints and interpolation relative to `cameraLimits.minZoom`, pure static-layout derivation, stable glyph selection, retained-container lifecycle, no mipmap configuration, unchanged camera bounds, and no gameplay or generation writes. Update 5.0 with the LOD page and twelve runtime pages when accepted.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: a retained district layer, deterministic static plan, and fitted-zoom-relative crossfade.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: a retained district layer, deterministic static plan, and fitted-zoom-relative crossfade.
 
 Common failures: using absolute zoom values, using texture minification or mipmaps as LOD, changing camera limits to conceal a hierarchy problem, rebuilding either map per zoom or tick, fading characters and annotations with the district blocks, or deriving an LOD icon from mutable simulation state.
 
@@ -182,7 +190,7 @@ This is the final visual unit by design. Review it over the accepted detailed wo
 
 Tests cover manifest dimensions and the transparent cell, required frame installation, control state art without semantic changes, ungraded layer membership, fallback and retained-node installation, plus existing accessibility and keyboard contracts. Update 5.0 with the HUD page and the final thirteen-page runtime count only as this unit lands.
 
-Approval record: Gate A pending. Gate B pending. Expected integration work: HUD atlas loading and skinning of existing retained controls without behavioural changes.
+Approval record: First comparison batch pending. Gate A pending. Gate B pending. Expected integration work: HUD atlas loading and skinning of existing retained controls without behavioural changes.
 
 Common failures: baking HUD pixels into the graded world, using HUD art as a reason to alter an interaction target, resetting follow or a held input while artwork loads, omitting a disabled plate, or relying on a browser journey for assertions a focused unit test can make.
 
@@ -192,7 +200,7 @@ Use the pinned fixture to make like-for-like comparison possible, then use gener
 
 For each integration, inspect loading, a replay seek, a repeated delivered state, resize, and a live transition. The art should remain deterministic because static selection depends only on the static layout or stable id, and animated selection depends only on the recorded presentation time. The fallback must remain coherent until a successful asset installation. Do not turn an art correction into a new state or a special rendering path unless the unit's stated contract requires it.
 
-Keep the review discussion concrete: named cell, runtime scale, phase, overlap, anchor, and expected retained layer. Record the Gate A and Gate B dates and a short acceptance note under the unit. Store any review screenshots in the existing committed art evidence location only when they are durable reference material. Candidate sheets stay in the ignored review directory.
+Keep the review discussion concrete: named cell, runtime scale, phase, overlap, anchor, and expected retained layer. Record the first-comparison decision and the Gate A and Gate B dates with a short acceptance note under the unit. First comparison batches stay Git-visible and unstaged until the owner decides their disposition. Store review assets in committed art evidence only when they are durable reference material. Later disposable candidate sheets stay in the ignored review directory.
 
 ## Final verification
 
@@ -210,4 +218,4 @@ Run focused renderer tests throughout implementation. Unit 1 must include `asset
 
 ## Done when
 
-All eight units have dated Gate A and Gate B owner approvals. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The terrain page remains a tintable 1024 by 1024 grayscale-alpha mask whose accepted source, loose frames, and packed page are pixel-identical, and its established runtime tint and composition pipeline remains intact. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, district LOD, and HUD. The fitted village reads through the district representation at or below 1.25 times fitted zoom, crossfades to detailed art through 1.5 times fitted zoom, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner's final acceptance date.
+All eight units have recorded first-comparison decisions and dated Gate A and Gate B owner approvals. Each unit began only after the owner sent it, the approved conceptual art was reread, and its Git-visible unstaged first comparison batch was reviewed before further generation. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The terrain page remains a tintable 1024 by 1024 grayscale-alpha mask whose accepted source, loose frames, and packed page are pixel-identical, and its established runtime tint and composition pipeline remains intact. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, district LOD, and HUD. The fitted village reads through the district representation at or below 1.25 times fitted zoom, crossfades to detailed art through 1.5 times fitted zoom, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner's final acceptance date.
