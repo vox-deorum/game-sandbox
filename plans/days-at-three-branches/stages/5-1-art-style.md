@@ -1,8 +1,8 @@
 # Step 5.1: Art style
 
-Status: in progress. The owner approved Hearthside Ink on 2026-08-09, its flat tiled presentation on 2026-08-11, and the top-down-shooter character projection on 2026-08-12, and redirected the terrain boundaries to hand-tinted map seams with inked contours on 2026-08-14. Implementation lands through the owner-reviewed steps in this file.
+Status: functional baseline implemented. The owner approved Hearthside Ink on 2026-08-09, its flat tiled presentation on 2026-08-11, and the top-down-shooter character projection on 2026-08-12, and redirected the terrain boundaries to hand-tinted map seams with inked contours on 2026-08-14. [Step 5.3](5-3-visual-refinement.md) owns the remaining asset revisions and final visual sign-offs.
 
-Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). Its atlas art flows through the [step 5.0](5-0-atlas.md) pipeline. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
+Part of [the plan](../README.md). This first signed part of build-order step 5 replaces step 3's placeholder tileset, preserves its renderer contract and collision overlay, and leaves the HUD and input to [step 5.2](5-2-hud-interaction-and-camera.md). [Step 5.3](5-3-visual-refinement.md) revises this visual baseline without changing those functional contracts. Its atlas art flows through the [step 5.0](5-0-atlas.md) pipeline. The approved reference is [Hearthside Ink](../art/hearthside-ink-approval.png).
 
 ## The design: Hearthside Ink
 
@@ -252,21 +252,21 @@ The owner reviews the terrain: parchment ground, water and banks, reeds, fields,
 
 ### Terrain sign-off
 
-Pending. Manual owner sign-off after terrain watch-session review remains required.
+Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade), which separates source-sheet approval from integrated-scene approval.
 
 ### Material board and road pilot sign-off
 
-Pending. The owner reviews the material board and road pilot together before automated tests or independent review. Inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daylight, plus one night view. Accept only if the road stays one stable warm material over ground, field, reeds, and bridge approaches, with no substrate bleed, fuzzy double grain, cell grid, visible four-by-four repeat, directional texture, or curve seams. Confirm that the path remains lighter and narrower, routes remain below characters and props, collision corridors remain plausible, and the board reads as the intended midpoint. Confirm that no road, path, or fade texture is visible under bridge planks, plank gaps reveal shadowed water, the light south-offset shadow reads as a small height cue, and axis cutouts and planks end at the water portals without extending along the land approach. No automated checks run before this visual gate.
+Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-direct-colour-terrain-and-no-daytime-authored-grade). Retain this acceptance rubric when reviewing that unit: inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daylight, plus one night view. Accept only if the road stays one stable warm material over ground, field, reeds, and bridge approaches, with no substrate bleed, fuzzy double grain, cell grid, visible four-by-four repeat, directional texture, or curve seams. Confirm that the path remains lighter and narrower, routes remain below characters and props, collision corridors remain plausible, and the board reads as the intended midpoint. Confirm that no road, path, or fade texture is visible under bridge planks, plank gaps reveal shadowed water, the light south-offset shadow reads as a small height cue, and axis cutouts and planks end at the water portals without extending along the land approach.
 
 ## Characters
 
-`characters-art.ts` selects player-id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from player id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.walk.frameRatio` gives each pose's duration as a positive fraction of one recorded presentation tick. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. `player_0` wears `visitorTie` in cinnabar. Below the far-view readability threshold shared with [step 5.2](5-2-hud-interaction-and-camera.md)'s nameplates, a character draws as a Hearthside-styled overhead mark, a tinted circle with a direction tick, in place of the unreadable sprite. Step 5.2 owns the ungraded recorded-expression treatment and its final optional arm-pose study.
+`characters-art.ts` selects player-id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from player id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.walk.frameRatio` gives each pose's duration as a positive fraction of one recorded presentation tick. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. `player_0` wears `visitorTie` in cinnabar. Below the far-view readability threshold shared with [step 5.2](5-2-hud-interaction-and-camera.md)'s nameplates, a character draws as a Hearthside-styled overhead mark, a tinted circle with a direction tick, in place of the unreadable sprite. Step 5.2 owns the ungraded recorded-expression treatment, and [step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets) owns the final layered cast revision.
 
 Tests cover style, walk, and rotation determinism. The owner reviews the cast at rest, walking, and turning, and the far-view marks.
 
 ### Character sign-off
 
-Pending. The owner reviews the cast in watch sessions and records the date here.
+Deferred to [step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets).
 
 ## Props, scenery, and effects
 
@@ -276,7 +276,7 @@ After visual acceptance, tests cover every catalog state mapping, enabled-type p
 
 ### Prop sign-off
 
-Gate 1, the bell family, is pending owner review. Inspect the centered 1.0-cell collision circle at fitted, middle, and close zoom, then ring the bell through the normal Use action. Accept only a solid civic plinth below characters, a fixed-north rectangular two-post upper assembly above them, clear alpha apertures around the hanging bell, identical silent and ringing registration, and a restrained six-frame gilt bell-line cadence. The foundation must not read as a well, the upper must not form a triangle, and no white backdrop may appear through the frame. Record the acceptance date and screenshots here. Do not run automated tests or independent review before this owner gate.
+Deferred to [step 5.3 unit 6](5-3-visual-refinement.md#6-monument-and-effect-completion). Retain this acceptance rubric: inspect the centered 1.0-cell collision circle at fitted, middle, and close zoom, then ring the bell through the normal Use action. Accept only a solid civic plinth below characters, a fixed-north rectangular two-post upper assembly above them, clear alpha apertures around the hanging bell, identical silent and ringing registration, and a restrained six-frame gilt bell-line cadence. The foundation must not read as a well, the upper must not form a triangle, and no white backdrop may appear through the frame.
 
 ## Roofs
 
@@ -286,11 +286,11 @@ Tests cover the tile plan, occupancy targets, easing and snap semantics, build-o
 
 ### Roof sign-off
 
-Pending. The owner reviews the roofs in watch sessions and records the date here.
+Deferred to [step 5.3 unit 4](5-3-visual-refinement.md#4-128-px-roof-tiles).
 
 ### Post-effect sign-off
 
-Pending. This gate is handed over without automated tests or independent review, so nothing is added until the owner accepts the look. Inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daytime and at night, and review every state of all ten prop families, characters, pine and crate scenery, interiors, walls, bridges, sustained effects, highlights, and emissives. `season_4` carries `daynight`, so its night phase begins at tick 961; a recorded replay scrubs there faster than a live episode does.
+Deferred to the matching units in [step 5.3](5-3-visual-refinement.md). Inspect seeds 0, 17, and 37 at fitted, middle, and maximum zoom in daytime and at night, and review every state of all ten prop families, characters, pine and crate scenery, interiors, walls, bridges, sustained effects, highlights, and emissives. `season_4` carries `daynight`, so its night phase begins at tick 961; a recorded replay scrubs there faster than a live episode does.
 
 Accept only if natural terrain and routes retain their daytime colours, generated artwork and architecture read as part of the same restrained palette, every prop state stays immediately distinguishable, ink edges and transparent apertures stay crisp, contact shadows ground props without reading as dark decals, night darkens terrain and authored artwork together, lantern and hearth emissives keep clean warmth, highlighting and annotations and collision and controls are unchanged, maximum-zoom panning and animated effects stay smooth, and no halos, filter seams, clipping, added blur, or muddy shadows appear. The likely dials are grade contrast, tint mix, and shadow opacity.
 
@@ -307,7 +307,7 @@ Tests cover crane determinism and the cadence rules. The owner reviews the night
 
 ### Final sign-off
 
-Pending. The owner reviews the finished style across phases and seeds and records the date here.
+Deferred to [step 5.3](5-3-visual-refinement.md), after all eight visual-refinement units have passed both owner gates.
 
 ## Tests
 
@@ -322,4 +322,4 @@ The suite tests structure, not aesthetics: no test measures whether the village 
 
 ## Done when
 
-The fixture and generated villages replay in approved Hearthside Ink with contoured, seam-treated terrain, cutaway roofs, deterministic state treatments, phase grading, and a toggleable collision overlay that matches collision truth. Every step sign-off above is dated, manifest assets and the thumbnail load in production, and the Three Branches and full browser e2e suites pass.
+The functional Hearthside Ink baseline replays with contoured, seam-treated terrain, cutaway roofs, deterministic state treatments, phase grading, and a toggleable collision overlay that matches collision truth. [Step 5.3](5-3-visual-refinement.md) records the remaining asset approvals, integrated visual approvals, final manifest facts, and final browser verification.

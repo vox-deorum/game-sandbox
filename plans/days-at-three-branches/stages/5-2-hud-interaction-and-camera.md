@@ -1,8 +1,8 @@
 # Step 5.2: HUD and interaction design
 
-Status: in progress. Existing HUD and input design are complete; character-expression art and final owner review remain.
+Status: functional baseline implemented. Existing HUD and input behaviour are complete. [Step 5.3](5-3-visual-refinement.md) owns the remaining character-expression art, Hearthside HUD art, and final visual review.
 
-Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and may retune the art-driven camera ceiling established in [step 5.1](5-1-art-style.md) under the final HUD. Review the pinned fixture under the full HUD at fitted and close views.
+Part of [the plan](../README.md). This second signed part of build-order step 5 turns [step 3](3-renderer-and-registration.md)'s provisional chrome into the village information layer, specifies [step 6](6-human-play.md)'s input UI, and may retune the art-driven camera ceiling established in [step 5.1](5-1-art-style.md) under the final HUD. [Step 5.3](5-3-visual-refinement.md) restyles this functional baseline and adds the fitted-view hierarchy. Review the pinned fixture under the full HUD at fitted and close views.
 
 ## Why this is its own seam
 
@@ -16,7 +16,7 @@ Step 6 implements only the owner-approved input design. Step 5.1 sets a close-in
 4. Add the recorded-expression marks below and get owner approval across the full cast and zoom range.
 5. Retune and test the step 3 camera only where the fixed HUD changes close-view readability.
 6. Record the approved step 6 input specification and the collision overlay's shipped default in this file.
-7. After every required step 5.1 and 5.2 unit is signed off, run the optional embodied-arm study and record whether its result replaces or leaves the required mark treatment.
+7. Hand the implemented interaction and annotation contracts to [step 5.3](5-3-visual-refinement.md) for asset revision and integrated visual approval.
 
 ## Information layer
 
@@ -80,11 +80,9 @@ Extend the retained annotation node with the expression chip and install its sli
 
 The `use` chip names the target prop's catalog activity rather than the token: Sitting, Working Pump, Ringing Bell, Tending Shrine, or Reading Board, falling back to `Use` only when the recorded target is absent from the scene. The ten pictograms and two accent frames ship as fully transparent placeholder PNGs; the real art lands later as a pure repaint of those twelve effects-page frames, with no renderer change. The status below stays open until the real art and the owner review land.
 
-#### Final embodied-arm study
+#### Character asset handoff
 
-The pictogram-and-text treatment above is the required delivery. Only after every required step 5.1 and 5.2 unit has owner sign-off, author one arm-mask pose each for `wave`, `point`, `shrug`, and `sweep`. The chip remains present for all ten expressions. During these four expressions, the trial pose replaces only the arms mask; body and clothing keep their rest or walk frame, details stay fixed, and the complete character keeps its recorded rotation.
-
-The trial temporarily expands the arms page from four frames in a 4 by 1 grid at 768 by 192 pixels to eight frames in a 4 by 2 grid at 768 by 384 pixels. Update the manifest, source-art original and metadata, loose files, compiled page, and atlas tests together. Review the four poses at rest, moving, and turning. If the owner accepts them, retain them, update the step 5.0 character-page table to record eight arms frames and its non-props total from 140 to 144, amend the step 5.1 character contract, and repeat its narrow character sign-off. If the owner rejects them, delete the trial loose frames and code, restore the four-frame manifest, compiled page, source-art original and metadata, restore step 5.0's character-page table to four frames per layer and its total to 140, restore the step 5.1 character contract and its pre-trial sign-off state, and record the required pictogram-and-text treatment as final.
+The pictogram-and-text treatment above remains the required expression delivery. [Step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets) replaces the shared character masks with four family-specific layered sets. That page contract includes family-specific arms, so there is no separate embodied-arm study or expression-specific arm override. Expressions continue to use the chip and text without replacing walking, heading, clothing, or body frames.
 
 ### Speech bubbles
 
@@ -156,7 +154,7 @@ The shared panel's composer sends broadcasts and direct lines through the recipi
 ## Tests
 
 - Renderer unit tests cover the chrome elements and their states, the collision overlay's off default and C toggle, nameplate zoom gating, bubble tagging, wrapping, replacement, and seek clearing, camera follow, inspection suspension, gradual live return, zoom-preserving Recenter, and tuned fixture zoom limits.
-- Expression tests cover all nine ruleset emotes plus `use`, `none`, title text, exact target-state selection, movement alongside an expression, equal-frame seek and repeat determinism, retained-node lifecycle, bubble stacking, text-only loading fallback, effects-frame completeness, and hiding throughout the nameplate fade band and far zoom. If the arm study is accepted, its four-token override matrix and unchanged walk body and clothing frames gain focused coverage.
+- Expression tests cover all nine ruleset emotes plus `use`, `none`, title text, exact target-state selection, movement alongside an expression, equal-frame seek and repeat determinism, retained-node lifecycle, bubble stacking, text-only loading fallback, effects-frame completeness, and hiding throughout the nameplate fade band and far zoom.
 - Shared panel tests cover the display-name hook in chat rows, badges, and the recipient selector on the session and replay pages.
 - The Three Branches browser journeys cover the off collision default, the button, the C key, zoom-preserving Recenter, the permanent joystick, and the visitor camera's gradual return during live play.
 - Update locators whenever markup moves.
@@ -164,4 +162,4 @@ The shared panel's composer sends broadcasts and direct lines through the recipi
 
 ## Done when
 
-The fixture replays under the full HUD and remains usable close up. The information layer above is implemented, every expression is readable at rest, moving, and turning at close and mid views, expressions are absent at far zoom, the required mark treatment has owner sign-off, and the final arm study records an accepted or rejected result. The step 6 input specification is approved and recorded here, the bare full browser e2e suite passes, and this status line records the owner's final sign-off.
+The fixture replays under the full functional HUD and remains usable close up. The information layer above is implemented, every expression remains readable at rest, moving, and turning at close and mid views, expressions are absent at far zoom, and the step 6 input specification is approved and recorded here. [Step 5.3](5-3-visual-refinement.md) records the remaining art approvals, HUD restyling, final browser verification, and final visual sign-off.

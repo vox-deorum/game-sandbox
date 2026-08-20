@@ -1,6 +1,6 @@
 # Days at Three Branches: Implementation Plan
 
-Status: in progress. Steps 1, 2, 5.0, 6, and 8 have shipped. Steps 3, 4, 5.1, 5.2, and 7 remain.
+Status: in progress. Steps 1, 2, 5.0, 6, and 8 have shipped. Steps 3, 4, 5.1, 5.2, 5.3, and 7 remain.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Ship Days at Three Branches as a complete Game Sandbox environment. A student cl
 
 Read the design contracts first: [rules](ruleset.md), [village](village.md), [environment interface](environment.md), [teaching arc](pedagogy.md), and [setting](worldview.md). Then follow the numbered [step plans](stages/) in dependency order. Step 1 landed the required platform support, including the first simultaneous mask-free `Dict` action space. Nothing here depends on Skirmish at Crane Reach, which has shipped.
 
-Steps 1 through 4 form a chain. Step 2 registers a real stub with the engine and a fixture village. Step 3 replaces the stub with the browser renderer and watch surface, and step 4 replaces the fixture with the generator. Generation then iterates in the real viewer. Step 5.0 is independent infrastructure that lands before step 5.1. Step 5.1 follows step 4. Step 5.2 follows step 5.1 and defines the input UI before step 6 builds it. Step 7 can begin after step 4 and completes after step 6. Step 8 closes the plan.
+Steps 1 through 4 form a chain. Step 2 registers a real stub with the engine and a fixture village. Step 3 replaces the stub with the browser renderer and watch surface, and step 4 replaces the fixture with the generator. Generation then iterates in the real viewer. Step 5.0 is independent infrastructure that lands before step 5.1. Step 5.1 follows step 4. Step 5.2 follows step 5.1 and defines the input UI before step 6 builds it. Step 5.3 follows the functional 5.1 and 5.2 baselines and completes their visual refinement through separate owner approvals for asset generation and runtime integration. Step 7 can begin after step 4 and completes after step 6. Step 8 closes the plan.
 
 The completed platform stages supply named builtins and restricted seats (16), simultaneous stepping (17), the canonical zod contract (18), composite action spaces (19), and the LLM gateway's proxy, credentials, and budgets. Steps 2 and 3 are the first production use of the simultaneous path.
 
@@ -65,7 +65,8 @@ Cast size and day length stay fixed throughout: `cast_5` in Season 1, `cast_10` 
    - [5.0 atlas pipeline](stages/5-0-atlas.md): loose per-frame files are the editable art truth, compiled into atlas pages loaded only when a page has shipped consumers.
    - [5.1 art style](stages/5-1-art-style.md): visual identity, prop animation, phase lighting, and an art-driven close-inspection zoom ceiling.
    - [5.2 HUD and interaction design](stages/5-2-hud-interaction-and-camera.md): the information layer, recorded-expression marks, and input design; it may retune the camera limits against the final HUD.
-   - The two signed parts merge after owner sign-off. Outcome: the pinned fixture replays in final style and supports close exploration.
+   - [5.3 visual refinement and fitted-view hierarchy](stages/5-3-visual-refinement.md): direct-colour asset revision, higher-resolution pine variants, tall lantern registration, character occlusion, HUD restyling, and the fitted-view district representation. Every unit has separate owner approvals for generated assets and code integration.
+   - The three signed parts merge after owner sign-off. Outcome: the pinned fixture reads clearly at fitted scale, replays in final style, and supports close exploration.
 6. **[Human play](stages/6-human-play.md).** Add pointer and keyboard locomotion, expression preview and palette, chat, and local parity. Outcome: a person plays the visitor in the browser and locally.
 7. **[Template, helpers, guide, and worked example](stages/7-template-and-materials.md).** Deliver `sandbox.village`, starter agent, canonical guide, and `sweeper`, pin-tested against the engine. Outcome: the full student flow from clone to a local day beside the scripted visitor.
 8. **[Starter village routines and dialogue example](stages/8-starter-village-routines.md).** Deliver `neighbor`, the routine library, routing, and dialogue layer before Season 4. Outcome: the starter village routines are ready for the course.
