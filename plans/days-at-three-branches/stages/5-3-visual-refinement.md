@@ -80,7 +80,7 @@ Each accepted unit amends the factual inventory in [step 5.0](5-0-atlas.md) in t
 
 ### 1. Tintable terrain repaint and no daytime authored grade
 
-Repaint or regenerate the terrain textures offline as a tintable grayscale-alpha mask. Keep the existing 1024 by 1024 page, 8 by 8 grid, 128 px cells, all 64 declared frame names, and every frame-to-world mapping. Every pixel keeps equal red, green, and blue channels. Preserve the established alpha topology, opaque matching fill borders, water-visible bridge gaps, shallow upper-wall profiles, and the edge, corner, shoulder, seam, route, reed, bridge, and contour roles from 5.1.
+Repaint or regenerate the terrain textures offline as a tintable grayscale-alpha mask.
 
 Preserve the complete terrain rendering pipeline. `terrain-art.ts` continues to bake the authored mask with the selected material tint and to use the existing texture caches, four-cell pattern composition, deterministic variants, loading fallback, successful replacement lifecycle, and map ownership. Add no new runtime texture-generation path. Freeze contour shaping, intentional seams, reed marks, route curves and widths, bridge masks and placement, pattern offsets, frame assignments, texture bleed, sprite opacity, and layer order.
 
