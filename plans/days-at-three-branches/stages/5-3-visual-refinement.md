@@ -53,8 +53,8 @@ Gate B accepts the integrated visual result and the unchanged contracts around i
 | 4. Roofs | Home, inn, and shed 128 px roof roles | Roof fade while a character enters and leaves each building | Tile plan, retained install, fade and seek semantics |
 | 5. Characters | Visitor and three villager layered four-pose sets | Rest, movement, turning, far mark, nameplate, and expression chip | Pose selection, layer assembly, deterministic style selection |
 | 6. Monuments and effects | Five monument cells and all 40 effects cells | Pump, bell, lantern, hearth, shrine, crane, and expression states at night | Frame mappings, anchors, effect cadence, grade lifecycle |
-| 7. HUD | Twelve HUD cells, including one transparent trailing cell | Watch, replay, and visitor-play chrome under all control states | Existing semantics, focus behaviour, unit and browser coverage |
-| 8. District LOD | Nine block and glyph cells | Fitted, transition, and detailed zooms across fixture and generated villages | Thresholds, crossfade, static lifecycle, no camera or gameplay drift |
+| 7. District LOD | Nine block and glyph cells | Fitted, transition, and detailed zooms across fixture and generated villages | Fitted-zoom factors, crossfade, static lifecycle, no camera or gameplay drift |
+| 8. HUD | Twelve HUD cells, including one transparent trailing cell | Watch, replay, and visitor-play chrome under all control states | Existing semantics, focus behaviour, unit and browser coverage |
 
 ## Gate B implementation contracts
 
@@ -97,6 +97,8 @@ Common failures: treating canopy as a world-shadow layer, drawing it before char
 ### 3. Ordinary props and a dedicated lantern page
 
 Restyle every ordinary prop state in the existing props atlas. Keep the ordinary catalog mapping and the full prop state surface: each catalog state still resolves through `SHIPPED_PROP_TYPES`, its declared state, and the renderer's retained reconciliation. Do not move pump or bell into this page. They remain monument art.
+
+After extracting the lantern, the existing 6 by 6, 2304 by 1536 ordinary-props page keeps thirteen 384 by 256 frames in this exact order: `stallOpen`, `stallClosed`, `benchOccupied`, `benchEmpty`, `shrineTended`, `shrineUntended`, `boardNone`, `plotTended`, `plotOvergrown`, `hearthLit`, `hearthUnlit`, `repairBenchBusy`, and `repairBenchIdle`. Cells 13 through 35 are the unnamed transparent suffix. Update `PROPS_ATLAS_FRAME_NAMES`, its frame paths, and the 5.0 inventory with the extraction.
 
 Move lantern art out of the ordinary props page into a dedicated full-colour `lantern-atlas.png`. Its 2048 by 1536 source page has two 1024 by 1536 masters. Mechanically downsample it to a 2 by 1 runtime page at 1024 by 768 pixels with two 512 by 768 frames: `lanternLit` and `lanternUnlit`. The lantern uses `textureDensityDivisor: 4`, `sourceAnchor: (256, 640)`, and `effectAnchor: (256, 144)`. Those anchors are runtime source-pixel coordinates in the 512 by 768 cell. The renderer places the visual source anchor at the same world registration used today, then derives the effect position from the same transform. The visual occupies a 1 by 2 northward silhouette, while its collision and interaction footprint remain exactly the existing 1 by 1 cell.
 
@@ -146,33 +148,35 @@ Approval record: Gate A pending. Gate B pending. Expected integration work: no c
 
 Common failures: changing a monument anchor while trimming alpha, treating a bell effect as part of the fixed monument image, forgetting one expression frame because its text fallback remains readable, grading a HUD or annotation effect, or removing the night grade with the daytime authored grade.
 
-### 7. Hearthside HUD atlas and retained interaction chrome
+### 7. District LOD at fitted view
 
-Add a full-colour 4 by 3 `hud-atlas.png`, 1024 by 768 pixels, with twelve 256 by 256 runtime cells downsampled from a 2048 by 1536 source page with 512 by 512 masters. Its eleven named frames are `chromePaper`, `plateIdle`, `plateHover`, `plateActive`, `plateDisabled`, `joystickRing`, `joystickKnob`, `nameplate`, `speechPanel`, `speechTail`, and `expressionChip`. The final cell is transparent. Add the page to the runtime loader, raising the runtime page count from 11 to 12 when this unit lands.
+Add a tintable grayscale-alpha 3 by 3 `district-lod-atlas.png`, 768 by 768 pixels, with nine 256 by 256 runtime frames downsampled from 512 by 512 masters: `homeBlock`, `innBlock`, `shedBlock`, `pumpGlyph`, `bellGlyph`, `marketGlyph`, `pineMassA`, `pineMassB`, and `pineMassC`. Add it to the runtime loader, raising the runtime page count from 11 to 12 when this unit lands. The page contains authored district representations, not generated mip levels, and uses named presentation colours rather than hard-coded per-sprite tints.
+
+Express both thresholds as factors of the camera's current fitted zoom, which is `cameraLimits.minZoom` and changes with viewport and map span. Add `districtLod.farZoomFactor: 1.25` and `districtLod.fullZoomFactor: 1.5` to the validated presentation contract. At or below 1.25 times fitted zoom, show the district representation in place of detailed scenery, contact shadows, ordinary props, monument foundations and uppers, roof and upper structures, and non-emissive world effects. The `pumpGlyph` and `bellGlyph` replace both visual parts of their detailed monuments, so no foundation remains beneath a district glyph. At or above 1.5 times fitted zoom, show the detailed scene. Between those factors, crossfade the two retained representations from the current camera zoom divided by fitted zoom. The relationship is continuous, deterministic, and seek-independent.
+
+Natural terrain and routes remain visible under the district representation. Existing character far marks, emissives, prop highlights, ungraded annotations, HUD, and collision overlay retain their responsibilities. District building blocks and landmark glyphs live with the graded world. District pine masses draw after character far marks so the fitted view keeps the same under-canopy occlusion cue as the detailed view. The collision overlay continues to show exact collision truth rather than invented district shapes. Do not add mipmaps.
+
+The district plan is derived once from the existing static village drawables and static-layout key. It does not modify generator output, world ownership, character placement, collision, camera limits, camera gestures, input, or gameplay. Keep both static representations retained during the crossfade and avoid zoom-time or tick-time scene reconstruction.
+
+Gate A checks the nine cells as a hierarchy at fitted scale. Gate B checks the pinned fixture and seeds 0, 17, and 37 at 1.25 times fitted zoom, several values in the transition band, and 1.5 times fitted zoom, with a moving character, collision overlay, roof state, and night. Tests cover exact frame names and dimensions, factor validation, alpha endpoints and interpolation relative to `cameraLimits.minZoom`, pure static-layout derivation, stable glyph selection, retained-container lifecycle, no mipmap configuration, unchanged camera bounds, and no gameplay or generation writes. Update 5.0 with the LOD page and twelve runtime pages when accepted.
+
+Approval record: Gate A pending. Gate B pending. Expected integration work: a retained district layer, deterministic static plan, and fitted-zoom-relative crossfade.
+
+Common failures: using absolute zoom values, using texture minification or mipmaps as LOD, changing camera limits to conceal a hierarchy problem, rebuilding either map per zoom or tick, fading characters and annotations with the district blocks, or deriving an LOD icon from mutable simulation state.
+
+### 8. Hearthside HUD atlas and retained interaction chrome
+
+Add a full-colour 4 by 3 `hud-atlas.png`, 1024 by 768 pixels, with twelve 256 by 256 runtime cells downsampled from a 2048 by 1536 source page with 512 by 512 masters. Its eleven named frames are `chromePaper`, `plateIdle`, `plateHover`, `plateActive`, `plateDisabled`, `joystickRing`, `joystickKnob`, `nameplate`, `speechPanel`, `speechTail`, and `expressionChip`. The final cell is transparent. Add the page to the runtime loader, raising the runtime page count from 12 to 13 when this unit lands.
 
 Restyle `ui/chrome.ts`, `ui/annotations.ts`, and the visitor input components to consume the atlas. Preserve all approved 5.2 behaviour: opening and terminal chrome text, bell state, collision off by default and C-key access, zoom-preserving Recenter, visitor follow and manual suspension, ungraded nameplates and bubbles, expression hold and seek rules, permanent joystick semantics, expression palette semantics, and chat ownership. Art loading still leaves readable current fallbacks, and installing the HUD page must not replace retained controls or reset their state.
 
-Add the missing `three-branches` browser end-to-end group under `frontend/e2e/three-branches/` and make it runnable as `uv run python scripts/ci.py frontend-e2e --group three-branches`. Cover real navigation and interactions that require the browser. Keep text, state, and structure assertions in fast renderer or frontend unit tests. Gate B runs the group in normal watch, replay, and visitor-play paths.
+This is the final visual unit by design. Review it over the accepted detailed world and district LOD so the chrome supports both scales without competing with either. Add the missing `three-branches` browser end-to-end group under `frontend/e2e/three-branches/` and make it runnable as `uv run python scripts/ci.py frontend-e2e --group three-branches`. Cover real navigation and interactions that require the browser. Keep text, state, and structure assertions in fast renderer or frontend unit tests. Gate B runs the group in normal watch, replay, and visitor-play paths.
 
-Tests cover manifest dimensions and the transparent cell, required frame installation, control state art without semantic changes, ungraded layer membership, fallback and retained-node installation, plus existing accessibility and keyboard contracts. Update 5.0 with the HUD page and its runtime count only as this unit lands.
+Tests cover manifest dimensions and the transparent cell, required frame installation, control state art without semantic changes, ungraded layer membership, fallback and retained-node installation, plus existing accessibility and keyboard contracts. Update 5.0 with the HUD page and the final thirteen-page runtime count only as this unit lands.
 
 Approval record: Gate A pending. Gate B pending. Expected integration work: HUD atlas loading and skinning of existing retained controls without behavioural changes.
 
 Common failures: baking HUD pixels into the graded world, using HUD art as a reason to alter an interaction target, resetting follow or a held input while artwork loads, omitting a disabled plate, or relying on a browser journey for assertions a focused unit test can make.
-
-### 8. District LOD at fitted view
-
-Add a full-colour 3 by 3 `district-lod-atlas.png`, 768 by 768 pixels, with nine 256 by 256 runtime frames downsampled from 512 by 512 masters: `homeBlock`, `innBlock`, `shedBlock`, `pumpGlyph`, `bellGlyph`, `marketGlyph`, `pineMassA`, `pineMassB`, and `pineMassC`. Add it to the runtime loader, raising the runtime page count from 12 to 13 when this unit lands. The page contains authored district representations, not generated mip levels.
-
-At zoom less than or equal to 1.25, show only the district LOD representation. At zoom greater than or equal to 1.5, show the existing detailed scene. Between 1.25 and 1.5, crossfade the two retained static representations from the exact camera zoom. The relationship is continuous, deterministic, and seek-independent: the LOD alpha is a pure clamp of the current zoom over that interval. Do not add mipmaps.
-
-The block layer is derived from the existing static village drawables and static-layout key. It does not modify generator output, world ownership, character placement, collision, camera limits, camera gestures, input, or gameplay. Dynamic characters, ungraded annotations, HUD, and collision overlay retain their existing responsibilities. The collision overlay can continue to show exact detailed collision truth at fitted view rather than inventing district collision shapes. Keep the detailed static world retained during the crossfade and avoid tick-time rebuilds.
-
-Gate A checks the nine cells as a hierarchy at fitted scale. Gate B checks the pinned fixture and generated villages at 1.25, several values in the transition band, and 1.5, with a moving character, collision overlay, roof state, and night. Tests cover exact frame names and dimensions, thresholds, alpha endpoints and interpolation, pure static-layout derivation, stable glyph selection, retained-container lifecycle, no mipmap configuration, unchanged camera bounds, and no gameplay or generation writes. Update 5.0 with the LOD page and the final 13 runtime pages when accepted.
-
-Approval record: Gate A pending. Gate B pending. Expected integration work: a retained district layer, deterministic static plan, and zoom-only crossfade.
-
-Common failures: using texture minification or mipmaps as LOD, changing camera limits to conceal a hierarchy problem, rebuilding the detailed map per zoom or tick, fading character and annotation layers with the district blocks, or deriving an LOD icon from mutable simulation state.
 
 ## Visual evaluation guidance
 
@@ -198,4 +202,4 @@ Run focused renderer tests throughout implementation, including the relevant `as
 
 ## Done when
 
-All eight units have dated Gate A and Gate B owner approvals. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, HUD, and district LOD. The fitted village reads through the district representation at zoom 1.25 and below, crossfades to detailed art through 1.5, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner’s final acceptance date.
+All eight units have dated Gate A and Gate B owner approvals. Accepted sheets are the committed runtime pixels, with their source-art provenance, loose frames, compiled atlases, manifests, and 5.0 facts aligned. The final asset catalog loads thirteen runtime pages: terrain, props, monuments, lantern, buildings, scenery, body, clothing, arms, details, effects, district LOD, and HUD. The fitted village reads through the district representation at or below 1.25 times fitted zoom, crossfades to detailed art through 1.5 times fitted zoom, and uses no mipmaps. Daytime has no authored grade, while night grade, contact shadows, and emissives remain. The fixture and generated villages preserve their generation, camera, collision, replay, input, and gameplay contracts, the Three Branches browser group exists and passes, the full browser suite passes, and this stage records the owner's final acceptance date.
