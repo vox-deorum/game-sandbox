@@ -423,9 +423,10 @@ class Pine:
     # How often a pine brings neighbours, and how many it may bring.
     companion_chance: float
     companions: int
-    # Inclusive size factor each planted pine draws. The factor multiplies the solid circle's
-    # radius as well as the drawn sprite, so the field must not fall below 1.0: a smaller value
-    # would let a tree's own solid shrink inside its reserved cell.
+    # Inclusive collision factor each planted pine draws. The factor scales the solid circle's
+    # radius, and the renderer layers a per-type visual scale on top, so collision and look are
+    # separate knobs. It must not fall below 1.0: a smaller value would let a tree's own solid
+    # shrink inside its reserved cell.
     size: tuple[float, float]
 
 

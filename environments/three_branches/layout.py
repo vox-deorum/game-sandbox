@@ -32,9 +32,10 @@ class PlacedProp:
 class Scenery:
     type: str
     cell: Cell
-    # Size factor a circular placement draws. The generator gives each pine one between the
-    # configured bounds, and the engine scales the circle's collision radius by it and the renderer
-    # the sprite by the same value, so a tree's footprint and its look are the same property.
+    # Size factor a circular placement collides with. The generator gives each pine one between the
+    # configured bounds, and the engine scales the circle's collision radius by it. The renderer
+    # draws the sprite with the same factor on top of a per-type visual scale, so collision and
+    # look stay separate knobs while still tracking one another.
     scale: float = 1.0
 
 
@@ -83,8 +84,8 @@ def shape_for(item: PlacedProp | Scenery) -> Rect | Circle:
 
     This is the single source both the generator's placement checks and the published layout's
     solids consult, so a solid the generator accepts is exactly the solid the engine enforces. A
-    circular placement's radius scales with the placement's drawn size as well as its catalog
-    collision scale, which is what lets a planted pine collide as big as it looks.
+    circular placement's radius scales with its size factor; the drawn sprite is a separate visual
+    choice the renderer layers on top, so a planted pine can look far bigger than it collides.
     """
     source = PROP_BY_TOKEN[item.type] if isinstance(item, PlacedProp) else SCENERY_BY_TOKEN[item.type]
     width, height = footprint(item)
@@ -116,6 +117,31 @@ def _rectangles(cells: set[Cell]) -> tuple[Rect, ...]:
     return tuple(rectangles)
 
 
+def _solid_index(
+    blocked: tuple[Rect, ...], solids: tuple[Rect | Circle, ...]
+) -> dict[tuple[int, int], tuple[Rect | Circle, ...]]:
+    """Bucket every solid into the unit cells its bounding box covers.
+
+    A shape is stored in every cell its bounding rectangle can touch, so any query circle whose
+    box overlaps that box reads at least one shared cell. Building over the frame stays bounded:
+    a shape fills as many cells as it spans.
+    """
+    buckets: dict[tuple[int, int], list[Rect | Circle]] = {}
+    for shape in (*blocked, *solids):
+        if isinstance(shape, Rect):
+            left, right = int(shape.x), int(shape.right)
+            bottom, top = int(shape.y), int(shape.top)
+        else:
+            left = int(shape.x - shape.radius)
+            right = int(shape.x + shape.radius)
+            bottom = int(shape.y - shape.radius)
+            top = int(shape.y + shape.radius)
+        for row in range(bottom, top + 1):
+            for column in range(left, right + 1):
+                buckets.setdefault((column, row), []).append(shape)
+    return {cell: tuple(shapes) for cell, shapes in buckets.items()}
+
+
 @dataclass(frozen=True, slots=True)
 class Layout:
     grid: Grid
@@ -126,6 +152,8 @@ class Layout:
     # Static collision geometry, derived once the placements above are known to be valid.
     blocked: tuple[Rect, ...] = field(init=False, compare=False, repr=False)
     solids: tuple[Rect | Circle, ...] = field(init=False, compare=False, repr=False)
+    # A per-cell spatial index of every solid, so clearance queries reach only nearby geometry.
+    index: dict[tuple[int, int], tuple[Rect | Circle, ...]] = field(init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.grid.frame != FRAME:
@@ -163,6 +191,7 @@ class Layout:
         object.__setattr__(
             self, "solids", tuple(self.shape_for(item) for item in (*self.props, *self.scenery))
         )
+        object.__setattr__(self, "index", _solid_index(self.blocked, self.solids))
 
     def ground_at(self, point: Point) -> Ground | None:
         cell = self.grid.cell_at(point)
@@ -186,12 +215,24 @@ class Layout:
             and radius <= point[1] <= self.grid.frame.height - radius
         ):
             return False
-        return not any(circle_intersects_rect(point, radius, rect) for rect in self.blocked) and not any(
-            circle_intersects_rect(point, radius, shape)
-            if isinstance(shape, Rect)
-            else circle_intersects_circle(point, radius, shape)
-            for shape in self.solids
-        )
+        # Query only the cells the body circle can reach. Every shape whose bounding box that
+        # circle overlaps shares a cell with it, so the strict tests below stay conclusive against
+        # the same geometry the whole-grid scan used.
+        seen: set[int] = set()
+        for column in range(int(point[0] - radius), int(point[0] + radius) + 1):
+            for row in range(int(point[1] - radius), int(point[1] + radius) + 1):
+                for shape in self.index.get((column, row), ()):
+                    if id(shape) in seen:
+                        continue
+                    seen.add(id(shape))
+                    if not (
+                        circle_intersects_rect(point, radius, shape)
+                        if isinstance(shape, Rect)
+                        else circle_intersects_circle(point, radius, shape)
+                    ):
+                        continue
+                    return False
+        return True
 
     def line_clear(self, start: Point, end: Point) -> bool:
         return all(

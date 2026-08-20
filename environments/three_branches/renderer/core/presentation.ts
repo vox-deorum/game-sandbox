@@ -777,12 +777,14 @@ function visualScaleTreatment(
 ): VisualScaleTreatment {
   const source = exactRecord(value, name, ['defaultScale', 'scaleByType'])
   const overrides = recordWithOptional(source.scaleByType, `${name}.scaleByType`, [], knownTypes)
+  const calibrate = (scale: unknown, item: string): number =>
+    boundedNumber(scale, `${name}.${item}`, 0.05, 1.0, true)
   return {
-    defaultScale: boundedNumber(source.defaultScale, `${name}.defaultScale`, 0.05, 0.5, true),
+    defaultScale: calibrate(source.defaultScale, 'defaultScale'),
     scaleByType: Object.fromEntries(
       Object.entries(overrides).map(([type, scale]) => [
         type,
-        boundedNumber(scale, `${name}.scaleByType.${type}`, 0.05, 0.5, true),
+        calibrate(scale, `scaleByType.${type}`),
       ]),
     ),
   }

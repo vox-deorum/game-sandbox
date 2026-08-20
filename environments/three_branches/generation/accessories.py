@@ -19,6 +19,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from math import atan2, dist, hypot, pi
+from typing import Callable
 
 from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN
 from ..geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect, nearest_point
@@ -31,6 +32,8 @@ from .sites import Settlement, Site
 
 # Ground an outdoor prop may stand on. Road, path, bridge, and doorway all carry people.
 _STANDABLE = frozenset({"g", "f", "e"})
+# Ground that carries people, whose corridors a unit circle must not pinch.
+_WAYS = frozenset({"r", "p", "b"})
 _FACINGS = ("north", "east", "south", "west")
 # Props are published in catalog type order, which is the order the catalog lists them in.
 _ORDER = {kind.token: index for index, kind in enumerate(CATALOG.props)}
@@ -160,6 +163,10 @@ class _Yard:
         self.witnesses: dict[str, Cell] = {}
         self.taken: set[Cell] = set()
         self.solids: list[Rect | Circle] = []
+        # Committed solids bucketed by the cells their boxes span, so overlap checks stay local.
+        self.placed: dict[tuple[int, int], list[Rect | Circle]] = {}
+        # Placed pine cells bucketed the same way, so the scatter gap check stays local too.
+        self.pines: dict[tuple[int, int], list[Cell]] = {}
         # What no later solid may close off: the spawn, every doorway approach, and each witness
         # as it is banked.
         self.protected: list[tuple[Point, float]] = [clearance]
@@ -173,7 +180,7 @@ class _Yard:
         if not self._footprint_free(item, interior=interior):
             return False
         shape = shape_for(item)
-        if not self._keeps_promises(shape):
+        if not self._keeps_promises(item, shape):
             return False
         witness = self._witness(item, shape)
         if witness is None:
@@ -182,6 +189,7 @@ class _Yard:
         self.witnesses[item.id] = witness
         self.taken.update(footprint_cells(item))
         self.solids.append(shape)
+        self._bank(shape)
         self.protected.append((_centre(witness), PROFILE.body_radius))
         return True
 
@@ -189,19 +197,23 @@ class _Yard:
         """Stand one piece of scenery, which is solid but is never used and banks no witness.
 
         A circular placement is planted at its drawn size; when that solid would overlap a solid
-        already standing or close off a protected point, it shrinks back to the base size instead
-        of leaving the spot empty, since a bare one-cell tree is always legal where its cell is.
+        already standing, close off a protected point, or pinch a passable way, it shrinks back to
+        the base size before leaving the spot empty, since a bare one-cell tree is always legal
+        where its cell is.
         """
         if not self._footprint_free(Scenery(token, cell)):
             return False
         for candidate in (scale, 1.0):
             item = Scenery(token, cell, candidate)
             shape = shape_for(item)
-            if not self._keeps_promises(shape):
+            if not self._keeps_promises(item, shape):
                 continue
             self.scenery.append(item)
             self.taken.update(footprint_cells(item))
             self.solids.append(shape)
+            self._bank(shape)
+            if token == "pine":
+                self.pines.setdefault(item.cell, []).append(item.cell)
             return True
         return False
 
@@ -219,12 +231,54 @@ class _Yard:
                 return False
         return True
 
-    def _keeps_promises(self, shape: Rect | Circle) -> bool:
-        """Refuse a solid that would close off the spawn, a doorway, or a banked witness, or overlap
-        a solid already standing, so cell exclusivity stays backed by solid exclusivity."""
+    def _keeps_promises(self, item: PlacedProp | Scenery, shape: Rect | Circle) -> bool:
+        """Refuse a solid that would close off the spawn, a doorway, or a banked witness, overlap a
+        solid already standing, or pinch a passable way, so cell exclusivity stays backed by solid
+        exclusivity and the village stays one body-clear region."""
         if any(_touches(shape, point, radius) for point, radius in self.protected):
             return False
-        return not any(_overlaps(shape, other) for other in self.solids)
+        if not self._wayside_clear(item, shape):
+            return False
+        return not any(_overlaps(shape, other) for other in self._near(shape))
+
+    def _bank(self, shape: Rect | Circle) -> None:
+        """Record a committed solid in the cell buckets the overlap checks search."""
+        for cell in _span(shape):
+            self.placed.setdefault(cell, []).append(shape)
+
+    def _near(self, shape: Rect | Circle) -> tuple[Rect | Circle, ...]:
+        """The solids committed in the cells a candidate's box reaches, deduplicated."""
+        seen: set[int] = set()
+        found: list[Rect | Circle] = []
+        for cell in _span(shape):
+            for other in self.placed.get(cell, ()):
+                if id(other) in seen:
+                    continue
+                seen.add(id(other))
+                found.append(other)
+        return tuple(found)
+
+    def _wayside_clear(self, item: PlacedProp | Scenery, shape: Rect | Circle) -> bool:
+        """A unit circle may not pinch a passable way, whatever size it draws at.
+
+        Only 1×1 circular placements can wedge between travellers and a way, so only they carry
+        the check: the solid must stay body-clear of every road, path, or bridge cell centre it
+        reaches. A scaled pine is just a larger instance of the same family, so the guard follows
+        the geometry instead of a token list.
+        """
+        width, height = footprint(item)
+        if not isinstance(shape, Circle) or min(width, height) > 1:
+            return True
+        ring = shape.radius + PROFILE.body_radius
+        for row in range(int(shape.y - ring), int(shape.y + ring) + 1):
+            for column in range(int(shape.x - ring), int(shape.x + ring) + 1):
+                if not _inside((column, row)):
+                    continue
+                if self.rows[row][column] in _WAYS and _touches(
+                    shape, _centre((column, row)), PROFILE.body_radius
+                ):
+                    return False
+        return True
 
     def _witness(self, item: PlacedProp, shape: Rect | Circle) -> Cell | None:
         """Find the nearest standing cell in reach of a prop, with a clear line to it."""
@@ -357,25 +411,28 @@ def _bell(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) -
 def _lanterns(stream: random.Random, yard: _Yard, road: Road, market: float, tuning: Accessories) -> None:
     """Light the road, closer together at the market. A blocked station is simply skipped."""
     lantern = tuning.lantern
-    side = 1 if stream.random() < 0.5 else -1
-    posts = set(_posts(road, float(lantern.spacing)))
-    posts.update(_near(_posts(road, float(lantern.market_spacing)), market, float(tuning.stall.span)))
-    for index, station in enumerate(sorted(posts, key=lambda item: item.arc)):
-        turn = side if index % 2 == 0 else -side
-        # Alternate sides, try the other one once, and leave a station that takes neither.
-        for attempt in (turn, -turn):
-            if _stand_beside(yard, "lantern", station, attempt, tuning):
-                break
+    posts = sorted(
+        {
+            *_posts(road, float(lantern.spacing)),
+            *_near(_posts(road, float(lantern.market_spacing)), market, float(tuning.stall.span)),
+        },
+        key=lambda station: station.arc,
+    )
+    _wayside_line(stream, yard, tuple(posts), "lantern", tuning)
 
 
 def _pines(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) -> None:
-    """Plant the pines last, at road stations and scattered over open ground, with companions."""
+    """Plant the pines last, along the road and scattered over open ground, with companions."""
     pine = tuning.pine
     low, high = pine.size
-    for index, station in enumerate(_posts(road, float(pine.spacing))):
-        _stand_beside(
-            yard, "pine", station, 1 if index % 2 == 0 else -1, tuning, scale=_pine_scale(stream, low, high)
-        )
+    _wayside_line(
+        stream,
+        yard,
+        _posts(road, float(pine.spacing)),
+        "pine",
+        tuning,
+        scale=lambda stream: _pine_scale(stream, low, high),
+    )
     for _ in range(pine.scatter):
         cell = (stream.randrange(FRAME.cells_x), stream.randrange(FRAME.cells_y))
         if not _spaced(yard, cell, pine.gap):
@@ -391,6 +448,31 @@ def _pines(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) 
             )
             if _spaced(yard, near, pine.gap - 1):
                 yard.stand("pine", near, scale=_pine_scale(stream, low, high))
+
+
+def _wayside_line(
+    stream: random.Random,
+    yard: _Yard,
+    posts: tuple[Station, ...],
+    token: str,
+    tuning: Accessories,
+    *,
+    scale: Callable[[random.Random], float] | None = None,
+) -> None:
+    """Plant optional unit circles along the road, alternating sides and skipping blocked spots.
+
+    Lanterns and pines are the same placement: walk the stations in their centreline order, stand
+    one on the drawn side or the other, and carry on when neither takes. A ``scale`` callable lets
+    each station draw its own size, where one kind varies.
+    """
+    side = 1 if stream.random() < 0.5 else -1
+    for index, station in enumerate(posts):
+        turn = side if index % 2 == 0 else -side
+        for attempt in (turn, -turn):
+            if _stand_beside(
+                yard, token, station, attempt, tuning, scale=scale(stream) if scale is not None else 1.0
+            ):
+                break
 
 
 def _pine_scale(stream: random.Random, low: float, high: float) -> float:
@@ -464,8 +546,29 @@ def _skirt(item: PlacedProp) -> tuple[Cell, ...]:
 
 
 def _spaced(yard: _Yard, cell: Cell, gap: int) -> bool:
-    """Keep pines apart, so a stand of them reads as trees rather than as a hedge."""
-    return _inside(cell) and all(dist(cell, item.cell) >= gap for item in yard.scenery if item.type == "pine")
+    """Keep pines apart, windowed over only nearby trees, so a stand reads as trees rather than
+    as a hedge. A pine closer than ``gap`` is never outside the box window around a candidate."""
+    if not _inside(cell):
+        return False
+    for row in range(cell[1] - gap, cell[1] + gap + 1):
+        for column in range(cell[0] - gap, cell[0] + gap + 1):
+            for pine in yard.pines.get((column, row), ()):
+                if dist(cell, pine) < gap:
+                    return False
+    return True
+
+
+def _span(shape: Rect | Circle) -> tuple[tuple[int, int], ...]:
+    """The unit cells a solid's bounding box can reach."""
+    if isinstance(shape, Rect):
+        left, right = int(shape.x), int(shape.right)
+        bottom, top = int(shape.y), int(shape.top)
+    else:
+        left, right = int(shape.x - shape.radius), int(shape.x + shape.radius)
+        bottom, top = int(shape.y - shape.radius), int(shape.y + shape.radius)
+    return tuple(
+        (column, row) for row in range(bottom, top + 1) for column in range(left, right + 1)
+    )
 
 
 def _market_arc(road: Road, settlement: Settlement) -> float:

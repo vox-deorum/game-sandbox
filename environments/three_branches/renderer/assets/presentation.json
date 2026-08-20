@@ -202,7 +202,7 @@
       }
     }
   },
-  "scenery": { "defaultScale": 0.25, "scaleByType": { "crate": 0.3 } },
+  "scenery": { "defaultScale": 0.25, "scaleByType": { "crate": 0.3, "pine": 0.75 } },
   "propEffects": {
     "lantern": {
       "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],
