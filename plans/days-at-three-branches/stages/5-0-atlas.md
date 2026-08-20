@@ -48,7 +48,7 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 ## Incremental runtime loading
 
-`assets.ts` keeps the seven-group catalog, page paths, grids, dimensions, and runtime load function. The runtime glob names only pages with shipped consumers: terrain, props, monuments, scenery, the four character layers, and effects. Buildings and loose frames stay outside the bundle until their visual units land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets.ts` keeps the catalog, page paths, grids, dimensions, and runtime load function. The runtime loader includes its ten shipped pages: terrain, props, monuments, buildings, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 The road pilot retains its four native 1254 by 1254 colour sources in `renderer/source-art/road-material-source.png`, ordered `roadA roadB / roadC roadD`. The terrain source page keeps grayscale 192 by 128 previews of those sources in slots 4 through 7; loose runtime frames remain the packer's editable input.
 
@@ -59,11 +59,11 @@ Split `terrain`, `buildings`, `scenery`, `effects`, and the four `characters` la
 ## Tests
 
 - Pure packer tests in `frontend/test/atlas.test.ts` run on small synthetic images: name derivation for flat, nested, and underscored paths, a split-then-pack pixel round trip, and one failure case each for a missing frame, a stray PNG, a mis-sized frame, a non-gray pixel on a grayscale-alpha page, and bad grid arithmetic.
-- `assets.test.ts` checks catalog completeness, the nontrivial nested prop and monument paths, and the exact runtime page set for terrain, props, monuments, scenery, the four character layers, and effects.
+- `assets.test.ts` checks catalog completeness, the nontrivial nested prop and monument paths, and the exact runtime page set for terrain, props, monuments, buildings, scenery, the four character layers, and effects.
 - A freshness test in `environments/three_branches/renderer/atlas.test.ts` packs every page from its committed loose frames and compares pixels against the committed page, and checks each page's PNG header against its declared dimensions.
 
 All three ride the existing vitest include globs, so `scripts/ci.py` needs no change.
 
 ## Done when
 
-All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
+All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
