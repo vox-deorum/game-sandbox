@@ -84,7 +84,6 @@ export function contourDebugScene(rows: readonly string[]): ContourDebugScene {
     routes.visualRows,
     names,
     HEARTHSIDE_STYLE.terrain.contours,
-    HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
   )
   const planMs = performance.now() - startedAt
 

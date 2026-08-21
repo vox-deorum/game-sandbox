@@ -12,13 +12,12 @@ export { TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
 /**
  * Plan a closed, deterministic shared contour graph from top-first semantic rows.
  *
- * Bridge cells join the water material while remaining bridge-owned in span provenance.
+ * Bridge cells join the water material while retaining their semantic provenance.
  */
 export function planTerrainContours(
   rows: readonly string[],
   groundNameForCode: Readonly<Record<string, string>>,
   settings: TerrainContourSettings,
-  bridgeTaperCells: number,
 ): TerrainContourPlan {
   const { width, height } = validateInputs(rows, groundNameForCode)
   const layoutHash = stableHashParts('terrain-layout', width, height, rows.join('\n'))
@@ -32,7 +31,7 @@ export function planTerrainContours(
   const graph = buildGraph(cells, width, height, componentKeyForCell)
   const workingChains = buildChains(graph.nodes, graph.segments)
   buildContourReferences(workingChains, settings)
-  shapeChains(workingChains, settings, bridgeTaperCells, layoutHash)
+  shapeChains(workingChains, settings, layoutHash)
   repairCurveGraph(workingChains)
 
   const workingRings = buildRings(graph.nodes, graph.segments, workingChains)

@@ -135,9 +135,9 @@ describe('Hearthside Ink presentation', () => {
     reversedRunLength.terrain.seams.ink.runLengthCells = [9, 4]
     expect(() => readHearthsideStyle(reversedRunLength)).toThrow('runLengthCells must be ordered')
 
-    const excessiveBridgeTaper = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveBridgeTaper.terrain.seams.waterHatch.bridgeTaperCells = 1.01
-    expect(() => readHearthsideStyle(excessiveBridgeTaper)).toThrow('bridgeTaperCells')
+    const bridgeTaper = structuredClone(HEARTHSIDE_STYLE) as any
+    bridgeTaper.terrain.seams.waterHatch.bridgeTaperCells = 0.35
+    expect(() => readHearthsideStyle(bridgeTaper)).toThrow('waterHatch keys do not match')
   })
 
   it('rejects invalid reed mark calibration', () => {

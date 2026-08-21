@@ -52,7 +52,6 @@ function plan(rows: readonly string[], overrides: ContourTestOverrides = {}): Te
         water: { ...settings.profiles.water, ...profiles?.water },
       },
     },
-    HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
   )
 }
 
@@ -462,7 +461,6 @@ describe('continuous terrain contour planning', () => {
         routes.visualRows,
         names,
         settings,
-        HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
       )
       const reeds = result.components.filter((component) => component.material === 'reeds')
 
@@ -558,7 +556,7 @@ describe('continuous terrain contour planning', () => {
     expect(island.holeRingIds).toHaveLength(0)
   })
 
-  it('locks structures, map borders, junction tangents, and bridge portals', () => {
+  it('locks structures, map borders, and junction tangents', () => {
     const result = plan(['gggggg', 'gidxbg', 'grwwpg', 'gggggg'])
     const borderChains = result.chains.filter((chain) => chain.materials.includes(TERRAIN_EXTERIOR))
     expect(borderChains.length).toBeGreaterThan(0)
@@ -573,52 +571,36 @@ describe('continuous terrain contour planning', () => {
         chain.points.every((point) => distanceToPolyline(point, chain.rawPoints) < 1e-9),
       ),
     ).toBe(true)
-    const bridgePortal = result.chains.find((chain) =>
-      chain.spans.some((span) => span.bridgeSuppressed),
-    )!
-    expect(bridgePortal.spans.some((span) => span.bridgeSuppressed && span.fixed)).toBe(true)
-    expect(bridgePortal.points.some((point) => point.locked && point.shorelineFactor === 0)).toBe(
-      true,
-    )
   })
 
-  it('unions bridge with water while retaining shoreline provenance, suppression, and taper', () => {
-    const result = plan(['ggggg', 'gwbwg', 'ggggg'])
+  it('unions bridge with water while leaving its adjacent shoreline free to shape', () => {
+    const result = plan(['ggggggg', 'gwwbwwg', 'ggggggg'])
     expect(result.components.filter((candidate) => candidate.material === 'water')).toHaveLength(1)
-    expect(component(result, 'water').cellCount).toBe(3)
+    expect(component(result, 'water').cellCount).toBe(5)
     expect(result.chains.every((chain) => !chain.materials.includes('bridge'))).toBe(true)
     const shore = result.chains.find((chain) =>
       chain.shorelineSpans.some((span) => span.waterSemantics.includes('bridge')),
     )!
-    expect(shore.shorelineSpans.some((span) => span.suppressed)).toBe(true)
+    const bridgeSpans = shore.spans.filter(
+      (span) => span.left.semantics.includes('bridge') || span.right.semantics.includes('bridge'),
+    )
+    expect(bridgeSpans).not.toHaveLength(0)
+    expect(bridgeSpans.every((span) => !span.fixed)).toBe(true)
     expect(
-      shore.shorelineSpans.some(
-        (span) => !span.suppressed && span.waterSemantics.includes('water'),
+      shore.points.some(
+        (point) =>
+          !point.locked &&
+          bridgeSpans.some(
+            (span) => point.rawOffset >= span.startOffset && point.rawOffset <= span.endOffset,
+          ),
       ),
     ).toBe(true)
-    expect(shore.points.some((point) => point.shorelineFactor === 0)).toBe(true)
-    expect(shore.points.some((point) => point.shorelineFactor === 1)).toBe(true)
-  })
-
-  it('ramps bridge shoreline suppression more gently as the taper distance grows', () => {
-    const rows = ['ggggggg', 'gwwbwwg', 'ggggggg']
-    const defaultShore = plan(rows).chains.find((chain) => chain.shorelineSpans.length > 0)!
-    const widerShore = planTerrainContours(rows, names, settings, 0.5).chains.find(
-      (chain) => chain.id === defaultShore.id,
-    )!
-    // The taper sets suppression strength alone, so both plans emit the same points and every
-    // point on the ramp is weaker under the wider one.
-    expect(widerShore.points).toHaveLength(defaultShore.points.length)
-    let ramped = 0
-    for (const [index, point] of defaultShore.points.entries()) {
-      const wider = widerShore.points[index]!
-      expect(wider.rawOffset).toBeCloseTo(point.rawOffset, 9)
-      if (point.shorelineFactor <= 0 || point.shorelineFactor >= 1) continue
-      expect(wider.shorelineFactor).toBeLessThan(point.shorelineFactor)
-      ramped += 1
-    }
-    expect(ramped).toBeGreaterThan(0)
-    expect(widerShore.points.some((point) => point.shorelineFactor === 0)).toBe(true)
+    expect(
+      result.chains.every((chain) => chain.spans.every((span) => !('bridgeSuppressed' in span))),
+    ).toBe(true)
+    expect(
+      result.chains.every((chain) => chain.shorelineSpans.every((span) => !('suppressed' in span))),
+    ).toBe(true)
   })
 
   it('renders a one-cell staircase band as diagonals instead of stairs', () => {
@@ -775,13 +757,12 @@ describe('continuous terrain contour planning', () => {
   }, 30_000)
 
   it('rejects grids it cannot contour and profiles it cannot shape with', () => {
-    const taper = HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells
-    expect(() => planTerrainContours([], names, settings, taper)).toThrow(
+    expect(() => planTerrainContours([], names, settings)).toThrow(
       /non-empty rectangular grid/,
     )
     expect(() => plan(['gg', 'g'])).toThrow(/non-empty rectangular grid/)
     expect(() => plan(['q'])).toThrow(/has no ground name/)
-    expect(() => planTerrainContours(['g'], { g: 'lava' }, settings, taper)).toThrow(
+    expect(() => planTerrainContours(['g'], { g: 'lava' }, settings)).toThrow(
       /cannot be contoured/,
     )
     // Calibration bounds are held where the configuration is read. What is left to hold here is

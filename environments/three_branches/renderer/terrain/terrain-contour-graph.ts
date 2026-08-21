@@ -88,9 +88,7 @@ export function buildGraph(
     const right = sideFromCell(rightCell, componentKeyForCell)
     const fixed =
       FIXED_MATERIALS.has(left.material) ||
-      FIXED_MATERIALS.has(right.material) ||
-      left.semantics.includes('bridge') ||
-      right.semantics.includes('bridge')
+      FIXED_MATERIALS.has(right.material)
     const segment = { id: segments.length, start, end, fixed, left, right }
     segments.push(segment)
     start.segments.push(segment.id)
@@ -290,7 +288,6 @@ function finishChain(
       (left.material === 'water' || right.material === 'water') &&
       left.material !== TERRAIN_EXTERIOR &&
       right.material !== TERRAIN_EXTERIOR
-    const water = left.material === 'water' ? left : right.material === 'water' ? right : undefined
     spans.push({
       startOffset: rawLength,
       endOffset: rawLength + length,
@@ -298,7 +295,6 @@ function finishChain(
       right,
       fixed: atom.segment.fixed,
       shoreline,
-      bridgeSuppressed: shoreline && (water?.semantics.includes('bridge') ?? false),
     })
     rawLength += length
     rawPoints.push(end)
@@ -322,7 +318,6 @@ function finishChain(
         startOffset: span.startOffset,
         endOffset: span.endOffset,
         waterSemantics: water.semantics,
-        suppressed: span.bridgeSuppressed,
       }
     })
   return {

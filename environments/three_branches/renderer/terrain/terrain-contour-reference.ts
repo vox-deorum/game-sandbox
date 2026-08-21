@@ -8,7 +8,7 @@
 import type { ContourCoordinate, ContourReference, TerrainContourSpan } from '../core/types.js'
 import { EPSILON, required } from './terrain-helpers.js'
 
-/** A closed raw-arc interval used for locks and shoreline treatment. */
+/** A closed raw-arc interval used for contour locks. */
 export interface OffsetInterval {
   readonly startOffset: number
   readonly endOffset: number

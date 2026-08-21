@@ -373,8 +373,6 @@ export interface TerrainContourSpan {
   readonly fixed: boolean
   /** Whether the span separates water from land. */
   readonly shoreline: boolean
-  /** Whether a bridge suppresses seam drawing on the span. */
-  readonly bridgeSuppressed: boolean
 }
 
 /** One emitted contour point in cell units and top-first screen axes. */
@@ -383,8 +381,6 @@ export interface TerrainContourPoint extends ContourCoordinate {
   readonly rawOffset: number
   /** Whether shaping preserved this point exactly. */
   readonly locked: boolean
-  /** Shoreline treatment strength from zero to one. */
-  readonly shorelineFactor: number
 }
 
 /** One shoreline interval along a contour chain. */
@@ -395,8 +391,6 @@ export interface TerrainShorelineSpan {
   readonly endOffset: number
   /** Water semantics touching the span. */
   readonly waterSemantics: readonly string[]
-  /** Whether route coverage suppresses the shoreline treatment. */
-  readonly suppressed: boolean
 }
 
 /** One canonical curve shared by both incident material faces. */

@@ -225,7 +225,6 @@ export interface TerrainSeamTreatment {
     widthCells: number
     offsetsCells: readonly number[]
     opacity: number
-    bridgeTaperCells: number
   }
 }
 
@@ -924,7 +923,6 @@ function seamTreatment(
     'widthCells',
     'offsetsCells',
     'opacity',
-    'bridgeTaperCells',
   ])
   const offsetSources = array(hatchSource.offsetsCells, `${name}.waterHatch.offsetsCells`)
   if (offsetSources.length === 0 || offsetSources.length > 4) {
@@ -960,13 +958,6 @@ function seamTreatment(
         boundedNumber(offset, `${name}.waterHatch.offsetsCells[${index}]`, 0, 4),
       ),
       opacity: unitNumber(hatchSource.opacity, `${name}.waterHatch.opacity`),
-      bridgeTaperCells: boundedNumber(
-        hatchSource.bridgeTaperCells,
-        `${name}.waterHatch.bridgeTaperCells`,
-        0,
-        1,
-        true,
-      ),
     },
   }
 }

@@ -137,7 +137,6 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
       routes.visualRows,
       names,
       HEARTHSIDE_STYLE.terrain.contours,
-      HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
     ),
     plankLayer,
     upperWallTileset,

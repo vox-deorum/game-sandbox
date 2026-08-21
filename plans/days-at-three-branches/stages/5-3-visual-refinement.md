@@ -36,7 +36,7 @@ Desired result: terrain carries the Hearthside Ink material character and route 
 
 First, inspect the current terrain against the approved references at fitted, middle, and close scales, plus night. Present prioritized deviations, their effect, and proposed tuning focus to the owner, then wait for direction before art or runtime changes.
 
-Keep the tintable terrain composition, deterministic patterning, routes, bridges, geometry, and layer ownership. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
+Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
 
 The live renderer now has no daytime authored grade. The first Hearthside palette comparison adds dedicated terrain colours and remaps only terrain materials. Dedicated packed-earth road and sparse worn-stone path frames are integrated for the first comparison. The owner accepted the shared even road base, which prevents per-cell tonal blocks. The path treatment and remaining terrain review still await owner approval. The terrain repaint and both owner approvals remain in this unit.
 

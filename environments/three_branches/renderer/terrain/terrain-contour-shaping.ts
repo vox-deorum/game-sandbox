@@ -9,20 +9,16 @@ import type { WorkingChain } from './terrain-contour-graph.js'
 import type { OffsetInterval } from './terrain-contour-reference.js'
 import {
   buildContourReference,
-  nearestIntervalDistance,
   normalizedOffset,
   offsetLocked,
   rawPointAt,
   referenceOf,
 } from './terrain-contour-reference.js'
 import { shapeTerrainCurve } from './terrain-curves.js'
-import { EPSILON } from './terrain-helpers.js'
 
 interface ContourSpanIndex {
   readonly spans: readonly TerrainContourSpan[]
   readonly fixed: readonly OffsetInterval[]
-  readonly bridgeSuppressed: readonly OffsetInterval[]
-  readonly hasShoreline: boolean
 }
 
 /**
@@ -32,7 +28,6 @@ interface ContourSpanIndex {
 function shapeContourChain(
   chain: WorkingChain,
   settings: TerrainContourSettings,
-  bridgeTaperCells: number,
   layoutHash: number,
 ): readonly TerrainContourPoint[] {
   const reference = referenceOf(chain)
@@ -56,13 +51,6 @@ function shapeContourChain(
   // arc and a sample offset needs only to be brought into range.
   return shaped.map((point): TerrainContourPoint => {
     const rawOffset = normalizedOffset(point.sourceOffset, chain.rawLength, chain.closed)
-    const shorelineFactor = shorelineFactorAt(
-      rawOffset,
-      spanIndex,
-      chain.rawLength,
-      chain.closed,
-      bridgeTaperCells,
-    )
     const locked = offsetLocked(
       rawOffset,
       spanIndex.fixed,
@@ -78,9 +66,9 @@ function shapeContourChain(
         chain.rawLength,
         chain.closed,
       )
-      return { x: raw.x, y: raw.y, rawOffset, locked: true, shorelineFactor }
+      return { x: raw.x, y: raw.y, rawOffset, locked: true }
     }
-    return { x: point.x, y: point.y, rawOffset, locked: false, shorelineFactor }
+    return { x: point.x, y: point.y, rawOffset, locked: false }
   })
 }
 
@@ -90,29 +78,7 @@ function indexContourSpans(spans: readonly TerrainContourSpan[]): ContourSpanInd
   return {
     spans,
     fixed: spans.filter((span) => span.fixed).sort(byStartOffset),
-    bridgeSuppressed: spans.filter((span) => span.bridgeSuppressed).sort(byStartOffset),
-    hasShoreline: spans.some((span) => span.shoreline),
   }
-}
-
-function shorelineFactorAt(
-  offset: number,
-  spanIndex: ContourSpanIndex,
-  rawLength: number,
-  closed: boolean,
-  taperCells: number,
-): number {
-  if (!spanIndex.hasShoreline) return 0
-  if (spanIndex.bridgeSuppressed.length === 0) return 1
-  const normalized = normalizedOffset(offset, rawLength, closed)
-  const distance = nearestIntervalDistance(
-    normalized,
-    spanIndex.bridgeSuppressed,
-    rawLength,
-    closed,
-  )
-  if (taperCells === 0) return distance <= EPSILON ? 0 : 1
-  return Math.min(1, distance / taperCells)
 }
 
 /**
@@ -132,10 +98,9 @@ export function buildContourReferences(
 export function shapeChains(
   chains: readonly WorkingChain[],
   settings: TerrainContourSettings,
-  bridgeTaperCells: number,
   layoutHash: number,
 ): void {
   for (const chain of chains) {
-    chain.points = shapeContourChain(chain, settings, bridgeTaperCells, layoutHash)
+    chain.points = shapeContourChain(chain, settings, layoutHash)
   }
 }

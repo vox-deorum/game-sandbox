@@ -31,7 +31,6 @@ describe('Three Branches terrain art planning', () => {
       routes.visualRows,
       names,
       HEARTHSIDE_STYLE.terrain.contours,
-      HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
     )
 
     expect(routes.visualRows.join('')).not.toContain('r')

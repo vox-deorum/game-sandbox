@@ -420,7 +420,7 @@ function strokeRunPolyline(
   target.stroke(stroke)
 }
 
-/** Draw offset hatch lines on the water side of every shoreline, tapered beside bridges. */
+/** Draw offset hatch lines on the water side of every shoreline. */
 export function hatchGraphics(plan: TerrainContourPlan, cellSize: number): Graphics {
   const hatch = new Graphics()
   const spec = HEARTHSIDE_STYLE.terrain.seams.waterHatch
@@ -429,7 +429,7 @@ export function hatchGraphics(plan: TerrainContourPlan, cellSize: number): Graph
     const sign = chain.leftMaterial === 'water' ? 1 : -1
     for (const [lineIndex, offsetCells] of spec.offsetsCells.entries()) {
       const runs: SeamStrokeRun[] = []
-      appendTaperedRuns(runs, chain, 0, chain.rawLength, spec.opacity / (lineIndex + 1), true)
+      appendSeamRun(runs, chain, 0, chain.rawLength, spec.opacity / (lineIndex + 1))
       for (const run of runs) {
         for (const line of offsetPolyline(run.points, sign * offsetCells)) {
           hatch.moveTo(line[0]!.x * cellSize, line[0]!.y * cellSize)
@@ -877,7 +877,7 @@ function appendBridgeDecks(
 }
 
 /**
- * Split one seam into deterministic visible arc intervals with shoreline taper alpha.
+ * Split one seam into deterministic visible arc intervals.
  *
  * Runs and gaps alternate, each drawn from its own configured range, so no stretch of boundary
  * longer than one gap ever goes undrawn and runs never overlap into a doubled stroke. A chain
@@ -885,7 +885,7 @@ function appendBridgeDecks(
  * being short.
  */
 export function seamStrokeRuns(
-  chain: Pick<TerrainContourChain, 'id' | 'closed' | 'points' | 'rawLength' | 'shorelineSpans'>,
+  chain: Pick<TerrainContourChain, 'id' | 'closed' | 'points' | 'rawLength'>,
   spec: {
     readonly opacity: number
     readonly runLengthCells: readonly [number, number]
@@ -895,11 +895,10 @@ export function seamStrokeRuns(
 ): readonly SeamStrokeRun[] {
   const runs: SeamStrokeRun[] = []
   if (chain.points.length < 2 || chain.rawLength <= 0) return runs
-  const tapered = chain.shorelineSpans.length > 0
   const pick = (range: readonly [number, number], role: string, index: number): number =>
     range[0] + hashUnit(stableHashParts(`${tag}-${role}`, chain.id, index)) * (range[1] - range[0])
   if (chain.rawLength <= spec.runLengthCells[0]) {
-    appendTaperedRuns(runs, chain, 0, chain.rawLength, spec.opacity, tapered)
+    appendSeamRun(runs, chain, 0, chain.rawLength, spec.opacity)
     return runs
   }
   // The phase spans one whole run and gap, so where a chain falls in the pattern varies with its
@@ -910,44 +909,33 @@ export function seamStrokeRuns(
     const startOffset = Math.max(0, offset)
     const endOffset = Math.min(chain.rawLength, offset + runLength)
     if (endOffset - startOffset > 1e-9) {
-      appendTaperedRuns(runs, chain, startOffset, endOffset, spec.opacity, tapered)
+      appendSeamRun(runs, chain, startOffset, endOffset, spec.opacity)
     }
     offset += runLength + pick(spec.gapLengthCells, 'gap', index)
   }
   return runs
 }
 
-function appendTaperedRuns(
+function appendSeamRun(
   result: SeamStrokeRun[],
   chain: Pick<TerrainContourChain, 'closed' | 'points' | 'rawLength'>,
   startOffset: number,
   endOffset: number,
   opacity: number,
-  tapered: boolean,
 ): void {
   const points = pointsForArcInterval(chain, startOffset, endOffset)
-  const factorOf = (point: TerrainContourPoint): number => (tapered ? point.shorelineFactor : 1)
   let active: TerrainContourPoint[] | undefined
-  let activeAlpha = 0
   for (let index = 1; index < points.length; index += 1) {
     const start = points[index - 1]
     const end = points[index]
     if (start === undefined || end === undefined) continue
-    const alpha = opacity * Math.min(factorOf(start), factorOf(end))
-    if (alpha <= 0) {
-      if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
-      active = undefined
-      continue
-    }
-    if (active === undefined || Math.abs(activeAlpha - alpha) > 1e-9) {
-      if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
+    if (active === undefined) {
       active = [start, end]
-      activeAlpha = alpha
     } else {
       active.push(end)
     }
   }
-  if (active !== undefined) result.push({ points: active, alpha: activeAlpha })
+  if (active !== undefined) result.push({ points: active, alpha: opacity })
 }
 
 function pointsForArcInterval(
@@ -984,8 +972,6 @@ function pointAtRawOffset(
       y: start.y + (end.y - start.y) * amount,
       rawOffset: offset,
       locked: start.locked && end.locked,
-      shorelineFactor:
-        start.shorelineFactor + (end.shorelineFactor - start.shorelineFactor) * amount,
     }
   }
   const fallback = chain.points.at(-1)

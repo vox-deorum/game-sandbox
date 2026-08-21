@@ -20,7 +20,9 @@ import { planTerrainRoutes } from '../terrain/terrain-routes.js'
 import {
   bridgeDeckMask,
   componentPaths,
+  drawMap,
   exactTerrainGrid,
+  hatchGraphics,
   materialSurface,
   offsetPolyline,
   pathGuideGraphics,
@@ -44,8 +46,8 @@ const names: Readonly<Record<string, string>> = {
   x: 'wall',
 }
 
-function shorelinePoint(x: number, factor: number): TerrainContourPoint {
-  return { x, y: 0, rawOffset: x, locked: false, shorelineFactor: factor }
+function contourPoint(x: number): TerrainContourPoint {
+  return { x, y: 0, rawOffset: x, locked: false }
 }
 
 const INK_SPEC = HEARTHSIDE_STYLE.terrain.seams.ink
@@ -69,7 +71,6 @@ function contourPlan(rows: readonly string[]): TerrainContourPlan {
     rows,
     names,
     HEARTHSIDE_STYLE.terrain.contours,
-    HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
   )
 }
 
@@ -124,7 +125,6 @@ function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
       routes.visualRows,
       names,
       HEARTHSIDE_STYLE.terrain.contours,
-      HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
     ),
     plankLayer: { columns: 5, rows: plankRowsFor(routes) },
     upperWallTileset: { tileSize: 1, textures: { U: Texture.EMPTY, '.': Texture.EMPTY } },
@@ -193,7 +193,6 @@ describe('Three Branches map layer', () => {
       ['ggggg', 'gwwwg', 'gwgwg', 'gwwwg', 'ggggg'],
       names,
       HEARTHSIDE_STYLE.terrain.contours,
-      HEARTHSIDE_STYLE.terrain.seams.waterHatch.bridgeTaperCells,
     )
     const outer = required(
       plan.components.find(
@@ -232,8 +231,8 @@ describe('Three Branches map layer', () => {
   })
 
   it('breaks a seam into deterministic runs that repeat for the same chain and tag', () => {
-    const points = Array.from({ length: 41 }, (_, index) => shorelinePoint(index, 1))
-    const chain = { id: 'bank', closed: false, rawLength: 40, points, shorelineSpans: [] }
+    const points = Array.from({ length: 41 }, (_, index) => contourPoint(index))
+    const chain = { id: 'bank', closed: false, rawLength: 40, points }
     const first = seamStrokeRuns(chain, INK_SPEC, 'seam-ink')
     const second = seamStrokeRuns(chain, INK_SPEC, 'seam-ink')
 
@@ -245,8 +244,8 @@ describe('Three Branches map layer', () => {
 
   it('leaves no gap longer than the configured maximum and never overlaps two runs', () => {
     for (const id of ['bank', 'reed-edge', 'shore', 'field-line', 'pond']) {
-      const points = Array.from({ length: 61 }, (_, index) => shorelinePoint(index / 2, 1))
-      const chain = { id, closed: false, rawLength: 30, points, shorelineSpans: [] }
+      const points = Array.from({ length: 61 }, (_, index) => contourPoint(index / 2))
+      const chain = { id, closed: false, rawLength: 30, points }
       const spans = seamStrokeRuns(chain, INK_SPEC, 'seam-ink').map((run) => ({
         start: run.points[0]!.rawOffset,
         end: run.points.at(-1)!.rawOffset,
@@ -266,14 +265,14 @@ describe('Three Branches map layer', () => {
   it('draws a chain shorter than one run in full rather than dropping it into a gap', () => {
     for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
       for (const rawLength of [0.5, 2, 3.5]) {
-        const points = [shorelinePoint(0, 1), shorelinePoint(rawLength, 1)]
-        const chain = { id, closed: false, rawLength, points, shorelineSpans: [] }
+        const points = [contourPoint(0), contourPoint(rawLength)]
+        const chain = { id, closed: false, rawLength, points }
         expect(visibleLength(seamStrokeRuns(chain, INK_SPEC, 'seam-ink'))).toBeCloseTo(rawLength, 9)
       }
     }
   })
 
-  it('holds full opacity on a land-land seam and tapers only where the chain has shoreline spans', () => {
+  it('holds full opacity on land and shoreline seams', () => {
     const spec = {
       opacity: 0.2,
       runLengthCells: [2, 2] as [number, number],
@@ -283,33 +282,30 @@ describe('Three Branches map layer', () => {
       id: 'land-land',
       closed: false,
       rawLength: 10,
-      points: Array.from({ length: 11 }, (_, x) => shorelinePoint(x, 1)),
-      shorelineSpans: [],
+      points: Array.from({ length: 11 }, (_, x) => contourPoint(x)),
     }
     const flatRuns = seamStrokeRuns(flatChain, spec, 'seam-ink')
     expect(flatRuns.length).toBeGreaterThan(0)
     expect(flatRuns.every((run) => run.alpha === 0.2)).toBe(true)
 
-    const taperedChain = {
-      id: 'taper',
+    const varyingSourcePoints = {
+      id: 'varying-source-points',
       closed: false,
       rawLength: 10,
       points: [
-        shorelinePoint(0, 1),
-        shorelinePoint(4, 0.5),
-        shorelinePoint(5, 0),
-        shorelinePoint(6, 0.5),
-        shorelinePoint(10, 1),
+        contourPoint(0),
+        contourPoint(4),
+        contourPoint(5),
+        contourPoint(6),
+        contourPoint(10),
       ],
-      shorelineSpans: [{ startOffset: 0, endOffset: 10, waterSemantics: [], suppressed: false }],
     }
-    const taperRuns = seamStrokeRuns(taperedChain, spec, 'seam-ink')
-    expect(taperRuns.every((run) => run.alpha > 0 && run.alpha <= 0.2)).toBe(true)
-    expect(taperRuns.some((run) => run.alpha < 0.2)).toBe(true)
+    const varyingRuns = seamStrokeRuns(varyingSourcePoints, spec, 'seam-ink')
+    expect(varyingRuns.every((run) => run.alpha === 0.2)).toBe(true)
   })
 
   it('offsets a straight run into an exact parallel line', () => {
-    const run = Array.from({ length: 5 }, (_, index) => shorelinePoint(index, 1))
+    const run = Array.from({ length: 5 }, (_, index) => contourPoint(index))
     expect(offsetPolyline(run, -0.55)).toEqual([run.map((point) => ({ x: point.x, y: -0.55 }))])
   })
 
@@ -318,7 +314,7 @@ describe('Three Branches map layer', () => {
     // strokes as a small dark triangle sitting out on the water.
     const bank = Array.from({ length: 121 }, (_, index) => {
       const x = index / 20
-      return { x, y: 4 + 0.6 * Math.cos(x * 2), rawOffset: x, locked: false, shorelineFactor: 1 }
+      return { x, y: 4 + 0.6 * Math.cos(x * 2), rawOffset: x, locked: false }
     })
     const offset = 1.05
     const lines = offsetPolyline(bank, -offset)
@@ -378,6 +374,37 @@ describe('Three Branches map layer', () => {
       }
     }
     expect(folded).toEqual([])
+  })
+
+  it('keeps bridge-water hatching beneath the shared route and deck cover', () => {
+    const { scene, art } = sparseLayerFixture()
+    const bridgeShore = art.contours.chains.find((chain) =>
+      chain.shorelineSpans.some((span) => span.waterSemantics.includes('bridge')),
+    )
+    const hatch = hatchGraphics(art.contours, 16)
+
+    expect(bridgeShore).toBeDefined()
+    expect(
+      hatch.context.instructions.filter((instruction) => instruction.action === 'stroke'),
+    ).not.toHaveLength(0)
+    hatch.destroy()
+
+    const view = drawMap(scene, art)
+    const hatchLayer = required(
+      view.naturalView.children.find((child) => child.label === 'terrain-seam-hatch') as
+        | Graphics
+        | undefined,
+      'Terrain hatch layer is missing.',
+    )
+    const cover = required(
+      view.naturalView.children.find((child) => child.label === 'terrain-seam-cover') as
+        | Graphics
+        | undefined,
+      'Terrain seam cover is missing.',
+    )
+    expect(art.routes.bridgeComponents).not.toHaveLength(0)
+    expect(hatchLayer.mask).toBe(cover)
+    view.destroy()
   })
 
   it('strokes the road and path guides with their configured pattern fills', () => {
