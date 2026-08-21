@@ -340,7 +340,7 @@ export interface HearthsideStyle {
   characters: {
     clothingTints: readonly HearthsidePaletteKey[]
     details: readonly string[]
-    walk: { frames: readonly string[]; frameRatio: number }
+    walk: { frames: readonly string[]; frameRatio: number; deadZone: number }
     visitor: { detail: string; tint: HearthsidePaletteKey }
   }
   props: PropVisualTreatment
@@ -567,6 +567,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const walkSource = exactRecord(charactersSource.walk, 'presentation.characters.walk', [
     'frames',
     'frameRatio',
+    'deadZone',
   ])
   const visitorSource = exactRecord(charactersSource.visitor, 'presentation.characters.visitor', [
     'detail',
@@ -588,6 +589,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
         0,
         1,
       ),
+      deadZone: boundedNumber(walkSource.deadZone, 'presentation.characters.walk.deadZone', 0, 1),
     },
     visitor: {
       detail: knownText(

@@ -40,30 +40,29 @@ describe('Three Branches character art choices', () => {
     })
   })
 
-  it('rests while still and advances the four-pose walk cycle from fractional tick', () => {
+  it('rests while still and advances the four-pose walk cycle from walked distance', () => {
     const playerId = 'player_7'
-    const frameTicks = CHARACTER_WALK_CYCLE.map(
-      (_, index) => (index + 0.25) * HEARTHSIDE_STYLE.characters.walk.frameRatio,
-    )
-    const frames = frameTicks.map((tick) => characterWalkFrame(playerId, tick, 0.5))
+    const frameRatio = HEARTHSIDE_STYLE.characters.walk.frameRatio
+    const poseDistances = CHARACTER_WALK_CYCLE.map((_, index) => (index + 0.25) * frameRatio)
+    const frames = poseDistances.map((distance) => characterWalkFrame(playerId, distance, 0.5))
     const rotations = CHARACTER_WALK_CYCLE.map((_, offset) =>
       CHARACTER_WALK_CYCLE.map(
         (_, index) => CHARACTER_WALK_CYCLE[(index + offset) % CHARACTER_WALK_CYCLE.length],
       ),
     )
 
-    expect(characterWalkFrame(playerId, 18.75, 0)).toBe(CHARACTER_REST_FRAME)
+    expect(characterWalkFrame(playerId, 18.75 * frameRatio, 0)).toBe(CHARACTER_REST_FRAME)
     expect(rotations).toContainEqual(frames)
   })
 
-  it('gives fixed player ids stable, distinct walk phases at the same fractional tick', () => {
+  it('gives fixed player ids stable, distinct walk phases at the same walked distance', () => {
     const { frameRatio } = HEARTHSIDE_STYLE.characters.walk
-    const tick = 0.25 * frameRatio
+    const distance = 0.25 * frameRatio
     const ids = ['player_1', 'player_2', 'player_3', 'player_4']
 
-    const frames = ids.map((id) => characterWalkFrame(id, tick, 0.5))
+    const frames = ids.map((id) => characterWalkFrame(id, distance, 0.5))
     // One id owns one phase: repeating the id keeps its frame, and the ids spread across the walk
-    // cycle's entries at the same recorded tick.
+    // cycle's entries at the same walked distance.
     expect(new Set(frames).size).toBeGreaterThan(1)
     // Crossing a full frame ratio advances the walk one pose and never repeats the same one.
     expect(characterWalkFrame(ids[0]!, frameRatio * 0.999, 0.5)).toBe(frames[0])

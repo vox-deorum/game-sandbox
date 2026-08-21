@@ -44,16 +44,12 @@ export function characterStyle(playerId: string): CharacterStyle {
   return { clothingTint, detail, detailTint, markTint: clothingTint }
 }
 
-/** Resolve the exact pose at one fractional recorded tick. A still character always rests. */
-export function characterWalkFrame(
-  playerId: string,
-  fractionalTick: number,
-  moved: number,
-): string {
+/** Resolve the exact pose at one walked distance. A still character always rests. */
+export function characterWalkFrame(playerId: string, walkDistance: number, moved: number): string {
   if (moved <= 0) return CHARACTER_REST_FRAME
-  const elapsedFrames = Math.floor(fractionalTick / HEARTHSIDE_STYLE.characters.walk.frameRatio)
+  const elapsedPoses = Math.floor(walkDistance / HEARTHSIDE_STYLE.characters.walk.frameRatio)
   const playerPhase = stableHashParts('character-walk', playerId) % CHARACTER_WALK_CYCLE.length
-  return CHARACTER_WALK_CYCLE[(elapsedFrames + playerPhase) % CHARACTER_WALK_CYCLE.length]!
+  return CHARACTER_WALK_CYCLE[(elapsedPoses + playerPhase) % CHARACTER_WALK_CYCLE.length]!
 }
 
 /** Turn a north-authored sprite to an exact environment heading in Pixi screen axes. */

@@ -193,7 +193,11 @@
   "characters": {
     "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],
     "details": ["hairKnot", "reedCap", "headscarf"],
-    "walk": { "frames": ["rest", "leftForward", "pass", "rightForward"], "frameRatio": 0.68 },
+    "walk": {
+      "frames": ["rest", "leftForward", "pass", "rightForward"],
+      "frameRatio": 0.68,
+      "deadZone": 0.05
+    },
     "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
   },
   "props": {

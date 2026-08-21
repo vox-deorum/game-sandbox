@@ -103,14 +103,7 @@ export function createCharacterLayer(layer: Container): CharacterLayer {
         }
       }
       for (const character of scene.characters) {
-        drawCharacter(
-          nodeFor(character.id),
-          character,
-          scene.presentationTick,
-          art,
-          zoom,
-          fittedZoom,
-        )
+        drawCharacter(nodeFor(character.id), character, art, zoom, fittedZoom)
       }
     },
     install(nextArt) {
@@ -178,7 +171,6 @@ function characterSprite(label: string, texture: Texture): Sprite {
 function drawCharacter(
   node: CharacterNode,
   character: CharacterDrawable,
-  fractionalTick: number,
   art: CharacterArt | null,
   zoom: number,
   fittedZoom: number,
@@ -204,7 +196,7 @@ function drawCharacter(
   rotor.rotation = rotation
   if (farView) return
 
-  const pose = characterWalkFrame(character.id, fractionalTick, character.moved)
+  const pose = characterWalkFrame(character.id, character.walkDistance, character.moved)
   requiredPart(node.body, 'body').texture = requiredTexture(art.body, pose)
   const clothing = requiredPart(node.clothing, 'clothing')
   clothing.texture = requiredTexture(art.clothing, pose)

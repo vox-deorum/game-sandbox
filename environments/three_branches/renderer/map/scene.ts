@@ -1,6 +1,11 @@
 import type { StepState } from '@game-sandbox/schema'
 import { clamp, interpolateDegrees, lerp } from '@renderers/base/math.js'
-import { groundColor, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
+import {
+  groundColor,
+  HEARTHSIDE_STYLE,
+  PALETTE,
+  THREE_BRANCHES_PRESENTATION,
+} from '../core/presentation.js'
 import type {
   Cell,
   CharacterExpression,
@@ -14,6 +19,8 @@ import type {
 import { CATALOG, RULES, readDynamic } from '../ui/overlay.js'
 
 const STRUCTURE_GROUND = new Set(['interior', 'doorway', 'wall'])
+
+const VISITOR_PLAYER = 'player_0'
 
 /** Convert configured metres to the renderer's provisional world scale. */
 export function metresToWorld(value: number): number {
@@ -109,11 +116,15 @@ export function computeScene(
     ...character,
     point: pointToWorld(staticScene.village, character.x, character.y),
     radius,
-    fill: character.id === 'player_0' ? PALETTE.visitor : PALETTE.npc,
+    fill: character.id === VISITOR_PLAYER ? PALETTE.visitor : PALETTE.npc,
     label:
       character.expression.type === 'none'
         ? character.id
         : `${character.id}: ${labelFor(character.expression.type)}`,
+    // Sub-threshold drift neither animates feet nor returns the camera, so the recorded magnitude
+    // zeroes out below the walk dead zone and the renderer stamps the cumulative distance later.
+    moved: character.moved < HEARTHSIDE_STYLE.characters.walk.deadZone ? 0 : character.moved,
+    walkDistance: 0,
     expressionTitle: expressionTitleFor(staticScene, character.expression),
   }))
   return { static: staticScene, dynamic, presentationTick: dynamic?.tick ?? 0, characters }
@@ -161,10 +172,63 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
           x: lerp(start.point.x, character.point.x, amount),
           y: lerp(start.point.y, character.point.y, amount),
         },
-        moved: start.point.x === character.point.x && start.point.y === character.point.y ? 0 : 1,
+        moved:
+          start.point.x === character.point.x && start.point.y === character.point.y
+            ? 0
+            : character.moved,
+        walkDistance: lerp(start.walkDistance, character.walkDistance, amount),
       }
     }),
   }
+}
+
+/** Whether any matching character displaced above the dead zone or turned between two frames. */
+export function sceneCharactersMoved(from: FrameScene, to: FrameScene): boolean {
+  const prior = new Map(from.characters.map((character) => [character.id, character]))
+  return to.characters.some((character) => {
+    const start = prior.get(character.id)
+    return start !== undefined && (character.moved > 0 || start.heading !== character.heading)
+  })
+}
+
+/** Whether the visitor itself displaced above the dead zone between two frames. */
+export function sceneVisitorMoved(from: FrameScene, to: FrameScene): boolean {
+  const start = from.characters.find((character) => character.id === VISITOR_PLAYER)
+  const end = to.characters.find((character) => character.id === VISITOR_PLAYER)
+  return start !== undefined && end !== undefined && end.moved > 0
+}
+
+/**
+ * Advance or hold the per-character walked-distance phase. A reset (replay seek) starts the phase
+ * over; a held frame (snap or same-tick re-delivery) keeps the current phase; a landed frame adds
+ * the dead-zoned per-tick distance and stamps the scene's characters for the walk cycle.
+ */
+export function advanceWalkDistance(
+  accumulated: Map<string, number>,
+  scene: FrameScene,
+  reset: boolean,
+  advance: boolean,
+): void {
+  if (reset) accumulated.clear()
+  if (advance) {
+    for (const character of scene.characters) {
+      const next = (accumulated.get(character.id) ?? 0) + character.moved
+      accumulated.set(character.id, next)
+      character.walkDistance = next
+    }
+  } else {
+    for (const character of scene.characters) {
+      character.walkDistance = accumulated.get(character.id) ?? 0
+    }
+  }
+}
+
+/**
+ * Whether an in-flight movement should keep gliding toward the new frame instead of snapping to it:
+ * true for a later landed frame, false for a same-tick re-presentation that is already its target.
+ */
+export function settleGlideOnto(movement: { to: FrameScene } | null, scene: FrameScene): boolean {
+  return movement !== null && movement.to.dynamic?.tick !== scene.dynamic?.tick
 }
 
 /** Convert a rules or catalog token into a compact diagnostic label. */

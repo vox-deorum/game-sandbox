@@ -188,9 +188,7 @@ describe('Hearthside Ink presentation', () => {
 
     const unknownFrame = structuredClone(HEARTHSIDE_STYLE) as any
     unknownFrame.roofs.frames.inn.edge = 'missingFrame'
-    expect(() => readHearthsideStyle(unknownFrame)).toThrow(
-      'roofs.frames.inn.edge is unknown',
-    )
+    expect(() => readHearthsideStyle(unknownFrame)).toThrow('roofs.frames.inn.edge is unknown')
 
     const emptyFills = structuredClone(HEARTHSIDE_STYLE) as any
     emptyFills.roofs.frames.shed.fills = []
@@ -292,6 +290,24 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(excessiveRatio)).toThrow(
       'characters.walk.frameRatio must be greater than 0 and at most 1',
     )
+  })
+
+  it('requires a positive walk dead zone below one', () => {
+    const zeroDeadZone = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroDeadZone.characters.walk.deadZone = 0
+    expect(() => readHearthsideStyle(zeroDeadZone)).toThrow(
+      'characters.walk.deadZone must be greater than 0',
+    )
+
+    const excessiveDeadZone = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveDeadZone.characters.walk.deadZone = 1.01
+    expect(() => readHearthsideStyle(excessiveDeadZone)).toThrow(
+      'characters.walk.deadZone must be greater than 0 and at most 1',
+    )
+
+    const missingDeadZone = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingDeadZone.characters.walk.deadZone
+    expect(() => readHearthsideStyle(missingDeadZone)).toThrow('keys do not match')
   })
 
   it('rejects expression frames absent from the effects page and an invalid frame ratio', () => {

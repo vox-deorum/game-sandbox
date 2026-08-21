@@ -4,12 +4,16 @@ import { fixtureRecording } from '../core/test-helpers.js'
 import type { CharacterDrawable, FrameScene } from '../core/types.js'
 import { expectedCharacterIds, RULES, readDynamic, readStatic } from '../ui/overlay.js'
 import {
+  advanceWalkDistance,
   buildStaticScene,
   computeScene,
   expressionTitleFor,
   interpolateScene,
   pointToWorld,
   rectToWorld,
+  sceneCharactersMoved,
+  sceneVisitorMoved,
+  settleGlideOnto,
 } from './scene.js'
 
 describe('Three Branches pure scene', () => {
@@ -112,7 +116,10 @@ describe('interpolateScene walk displacement', () => {
   function rewriteCharacters(
     frame: FrameScene,
     overrides: Readonly<
-      Record<string, Partial<Pick<CharacterDrawable, 'point' | 'x' | 'y' | 'moved'>>>
+      Record<
+        string,
+        Partial<Pick<CharacterDrawable, 'point' | 'x' | 'y' | 'moved' | 'heading' | 'walkDistance'>>
+      >
     >,
   ): FrameScene {
     return {
@@ -136,11 +143,11 @@ describe('interpolateScene walk displacement', () => {
       [mover.id]: { point: { x: 40, y: 80 }, x: 4, y: 8 },
     })
     const movedTo = rewriteCharacters(to, {
-      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 1 },
+      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 0.6 },
       [still.id]: { point: still.point, x: still.x, y: still.y, moved: 0 },
     })
     const halfway = interpolateScene(movedFrom, movedTo, 0.5)
-    expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(1)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(0.6)
     expect(halfway.characters.find((character) => character.id === still.id)?.moved).toBe(0)
   })
 
@@ -149,10 +156,126 @@ describe('interpolateScene walk displacement', () => {
     const mover = from.characters[0]
     if (mover === undefined) throw new Error('the walk fixture needs at least one character.')
     const to = rewriteCharacters(from, {
-      [mover.id]: { point: mover.point, x: mover.x, y: mover.y, moved: 1 },
+      [mover.id]: { point: mover.point, x: mover.x, y: mover.y, moved: 0.6 },
     })
     const halfway = interpolateScene(from, to, 0.5)
     expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(0)
+  })
+
+  it('lerps the walk phase distance between the source and target frames', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const to = computeScene(states[1] as (typeof states)[number], scene, roster)
+    const mover = from.characters[0]
+    if (mover === undefined) throw new Error('the walk fixture needs at least one character.')
+    const walkFrom = rewriteCharacters(from, { [mover.id]: { walkDistance: 10 } })
+    const walkTo = rewriteCharacters(to, { [mover.id]: { walkDistance: 14 } })
+    const halfway = interpolateScene(walkFrom, walkTo, 0.5)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(12)
+  })
+
+  it('zeroes a recorded walk displacement below the dead zone on a landed frame', () => {
+    const state = states[0] as (typeof states)[number]
+    const dynamic = readDynamic(state, roster, scene.village)
+    if (dynamic === null) throw new Error('the dead zone fixture needs a dynamic overlay.')
+    const drift = dynamic.characters[0]
+    const stride = dynamic.characters[1]
+    if (drift === undefined || stride === undefined) {
+      throw new Error('the dead zone fixture needs at least two characters.')
+    }
+    const patched: typeof state = {
+      ...state,
+      overlay: {
+        ...(state.overlay ?? {}),
+        characters: dynamic.characters.map((character) => ({
+          ...character,
+          moved:
+            character.id === drift.id ? 0.03 : character.id === stride.id ? 0.5 : character.moved,
+        })),
+      },
+    }
+    const landed = computeScene(patched, scene, roster)
+    expect(landed.characters.find((character) => character.id === drift.id)?.moved).toBe(0)
+    expect(landed.characters.find((character) => character.id === stride.id)?.moved).toBe(0.5)
+  })
+
+  it('advances, holds, and re-anchors the walked phase accumulator', () => {
+    const state = states[0] as (typeof states)[number]
+    const dynamic = readDynamic(state, roster, scene.village)
+    if (dynamic === null) throw new Error('the walk accumulator fixture needs a dynamic overlay.')
+    const mover = dynamic.characters[0]
+    if (mover === undefined) throw new Error('the walk accumulator fixture needs a character.')
+    const patched = (moved: number): typeof state => ({
+      ...state,
+      overlay: {
+        ...(state.overlay ?? {}),
+        characters: dynamic.characters.map((character) => ({
+          ...character,
+          moved: character.id === mover.id ? moved : character.moved,
+        })),
+      },
+    })
+
+    const accumulated = new Map<string, number>()
+    const first = computeScene(patched(0.4), scene, roster)
+    advanceWalkDistance(accumulated, first, false, true)
+    expect(first.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(0.4)
+
+    const second = computeScene(patched(0.6), scene, roster)
+    advanceWalkDistance(accumulated, second, false, true)
+    expect(second.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(1)
+
+    const held = computeScene(patched(0.6), scene, roster)
+    advanceWalkDistance(accumulated, held, false, false)
+    expect(held.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(1)
+
+    const reanchored = computeScene(patched(0.6), scene, roster)
+    advanceWalkDistance(accumulated, reanchored, true, false)
+    expect(reanchored.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(
+      0,
+    )
+    expect(accumulated.size).toBe(0)
+  })
+
+  it('settles a glide onto a later frame and snaps onto a same-tick re-delivery', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const to = computeScene(states[1] as (typeof states)[number], scene, roster)
+    expect(settleGlideOnto(null, to)).toBe(false)
+    expect(settleGlideOnto({ to: from }, to)).toBe(from.dynamic?.tick !== to.dynamic?.tick)
+    // A movement already aimed at the same recorded tick must snap, not re-aim.
+    const same = computeScene(states[1] as (typeof states)[number], scene, roster)
+    expect(settleGlideOnto({ to }, same)).toBe(false)
+  })
+
+  it('flags displacement above the dead zone and turns, but never a still visitor', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const mover = from.characters[0]
+    const npc = from.characters[1]
+    const visitor = from.characters.find((character) => character.id === 'player_0')
+    if (mover === undefined || npc === undefined || visitor === undefined) {
+      throw new Error('the movement fixture needs the visitor and at least two characters.')
+    }
+    const allStill = Object.fromEntries(
+      from.characters.map((character) => [character.id, { moved: 0 }]),
+    )
+    const rest = rewriteCharacters(from, allStill)
+    expect(sceneCharactersMoved(from, rest)).toBe(false)
+    expect(sceneVisitorMoved(from, rest)).toBe(false)
+
+    const shifted = rewriteCharacters(rest, { [mover.id]: { moved: 0.06 } })
+    expect(sceneCharactersMoved(rest, shifted)).toBe(true)
+
+    const visitorMoved = rewriteCharacters(rest, { [visitor.id]: { moved: 0.06 } })
+    expect(sceneVisitorMoved(rest, visitorMoved)).toBe(true)
+
+    const turnedNpc = rewriteCharacters(rest, { [npc.id]: { heading: npc.heading + 90 } })
+    expect(sceneCharactersMoved(rest, turnedNpc)).toBe(true)
+    expect(sceneVisitorMoved(rest, turnedNpc)).toBe(false)
+
+    const turnedVisitor = rewriteCharacters(rest, {
+      [visitor.id]: { heading: visitor.heading + 90 },
+    })
+    expect(sceneCharactersMoved(rest, turnedVisitor)).toBe(true)
+    expect(sceneVisitorMoved(rest, turnedVisitor)).toBe(false)
   })
 
   it('keeps the recorded walk flag on a landed target scene', () => {

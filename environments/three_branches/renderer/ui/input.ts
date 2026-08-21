@@ -58,20 +58,25 @@ export function wrapDegrees(value: number): number {
  * Read a pad drag as motion, or null while the drag sits inside the dead zone.
  *
  * Speed rises linearly from zero at the dead-zone edge to full at the pad ring and saturates
- * beyond it. The heading converts the screen-space drag into environment degrees.
+ * beyond it. A speed below the given low-speed clamp reads as no movement, so an imperceptible
+ * crawl never reaches the engine. The heading converts the screen-space drag into environment
+ * degrees.
  */
 export function joystickMotion(
   center: { x: number; y: number },
   point: { x: number; y: number },
   radius = JOYSTICK_RADIUS,
+  speedDeadZone: number,
 ): MotionInput | null {
   const dx = point.x - center.x
   const dy = point.y - center.y
   const reach = Math.hypot(dx, dy) / radius
   if (reach <= JOYSTICK_DEAD_ZONE) return null
+  const speed = Math.min((reach - JOYSTICK_DEAD_ZONE) / (1 - JOYSTICK_DEAD_ZONE), 1)
+  if (speed < speedDeadZone) return null
   return {
     heading: wrapDegrees((Math.atan2(-dy, dx) * 180) / Math.PI),
-    speed: Math.min((reach - JOYSTICK_DEAD_ZONE) / (1 - JOYSTICK_DEAD_ZONE), 1),
+    speed,
   }
 }
 

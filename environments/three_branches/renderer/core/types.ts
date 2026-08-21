@@ -192,6 +192,8 @@ export interface CharacterDrawable extends DynamicCharacter {
   fill: string
   /** Human-readable identity and expression label. */
   label: string
+  /** Cumulative on-screen distance walked, the deterministic phase driver for the walk cycle. */
+  walkDistance: number
   /** The expression chip's title-cased text, or null when the character has no expression. */
   expressionTitle: string | null
 }

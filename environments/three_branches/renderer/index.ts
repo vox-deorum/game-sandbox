@@ -59,7 +59,15 @@ import {
 import { collisionWithPropStates, frameCollision, staticCollision } from './map/collision.js'
 import { type CollisionLayer, createCollisionLayer } from './map/collision-layer.js'
 import { drawMap, drawUpperWalls, type MapLayerView } from './map/map-layer.js'
-import { buildStaticScene, computeScene, interpolateScene } from './map/scene.js'
+import {
+  advanceWalkDistance,
+  buildStaticScene,
+  computeScene,
+  interpolateScene,
+  sceneCharactersMoved,
+  sceneVisitorMoved,
+  settleGlideOnto,
+} from './map/scene.js'
 import { createWorldArtStack, type WorldArtStack } from './map/world-stack.js'
 
 // props/
@@ -153,6 +161,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private visitorInput: VisitorInputController | null = null
   /** The visitor's latest landed pose. Input composition and the use preview never interpolate. */
   private landedVisitor: { point: WorldPoint; heading: number } | null = null
+  /** The last landed (non-snap) frame, the authoritative basis for movement decisions. */
+  private landedScene: FrameScene | null = null
+  /** Per-character cumulative on-screen walk distance, the deterministic walk-cycle phase driver. */
+  private readonly walkDistance = new Map<string, number>()
 
   /** Parse immutable renderer inputs before Pixi builds the retained scene. */
   constructor(ctx: RendererContext) {
@@ -267,19 +279,21 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
+    // A connection that re-delivers the current recorded tick re-presents the same frame, so it
+    // must neither advance the walk phase nor restart a movement; the roof keeps the same guard.
+    const dynamicTick = scene.dynamic?.tick
+    const reDelivery = dynamicTick !== undefined && dynamicTick === this.lastRoofTick
+    if (dynamicTick !== undefined) this.lastRoofTick = dynamicTick
+    // Snap frames (resize, redraw, seek) and same-tick re-deliveries hold the walk phase; only real
+    // landed frames advance the per-character walk distance accumulator.
+    const snapLike = options?.snap === true || reDelivery
+    advanceWalkDistance(this.walkDistance, scene, options?.seek === true, !snapLike)
     const landedVisitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (landedVisitor !== undefined) {
       this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
     }
-    // A connection that re-delivers the current recorded tick re-presents the same frame, so the
-    // roof snaps to its occupancy rather than replaying the fade.
-    const dynamicTick = scene.dynamic?.tick
     const snapRoofs =
-      options?.snap === true ||
-      options?.seek === true ||
-      this.presentedScene === null ||
-      (dynamicTick !== undefined && dynamicTick === this.lastRoofTick)
-    if (dynamicTick !== undefined) this.lastRoofTick = dynamicTick
+      options?.snap === true || options?.seek === true || this.presentedScene === null || reDelivery
     this.roofs.setTargets(scene, snapRoofs)
     // A snap re-presentation (resize, DPR change, asset redraw) is not a landed transport frame, so
     // it must not compose or send an action; only real states advance the live input window. The
@@ -307,8 +321,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
     const shouldAnimate =
       durationMs > 0 &&
+      !reDelivery &&
       this.presentedScene !== null &&
-      (charactersMoved(this.presentedScene, scene) ||
+      (sceneCharactersMoved(this.landedScene ?? this.presentedScene, scene) ||
         hasSustainedPropEffectTransition(this.presentedScene, scene))
     this.settleRemainingMs = 0
     if (shouldAnimate && this.presentedScene !== null) {
@@ -321,11 +336,24 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         durationMs,
       }
       this.presentScene(interpolateScene(this.presentedScene, scene, 0))
+    } else if (this.movement !== null && settleGlideOnto(this.movement, scene)) {
+      // A stopped frame landed while its movement was still gliding: aim the remaining glide at
+      // the stop frame so the sprite settles its last stretch with resting feet instead of popping
+      // the leftover distance. The stop frame reads moved 0, so feet rest and the camera never
+      // returns during the settle.
+      const glide = this.movement
+      this.movement = {
+        from: glide.from,
+        to: scene,
+        elapsedMs: glide.elapsedMs,
+        durationMs: glide.durationMs,
+      }
     } else {
       this.movement = null
       this.presentScene(scene)
     }
     this.updateProbes(state, scene)
+    if (!snapLike) this.landedScene = scene
   }
 
   /** Advance character interpolation, the visitor camera, and the speech bubbles' hold and fade. */
@@ -340,7 +368,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       movement.elapsedMs += dtMs
       const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
       this.presentScene(interpolateScene(movement.from, movement.to, progress))
-      this.advanceCameraReturn(dtMs, visitorMoved(movement.from, movement.to))
+      this.advanceCameraReturn(dtMs, sceneVisitorMoved(movement.from, movement.to))
       this.props.advance(this.presentedScene ?? movement.to)
       if (progress >= 1) {
         this.movement = null
@@ -758,29 +786,6 @@ function replaceSceneLayer(current: Container, replacement: Container): void {
 function replaceMapLayerView(current: MapLayerView, replacement: MapLayerView): void {
   replaceSceneLayer(current.naturalView, replacement.naturalView)
   replaceSceneLayer(current.architectureView, replacement.architectureView)
-}
-
-function charactersMoved(from: FrameScene, to: FrameScene): boolean {
-  const prior = new Map(from.characters.map((character) => [character.id, character]))
-  return to.characters.some((character) => {
-    const start = prior.get(character.id)
-    return (
-      start !== undefined &&
-      (start.point.x !== character.point.x ||
-        start.point.y !== character.point.y ||
-        start.heading !== character.heading)
-    )
-  })
-}
-
-function visitorMoved(from: FrameScene, to: FrameScene): boolean {
-  const start = from.characters.find((character) => character.id === VISITOR_PLAYER)
-  const end = to.characters.find((character) => character.id === VISITOR_PLAYER)
-  return (
-    start !== undefined &&
-    end !== undefined &&
-    (start.point.x !== end.point.x || start.point.y !== end.point.y)
-  )
 }
 
 const definition = {
