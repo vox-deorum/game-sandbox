@@ -47,9 +47,9 @@ export function composeColorGradeMatrix(
 }
 
 /**
- * Create one retained grade filter. Both world grades use the same options: they inherit the render
- * target's resolution and antialiasing, add no padding, and clip to the viewport so a filter pass
- * costs one screen-sized texture however far the camera is zoomed in.
+ * Create the retained night-grade filter. It inherits the render target's resolution and
+ * antialiasing, adds no padding, and clips to the viewport so the pass costs one screen-sized
+ * texture however far the camera is zoomed in.
  */
 export function createGradeFilter(
   treatment: ColorGradeTreatment,

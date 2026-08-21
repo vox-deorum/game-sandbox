@@ -1,6 +1,6 @@
 # Step 5.3: Visual refinement and fitted-view hierarchy
 
-Status: planned. Tune the current graphics toward the approved Hearthside Ink direction: a village that reads clearly at fitted view and rewards close inspection without losing its calm, hand-made hierarchy.
+Status: in progress. Unit 1 has removed the daytime authored grade from the live renderer. Tune the current graphics toward the approved Hearthside Ink direction: a village that reads clearly at fitted view and rewards close inspection without losing its calm, hand-made hierarchy.
 
 Part of [the plan](../README.md). This stage uses the [5.0 atlas pipeline](5-0-atlas.md), the [5.1 visual direction](5-1-art-style.md), and the [5.2 HUD semantics and input design](5-2-hud-interaction-and-camera.md). It improves the live presentation, not technical parity for its own sake.
 
@@ -37,6 +37,8 @@ Desired result: terrain carries the Hearthside Ink material character and route 
 First, inspect the current terrain against the approved references at fitted, middle, and close scales, plus night. Present prioritized deviations, their effect, and proposed tuning focus to the owner, then wait for direction before art or runtime changes.
 
 Keep the tintable terrain composition, deterministic patterning, routes, bridges, geometry, and layer ownership. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
+
+The live renderer now has no daytime authored grade. The terrain repaint and both owner approvals remain in this unit.
 
 ### 2. Split pines and market crate
 

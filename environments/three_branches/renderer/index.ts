@@ -594,7 +594,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private presentScene(scene: FrameScene): void {
     this.presentedScene = scene
     // Only the exact night phase darkens the world. Opening, day, the other named phases, and any
-    // unknown value stay neutral beyond the authored grade, and the switch never fades.
+    // unknown value stay ungraded, and the switch never fades.
     this.world.setNightGrade(scene.dynamic?.phase === 'night')
     const visitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (visitor !== undefined) {

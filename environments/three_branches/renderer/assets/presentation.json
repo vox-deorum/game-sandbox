@@ -153,13 +153,6 @@
     }
   },
   "postEffects": {
-    "authoredGrade": {
-      "brightness": 1.02,
-      "contrast": 0.88,
-      "saturation": 0.8,
-      "tint": "parchment",
-      "tintMix": 0.2
-    },
     "nightGrade": {
       "brightness": 0.7,
       "contrast": 1.08,

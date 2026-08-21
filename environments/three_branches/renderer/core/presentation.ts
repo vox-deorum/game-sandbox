@@ -326,7 +326,6 @@ export interface HearthsideStyle {
     frames: Readonly<Record<string, RoofFramesTreatment>>
   }
   postEffects: {
-    authoredGrade: ColorGradeTreatment
     nightGrade: ColorGradeTreatment
     propContactShadow: PropContactShadowTreatment
   }
@@ -523,16 +522,10 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   const postEffectsSource = exactRecord(source.postEffects, 'presentation.postEffects', [
-    'authoredGrade',
     'nightGrade',
     'propContactShadow',
   ])
   const postEffects = {
-    authoredGrade: colorGradeTreatment(
-      postEffectsSource.authoredGrade,
-      'presentation.postEffects.authoredGrade',
-      paletteNames,
-    ),
     nightGrade: colorGradeTreatment(
       postEffectsSource.nightGrade,
       'presentation.postEffects.nightGrade',

@@ -3,13 +3,13 @@ import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { createGradeFilter } from '../effects/post-effects.js'
 import type { MapLayerView } from './map-layer.js'
 
-/** The world containers and the two retained grades that decide which of them a filter covers. */
+/** The world containers and retained night grade that decide which layers the filter covers. */
 export interface WorldArtStack {
   /** The camera-transformed root the renderer masks and adds to the Pixi stage. */
   readonly root: Container
   /** Ungraded terrain, routes, and seams. */
   readonly natural: Container
-  /** Generated art and architecture, always under the authored grade. */
+  /** Generated art and architecture. */
   readonly authored: Container
   readonly scenery: Container
   readonly shadows: Container
@@ -27,16 +27,15 @@ export interface WorldArtStack {
   readonly collision: Container
   /** Attach or release the one retained night filter over terrain and authored art together. */
   setNightGrade(active: boolean): void
-  /** Release both retained filters. Safe to call more than once. */
+  /** Release the retained night filter. Safe to call more than once. */
   destroy(): void
 }
 
 /**
- * Build the world scene graph in its drawn order. Natural terrain and the authored composite are
- * separate roots so the authored grade reaches generated art and architecture without touching the
- * terrain's daytime colour, and so the night grade can cover both at once by sitting on the shared
- * parent. Emissives, the prop highlight, annotations, and collision are outside both grades, which
- * makes "post-grade" a structural property rather than a rule someone has to remember.
+ * Build the world scene graph in its drawn order. Natural terrain and the authored composite stay
+ * separate roots so the night grade can cover both at once from their shared parent. Emissives, the
+ * prop highlight, annotations, and collision remain outside the night grade. This makes the filter
+ * boundary structural rather than a rule someone has to remember.
  */
 export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const natural = new Container({ label: 'world-natural' })
@@ -55,10 +54,6 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const worldArt = new Container({ label: 'world-art' })
   const root = new Container({ label: 'world-root' })
 
-  const authoredFilter = createGradeFilter(
-    HEARTHSIDE_STYLE.postEffects.authoredGrade,
-    HEARTHSIDE_STYLE.palette,
-  )
   const nightFilter = createGradeFilter(
     HEARTHSIDE_STYLE.postEffects.nightGrade,
     HEARTHSIDE_STYLE.palette,
@@ -67,7 +62,6 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   let destroyed = false
 
   natural.addChild(mapView.naturalView)
-  authored.filters = [authoredFilter]
   authored.addChild(mapView.architectureView, scenery, shadows, props, characters, upper, roofs, effects)
   worldArt.addChild(natural, authored)
   root.addChild(worldArt, emissives, highlight, annotations, collision)
@@ -97,9 +91,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
     destroy() {
       if (destroyed) return
       destroyed = true
-      authored.filters = []
       worldArt.filters = []
-      authoredFilter.destroy()
       nightFilter.destroy()
     },
   }
