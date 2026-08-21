@@ -2,12 +2,8 @@ import { stableHashParts } from '@renderers/base/math.js'
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import {
-  HEARTHSIDE_STYLE,
-  PALETTE,
-  THREE_BRANCHES_PRESENTATION,
-} from '../core/presentation.js'
 import type { RoofFramesTreatment } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { pointToWorld } from '../map/scene.js'
 import { frameRectangle } from '../ui/tint.js'
@@ -111,7 +107,7 @@ export function createRoofLayer(layer: Container, scene: StaticScene): RoofLayer
     setTargets(frame, snap) {
       if (art === null) return
       for (const node of nodes.values()) {
-        const target = occupiedBy(frame, node.item) ? HEARTHSIDE_STYLE.roofs.clearAlpha : 1
+        const target = buildingOccupied(frame, node.item) ? HEARTHSIDE_STYLE.roofs.clearAlpha : 1
         node.targetAlpha = target
         if (snap) {
           node.currentAlpha = target
@@ -129,7 +125,8 @@ export function createRoofLayer(layer: Container, scene: StaticScene): RoofLayer
         const remaining = node.targetAlpha - node.currentAlpha
         const step = Math.min(Math.abs(remaining), elapsed * rate)
         node.currentAlpha += remaining < 0 ? -step : step
-        if (Math.abs(node.targetAlpha - node.currentAlpha) < 1e-6) node.currentAlpha = node.targetAlpha
+        if (Math.abs(node.targetAlpha - node.currentAlpha) < 1e-6)
+          node.currentAlpha = node.targetAlpha
         node.container.alpha = node.currentAlpha
         active = true
       }
@@ -156,7 +153,8 @@ function roofTreatment(type: string): RoofFramesTreatment {
   return treatment
 }
 
-function occupiedBy(frame: FrameScene, building: StaticDrawable): boolean {
+/** Whether any recorded character stands within this building's semantic world rectangle. */
+export function buildingOccupied(frame: FrameScene, building: StaticDrawable): boolean {
   const dynamic = frame.dynamic
   if (dynamic === null) return false
   const village = frame.static.village
@@ -201,14 +199,18 @@ export function roofTilePlan(building: StaticDrawable, cellSize: number): readon
       const left = col === 0
       const right = col === width - 1
       if (top && left) push({ col, row, role: 'corner', frame: treatment.corner, rotation: 0 })
-      else if (top && right) push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI / 2 })
-      else if (bottom && right) push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI })
-      else if (bottom && left) push({ col, row, role: 'corner', frame: treatment.corner, rotation: -Math.PI / 2 })
+      else if (top && right)
+        push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI / 2 })
+      else if (bottom && right)
+        push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI })
+      else if (bottom && left)
+        push({ col, row, role: 'corner', frame: treatment.corner, rotation: -Math.PI / 2 })
       else if (top) push({ col, row, role: 'edge', frame: treatment.edge, rotation: 0 })
       else if (bottom) push({ col, row, role: 'edge', frame: treatment.edge, rotation: Math.PI })
       else if (left) push({ col, row, role: 'edge', frame: treatment.edge, rotation: -Math.PI / 2 })
       else if (right) push({ col, row, role: 'edge', frame: treatment.edge, rotation: Math.PI / 2 })
-      else if (row === ridgeRow) push({ col, row, role: 'ridge', frame: treatment.ridge, rotation: 0 })
+      else if (row === ridgeRow)
+        push({ col, row, role: 'ridge', frame: treatment.ridge, rotation: 0 })
       else {
         push({
           col,

@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
+import { buildingOccupied } from '../buildings/buildings.js'
 import {
   HEARTHSIDE_STYLE,
   PALETTE,
@@ -105,8 +106,10 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   )
   const nodes = new Map<string, PropNode>()
   let art: PropArt | null = null
+  const pines = new Container({ label: 'pines' })
+  const pineBuildingCutout = new Graphics({ label: 'pine-building-cutout' })
+  pines.setMask({ mask: pineBuildingCutout, inverse: true })
 
-  for (const item of scene.scenery) layers.scenery.addChild(createSceneryNode(item))
   for (const item of scene.props) {
     const node = createPropNode(item, cellSize)
     nodes.set(item.id, node)
@@ -120,6 +123,13 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     layers.effects.addChild(node.effect)
     layers.emissives.addChild(node.emissive)
   }
+  for (const item of scene.scenery) {
+    const target = item.type === 'pine' ? pines : layers.scenery
+    target.addChild(createSceneryNode(item))
+  }
+  // Effects and monument uppers are added first, then pines sit over the entire authored village.
+  // The inverse mask leaves only occupied building interiors clear.
+  layers.effects.addChild(pines, pineBuildingCutout)
   const highlightNode = new Graphics({ label: 'prop-highlight' })
   layers.highlight.addChild(highlightNode)
 
@@ -150,7 +160,9 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       preflightArt(nextArt)
       for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
-      for (const item of scene.scenery) installScenery(layers.scenery, item, nextArt)
+      for (const item of scene.scenery) {
+        installScenery(item.type === 'pine' ? pines : layers.scenery, item, nextArt)
+      }
       for (const node of nodes.values()) {
         const state = node.state ?? start(starts, node.item.id)
         node.state = null
@@ -158,6 +170,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       }
     },
     reconcile(frame) {
+      syncPineBuildingCutout(pineBuildingCutout, frame)
       for (const node of nodes.values()) {
         applyState(node, frame.dynamic?.props[node.item.id] ?? start(starts, node.item.id))
       }
@@ -231,6 +244,17 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
           .stroke(stroke)
       }
     },
+  }
+}
+
+/** Rebuild the retained inverse mask from semantic, snapped building occupancy. */
+function syncPineBuildingCutout(mask: Graphics, frame: FrameScene): void {
+  mask.clear()
+  for (const building of frame.static.buildings) {
+    if (!buildingOccupied(frame, building)) continue
+    mask
+      .rect(building.rect.x, building.rect.y, building.rect.width, building.rect.height)
+      .fill(0xffffff)
   }
 }
 

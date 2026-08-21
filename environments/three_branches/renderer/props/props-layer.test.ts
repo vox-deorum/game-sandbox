@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { sceneryVisualScale } from '../core/presentation.js'
-import type { StaticDrawable, StaticScene } from '../core/types.js'
+import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import type { FrameGrid } from '../ui/tint.js'
 import { frameRectangle } from '../ui/tint.js'
 import {
@@ -78,6 +78,28 @@ function completeArt() {
   })
 }
 
+function frame(scene: StaticScene, characters: readonly (readonly [number, number])[]): FrameScene {
+  return {
+    static: scene,
+    dynamic: {
+      tick: 1,
+      phase: 'day',
+      characters: characters.map(([x, y], index) => ({
+        id: `player_${index}`,
+        x,
+        y,
+        heading: 0,
+        moved: 0,
+        expression: { type: 'none', target: '' },
+      })),
+      props: {},
+      terminal: false,
+    },
+    presentationTick: 1,
+    characters: [],
+  }
+}
+
 describe('Three Branches prop art views', () => {
   it('slices named views over their atlas source with manifest rectangles', () => {
     const source = Texture.WHITE.source
@@ -114,7 +136,9 @@ describe('Three Branches prop art views', () => {
     const props = createPropLayer(targets, sceneryScene())
     props.install(completeArt())
 
-    const pineRoot = targets.scenery.getChildByLabel('scenery:pine-1')
+    const pines = targets.effects.getChildByLabel('pines')
+    expect(pines).toBeInstanceOf(Container)
+    const pineRoot = (pines as Container).getChildByLabel('scenery:pine-1')
     const crateRoot = targets.scenery.getChildByLabel('scenery:crate-1')
     expect(pineRoot).toBeInstanceOf(Container)
     expect(crateRoot).toBeInstanceOf(Container)
@@ -126,6 +150,48 @@ describe('Three Branches prop art views', () => {
     expect((crate as Sprite).scale.x).toBe((sceneryVisualScale('crate') * 0.4) / 8)
     expect((pine as Sprite).tint).toBe(0xffffff)
     expect((crate as Sprite).tint).toBe(0xffffff)
+  })
+
+  it('keeps pines above prop effects and cuts them out only for occupied buildings', () => {
+    const targets = layerTargets()
+    const scene = sceneryScene()
+    const building: StaticDrawable = {
+      id: 'home_0',
+      type: 'home',
+      label: 'home',
+      shape: 'box',
+      collisionScale: 1,
+      rect: { x: 0, y: 0, width: 32, height: 32 },
+    }
+    scene.buildings = [building]
+    scene.props = [
+      {
+        id: 'bench_0',
+        type: 'bench',
+        label: 'bench',
+        shape: 'box',
+        collisionScale: 1,
+        rect: { x: 40, y: 40, width: 8, height: 8 },
+      },
+    ]
+    const props = createPropLayer(targets, scene)
+    const pines = targets.effects.getChildByLabel('pines') as Container
+    const cutout = targets.effects.getChildByLabel('pine-building-cutout') as Container
+
+    expect(targets.effects.children.map((child) => child.label)).toEqual([
+      'prop-effect:bench_0',
+      'pines',
+      'pine-building-cutout',
+    ])
+    expect(pines.mask).toBe(cutout)
+    expect(
+      (pines as Container & { _maskOptions?: { inverse?: boolean } })._maskOptions?.inverse,
+    ).toBe(true)
+
+    props.reconcile(frame(scene, [[0.5, 0.5]]))
+    expect(cutout.getLocalBounds()).toMatchObject({ x: 0, y: 0, width: 32, height: 32 })
+    props.reconcile(frame(scene, [[3, 3]]))
+    expect(cutout.getLocalBounds()).toMatchObject({ width: 0, height: 0 })
   })
 
   it('preflights every approved pine frame', () => {

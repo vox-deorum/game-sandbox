@@ -50,6 +50,8 @@ Keep static placement, collision, and stable variant selection. Draw each pine a
 
 Gate A accepted six complete, full-color 512 px pine variants. The owner approved the ground and night comparison, and variants B and F were reframed with transparent left padding before promotion. The 4 by 2 scenery page keeps the market crate in the seventh cell and leaves the eighth cell transparent. Runtime scale is divided by 8 so placement and collision registration remain unchanged. Gate B remains open for the integrated fitted, middle, close, and night review.
 
+Pines now occupy a retained post-roof layer above props, effects, and characters. The layer has an inverse semantic building mask that snaps to the same recorded occupancy as roof fading, without waiting for roof art. Gate B remains open for owner visual approval.
+
 ### 3. Ordinary props and a dedicated lantern page
 
 Desired result: ordinary props clearly express their states, and the lantern becomes a warm vertical landmark that reads at night without crowding the day scene.

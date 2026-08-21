@@ -2,11 +2,17 @@ import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import { createRoofArt, createRoofLayer, roofTilePlan, type RoofArt } from './buildings.js'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene, VillageStatic } from '../core/types.js'
 import { buildStaticScene } from '../map/scene.js'
 import type { FrameGrid } from '../ui/tint.js'
+import {
+  buildingOccupied,
+  createRoofArt,
+  createRoofLayer,
+  type RoofArt,
+  roofTilePlan,
+} from './buildings.js'
 
 const CELL = THREE_BRANCHES_PRESENTATION.unitsPerMetre
 
@@ -147,6 +153,13 @@ describe('Three Branches retained roof layer', () => {
     roofs.setTargets(outside(), true)
     expect(home0.alpha).toBe(1)
     expect(home1.alpha).toBe(1)
+  })
+
+  it('shares semantic building occupancy with other retained layers', () => {
+    const building = scene.buildings.find((item) => item.id === 'home_0')
+    if (building === undefined) throw new Error('home_0 fixture building is missing.')
+    expect(buildingOccupied(inside(), building)).toBe(true)
+    expect(buildingOccupied(outside(), building)).toBe(false)
   })
 
   it('eases linearly at fadeMs and snaps on request', () => {
