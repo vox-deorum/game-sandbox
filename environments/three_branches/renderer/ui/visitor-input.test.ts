@@ -116,6 +116,7 @@ describe('Three Branches visitor input', () => {
   }
 
   afterEach(() => {
+    vi.useRealTimers()
     for (const entry of mounted.splice(0)) {
       entry.controller.destroy()
       entry.container.remove()
@@ -177,12 +178,14 @@ describe('Three Branches visitor input', () => {
     it('sends held keys once per landed frame at full speed', () => {
       const { container, sendAction, controller } = mount()
       key('keydown', 'KeyW')
-      controller.handleFrame(false)
+      // Motion now also pushes eagerly on input, and again on every landed frame.
       expect(sendAction).toHaveBeenCalledTimes(1)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       expect(container.getAttribute('data-three-branches-last-action')).toBe('90,1,0')
       controller.handleFrame(false)
-      expect(sendAction).toHaveBeenCalledTimes(2)
+      expect(sendAction).toHaveBeenCalledTimes(3)
     })
 
     it('halves the speed while Shift is held', () => {
@@ -196,32 +199,43 @@ describe('Three Branches visitor input', () => {
     it('cancels opposing keys per axis and skips the fully cancelled frame', () => {
       const { sendAction, controller } = mount()
       key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       key('keydown', 'KeyS')
+      // The axes cancel, so the change reads as an explicit stop of the in-flight motion.
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
       controller.handleFrame(false)
-      expect(sendAction).not.toHaveBeenCalled()
+      expect(sendAction).toHaveBeenCalledTimes(2)
       key('keydown', 'KeyD')
+      expect(sendAction).toHaveBeenCalledTimes(3)
       controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 0, speed: 1, action: 0 })
+      expect(sendAction).toHaveBeenCalledTimes(4)
     })
 
     it('stops sending once the key lifts', () => {
       const { sendAction, controller } = mount()
       key('keydown', 'KeyA')
-      controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
       key('keyup', 'KeyA')
+      // The lift sends an explicit stop at the current heading.
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
       controller.handleFrame(false)
       controller.handleFrame(false)
       controller.handleFrame(false)
-      expect(sendAction).toHaveBeenCalledTimes(1)
+      expect(sendAction).toHaveBeenCalledTimes(3)
     })
 
     it('drops held keys when the window loses focus', () => {
       const { sendAction, controller } = mount()
       key('keydown', 'KeyD')
+      expect(sendAction).toHaveBeenCalledTimes(1)
       window.dispatchEvent(new Event('blur'))
+      // Losing focus drops the keys, so the in-flight motion is stopped explicitly.
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
       controller.handleFrame(false)
-      expect(sendAction).not.toHaveBeenCalled()
+      expect(sendAction).toHaveBeenCalledTimes(2)
     })
 
     it('ignores keys typed into a text field', () => {
@@ -241,15 +255,21 @@ describe('Three Branches visitor input', () => {
       const { container, surface, sendAction, controller } = mount()
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
+      // Engaging inside the dead zone moves nothing, so nothing sends yet.
+      expect(sendAction).not.toHaveBeenCalled()
       pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
+      expect(sendAction).toHaveBeenCalledTimes(1)
       controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70)
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
+      // Release sends an explicit stop on top of the motion sends.
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
       controller.handleFrame(false)
       controller.handleFrame(false)
       controller.handleFrame(false)
-      expect(sendAction).toHaveBeenCalledTimes(1)
+      expect(sendAction).toHaveBeenCalledTimes(3)
     })
 
     it('claims only the fixed pad and leaves the rest of the left side to the camera', () => {
@@ -323,10 +343,13 @@ describe('Three Branches visitor input', () => {
       pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y, true, 0, 'pen')
       pointer(window, 'pointermove', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
+      expect(sendAction).toHaveBeenCalledTimes(1)
       controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
       pointer(window, 'pointerup', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y - 70, true, 0, 'pen')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')
+      // Release sends an explicit stop on top of the motion sends.
+      expect(sendAction).toHaveBeenCalledTimes(3)
     })
 
     it('claims a pad double click and leaves other left-side double clicks to the camera', () => {
@@ -605,7 +628,9 @@ describe('Three Branches visitor input', () => {
       controller.handleFrame(false)
       controller.handleFrame(false)
       controller.handleFrame(false)
-      expect(sendAction).not.toHaveBeenCalled()
+      // Only the pre-terminal sends remain: the eager KeyW motion, and the stop sent when the
+      // joystick engages in its dead zone, because an engaged joystick overrides the held key.
+      expect(sendAction).toHaveBeenCalledTimes(2)
       // The camera keeps the whole content area again: nothing claims the left half anymore.
       const bubbled = vi.fn()
       container.addEventListener('pointerdown', bubbled)
@@ -616,10 +641,11 @@ describe('Three Branches visitor input', () => {
     it('sends nothing more after destroy', () => {
       const { sendAction, controller } = mount()
       key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(1)
       controller.destroy()
       controller.handleFrame(false)
       controller.handleFrame(false)
-      expect(sendAction).not.toHaveBeenCalled()
+      expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('ends the session on a terminal snap frame without sending', () => {
@@ -630,17 +656,163 @@ describe('Three Branches visitor input', () => {
       expect(container.getAttribute('data-three-branches-joystick')).toBe('none')
       expect(padLayer.visible).toBe(false)
       expect(paletteLayer.visible).toBe(false)
-      expect(sendAction).not.toHaveBeenCalled()
+      expect(sendAction).toHaveBeenCalledTimes(1)
     })
 
     it('skips the send window on a non-terminal snap frame but stays live', () => {
       const { container, sendAction, controller } = mount()
       key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(1)
       controller.handleFrame(false, false)
       expect(container.getAttribute('data-three-branches-input')).toBe('ready')
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('eager motion and heartbeat', () => {
+    it('sends motion eagerly before any landed frame', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction } = mount()
+      key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      vi.useRealTimers()
+    })
+
+    it('sends an explicit stop on release and on blur', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction } = mount()
+      key('keydown', 'KeyW')
+      key('keyup', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
+      key('keydown', 'KeyD')
+      window.dispatchEvent(new Event('blur'))
+      expect(sendAction).toHaveBeenCalledTimes(4)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
+      vi.useRealTimers()
+    })
+
+    it('dedupes unchanged motion and throttles distinct motion to one send per 50 ms', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { surface, sendAction } = mount()
+      const north = { x: JOYSTICK_CENTER.x, y: JOYSTICK_CENTER.y - 70 }
+      const east = { x: JOYSTICK_CENTER.x + 70, y: JOYSTICK_CENTER.y }
+      const south = { x: JOYSTICK_CENTER.x, y: JOYSTICK_CENTER.y + 70 }
+      pointer(surface, 'pointerdown', 1, JOYSTICK_CENTER.x, JOYSTICK_CENTER.y)
       expect(sendAction).not.toHaveBeenCalled()
+      pointer(window, 'pointermove', 1, north.x, north.y)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      // A distinct heading inside the throttle window is dropped.
+      vi.advanceTimersByTime(10)
+      pointer(window, 'pointermove', 1, east.x, east.y)
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      // Once the window has passed, a distinct heading sends again.
+      vi.advanceTimersByTime(50)
+      pointer(window, 'pointermove', 1, south.x, south.y)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      // The same key as the latest send is deduped again, no time window needed.
+      pointer(window, 'pointermove', 1, south.x, south.y)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      vi.useRealTimers()
+    })
+
+    it('heartbeat re-sends the held motion while motion is held', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction } = mount()
+      key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(220)
+      expect(sendAction).toHaveBeenCalledTimes(3)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      expect(sendAction).not.toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 0 })
+      vi.useRealTimers()
+    })
+
+    it('keeps expressions exactly once while walking', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      key('keydown', 'Digit1')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      // The heartbeat is suppressed while the queued emote is in flight.
+      vi.advanceTimersByTime(300)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(3)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 2 })
+      vi.useRealTimers()
+    })
+
+    it('does not send a stop after a stop (blur twice)', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction } = mount()
+      key('keydown', 'KeyD')
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      window.dispatchEvent(new Event('blur'))
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      window.dispatchEvent(new Event('blur'))
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      vi.useRealTimers()
+    })
+
+    it('clears the heartbeat on the terminal frame and on destroy', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const first = mount()
+      key('keydown', 'KeyW')
+      expect(first.sendAction).toHaveBeenCalledTimes(1)
+      first.controller.handleFrame(true)
+      vi.advanceTimersByTime(500)
+      expect(first.sendAction).toHaveBeenCalledTimes(1)
+      const second = mount()
+      key('keydown', 'KeyW')
+      expect(second.sendAction).toHaveBeenCalledTimes(1)
+      second.controller.destroy()
+      vi.advanceTimersByTime(500)
+      expect(second.sendAction).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+    })
+
+    it('re-sends the same motion eagerly after release during an expression flight', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction, controller } = mount()
+      key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      key('keydown', 'Digit1')
+      // The frozen frame carries the motion and the queued emote together.
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 90, speed: 1, action: 2 })
+      key('keyup', 'KeyW')
+      // The release is suppressed while the emote is in flight, so no stop sends yet.
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      // The flight clears and nothing composes, so the recorded motion drops at rest.
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledTimes(2)
+      // A fresh start re-sends eagerly instead of deduping against the stale pre-flight key.
+      key('keydown', 'KeyW')
+      expect(sendAction).toHaveBeenCalledTimes(3)
+      expect(sendAction).toHaveBeenLastCalledWith('player_0', { heading: 90, speed: 1, action: 0 })
+      vi.useRealTimers()
+    })
+
+    it('does not re-send a stop after an idle frame', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+      const { sendAction, controller } = mount()
+      key('keydown', 'Digit1')
+      controller.handleFrame(false)
+      expect(sendAction).toHaveBeenCalledWith('player_0', { heading: 45, speed: 0, action: 2 })
+      // The next frame clears the flight and sends nothing, leaving the visitor at rest.
       controller.handleFrame(false)
       expect(sendAction).toHaveBeenCalledTimes(1)
+      // Shift alone reads no motion, and with no motion recorded it must send nothing.
+      key('keydown', 'ShiftLeft')
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
     })
   })
 })

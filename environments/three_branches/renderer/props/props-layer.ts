@@ -22,12 +22,14 @@ import { frameRectangle } from '../ui/tint.js'
 import {
   isFixedFacingPropType,
   isShippedPropType,
+  PINE_FRAME_NAMES,
   propFoundationFrame,
   propTreatment,
   sceneryFrame,
 } from './props-art.js'
 
 const EFFECT_SCALE = 0.25
+const SCENERY_TEXTURE_DENSITY_DIVISOR = 8
 
 /** The effects-atlas cell the contact shadow is drawn from, so its scale reaches a real footprint. */
 const SHADOW_SOURCE = shadowSourceSize()
@@ -272,7 +274,8 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
 function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
   if (!(root instanceof Container)) return
-  const scale = sceneryVisualScale(item.type) * item.collisionScale
+  const scale =
+    (sceneryVisualScale(item.type) * item.collisionScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
     existing.scale.set(scale)
@@ -283,7 +286,7 @@ function installScenery(layer: Container, item: StaticDrawable, art: PropArt): v
     texture(art.scenery, sceneryFrame(item.type, item.id)),
     scale,
   )
-  artNode.tint = HEARTHSIDE_STYLE.palette[item.type === 'pine' ? 'pine' : 'timber']
+  artNode.tint = 0xffffff
   root.addChild(artNode)
   const fallbackNode = root.getChildByLabel('scenery-fallback')
   if (fallbackNode !== null) fallbackNode.visible = false
@@ -430,9 +433,7 @@ function preflightArt(art: PropArt): void {
   texture(art.effects, 'characterShadow')
   for (const scenery of CATALOG.scenery) {
     if (scenery.token === 'pine') {
-      texture(art.scenery, 'pineA')
-      texture(art.scenery, 'pineB')
-      texture(art.scenery, 'pineC')
+      for (const frame of PINE_FRAME_NAMES) texture(art.scenery, frame)
     } else texture(art.scenery, sceneryFrame(scenery.token, 'preflight'))
   }
   for (const prop of CATALOG.props) {

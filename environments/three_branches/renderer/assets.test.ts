@@ -91,6 +91,23 @@ describe('Three Branches asset catalog', () => {
       'bellFoundation',
     ])
 
+    const scenery = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'scenery')
+    expect(scenery && !('layers' in scenery) ? scenery : null).toMatchObject({
+      sourceWidth: 2048,
+      sourceHeight: 1024,
+      width: 2048,
+      height: 1024,
+      tintable: false,
+      format: 'full-color',
+      frames: {
+        width: 512,
+        height: 512,
+        columns: 4,
+        rows: 2,
+        names: ['pineA', 'pineB', 'pineC', 'pineD', 'pineE', 'pineF', 'marketCrate'],
+      },
+    })
+
     const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
     expect(
       characters && 'layers' in characters ? characters.layers.map((layer) => layer.name) : [],
@@ -117,6 +134,16 @@ describe('Three Branches asset catalog', () => {
       'bell/ringing.png',
       'bell/silent.png',
       'bell/foundation.png',
+    ])
+    const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
+    expect(scenery?.framePaths).toEqual([
+      'pineA.png',
+      'pineB.png',
+      'pineC.png',
+      'pineD.png',
+      'pineE.png',
+      'pineF.png',
+      'marketCrate.png',
     ])
   })
 

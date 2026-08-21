@@ -10,6 +10,7 @@ import {
   JOYSTICK_RADIUS,
   joystickMotion,
   keyboardMotion,
+  motionKey,
   wrapDegrees,
 } from './input.js'
 
@@ -89,6 +90,13 @@ describe('Three Branches input composition', () => {
       expect(keyboardMotion(new Set(['KeyW', 'KeyS', 'KeyA', 'KeyD']))).toBeNull()
       expect(keyboardMotion(new Set())).toBeNull()
       expect(keyboardMotion(new Set(['ShiftLeft']))).toBeNull()
+    })
+  })
+
+  describe('motionKey', () => {
+    it('rounds the heading to 10 and the speed to 100', () => {
+      expect(motionKey({ heading: 91.6, speed: 0.333 })).toBe('91.6,0.33')
+      expect(motionKey({ heading: 90, speed: 1 })).toBe('90,1')
     })
   })
 

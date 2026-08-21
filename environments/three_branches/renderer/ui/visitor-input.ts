@@ -21,7 +21,9 @@ import {
   keyboardMotion,
   MOVEMENT_KEY_CODES,
   type MotionInput,
+  motionKey,
   SHIFT_KEY_CODES,
+  type VisitorAction,
 } from './input.js'
 import {
   createExpressionPalette,
@@ -36,6 +38,11 @@ const PALETTE = HEARTHSIDE_STYLE.palette
 /** The recording player id the human visitor acts for in every plan. */
 const VISITOR_PLAYER = 'player_0'
 const JOYSTICK_MARGIN = 18
+
+/** How closely eager motion sends may follow one another, milliseconds. */
+const EAGER_THROTTLE_MS = 50
+/** How often a held motion re-sends while a landed frame is still pending. */
+const HEARTBEAT_MS = 110
 
 /** Permanent bottom-left joystick center in logical renderer coordinates. */
 export const JOYSTICK_CENTER = {
@@ -109,6 +116,15 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     pointerId: number
     motion: MotionInput | null
   } | null = null
+  // An expression action was sent on the latest landed frame and is not yet cleared.
+  let expressionInFlight = false
+  // motionKey of the last motion-bearing send; null when no motion is in flight, right after a
+  // stop, or after a landed frame that sent nothing (the visitor at rest).
+  let lastSentMotion: string | null = null
+  // performance.now() of the last eager motion send; 0 means none yet.
+  let lastEagerAtMs = 0
+  // The held-motion re-send beat, active for the whole live session.
+  let heartbeat: ReturnType<typeof setInterval> | null = null
 
   data.threeBranchesInput = 'ready'
   data.threeBranchesQueued = 'none'
@@ -156,6 +172,44 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     paintPalette()
   }
 
+  /**
+   * Push a motion change right away instead of waiting for the next landed frame. A null window
+   * reads as an explicit stop, and a repeat key is skipped, so only real changes cross the
+   * throttle window. A null-to-motion start is never throttled, and after a stop no step re-sends.
+   */
+  const sendMotionEagerly = (): void => {
+    if (ended || expressionInFlight) return
+    const motion = windowMotion()
+    if (motion === null) {
+      // explicit stop: only when a motion is in flight
+      if (lastSentMotion === null) return
+      const heading = options.currentHeading()
+      const action = { heading, speed: 0, action: 0 }
+      sendAction(VISITOR_PLAYER, action)
+      data.threeBranchesLastAction = `${round(heading, 10)},0,0`
+      lastSentMotion = null
+      lastEagerAtMs = performance.now()
+      return
+    }
+    const key = motionKey(motion)
+    if (key === lastSentMotion) return
+    const started = lastSentMotion === null
+    if (!started && performance.now() - lastEagerAtMs < EAGER_THROTTLE_MS) return
+    sendAction(VISITOR_PLAYER, { heading: motion.heading, speed: motion.speed, action: 0 })
+    data.threeBranchesLastAction = `${key},0`
+    lastSentMotion = key
+    lastEagerAtMs = performance.now()
+  }
+
+  /** Re-send the held motion on a beat so a moving visitor keeps driving between frames. */
+  const heartbeatTick = (): void => {
+    if (ended || expressionInFlight) return
+    const motion = windowMotion()
+    if (motion === null) return
+    sendAction(VISITOR_PLAYER, { heading: motion.heading, speed: motion.speed, action: 0 })
+    data.threeBranchesLastAction = `${motionKey(motion)},0`
+  }
+
   /** Engage the held use on the currently previewed prop, or toggle a held use back off. */
   const pressUse = (): void => {
     if (ended || moving) return
@@ -194,6 +248,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     joystick = null
     paintPad(pad, JOYSTICK_CENTER, JOYSTICK_CENTER)
     updateMoving()
+    sendMotionEagerly()
     options.redraw()
   }
 
@@ -213,6 +268,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     joystick = { pointerId: event.pointerId, motion: joystickMotion(JOYSTICK_CENTER, view) }
     paintPad(pad, JOYSTICK_CENTER, view)
     updateMoving()
+    sendMotionEagerly()
     options.redraw()
   }
 
@@ -229,6 +285,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     joystick.motion = joystickMotion(JOYSTICK_CENTER, view)
     paintPad(pad, JOYSTICK_CENTER, view)
     updateMoving()
+    sendMotionEagerly()
     options.redraw()
   }
 
@@ -257,10 +314,12 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       event.preventDefault()
       heldKeys.add(event.code)
       updateMoving()
+      sendMotionEagerly()
       return
     }
     if (SHIFT_KEY_CODES.has(event.code)) {
       heldKeys.add(event.code)
+      sendMotionEagerly()
       return
     }
     const expression = hotkeyExpression(event.code)
@@ -272,7 +331,10 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
 
   const onKeyUp = (event: KeyboardEvent): void => {
     heldKeys.delete(event.code)
-    if (MOVEMENT_KEY_CODES.has(event.code)) updateMoving()
+    if (MOVEMENT_KEY_CODES.has(event.code) || SHIFT_KEY_CODES.has(event.code)) {
+      updateMoving()
+      sendMotionEagerly()
+    }
   }
 
   /** Keys and pointers can be released outside the window, so losing focus drops them all. */
@@ -280,11 +342,12 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     heldKeys.clear()
     releaseJoystick()
     updateMoving()
+    sendMotionEagerly()
   }
 
   /** Compose and send exactly once per landed frame: motion first, then a held use or queued emote. */
-  const sendWindow = (): void => {
-    if (ended) return
+  const sendWindow = (): VisitorAction | null => {
+    if (ended) return null
     const motion = windowMotion()
     if (latched && motion !== null) releaseLatch()
     const action = composeWindow({
@@ -301,9 +364,10 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       const transition = latchTarget === null ? 'none' : options.targetTransition(latchTarget)
       if (transition === 'toggle' || transition === 'none') releaseLatch()
     }
-    if (action === null) return
+    if (action === null) return null
     sendAction(VISITOR_PLAYER, action)
     data.threeBranchesLastAction = `${round(action.heading, 10)},${round(action.speed, 100)},${action.action}`
+    return action
   }
 
   options.container.addEventListener('pointerdown', onPointerDown, { capture: true })
@@ -316,6 +380,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('blur', onWindowBlur)
+  heartbeat = setInterval(heartbeatTick, HEARTBEAT_MS)
 
   return {
     handleFrame(terminal, send = true) {
@@ -323,6 +388,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       // A terminal frame ends the session's input for good, so it composes nothing.
       if (terminal) {
         ended = true
+        if (heartbeat !== null) clearInterval(heartbeat)
         releaseJoystick()
         releaseLatch()
         moving = false
@@ -342,12 +408,24 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
       }
       // A latched use drops when the landing pose no longer puts a prop in reach.
       if (latched && options.previewTarget() === null) releaseLatch()
-      if (send) sendWindow()
+      if (send) {
+        expressionInFlight = false
+        const action = sendWindow()
+        if (action !== null) {
+          expressionInFlight = action.action !== 0
+          lastSentMotion = motionKey({ heading: action.heading, speed: action.speed })
+        } else {
+          // The visitor is at rest, so drop any recorded motion: a fresh start re-sends eagerly,
+          // and a later stop never re-sends (a suppressed release leaves no stale key to dedupe).
+          lastSentMotion = null
+        }
+      }
       // The landed pose moved, so a held hover re-answers which prop a use would select now.
       if (useHovered) setPreview(options.previewTarget())
     },
     destroy() {
       ended = true
+      if (heartbeat !== null) clearInterval(heartbeat)
       options.container.removeEventListener('pointerdown', onPointerDown, { capture: true })
       options.container.removeEventListener('dblclick', onDoubleClick, { capture: true })
       options.container.removeEventListener('pointermove', onHoverMove)

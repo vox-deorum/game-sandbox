@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording } from '../core/test-helpers.js'
-import { expectedCharacterIds, RULES, readStatic } from '../ui/overlay.js'
+import type { CharacterDrawable, FrameScene } from '../core/types.js'
+import { expectedCharacterIds, RULES, readDynamic, readStatic } from '../ui/overlay.js'
 import {
   buildStaticScene,
   computeScene,
@@ -100,6 +101,70 @@ describe('Three Branches pure scene', () => {
     expect(halfway.presentationTick).toBeCloseTo((from.presentationTick + to.presentationTick) / 2)
     expect(halfway.static).toBe(scene)
     expect(to).toEqual(computeScene(states[1] as (typeof states)[number], scene, roster))
+  })
+})
+
+describe('interpolateScene walk displacement', () => {
+  const { header, states } = fixtureRecording()
+  const scene = buildStaticScene(readStatic(header))
+  const roster = expectedCharacterIds(header)
+
+  function rewriteCharacters(
+    frame: FrameScene,
+    overrides: Readonly<
+      Record<string, Partial<Pick<CharacterDrawable, 'point' | 'x' | 'y' | 'moved'>>>
+    >,
+  ): FrameScene {
+    return {
+      ...frame,
+      characters: frame.characters.map((character) => {
+        const override = overrides[character.id]
+        return override === undefined ? character : { ...character, ...override }
+      }),
+    }
+  }
+
+  it('walks a character that displaces and rests one that stays put', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const to = computeScene(states[1] as (typeof states)[number], scene, roster)
+    const mover = from.characters[0]
+    const still = from.characters[1]
+    if (mover === undefined || still === undefined) {
+      throw new Error('the walk fixture needs at least two characters.')
+    }
+    const movedFrom = rewriteCharacters(from, {
+      [mover.id]: { point: { x: 40, y: 80 }, x: 4, y: 8 },
+    })
+    const movedTo = rewriteCharacters(to, {
+      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 1 },
+      [still.id]: { point: still.point, x: still.x, y: still.y, moved: 0 },
+    })
+    const halfway = interpolateScene(movedFrom, movedTo, 0.5)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(1)
+    expect(halfway.characters.find((character) => character.id === still.id)?.moved).toBe(0)
+  })
+
+  it('rests feet when the source and target points are equal despite a landed flag', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const mover = from.characters[0]
+    if (mover === undefined) throw new Error('the walk fixture needs at least one character.')
+    const to = rewriteCharacters(from, {
+      [mover.id]: { point: mover.point, x: mover.x, y: mover.y, moved: 1 },
+    })
+    const halfway = interpolateScene(from, to, 0.5)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(0)
+  })
+
+  it('keeps the recorded walk flag on a landed target scene', () => {
+    const state = states[0] as (typeof states)[number]
+    const to = computeScene(state, scene, roster)
+    const dynamic = readDynamic(state, roster, scene.village)
+    const recordedBy = new Map(
+      (dynamic?.characters ?? []).map((item) => [item.id, item.moved] as const),
+    )
+    for (const character of to.characters) {
+      expect(character.moved).toBe(recordedBy.get(character.id))
+    }
   })
 })
 

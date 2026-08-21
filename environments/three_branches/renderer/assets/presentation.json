@@ -23,7 +23,7 @@
     "wall": "#484238",
     "bridge": "#685038"
   },
-  "transition": { "naturalMs": 1000, "settleGraceMs": 100 },
+  "transition": { "naturalMs": 1000, "settleGraceMs": 100, "headroom": 1.1 },
   "terrain": {
     "fills": {
       "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "ground", "opacity": 1 },
@@ -154,9 +154,24 @@
     "clearAlpha": 0.18,
     "fadeMs": 220,
     "frames": {
-      "home": { "fills": ["homeFill", "homeFillAlt"], "edge": "homeEdge", "corner": "homeCorner", "ridge": "homeRidge" },
-      "inn": { "fills": ["innFill", "innFillAlt"], "edge": "innEdge", "corner": "innCorner", "ridge": "innRidge" },
-      "shed": { "fills": ["shedFill", "shedFillAlt"], "edge": "shedEdge", "corner": "shedCorner", "ridge": "shedRidge" }
+      "home": {
+        "fills": ["homeFill", "homeFillAlt"],
+        "edge": "homeEdge",
+        "corner": "homeCorner",
+        "ridge": "homeRidge"
+      },
+      "inn": {
+        "fills": ["innFill", "innFillAlt"],
+        "edge": "innEdge",
+        "corner": "innCorner",
+        "ridge": "innRidge"
+      },
+      "shed": {
+        "fills": ["shedFill", "shedFillAlt"],
+        "edge": "shedEdge",
+        "corner": "shedCorner",
+        "ridge": "shedRidge"
+      }
     }
   },
   "postEffects": {

@@ -1,5 +1,8 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
+/** Complete high-resolution pine stills available for stable placement selection. */
+export const PINE_FRAME_NAMES = ['pineA', 'pineB', 'pineC', 'pineD', 'pineE', 'pineF'] as const
+
 /** A resolved prop treatment that never depends on placement or playback history. */
 export interface PropTreatment {
   /** Complete north-facing still for this recorded state. */
@@ -98,8 +101,8 @@ export function propFoundationFrame(type: string): string | null {
 export function sceneryFrame(type: string, id: string): string {
   if (type === 'crate') return 'marketCrate'
   if (type === 'pine') {
-    const variants = ['pineA', 'pineB', 'pineC'] as const
-    return variants[stableHashParts('three-branches-scenery', id) % variants.length]!
+    const index = stableHashParts('three-branches-scenery', id) % PINE_FRAME_NAMES.length
+    return PINE_FRAME_NAMES.at(index) ?? PINE_FRAME_NAMES[0]
   }
   throw new Error(`Three Branches scenery type has no art frame: ${type}`)
 }

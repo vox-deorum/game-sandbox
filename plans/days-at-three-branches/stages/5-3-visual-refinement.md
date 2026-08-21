@@ -40,13 +40,15 @@ Keep the tintable terrain composition, deterministic patterning, routes, bridge 
 
 The live renderer now has no daytime authored grade. The first Hearthside palette comparison adds dedicated terrain colours and remaps only terrain materials. Dedicated packed-earth road and sparse worn-stone path frames are integrated for the first comparison. The owner accepted the shared even road base, which prevents per-cell tonal blocks. The next integrated comparison gives the path a darker neutral tint and strengthens the contrast of its existing texture; it awaits owner visual approval. The remaining terrain review and both owner approvals remain in this unit.
 
-### 2. Split pines
+### 2. High-resolution pines
 
 Desired result: pines create readable village massing at fitted view, while base, canopy, and line work hold up nearby.
 
 First, inspect the current scenery against the approved references at fitted, middle, and close scales, plus night. Present prioritized deviations, their effect, and proposed tuning focus to the owner, then wait for direction before art or runtime changes.
 
-Keep static placement, collision, and stable variant selection. Canopies continue to occlude characters where they pass beneath them.
+Keep static placement, collision, and stable variant selection. Draw each pine as one complete sprite after roofs so trees occlude characters and nearby architecture. Mask trees out of an entered building's semantic footprint so its cutaway interior remains clear.
+
+Gate A accepted six complete, full-color 512 px pine variants. The owner approved the ground and night comparison, and variants B and F were reframed with transparent left padding before promotion. The 4 by 2 scenery page keeps the market crate in the seventh cell and leaves the eighth cell transparent. Runtime scale is divided by 8 so placement and collision registration remain unchanged. Gate B remains open for the integrated fitted, middle, close, and night review.
 
 ### 3. Ordinary props and a dedicated lantern page
 

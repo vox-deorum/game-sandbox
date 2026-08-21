@@ -5,6 +5,7 @@ import {
   measureDeliveryGap,
   propEffectAnchor,
   readHearthsideStyle,
+  smoothedDeliveryGapMs,
   type TerrainFillTreatment,
   transitionDurationMs,
 } from './presentation.js'
@@ -34,14 +35,32 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(offAnchor)).toThrow('effectAnchorByType.lantern.y')
   })
 
-  it('uses explicit host pace and caps unpaced delivery gaps at the natural duration', () => {
+  it('uses explicit host pace and scales unpaced delivery gaps by headroom, capped at natural', () => {
     expect(transitionDurationMs({ snap: true }, 400)).toBe(0)
     expect(transitionDurationMs({ transitionScale: 0 }, 400)).toBe(0)
     expect(transitionDurationMs({ transitionScale: 0.5 }, 900)).toBe(500)
-    expect(transitionDurationMs(undefined, 240)).toBe(240)
+    expect(transitionDurationMs(undefined, 240)).toBe(264)
     expect(transitionDurationMs(undefined, 1_400)).toBe(1_000)
     expect(transitionDurationMs()).toBe(1_000)
     expect(transitionDurationMs(undefined, Number.NaN)).toBe(1_000)
+  })
+
+  it('smooths the delivery gap with an EMA and applies headroom', () => {
+    expect(smoothedDeliveryGapMs(null, 240)).toBe(240)
+    expect(smoothedDeliveryGapMs(200, 240)).toBe(210)
+    expect(smoothedDeliveryGapMs(220, 260)).toBe(230)
+    expect(transitionDurationMs(undefined, 210)).toBeCloseTo(231)
+    expect(transitionDurationMs(undefined, 10_000)).toBe(1_000)
+  })
+
+  it('requires a positive transition headroom', () => {
+    const zeroHeadroom = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroHeadroom.transition.headroom = 0
+    expect(() => readHearthsideStyle(zeroHeadroom)).toThrow('transition.headroom')
+
+    const missingHeadroom = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingHeadroom.transition.headroom
+    expect(() => readHearthsideStyle(missingHeadroom)).toThrow('keys do not match')
   })
 
   it('measures consecutive unpaced deliveries and resets the clock on snaps and pacing', () => {

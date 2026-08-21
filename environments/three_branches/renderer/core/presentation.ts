@@ -318,7 +318,7 @@ interface PropVisualTreatment extends VisualScaleTreatment {
 
 export interface HearthsideStyle {
   palette: HearthsidePalette
-  transition: { naturalMs: number; settleGraceMs: number }
+  transition: { naturalMs: number; settleGraceMs: number; headroom: number }
   terrain: {
     fills: Readonly<Record<string, TerrainFillTreatment>>
     contours: TerrainContourTreatment
@@ -372,16 +372,28 @@ export function groundColor(name: string): string {
 /** Resolve one transition duration from transport timing and the natural presentation duration. */
 export function transitionDurationMs(
   options?: RenderOptions,
-  deliveryGapMs?: number,
+  deliveryGapMs?: number | null,
   style: Pick<HearthsideStyle, 'transition'> = HEARTHSIDE_STYLE,
 ): number {
   if (options?.snap === true) return 0
   if (options?.transitionScale !== undefined) {
     return style.transition.naturalMs * transitionScaleOf(options)
   }
-  return deliveryGapMs !== undefined && Number.isFinite(deliveryGapMs) && deliveryGapMs >= 0
-    ? Math.min(deliveryGapMs, style.transition.naturalMs)
+  return deliveryGapMs !== undefined &&
+    deliveryGapMs !== null &&
+    Number.isFinite(deliveryGapMs) &&
+    deliveryGapMs >= 0
+    ? Math.min(deliveryGapMs * style.transition.headroom, style.transition.naturalMs)
     : style.transition.naturalMs
+}
+
+/** Smooth one measured delivery gap into the running estimate, giving recent gaps the most weight. */
+export function smoothedDeliveryGapMs(
+  previousEstimateMs: number | null,
+  measuredGapMs: number,
+): number {
+  if (previousEstimateMs === null) return measuredGapMs
+  return previousEstimateMs * 0.75 + measuredGapMs * 0.25
 }
 
 /** Measure only consecutive unpaced deliveries, resetting the clock across snaps and paced hosts. */
@@ -447,6 +459,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const transitionSource = exactRecord(source.transition, 'presentation.transition', [
     'naturalMs',
     'settleGraceMs',
+    'headroom',
   ])
   const transition = {
     naturalMs: positiveNumber(transitionSource.naturalMs, 'presentation.transition.naturalMs'),
@@ -454,6 +467,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       transitionSource.settleGraceMs,
       'presentation.transition.settleGraceMs',
     ),
+    headroom: positiveNumber(transitionSource.headroom, 'presentation.transition.headroom'),
   }
 
   const terrainFrames = framesFor('terrain')
@@ -520,11 +534,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     frames: Object.fromEntries(
       Object.entries(roofFramesSource).map(([name, frameValue]) => [
         name,
-        roofFramesTreatment(
-          frameValue,
-          `presentation.roofs.frames.${name}`,
-          buildingFrames,
-        ),
+        roofFramesTreatment(frameValue, `presentation.roofs.frames.${name}`, buildingFrames),
       ]),
     ),
   }

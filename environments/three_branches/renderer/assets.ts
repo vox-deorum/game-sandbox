@@ -2,6 +2,7 @@ import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
 
 import catalogDocument from '../catalog.json'
 
+import { PINE_FRAME_NAMES } from './props/props-art.js'
 import type { FrameGrid } from './ui/tint.js'
 
 /** One generated source atlas and its optimized runtime counterpart. */
@@ -153,7 +154,7 @@ export const MONUMENTS_ATLAS_FRAME_NAMES = [
   'bellFoundation',
 ] as const
 
-export const SCENERY_ATLAS_FRAME_NAMES = ['pineA', 'pineB', 'pineC', 'marketCrate'] as const
+export const SCENERY_ATLAS_FRAME_NAMES = [...PINE_FRAME_NAMES, 'marketCrate'] as const
 
 export const CHARACTER_POSE_FRAME_NAMES = ['rest', 'leftForward', 'pass', 'rightForward'] as const
 
@@ -289,18 +290,18 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
   {
     name: 'scenery',
     source: './assets/source-art/scenery-atlas-source.png',
-    sourceWidth: 1254,
-    sourceHeight: 1254,
+    sourceWidth: 2048,
+    sourceHeight: 1024,
     path: './assets/scenery-atlas.png',
-    width: 128,
-    height: 128,
-    tintable: true,
-    format: 'grayscale-alpha',
-    consumer: 'three red-pine variants and the market crate',
+    width: 2048,
+    height: 1024,
+    tintable: false,
+    format: 'full-color',
+    consumer: 'six complete high-resolution pine variants and the market crate',
     frames: {
-      width: 64,
-      height: 64,
-      columns: 2,
+      width: 512,
+      height: 512,
+      columns: 4,
       rows: 2,
       names: SCENERY_ATLAS_FRAME_NAMES,
     },

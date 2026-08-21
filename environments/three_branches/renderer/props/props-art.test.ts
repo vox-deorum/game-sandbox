@@ -6,7 +6,7 @@ import {
 } from '../assets.js'
 import { HEARTHSIDE_STYLE, propMonumentTreatment } from '../core/presentation.js'
 import { CATALOG } from '../ui/overlay.js'
-import { propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
+import { PINE_FRAME_NAMES, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
 
 function camelType(token: string): string {
   return token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
@@ -38,7 +38,9 @@ describe('Three Branches prop art treatments', () => {
     }
     Object.values(HEARTHSIDE_STYLE.propEffects)
       .flatMap((effect) => effect.frames)
-      .forEach((frame) => expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame))
+      .forEach((frame) => {
+        expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame)
+      })
     expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(HEARTHSIDE_STYLE.emissives.frame)
   })
 
@@ -51,6 +53,9 @@ describe('Three Branches prop art treatments', () => {
 
   it('selects scenery variants from stable placement ids', () => {
     expect(sceneryFrame('pine', 'scenery:4')).toBe(sceneryFrame('pine', 'scenery:4'))
+    expect(
+      new Set(Array.from({ length: 128 }, (_, index) => sceneryFrame('pine', `scenery:${index}`))),
+    ).toEqual(new Set(PINE_FRAME_NAMES))
     expect(sceneryFrame('crate', 'scenery:4')).toBe('marketCrate')
   })
 

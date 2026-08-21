@@ -121,6 +121,12 @@ export function composeWindow(input: WindowInput): VisitorAction | null {
   }
 }
 
+/** One rounded motion identity, by which eager sends recognize an unchanged reading. */
+export function motionKey(motion: MotionInput): string {
+  const round = (value: number, factor: number): number => Math.round(value * factor) / factor
+  return `${round(motion.heading, 10)},${round(motion.speed, 100)}`
+}
+
 /** Map an expression token to its action id: use is 1 and the emotes fill 2 through 10. */
 export function expressionActionId(token: string): number {
   if (token === 'use') return 1

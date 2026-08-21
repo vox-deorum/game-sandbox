@@ -14,7 +14,7 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 | `buildings-atlas.png` | `assets/buildings/` | 16 |
 | `props-atlas.png` | `assets/props/<type>/<state>.png` for ordinary props | 15 |
 | `monuments-atlas.png` | `assets/monuments/<type>/<state>.png` plus `assets/monuments/bell/foundation.png` | 5 |
-| `scenery-atlas.png` | `assets/scenery/` | 4 |
+| `scenery-atlas.png` | `assets/scenery/` | 7 |
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 40 |
 
@@ -27,6 +27,8 @@ The terrain page is an 8 by 9 grid of 128 px frames on a 1024 by 1152 runtime pa
 The props frame names in `assets.ts` derive from ordinary catalog tokens and states. Slots 0 through 14 name complete states in catalog order, from `stallOpen` through `repairBenchIdle`; slots 15 through 35 are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling. `assets/props/` contains no pump or bell files.
 
 The monument page is the sole authority for the fixed-north pump and bell. Its row-major 3 by 2 grid names `pumpFlowing`, `pumpIdle`, `bellRinging`, `bellSilent`, and `bellFoundation` from matching `assets/monuments/` paths. Each tightly authored runtime frame is 768 by 512 on a 2304 by 1024 page. The renderer divides the configured pump scale by 4 and the bell scale by 8, then anchors each sprite at its configured source pixel so its collision registration and world bounds remain unchanged. The sixth cell is an unnamed trailing cell that the packer fills transparently. Its source page has the same 2304 by 1024 dimensions because the accepted masters need no runtime downsampling.
+
+The full-color scenery page is a 4 by 2 grid of 512 px frames on a 2048 by 1024 page. Its first seven row-major cells contain `pineA` through `pineF`, then `marketCrate`; the eighth cell is transparent. The source page has the same dimensions. The renderer divides every scenery sprite scale by 8 so the denser art preserves the established world footprint and collision registration.
 
 The effects page is a 10 by 4 grid of 40 runtime frames on a 1920 by 512 page. Its 384 by 256 source cells live on a 3840 by 1024 source page.
 
@@ -68,4 +70,4 @@ All three ride the existing vitest include globs, so `scripts/ci.py` needs no ch
 
 ## Done when
 
-All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, the terrain page matches its 68 frames with four transparent trailing cells, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
+All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, the terrain page matches its 68 frames with four transparent trailing cells, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell, and `assets/scenery-atlas.png` matches its seven full-color scenery frames with a transparent eighth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.

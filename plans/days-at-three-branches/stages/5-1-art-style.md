@@ -67,7 +67,7 @@ Keep step 3's shared tile-map pipeline. Build static terrain, upper walls, seman
 
 Reconcile characters, prop-state treatments, roof alpha, the night grade, emissives, and crane dressing by stable id. The shared Pixi ticker smooths position, heading, walk frames, sustained effects, and crane motion between recorded ticks.
 
-Resolve state treatments once per recorded tick. Between ticks, transform the cast and sustained effects without rebuilding art, and move collision bodies with their art. `presentation.json` owns the natural one-second transition. Paced hosts scale it to replay or watch cadence. An unpaced human session measures the gap between states, caps it at the natural duration, and passes no cadence. Keep the frame loop briefly alive after settling, reuse masks, and load textures only through the renderer-local manifest.
+Resolve state treatments once per recorded tick. Between ticks, transform the cast and sustained effects without rebuilding art, and move collision bodies with their art. `presentation.json` owns the natural one-second transition. Paced hosts scale it to replay or watch cadence. An unpaced human session measures the gap between states, animates over an EMA-smoothed estimate with a small headroom capped at the natural duration, and passes no cadence. Keep the frame loop briefly alive after settling, reuse masks, and load textures only through the renderer-local manifest.
 
 Draw world layers in this order:
 
@@ -90,7 +90,7 @@ Natural terrain keeps its daytime colour through the authored grade, so generate
 
 ### Characters, props, and dressing
 
-Build characters from shared north-facing grayscale-alpha masks in a conventional top-down-shooter projection. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. A peaceful forward-arm pose makes north readable without a weapon. Rotate the complete assembled sprite around its centre to the exact recorded heading. A rest frame and short walk cycle advance from player id, tick, and movement state without changing that projection. Render a readable fitted-view shadow and direction mark. Select tint combinations and optional shared clothing details with a stable player-id hash. Give `player_0` a small cinnabar hood tie and retain the villagers' warm materials. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
+Build characters from shared north-facing grayscale-alpha masks in a conventional top-down-shooter projection. The camera looks straight down onto the head, shoulders, torso, arms, and partly occluded lower body. A peaceful forward-arm pose makes north readable without a weapon. Rotate the complete assembled sprite around its centre to the exact recorded heading. A rest frame and short walk cycle advance from player id, tick, and presented on-screen displacement without changing that projection. Render a readable fitted-view shadow and direction mark. Select tint combinations and optional shared clothing details with a stable player-id hash. Give `player_0` a small cinnabar hood tie and retain the villagers' warm materials. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
@@ -262,7 +262,7 @@ Deferred to [step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repain
 
 ## Characters
 
-`characters-art.ts` selects player-id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from player id, fractional tick, and movement, and fixes rotation at 90 degrees minus heading, in radians. `characters.walk.frameRatio` gives each pose's duration as a positive fraction of one recorded presentation tick. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. `player_0` wears `visitorTie` in cinnabar. Below the far-view readability threshold shared with [step 5.2](5-2-hud-interaction-and-camera.md)'s nameplates, a character draws as a Hearthside-styled overhead mark, a tinted circle with a direction tick, in place of the unreadable sprite. Step 5.2 owns the ungraded recorded-expression treatment, and [step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets) owns the final layered cast revision.
+`characters-art.ts` selects player-id-hashed tints and details from the allowed pool, advances the walk cycle (leftForward, pass, rightForward, pass) from player id, fractional tick, and presented on-screen displacement, and fixes rotation at 90 degrees minus heading, in radians. `characters.walk.frameRatio` gives each pose's duration as a positive fraction of one recorded presentation tick. `characters.ts` assembles each character as a shadow plus a rotor of body, clothing, arms, and detail masks with a direction mark. `player_0` wears `visitorTie` in cinnabar. Below the far-view readability threshold shared with [step 5.2](5-2-hud-interaction-and-camera.md)'s nameplates, a character draws as a Hearthside-styled overhead mark, a tinted circle with a direction tick, in place of the unreadable sprite. Step 5.2 owns the ungraded recorded-expression treatment, and [step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets) owns the final layered cast revision.
 
 Tests cover style, walk, and rotation determinism. The owner reviews the cast at rest, walking, and turning, and the far-view marks.
 
@@ -302,7 +302,7 @@ Record the acceptance date and screenshots under the matching step 5.3 unit. If 
 
 - Day phase: in the current baseline, the night grade attaches over terrain and authored art together for the exact `night` phase alone. Every other phase, `day` included, carries no filter of its own beyond the always-on authored grade. [Step 5.3 unit 1](5-3-visual-refinement.md#1-tintable-terrain-repaint-and-no-daytime-authored-grade) removes that daytime authored grade.
 - `cranes.ts` derives count, routes, and per-tick states from the static-layout key, drawn north-facing and rotated to the route tangent.
-- Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over the gap capped at the natural duration. The frame loop stays alive for a short grace after settling.
+- Cadence: a paced host keeps the natural duration times its `transitionScale`. With no scale, the renderer measures the wall-clock gap between deliveries and animates over an EMA-smoothed estimate of the gap with a small headroom capped at the natural duration. The frame loop stays alive for a short grace after settling.
 - The 320 by 180 thumbnail lands here.
 
 Tests cover crane determinism and the cadence rules. The owner reviews the night grade over the finished village, the cranes, and the fixture and generated seeds at fitted, mid, and close scales. The bare full browser suite runs before handoff.

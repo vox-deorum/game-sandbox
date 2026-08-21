@@ -123,7 +123,7 @@ Step 6 implements this specification without further design work. Controls appea
 
 - A permanent virtual joystick sits in the bottom-left of the content area for pointer and touch. A primary press inside its ring engages the fixed pad. Dragging sets heading from the drag angle and relative speed from the drag distance, with a 15 percent dead zone and full speed at the pad ring. Release stops the visitor and returns the knob to the center. Presses outside the pad and expression palette keep the camera gestures, including the double-click or double-tap that resumes visitor follow.
 - Keyboard locomotion uses WASD and the arrow keys for eight-way headings at full speed. Holding Shift halves the speed. Opposing keys cancel on their axis, and cancelling on both axes yields no keyboard heading.
-- Input composes and sends once per landed frame, the environment's 250 millisecond tick cadence: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default.
+- Input composes and sends on every landed frame, the environment's 250 millisecond tick cadence: an engaged joystick wins, held keys apply otherwise, and neither yields speed 0 with the current heading, the environment default. Motion also sends eagerly on input change and on a 110 millisecond heartbeat while held, since the harness latch is latest-wins and re-sends are safe. Releasing movement sends an explicit stop so a stale motion cannot sit in the latch and move the visitor one extra tick.
 
 ### Expression palette
 
@@ -145,7 +145,7 @@ Step 6 implements this specification without further design work. Controls appea
 - Hovering Use highlights the prop a use would select under the environment's reach-plus-unblocked-line rule. The palette is drawn on the canvas, so pointer hover is the preview affordance and hotkey 0 is the keyboard access to use itself. The preview is informational and never sends. The highlight owns its own layer above the emissives and outside both [step 5.1](5-1-art-style.md#day-phase) world grades, so hovering a prop never shifts its colour.
 - A pressed control sets the expression on the next composed action frame. The last press in a frame wins, and the frame sends no expression when nothing was pressed.
 - Use is a latch, not a one-window press: while latched and standing still, every landed frame composes use again until the visitor presses Use or hotkey 0 again, presses any emote, begins moving, or the landing pose drops the selected prop out of reach. A target whose catalog transition is `toggle` or `none` releases itself after its first send, because one flip is the whole interaction; only `occupancy` and `timed` props keep the latch. While the visitor is moving, the Use plate paints dim and ignores presses and hotkey 0.
-  - Composing on landed frames instead of a free-running timer guarantees exactly one action per tick, so a missed or doubled window can no longer swallow an emote or skip a held prop for a tick.
+  - Expressions send only on landed frames and suppress motion sends until the next landed frame, so the single-slot latch's use or emote is never overwritten before the boundary consumes it.
 
 ### Chat input
 

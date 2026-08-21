@@ -137,7 +137,12 @@ export function expressionTitleFor(
   return titleFor(kind?.activity ?? 'use')
 }
 
-/** Interpolate matching stable-id characters while keeping the target frame authoritative. */
+/**
+ * Interpolate matching stable-id characters while keeping the target frame authoritative.
+ *
+ * During interpolation the walk flag is driven by the on-screen positional displacement rather than
+ * the landed flag, so feet align with the moving sprite and rest when a wall zeroes the displacement.
+ */
 export function interpolateScene(from: FrameScene, to: FrameScene, progress: number): FrameScene {
   const amount = clamp(progress, 0, 1)
   const prior = new Map(from.characters.map((character) => [character.id, character]))
@@ -156,6 +161,7 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
           x: lerp(start.point.x, character.point.x, amount),
           y: lerp(start.point.y, character.point.y, amount),
         },
+        moved: start.point.x === character.point.x && start.point.y === character.point.y ? 0 : 1,
       }
     }),
   }

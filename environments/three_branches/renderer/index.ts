@@ -24,8 +24,8 @@ import { loadThreeBranchesRuntimeAssets } from './assets.js'
 import {
   createRoofArt,
   createRoofLayer,
-  type RoofLayer,
   drawBuildings,
+  type RoofLayer,
 } from './buildings/buildings.js'
 
 // characters/
@@ -40,6 +40,7 @@ import { runArtLoad } from './core/art-loading.js'
 import {
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
+  smoothedDeliveryGapMs,
   THREE_BRANCHES_PRESENTATION,
   transitionDurationMs,
 } from './core/presentation.js'
@@ -145,6 +146,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private settleRemainingMs = 0
   private collisionTextZoom = Number.NaN
   private lastDeliveryAtMs: number | null = null
+  /** EMA-smoothed delivery gap that paces character motion, or null before the first measured gap. */
+  private gapEstimateMs: number | null = null
   /** Whether the previous frame drew a bubble, so the frame that retires the last one still repaints. */
   private wasSpeaking = false
   private visitorInput: VisitorInputController | null = null
@@ -258,7 +261,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   protected update(state: StepState, options?: RenderOptions): void {
     const delivery = measureDeliveryGap(this.lastDeliveryAtMs, performance.now(), options)
-    const deliveryGapMs = delivery.gapMs
+    if (delivery.gapMs !== undefined) {
+      this.gapEstimateMs = smoothedDeliveryGapMs(this.gapEstimateMs, delivery.gapMs)
+    }
     this.lastDeliveryAtMs = delivery.nextMs
     const scene = computeScene(state, this.staticScene, this.expectedIds)
     this.currentScene = scene
@@ -284,7 +289,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // and asset redraws retain the current bubble ages.
     if (options?.seek === true) this.annotations.clear()
     this.annotations.deliver(readSpeech(state, this.expectedIds))
-    const durationMs = transitionDurationMs(options, deliveryGapMs)
+    const durationMs = transitionDurationMs(options, this.gapEstimateMs)
     // A snap re-presentation is not a landed state, so it must not move the expression chip tails;
     // only real states age a held chip or close out a fade over one state's presentation time.
     if (options?.snap !== true) {

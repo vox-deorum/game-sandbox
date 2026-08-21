@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This build-order step puts the visitor seat in
 
 ### Locomotion and expression
 
-Compose pointer and keyboard input into heading and relative speed once per landed frame, the environment's 250 millisecond tick cadence. The landed frame is the only move clock. A frame whose composition matches the environment default sends nothing; the harness supplies the default action for a silent frame, so the result is identical. Use is a latch held across frames while standing still, released by another Use press, an emote, movement, or a landing pose without the prop, with `toggle` and `none` targets releasing themselves after one send.
+Compose pointer and keyboard input into heading and relative speed on every landed frame, the environment's 250 millisecond tick cadence. Motion also sends eagerly on input change and on a 110 millisecond heartbeat while held, since the harness latch is latest-wins and re-sends are safe, and releasing movement sends an explicit stop. A silent idle frame still falls back to the harness default action. Use is a latch held across frames while standing still, released by another Use press, an emote, movement, or a landing pose without the prop, with `toggle` and `none` targets releasing themselves after one send.
 
 Use `ctx.controlledPlayers` as the ownership signal established in step 3. While `player_0` is controlled, visitor movement feeds the existing camera-follow policy. Manual camera gestures suspend follow, and camera reset resumes it. Spectators, replay viewers, and ended sessions never acquire follow through recording attribution alone.
 
