@@ -35,7 +35,7 @@
         "offsetPassOpacity": 0
       },
       "path": {
-        "frames": ["roadA", "roadB", "roadC", "roadD"],
+        "frames": ["pathA", "pathB", "pathC", "pathD"],
         "tint": "path",
         "opacity": 1,
         "offsetPassOpacity": 0

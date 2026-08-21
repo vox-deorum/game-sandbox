@@ -101,6 +101,10 @@ export const TERRAIN_ATLAS_FRAME_NAMES = [
   'furrowEndB',
   'furrowEndC',
   'bankStones',
+  'pathA',
+  'pathB',
+  'pathC',
+  'pathD',
 ] as const
 
 export const BUILDINGS_ATLAS_FRAME_NAMES = [
@@ -209,10 +213,10 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     name: 'terrain',
     source: './assets/source-art/terrain-atlas-source.png',
     sourceWidth: 1536,
-    sourceHeight: 1024,
+    sourceHeight: 1152,
     path: './assets/terrain-atlas.png',
     width: 1024,
-    height: 1024,
+    height: 1152,
     tintable: true,
     format: 'grayscale-alpha',
     consumer: 'terrain fills, transitions, bridge planks, and the upper-wall repaint',
@@ -220,7 +224,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
       width: 128,
       height: 128,
       columns: 8,
-      rows: 8,
+      rows: 9,
       names: TERRAIN_ATLAS_FRAME_NAMES,
     },
   },

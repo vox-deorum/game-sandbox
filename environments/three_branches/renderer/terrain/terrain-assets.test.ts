@@ -9,12 +9,12 @@ const SIZE = 128
 const FILL_FAMILIES = [
   ['washA', 'washB', 'washC', 'washD'],
   ['roadA', 'roadB', 'roadC', 'roadD'],
+  ['pathA', 'pathB', 'pathC', 'pathD'],
   ['furrowA', 'furrowB', 'furrowC', 'furrowD'],
   ['reedsA', 'reedsB', 'reedsC', 'reedsD'],
   ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
   ['floorA', 'floorB', 'floorC', 'floorD'],
 ] as const
-const SELF_TILING_ONLY_FAMILIES = new Set<string>(['roadA'])
 function frame(name: string): Uint8ClampedArray {
   const path = resolve(
     process.cwd(),
@@ -98,10 +98,6 @@ describe('Three Branches terrain raster contract', () => {
         expect(edge(pixels, 'right')).toEqual(edge(pixels, 'left'))
         expect(edge(pixels, 'bottom')).toEqual(edge(pixels, 'top'))
       }
-      // Terrain art picks a variant per cell, so neighbours routinely differ. The road rasters are
-      // currently authored with per-variant borders and only hold the weaker self-tiling contract
-      // above until they are regenerated.
-      if (SELF_TILING_ONLY_FAMILIES.has(family[0])) continue
       for (const first of variants) {
         for (const second of variants) {
           expect(edge(first, 'right')).toEqual(edge(second, 'left'))

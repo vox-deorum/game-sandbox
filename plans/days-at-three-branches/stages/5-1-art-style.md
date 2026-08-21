@@ -141,7 +141,7 @@ The local manifest is the only asset catalog. Keep only the high-resolution orig
 
 | Group | Compiled dimensions | Contents |
 | --- | --- | --- |
-| Terrain | 128 px cells on one 1024 by 1024 atlas page | A few fill variants for each ground class, retained compatibility masks, the wall tiles' upper-layer repaint, and bridge plank tiles |
+| Terrain | 128 px cells on one 1024 by 1152 atlas page | A few fill variants for each ground class, retained compatibility masks, the wall tiles' upper-layer repaint, and bridge plank tiles |
 | Buildings | 64 px cells | Semantic roof tiles for the home, the inn, and the repair shed |
 | Props | 384 by 256 cells on one 2304 by 1536 atlas page | Current baseline: fifteen complete full-colour ordinary prop stills, with transparent cells 15 through 35. Step 5.3 unit 3 extracts the two lantern frames. |
 | Monuments | 768 by 512 cells on one 2304 by 1024 atlas page | The sole fixed-north pump stills and both bell parts, tightly authored around their configured source-pixel anchors and scale divisors |

@@ -10,7 +10,7 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 
 | Page | Frames directory | Frames |
 | --- | --- | --- |
-| `terrain-atlas.png` | `assets/terrain/` | 64 |
+| `terrain-atlas.png` | `assets/terrain/` | 68 |
 | `buildings-atlas.png` | `assets/buildings/` | 16 |
 | `props-atlas.png` | `assets/props/<type>/<state>.png` for ordinary props | 15 |
 | `monuments-atlas.png` | `assets/monuments/<type>/<state>.png` plus `assets/monuments/bell/foundation.png` | 5 |
@@ -21,6 +21,8 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 The Frames column counts loose files, not frame pixels. Each page's current frame dimensions, count, and names live in `renderer/assets.ts` and change only with the consuming art unit, its loose files, compiled page, source-art metadata, plan facts, and tests in the same change set.
 
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
+
+The terrain page is an 8 by 9 grid of 128 px frames on a 1024 by 1152 runtime page. Its 68 named frames leave the final four cells transparent. The 1536 by 1152 source page uses 192 by 128 preview cells.
 
 The props frame names in `assets.ts` derive from ordinary catalog tokens and states. Slots 0 through 14 name complete states in catalog order, from `stallOpen` through `repairBenchIdle`; slots 15 through 35 are an unnamed trailing suffix that the packer fills transparently. The runtime page is 2304 by 1536, with 384 by 256 runtime frames and no downsampling. `assets/props/` contains no pump or bell files.
 
@@ -50,7 +52,7 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 `assets.ts` keeps the catalog, page paths, grids, dimensions, and runtime load function. The runtime loader includes its ten shipped pages: terrain, props, monuments, buildings, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
-The road pilot retains its four native 1254 by 1254 colour sources in `renderer/source-art/road-material-source.png`, ordered `roadA roadB / roadC roadD`. The terrain source page keeps grayscale 192 by 128 previews of those sources in slots 4 through 7; loose runtime frames remain the packer's editable input.
+`assets/source-art/road-material-source.png` retains the accepted 1254 by 1254 packed-earth master. The four road runtime frames share its even base so deterministic frame selection cannot create tonal blocks. `assets/source-art/path-material-source.png` retains the four-quadrant worn-stone path source. The terrain source page keeps grayscale previews for road slots 4 through 7 and path slots 64 through 67. Loose runtime frames remain the packer's editable input.
 
 ## Migration
 
@@ -66,4 +68,4 @@ All three ride the existing vitest include globs, so `scripts/ci.py` needs no ch
 
 ## Done when
 
-All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
+All ten declared pages have complete committed loose frame sets, each compiled page matches its current manifest, the terrain page matches its 68 frames with four transparent trailing cells, `assets/props-atlas.png` matches its 15 ordinary loose prop frames with transparent cells 15 through 35, and `assets/monuments-atlas.png` matches its five sole-authority monument frames with a transparent sixth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, the packer and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every authored page retains its source-art provenance, and the plan README and consuming stages reference this pipeline.
