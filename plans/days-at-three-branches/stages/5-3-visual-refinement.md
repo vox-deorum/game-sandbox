@@ -10,7 +10,7 @@ The world remains an exact 90 degree top-down projection. Do not redesign gamepl
 
 Keep the night grade, prop contact shadows, and emissives. Unit 1 removes only the daytime authored grade. HUD and annotation layers remain ungraded, including nameplates, speech, and expression marks.
 
-Work one owner-started unit at a time. Visual decisions belong to the owner. Tests and contract checks protect behaviour, but never substitute for visual judgment.
+Work one owner-started unit at a time. Visual decisions belong to the owner. Tests and contract checks protect behaviour, but never substitute for visual judgment. Only run selected, focused tests.
 
 ## Required start for every unit
 
