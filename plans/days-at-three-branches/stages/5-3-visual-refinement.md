@@ -38,11 +38,11 @@ First, inspect the current terrain against the approved references at fitted, mi
 
 Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
 
-The live renderer now has no daytime authored grade. The first Hearthside palette comparison adds dedicated terrain colours and remaps only terrain materials. Dedicated packed-earth road and sparse worn-stone path frames are integrated for the first comparison. The owner accepted the shared even road base, which prevents per-cell tonal blocks. The path treatment and remaining terrain review still await owner approval. The terrain repaint and both owner approvals remain in this unit.
+The live renderer now has no daytime authored grade. The first Hearthside palette comparison adds dedicated terrain colours and remaps only terrain materials. Dedicated packed-earth road and sparse worn-stone path frames are integrated for the first comparison. The owner accepted the shared even road base, which prevents per-cell tonal blocks. The next integrated comparison gives the path a darker neutral tint and strengthens the contrast of its existing texture; it awaits owner visual approval. The remaining terrain review and both owner approvals remain in this unit.
 
-### 2. Split pines and market crate
+### 2. Split pines
 
-Desired result: pines and the market crate create readable village massing at fitted view, while base, canopy, and line work hold up nearby.
+Desired result: pines create readable village massing at fitted view, while base, canopy, and line work hold up nearby.
 
 First, inspect the current scenery against the approved references at fitted, middle, and close scales, plus night. Present prioritized deviations, their effect, and proposed tuning focus to the owner, then wait for direction before art or runtime changes.
 

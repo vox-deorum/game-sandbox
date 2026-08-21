@@ -15,7 +15,7 @@
     "timber": "#8a6246",
     "ground": "#9b8c67",
     "road": "#a48259",
-    "path": "#c7b895",
+    "path": "#b3aa8d",
     "field": "#ac8754",
     "bank": "#747453",
     "stream": "#536666",
@@ -37,6 +37,7 @@
       "path": {
         "frames": ["pathA", "pathB", "pathC", "pathD"],
         "tint": "path",
+        "detailShift": 0.12,
         "opacity": 1,
         "offsetPassOpacity": 0
       },
