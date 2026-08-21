@@ -153,6 +153,15 @@ export const HEARTHSIDE_PALETTE_KEYS = [
   'gilt',
   'violet',
   'timber',
+  'ground',
+  'road',
+  'path',
+  'field',
+  'bank',
+  'stream',
+  'floor',
+  'wall',
+  'bridge',
 ] as const
 
 export type HearthsidePaletteKey = (typeof HEARTHSIDE_PALETTE_KEYS)[number]

@@ -38,7 +38,7 @@ First, inspect the current terrain against the approved references at fitted, mi
 
 Keep the tintable terrain composition, deterministic patterning, routes, bridges, geometry, and layer ownership. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
 
-The live renderer now has no daytime authored grade. The terrain repaint and both owner approvals remain in this unit.
+The live renderer now has no daytime authored grade. The first Hearthside palette comparison adds dedicated terrain colours and remaps only terrain materials. It awaits owner visual approval. The terrain repaint and both owner approvals remain in this unit.
 
 ### 2. Split pines and market crate
 

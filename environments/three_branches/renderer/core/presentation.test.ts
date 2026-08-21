@@ -64,11 +64,15 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(excessiveDetailShift)).toThrow('fills.reeds.detailShift')
 
     const unknownTintMixKey = structuredClone(HEARTHSIDE_STYLE) as any
-    unknownTintMixKey.terrain.fills.reeds.tintMix.mode = 'blend'
+    unknownTintMixKey.terrain.fills.reeds.tintMix = {
+      tint: 'pine',
+      amount: 0.25,
+      mode: 'blend',
+    }
     expect(() => readHearthsideStyle(unknownTintMixKey)).toThrow('tintMix keys do not match')
 
     const unknownTintMixTint = structuredClone(HEARTHSIDE_STYLE) as any
-    unknownTintMixTint.terrain.fills.reeds.tintMix.tint = 'orange'
+    unknownTintMixTint.terrain.fills.reeds.tintMix = { tint: 'orange', amount: 0.25 }
     expect(() => readHearthsideStyle(unknownTintMixTint)).toThrow('tintMix.tint is unknown')
 
     const extraFillKey = structuredClone(HEARTHSIDE_STYLE) as any

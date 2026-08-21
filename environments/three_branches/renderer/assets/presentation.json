@@ -12,55 +12,62 @@
     "cinnabar": "#b0402e",
     "gilt": "#d9a441",
     "violet": "#6b5d72",
-    "timber": "#8a6246"
+    "timber": "#8a6246",
+    "ground": "#9b8c67",
+    "road": "#a48259",
+    "path": "#c7b895",
+    "field": "#ac8754",
+    "bank": "#747453",
+    "stream": "#536666",
+    "floor": "#765b3d",
+    "wall": "#484238",
+    "bridge": "#685038"
   },
   "transition": { "naturalMs": 1000, "settleGraceMs": 100 },
   "terrain": {
     "fills": {
-      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "reed", "opacity": 1 },
+      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "ground", "opacity": 1 },
       "road": {
         "frames": ["roadA", "roadB", "roadC", "roadD"],
-        "tint": "silt",
-        "tintMix": { "tint": "timber", "amount": 0.2 },
+        "tint": "road",
         "detailShift": 0.12,
         "opacity": 1,
         "offsetPassOpacity": 0
       },
       "path": {
         "frames": ["roadA", "roadB", "roadC", "roadD"],
-        "tint": "parchment",
+        "tint": "path",
         "opacity": 1,
         "offsetPassOpacity": 0
       },
       "bridge": {
         "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
-        "tint": "water",
+        "tint": "stream",
         "opacity": 1
       },
       "interior": {
         "frames": ["floorA", "floorB", "floorC", "floorD"],
-        "tint": "parchment",
+        "tint": "floor",
         "opacity": 1
       },
-      "doorway": { "frames": ["doorway"], "tint": "bone", "opacity": 1 },
+      "doorway": { "frames": ["doorway"], "tint": "path", "opacity": 1 },
       "field": {
         "frames": ["furrowA", "furrowB", "furrowC", "furrowD"],
-        "tint": "gilt",
+        "tint": "field",
         "opacity": 1
       },
       "reeds": {
         "frames": ["reedsA", "reedsB", "reedsC", "reedsD"],
-        "tint": "reed",
-        "tintMix": { "tint": "pine", "amount": 0.45 },
+        "tint": "bank",
         "detailShift": 0.2,
         "opacity": 1
       },
       "water": {
         "frames": ["rippleA", "rippleB", "rippleC", "rippleD"],
-        "tint": "water",
+        "tint": "stream",
         "opacity": 1
       },
-      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "indigo", "opacity": 1 }
+      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "wall", "opacity": 1 }
     },
     "contours": {
       "profiles": {
@@ -135,13 +142,13 @@
       "horizontal": "bridgeA",
       "vertical": "bridgeB",
       "compact": "bridgeC",
-      "tint": "timber",
+      "tint": "bridge",
       "shadowTint": "backdrop",
       "shadowOpacity": 0.25,
       "shadowOffsetCells": 0.06,
       "textureBleedCells": 0.025
     },
-    "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "indigo" }
+    "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "wall" }
   },
   "roofs": {
     "clearAlpha": 0.18,
