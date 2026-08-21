@@ -1,53 +1,112 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   EFFECTS_ATLAS_FRAME_NAMES,
+  LANTERN_ATLAS_FRAME_NAMES,
   MONUMENTS_ATLAS_FRAME_NAMES,
   PROPS_ATLAS_FRAME_NAMES,
 } from '../assets.js'
-import { HEARTHSIDE_STYLE, propMonumentTreatment } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { CATALOG } from '../ui/overlay.js'
-import { PINE_FRAME_NAMES, propFoundationFrame, propTreatment, sceneryFrame } from './props-art.js'
+import {
+  hasPropArtRole,
+  isFixedFacingPropType,
+  PINE_FRAME_NAMES,
+  propRoleTreatment,
+  propTreatment,
+  sceneryFrame,
+} from './props-art.js'
 
-function camelType(token: string): string {
-  return token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-}
+const framesByPage = {
+  props: PROPS_ATLAS_FRAME_NAMES,
+  monuments: MONUMENTS_ATLAS_FRAME_NAMES,
+  lantern: LANTERN_ATLAS_FRAME_NAMES,
+} as const
 
 describe('Three Branches prop art treatments', () => {
-  it('resolves every catalog state to a readable frame named after its type and state', () => {
-    for (const prop of CATALOG.props) {
-      for (const state of prop.states) {
-        const treatment = propTreatment(prop.token, state)
-        expect(treatment.frame).toBe(
-          `${camelType(prop.token)}${state[0]?.toUpperCase()}${state.slice(1)}`,
-        )
-      }
-    }
+  it('gives ordinary state stills only a lower role on the props page', () => {
+    expect(propRoleTreatment('bench', 'occupied', 'lower')).toMatchObject({
+      page: 'props',
+      frame: 'benchOccupied',
+    })
+    expect(propRoleTreatment('bench', 'occupied', 'upper')).toBeNull()
   })
 
-  it('keeps every treatment, foundation, and configured effect frame in its atlas manifest', () => {
+  it('uses the pump monument state twice as complementary registered clips', () => {
+    expect(propRoleTreatment('pump', 'idle', 'lower')).toEqual({
+      page: 'monuments',
+      frame: 'pumpIdle',
+      registrationRole: 'full',
+      clip: 'lower',
+    })
+    expect(propRoleTreatment('pump', 'idle', 'upper')).toEqual({
+      page: 'monuments',
+      frame: 'pumpIdle',
+      registrationRole: 'full',
+      clip: 'upper',
+    })
+  })
+
+  it('keeps the bell foundation below and its state still above', () => {
+    expect(propRoleTreatment('bell', 'ringing', 'lower')).toEqual({
+      page: 'monuments',
+      frame: 'bellFoundation',
+      registrationRole: 'lower',
+    })
+    expect(propRoleTreatment('bell', 'ringing', 'upper')).toEqual({
+      page: 'monuments',
+      frame: 'bellRinging',
+      registrationRole: 'upper',
+    })
+  })
+
+  it('uses one lantern page frame twice as complementary registered clips', () => {
+    expect(propRoleTreatment('lantern', 'lit', 'lower')).toEqual({
+      page: 'lantern',
+      frame: 'lanternLit',
+      registrationRole: 'full',
+      clip: 'lower',
+    })
+    expect(propRoleTreatment('lantern', 'lit', 'upper')).toEqual({
+      page: 'lantern',
+      frame: 'lanternLit',
+      registrationRole: 'full',
+      clip: 'upper',
+    })
+  })
+
+  it('keeps role selection independent from fixed-facing selection', () => {
+    expect(hasPropArtRole('pump', 'upper')).toBe(true)
+    expect(hasPropArtRole('pump', 'lower')).toBe(true)
+    expect(isFixedFacingPropType('pump')).toBe(true)
+    expect(isFixedFacingPropType('bell')).toBe(true)
+    expect(isFixedFacingPropType('lantern')).toBe(true)
+    expect(isFixedFacingPropType('shrine')).toBe(true)
+  })
+
+  it('keeps every selected state frame in its dedicated atlas manifest', () => {
     for (const prop of CATALOG.props) {
-      const frames =
-        propMonumentTreatment(prop.token) !== null
-          ? MONUMENTS_ATLAS_FRAME_NAMES
-          : PROPS_ATLAS_FRAME_NAMES
       for (const state of prop.states) {
-        expect(frames).toContain(propTreatment(prop.token, state).frame)
+        for (const role of ['lower', 'upper'] as const) {
+          const treatment = propRoleTreatment(prop.token, state, role)
+          if (treatment !== null) expect(framesByPage[treatment.page]).toContain(treatment.frame)
+        }
       }
-      const foundation = propFoundationFrame(prop.token)
-      if (foundation !== null) expect(frames).toContain(foundation)
     }
     Object.values(HEARTHSIDE_STYLE.propEffects)
       .flatMap((effect) => effect.frames)
-      .forEach((frame) => {
-        expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame)
-      })
-    expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(HEARTHSIDE_STYLE.emissives.frame)
+      .forEach((frame) => expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame))
   })
 
-  it('gives every state of a prop type its own frame', () => {
+  it('keeps every recorded state on its own state frame', () => {
     for (const prop of CATALOG.props) {
-      const frames = prop.states.map((state) => propTreatment(prop.token, state).frame)
-      expect(new Set(frames).size).toBe(frames.length)
+      const stateFrames = prop.states.map((state) => {
+        const treatment = propTreatment(prop.token, state)
+        const stateRole = treatment.upper ?? treatment.lower
+        if (stateRole === undefined) throw new Error(`Prop state has no art role: ${prop.token}.${state}`)
+        return `${stateRole.page}.${stateRole.frame}`
+      })
+      expect(new Set(stateFrames).size).toBe(stateFrames.length)
     }
   })
 

@@ -14,16 +14,22 @@ import {
 // configuration that art passes are meant to move freely, so nothing here pins their values. What
 // the suite guards is the reader: every malformed shape below must still be rejected.
 describe('Hearthside Ink presentation', () => {
-  it('rejects incomplete or out-of-frame monument calibration', () => {
+  it('validates each registered prop against its own frame and role contract', () => {
     const missingFoundation = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingFoundation.props.monumentByType.bell.sourceAnchorByRole.foundation
+    delete missingFoundation.props.registeredPropByType.bell.sourceAnchorByRole.lower
     expect(() => readHearthsideStyle(missingFoundation)).toThrow('sourceAnchorByRole keys')
 
-    const offFrame = structuredClone(HEARTHSIDE_STYLE) as any
-    offFrame.props.monumentByType.pump.sourceAnchorByRole.still.x = 769
-    expect(() => readHearthsideStyle(offFrame)).toThrow(
-      'must be inside a 768 by 512 monument frame',
-    )
+    const pumpOutOfBounds = structuredClone(HEARTHSIDE_STYLE) as any
+    pumpOutOfBounds.props.registeredPropByType.pump.sourceAnchorByRole.full.x = 768
+    expect(() => readHearthsideStyle(pumpOutOfBounds)).toThrow('768 by 512 registered prop frame')
+
+    const invalidLanternSplit = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidLanternSplit.props.registeredPropByType.lantern.splitY = 512
+    expect(() => readHearthsideStyle(invalidLanternSplit)).toThrow('strictly inside')
+
+    const lanternOutOfBounds = structuredClone(HEARTHSIDE_STYLE) as any
+    lanternOutOfBounds.props.registeredPropByType.lantern.sourceAnchorByRole.full.y = 512
+    expect(() => readHearthsideStyle(lanternOutOfBounds)).toThrow('384 by 512 registered prop frame')
   })
 
   it('anchors the lantern light above the footprint and rejects an out-of-range anchor', () => {

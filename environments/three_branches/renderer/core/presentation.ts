@@ -297,23 +297,30 @@ export interface SourceAnchor {
   y: number
 }
 
-/** An absolute pixel position inside a complete monument source frame. */
+/** An absolute pixel position inside a registered prop source frame. */
 export interface SourcePixelAnchor {
   x: number
   y: number
 }
 
-type MonumentSpriteRole = 'still' | 'foundation'
+export interface SourceFrameSize {
+  width: number
+  height: number
+}
 
-/** Higher-density monument calibration that preserves collision registration. */
-export interface MonumentVisualTreatment {
+export type RegisteredPropSpriteRole = 'lower' | 'upper' | 'full'
+
+/** Higher-density prop calibration that preserves one complete source-frame registration. */
+export interface RegisteredPropVisualTreatment {
   textureDensityDivisor: number
-  sourceAnchorByRole: Readonly<Partial<Record<MonumentSpriteRole, SourcePixelAnchor>>>
+  frameSize: SourceFrameSize
+  sourceAnchorByRole: Readonly<Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>>
+  splitY?: number
 }
 
 interface PropVisualTreatment extends VisualScaleTreatment {
   effectAnchorByType: Readonly<Record<string, SourceAnchor>>
-  monumentByType: Readonly<Record<string, MonumentVisualTreatment>>
+  registeredPropByType: Readonly<Record<string, RegisteredPropVisualTreatment>>
 }
 
 export interface HearthsideStyle {
@@ -421,9 +428,9 @@ export function propEffectAnchor(type: string): SourceAnchor {
   return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
 }
 
-/** Resolve fixed-north monument density and collision anchors, when a prop has them. */
-export function propMonumentTreatment(type: string): MonumentVisualTreatment | null {
-  return HEARTHSIDE_STYLE.props.monumentByType[type] ?? null
+/** Resolve complete-source registration for a prop that needs it. */
+export function registeredPropTreatment(type: string): RegisteredPropVisualTreatment | null {
+  return HEARTHSIDE_STYLE.props.registeredPropByType[type] ?? null
 }
 
 /** Resolve one scenery sprite scale from the validated visual calibration. */
@@ -812,7 +819,7 @@ function propVisualTreatment(
     'defaultScale',
     'scaleByType',
     'effectAnchorByType',
-    'monumentByType',
+    'registeredPropByType',
   ])
   const scales = visualScaleTreatment(
     { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
@@ -825,7 +832,11 @@ function propVisualTreatment(
     [],
     knownTypes,
   )
-  const monuments = exactRecord(source.monumentByType, `${name}.monumentByType`, ['pump', 'bell'])
+  const registrations = exactRecord(source.registeredPropByType, `${name}.registeredPropByType`, [
+    'pump',
+    'bell',
+    'lantern',
+  ])
   return {
     ...scales,
     effectAnchorByType: Object.fromEntries(
@@ -840,48 +851,95 @@ function propVisualTreatment(
         ]
       }),
     ),
-    monumentByType: Object.fromEntries(
-      Object.entries(monuments).map(([type, value]) => [
+    registeredPropByType: Object.fromEntries(
+      Object.entries(registrations).map(([type, value]) => [
         type,
-        monumentVisualTreatment(value, `${name}.monumentByType.${type}`, type === 'bell'),
+        registeredPropVisualTreatment(value, `${name}.registeredPropByType.${type}`, type),
       ]),
     ),
   }
 }
 
-function monumentVisualTreatment(
+function registeredPropVisualTreatment(
   value: unknown,
   name: string,
-  hasFoundation: boolean,
-): MonumentVisualTreatment {
-  const source = exactRecord(value, name, ['textureDensityDivisor', 'sourceAnchorByRole'])
+  type: string,
+): RegisteredPropVisualTreatment {
+  const requirements = registeredPropRequirements(type)
+  const source = exactRecord(
+    value,
+    name,
+    requirements.hasSplit
+      ? ['textureDensityDivisor', 'frameSize', 'sourceAnchorByRole', 'splitY']
+      : ['textureDensityDivisor', 'frameSize', 'sourceAnchorByRole'],
+  )
   const divisor = positiveInteger(source.textureDensityDivisor, `${name}.textureDensityDivisor`)
   if (divisor > 8) {
     throw new Error(`${name}.textureDensityDivisor must be at most eight.`)
   }
+  const frameSize = sourceFrameSize(source.frameSize, `${name}.frameSize`)
   const roles = recordWithOptional(
     source.sourceAnchorByRole,
     `${name}.sourceAnchorByRole`,
-    hasFoundation ? ['still', 'foundation'] : ['still'],
+    requirements.roles,
     [],
   )
+  const splitY = requirements.hasSplit
+    ? splitInsideFrame(source.splitY, `${name}.splitY`, frameSize)
+    : undefined
   return {
     textureDensityDivisor: divisor,
+    frameSize,
     sourceAnchorByRole: Object.fromEntries(
       Object.entries(roles).map(([role, anchor]) => [
         role,
-        sourcePixelAnchor(anchor, `${name}.sourceAnchorByRole.${role}`),
+        sourcePixelAnchor(anchor, `${name}.sourceAnchorByRole.${role}`, frameSize),
       ]),
-    ) as Partial<Record<MonumentSpriteRole, SourcePixelAnchor>>,
+    ) as Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>,
+    ...(splitY === undefined ? {} : { splitY }),
   }
 }
 
-function sourcePixelAnchor(value: unknown, name: string): SourcePixelAnchor {
+function registeredPropRequirements(type: string): {
+  roles: readonly RegisteredPropSpriteRole[]
+  hasSplit: boolean
+} {
+  if (type === 'pump') return { roles: ['full'], hasSplit: true }
+  if (type === 'bell') return { roles: ['lower', 'upper'], hasSplit: false }
+  if (type === 'lantern') return { roles: ['full'], hasSplit: true }
+  throw new Error(`Three Branches registered prop type is unknown: ${type}`)
+}
+
+function sourceFrameSize(value: unknown, name: string): SourceFrameSize {
+  const source = exactRecord(value, name, ['width', 'height'])
+  return {
+    width: positiveInteger(source.width, `${name}.width`),
+    height: positiveInteger(source.height, `${name}.height`),
+  }
+}
+
+function sourcePixelAnchor(
+  value: unknown,
+  name: string,
+  frameSize: SourceFrameSize,
+): SourcePixelAnchor {
   const source = exactRecord(value, name, ['x', 'y'])
   const x = nonnegativeInteger(source.x, `${name}.x`)
   const y = nonnegativeInteger(source.y, `${name}.y`)
-  if (x > 768 || y > 512) throw new Error(`${name} must be inside a 768 by 512 monument frame.`)
+  if (x >= frameSize.width || y >= frameSize.height) {
+    throw new Error(
+      `${name} must be inside its ${frameSize.width} by ${frameSize.height} registered prop frame.`,
+    )
+  }
   return { x, y }
+}
+
+function splitInsideFrame(value: unknown, name: string, frameSize: SourceFrameSize): number {
+  const splitY = nonnegativeInteger(value, name)
+  if (splitY <= 0 || splitY >= frameSize.height) {
+    throw new Error(`${name} must be strictly inside its ${frameSize.height}-pixel frame height.`)
+  }
+  return splitY
 }
 
 function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {

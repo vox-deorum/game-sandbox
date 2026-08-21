@@ -47,11 +47,12 @@ function readPngHeader(relativePath: string): PngHeader {
 }
 
 describe('Three Branches asset catalog', () => {
-  it('catalogs the seven approved atlas groups with named frame prefixes', () => {
+  it('catalogs the eight declared atlas groups with named frame prefixes', () => {
     expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
       'terrain',
       'buildings',
       'props',
+      'lantern',
       'monuments',
       'scenery',
       'characters',
@@ -71,9 +72,11 @@ describe('Three Branches asset catalog', () => {
     }
 
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
-    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(15)
+    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(13)
     expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
       expect.arrayContaining([
+        'lanternLit',
+        'lanternUnlit',
         'pumpFlowing',
         'pumpIdle',
         'bellRinging',
@@ -81,6 +84,23 @@ describe('Three Branches asset catalog', () => {
         'bellFoundation',
       ]),
     )
+
+    const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
+    expect(lantern && !('layers' in lantern) ? lantern : null).toMatchObject({
+      sourceWidth: 2048,
+      sourceHeight: 1536,
+      width: 768,
+      height: 512,
+      tintable: false,
+      format: 'full-color',
+      frames: {
+        width: 384,
+        height: 512,
+        columns: 2,
+        rows: 1,
+        names: ['lanternLit', 'lanternUnlit'],
+      },
+    })
 
     const monuments = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'monuments')
     expect(monuments && !('layers' in monuments) ? monuments.frames.names : []).toEqual([
@@ -114,10 +134,10 @@ describe('Three Branches asset catalog', () => {
     ).toEqual(['body', 'clothing', 'arms', 'details'])
   })
 
-  it('derives nested prop paths from camel-case frame names', () => {
+  it('derives nested ordinary-prop paths and gives lantern frames their dedicated page', () => {
     const props = ATLAS_PAGES.find((page) => page.group === 'props')
     expect(props?.framePaths).toEqual(
-      expect.arrayContaining(['stall/open.png', 'lantern/lit.png', 'repair_bench/busy.png']),
+      expect.arrayContaining(['stall/open.png', 'repair_bench/busy.png']),
     )
     expect(props?.framePaths).not.toEqual(
       expect.arrayContaining([
@@ -125,8 +145,19 @@ describe('Three Branches asset catalog', () => {
         'pump/idle.png',
         'bell/ringing.png',
         'bell/silent.png',
+        'lantern/lit.png',
+        'lantern/unlit.png',
       ]),
     )
+    const lantern = ATLAS_PAGES.find((page) => page.group === 'lantern')
+    expect(lantern).toMatchObject({
+      framesPath: './assets/lantern',
+      framePaths: ['lit.png', 'unlit.png'],
+      width: 768,
+      height: 512,
+      columns: 2,
+      rows: 1,
+    })
     const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
     expect(monuments?.framePaths).toEqual([
       'pump/flowing.png',
@@ -162,21 +193,36 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('loads every shipped runtime page including the buildings atlas', async () => {
+  it('keeps the dedicated lantern source, frames, and packed page at their declared dimensions', () => {
+    const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
+    if (lantern === undefined || 'layers' in lantern) throw new Error('Lantern atlas is missing')
+
+    expect(readPngHeader(lantern.source)).toMatchObject({
+      width: lantern.sourceWidth,
+      height: lantern.sourceHeight,
+    })
+    expect(readPngHeader(lantern.path)).toMatchObject({ width: lantern.width, height: lantern.height })
+    expect(readPngHeader('./assets/lantern/lit.png')).toMatchObject({ width: 384, height: 512 })
+    expect(readPngHeader('./assets/lantern/unlit.png')).toMatchObject({ width: 384, height: 512 })
+  })
+
+  it('loads all eleven shipped runtime pages including the dedicated lantern atlas', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(10)
+    expect(load).toHaveBeenCalledTimes(11)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
     expect(assets.characters.arms).toMatch(/characters-arms-atlas\.png/)
     expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
+    expect(assets.lantern).toMatch(/lantern-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
     expect(assets.buildings).toMatch(/buildings-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /buildings/.test(source))).toBe(true)

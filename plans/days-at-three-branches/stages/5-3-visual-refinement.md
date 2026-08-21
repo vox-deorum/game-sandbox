@@ -60,6 +60,16 @@ First, inspect the current props and lantern against the approved references at 
 
 Keep prop state meanings and interaction and collision footprints. Move the lantern out of the ordinary props page into its own taller treatment, registering the approved art without shifting its world position or established glow placement. Keep its contact shadow and emissive behavior. Pump and bell remain monuments.
 
+The owner directed one provisional runtime comparison before Gate A. This exception exists only to judge the current lantern candidate in the village. The comparison uses a dedicated 2 by 1 page with 384 by 512 cells, keeps the lantern at scale `0.14`, anchors its one-cell footing at `(192, 384)`, and splits the same state texture at runtime row `362`: the footing draws below characters and the post and lamp draw above them. Its 2048 by 1536 provenance page retains the unchanged high-resolution candidate in both state cells. The lit candidate supplies both runtime state slots for this comparison, so the provisional `unlit` still contains its gilt core and baked halo. The `lit` state also keeps the established runtime flicker, glow, and `(0, -70)` effect anchor. This diagnostic art stays unstaged and does not count as Gate A or Gate B approval.
+
+Lantern, pump, and bell share the same registered-prop behavior without sharing page dimensions. Each reads about two cells tall while occupying one gameplay cell, keeps its base below characters, and draws its upright structure above characters. Pump keeps density divisor `4` and its source anchor, with complementary clips separating the circular well base from its upper mechanism. Bell keeps its lower foundation, upper state treatment, density divisor `8`, and role anchors. The lantern uses density divisor `1` and complementary lower and upper clips. Registration, fixed facing, collision scaling, contact shadows, and layer roles remain separate renderer contracts. Each catalog rectangle, collision circle, selection, generation placement, shadow, and highlight remains one cell.
+
+Review the provisional lantern at fitted, middle, and close views in day and night. Include the collision overlay, character overlap, building adjacency, and both recorded states. Revise its geometry, exact overhead projection, combined baked and runtime glow, split occlusion, and timber tone until the owner accepts it. Then derive a true unlit state with identical geometry and registration.
+
+The accepted lantern becomes the qualitative timber reference for all interactive props and the market crate. Regenerate full-colour art rather than tinting it at runtime, and use no wood mask, shader, numeric colour tolerance, or colour snapshot test. Work one family at a time in this order: stall, bench, shrine, board, plot, hearth, repair bench, pump, bell, then market crate. Accept the neutral or base state first, then edit it into the remaining states so registration and silhouette stay fixed. Grain, wear, and light-to-dark proportions may vary, but the props do not form separate blond, orange, gray, or dark-brown timber families. Buildings and pines remain outside this pass. The board stays on its 384 by 256 canvas and keeps its interim scale override until its later re-authoring.
+
+Formal Gate A waits for one sheet containing every revised prop state and the crate. After Gate A, promote the accepted loose frames and source provenance and update steps 5.0 and 5.1. Gate B then checks the pinned fixture and generated seeds `0`, `17`, and `37` for fitted hierarchy, middle and close material unity, state readability, night behavior, unchanged registration, and the one-cell collision contract.
+
 ### 4. 128 px roof tiles
 
 Desired result: roof materials establish a readable building hierarchy from fitted view and reward close inspection without obscuring residents.
@@ -105,6 +115,8 @@ Keep every approved 5.2 semantic, including watch and replay chrome, collision a
 At Gate B, compare the pinned fixture first, then generated villages to expose density and placement issues. Review day before night, and review fitted before middle and close. Inspect relevant loading, replay seek, resize, and live transitions when the unit touches them.
 
 Run focused renderer and frontend checks for each changed boundary. Update [5.0](5-0-atlas.md) only when accepted assets or pipeline facts land. Keep tests focused on the contract, not subjective appearance. Do not stage changes.
+
+The documented `three-branches` Playwright group is not present in the current `frontend/e2e/` tree. Use manual fixture captures and focused renderer tests during this provisional comparison. Keep the group command as the intended focused Gate B check once that journey exists, and run the complete browser suite at the final gate.
 
 After the final Gate B, run:
 

@@ -16,6 +16,9 @@ export const JOYSTICK_RADIUS = 70
 /** Fraction of the pad ring below which a drag reads as no movement. */
 export const JOYSTICK_DEAD_ZONE = 0.15
 
+/** Commanded relative speed below which a pad drag reads as no movement. */
+export const JOYSTICK_SPEED_DEAD_ZONE = 0.05
+
 /** Keyboard codes that steer the visitor, per compass direction. */
 const NORTH_KEYS = ['KeyW', 'ArrowUp'] as const
 const SOUTH_KEYS = ['KeyS', 'ArrowDown'] as const
@@ -58,15 +61,16 @@ export function wrapDegrees(value: number): number {
  * Read a pad drag as motion, or null while the drag sits inside the dead zone.
  *
  * Speed rises linearly from zero at the dead-zone edge to full at the pad ring and saturates
- * beyond it. A speed below the given low-speed clamp reads as no movement, so an imperceptible
- * crawl never reaches the engine. The heading converts the screen-space drag into environment
- * degrees.
+ * beyond it. A speed below the low-speed clamp reads as no movement, so an imperceptible crawl
+ * never reaches the engine. The clamp is a commanded-speed dead zone in input units, independent
+ * of the renderer's per-tick distance dead zone. The heading converts the screen-space drag into
+ * environment degrees.
  */
 export function joystickMotion(
   center: { x: number; y: number },
   point: { x: number; y: number },
   radius = JOYSTICK_RADIUS,
-  speedDeadZone: number,
+  speedDeadZone = JOYSTICK_SPEED_DEAD_ZONE,
 ): MotionInput | null {
   const dx = point.x - center.x
   const dy = point.y - center.y

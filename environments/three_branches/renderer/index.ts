@@ -64,9 +64,9 @@ import {
   buildStaticScene,
   computeScene,
   interpolateScene,
+  movementAction,
   sceneCharactersMoved,
   sceneVisitorMoved,
-  settleGlideOnto,
 } from './map/scene.js'
 import { createWorldArtStack, type WorldArtStack } from './map/world-stack.js'
 
@@ -277,17 +277,23 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       this.gapEstimateMs = smoothedDeliveryGapMs(this.gapEstimateMs, delivery.gapMs)
     }
     this.lastDeliveryAtMs = delivery.nextMs
-    const scene = computeScene(state, this.staticScene, this.expectedIds)
-    this.currentScene = scene
     // A connection that re-delivers the current recorded tick re-presents the same frame, so it
-    // must neither advance the walk phase nor restart a movement; the roof keeps the same guard.
-    const dynamicTick = scene.dynamic?.tick
-    const reDelivery = dynamicTick !== undefined && dynamicTick === this.lastRoofTick
+    // must neither advance the walk phase nor disturb an in-flight movement; the roof keeps the
+    // same guard. Snap frames (resize, redraw, seek) are not re-deliveries: they must still
+    // present, so only a non-snap same-tick delivery counts. Real landed frames advance the walk
+    // phase accumulator.
+    const raw = computeScene(state, this.staticScene, this.expectedIds)
+    const dynamicTick = raw.dynamic?.tick
+    const reDelivery =
+      options?.snap !== true && dynamicTick !== undefined && dynamicTick === this.lastRoofTick
     if (dynamicTick !== undefined) this.lastRoofTick = dynamicTick
-    // Snap frames (resize, redraw, seek) and same-tick re-deliveries hold the walk phase; only real
-    // landed frames advance the per-character walk distance accumulator.
     const snapLike = options?.snap === true || reDelivery
-    advanceWalkDistance(this.walkDistance, scene, options?.seek === true, !snapLike)
+    const scene = advanceWalkDistance(
+      this.walkDistance,
+      raw,
+      options?.seek === true ? 'reset' : snapLike ? 'hold' : 'advance',
+    )
+    this.currentScene = scene
     const landedVisitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (landedVisitor !== undefined) {
       this.landedVisitor = { point: landedVisitor.point, heading: landedVisitor.heading }
@@ -321,37 +327,47 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.chrome.update(scene, state.tick, this.collisionVisible, this.textResolution())
     const shouldAnimate =
       durationMs > 0 &&
-      !reDelivery &&
       this.presentedScene !== null &&
       (sceneCharactersMoved(this.landedScene ?? this.presentedScene, scene) ||
         hasSustainedPropEffectTransition(this.presentedScene, scene))
+    const action = movementAction({
+      reDelivery,
+      shouldAnimate,
+      presentedScene: this.presentedScene,
+      snapLike,
+      movement: this.movement,
+      scene,
+    })
+    const presented = this.presentedScene
+    const glide = this.movement
     this.settleRemainingMs = 0
-    if (shouldAnimate && this.presentedScene !== null) {
+    if (action === 'start' && presented !== null) {
       // Movement always follows the renderer transport. It deliberately does not inspect the
       // reduced-motion media query, since continuous character movement is core game state here.
       this.movement = {
-        from: this.presentedScene,
+        from: presented,
         to: scene,
         elapsedMs: 0,
         durationMs,
       }
-      this.presentScene(interpolateScene(this.presentedScene, scene, 0))
-    } else if (this.movement !== null && settleGlideOnto(this.movement, scene)) {
+      this.presentScene(interpolateScene(presented, scene, 0))
+    } else if (action === 'settle' && glide !== null) {
       // A stopped frame landed while its movement was still gliding: aim the remaining glide at
       // the stop frame so the sprite settles its last stretch with resting feet instead of popping
-      // the leftover distance. The stop frame reads moved 0, so feet rest and the camera never
-      // returns during the settle.
-      const glide = this.movement
+      // the leftover distance. The stop frame reads moved 0, so the feet rest while the remaining
+      // stretch completes, and the camera's return keeps following that motion until it settles.
       this.movement = {
         from: glide.from,
         to: scene,
         elapsedMs: glide.elapsedMs,
         durationMs: glide.durationMs,
       }
-    } else {
+    } else if (action === 'snap') {
       this.movement = null
       this.presentScene(scene)
     }
+    // The hold action (a same-tick re-delivery) leaves any in-flight glide untouched; the external
+    // layers were reconciled above, and onFrame keeps presenting the glide.
     this.updateProbes(state, scene)
     if (!snapLike) this.landedScene = scene
   }
@@ -670,6 +686,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         const textures = [
           assets.terrain,
           assets.props,
+          assets.lantern,
           assets.monuments,
           assets.buildings,
           assets.scenery,
@@ -685,6 +702,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         const terrain = createTerrainArt(assets.terrain, this.staticScene)
         const propArt = createPropArt({
           props: assets.props,
+          lantern: assets.lantern,
           monuments: assets.monuments,
           scenery: assets.scenery,
           effects: assets.effects,

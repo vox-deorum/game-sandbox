@@ -13,7 +13,7 @@ import {
   visualFacing,
 } from './props-layer.js'
 
-type PageName = 'props' | 'monuments' | 'scenery' | 'effects'
+type PageName = 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects'
 
 function frameGrid(name: PageName): FrameGrid {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
@@ -73,12 +73,17 @@ function completeArt() {
   return createPropArt({
     props: page('props', source),
     monuments: page('monuments', source),
+    lantern: page('lantern', source),
     scenery: page('scenery', source),
     effects: page('effects', source),
   })
 }
 
-function frame(scene: StaticScene, characters: readonly (readonly [number, number])[]): FrameScene {
+function frame(
+  scene: StaticScene,
+  characters: readonly (readonly [number, number])[],
+  props: Record<string, string> = {},
+): FrameScene {
   return {
     static: scene,
     dynamic: {
@@ -92,7 +97,7 @@ function frame(scene: StaticScene, characters: readonly (readonly [number, numbe
         moved: 0,
         expression: { type: 'none', target: '' },
       })),
-      props: {},
+      props,
       terminal: false,
     },
     presentationTick: 1,
@@ -106,6 +111,7 @@ describe('Three Branches prop art views', () => {
     const views = createPropArt({
       props: page('props', source),
       monuments: page('monuments', source),
+      lantern: page('lantern', source),
       scenery: page('scenery', source),
       effects: page('effects', source),
     })
@@ -115,6 +121,10 @@ describe('Three Branches prop art views', () => {
     // they come from the manifest rather than being pinned in this suite.
     expect(views.props.stallOpen?.source).toBe(source)
     expect(views.props.stallOpen?.frame).toEqual(frameRectangle(frameGrid('props'), 'stallOpen'))
+    expect(views.props.lanternLit).toBeUndefined()
+    expect(views.lantern.lanternLit?.frame).toEqual(
+      frameRectangle(frameGrid('lantern'), 'lanternLit'),
+    )
     expect(views.props.bellFoundation).toBeUndefined()
     expect(views.monuments.bellFoundation?.frame).toEqual(
       frameRectangle(frameGrid('monuments'), 'bellFoundation'),
@@ -206,6 +216,166 @@ describe('Three Branches prop art views', () => {
   })
 })
 
+function propScene(...props: StaticDrawable[]): StaticScene {
+  const scene = sceneryScene()
+  scene.scenery = []
+  scene.props = props
+  return scene
+}
+
+function drawable(type: string, id: string, collisionScale: number = 1): StaticDrawable {
+  return {
+    id,
+    type,
+    label: type,
+    shape: type === 'lantern' || type === 'pump' || type === 'bell' ? 'circle' : 'box',
+    collisionScale,
+    rect: { x: 0, y: 0, width: 16, height: 16 },
+    facing: 'east',
+  }
+}
+
+function sprite(root: Container, label: string): Sprite {
+  const node = root.getChildByLabel(label)
+  if (!(node instanceof Sprite)) throw new Error(`Expected sprite ${label}.`)
+  return node
+}
+
+describe('Three Branches registered prop layers', () => {
+  it('keeps ordinary artwork in the lower prop layer only', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('bench', 'bench_0'))
+    createPropLayer(targets, scene).install(completeArt())
+
+    const lower = targets.props.getChildByLabel('prop-lower:bench_0') as Container
+    expect(sprite(lower, 'prop-lower-art').visible).toBe(true)
+    expect(targets.effects.getChildByLabel('prop-upper:bench_0')).toBeNull()
+  })
+
+  it('splits the pump across layers with its registered density and anchor', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('pump', 'pump_0', 0.75))
+    createPropLayer(targets, scene).install(completeArt())
+
+    const lower = targets.props.getChildByLabel('prop-lower:pump_0') as Container
+    const upper = targets.effects.getChildByLabel('prop-upper:pump_0') as Container
+    const lowerArt = sprite(lower, 'prop-lower-art')
+    expect(lowerArt.visible).toBe(true)
+    const art = sprite(upper, 'prop-upper-art')
+    const full = frameRectangle(frameGrid('monuments'), 'pumpIdle')
+    expect(art.visible).toBe(true)
+    expect(art.scale.x).toBe(0.33 / 4)
+    expect(art.texture.frame).toEqual(new Rectangle(full.x, full.y, full.width, 304))
+    expect(lowerArt.texture.frame).toEqual(
+      new Rectangle(full.x, full.y + 304, full.width, 208),
+    )
+    expect(art.anchor).toMatchObject({ x: 344 / 768, y: 384 / 304 })
+    expect(lowerArt.anchor).toMatchObject({ x: 344 / 768, y: (384 - 304) / 208 })
+    expect(lower.parent).toBe(targets.props)
+    expect(upper.parent).toBe(targets.effects)
+    expect(lower.position.x).toBe(upper.position.x)
+    expect(lower.position.y).toBe(upper.position.y)
+    expect(lower.rotation).toBe(upper.rotation)
+  })
+
+  it('splits the bell foundation and state still across lower and upper roots', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('bell', 'bell_0'))
+    createPropLayer(targets, scene).install(completeArt())
+
+    const lower = sprite(
+      targets.props.getChildByLabel('prop-lower:bell_0') as Container,
+      'prop-lower-art',
+    )
+    const upper = sprite(
+      targets.effects.getChildByLabel('prop-upper:bell_0') as Container,
+      'prop-upper-art',
+    )
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'bellFoundation'))
+    expect(lower.anchor).toMatchObject({ x: 384 / 768, y: 256 / 512 })
+    expect(upper.anchor).toMatchObject({ x: 384 / 768, y: 480 / 512 })
+    expect(lower.scale.x).toBe(0.36 / 8)
+    expect(upper.scale.x).toBe(0.36 / 8)
+  })
+
+  it('keeps lantern state registration stable across complementary lower and upper clips', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('lantern', 'lantern_0'))
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
+    layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
+
+    const lower = sprite(
+      targets.props.getChildByLabel('prop-lower:lantern_0') as Container,
+      'prop-lower-art',
+    )
+    const upper = sprite(
+      targets.effects.getChildByLabel('prop-upper:lantern_0') as Container,
+      'prop-upper-art',
+    )
+    const full = frameRectangle(frameGrid('lantern'), 'lanternLit')
+    expect(lower.texture.frame).toEqual(new Rectangle(full.x, full.y + 362, full.width, 150))
+    expect(upper.texture.frame).toEqual(new Rectangle(full.x, full.y, full.width, 362))
+    expect(upper.anchor.x).toBe(lower.anchor.x)
+    expect(upper.anchor.y * upper.texture.height).toBe(384)
+    expect(lower.anchor.y * lower.texture.height + 362).toBe(384)
+    const litLower = lower.texture
+    const litUpper = upper.texture
+
+    layer.reconcile(frame(scene, [], { lantern_0: 'unlit' }))
+    expect(lower.texture.frame).toEqual(new Rectangle(384, 362, 384, 150))
+    expect(upper.texture.frame).toEqual(new Rectangle(384, 0, 384, 362))
+
+    layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
+    expect(lower.texture).toBe(litLower)
+    expect(upper.texture).toBe(litUpper)
+  })
+
+  it('keeps a one-cell lantern shadow and highlight independent of registered artwork', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('lantern', 'lantern_0'))
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
+    layer.highlight('lantern_0')
+
+    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:lantern_0') as Sprite
+    expect(shadow.scale.x).toBeCloseTo(0.1)
+    expect(shadow.scale.y).toBe(0.09375)
+    expect(targets.highlight.getLocalBounds()).toMatchObject({
+      minX: -3,
+      minY: -3,
+      maxX: 19,
+      maxY: 19,
+    })
+  })
+
+  it('keeps the installed lantern state and clips when a replacement preflight fails', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('lantern', 'lantern_0'))
+    const layer = createPropLayer(targets, scene)
+    const art = completeArt()
+    layer.install(art)
+    layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
+    const lower = sprite(
+      targets.props.getChildByLabel('prop-lower:lantern_0') as Container,
+      'prop-lower-art',
+    )
+    const upper = sprite(
+      targets.effects.getChildByLabel('prop-upper:lantern_0') as Container,
+      'prop-upper-art',
+    )
+    const installedLower = lower.texture
+    const installedUpper = upper.texture
+    const lantern = Object.fromEntries(
+      Object.entries(art.lantern).filter(([name]) => name !== 'lanternLit'),
+    )
+
+    expect(() => layer.install({ ...art, lantern })).toThrow(/prop frame is missing: lantern.lanternLit/)
+    expect(lower.texture).toBe(installedLower)
+    expect(upper.texture).toBe(installedUpper)
+  })
+})
+
 describe('Three Branches prop visual facing', () => {
   const drawable = (type: string, facing?: string): StaticDrawable => ({
     id: `${type}-test`,
@@ -229,8 +399,12 @@ describe('Three Branches prop visual facing', () => {
     expect(visualFacing(drawable('shrine', 'east'))).toBe(0)
   })
 
-  it('keeps an east-facing monument fixed north', () => {
+  it('keeps an east-facing pump fixed north', () => {
     expect(visualFacing(drawable('pump', 'east'))).toBe(0)
+  })
+
+  it('keeps an east-facing bell fixed north', () => {
+    expect(visualFacing(drawable('bell', 'east'))).toBe(0)
   })
 
   it('defaults an undefined facing to north', () => {

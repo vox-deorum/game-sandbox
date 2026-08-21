@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Texture } from 'pixi.js'
+import { Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { buildingOccupied } from '../buildings/buildings.js'
@@ -6,8 +6,8 @@ import {
   HEARTHSIDE_STYLE,
   PALETTE,
   propEffectAnchor,
-  propMonumentTreatment,
   propVisualScale,
+  registeredPropTreatment,
   sceneryVisualScale,
   THREE_BRANCHES_PRESENTATION,
 } from '../core/presentation.js'
@@ -24,8 +24,9 @@ import {
   isFixedFacingPropType,
   isShippedPropType,
   PINE_FRAME_NAMES,
-  propFoundationFrame,
-  propTreatment,
+  hasPropArtRole,
+  type PropArtFrame,
+  propRoleTreatment,
   sceneryFrame,
 } from './props-art.js'
 
@@ -39,6 +40,7 @@ const SHADOW_SOURCE = shadowSourceSize()
 export interface PropAtlasTextures {
   props: Texture
   monuments: Texture
+  lantern: Texture
   scenery: Texture
   effects: Texture
 }
@@ -47,6 +49,7 @@ export interface PropAtlasTextures {
 export interface PropArt {
   props: Readonly<Record<string, Texture>>
   monuments: Readonly<Record<string, Texture>>
+  lantern: Readonly<Record<string, Texture>>
   scenery: Readonly<Record<string, Texture>>
   effects: Readonly<Record<string, Texture>>
 }
@@ -61,11 +64,12 @@ export interface PropLayer {
 
 interface PropNode {
   item: StaticDrawable
-  root: Container
+  lowerRoot: Container
+  upperRoot: Container
   fallback: Graphics
   shadow: Sprite
-  foundation: Sprite
-  still: Sprite
+  lower: Sprite
+  upper: Sprite
   effect: Sprite
   emissive: Sprite
   state: string | null
@@ -76,6 +80,7 @@ export function createPropArt(atlases: PropAtlasTextures): PropArt {
   return {
     props: framesFor('props', atlases.props),
     monuments: framesFor('monuments', atlases.monuments),
+    lantern: framesFor('lantern', atlases.lantern),
     scenery: framesFor('scenery', atlases.scenery),
     effects: framesFor('effects', atlases.effects),
   }
@@ -106,6 +111,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   )
   const nodes = new Map<string, PropNode>()
   let art: PropArt | null = null
+  const clippedTextures = new Map<Texture, Map<string, Texture>>()
   const pines = new Container({ label: 'pines' })
   const pineBuildingCutout = new Graphics({ label: 'pine-building-cutout' })
   pines.setMask({ mask: pineBuildingCutout, inverse: true })
@@ -114,12 +120,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     const node = createPropNode(item, cellSize)
     nodes.set(item.id, node)
     layers.shadows.addChild(node.shadow)
-    if (isFixedMonument(item)) {
-      // A monument's civic upper reads above characters, while its plinth stays with the props.
-      layers.effects.addChild(node.root)
-      node.foundation.position.set(centerX(item), centerY(item))
-      layers.props.addChild(node.foundation)
-    } else layers.props.addChild(node.root)
+    layers.props.addChild(node.lowerRoot)
+    if (hasPropArtRole(item.type, 'upper')) layers.effects.addChild(node.upperRoot)
     layers.effects.addChild(node.effect)
     layers.emissives.addChild(node.emissive)
   }
@@ -141,23 +143,26 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     node.fallback.visible = !shipped
     node.shadow.visible = shipped
     node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
-    const foundationFrame = propFoundationFrame(node.item.type)
-    node.foundation.visible = shipped && foundationFrame !== null
-    node.foundation.texture =
-      foundationFrame === null
-        ? Texture.EMPTY
-        : texture(propFrames(art, node.item.type), foundationFrame)
-    node.still.visible = shipped
-    node.still.texture = shipped
-      ? texture(propFrames(art, node.item.type), propTreatment(node.item.type, state).frame)
-      : Texture.EMPTY
-    syncPropSprite(node.still, node.item, 'still')
-    if (foundationFrame !== null) syncPropSprite(node.foundation, node.item, 'foundation')
+    syncPropRole(
+      node.lower,
+      node.item,
+      shipped ? propRoleTreatment(node.item.type, state, 'lower') : null,
+      art,
+      clippedTextures,
+    )
+    syncPropRole(
+      node.upper,
+      node.item,
+      shipped ? propRoleTreatment(node.item.type, state, 'upper') : null,
+      art,
+      clippedTextures,
+    )
   }
 
   return {
     install(nextArt) {
       preflightArt(nextArt)
+      clearClippedTextures(clippedTextures)
       for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
       for (const item of scene.scenery) {
@@ -180,7 +185,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       const tick = typeof value === 'number' ? value : value.presentationTick
       let active = false
       for (const node of nodes.values()) {
-        node.root.rotation = visualFacing(node.item)
+        node.lowerRoot.rotation = visualFacing(node.item)
+        node.upperRoot.rotation = visualFacing(node.item)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
           node.emissive.visible = false
@@ -266,16 +272,21 @@ function createSceneryNode(item: StaticDrawable): Container {
 }
 
 function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
-  const root = new Container({ label: `prop:${item.id}` })
-  root.position.set(centerX(item), centerY(item))
-  root.rotation = visualFacing(item)
+  const lowerRoot = new Container({ label: `prop-lower:${item.id}` })
+  lowerRoot.position.set(centerX(item), centerY(item))
+  lowerRoot.rotation = visualFacing(item)
+  const upperRoot = new Container({ label: `prop-upper:${item.id}` })
+  upperRoot.position.set(centerX(item), centerY(item))
+  upperRoot.rotation = visualFacing(item)
   const shadow = propShadow(item, cellSize)
   const fallbackNode = fallback(item, true)
   const artScale = propArtScale(item)
-  const foundation = propSprite('prop-foundation', Texture.EMPTY, artScale)
-  foundation.visible = false
-  const still = propSprite('prop-still', Texture.EMPTY, artScale)
-  root.addChild(fallbackNode, still)
+  const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
+  const upper = propSprite('prop-upper-art', Texture.EMPTY, artScale)
+  lower.visible = false
+  upper.visible = false
+  lowerRoot.addChild(fallbackNode, lower)
+  upperRoot.addChild(upper)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.rotation = visualFacing(item)
@@ -284,11 +295,12 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   emissive.visible = false
   return {
     item,
-    root,
+    lowerRoot,
+    upperRoot,
     fallback: fallbackNode,
     shadow,
-    foundation,
-    still,
+    lower,
+    upper,
     effect,
     emissive,
     state: null,
@@ -338,7 +350,7 @@ function propShadow(item: StaticDrawable, cellSize: number): Sprite {
   const treatment = HEARTHSIDE_STYLE.postEffects.propContactShadow
   const shadow = sprite(`prop-contact-shadow:${item.id}`, Texture.EMPTY, 1)
   const { width, height } = localFootprint(item)
-  const collisionScale = isFixedMonument(item) ? item.collisionScale : 1
+  const collisionScale = usesCollisionScaledContactShadow(item.type) ? item.collisionScale : 1
   shadow.scale.set(
     (width * collisionScale * treatment.widthFactor) / SHADOW_SOURCE.width,
     (height * collisionScale * treatment.heightFactor) / SHADOW_SOURCE.height,
@@ -353,7 +365,6 @@ function propShadow(item: StaticDrawable, cellSize: number): Sprite {
 
 function localFootprint(item: StaticDrawable): { width: number; height: number } {
   const turned =
-    !isFixedMonument(item) &&
     !isFixedFacingPropType(item.type) &&
     (item.facing === 'east' || item.facing === 'west')
   return {
@@ -372,23 +383,51 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
 }
 
-function syncArtScale(node: Pick<PropNode, 'item' | 'foundation' | 'still'>): void {
+function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'upper'>): void {
   const scale = propArtScale(node.item)
-  node.foundation.scale.set(scale)
-  node.still.scale.set(scale)
+  node.lower.scale.set(scale)
+  node.upper.scale.set(scale)
 }
 
-function syncPropSprite(node: Sprite, item: StaticDrawable, role: 'still' | 'foundation'): void {
-  const monument = propMonumentTreatment(item.type)
-  if (monument === null) {
+function syncPropRole(
+  node: Sprite,
+  item: StaticDrawable,
+  treatment: PropArtFrame | null,
+  art: PropArt,
+  clippedTextures: Map<Texture, Map<string, Texture>>,
+): void {
+  node.visible = treatment !== null
+  if (treatment === null) {
+    node.texture = Texture.EMPTY
+    return
+  }
+  const frame = propTexture(art, treatment)
+  node.texture = clippedTexture(frame, treatment, item.type, clippedTextures)
+  syncPropSprite(node, item.type, treatment)
+}
+
+function syncPropSprite(node: Sprite, type: string, treatment: PropArtFrame): void {
+  if (treatment.registrationRole === undefined) {
     node.anchor.set(0.5)
     return
   }
-  const anchor = monument.sourceAnchorByRole[role]
-  if (anchor === undefined) {
-    throw new Error(`Three Branches monument source anchor is missing: ${item.type}.${role}`)
+  const registration = registeredPropTreatment(type)
+  if (registration === null) {
+    throw new Error(`Three Branches prop registration is missing: ${type}`)
   }
-  node.anchor.set(anchor.x / node.texture.width, anchor.y / node.texture.height)
+  const anchor = registration.sourceAnchorByRole[treatment.registrationRole]
+  if (anchor === undefined) {
+    throw new Error(`Three Branches prop source anchor is missing: ${type}.${treatment.registrationRole}`)
+  }
+  if (treatment.clip === undefined) {
+    node.anchor.set(anchor.x / registration.frameSize.width, anchor.y / registration.frameSize.height)
+    return
+  }
+  const splitY = registration.splitY
+  if (splitY === undefined) throw new Error(`Three Branches prop split is missing: ${type}`)
+  const clipTop = treatment.clip === 'lower' ? splitY : 0
+  const clipHeight = treatment.clip === 'lower' ? registration.frameSize.height - splitY : splitY
+  node.anchor.set(anchor.x / registration.frameSize.width, (anchor.y - clipTop) / clipHeight)
 }
 
 function centerX(item: StaticDrawable): number {
@@ -398,20 +437,16 @@ function centerY(item: StaticDrawable): number {
   return item.rect.y + item.rect.height / 2
 }
 function propArtScale(item: StaticDrawable): number {
-  const monument = propMonumentTreatment(item.type)
-  return propVisualScale(item.type) / (monument?.textureDensityDivisor ?? 1)
+  const registration = registeredPropTreatment(item.type)
+  return propVisualScale(item.type) / (registration?.textureDensityDivisor ?? 1)
 }
-function propFrames(art: PropArt, type: string): Readonly<Record<string, Texture>> {
-  return isFixedMonumentType(type) ? art.monuments : art.props
-}
-function isFixedMonument(item: StaticDrawable): boolean {
-  return isFixedMonumentType(item.type)
-}
-function isFixedMonumentType(type: string): boolean {
-  return propMonumentTreatment(type) !== null
+
+/** Pump and bell retain collision-scaled contact shadows despite separate art registration. */
+function usesCollisionScaledContactShadow(type: string): boolean {
+  return type === 'pump' || type === 'bell'
 }
 export function visualFacing(item: StaticDrawable): number {
-  return isFixedMonument(item) || isFixedFacingPropType(item.type) ? 0 : facing(item.facing)
+  return isFixedFacingPropType(item.type) ? 0 : facing(item.facing)
 }
 function facing(value: string | undefined): number {
   return (
@@ -425,12 +460,55 @@ function start(starts: ReadonlyMap<string, string>, id: string): string {
   if (value === undefined) throw new Error(`Three Branches prop start state is missing: ${id}`)
   return value
 }
-function texture(frames: Readonly<Record<string, Texture>>, name: string): Texture {
+
+function propTexture(art: PropArt, treatment: PropArtFrame): Texture {
+  return texture(art[treatment.page], treatment.frame, `${treatment.page}.${treatment.frame}`)
+}
+
+function clippedTexture(
+  frame: Texture,
+  treatment: PropArtFrame,
+  type: string,
+  cache: Map<Texture, Map<string, Texture>>,
+): Texture {
+  if (treatment.clip === undefined) return frame
+  const cacheKey = `${type}:${treatment.clip}`
+  const existing = cache.get(frame)?.get(cacheKey)
+  if (existing !== undefined) return existing
+  const registration = registeredPropTreatment(type)
+  if (registration === null || registration.splitY === undefined) {
+    throw new Error(`Three Branches prop split is missing: ${type}`)
+  }
+  const { width, height } = registration.frameSize
+  const y = treatment.clip === 'lower' ? registration.splitY : 0
+  const clippedHeight = treatment.clip === 'lower' ? height - registration.splitY : registration.splitY
+  const clipped = new Texture({
+    source: frame.source,
+    frame: new Rectangle(frame.frame.x, frame.frame.y + y, width, clippedHeight),
+  })
+  const byRole = cache.get(frame) ?? new Map<string, Texture>()
+  byRole.set(cacheKey, clipped)
+  cache.set(frame, byRole)
+  return clipped
+}
+
+function clearClippedTextures(cache: Map<Texture, Map<string, Texture>>): void {
+  for (const byRole of cache.values()) {
+    for (const clipped of byRole.values()) clipped.destroy(false)
+  }
+  cache.clear()
+}
+
+function texture(
+  frames: Readonly<Record<string, Texture>>,
+  name: string,
+  displayName: string = name,
+): Texture {
   const value = frames[name]
-  if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${name}`)
+  if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${displayName}`)
   return value
 }
-function atlasEntry(name: 'props' | 'monuments' | 'scenery' | 'effects') {
+function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects') {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) {
     throw new Error(`Three Branches ${name} atlas is missing.`)
@@ -442,7 +520,7 @@ function shadowSourceSize(): { width: number; height: number } {
   return { width: atlas.frames.width, height: atlas.frames.height }
 }
 function framesFor(
-  name: 'props' | 'monuments' | 'scenery' | 'effects',
+  name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects',
   atlasTexture: Texture,
 ): Readonly<Record<string, Texture>> {
   const atlas = atlasEntry(name)
@@ -462,14 +540,31 @@ function preflightArt(art: PropArt): void {
   }
   for (const prop of CATALOG.props) {
     if (!isShippedPropType(prop.token)) continue
-    const foundationFrame = propFoundationFrame(prop.token)
-    if (foundationFrame !== null) texture(propFrames(art, prop.token), foundationFrame)
     for (const state of prop.states) {
-      texture(propFrames(art, prop.token), propTreatment(prop.token, state).frame)
+      for (const role of ['lower', 'upper'] as const) {
+        const treatment = propRoleTreatment(prop.token, state, role)
+        if (treatment === null) continue
+        const frame = propTexture(art, treatment)
+        validateRegisteredFrame(prop.token, treatment, frame)
+      }
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
       const emissive = emissiveSpec(prop.token, state)
       if (emissive !== null) texture(art.effects, emissive.frame)
     }
+  }
+}
+
+function validateRegisteredFrame(type: string, treatment: PropArtFrame, frame: Texture): void {
+  if (treatment.registrationRole === undefined) return
+  const registration = registeredPropTreatment(type)
+  if (registration === null) throw new Error(`Three Branches prop registration is missing: ${type}`)
+  if (
+    frame.width !== registration.frameSize.width ||
+    frame.height !== registration.frameSize.height
+  ) {
+    throw new Error(
+      `Three Branches registered prop frame has the wrong dimensions: ${type}.${treatment.frame}.`,
+    )
   }
 }
 

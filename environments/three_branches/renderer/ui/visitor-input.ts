@@ -265,15 +265,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
     if (!inJoystick(view)) return
     claim(event)
     if (joystick !== null) return
-    joystick = {
-      pointerId: event.pointerId,
-      motion: joystickMotion(
-        JOYSTICK_CENTER,
-        view,
-        JOYSTICK_RADIUS,
-        HEARTHSIDE_STYLE.characters.walk.deadZone,
-      ),
-    }
+    joystick = { pointerId: event.pointerId, motion: joystickMotion(JOYSTICK_CENTER, view) }
     paintPad(pad, JOYSTICK_CENTER, view)
     updateMoving()
     sendMotionEagerly()
@@ -290,12 +282,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   const onPointerMove = (event: PointerEvent): void => {
     if (ended || joystick === null || event.pointerId !== joystick.pointerId) return
     const view = options.toView({ x: event.clientX, y: event.clientY })
-    joystick.motion = joystickMotion(
-      JOYSTICK_CENTER,
-      view,
-      JOYSTICK_RADIUS,
-      HEARTHSIDE_STYLE.characters.walk.deadZone,
-    )
+    joystick.motion = joystickMotion(JOYSTICK_CENTER, view)
     paintPad(pad, JOYSTICK_CENTER, view)
     updateMoving()
     sendMotionEagerly()

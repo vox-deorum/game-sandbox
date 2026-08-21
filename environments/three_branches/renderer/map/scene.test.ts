@@ -14,6 +14,8 @@ import {
   sceneCharactersMoved,
   sceneVisitorMoved,
   settleGlideOnto,
+  movementAction,
+  type MovementActionInput,
 } from './scene.js'
 
 describe('Three Branches pure scene', () => {
@@ -214,25 +216,32 @@ describe('interpolateScene walk displacement', () => {
         })),
       },
     })
+    const moverDistance = (landed: ReturnType<typeof computeScene>): number | undefined =>
+      landed.characters.find((character) => character.id === mover.id)?.walkDistance
 
     const accumulated = new Map<string, number>()
-    const first = computeScene(patched(0.4), scene, roster)
-    advanceWalkDistance(accumulated, first, false, true)
-    expect(first.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(0.4)
+    const firstInput = computeScene(patched(0.4), scene, roster)
+    const first = advanceWalkDistance(accumulated, firstInput, 'advance')
+    expect(moverDistance(first)).toBe(0.4)
+    // The input scene is left untouched; only the returned scene carries the stamped phase.
+    expect(moverDistance(firstInput)).toBe(0)
 
-    const second = computeScene(patched(0.6), scene, roster)
-    advanceWalkDistance(accumulated, second, false, true)
-    expect(second.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(1)
-
-    const held = computeScene(patched(0.6), scene, roster)
-    advanceWalkDistance(accumulated, held, false, false)
-    expect(held.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(1)
-
-    const reanchored = computeScene(patched(0.6), scene, roster)
-    advanceWalkDistance(accumulated, reanchored, true, false)
-    expect(reanchored.characters.find((character) => character.id === mover.id)?.walkDistance).toBe(
-      0,
+    const second = advanceWalkDistance(
+      accumulated,
+      computeScene(patched(0.6), scene, roster),
+      'advance',
     )
+    expect(moverDistance(second)).toBe(1)
+
+    const held = advanceWalkDistance(accumulated, computeScene(patched(0.6), scene, roster), 'hold')
+    expect(moverDistance(held)).toBe(1)
+
+    const reanchored = advanceWalkDistance(
+      accumulated,
+      computeScene(patched(0.6), scene, roster),
+      'reset',
+    )
+    expect(moverDistance(reanchored)).toBe(0)
     expect(accumulated.size).toBe(0)
   })
 
@@ -246,7 +255,44 @@ describe('interpolateScene walk displacement', () => {
     expect(settleGlideOnto({ to }, same)).toBe(false)
   })
 
-  it('flags displacement above the dead zone and turns, but never a still visitor', () => {
+  it('decides the movement action for redispatches, seeks, stops, and real motion', () => {
+    const from = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const to = computeScene(states[1] as (typeof states)[number], scene, roster)
+    const glide = { to: from, elapsedMs: 200, durationMs: 250 }
+    const decide = (overrides: Partial<MovementActionInput>): MovementActionInput => ({
+      reDelivery: false,
+      shouldAnimate: false,
+      presentedScene: from,
+      snapLike: false,
+      movement: glide,
+      scene: to,
+      ...overrides,
+    })
+
+    // A same-tick re-delivery holds any in-flight glide, whatever else the frame claims.
+    expect(movementAction(decide({ reDelivery: true, shouldAnimate: true }))).toBe('hold')
+    expect(movementAction(decide({ reDelivery: true }))).toBe('hold')
+
+    // Real landed movement starts a new glide, even while another is in flight.
+    expect(movementAction(decide({ shouldAnimate: true, presentedScene: from }))).toBe('start')
+
+    // A real stop mid-glide settles the remaining stretch onto its frame.
+    expect(movementAction(decide({}))).toBe('settle')
+
+    // A glide that already ran out its wall clock (a skipped tick) snaps rather than lurching.
+    expect(
+      movementAction(decide({ movement: { ...glide, elapsedMs: 250, durationMs: 250 } })),
+    ).toBe('snap')
+
+    // A replay seek (snap-like and a later tick) must snap, never settle.
+    expect(movementAction(decide({ snapLike: true, presentedScene: null }))).toBe('snap')
+
+    // An idle or already-settled real frame snaps outright.
+    expect(movementAction(decide({ snapLike: false, movement: null }))).toBe('snap')
+    expect(movementAction(decide({ snapLike: true, movement: null }))).toBe('snap')
+  })
+
+  it('flags recorded displacement at the dead zone and turns, but never sub-threshold drift', () => {
     const from = computeScene(states[0] as (typeof states)[number], scene, roster)
     const mover = from.characters[0]
     const npc = from.characters[1]
@@ -261,10 +307,14 @@ describe('interpolateScene walk displacement', () => {
     expect(sceneCharactersMoved(from, rest)).toBe(false)
     expect(sceneVisitorMoved(from, rest)).toBe(false)
 
-    const shifted = rewriteCharacters(rest, { [mover.id]: { moved: 0.06 } })
+    // A drift under the 0.05 dead zone in recorded metres reads as still.
+    const drift = rewriteCharacters(rest, { [mover.id]: { x: mover.x + 0.03 } })
+    expect(sceneCharactersMoved(rest, drift)).toBe(false)
+
+    const shifted = rewriteCharacters(rest, { [mover.id]: { x: mover.x + 0.06 } })
     expect(sceneCharactersMoved(rest, shifted)).toBe(true)
 
-    const visitorMoved = rewriteCharacters(rest, { [visitor.id]: { moved: 0.06 } })
+    const visitorMoved = rewriteCharacters(rest, { [visitor.id]: { x: visitor.x + 0.06 } })
     expect(sceneVisitorMoved(rest, visitorMoved)).toBe(true)
 
     const turnedNpc = rewriteCharacters(rest, { [npc.id]: { heading: npc.heading + 90 } })

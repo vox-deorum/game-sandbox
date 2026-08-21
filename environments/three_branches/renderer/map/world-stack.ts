@@ -62,7 +62,16 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   let destroyed = false
 
   natural.addChild(mapView.naturalView)
-  authored.addChild(mapView.architectureView, scenery, shadows, props, characters, upper, roofs, effects)
+  authored.addChild(
+    mapView.architectureView,
+    scenery,
+    shadows,
+    props,
+    characters,
+    upper,
+    roofs,
+    effects,
+  )
   worldArt.addChild(natural, authored)
   root.addChild(worldArt, emissives, highlight, annotations, collision)
 

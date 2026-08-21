@@ -182,44 +182,62 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
   }
 }
 
-/** Whether any matching character displaced above the dead zone or turned between two frames. */
+/**
+ * Whether any matching character displaced at least the dead zone in recorded metres or turned
+ * between two landed frames. Keyed on the position delta rather than the engine's reported
+ * distance, so slow ground and wall slides that displace at or above the dead zone still glide,
+ * while sub-dead-zone drift stays still.
+ */
 export function sceneCharactersMoved(from: FrameScene, to: FrameScene): boolean {
+  const deadZone = HEARTHSIDE_STYLE.characters.walk.deadZone
   const prior = new Map(from.characters.map((character) => [character.id, character]))
   return to.characters.some((character) => {
     const start = prior.get(character.id)
-    return start !== undefined && (character.moved > 0 || start.heading !== character.heading)
+    return (
+      start !== undefined &&
+      (Math.hypot(character.x - start.x, character.y - start.y) >= deadZone ||
+        start.heading !== character.heading)
+    )
   })
 }
 
-/** Whether the visitor itself displaced above the dead zone between two frames. */
+/**
+ * Whether the visitor itself displaced at least the dead zone in recorded metres between two
+ * frames, so sub-threshold drift neither returns the camera nor reads as motion.
+ */
 export function sceneVisitorMoved(from: FrameScene, to: FrameScene): boolean {
+  const deadZone = HEARTHSIDE_STYLE.characters.walk.deadZone
   const start = from.characters.find((character) => character.id === VISITOR_PLAYER)
   const end = to.characters.find((character) => character.id === VISITOR_PLAYER)
-  return start !== undefined && end !== undefined && end.moved > 0
+  return (
+    start !== undefined &&
+    end !== undefined &&
+    Math.hypot(end.x - start.x, end.y - start.y) >= deadZone
+  )
 }
 
 /**
- * Advance or hold the per-character walked-distance phase. A reset (replay seek) starts the phase
- * over; a held frame (snap or same-tick re-delivery) keeps the current phase; a landed frame adds
- * the dead-zoned per-tick distance and stamps the scene's characters for the walk cycle.
+ * Next scene carrying the per-character walked-distance phase. A reset (replay seek) starts the
+ * phase over; a held frame (snap or same-tick re-delivery) keeps the current phase; a landed frame
+ * adds the dead-zoned per-tick distance. Returns a fresh scene, leaving the input untouched.
  */
 export function advanceWalkDistance(
   accumulated: Map<string, number>,
   scene: FrameScene,
-  reset: boolean,
-  advance: boolean,
-): void {
-  if (reset) accumulated.clear()
-  if (advance) {
-    for (const character of scene.characters) {
+  mode: 'reset' | 'hold' | 'advance',
+): FrameScene {
+  if (mode === 'reset') accumulated.clear()
+  const advance = mode === 'advance'
+  return {
+    ...scene,
+    characters: scene.characters.map((character) => {
+      if (!advance) {
+        return { ...character, walkDistance: accumulated.get(character.id) ?? 0 }
+      }
       const next = (accumulated.get(character.id) ?? 0) + character.moved
       accumulated.set(character.id, next)
-      character.walkDistance = next
-    }
-  } else {
-    for (const character of scene.characters) {
-      character.walkDistance = accumulated.get(character.id) ?? 0
-    }
+      return { ...character, walkDistance: next }
+    }),
   }
 }
 
@@ -229,6 +247,56 @@ export function advanceWalkDistance(
  */
 export function settleGlideOnto(movement: { to: FrameScene } | null, scene: FrameScene): boolean {
   return movement !== null && movement.to.dynamic?.tick !== scene.dynamic?.tick
+}
+
+/** What the transport should do with any in-flight movement for a freshly delivered frame. */
+export type MovementAction = 'hold' | 'start' | 'settle' | 'snap'
+
+/** A glide currently in flight, with the wall-clock progress to preserve when re-aimed. */
+export interface MovementGlide {
+  /** The landed frame the glide is heading to. */
+  to: FrameScene
+  /** Wall-clock time already spent gliding. */
+  elapsedMs: number
+  /** The wall-clock duration the glide was sized for. */
+  durationMs: number
+}
+
+/** The inputs the renderer needs to choose one {@link MovementAction}. */
+export interface MovementActionInput {
+  /** Whether this delivery re-presents the current recorded tick on a connect (never a snap). */
+  reDelivery: boolean
+  /** Whether a new glide is warranted: a real landed movement or a sustained prop transition. */
+  shouldAnimate: boolean
+  /** Whether a scene is already on screen to glide from. */
+  presentedScene: FrameScene | null
+  /** Whether the delivery is a snap or same-tick re-presentation. */
+  snapLike: boolean
+  /** The glide currently in flight, or null. */
+  movement: MovementGlide | null
+  /** The freshly computed landed frame. */
+  scene: FrameScene
+}
+
+/**
+ * Decide how a delivered frame treats any in-flight movement. A same-tick re-delivery holds the
+ * glide; real movement starts a new glide; a real stop settles the glide onto its frame while it
+ * still has time left (a glide that already ran out across a skipped tick snaps instead of
+ * lurching); and any snap, seek, or already-settled frame releases the glide. Re-aiming is never
+ * applied to a snap or seek; those always snap to the landed frame.
+ */
+export function movementAction(input: MovementActionInput): MovementAction {
+  if (input.reDelivery) return 'hold'
+  if (input.shouldAnimate && input.presentedScene !== null) return 'start'
+  if (
+    !input.snapLike &&
+    input.movement !== null &&
+    input.movement.elapsedMs < input.movement.durationMs &&
+    settleGlideOnto(input.movement, input.scene)
+  ) {
+    return 'settle'
+  }
+  return 'snap'
 }
 
 /** Convert a rules or catalog token into a compact diagnostic label. */

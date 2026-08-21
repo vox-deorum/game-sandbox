@@ -8,6 +8,7 @@ import {
   isTextEntry,
   JOYSTICK_DEAD_ZONE,
   JOYSTICK_RADIUS,
+  JOYSTICK_SPEED_DEAD_ZONE,
   joystickMotion,
   keyboardMotion,
   motionKey,
@@ -32,61 +33,32 @@ describe('Three Branches input composition', () => {
   })
 
   describe('joystickMotion', () => {
-    const SPEED_DEAD_ZONE = 0.05
-
     it('reads no motion inside the dead zone', () => {
       const inside = JOYSTICK_RADIUS * JOYSTICK_DEAD_ZONE
-      expect(joystickMotion(CENTER, CENTER, JOYSTICK_RADIUS, SPEED_DEAD_ZONE)).toBeNull()
-      expect(
-        joystickMotion(
-          CENTER,
-          { x: CENTER.x + inside, y: CENTER.y },
-          JOYSTICK_RADIUS,
-          SPEED_DEAD_ZONE,
-        ),
-      ).toBeNull()
+      expect(joystickMotion(CENTER, CENTER)).toBeNull()
+      expect(joystickMotion(CENTER, { x: CENTER.x + inside, y: CENTER.y })).toBeNull()
     })
 
     it('converts an upward screen drag into a north heading', () => {
-      const motion = joystickMotion(
-        CENTER,
-        { x: CENTER.x, y: CENTER.y - JOYSTICK_RADIUS },
-        JOYSTICK_RADIUS,
-        SPEED_DEAD_ZONE,
-      )
+      const motion = joystickMotion(CENTER, { x: CENTER.x, y: CENTER.y - JOYSTICK_RADIUS })
       expect(motion?.heading).toBeCloseTo(90)
       expect(motion?.speed).toBeCloseTo(1)
     })
 
     it('converts a down-left drag into a southwest heading', () => {
-      const motion = joystickMotion(
-        CENTER,
-        { x: CENTER.x - 50, y: CENTER.y + 50 },
-        JOYSTICK_RADIUS,
-        SPEED_DEAD_ZONE,
-      )
+      const motion = joystickMotion(CENTER, { x: CENTER.x - 50, y: CENTER.y + 50 })
       expect(motion?.heading).toBeCloseTo(225)
     })
 
     it('rises linearly from the dead zone edge to the pad ring', () => {
       const halfway = JOYSTICK_RADIUS * (JOYSTICK_DEAD_ZONE + (1 - JOYSTICK_DEAD_ZONE) / 2)
-      const motion = joystickMotion(
-        CENTER,
-        { x: CENTER.x + halfway, y: CENTER.y },
-        JOYSTICK_RADIUS,
-        SPEED_DEAD_ZONE,
-      )
+      const motion = joystickMotion(CENTER, { x: CENTER.x + halfway, y: CENTER.y })
       expect(motion?.heading).toBeCloseTo(0)
       expect(motion?.speed).toBeCloseTo(0.5)
     })
 
     it('saturates at full speed beyond the pad ring', () => {
-      const motion = joystickMotion(
-        CENTER,
-        { x: CENTER.x, y: CENTER.y + JOYSTICK_RADIUS * 4 },
-        JOYSTICK_RADIUS,
-        SPEED_DEAD_ZONE,
-      )
+      const motion = joystickMotion(CENTER, { x: CENTER.x, y: CENTER.y + JOYSTICK_RADIUS * 4 })
       expect(motion?.heading).toBeCloseTo(270)
       expect(motion?.speed).toBe(1)
     })
@@ -94,21 +66,15 @@ describe('Three Branches input composition', () => {
     it('reads a barely-past-the-dead-zone crawl as no motion', () => {
       const crawl = JOYSTICK_RADIUS * (JOYSTICK_DEAD_ZONE + 0.01)
       // Speed rises 0.01 / (1 - dead zone) past the edge, far below the low-speed clamp.
-      expect(
-        joystickMotion(
-          CENTER,
-          { x: CENTER.x + crawl, y: CENTER.y },
-          JOYSTICK_RADIUS,
-          SPEED_DEAD_ZONE,
-        ),
-      ).toBeNull()
+      expect(joystickMotion(CENTER, { x: CENTER.x + crawl, y: CENTER.y })).toBeNull()
     })
 
-    it('honors a speed dead zone above the default', () => {
-      const crawl = JOYSTICK_RADIUS * (JOYSTICK_DEAD_ZONE + 0.05)
+    it('honors a clamp above the default and keeps a clamp-equivalent drag', () => {
+      const crawl = JOYSTICK_RADIUS * (JOYSTICK_DEAD_ZONE + JOYSTICK_SPEED_DEAD_ZONE)
       const point = { x: CENTER.x + crawl, y: CENTER.y }
-      // Speed 0.05 / 0.85 is above the configured 0.05 clamp, so the clamp itself must not drop it.
-      expect(joystickMotion(CENTER, point, JOYSTICK_RADIUS, 0.05)).not.toBeNull()
+      // Speed 0.05 / 0.85 sits just above the default 0.05 clamp, so the default must keep it and
+      // a higher clamp must drop it.
+      expect(joystickMotion(CENTER, point)).not.toBeNull()
       expect(joystickMotion(CENTER, point, JOYSTICK_RADIUS, 0.1)).toBeNull()
     })
   })

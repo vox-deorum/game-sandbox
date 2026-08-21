@@ -207,17 +207,26 @@
       "pump": { "x": 31, "y": -61 },
       "lantern": { "x": 0, "y": -70 }
     },
-    "monumentByType": {
+    "registeredPropByType": {
       "pump": {
         "textureDensityDivisor": 4,
-        "sourceAnchorByRole": { "still": { "x": 344, "y": 384 } }
+        "frameSize": { "width": 768, "height": 512 },
+        "sourceAnchorByRole": { "full": { "x": 344, "y": 384 } },
+        "splitY": 304
       },
       "bell": {
         "textureDensityDivisor": 8,
+        "frameSize": { "width": 768, "height": 512 },
         "sourceAnchorByRole": {
-          "still": { "x": 384, "y": 480 },
-          "foundation": { "x": 384, "y": 256 }
+          "upper": { "x": 384, "y": 480 },
+          "lower": { "x": 384, "y": 256 }
         }
+      },
+      "lantern": {
+        "textureDensityDivisor": 1,
+        "frameSize": { "width": 384, "height": 512 },
+        "sourceAnchorByRole": { "full": { "x": 192, "y": 384 } },
+        "splitY": 362
       }
     }
   },
