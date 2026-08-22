@@ -11,7 +11,9 @@ Part of [the plan](../README.md). This stage is independent infrastructure: it a
 | Page | Configured source roots | Named cells |
 | --- | --- | --- |
 | `terrain-atlas.png` | `assets/source-art/frames/terrain/` | 68 |
-| `buildings-atlas.png` | `assets/source-art/frames/buildings/` | 16 |
+| `buildings-home-atlas.png` | `assets/source-art/frames/buildings/` | 1 (`home`) |
+| `buildings-inn-atlas.png` | `assets/source-art/frames/buildings/` | 1 (`inn`) |
+| `buildings-shed-atlas.png` | `assets/source-art/frames/buildings/` | 1 (`shed`) |
 | `props-atlas.png` | `assets/source-art/stall/` and `assets/source-art/frames/props/` | 17 |
 | `lantern-atlas.png` | `assets/source-art/frames/lantern/` | 2 |
 | `monuments-atlas.png` | `assets/source-art/frames/monuments/` | 2 |
@@ -22,11 +24,13 @@ Part of [the plan](../README.md). This stage is independent infrastructure: it a
 
 The Named cells column counts configured cells, not frame pixels. Each page's current frame dimensions, count, names, source paths, and transforms live in `renderer/assets/presentation.json` and change only with the consuming art unit, its source art, compiled page, plan facts, and tests in the same change set.
 
+The nine JSON atlas declarations resolve to fourteen compiled pages. The `buildings` declaration is one layered, full-color group with three mipmapped one-frame pages: `buildings-home-atlas.png` is 1024 by 896, `buildings-inn-atlas.png` is 1536 by 1280, and `buildings-shed-atlas.png` is 1024 by 1024. Each page is authored at 128 px per semantic cell for the home's 8 by 7, inn's 12 by 10, and shed's 8 by 8 extent. This replaces the previous single buildings page with three pages, a net increase of two.
+
 A cell name is declared explicitly in `presentation.json`; it is not inferred from a directory or filename. Exact-copy cells must match the configured frame size. Transformed cells use the configured crop and raster operation.
 
 The terrain page is an 8 by 9 grid of 128 px frames on a 1024 by 1152 runtime page. Its 68 named frames leave the final four cells transparent.
 
-The props cell names in `presentation.json` remain ordered by ordinary catalog tokens and states. Slots 0 through 5 contain `stallAOpen`, `stallAClosed`, `stallBOpen`, `stallBClosed`, `stallCOpen`, and `stallCClosed`. Slots 6 through 16 contain the remaining complete prop states in catalog order, from `benchOccupied` through `repairBenchIdle`. Slots 17 through 35 are an unnamed trailing suffix that the compiler fills transparently. The six stall cells use their 1536 by 1024 masters with the configured area resize to 384 by 256. The fixed-north board keeps a 512 by 512 canonical source. A configured visible-bounds fit uses the full safe 252 px cell height, preserves the source proportions, and centers the resulting 251 by 252 silhouette at `(192, 128)` in its shared props cell. The runtime page remains 2304 by 1536.
+The props cell names in `presentation.json` remain ordered by ordinary catalog tokens and states. Slots 0 through 5 contain `stallAOpen`, `stallAClosed`, `stallBOpen`, `stallBClosed`, `stallCOpen`, and `stallCClosed`. Slots 6 through 16 contain the remaining complete prop states in catalog order, from `benchOccupied` through `repairBenchIdle`. Slots 17 through 35 are an unnamed trailing suffix that the compiler fills transparently. The six stall cells use their 1536 by 1024 masters with the configured area resize to 384 by 256. The fixed-north board keeps a 512 by 512 canonical source. A configured visible-bounds fit uses the full safe 252 px cell height, preserves the source proportions, and centers the resulting 251 by 252 silhouette at `(192, 128)` in its shared props cell. The two garden cells are exact-copy 384 by 256 sources with a common centered 376 by 188 visible rectangle. The runtime page remains 2304 by 1536.
 
 The lantern page is a 2 by 1 grid of 384 by 512 frames on a 768 by 512 runtime page. It names `lanternLit` and `lanternUnlit` from the source paths declared in `presentation.json`.
 
@@ -57,22 +61,22 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 ## Incremental runtime loading
 
-`assets/presentation.json` keeps the catalog, page paths, grids, dimensions, sampling flags, ordered cell names, source paths, and source transforms. `assets.ts` validates that catalog and loads its twelve shipped pages: terrain, props, lantern, monuments, bell, buildings, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` contains the canonical inputs referenced by the catalog. Unreferenced intermediate sheets and superseded masters are not retained. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets/presentation.json` keeps the catalog, page paths, grids, dimensions, sampling flags, ordered cell names, source paths, and source transforms. `assets.ts` validates that catalog and loads its fourteen shipped pages: terrain, props, lantern, monuments, bell, the three buildings pages, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` contains the canonical inputs referenced by the catalog. Unreferenced intermediate sheets and superseded masters are not retained. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 The four configured road cells share an even base so deterministic frame selection cannot create tonal blocks. The four configured path cells retain the accepted worn-stone variations. Configured source cells remain the editable input; runtime atlases are generated outputs.
 
 ## Migration
 
-Declare the 116 terrain, buildings, scenery, effects, and character cells, then declare props, lantern, monuments, and bell cells with their source paths. Declare each transformed cell's complete raster recipe. Keep cells 17 through 35 of props and the four unused monument cells transparent, and retain all three high-resolution bell cells. Commit canonical source art, config, and compiled runtime pages together. The compiler rejects missing sources, unsafe paths, invalid dimensions, invalid crops, bad transforms, duplicate cells, and non-grayscale output.
+Declare terrain, scenery, effects, and character cells, then declare props, lantern, monuments, bell, and the layered buildings group with its one full-color frame per building page. Declare each transformed cell's complete raster recipe. Keep cells 17 through 35 of props and the four unused monument cells transparent, and retain all three high-resolution bell cells. Commit canonical source art, config, and compiled runtime pages together. The compiler rejects missing sources, unsafe paths, invalid dimensions, invalid crops, bad transforms, duplicate cells, and non-grayscale output.
 
 ## Tests
 
 - Pure compiler tests in `frontend/test/atlas.test.ts` run on small synthetic images: exact-copy and area-resize cells, alpha normalization and cleanup, visible-bounds fitting, shared bounds, deterministic rounding, crop validation, source containment, duplicate and missing cells, grayscale-alpha validation, and bad grid arithmetic.
-- `assets.test.ts` checks catalog completeness, the nontrivial nested prop paths, the dedicated lantern and bell paths, and the exact runtime page set for terrain, props, lantern, monuments, bell, buildings, scenery, the four character layers, and effects.
+- `assets.test.ts` checks catalog completeness, the nontrivial nested prop paths, the dedicated lantern and bell paths, the three mipmapped buildings pages, and the exact fourteen-page runtime set for terrain, props, lantern, monuments, bell, buildings, scenery, the four character layers, and effects.
 - A freshness test in `environments/three_branches/renderer/atlas.test.ts` compiles every page from its configured source cells and compares pixels against the committed page, and checks each page's PNG header against its declared dimensions.
 
 All three ride the existing vitest include globs, so `scripts/ci.py` needs no change.
 
 ## Done when
 
-All twelve declared pages have complete configured source cells, each compiled page matches its current config, the terrain page matches its 68 cells with four transparent trailing cells, `assets/props-atlas.png` has transparent cells 17 through 35, its board cell is fitted from the 512 by 512 canonical source without aspect distortion, `assets/lantern-atlas.png` matches its two tall state cells, `assets/monuments-atlas.png` matches its two pump cells with four transparent trailing cells, `assets/bell-atlas.png` matches its three double-density bell roles, and `assets/scenery-atlas.png` matches its seven full-color scenery cells with a transparent eighth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, compiler and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every configured cell retains its canonical source art, and the plan README and consuming stages reference this compiler.
+All fourteen compiled pages from nine declarations have complete configured source cells, each compiled page matches its current config, the terrain page matches its 68 cells with four transparent trailing cells, `assets/props-atlas.png` has transparent cells 17 through 35, its board cell is fitted from the 512 by 512 canonical source without aspect distortion, `assets/lantern-atlas.png` matches its two tall state cells, `assets/monuments-atlas.png` matches its two pump cells with four transparent trailing cells, `assets/bell-atlas.png` matches its three double-density bell roles, the three mipmapped buildings pages each match one full-color frame at their declared dimensions, and `assets/scenery-atlas.png` matches its seven full-color scenery cells with a transparent eighth cell. `npm run atlas --workspace @game-sandbox/frontend -- check three_branches` passes, compiler and freshness tests are green in CI, the runtime bundle loads only pages with shipped consumers, every configured cell retains its canonical source art, and the plan README and consuming stages reference this compiler.
