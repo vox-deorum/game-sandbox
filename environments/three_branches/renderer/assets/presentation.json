@@ -202,11 +202,15 @@
   },
   "props": {
     "defaultScale": 0.14,
-    "scaleByType": { "bell": 0.36, "pump": 0.33, "shrine": 0.2, "board": 0.28, "plot": 0.17 },
-    "effectAnchorByType": {
-      "pump": { "x": 31, "y": -61 },
-      "lantern": { "x": 0, "y": -70 }
+    "scaleByType": {
+      "bell": 0.36,
+      "pump": 0.33,
+      "lantern": 0.1,
+      "shrine": 0.2,
+      "board": 0.28,
+      "plot": 0.17
     },
+    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } },
     "registeredPropByType": {
       "pump": {
         "textureDensityDivisor": 4,
@@ -221,12 +225,6 @@
           "upper": { "x": 384, "y": 480 },
           "lower": { "x": 384, "y": 256 }
         }
-      },
-      "lantern": {
-        "textureDensityDivisor": 1,
-        "frameSize": { "width": 384, "height": 512 },
-        "sourceAnchorByRole": { "full": { "x": 192, "y": 384 } },
-        "splitY": 362
       }
     }
   },

@@ -33,8 +33,7 @@ const bell = (frame: string): PropTreatment => ({
   upper: { page: 'monuments', frame, registrationRole: 'upper' },
 })
 const lantern = (frame: string): PropTreatment => ({
-  lower: { page: 'lantern', frame, registrationRole: 'full', clip: 'lower' },
-  upper: { page: 'lantern', frame, registrationRole: 'full', clip: 'upper' },
+  lower: { page: 'lantern', frame },
 })
 
 const STALL_TREATMENTS = [

@@ -61,19 +61,12 @@ describe('Three Branches prop art treatments', () => {
     })
   })
 
-  it('uses one lantern page frame twice as complementary registered clips', () => {
+  it('uses one complete lantern page frame as a centered lower-only prop', () => {
     expect(propRoleTreatment('lantern', 'lit', 'lantern_0', 'lower')).toEqual({
       page: 'lantern',
       frame: 'lanternLit',
-      registrationRole: 'full',
-      clip: 'lower',
     })
-    expect(propRoleTreatment('lantern', 'lit', 'lantern_0', 'upper')).toEqual({
-      page: 'lantern',
-      frame: 'lanternLit',
-      registrationRole: 'full',
-      clip: 'upper',
-    })
+    expect(propRoleTreatment('lantern', 'lit', 'lantern_0', 'upper')).toBeNull()
   })
 
   it('keeps role selection independent from fixed-facing selection', () => {

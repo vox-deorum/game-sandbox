@@ -364,40 +364,40 @@ describe('Three Branches registered prop layers', () => {
     expect(upper.scale.x).toBe(0.36 / 8)
   })
 
-  it('keeps lantern state registration stable across complementary lower and upper clips', () => {
+  it('keeps a centered lower-only lantern state stable across complete textures', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('lantern', 'lantern_0'))
     const layer = createPropLayer(targets, scene)
     layer.install(completeArt())
     layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
+    layer.advance(1)
 
     const lower = sprite(
       targets.props.getChildByLabel('prop-lower:lantern_0') as Container,
       'prop-lower-art',
     )
-    const upper = sprite(
-      targets.effects.getChildByLabel('prop-upper:lantern_0') as Container,
-      'prop-upper-art',
-    )
-    const full = frameRectangle(frameGrid('lantern'), 'lanternLit')
-    expect(lower.texture.frame).toEqual(new Rectangle(full.x, full.y + 362, full.width, 150))
-    expect(upper.texture.frame).toEqual(new Rectangle(full.x, full.y, full.width, 362))
-    expect(upper.anchor.x).toBe(lower.anchor.x)
-    expect(upper.anchor.y * upper.texture.height).toBe(384)
-    expect(lower.anchor.y * lower.texture.height + 362).toBe(384)
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('lantern'), 'lanternLit'))
+    expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
+    expect(lower.scale.x).toBe(0.1)
+    expect(targets.effects.getChildByLabel('prop-upper:lantern_0')).toBeNull()
+    expect(targets.effects.getChildByLabel('prop-effect:lantern_0')?.position).toMatchObject({
+      x: 8,
+      y: 8,
+    })
+    expect(targets.emissives.getChildByLabel('prop-emissive:lantern_0')?.position).toMatchObject({
+      x: 8,
+      y: 8,
+    })
     const litLower = lower.texture
-    const litUpper = upper.texture
 
     layer.reconcile(frame(scene, [], { lantern_0: 'unlit' }))
-    expect(lower.texture.frame).toEqual(new Rectangle(384, 362, 384, 150))
-    expect(upper.texture.frame).toEqual(new Rectangle(384, 0, 384, 362))
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('lantern'), 'lanternUnlit'))
 
     layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
     expect(lower.texture).toBe(litLower)
-    expect(upper.texture).toBe(litUpper)
   })
 
-  it('keeps a one-cell lantern shadow and highlight independent of registered artwork', () => {
+  it('keeps a one-cell lantern shadow and highlight independent of dedicated artwork', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('lantern', 'lantern_0'))
     const layer = createPropLayer(targets, scene)
@@ -415,7 +415,7 @@ describe('Three Branches registered prop layers', () => {
     })
   })
 
-  it('keeps the installed lantern state and clips when a replacement preflight fails', () => {
+  it('keeps the installed lower-only lantern state when replacement preflight fails', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('lantern', 'lantern_0'))
     const layer = createPropLayer(targets, scene)
@@ -426,12 +426,7 @@ describe('Three Branches registered prop layers', () => {
       targets.props.getChildByLabel('prop-lower:lantern_0') as Container,
       'prop-lower-art',
     )
-    const upper = sprite(
-      targets.effects.getChildByLabel('prop-upper:lantern_0') as Container,
-      'prop-upper-art',
-    )
     const installedLower = lower.texture
-    const installedUpper = upper.texture
     const lantern = Object.fromEntries(
       Object.entries(art.lantern).filter(([name]) => name !== 'lanternLit'),
     )
@@ -440,7 +435,6 @@ describe('Three Branches registered prop layers', () => {
       /prop frame is missing: lantern.lanternLit/,
     )
     expect(lower.texture).toBe(installedLower)
-    expect(upper.texture).toBe(installedUpper)
   })
 })
 

@@ -22,23 +22,10 @@ describe('Hearthside Ink presentation', () => {
     const pumpOutOfBounds = structuredClone(HEARTHSIDE_STYLE) as any
     pumpOutOfBounds.props.registeredPropByType.pump.sourceAnchorByRole.full.x = 768
     expect(() => readHearthsideStyle(pumpOutOfBounds)).toThrow('768 by 512 registered prop frame')
-
-    const invalidLanternSplit = structuredClone(HEARTHSIDE_STYLE) as any
-    invalidLanternSplit.props.registeredPropByType.lantern.splitY = 512
-    expect(() => readHearthsideStyle(invalidLanternSplit)).toThrow('strictly inside')
-
-    const lanternOutOfBounds = structuredClone(HEARTHSIDE_STYLE) as any
-    lanternOutOfBounds.props.registeredPropByType.lantern.sourceAnchorByRole.full.y = 512
-    expect(() => readHearthsideStyle(lanternOutOfBounds)).toThrow('384 by 512 registered prop frame')
   })
 
-  it('anchors the lantern light above the footprint and rejects an out-of-range anchor', () => {
-    expect(propEffectAnchor('lantern').x).toBe(0)
-    expect(propEffectAnchor('lantern').y).toBeLessThan(0)
-
-    const offAnchor = structuredClone(HEARTHSIDE_STYLE) as any
-    offAnchor.props.effectAnchorByType.lantern.y = -129
-    expect(() => readHearthsideStyle(offAnchor)).toThrow('effectAnchorByType.lantern.y')
+  it('defaults the lantern light anchor to the collision center', () => {
+    expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
   })
 
   it('uses explicit host pace and scales unpaced delivery gaps by headroom, capped at natural', () => {

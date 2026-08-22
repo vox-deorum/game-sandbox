@@ -835,7 +835,6 @@ function propVisualTreatment(
   const registrations = exactRecord(source.registeredPropByType, `${name}.registeredPropByType`, [
     'pump',
     'bell',
-    'lantern',
   ])
   return {
     ...scales,
@@ -906,7 +905,6 @@ function registeredPropRequirements(type: string): {
 } {
   if (type === 'pump') return { roles: ['full'], hasSplit: true }
   if (type === 'bell') return { roles: ['lower', 'upper'], hasSplit: false }
-  if (type === 'lantern') return { roles: ['full'], hasSplit: true }
   throw new Error(`Three Branches registered prop type is unknown: ${type}`)
 }
 

@@ -282,7 +282,7 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     height: 512,
     tintable: false,
     format: 'full-color',
-    consumer: 'tall landmark lantern stills with separate recorded-state registration',
+    consumer: 'centered one-cell lantern state stills on a dedicated page',
     frames: {
       width: 384,
       height: 512,

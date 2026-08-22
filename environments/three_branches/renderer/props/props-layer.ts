@@ -198,10 +198,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         node.effect.visible = effect !== null
         node.emissive.visible = emissive !== null
         // The effect anchor is where a prop's generated accent sits on its own artwork. The same
-        // anchor also positions the emissive pool below, so a prop that has both (lantern today)
-        // keeps its flicker and its glow glued to the same point instead of at the footprint's
-        // center. Adding an anchor to another emissive prop (hearth, frame) deliberately moves that
-        // pool too.
+        // anchor also positions the emissive pool below. An ordinary centered prop such as the
+        // lantern uses the default zero anchor, while a registered prop may move both treatments.
         const propScale = propVisualScale(node.item.type)
         const anchor = propEffectAnchor(node.item.type)
         if (effect !== null) {
