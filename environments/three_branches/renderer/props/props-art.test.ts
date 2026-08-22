@@ -78,6 +78,7 @@ describe('Three Branches prop art treatments', () => {
     expect(isFixedFacingPropType('bell')).toBe(true)
     expect(isFixedFacingPropType('lantern')).toBe(true)
     expect(isFixedFacingPropType('shrine')).toBe(true)
+    expect(isFixedFacingPropType('board')).toBe(true)
   })
 
   it('keeps every selected state frame in its dedicated atlas manifest', () => {

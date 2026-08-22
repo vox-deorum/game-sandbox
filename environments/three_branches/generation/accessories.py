@@ -5,9 +5,12 @@ the class already painted under it, and banks one standing cell it can be used f
 found when the prop is placed and protected from everything placed after it, which is what makes the
 guarantee hold without any stage having to look back.
 
-Most spots come off the road. A station is a point along the road's centreline with the direction of
-travel there, so a stall, a lantern, a shrine, or a pine can be set a fixed distance to one side of
-it and turned to face the road. The market is the stretch of that centreline nearest the anchor.
+Most spots come off the road. A station is a point along the road's centreline with the
+direction of travel there, so a stall, a lantern, a shrine, or a pine can be set a fixed distance to
+one side of it and turned to face the road. Stalls and shrines front whichever way is actually
+nearest instead of the station's tangent: the nearest road cell when one is within reach, else the
+nearest path cell, and a shrine only ever stands on the road's north side. The market is the stretch
+of that centreline nearest the anchor.
 
 Stalls, the board, benches, shrines, gardens, the interior props, the pump, and the bell are
 mandatory: running out of candidates discards the layout. Lanterns and pines are not. They skip a
@@ -37,6 +40,10 @@ _WAYS = frozenset({"r", "p", "b"})
 _FACINGS = ("north", "east", "south", "west")
 # Props are published in catalog type order, which is the order the catalog lists them in.
 _ORDER = {kind.token: index for index, kind in enumerate(CATALOG.props)}
+# Stalls and shrines front the nearest way rather than the station they were derived from.
+_ROADSIDE_FACED = frozenset({"stall", "shrine"})
+# How close a cell of road has to be for it to count as the way a roadside prop fronts.
+_WAY_REACH = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,10 +376,12 @@ def _benches(stream: random.Random, yard: _Yard, settlement: Settlement, tuning:
 def _shrines(
     stream: random.Random, yard: _Yard, road: Road, shrines: tuple[Station, ...], tuning: Accessories
 ) -> None:
-    """Stand each shrine at its turn, letting it slide a little along the road to find room."""
+    """Stand each shrine at its turn on the road's north side, letting it slide to find room."""
     for station in shrines:
         posts = _near(_posts(road, 1.0), station.arc, float(tuning.shrine.window))
-        if not _try(stream, yard, "shrine", posts or (station,), 1, tuning, tuning.shrine.budget):
+        if not _try(
+            stream, yard, "shrine", posts or (station,), 1, tuning, tuning.shrine.budget, north_only=True
+        ):
             raise Retry("a shrine found nowhere to stand at the turn it belongs to")
 
 
@@ -487,26 +496,40 @@ def _try(
     side: int,
     tuning: Accessories,
     budget: int,
+    *,
+    north_only: bool = False,
 ) -> bool:
-    """Sweep the stations from a drawn start until one takes the prop, on its side or the other."""
+    """Sweep the stations from a drawn start until one takes the prop, on its side or the other.
+
+    ``north_only`` confines a shrine to the side that fronts the road's north bank, which is
+    whichever side lifts the prop above the station on the centreline.
+    """
     if not posts:
         return False
     start = stream.randrange(len(posts))
     for offset in range(min(budget, len(posts))):
         station = posts[(start + offset) % len(posts)]
-        for turn in (side, -side):
+        turns = (_north_turn(station),) if north_only else (side, -side)
+        for turn in turns:
             if _stand_beside(yard, token, station, turn, tuning):
                 return True
     return False
 
 
+def _north_turn(station: Station) -> int:
+    """The side whose normal lifts the prop north so a shrine fronts the road's top bank."""
+    return 1 if station.tangent[0] >= 0 else -1
+
+
 def _stand_beside(
     yard: _Yard, token: str, station: Station, side: int, tuning: Accessories, *, scale: float = 1.0
 ) -> bool:
-    """Set a prop one setback off the road at a station, turned to face the road it serves.
+    """Set a prop one setback off the road at a station, turned to face the way it serves.
 
-    ``scale`` is a circular scenery's drawn size; only the scenery branch consumes it, so a prop
-    caller passes the default and it is ignored.
+    Stalls and shrines front the nearest way instead of the station's tangent: the nearest road
+    cell when one is within reach, else the nearest path cell. ``scale`` is a circular scenery's
+    drawn size; only the scenery branch consumes it, so a prop caller passes the default and it is
+    ignored.
     """
     kind = PROP_BY_TOKEN.get(token)
     normal = (-station.tangent[1] * side, station.tangent[0] * side)
@@ -517,7 +540,39 @@ def _stand_beside(
     away = tuning.setback + max(width, height) / 2 + 1.5
     centre = (station.point[0] + normal[0] * away, station.point[1] + normal[1] * away)
     cell = (int(centre[0] - width / 2), int(centre[1] - height / 2))
+    if token in _ROADSIDE_FACED:
+        facing = _nearest_way_facing(yard.rows, cell, width, height, facing)
     return yard.place(token, cell, facing) if kind is not None else yard.stand(token, cell, scale=scale)
+
+
+def _nearest_way_facing(rows: list[list[str]], cell: Cell, width: int, height: int, fallback: str) -> str:
+    """The compass way to the nearest road from a placement, or the nearest path when no road is close.
+
+    A stall or shrine fronts the road it can be reached from: the nearest road cell centre within
+    reach when there is one, else the nearest path cell centre. Nothing within reach keeps the
+    station's tangent facing.
+    """
+    centre = (cell[0] + width / 2, cell[1] + height / 2)
+    spot = _nearest_ground(rows, centre, "r")
+    if spot is None:
+        spot = _nearest_ground(rows, centre, "p")
+    if spot is None:
+        return fallback
+    return _facing_of((spot[0] - centre[0], spot[1] - centre[1]))
+
+
+def _nearest_ground(rows: list[list[str]], centre: Point, code: str) -> Point | None:
+    """The cell centre of the nearest ``code`` cell within reach of a point, or None."""
+    best: tuple[float, Point] | None = None
+    for row in range(int(centre[1]) - _WAY_REACH, int(centre[1]) + _WAY_REACH + 1):
+        for column in range(int(centre[0]) - _WAY_REACH, int(centre[0]) + _WAY_REACH + 1):
+            if not _inside((column, row)) or rows[row][column] != code:
+                continue
+            spot = (column + 0.5, row + 0.5)
+            distance = hypot(spot[0] - centre[0], spot[1] - centre[1])
+            if best is None or distance < best[0]:
+                best = (distance, spot)
+    return None if best is None else best[1]
 
 
 def _around(stream: random.Random, yard: _Yard, token: str, centre: Cell, budget: int) -> bool:

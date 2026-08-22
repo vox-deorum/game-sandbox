@@ -299,7 +299,7 @@ describe('Three Branches registered prop layers', () => {
         const root = targets.props.getChildByLabel(`prop-lower:${item.id}`) as Container
         return root.rotation
       }),
-    ).toEqual(Array(5).fill(Math.PI / 2))
+    ).toEqual(Array(5).fill((3 * Math.PI) / 2))
 
     layer.install(art)
     expect(stallFrames()).toEqual(
@@ -489,6 +489,14 @@ describe('Three Branches prop visual facing', () => {
     expect(visualFacing(drawable('bench', 'east'))).toBe(Math.PI / 2)
   })
 
+  it('turns a north-facing stall half a turn round from its standing', () => {
+    expect(visualFacing(drawable('stall', 'north'))).toBe(Math.PI)
+  })
+
+  it('turns an east-facing stall half a turn past the quarter turn', () => {
+    expect(visualFacing(drawable('stall', 'east'))).toBe((3 * Math.PI) / 2)
+  })
+
   it('keeps an east-facing lantern fixed north', () => {
     expect(visualFacing(drawable('lantern', 'east'))).toBe(0)
   })
@@ -503,6 +511,10 @@ describe('Three Branches prop visual facing', () => {
 
   it('keeps an east-facing bell fixed north', () => {
     expect(visualFacing(drawable('bell', 'east'))).toBe(0)
+  })
+
+  it('keeps an east-facing board fixed north', () => {
+    expect(visualFacing(drawable('board', 'east'))).toBe(0)
   })
 
   it('defaults an undefined facing to north', () => {

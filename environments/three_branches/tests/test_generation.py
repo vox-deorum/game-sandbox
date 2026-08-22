@@ -25,6 +25,7 @@ import pytest
 from three_branches.catalog import BUILDING_BY_TOKEN, CATALOG
 from three_branches.env import make_env
 from three_branches.generation import Report, build_village, carve, generate, grounds
+from three_branches.generation.accessories import _WAY_REACH
 from three_branches.generation.config import GENERATION
 from three_branches.geometry import (
     Circle,
@@ -172,6 +173,26 @@ def _without(layout: Layout, token: str) -> tuple[tuple[str, str, Cell, str], ..
 
 def _cells(layout: Layout, codes: str) -> set[Cell]:
     return {(x, y) for y, row in enumerate(layout.grid.rows) for x, code in enumerate(row) if code in codes}
+
+
+def _nearest_way(layout: Layout, centre: tuple[float, float], code: str) -> tuple[float, float] | None:
+    """The nearest ``code`` cell centre within reach of a point, or None."""
+    best: tuple[float, tuple[float, float]] | None = None
+    for row in range(int(centre[1]) - _WAY_REACH, int(centre[1]) + _WAY_REACH + 1):
+        for column in range(int(centre[0]) - _WAY_REACH, int(centre[0]) + _WAY_REACH + 1):
+            if not layout.grid.in_bounds((column, row)) or layout.grid.value_at((column, row)) != code:
+                continue
+            spot = (column + 0.5, row + 0.5)
+            distance = math.dist(spot, centre)
+            if best is None or distance < best[0]:
+                best = (distance, spot)
+    return None if best is None else best[1]
+
+
+def _cardinal(direction: tuple[float, float]) -> str:
+    if abs(direction[0]) >= abs(direction[1]):
+        return "east" if direction[0] >= 0 else "west"
+    return "north" if direction[1] >= 0 else "south"
 
 
 def _runs(columns: set[int]) -> tuple[tuple[int, ...], ...]:
@@ -566,6 +587,36 @@ def test_footpaths_join_the_road_to_the_plaza_the_homes_and_the_shrines(
                 assert any(math.dist(item.cell, spot) <= roadside + 1 for spot in ways), (seed, item.id)
         pump = next(item for item in layout.props if item.type == "pump").cell
         assert any(math.dist(pump, spot) <= plaza + 2 for spot in ways), (seed, pump)
+
+
+def test_stalls_and_shrines_front_the_nearest_way(batch: dict[int, tuple[Layout, Report]]) -> None:
+    """A stall or shrine faces the nearest road cell, or the nearest path when no road is close."""
+    for seed, (layout, _) in batch.items():
+        for item in layout.props:
+            if item.type not in {"stall", "shrine"}:
+                continue
+            width, height = footprint(item)
+            centre = (item.cell[0] + width / 2, item.cell[1] + height / 2)
+            spot = _nearest_way(layout, centre, "r") or _nearest_way(layout, centre, "p")
+            assert spot is not None, (seed, item.id, "no way in reach to front")
+            assert item.facing == _cardinal((spot[0] - centre[0], spot[1] - centre[1])), (seed, item.id)
+
+
+def test_shrines_stand_on_the_north_side_of_the_road(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """A shrine fronts the road's north bank: nothing in its own columns stands above its centre."""
+    for seed, (layout, _) in batch.items():
+        for item in layout.props:
+            if item.type != "shrine":
+                continue
+            width, height = footprint(item)
+            centre_y = item.cell[1] + height / 2
+            for column in range(item.cell[0], item.cell[0] + width):
+                assert all(
+                    layout.grid.value_at((column, row)) not in {"r", "b"} or row < centre_y
+                    for row in range(FRAME.cells_y)
+                ), (seed, item.id, column)
 
 
 def test_a_footpath_that_cannot_be_walked_is_still_laid_along_its_route() -> None:

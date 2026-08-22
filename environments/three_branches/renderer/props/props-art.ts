@@ -86,7 +86,7 @@ export function isShippedPropType(type: string): boolean {
 }
 
 /** Symmetric props whose recorded facing is ignored: they always draw facing north. */
-const FIXED_FACING_PROP_TYPES = new Set(['lantern', 'shrine', 'pump', 'bell'])
+const FIXED_FACING_PROP_TYPES = new Set(['lantern', 'shrine', 'pump', 'bell', 'board'])
 
 /** Whether a prop type draws fixed north, ignoring its recorded facing. */
 export function isFixedFacingPropType(type: string): boolean {

@@ -489,7 +489,10 @@ function usesCollisionScaledContactShadow(type: string): boolean {
   return type === 'pump' || type === 'bell'
 }
 export function visualFacing(item: StaticDrawable): number {
-  return isFixedFacingPropType(item.type) ? 0 : facing(item.facing)
+  if (isFixedFacingPropType(item.type)) return 0
+  // The stall texture's front reads the opposite way from the recorded facing, so its sprite is
+  // drawn half a turn round from where it stands.
+  return facing(item.facing) + (item.type === 'stall' ? Math.PI : 0)
 }
 function facing(value: string | undefined): number {
   return (
