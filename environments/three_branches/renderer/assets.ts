@@ -257,35 +257,21 @@ export const THREE_BRANCHES_ASSET_CATALOG = readThreeBranchesAssetCatalog(
   presentationDocument.atlases,
 )
 
-function singleFrameNames(name: string): readonly string[] {
-  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
-  if (atlas === undefined || 'layers' in atlas)
-    throw new Error(`Three Branches manifest has no ${name} atlas.`)
-  return atlas.frames.names
-}
-
-export const TERRAIN_ATLAS_FRAME_NAMES = singleFrameNames('terrain')
-export const BUILDINGS_ATLAS_FRAME_NAMES = singleFrameNames('buildings')
-export const PROPS_ATLAS_FRAME_NAMES = singleFrameNames('props')
-export const LANTERN_ATLAS_FRAME_NAMES = singleFrameNames('lantern')
-export const MONUMENTS_ATLAS_FRAME_NAMES = singleFrameNames('monuments')
-export const BELL_ATLAS_FRAME_NAMES = singleFrameNames('bell')
-export const SCENERY_ATLAS_FRAME_NAMES = singleFrameNames('scenery')
-export const EFFECTS_ATLAS_FRAME_NAMES = singleFrameNames('effects')
-
-function characterFrameNames(name: string): readonly string[] {
-  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'characters')
-  const layer =
-    atlas !== undefined && 'layers' in atlas
-      ? atlas.layers.find((item) => item.name === name)
-      : undefined
+/** Resolve frame names from one JSON-owned atlas page. */
+export function atlasFrameNames(group: string, layer?: string): readonly string[] {
+  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
+  if (atlas === undefined) throw new Error(`Three Branches manifest has no ${group} atlas.`)
+  if (!('layers' in atlas)) {
+    if (layer !== undefined)
+      throw new Error(`Three Branches manifest atlas ${group} has no layers.`)
+    return atlas.frames.names
+  }
   if (layer === undefined)
-    throw new Error(`Three Branches manifest has no characters.${name} layer.`)
-  return layer.frames.names
+    throw new Error(`Three Branches manifest atlas ${group} requires a layer.`)
+  const page = atlas.layers.find((item) => item.name === layer)
+  if (page === undefined) throw new Error(`Three Branches manifest has no ${group}.${layer} layer.`)
+  return page.frames.names
 }
-
-export const CHARACTER_POSE_FRAME_NAMES = characterFrameNames('body')
-export const CHARACTER_DETAIL_FRAME_NAMES = characterFrameNames('details')
 
 function flatFramePaths(names: readonly string[]): readonly string[] {
   return names.map((name) => `${name}.png`)
@@ -398,6 +384,12 @@ export interface ThreeBranchesRuntimeAssetLoadOptions {
   autoGenerateMipmaps: true
 }
 
+interface RuntimeAtlasPage {
+  key: string
+  path: string
+  mipmaps: boolean
+}
+
 /** Resolve and load the atlas pages consumed by shipped terrain, prop, and character art. */
 export async function loadThreeBranchesRuntimeAssets<T>(
   load: (source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => Promise<T> | T,
@@ -408,58 +400,36 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
     return Promise.resolve(load(source, options))
   }
-  const loadAtlas = (name: string, layer?: string): Promise<T> => {
-    const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
-    if (atlas === undefined) throw new Error(`Three Branches manifest has no ${name} atlas.`)
-    const raster =
-      layer === undefined
-        ? 'layers' in atlas
-          ? undefined
-          : atlas
-        : 'layers' in atlas
-          ? atlas.layers.find((item) => item.name === layer)
-          : undefined
-    if (raster === undefined)
-      throw new Error(`Three Branches manifest has no ${name} runtime page.`)
-    return loadPath(raster.path, atlas.mipmaps ? { autoGenerateMipmaps: true } : undefined)
+  const loaded = new Map<string, T>()
+  await Promise.all(
+    runtimeAtlasPages().map(async (page) => {
+      const texture = await loadPath(
+        page.path,
+        page.mipmaps ? { autoGenerateMipmaps: true } : undefined,
+      )
+      loaded.set(page.key, texture)
+    }),
+  )
+  const required = (group: string, layer?: string): T => {
+    const key = runtimeAtlasPageKey(group, layer)
+    if (!loaded.has(key)) throw new Error(`Three Branches runtime atlas is missing: ${key}`)
+    return loaded.get(key) as T
   }
-  const [
-    terrain,
-    props,
-    lantern,
-    monuments,
-    bell,
-    buildings,
-    scenery,
-    body,
-    clothing,
-    arms,
-    details,
-    effects,
-  ] = await Promise.all([
-    loadAtlas('terrain'),
-    loadAtlas('props'),
-    loadAtlas('lantern'),
-    loadAtlas('monuments'),
-    loadAtlas('bell'),
-    loadAtlas('buildings'),
-    loadAtlas('scenery'),
-    loadAtlas('characters', 'body'),
-    loadAtlas('characters', 'clothing'),
-    loadAtlas('characters', 'arms'),
-    loadAtlas('characters', 'details'),
-    loadAtlas('effects'),
-  ])
   return {
-    terrain,
-    props,
-    lantern,
-    monuments,
-    bell,
-    buildings,
-    scenery,
-    characters: { body, clothing, arms, details },
-    effects,
+    terrain: required('terrain'),
+    props: required('props'),
+    lantern: required('lantern'),
+    monuments: required('monuments'),
+    bell: required('bell'),
+    buildings: required('buildings'),
+    scenery: required('scenery'),
+    characters: {
+      body: required('characters', 'body'),
+      clothing: required('characters', 'clothing'),
+      arms: required('characters', 'arms'),
+      details: required('characters', 'details'),
+    },
+    effects: required('effects'),
   }
 }
 
@@ -480,7 +450,22 @@ function threeBranchesRuntimeAssetUrls(): Record<string, string> {
 
 /** Expand every catalog group to the runtime page paths Vite must bundle. */
 function runtimeAtlasPaths(): readonly string[] {
+  return runtimeAtlasPages().map((page) => page.path)
+}
+
+/** Expand every configured page so new groups load without a TypeScript case. */
+function runtimeAtlasPages(): readonly RuntimeAtlasPage[] {
   return THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) =>
-    'layers' in atlas ? atlas.layers.map((layer) => layer.path) : [atlas.path],
+    'layers' in atlas
+      ? atlas.layers.map((layer) => ({
+          key: runtimeAtlasPageKey(atlas.name, layer.name),
+          path: layer.path,
+          mipmaps: atlas.mipmaps,
+        }))
+      : [{ key: runtimeAtlasPageKey(atlas.name), path: atlas.path, mipmaps: atlas.mipmaps }],
   )
+}
+
+function runtimeAtlasPageKey(group: string, layer?: string): string {
+  return layer === undefined ? group : `${group}/${layer}`
 }

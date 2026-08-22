@@ -1,9 +1,11 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
-import { SCENERY_ATLAS_FRAME_NAMES } from '../assets.js'
+import { atlasFrameNames } from '../assets.js'
 
 /** Complete high-resolution pine stills available for stable placement selection. */
-export const PINE_FRAME_NAMES = SCENERY_ATLAS_FRAME_NAMES.filter((name) => /^pine[A-Z]$/.test(name))
+export const PINE_FRAME_NAMES = atlasFrameNames('scenery').filter((name) =>
+  /^pine[A-Z]$/.test(name),
+)
 
 export type PropArtPage = 'props' | 'monuments' | 'lantern' | 'bell'
 export type PropArtRole = 'lower' | 'upper' | 'moving'

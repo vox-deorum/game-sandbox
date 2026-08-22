@@ -268,12 +268,12 @@ describe('Three Branches asset catalog', () => {
     }
   })
 
-  it('loads all twelve shipped runtime pages including dedicated lantern and bell atlases', async () => {
+  it('loads every configured runtime page including dedicated lantern and bell atlases', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(12)
+    expect(load).toHaveBeenCalledTimes(ATLAS_PAGES.length)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)

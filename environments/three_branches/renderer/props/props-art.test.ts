@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  BELL_ATLAS_FRAME_NAMES,
-  EFFECTS_ATLAS_FRAME_NAMES,
-  LANTERN_ATLAS_FRAME_NAMES,
-  MONUMENTS_ATLAS_FRAME_NAMES,
-  PROPS_ATLAS_FRAME_NAMES,
-} from '../assets.js'
+import { atlasFrameNames } from '../assets.js'
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { CATALOG } from '../ui/overlay.js'
 import {
@@ -20,11 +14,12 @@ import {
 } from './props-art.js'
 
 const framesByPage = {
-  props: PROPS_ATLAS_FRAME_NAMES,
-  monuments: MONUMENTS_ATLAS_FRAME_NAMES,
-  lantern: LANTERN_ATLAS_FRAME_NAMES,
-  bell: BELL_ATLAS_FRAME_NAMES,
+  props: atlasFrameNames('props'),
+  monuments: atlasFrameNames('monuments'),
+  lantern: atlasFrameNames('lantern'),
+  bell: atlasFrameNames('bell'),
 } as const
+const effectFrames = atlasFrameNames('effects')
 
 describe('Three Branches prop art treatments', () => {
   it('gives ordinary state stills only a lower role on the props page', () => {
@@ -101,7 +96,7 @@ describe('Three Branches prop art treatments', () => {
     Object.values(HEARTHSIDE_STYLE.propEffects)
       .flatMap((effect) => effect.frames)
       .forEach((frame) => {
-        expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame)
+        expect(effectFrames).toContain(frame)
       })
   })
 
