@@ -428,117 +428,72 @@
     },
     {
       "name": "buildings",
-      "path": "./assets/buildings-atlas.png",
-      "width": 256,
-      "height": 256,
       "tintable": false,
       "format": "full-color",
-      "consumer": "home, inn, and repair-shed roof tiles",
-      "mipmaps": false,
-      "frames": {
-        "width": 64,
-        "height": 64,
-        "columns": 4,
-        "rows": 4,
-        "cells": [
-          {
-            "name": "homeFill",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/homeFill.png"
-            }
-          },
-          {
-            "name": "homeEdge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/homeEdge.png"
-            }
-          },
-          {
-            "name": "homeCorner",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/homeCorner.png"
-            }
-          },
-          {
-            "name": "homeRidge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/homeRidge.png"
-            }
-          },
-          {
-            "name": "innFill",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/innFill.png"
-            }
-          },
-          {
-            "name": "innEdge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/innEdge.png"
-            }
-          },
-          {
-            "name": "innCorner",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/innCorner.png"
-            }
-          },
-          {
-            "name": "innRidge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/innRidge.png"
-            }
-          },
-          {
-            "name": "shedFill",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/shedFill.png"
-            }
-          },
-          {
-            "name": "shedEdge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/shedEdge.png"
-            }
-          },
-          {
-            "name": "shedCorner",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/shedCorner.png"
-            }
-          },
-          {
-            "name": "shedRidge",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/shedRidge.png"
-            }
-          },
-          {
-            "name": "homeFillAlt",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/homeFillAlt.png"
-            }
-          },
-          {
-            "name": "innFillAlt",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/innFillAlt.png"
-            }
-          },
-          {
-            "name": "shedFillAlt",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/shedFillAlt.png"
-            }
-          },
-          {
-            "name": "eaveShadow",
-            "source": {
-              "path": "./assets/source-art/frames/buildings/eaveShadow.png"
-            }
+      "consumer": "complete home, inn, and repair-shed roofs",
+      "mipmaps": true,
+      "layers": [
+        {
+          "name": "home",
+          "path": "./assets/buildings-home-atlas.png",
+          "width": 1024,
+          "height": 896,
+          "frames": {
+            "width": 1024,
+            "height": 896,
+            "columns": 1,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "home",
+                "source": {
+                  "path": "./assets/source-art/frames/buildings/home.png"
+                }
+              }
+            ]
           }
-        ]
-      }
+        },
+        {
+          "name": "inn",
+          "path": "./assets/buildings-inn-atlas.png",
+          "width": 1536,
+          "height": 1280,
+          "frames": {
+            "width": 1536,
+            "height": 1280,
+            "columns": 1,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "inn",
+                "source": {
+                  "path": "./assets/source-art/frames/buildings/inn.png"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "shed",
+          "path": "./assets/buildings-shed-atlas.png",
+          "width": 1024,
+          "height": 1024,
+          "frames": {
+            "width": 1024,
+            "height": 1024,
+            "columns": 1,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "shed",
+                "source": {
+                  "path": "./assets/source-art/frames/buildings/shed.png"
+                }
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "props",
@@ -1501,24 +1456,9 @@
     "clearAlpha": 0.18,
     "fadeMs": 220,
     "frames": {
-      "home": {
-        "fills": ["homeFill", "homeFillAlt"],
-        "edge": "homeEdge",
-        "corner": "homeCorner",
-        "ridge": "homeRidge"
-      },
-      "inn": {
-        "fills": ["innFill", "innFillAlt"],
-        "edge": "innEdge",
-        "corner": "innCorner",
-        "ridge": "innRidge"
-      },
-      "shed": {
-        "fills": ["shedFill", "shedFillAlt"],
-        "edge": "shedEdge",
-        "corner": "shedCorner",
-        "ridge": "shedRidge"
-      }
+      "home": "home",
+      "inn": "inn",
+      "shed": "shed"
     }
   },
   "postEffects": {

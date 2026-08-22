@@ -150,6 +150,34 @@ describe('Three Branches asset catalog', () => {
     )
   })
 
+  it('keeps one clean, mipmapped full-roof page for each semantic building type', () => {
+    const buildings = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'buildings')
+    if (buildings === undefined || !('layers' in buildings)) {
+      throw new Error('Layered buildings atlas group is required.')
+    }
+
+    expect(buildings.mipmaps).toBe(true)
+    const expected = {
+      home: { width: 1024, height: 896 },
+      inn: { width: 1536, height: 1280 },
+      shed: { width: 1024, height: 1024 },
+    } as const
+    expect(buildings.layers.map((layer) => layer.name)).toEqual(Object.keys(expected))
+    for (const layer of buildings.layers) {
+      const dimensions = expected[layer.name as keyof typeof expected]
+      expect(layer).toMatchObject({
+        ...dimensions,
+        frames: { width: dimensions.width, height: dimensions.height, names: [layer.name] },
+      })
+      expect(readPngHeader(layer.path)).toMatchObject(dimensions)
+      expect(readPngHeader(layer.cells[0]?.source.path ?? '')).toMatchObject({
+        ...dimensions,
+        colorType: 6,
+      })
+      expect(coloredTransparentPixelCount(layer.cells[0]?.source.path ?? '')).toBe(0)
+    }
+  })
+
   it('accepts arbitrary catalog group and layer names while rejecting duplicate and malformed entries', () => {
     const arbitraryNames = mutableCatalog()
     catalogEntry(arbitraryNames, 0).name = 'meadows'
@@ -177,7 +205,7 @@ describe('Three Branches asset catalog', () => {
     )
 
     const duplicatePaths = mutableCatalog()
-    catalogEntry(duplicatePaths, 1).path = catalogEntry(duplicatePaths, 0).path
+    catalogEntry(duplicatePaths, 2).path = catalogEntry(duplicatePaths, 0).path
     expect(() => readThreeBranchesAssetCatalog(duplicatePaths)).toThrow(
       'must not reuse runtime paths',
     )
@@ -357,7 +385,9 @@ describe('Three Branches asset catalog', () => {
     expect(assets.lantern).toMatch(/lantern-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
     expect(assets.bell).toMatch(/bell-atlas\.png/)
-    expect(assets.buildings).toMatch(/buildings-atlas\.png/)
+    expect(assets.buildings.home).toMatch(/buildings-home-atlas\.png/)
+    expect(assets.buildings.inn).toMatch(/buildings-inn-atlas\.png/)
+    expect(assets.buildings.shed).toMatch(/buildings-shed-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
@@ -383,9 +413,12 @@ describe('Three Branches asset catalog', () => {
         expect.stringMatching(/monuments-atlas\.png/),
         expect.stringMatching(/bell-atlas\.png/),
         expect.stringMatching(/scenery-atlas\.png/),
+        expect.stringMatching(/buildings-home-atlas\.png/),
+        expect.stringMatching(/buildings-inn-atlas\.png/),
+        expect.stringMatching(/buildings-shed-atlas\.png/),
       ]),
     )
-    expect(mipmappedSources).toHaveLength(5)
+    expect(mipmappedSources).toHaveLength(8)
     for (const [, options] of mipmappedCalls) {
       expect(options).toEqual({ autoGenerateMipmaps: true })
     }

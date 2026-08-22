@@ -272,7 +272,7 @@ describe('Hearthside Ink presentation', () => {
   it('requires one matching full-roof frame for each building type', () => {
     const frameObject = structuredClone(HEARTHSIDE_STYLE) as any
     frameObject.roofs.frames.home = { frame: 'homeRoof' }
-    expect(() => readHearthsideStyle(frameObject)).toThrow('roofs.frames.home must be text')
+    expect(() => readHearthsideStyle(frameObject)).toThrow('roofs.frames.home is unknown')
 
     const unknownFrame = structuredClone(HEARTHSIDE_STYLE) as any
     unknownFrame.roofs.frames.inn = 'missingFrame'

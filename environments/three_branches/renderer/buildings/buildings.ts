@@ -1,15 +1,24 @@
-import { stableHashParts } from '@renderers/base/math.js'
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
-import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import type { RoofFramesTreatment } from '../core/presentation.js'
 import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { pointToWorld } from '../map/scene.js'
-import { frameRectangle } from '../ui/tint.js'
 
-/** One world-cell-covered building roof frame is authored at this many pixels. */
-const ROOF_FRAME_CELL = 64
+/** One semantic building cell is authored at this many roof-art pixels. */
+const ROOF_SOURCE_CELL = 128
+
+type RoofKind = 'home' | 'inn' | 'shed'
+
+interface RoofPageSize {
+  width: number
+  height: number
+}
+
+const ROOF_PAGE_SIZES: Readonly<Record<RoofKind, RoofPageSize>> = {
+  home: { width: 1024, height: 896 },
+  inn: { width: 1536, height: 1280 },
+  shed: { width: 1024, height: 1024 },
+}
 
 /** Draw semantic building extents while the terrain-art load is still pending. */
 export function drawBuildings(layer: Container, scene: StaticScene): Container {
@@ -26,26 +35,21 @@ export function drawBuildings(layer: Container, scene: StaticScene): Container {
   return outlines
 }
 
-/** The buildings atlas page sliced into named roof frames. */
-export type RoofArt = Readonly<Record<string, Texture>>
+/** The three one-frame pages that draw semantic building roofs. */
+export interface RoofArt {
+  readonly home: Texture
+  readonly inn: Texture
+  readonly shed: Texture
+}
 
 /** Operations exposed by the retained semantic roof display layer. */
 export interface RoofLayer {
-  /** Preflight and install roof art, building every building's tile plan once. */
+  /** Preflight and install roof art, retaining one sprite for every semantic building. */
   install(art: RoofArt): void
   /** Fix each building's target alpha from recorded occupancy, snapping when requested. */
   setTargets(scene: FrameScene, snap: boolean): void
   /** Ease roofs toward their targets. Returns true while any roof is unsettled. */
   advance(dtMs: number): boolean
-}
-
-/** One roof tile placement on a building's semantic rect. */
-export interface RoofTile {
-  col: number
-  row: number
-  role: 'corner' | 'edge' | 'ridge' | 'fill'
-  frame: string
-  rotation: number
 }
 
 interface RoofNode {
@@ -55,18 +59,10 @@ interface RoofNode {
   targetAlpha: number
 }
 
-/** Slice the buildings atlas page into named roof frames. */
-export function createRoofArt(atlasTexture: Texture): RoofArt {
-  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'buildings')
-  if (atlas === undefined || 'layers' in atlas) {
-    throw new Error('Three Branches buildings atlas is missing.')
-  }
-  return Object.fromEntries(
-    atlas.frames.names.map((frame) => [
-      frame,
-      new Texture({ source: atlasTexture.source, frame: frameRectangle(atlas.frames, frame) }),
-    ]),
-  )
+/** Validate and expose the separate full-roof atlas pages. */
+export function createRoofArt(pages: RoofArt): RoofArt {
+  validateRoofArt(pages)
+  return pages
 }
 
 /** Build each building's retained roof container and reconcile occupancy and easing. */
@@ -87,20 +83,18 @@ export function createRoofLayer(layer: Container, scene: StaticScene): RoofLayer
       if (art !== null) return
       preflightRoofArt(nextArt, scene)
       for (const node of nodes.values()) {
-        for (const tile of roofTilePlan(node.item, cellSize)) {
-          const spriteNode = new Sprite({
-            label: `roof-tile:${tile.col}:${tile.row}`,
-            texture: roofTexture(nextArt, tile.frame),
-          })
-          spriteNode.anchor.set(0.5)
-          spriteNode.scale.set(cellSize / ROOF_FRAME_CELL)
-          spriteNode.position.set(
-            node.item.rect.x + (tile.col + 0.5) * cellSize,
-            node.item.rect.y + (tile.row + 0.5) * cellSize,
-          )
-          spriteNode.rotation = tile.rotation
-          node.container.addChild(spriteNode)
-        }
+        const spriteNode = new Sprite({
+          label: 'roof-sprite',
+          texture: roofTexture(nextArt, node.item.type),
+        })
+        spriteNode.anchor.set(0.5)
+        spriteNode.scale.set(cellSize / ROOF_SOURCE_CELL)
+        spriteNode.position.set(
+          node.item.rect.x + node.item.rect.width / 2,
+          node.item.rect.y + node.item.rect.height / 2,
+        )
+        spriteNode.rotation = roofRotation(node.item.facing)
+        node.container.addChild(spriteNode)
       }
       art = nextArt
     },
@@ -136,21 +130,49 @@ export function createRoofLayer(layer: Container, scene: StaticScene): RoofLayer
 }
 
 function preflightRoofArt(nextArt: RoofArt, scene: StaticScene): void {
-  for (const building of scene.buildings) {
-    const treatment = roofTreatment(building.type)
-    roofTexture(nextArt, treatment.corner)
-    roofTexture(nextArt, treatment.edge)
-    roofTexture(nextArt, treatment.ridge)
-    for (const frame of treatment.fills) roofTexture(nextArt, frame)
+  validateRoofArt(nextArt)
+  for (const building of scene.buildings) roofTexture(nextArt, building.type)
+}
+
+function validateRoofArt(art: RoofArt): void {
+  for (const [kind, size] of Object.entries(ROOF_PAGE_SIZES) as readonly [RoofKind, RoofPageSize][]) {
+    const texture = roofTexture(art, kind)
+    if (
+      texture.frame.x !== 0 ||
+      texture.frame.y !== 0 ||
+      texture.frame.width !== size.width ||
+      texture.frame.height !== size.height
+    ) {
+      throw new Error(
+        `Three Branches ${kind} roof page must be one ${size.width}x${size.height} frame.`,
+      )
+    }
   }
 }
 
-function roofTreatment(type: string): RoofFramesTreatment {
-  const treatment = HEARTHSIDE_STYLE.roofs.frames[type]
-  if (treatment === undefined) {
-    throw new Error(`Three Branches building type has no roof treatment: ${type}`)
+function roofTexture(art: RoofArt, type: string): Texture {
+  if (type !== 'home' && type !== 'inn' && type !== 'shed') {
+    throw new Error(`Three Branches building type has no roof art: ${type}`)
   }
-  return treatment
+  const texture = art[type]
+  if (texture === undefined) throw new Error(`Three Branches ${type} roof page is missing.`)
+  return texture
+}
+
+function roofRotation(facing: string | undefined): number {
+  switch (facing) {
+    case undefined:
+    case 'north':
+      return 0
+    case 'east':
+      return Math.PI / 2
+    case 'south':
+      return Math.PI
+    case 'west':
+      return -Math.PI / 2
+    default:
+      throw new Error(`Three Branches building facing is invalid: ${facing}`)
+  }
 }
 
 /** Whether any recorded character stands within this building's semantic world rectangle. */
@@ -167,60 +189,4 @@ export function buildingOccupied(frame: FrameScene, building: StaticDrawable): b
       point.y <= building.rect.y + building.rect.height
     )
   })
-}
-
-function roofTexture(frames: RoofArt, name: string): Texture {
-  const value = frames[name]
-  if (value === undefined) throw new Error(`Three Branches roof frame is missing: ${name}`)
-  return value
-}
-
-function fillFrame(fills: readonly string[], buildingId: string, col: number, row: number): string {
-  // presentation.json validation guarantees at least one fill, so the hash index is always in range.
-  return fills[stableHashParts('three-branches-roof', buildingId, col, row) % fills.length]!
-}
-
-/**
- * Plan the tile grid for one semantic building rect at the given cell size. Corners quarter-rotate,
- * edges run along the perimeter, the ridge spans the middle row's interior columns, and every other
- * interior cell picks a fill deterministically from the configured list.
- */
-export function roofTilePlan(building: StaticDrawable, cellSize: number): readonly RoofTile[] {
-  const treatment = roofTreatment(building.type)
-  const width = Math.round(building.rect.width / cellSize)
-  const height = Math.round(building.rect.height / cellSize)
-  const ridgeRow = Math.floor(height / 2)
-  const tiles: RoofTile[] = []
-  const push = (tile: RoofTile) => tiles.push(tile)
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const top = row === 0
-      const bottom = row === height - 1
-      const left = col === 0
-      const right = col === width - 1
-      if (top && left) push({ col, row, role: 'corner', frame: treatment.corner, rotation: 0 })
-      else if (top && right)
-        push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI / 2 })
-      else if (bottom && right)
-        push({ col, row, role: 'corner', frame: treatment.corner, rotation: Math.PI })
-      else if (bottom && left)
-        push({ col, row, role: 'corner', frame: treatment.corner, rotation: -Math.PI / 2 })
-      else if (top) push({ col, row, role: 'edge', frame: treatment.edge, rotation: 0 })
-      else if (bottom) push({ col, row, role: 'edge', frame: treatment.edge, rotation: Math.PI })
-      else if (left) push({ col, row, role: 'edge', frame: treatment.edge, rotation: -Math.PI / 2 })
-      else if (right) push({ col, row, role: 'edge', frame: treatment.edge, rotation: Math.PI / 2 })
-      else if (row === ridgeRow)
-        push({ col, row, role: 'ridge', frame: treatment.ridge, rotation: 0 })
-      else {
-        push({
-          col,
-          row,
-          role: 'fill',
-          frame: fillFrame(treatment.fills, building.id, col, row),
-          rotation: 0,
-        })
-      }
-    }
-  }
-  return tiles
 }
