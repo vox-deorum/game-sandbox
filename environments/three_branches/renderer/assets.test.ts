@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { PNG } from 'pngjs'
 import { describe, expect, it, vi } from 'vitest'
 
+import presentationDocument from './assets/presentation.json'
 import type { ThreeBranchesRuntimeAssetLoadOptions } from './assets.js'
 import {
   ATLAS_PAGES,
@@ -66,7 +67,7 @@ function alphaBounds(relativePath: string): { width: number; height: number } {
 }
 
 function mutableCatalog(): Record<string, unknown>[] {
-  return structuredClone(THREE_BRANCHES_ASSET_CATALOG) as unknown as Record<string, unknown>[]
+  return structuredClone(presentationDocument.atlases) as Record<string, unknown>[]
 }
 
 function catalogEntry(catalog: Record<string, unknown>[], index: number): Record<string, unknown> {
@@ -143,7 +144,10 @@ describe('Three Branches asset catalog', () => {
     expect(() => readThreeBranchesAssetCatalog(unsafeGroup)).toThrow('must be a safe path segment')
 
     const unsafeFrame = mutableCatalog()
-    frameGrid(catalogEntry(unsafeFrame, 2)).names = ['../stall']
+    const cells = frameGrid(catalogEntry(unsafeFrame, 2)).cells as Record<string, unknown>[]
+    const firstCell = cells[0]
+    if (firstCell === undefined) throw new Error('Props cell is missing.')
+    firstCell.name = '../stall'
     expect(() => readThreeBranchesAssetCatalog(unsafeFrame)).toThrow('must be a safe filename stem')
 
     const nestedRuntimePath = mutableCatalog()
@@ -153,7 +157,13 @@ describe('Three Branches asset catalog', () => {
     )
 
     const unsafeSourcePath = mutableCatalog()
-    catalogEntry(unsafeSourcePath, 0).source = './assets/source-art/../terrain-atlas-source.png'
+    const terrainCells = frameGrid(catalogEntry(unsafeSourcePath, 0)).cells as Record<
+      string,
+      unknown
+    >[]
+    const terrainCell = terrainCells[0]
+    if (terrainCell === undefined) throw new Error('Terrain cell is missing.')
+    terrainCell.source = { path: './assets/source-art/../terrain.png' }
     expect(() => readThreeBranchesAssetCatalog(unsafeSourcePath)).toThrow(
       'must be a renderer-relative POSIX PNG path',
     )
@@ -163,69 +173,56 @@ describe('Three Branches asset catalog', () => {
     expect(() => readThreeBranchesAssetCatalog(malformedEntry)).toThrow('mipmaps must be boolean')
   })
 
-  it('derives nested ordinary-prop paths and gives lantern frames their dedicated page', () => {
+  it('derives build pages entirely from configured source cells', () => {
     const props = ATLAS_PAGES.find((page) => page.group === 'props')
-    expect(props?.framePaths).toEqual(
+    expect(props?.cells.map((cell) => cell.source.path)).toEqual(
       expect.arrayContaining([
-        'stall/open.png',
-        'stall/closed.png',
-        'stall/b/open.png',
-        'stall/b/closed.png',
-        'stall/c/open.png',
-        'stall/c/closed.png',
-        'repair_bench/busy.png',
-      ]),
-    )
-    expect(props?.framePaths).not.toEqual(
-      expect.arrayContaining([
-        'pump/flowing.png',
-        'pump/idle.png',
-        'bell/ringing.png',
-        'bell/silent.png',
-        'lantern/lit.png',
-        'lantern/unlit.png',
+        './assets/source-art/stall/a/open.png',
+        './assets/source-art/stall/a/closed.png',
+        './assets/source-art/stall/b/open.png',
+        './assets/source-art/stall/b/closed.png',
+        './assets/source-art/stall/c/open.png',
+        './assets/source-art/stall/c/closed.png',
+        './assets/source-art/frames/props/repairBenchBusy.png',
       ]),
     )
     const lantern = ATLAS_PAGES.find((page) => page.group === 'lantern')
     expect(lantern).toMatchObject({
-      framesPath: './assets/lantern',
-      framePaths: ['lit.png', 'unlit.png'],
+      pageKey: 'lantern',
       width: 768,
       height: 512,
       columns: 2,
       rows: 1,
     })
+    expect(lantern?.cells.map((cell) => cell.source.path)).toEqual([
+      './assets/source-art/frames/lantern/lanternLit.png',
+      './assets/source-art/frames/lantern/lanternUnlit.png',
+    ])
     const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
-    expect(monuments?.framePaths).toEqual(['pump/flowing.png', 'pump/idle.png'])
+    expect(monuments?.cells.map((cell) => cell.source.path)).toEqual([
+      './assets/source-art/frames/monuments/pumpFlowing.png',
+      './assets/source-art/frames/monuments/pumpIdle.png',
+    ])
     const bell = ATLAS_PAGES.find((page) => page.group === 'bell')
     expect(bell).toMatchObject({
-      framesPath: './assets/bell',
-      framePaths: ['foundation.png', 'gantry.png', 'moving.png'],
+      pageKey: 'bell',
       width: 4608,
       height: 1024,
       columns: 3,
       rows: 1,
     })
     const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
-    expect(scenery?.framePaths).toEqual([
-      'pineA.png',
-      'pineB.png',
-      'pineC.png',
-      'pineD.png',
-      'pineE.png',
-      'pineF.png',
-      'marketCrate.png',
-    ])
+    expect(scenery?.cells.at(-1)?.source.path).toBe(
+      './assets/source-art/frames/scenery/marketCrate.png',
+    )
   })
 
-  it('keeps the generated thumbnail source and runtime image at their declared dimensions', () => {
+  it('keeps the configured thumbnail source decodable and the runtime image at output dimensions', () => {
     const source = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.source)
     const runtime = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.path)
 
-    expect(source).toMatchObject({
-      width: THREE_BRANCHES_THUMBNAIL_ASSET.sourceWidth,
-      height: THREE_BRANCHES_THUMBNAIL_ASSET.sourceHeight,
-    })
+    expect(source.width).toBeGreaterThan(0)
+    expect(source.height).toBeGreaterThan(0)
     expect(runtime).toEqual({
       width: THREE_BRANCHES_THUMBNAIL_ASSET.width,
       height: THREE_BRANCHES_THUMBNAIL_ASSET.height,
@@ -237,35 +234,32 @@ describe('Three Branches asset catalog', () => {
     const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
     if (lantern === undefined || 'layers' in lantern) throw new Error('Lantern atlas is missing')
 
-    expect(readPngHeader(lantern.source)).toMatchObject({
-      width: lantern.sourceWidth,
-      height: lantern.sourceHeight,
-    })
     expect(readPngHeader(lantern.path)).toMatchObject({
       width: lantern.width,
       height: lantern.height,
     })
-    expect(readPngHeader('./assets/lantern/lit.png')).toMatchObject({ width: 384, height: 512 })
-    expect(readPngHeader('./assets/lantern/unlit.png')).toMatchObject({ width: 384, height: 512 })
+    for (const cell of lantern.cells) {
+      expect(readPngHeader(cell.source.path)).toMatchObject({ width: 384, height: 512 })
+    }
   })
 
   it('clears hidden color from fully transparent lantern pixels', () => {
-    expect(coloredTransparentPixelCount('./assets/lantern/lit.png')).toBe(0)
-    expect(coloredTransparentPixelCount('./assets/lantern/unlit.png')).toBe(0)
+    expect(coloredTransparentPixelCount('./assets/source-art/frames/lantern/lanternLit.png')).toBe(
+      0,
+    )
+    expect(
+      coloredTransparentPixelCount('./assets/source-art/frames/lantern/lanternUnlit.png'),
+    ).toBe(0)
   })
 
-  it('keeps the market crate square in its runtime frame and retained source', () => {
-    const runtimePath = './assets/scenery/marketCrate.png'
-    const sourcePath = './assets/source-art/scenery/marketCrate.png'
-    expect(readPngHeader(runtimePath)).toMatchObject({ width: 512, height: 512 })
-    expect(readPngHeader(sourcePath)).toMatchObject({ width: 1254, height: 1254 })
-    for (const path of [runtimePath, sourcePath]) {
-      const bounds = alphaBounds(path)
-      expect(
-        Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height),
-      ).toBeLessThan(1.05)
-      expect(coloredTransparentPixelCount(path)).toBe(0)
-    }
+  it('keeps the market crate square in its canonical source', () => {
+    const sourcePath = './assets/source-art/frames/scenery/marketCrate.png'
+    expect(readPngHeader(sourcePath)).toMatchObject({ width: 512, height: 512 })
+    const bounds = alphaBounds(sourcePath)
+    expect(
+      Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height),
+    ).toBeLessThan(1.05)
+    expect(coloredTransparentPixelCount(sourcePath)).toBe(0)
   })
 
   it('loads every configured runtime page including dedicated lantern and bell atlases', async () => {

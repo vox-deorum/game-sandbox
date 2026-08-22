@@ -1,50 +1,39 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import type { AtlasPageSpec } from './atlas.js'
-import { checkAtlasPage, packAtlasPage, splitAtlasPage } from './atlas-io.js'
+import type { AtlasBuildPageSpec } from './atlas.js'
+import { buildAtlasPage, checkAtlasPage, selectAtlasPages } from './atlas-io.js'
 
-type AtlasCommand = 'split' | 'pack' | 'check'
+type AtlasCommand = 'build' | 'check'
 
-/** Run the atlas command for one environment and, optionally, one catalog group. */
+/** Run the atlas compiler for one environment and, optionally, one group or page key. */
 export async function runAtlasCli(
   arguments_: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
-  const [command, environment, group, ...extra] = arguments_
-  if (!isAtlasCommand(command) || environment === undefined || extra.length > 0) {
-    throw new Error('Usage: atlas split|pack|check <environment> [group]')
-  }
+  const [command, environment, selector, ...extra] = arguments_
+  if (!isAtlasCommand(command) || environment === undefined || extra.length > 0)
+    throw new Error('Usage: atlas build|check <environment> [group-or-page]')
   const moduleUrl = environmentModuleUrl(environment)
-  const module = (await import(moduleUrl.href)) as { ATLAS_PAGES?: readonly AtlasPageSpec[] }
-  if (module.ATLAS_PAGES === undefined) {
+  const module = (await import(moduleUrl.href)) as { ATLAS_PAGES?: readonly AtlasBuildPageSpec[] }
+  if (module.ATLAS_PAGES === undefined)
     throw new Error(`Environment ${environment} does not export ATLAS_PAGES`)
-  }
-  const pages =
-    group === undefined
-      ? module.ATLAS_PAGES
-      : module.ATLAS_PAGES.filter((page) => page.group === group)
-  if (pages.length === 0) throw new Error(`Environment ${environment} has no ${group} atlas pages`)
-
+  const pages = selectAtlasPages(module.ATLAS_PAGES, selector)
+  if (pages.length === 0)
+    throw new Error(`Environment ${environment} has no ${selector} atlas pages`)
   const rendererDirectory = fileURLToPath(new URL('.', moduleUrl))
   for (const page of pages) {
-    if (command === 'split') {
-      await splitAtlasPage(rendererDirectory, page)
-    } else if (command === 'pack') {
-      await packAtlasPage(rendererDirectory, page)
-    } else {
-      await checkAtlasPage(rendererDirectory, page)
-    }
+    if (command === 'build') await buildAtlasPage(rendererDirectory, page)
+    else await checkAtlasPage(rendererDirectory, page)
   }
 }
 
 function isAtlasCommand(value: string | undefined): value is AtlasCommand {
-  return value === 'split' || value === 'pack' || value === 'check'
+  return value === 'build' || value === 'check'
 }
 
 /** Resolve one environment's renderer manifest without allowing path traversal. */
 export function environmentModuleUrl(environment: string): URL {
-  if (!/^[A-Za-z0-9_-]+$/.test(environment)) {
+  if (!/^[A-Za-z0-9_-]+$/.test(environment))
     throw new Error(`Environment must be one directory name: ${environment}`)
-  }
   return new URL(`../../../../../environments/${environment}/renderer/assets.ts`, import.meta.url)
 }
 
@@ -53,8 +42,7 @@ if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).
   try {
     await runAtlasCli()
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(message)
+    console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
   }
 }

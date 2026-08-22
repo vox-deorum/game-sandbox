@@ -5,20 +5,18 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
-  type AtlasPageSpec,
+  type AtlasBuildPageSpec,
   compareAtlasPixels,
-  composeAtlas,
-  frameName,
+  compileAtlas,
   type RgbaImage,
-  splitAtlas,
-  validateAtlasFrames,
-  validateAtlasPageSpec,
+  validateAtlasBuildPageSpec,
+  validateAtlasBuildPages,
 } from '../src/renderers/base/atlas/atlas.js'
 import {
+  buildAtlasPage,
   checkAtlasPage,
-  packAtlasPage,
   readPng,
-  splitAtlasPage,
+  selectAtlasPages,
   writePng,
 } from '../src/renderers/base/atlas/atlas-io.js'
 import { environmentModuleUrl } from '../src/renderers/base/atlas/cli.js'
@@ -31,17 +29,19 @@ afterEach(async () => {
   )
 })
 
-function spec(overrides: Partial<AtlasPageSpec> = {}): AtlasPageSpec {
+function spec(overrides: Partial<AtlasBuildPageSpec> = {}): AtlasBuildPageSpec {
   return {
     group: 'terrain',
     pagePath: './assets/sample-atlas.png',
-    framesPath: './assets/sample',
     format: 'full-color',
     width: 4,
     height: 2,
     columns: 2,
     rows: 1,
-    framePaths: ['first.png', 'nested/second_frame.png'],
+    cells: [
+      { name: 'first', source: { path: './assets/source/first.png' } },
+      { name: 'second', source: { path: './assets/source/second.png' } },
+    ],
     ...overrides,
   }
 }
@@ -50,140 +50,256 @@ function image(width: number, height: number, pixels: readonly number[]): RgbaIm
   return { width, height, data: new Uint8Array(pixels) }
 }
 
-function page(): RgbaImage {
-  return image(
-    4,
-    2,
-    [
-      1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255, 13, 14, 15, 255, 16, 17, 18, 255,
-      19, 20, 21, 255, 22, 23, 24, 255,
-    ],
-  )
-}
-
 async function temporaryRenderer(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'game-sandbox-atlas-'))
   temporaryDirectories.push(directory)
   return directory
 }
 
-describe('atlas names and pure pixel operations', () => {
-  it('derives names from flat, nested, and underscored loose PNG paths', () => {
-    expect(frameName('washA.png')).toBe('washA')
-    expect(frameName('characters/body/rest.png')).toBe('charactersBodyRest')
-    expect(frameName('repair_bench/busy_frame.png')).toBe('repairBenchBusyFrame')
+function sources() {
+  return [
+    {
+      name: 'first',
+      image: image(2, 2, [1, 2, 3, 0, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255]),
+    },
+    {
+      name: 'second',
+      image: image(2, 2, [13, 14, 15, 255, 16, 17, 18, 255, 19, 20, 21, 255, 22, 23, 24, 255]),
+    },
+  ]
+}
+
+describe('atlas source compilation', () => {
+  it('copies exact source pixels, including hidden transparent RGB, in row-major order', () => {
+    const atlas = compileAtlas(spec(), sources())
+    expect([...atlas.data]).toEqual([
+      1, 2, 3, 0, 4, 5, 6, 255, 13, 14, 15, 255, 16, 17, 18, 255, 7, 8, 9, 255, 10, 11, 12, 255, 19,
+      20, 21, 255, 22, 23, 24, 255,
+    ])
   })
 
-  it('round trips pixels through split and pack in declared row-major order', () => {
-    const original = page()
-    const packed = composeAtlas(spec(), splitAtlas(spec(), original))
-    expect(packed).toEqual(original)
-    expect(compareAtlasPixels(spec(), original, packed)).toBeNull()
+  it('leaves unnamed suffix cells transparent and names stale cells', () => {
+    const atlasSpec = spec({ width: 6, columns: 3 })
+    const atlas = compileAtlas(atlasSpec, sources())
+    expect(atlas.data.subarray(16, 24)).toEqual(new Uint8Array(8))
+    const stale = { ...atlas, data: new Uint8Array(atlas.data) }
+    stale.data[16] = 1
+    expect(compareAtlasPixels(atlasSpec, atlas, stale)).toBe('unused cell 2')
   })
 
-  it('leaves unnamed trailing cells transparent and identifies stale unused cells', () => {
-    const partialSpec = spec({
-      width: 6,
-      columns: 3,
-      framePaths: ['first.png', 'nested/second_frame.png'],
-    })
-    const original = image(
-      6,
-      2,
-      [
-        1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255, 13, 14, 15, 255, 16, 17, 18, 255,
-        19, 20, 21, 255, 22, 23, 24, 255, 25, 26, 27, 255, 28, 29, 30, 255, 31, 32, 33, 255, 34, 35,
-        36, 255,
+  it('area-resizes through premultiplied encoded RGB and clears transparent output color', () => {
+    const atlasSpec = spec({
+      width: 1,
+      height: 1,
+      columns: 1,
+      rows: 1,
+      cells: [
+        {
+          name: 'resized',
+          source: { path: './assets/source/resized.png' },
+          render: {
+            kind: 'resize',
+            resampler: 'area-premultiplied-encoded-rgb',
+            outputAlpha: { clearColorAtZero: true },
+          },
+        },
       ],
-    )
-    const frames = splitAtlas(partialSpec, original)
-    const packed = composeAtlas(partialSpec, frames)
-
-    expect(frames).toHaveLength(2)
-    expect(packed.data.subarray(16, 24)).toEqual(new Uint8Array(8))
-    expect(packed.data.subarray(40, 48)).toEqual(new Uint8Array(8))
-    expect(compareAtlasPixels(partialSpec, packed, original)).toBe('unused cell 2')
+    })
+    expect(
+      compileAtlas(atlasSpec, [
+        { name: 'resized', image: image(2, 1, [255, 0, 0, 255, 0, 0, 255, 0]) },
+      ]).data,
+    ).toEqual(new Uint8Array([255, 0, 0, 128]))
+    expect(
+      compileAtlas(atlasSpec, [
+        { name: 'resized', image: image(2, 1, [99, 88, 77, 0, 4, 3, 2, 0]) },
+      ]).data,
+    ).toEqual(new Uint8Array([0, 0, 0, 0]))
   })
 
-  it('rejects missing, stray, and mis-sized frames', () => {
-    const frames = splitAtlas(spec(), page())
-    const first = frames[0]
-    const second = frames[1]
-    if (first === undefined || second === undefined)
-      throw new Error('Test atlas should have two frames')
-    expect(() => validateAtlasFrames(spec(), frames.slice(0, 1))).toThrow(
-      'missing: nested/second_frame.png',
-    )
-    expect(() =>
-      validateAtlasFrames(spec(), [...frames, { ...first, path: 'stray.png', name: 'stray' }]),
-    ).toThrow('stray: stray.png')
-    expect(() =>
-      validateAtlasFrames(spec(), [{ ...first, image: image(1, 2, new Array(8).fill(0)) }, second]),
-    ).toThrow('expected 2x2')
+  it('fits visible pixels after inclusive alpha normalization and supports shared bounds', () => {
+    const atlasSpec = spec({
+      width: 4,
+      height: 2,
+      columns: 2,
+      cells: [
+        {
+          name: 'gantry',
+          source: { path: './assets/source/gantry.png' },
+          render: {
+            kind: 'fitVisible',
+            sourceAlpha: { clearAtOrBelow: 8, opaqueAtOrAbove: 245 },
+            bounds: { alphaAbove: 8 },
+            maxSize: { width: 2, height: 2 },
+            anchor: { x: 1, y: 1 },
+            resampler: 'bilinear-premultiplied-encoded-rgb',
+            outputAlpha: { clearAtOrBelow: 0 },
+          },
+        },
+        {
+          name: 'moving',
+          source: { path: './assets/source/moving.png' },
+          render: {
+            kind: 'fitVisible',
+            sourceAlpha: { clearAtOrBelow: 8, opaqueAtOrAbove: 245 },
+            bounds: { alphaAbove: 8, fromCell: 'gantry' },
+            maxSize: { width: 2, height: 2 },
+            anchor: { x: 1, bottom: 2 },
+            resampler: 'bilinear-premultiplied-encoded-rgb',
+            outputAlpha: { clearAtOrBelow: 0 },
+          },
+        },
+      ],
+    })
+    const atlas = compileAtlas(atlasSpec, [
+      { name: 'gantry', image: image(2, 2, [1, 1, 1, 8, 0, 0, 0, 245, 0, 0, 0, 9, 0, 0, 0, 0]) },
+      {
+        name: 'moving',
+        image: image(2, 2, [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0]),
+      },
+    ])
+    expect([...atlas.data.subarray(0, 16)]).toContain(255)
+    expect([...atlas.data.subarray(16, 32)]).toContain(255)
   })
 
-  it('rejects colored pixels in grayscale-alpha frames and invalid grid contracts', () => {
-    const graySpec = spec({ format: 'grayscale-alpha' })
-    const frames = splitAtlas(graySpec, page())
-    expect(() => validateAtlasFrames(graySpec, frames)).toThrow('not grayscale-alpha')
-    expect(() => validateAtlasPageSpec(spec({ width: 5 }))).toThrow('divide evenly')
-    expect(() => validateAtlasPageSpec(spec({ framePaths: [] }))).toThrow('at least one frame path')
-    expect(() => validateAtlasPageSpec(spec({ columns: 1 }))).toThrow(
-      'capacity is 1 frame paths, received 2',
+  it('rejects invalid configuration, source memberships, cycles, crops, clipping, and colored grayscale', () => {
+    expect(() => validateAtlasBuildPageSpec(spec({ width: 5 }))).toThrow('divide evenly')
+    expect(() => validateAtlasBuildPageSpec(spec({ cells: [] }))).toThrow('at least one cell')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({ cells: [{ name: 'one', source: { path: '../escape.png' } }] }),
+      ),
+    ).toThrow('renderer-relative POSIX')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({
+          pagePath: './assets/page.png',
+          cells: [{ name: 'one', source: { path: './assets/./page.png' } }],
+        }),
+      ),
+    ).toThrow('renderer-relative POSIX')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({
+          cells: [{ name: 'one', source: { path: './one.png' }, render: { kind: 'bad' } as never }],
+        }),
+      ),
+    ).toThrow('unknown render kind')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({
+          cells: [
+            {
+              name: 'one',
+              source: { path: './one.png' },
+              render: { kind: 'resize', resampler: 'area-premultiplied-encoded-rgb' } as never,
+            },
+          ],
+        }),
+      ),
+    ).toThrow('output alpha is required')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({
+          cells: [
+            {
+              name: 'one',
+              source: { path: './one.png' },
+              render: {
+                kind: 'fitVisible',
+                sourceAlpha: { clearAtOrBelow: 1 },
+                bounds: { alphaAbove: 1 },
+                maxSize: { width: 1, height: 1 },
+                anchor: { x: 0, y: 0 },
+                resampler: 'bilinear-premultiplied-encoded-rgb',
+              } as never,
+            },
+          ],
+        }),
+      ),
+    ).toThrow('output alpha is required')
+    expect(() =>
+      validateAtlasBuildPageSpec(
+        spec({
+          cells: [
+            {
+              name: 'one',
+              source: { path: './one.png' },
+              render: {
+                kind: 'fitVisible',
+                sourceAlpha: { clearAtOrBelow: 1 },
+                bounds: { alphaAbove: 1, fromCell: 'one' },
+                maxSize: { width: 1, height: 1 },
+                anchor: { x: 0, y: 0 },
+                resampler: 'bilinear-premultiplied-encoded-rgb',
+                outputAlpha: { clearAtOrBelow: 0 },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toThrow('cycle')
+    expect(() =>
+      compileAtlas(
+        spec({
+          cells: [
+            {
+              name: 'one',
+              source: { path: './one.png', crop: { x: 1, y: 0, width: 2, height: 1 } },
+            },
+          ],
+        }),
+        [{ name: 'one', image: image(2, 1, new Array(8).fill(0)) }],
+      ),
+    ).toThrow('crop exceeds')
+    expect(() => compileAtlas(spec({ format: 'grayscale-alpha' }), sources())).toThrow(
+      'not grayscale-alpha',
     )
   })
 
-  it('rejects an empty group and an unknown pixel format', () => {
-    expect(() => validateAtlasPageSpec(spec({ group: ' ' }))).toThrow('must not be empty')
-    expect(() =>
-      validateAtlasPageSpec({
-        ...spec(),
-        format: 'indexed' as AtlasPageSpec['format'],
+  it('validates environment page keys and selects one page key or a whole group', () => {
+    const pages = [
+      spec({ group: 'characters', pageKey: 'characters/body' }),
+      spec({
+        group: 'characters',
+        pageKey: 'characters/clothing',
+        pagePath: './assets/clothing.png',
       }),
-    ).toThrow('Unknown atlas format')
+    ]
+    expect(selectAtlasPages(pages, 'characters')).toHaveLength(2)
+    expect(selectAtlasPages(pages, 'characters/body')).toEqual([pages[0]])
+    const [body, clothing] = pages
+    if (body === undefined || clothing === undefined)
+      throw new Error('Test pages should be present')
+    expect(() =>
+      validateAtlasBuildPages([body, { ...clothing, pageKey: 'characters/body' }]),
+    ).toThrow('key is repeated')
   })
 })
 
 describe('atlas PNG I/O', () => {
-  it('splits a page, leaves a matching page untouched, and names the first stale frame', async () => {
-    const rendererDirectory = await temporaryRenderer()
-    const atlasSpec = spec()
-    const pagePath = join(rendererDirectory, 'assets', 'sample-atlas.png')
-    await writePng(pagePath, page())
-
-    await splitAtlasPage(rendererDirectory, atlasSpec)
-    const secondFrame = splitAtlas(atlasSpec, page())[1]
-    if (secondFrame === undefined) throw new Error('Test atlas should have a second frame')
-    expect(
-      await readPng(join(rendererDirectory, 'assets', 'sample', 'nested', 'second_frame.png')),
-    ).toEqual(secondFrame.image)
-
-    const before = await readFile(pagePath)
-    expect(await packAtlasPage(rendererDirectory, atlasSpec)).toBe(false)
-    expect(await readFile(pagePath)).toEqual(before)
-
-    await writePng(
-      join(rendererDirectory, 'assets', 'sample', 'nested', 'second_frame.png'),
-      image(2, 2, new Array(16).fill(42)),
+  it('names missing configured source art', async () => {
+    await expect(buildAtlasPage(await temporaryRenderer(), spec())).rejects.toThrow(
+      'Atlas cell first source is missing: ./assets/source/first.png',
     )
-    await expect(checkAtlasPage(rendererDirectory, atlasSpec)).rejects.toThrow('nestedSecondFrame')
   })
 
-  it('reports missing, stray, and mis-sized paths from a real frames directory together', async () => {
-    const rendererDirectory = await temporaryRenderer()
+  it('builds from sources, skips an identical decoded page, and names a stale source cell', async () => {
+    const renderer = await temporaryRenderer()
     const atlasSpec = spec()
+    for (const source of sources())
+      await writePng(join(renderer, 'assets', 'source', `${source.name}.png`), source.image)
+    expect(await buildAtlasPage(renderer, atlasSpec)).toBe(true)
+    const outputPath = join(renderer, 'assets', 'sample-atlas.png')
+    const before = await readFile(outputPath)
+    expect(await buildAtlasPage(renderer, atlasSpec)).toBe(false)
+    expect(await readFile(outputPath)).toEqual(before)
     await writePng(
-      join(rendererDirectory, 'assets', 'sample', 'stray.PNG'),
-      image(2, 2, new Array(16).fill(0)),
+      join(renderer, 'assets', 'source', 'second.png'),
+      image(2, 2, new Array(16).fill(42)),
     )
-    await writePng(
-      join(rendererDirectory, 'assets', 'sample', 'first.png'),
-      image(1, 2, new Array(8).fill(0)),
-    )
-
-    await expect(packAtlasPage(rendererDirectory, atlasSpec)).rejects.toThrow(
-      'missing: nested/second_frame.png; stray: stray.PNG; mis-sized: first.png (1x2, expected 2x2)',
-    )
+    await expect(checkAtlasPage(renderer, atlasSpec)).rejects.toThrow('cell second')
+    expect(await readPng(outputPath)).toMatchObject({ width: 4, height: 2 })
   })
 })
 

@@ -12,7 +12,7 @@ function rendererDirectory(): string {
 }
 
 describe('Three Branches atlas pages', () => {
-  it('are fresh from their declared loose frames', async () => {
+  it('are fresh from their configured source cells', async () => {
     await expectAtlasesFresh(rendererDirectory(), ATLAS_PAGES)
   })
 })

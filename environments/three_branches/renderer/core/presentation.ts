@@ -1,6 +1,11 @@
 import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import presentationDocument from '../assets/presentation.json'
-import { readThreeBranchesAssetCatalog, type ThreeBranchesAtlasDraft } from '../assets.js'
+import {
+  readThreeBranchesAssetCatalog,
+  readThreeBranchesThumbnailAsset,
+  type ThreeBranchesAtlasDraft,
+  type ThreeBranchesThumbnailAsset,
+} from '../assets.js'
 import { smoothingPassesFor } from '../terrain/terrain-curves.js'
 import { CATALOG, RULES } from '../ui/overlay.js'
 import { mixedTint } from '../ui/tint.js'
@@ -330,7 +335,9 @@ interface PropVisualTreatment extends VisualScaleTreatment {
 }
 
 export interface HearthsideStyle {
-  atlases: readonly ThreeBranchesAtlasDraft[]
+  /** The validated config-owned atlas definitions, retained for round-trip validation. */
+  atlases: unknown
+  thumbnail: ThreeBranchesThumbnailAsset
   palette: HearthsidePalette
   transition: { naturalMs: number; settleGraceMs: number; headroom: number }
   terrain: {
@@ -449,6 +456,7 @@ export function sceneryVisualScale(type: string): number {
 export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const source = exactRecord(value, 'presentation', [
     'atlases',
+    'thumbnail',
     'palette',
     'transition',
     'terrain',
@@ -463,6 +471,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'expressions',
   ])
   const atlases = readThreeBranchesAssetCatalog(source.atlases)
+  const thumbnail = readThreeBranchesThumbnailAsset(source.thumbnail)
   const paletteSource = exactRecord(source.palette, 'presentation.palette', HEARTHSIDE_PALETTE_KEYS)
   const palette = Object.fromEntries(
     HEARTHSIDE_PALETTE_KEYS.map((key) => [
@@ -727,7 +736,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   return {
-    atlases,
+    atlases: source.atlases,
+    thumbnail,
     palette,
     transition,
     terrain,

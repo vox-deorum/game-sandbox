@@ -15,6 +15,20 @@ import {
 // configuration that art passes are meant to move freely, so nothing here pins their values. What
 // the suite guards is the reader: every malformed shape below must still be rejected.
 describe('Hearthside Ink presentation', () => {
+  it('keeps the configured thumbnail in the validated presentation document', () => {
+    expect(HEARTHSIDE_STYLE.thumbnail).toEqual({
+      source: './assets/source-art/thumbnail-source.png',
+      path: './assets/thumbnail.png',
+      width: 320,
+      height: 180,
+      format: 'full-color',
+    })
+
+    const invalid = structuredClone(HEARTHSIDE_STYLE) as any
+    invalid.thumbnail.format = 'grayscale-alpha'
+    expect(() => readHearthsideStyle(invalid)).toThrow('thumbnail.format must be full-color')
+  })
+
   it('validates each registered prop against its own frame and role contract', () => {
     const missingFoundation = structuredClone(HEARTHSIDE_STYLE) as any
     delete missingFoundation.props.registeredPropByType.bell.sourceAnchorByRole.lower

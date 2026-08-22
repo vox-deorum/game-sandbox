@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { describe, expect, it } from 'vitest'
 
+import { ATLAS_PAGES } from '../assets.js'
 import { opaqueFillPixels, tintedMaskPixels } from '../ui/tint.js'
 
 const SIZE = 128
@@ -16,13 +17,31 @@ const FILL_FAMILIES = [
   ['floorA', 'floorB', 'floorC', 'floorD'],
 ] as const
 function frame(name: string): Uint8ClampedArray {
+  const terrain = ATLAS_PAGES.find((page) => page.group === 'terrain')
+  if (terrain === undefined) throw new Error('Terrain atlas page is missing.')
+  const index = terrain.cells.findIndex((cell) => cell.name === name)
+  if (index < 0) throw new Error(`Terrain frame is missing: ${name}`)
   const path = resolve(
     process.cwd(),
-    `../environments/three_branches/renderer/assets/terrain/${name}.png`,
+    `../environments/three_branches/renderer/${terrain.pagePath.slice(2)}`,
   )
   const image = PNG.sync.read(readFileSync(path))
-  expect({ width: image.width, height: image.height }).toEqual({ width: SIZE, height: SIZE })
-  return new Uint8ClampedArray(image.data)
+  const width = terrain.width / terrain.columns
+  const height = terrain.height / terrain.rows
+  expect({ width, height }).toEqual({ width: SIZE, height: SIZE })
+  const pixels = new Uint8ClampedArray(width * height * 4)
+  const left = (index % terrain.columns) * width
+  const top = Math.floor(index / terrain.columns) * height
+  for (let row = 0; row < height; row += 1) {
+    pixels.set(
+      image.data.subarray(
+        ((top + row) * image.width + left) * 4,
+        ((top + row) * image.width + left + width) * 4,
+      ),
+      row * width * 4,
+    )
+  }
+  return pixels
 }
 
 function channel(pixels: Uint8ClampedArray, x: number, y: number, offset: number): number {

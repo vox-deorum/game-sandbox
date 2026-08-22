@@ -2,9 +2,6 @@
   "atlases": [
     {
       "name": "terrain",
-      "source": "./assets/source-art/terrain-atlas-source.png",
-      "sourceWidth": 1536,
-      "sourceHeight": 1152,
       "path": "./assets/terrain-atlas.png",
       "width": 1024,
       "height": 1152,
@@ -17,24 +14,420 @@
         "height": 128,
         "columns": 8,
         "rows": 9,
-        "names": [
-          "washA", "washB", "washC", "washD", "roadA", "roadB", "roadC", "roadD",
-          "furrowA", "furrowB", "furrowC", "furrowD", "reedsA", "reedsB", "reedsC", "reedsD",
-          "rippleA", "rippleB", "rippleC", "rippleD", "floorA", "floorB", "floorC", "floorD",
-          "wallA", "wallB", "wallC", "wallD", "doorway", "bridgeA", "bridgeB", "bridgeC",
-          "edge00", "edge01", "edge02", "edge03", "edge04", "edge05", "edge06", "edge07",
-          "edge08", "edge09", "edge10", "edge11", "edge12", "edge13", "edge14", "edge15",
-          "cornerA", "cornerB", "cornerC", "cornerD", "cornerE", "cornerF", "cornerG", "cornerH",
-          "bankShoulder", "reedShoulderA", "reedShoulderB", "reedShoulderC", "furrowEndA", "furrowEndB",
-          "furrowEndC", "bankStones", "pathA", "pathB", "pathC", "pathD"
+        "cells": [
+          {
+            "name": "washA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/washA.png"
+            }
+          },
+          {
+            "name": "washB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/washB.png"
+            }
+          },
+          {
+            "name": "washC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/washC.png"
+            }
+          },
+          {
+            "name": "washD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/washD.png"
+            }
+          },
+          {
+            "name": "roadA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/roadA.png"
+            }
+          },
+          {
+            "name": "roadB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/roadB.png"
+            }
+          },
+          {
+            "name": "roadC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/roadC.png"
+            }
+          },
+          {
+            "name": "roadD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/roadD.png"
+            }
+          },
+          {
+            "name": "furrowA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowA.png"
+            }
+          },
+          {
+            "name": "furrowB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowB.png"
+            }
+          },
+          {
+            "name": "furrowC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowC.png"
+            }
+          },
+          {
+            "name": "furrowD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowD.png"
+            }
+          },
+          {
+            "name": "reedsA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedsA.png"
+            }
+          },
+          {
+            "name": "reedsB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedsB.png"
+            }
+          },
+          {
+            "name": "reedsC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedsC.png"
+            }
+          },
+          {
+            "name": "reedsD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedsD.png"
+            }
+          },
+          {
+            "name": "rippleA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/rippleA.png"
+            }
+          },
+          {
+            "name": "rippleB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/rippleB.png"
+            }
+          },
+          {
+            "name": "rippleC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/rippleC.png"
+            }
+          },
+          {
+            "name": "rippleD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/rippleD.png"
+            }
+          },
+          {
+            "name": "floorA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/floorA.png"
+            }
+          },
+          {
+            "name": "floorB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/floorB.png"
+            }
+          },
+          {
+            "name": "floorC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/floorC.png"
+            }
+          },
+          {
+            "name": "floorD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/floorD.png"
+            }
+          },
+          {
+            "name": "wallA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/wallA.png"
+            }
+          },
+          {
+            "name": "wallB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/wallB.png"
+            }
+          },
+          {
+            "name": "wallC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/wallC.png"
+            }
+          },
+          {
+            "name": "wallD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/wallD.png"
+            }
+          },
+          {
+            "name": "doorway",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/doorway.png"
+            }
+          },
+          {
+            "name": "bridgeA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/bridgeA.png"
+            }
+          },
+          {
+            "name": "bridgeB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/bridgeB.png"
+            }
+          },
+          {
+            "name": "bridgeC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/bridgeC.png"
+            }
+          },
+          {
+            "name": "edge00",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge00.png"
+            }
+          },
+          {
+            "name": "edge01",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge01.png"
+            }
+          },
+          {
+            "name": "edge02",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge02.png"
+            }
+          },
+          {
+            "name": "edge03",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge03.png"
+            }
+          },
+          {
+            "name": "edge04",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge04.png"
+            }
+          },
+          {
+            "name": "edge05",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge05.png"
+            }
+          },
+          {
+            "name": "edge06",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge06.png"
+            }
+          },
+          {
+            "name": "edge07",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge07.png"
+            }
+          },
+          {
+            "name": "edge08",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge08.png"
+            }
+          },
+          {
+            "name": "edge09",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge09.png"
+            }
+          },
+          {
+            "name": "edge10",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge10.png"
+            }
+          },
+          {
+            "name": "edge11",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge11.png"
+            }
+          },
+          {
+            "name": "edge12",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge12.png"
+            }
+          },
+          {
+            "name": "edge13",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge13.png"
+            }
+          },
+          {
+            "name": "edge14",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge14.png"
+            }
+          },
+          {
+            "name": "edge15",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/edge15.png"
+            }
+          },
+          {
+            "name": "cornerA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerA.png"
+            }
+          },
+          {
+            "name": "cornerB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerB.png"
+            }
+          },
+          {
+            "name": "cornerC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerC.png"
+            }
+          },
+          {
+            "name": "cornerD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerD.png"
+            }
+          },
+          {
+            "name": "cornerE",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerE.png"
+            }
+          },
+          {
+            "name": "cornerF",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerF.png"
+            }
+          },
+          {
+            "name": "cornerG",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerG.png"
+            }
+          },
+          {
+            "name": "cornerH",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/cornerH.png"
+            }
+          },
+          {
+            "name": "bankShoulder",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/bankShoulder.png"
+            }
+          },
+          {
+            "name": "reedShoulderA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedShoulderA.png"
+            }
+          },
+          {
+            "name": "reedShoulderB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedShoulderB.png"
+            }
+          },
+          {
+            "name": "reedShoulderC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/reedShoulderC.png"
+            }
+          },
+          {
+            "name": "furrowEndA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowEndA.png"
+            }
+          },
+          {
+            "name": "furrowEndB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowEndB.png"
+            }
+          },
+          {
+            "name": "furrowEndC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/furrowEndC.png"
+            }
+          },
+          {
+            "name": "bankStones",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/bankStones.png"
+            }
+          },
+          {
+            "name": "pathA",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/pathA.png"
+            }
+          },
+          {
+            "name": "pathB",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/pathB.png"
+            }
+          },
+          {
+            "name": "pathC",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/pathC.png"
+            }
+          },
+          {
+            "name": "pathD",
+            "source": {
+              "path": "./assets/source-art/frames/terrain/pathD.png"
+            }
+          }
         ]
       }
     },
     {
       "name": "buildings",
-      "source": "./assets/source-art/buildings-atlas-source.png",
-      "sourceWidth": 1254,
-      "sourceHeight": 1254,
       "path": "./assets/buildings-atlas.png",
       "width": 256,
       "height": 256,
@@ -47,14 +440,108 @@
         "height": 64,
         "columns": 4,
         "rows": 4,
-        "names": ["homeFill", "homeEdge", "homeCorner", "homeRidge", "innFill", "innEdge", "innCorner", "innRidge", "shedFill", "shedEdge", "shedCorner", "shedRidge", "homeFillAlt", "innFillAlt", "shedFillAlt", "eaveShadow"]
+        "cells": [
+          {
+            "name": "homeFill",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/homeFill.png"
+            }
+          },
+          {
+            "name": "homeEdge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/homeEdge.png"
+            }
+          },
+          {
+            "name": "homeCorner",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/homeCorner.png"
+            }
+          },
+          {
+            "name": "homeRidge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/homeRidge.png"
+            }
+          },
+          {
+            "name": "innFill",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/innFill.png"
+            }
+          },
+          {
+            "name": "innEdge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/innEdge.png"
+            }
+          },
+          {
+            "name": "innCorner",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/innCorner.png"
+            }
+          },
+          {
+            "name": "innRidge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/innRidge.png"
+            }
+          },
+          {
+            "name": "shedFill",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/shedFill.png"
+            }
+          },
+          {
+            "name": "shedEdge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/shedEdge.png"
+            }
+          },
+          {
+            "name": "shedCorner",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/shedCorner.png"
+            }
+          },
+          {
+            "name": "shedRidge",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/shedRidge.png"
+            }
+          },
+          {
+            "name": "homeFillAlt",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/homeFillAlt.png"
+            }
+          },
+          {
+            "name": "innFillAlt",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/innFillAlt.png"
+            }
+          },
+          {
+            "name": "shedFillAlt",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/shedFillAlt.png"
+            }
+          },
+          {
+            "name": "eaveShadow",
+            "source": {
+              "path": "./assets/source-art/frames/buildings/eaveShadow.png"
+            }
+          }
+        ]
       }
     },
     {
       "name": "props",
-      "source": "./assets/source-art/props-atlas-source.png",
-      "sourceWidth": 2304,
-      "sourceHeight": 1536,
       "path": "./assets/props-atlas.png",
       "width": 2304,
       "height": 1536,
@@ -67,14 +554,156 @@
         "height": 256,
         "columns": 6,
         "rows": 6,
-        "names": ["stallAOpen", "stallAClosed", "stallBOpen", "stallBClosed", "stallCOpen", "stallCClosed", "benchOccupied", "benchEmpty", "shrineTended", "shrineUntended", "boardNone", "plotTended", "plotOvergrown", "hearthLit", "hearthUnlit", "repairBenchBusy", "repairBenchIdle"]
+        "cells": [
+          {
+            "name": "stallAOpen",
+            "source": {
+              "path": "./assets/source-art/stall/a/open.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "stallAClosed",
+            "source": {
+              "path": "./assets/source-art/stall/a/closed.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "stallBOpen",
+            "source": {
+              "path": "./assets/source-art/stall/b/open.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "stallBClosed",
+            "source": {
+              "path": "./assets/source-art/stall/b/closed.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "stallCOpen",
+            "source": {
+              "path": "./assets/source-art/stall/c/open.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "stallCClosed",
+            "source": {
+              "path": "./assets/source-art/stall/c/closed.png"
+            },
+            "render": {
+              "kind": "resize",
+              "resampler": "area-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearColorAtZero": true
+              }
+            }
+          },
+          {
+            "name": "benchOccupied",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchOccupied.png"
+            }
+          },
+          {
+            "name": "benchEmpty",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchEmpty.png"
+            }
+          },
+          {
+            "name": "shrineTended",
+            "source": {
+              "path": "./assets/source-art/frames/props/shrineTended.png"
+            }
+          },
+          {
+            "name": "shrineUntended",
+            "source": {
+              "path": "./assets/source-art/frames/props/shrineUntended.png"
+            }
+          },
+          {
+            "name": "boardNone",
+            "source": {
+              "path": "./assets/source-art/frames/props/boardNone.png"
+            }
+          },
+          {
+            "name": "plotTended",
+            "source": {
+              "path": "./assets/source-art/frames/props/plotTended.png"
+            }
+          },
+          {
+            "name": "plotOvergrown",
+            "source": {
+              "path": "./assets/source-art/frames/props/plotOvergrown.png"
+            }
+          },
+          {
+            "name": "hearthLit",
+            "source": {
+              "path": "./assets/source-art/frames/props/hearthLit.png"
+            }
+          },
+          {
+            "name": "hearthUnlit",
+            "source": {
+              "path": "./assets/source-art/frames/props/hearthUnlit.png"
+            }
+          },
+          {
+            "name": "repairBenchBusy",
+            "source": {
+              "path": "./assets/source-art/frames/props/repairBenchBusy.png"
+            }
+          },
+          {
+            "name": "repairBenchIdle",
+            "source": {
+              "path": "./assets/source-art/frames/props/repairBenchIdle.png"
+            }
+          }
+        ]
       }
     },
     {
       "name": "lantern",
-      "source": "./assets/source-art/lantern-atlas-source.png",
-      "sourceWidth": 2048,
-      "sourceHeight": 1536,
       "path": "./assets/lantern-atlas.png",
       "width": 768,
       "height": 512,
@@ -82,13 +711,29 @@
       "format": "full-color",
       "consumer": "centered one-cell lantern state stills on a dedicated page",
       "mipmaps": true,
-      "frames": { "width": 384, "height": 512, "columns": 2, "rows": 1, "names": ["lanternLit", "lanternUnlit"] }
+      "frames": {
+        "width": 384,
+        "height": 512,
+        "columns": 2,
+        "rows": 1,
+        "cells": [
+          {
+            "name": "lanternLit",
+            "source": {
+              "path": "./assets/source-art/frames/lantern/lanternLit.png"
+            }
+          },
+          {
+            "name": "lanternUnlit",
+            "source": {
+              "path": "./assets/source-art/frames/lantern/lanternUnlit.png"
+            }
+          }
+        ]
+      }
     },
     {
       "name": "monuments",
-      "source": "./assets/source-art/monuments-atlas-source.png",
-      "sourceWidth": 2304,
-      "sourceHeight": 1024,
       "path": "./assets/monuments-atlas.png",
       "width": 2304,
       "height": 1024,
@@ -96,13 +741,29 @@
       "format": "full-color",
       "consumer": "higher-density fixed-north pump stills",
       "mipmaps": true,
-      "frames": { "width": 768, "height": 512, "columns": 3, "rows": 2, "names": ["pumpFlowing", "pumpIdle"] }
+      "frames": {
+        "width": 768,
+        "height": 512,
+        "columns": 3,
+        "rows": 2,
+        "cells": [
+          {
+            "name": "pumpFlowing",
+            "source": {
+              "path": "./assets/source-art/frames/monuments/pumpFlowing.png"
+            }
+          },
+          {
+            "name": "pumpIdle",
+            "source": {
+              "path": "./assets/source-art/frames/monuments/pumpIdle.png"
+            }
+          }
+        ]
+      }
     },
     {
       "name": "bell",
-      "source": "./assets/source-art/bell-atlas-source.png",
-      "sourceWidth": 4608,
-      "sourceHeight": 1024,
       "path": "./assets/bell-atlas.png",
       "width": 4608,
       "height": 1024,
@@ -110,13 +771,35 @@
       "format": "full-color",
       "consumer": "bell foundation, fixed gantry, and separately animated bell",
       "mipmaps": true,
-      "frames": { "width": 1536, "height": 1024, "columns": 3, "rows": 1, "names": ["bellFoundation", "bellGantry", "bellMoving"] }
+      "frames": {
+        "width": 1536,
+        "height": 1024,
+        "columns": 3,
+        "rows": 1,
+        "cells": [
+          {
+            "name": "bellFoundation",
+            "source": {
+              "path": "./assets/source-art/frames/bell/bellFoundation.png"
+            }
+          },
+          {
+            "name": "bellGantry",
+            "source": {
+              "path": "./assets/source-art/frames/bell/bellGantry.png"
+            }
+          },
+          {
+            "name": "bellMoving",
+            "source": {
+              "path": "./assets/source-art/frames/bell/bellMoving.png"
+            }
+          }
+        ]
+      }
     },
     {
       "name": "scenery",
-      "source": "./assets/source-art/scenery-atlas-source.png",
-      "sourceWidth": 2048,
-      "sourceHeight": 1024,
       "path": "./assets/scenery-atlas.png",
       "width": 2048,
       "height": 1024,
@@ -124,7 +807,56 @@
       "format": "full-color",
       "consumer": "six complete high-resolution pine variants and the market crate",
       "mipmaps": true,
-      "frames": { "width": 512, "height": 512, "columns": 4, "rows": 2, "names": ["pineA", "pineB", "pineC", "pineD", "pineE", "pineF", "marketCrate"] }
+      "frames": {
+        "width": 512,
+        "height": 512,
+        "columns": 4,
+        "rows": 2,
+        "cells": [
+          {
+            "name": "pineA",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineA.png"
+            }
+          },
+          {
+            "name": "pineB",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineB.png"
+            }
+          },
+          {
+            "name": "pineC",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineC.png"
+            }
+          },
+          {
+            "name": "pineD",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineD.png"
+            }
+          },
+          {
+            "name": "pineE",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineE.png"
+            }
+          },
+          {
+            "name": "pineF",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/pineF.png"
+            }
+          },
+          {
+            "name": "marketCrate",
+            "source": {
+              "path": "./assets/source-art/frames/scenery/marketCrate.png"
+            }
+          }
+        ]
+      }
     },
     {
       "name": "characters",
@@ -133,17 +865,162 @@
       "consumer": "independently registered overhead body, clothing, arm, and detail masks",
       "mipmaps": false,
       "layers": [
-        { "name": "body", "source": "./assets/source-art/characters-body-atlas-source.png", "sourceWidth": 2172, "sourceHeight": 724, "path": "./assets/characters-body-atlas.png", "width": 768, "height": 192, "frames": { "width": 192, "height": 192, "columns": 4, "rows": 1, "names": ["rest", "leftForward", "pass", "rightForward"] } },
-        { "name": "clothing", "source": "./assets/source-art/characters-clothing-atlas-source.png", "sourceWidth": 2022, "sourceHeight": 778, "path": "./assets/characters-clothing-atlas.png", "width": 768, "height": 192, "frames": { "width": 192, "height": 192, "columns": 4, "rows": 1, "names": ["rest", "leftForward", "pass", "rightForward"] } },
-        { "name": "arms", "source": "./assets/source-art/characters-arms-atlas-source.png", "sourceWidth": 2137, "sourceHeight": 736, "path": "./assets/characters-arms-atlas.png", "width": 768, "height": 192, "frames": { "width": 192, "height": 192, "columns": 4, "rows": 1, "names": ["rest", "leftForward", "pass", "rightForward"] } },
-        { "name": "details", "source": "./assets/source-art/characters-details-atlas-source.png", "sourceWidth": 2103, "sourceHeight": 748, "path": "./assets/characters-details-atlas.png", "width": 768, "height": 192, "frames": { "width": 192, "height": 192, "columns": 4, "rows": 1, "names": ["hairKnot", "reedCap", "headscarf", "visitorTie"] } }
+        {
+          "name": "body",
+          "path": "./assets/characters-body-atlas.png",
+          "width": 768,
+          "height": 192,
+          "frames": {
+            "width": 192,
+            "height": 192,
+            "columns": 4,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "rest",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/body/rest.png"
+                }
+              },
+              {
+                "name": "leftForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/body/leftForward.png"
+                }
+              },
+              {
+                "name": "pass",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/body/pass.png"
+                }
+              },
+              {
+                "name": "rightForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/body/rightForward.png"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "clothing",
+          "path": "./assets/characters-clothing-atlas.png",
+          "width": 768,
+          "height": 192,
+          "frames": {
+            "width": 192,
+            "height": 192,
+            "columns": 4,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "rest",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/clothing/rest.png"
+                }
+              },
+              {
+                "name": "leftForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/clothing/leftForward.png"
+                }
+              },
+              {
+                "name": "pass",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/clothing/pass.png"
+                }
+              },
+              {
+                "name": "rightForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/clothing/rightForward.png"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "arms",
+          "path": "./assets/characters-arms-atlas.png",
+          "width": 768,
+          "height": 192,
+          "frames": {
+            "width": 192,
+            "height": 192,
+            "columns": 4,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "rest",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/arms/rest.png"
+                }
+              },
+              {
+                "name": "leftForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/arms/leftForward.png"
+                }
+              },
+              {
+                "name": "pass",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/arms/pass.png"
+                }
+              },
+              {
+                "name": "rightForward",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/arms/rightForward.png"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "details",
+          "path": "./assets/characters-details-atlas.png",
+          "width": 768,
+          "height": 192,
+          "frames": {
+            "width": 192,
+            "height": 192,
+            "columns": 4,
+            "rows": 1,
+            "cells": [
+              {
+                "name": "hairKnot",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/details/hairKnot.png"
+                }
+              },
+              {
+                "name": "reedCap",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/details/reedCap.png"
+                }
+              },
+              {
+                "name": "headscarf",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/details/headscarf.png"
+                }
+              },
+              {
+                "name": "visitorTie",
+                "source": {
+                  "path": "./assets/source-art/frames/characters/details/visitorTie.png"
+                }
+              }
+            ]
+          }
+        }
       ]
     },
     {
       "name": "effects",
-      "source": "./assets/source-art/effects-atlas-source.png",
-      "sourceWidth": 3840,
-      "sourceHeight": 1024,
       "path": "./assets/effects-atlas.png",
       "width": 1920,
       "height": 512,
@@ -151,7 +1028,254 @@
       "format": "grayscale-alpha",
       "consumer": "character marks, expression chips, prop effects, and white-crane dressing",
       "mipmaps": false,
-      "frames": { "width": 192, "height": 128, "columns": 10, "rows": 4, "names": ["characterShadow", "directionMark", "glow", "glowFlicker", "flameA", "flameB", "flameC", "flameD", "smokeA", "smokeB", "waterA", "waterB", "bellLinesA", "bellLinesB", "craneA", "craneB", "glowLow", "glowHigh", "flameE", "flameF", "smokeC", "smokeD", "waterC", "waterD", "bellLinesC", "bellLinesD", "bellLinesE", "bellLinesF", "expressionWave", "expressionNod", "expressionShakeHead", "expressionPoint", "expressionLaugh", "expressionShrug", "expressionStartle", "expressionSleep", "expressionSweep", "expressionUse", "expressionAccentA", "expressionAccentB"] }
+      "frames": {
+        "width": 192,
+        "height": 128,
+        "columns": 10,
+        "rows": 4,
+        "cells": [
+          {
+            "name": "characterShadow",
+            "source": {
+              "path": "./assets/source-art/frames/effects/characterShadow.png"
+            }
+          },
+          {
+            "name": "directionMark",
+            "source": {
+              "path": "./assets/source-art/frames/effects/directionMark.png"
+            }
+          },
+          {
+            "name": "glow",
+            "source": {
+              "path": "./assets/source-art/frames/effects/glow.png"
+            }
+          },
+          {
+            "name": "glowFlicker",
+            "source": {
+              "path": "./assets/source-art/frames/effects/glowFlicker.png"
+            }
+          },
+          {
+            "name": "flameA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameA.png"
+            }
+          },
+          {
+            "name": "flameB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameB.png"
+            }
+          },
+          {
+            "name": "flameC",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameC.png"
+            }
+          },
+          {
+            "name": "flameD",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameD.png"
+            }
+          },
+          {
+            "name": "smokeA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/smokeA.png"
+            }
+          },
+          {
+            "name": "smokeB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/smokeB.png"
+            }
+          },
+          {
+            "name": "waterA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/waterA.png"
+            }
+          },
+          {
+            "name": "waterB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/waterB.png"
+            }
+          },
+          {
+            "name": "bellLinesA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesA.png"
+            }
+          },
+          {
+            "name": "bellLinesB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesB.png"
+            }
+          },
+          {
+            "name": "craneA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/craneA.png"
+            }
+          },
+          {
+            "name": "craneB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/craneB.png"
+            }
+          },
+          {
+            "name": "glowLow",
+            "source": {
+              "path": "./assets/source-art/frames/effects/glowLow.png"
+            }
+          },
+          {
+            "name": "glowHigh",
+            "source": {
+              "path": "./assets/source-art/frames/effects/glowHigh.png"
+            }
+          },
+          {
+            "name": "flameE",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameE.png"
+            }
+          },
+          {
+            "name": "flameF",
+            "source": {
+              "path": "./assets/source-art/frames/effects/flameF.png"
+            }
+          },
+          {
+            "name": "smokeC",
+            "source": {
+              "path": "./assets/source-art/frames/effects/smokeC.png"
+            }
+          },
+          {
+            "name": "smokeD",
+            "source": {
+              "path": "./assets/source-art/frames/effects/smokeD.png"
+            }
+          },
+          {
+            "name": "waterC",
+            "source": {
+              "path": "./assets/source-art/frames/effects/waterC.png"
+            }
+          },
+          {
+            "name": "waterD",
+            "source": {
+              "path": "./assets/source-art/frames/effects/waterD.png"
+            }
+          },
+          {
+            "name": "bellLinesC",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesC.png"
+            }
+          },
+          {
+            "name": "bellLinesD",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesD.png"
+            }
+          },
+          {
+            "name": "bellLinesE",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesE.png"
+            }
+          },
+          {
+            "name": "bellLinesF",
+            "source": {
+              "path": "./assets/source-art/frames/effects/bellLinesF.png"
+            }
+          },
+          {
+            "name": "expressionWave",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionWave.png"
+            }
+          },
+          {
+            "name": "expressionNod",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionNod.png"
+            }
+          },
+          {
+            "name": "expressionShakeHead",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionShakeHead.png"
+            }
+          },
+          {
+            "name": "expressionPoint",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionPoint.png"
+            }
+          },
+          {
+            "name": "expressionLaugh",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionLaugh.png"
+            }
+          },
+          {
+            "name": "expressionShrug",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionShrug.png"
+            }
+          },
+          {
+            "name": "expressionStartle",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionStartle.png"
+            }
+          },
+          {
+            "name": "expressionSleep",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionSleep.png"
+            }
+          },
+          {
+            "name": "expressionSweep",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionSweep.png"
+            }
+          },
+          {
+            "name": "expressionUse",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionUse.png"
+            }
+          },
+          {
+            "name": "expressionAccentA",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionAccentA.png"
+            }
+          },
+          {
+            "name": "expressionAccentB",
+            "source": {
+              "path": "./assets/source-art/frames/effects/expressionAccentB.png"
+            }
+          }
+        ]
+      }
     }
   ],
   "palette": {
@@ -178,10 +1302,18 @@
     "wall": "#484238",
     "bridge": "#685038"
   },
-  "transition": { "naturalMs": 1000, "settleGraceMs": 100, "headroom": 1.1 },
+  "transition": {
+    "naturalMs": 1000,
+    "settleGraceMs": 100,
+    "headroom": 1.1
+  },
   "terrain": {
     "fills": {
-      "ground": { "frames": ["washA", "washB", "washC", "washD"], "tint": "ground", "opacity": 1 },
+      "ground": {
+        "frames": ["washA", "washB", "washC", "washD"],
+        "tint": "ground",
+        "opacity": 1
+      },
       "road": {
         "frames": ["roadA", "roadB", "roadC", "roadD"],
         "tint": "road",
@@ -206,7 +1338,11 @@
         "tint": "floor",
         "opacity": 1
       },
-      "doorway": { "frames": ["doorway"], "tint": "path", "opacity": 1 },
+      "doorway": {
+        "frames": ["doorway"],
+        "tint": "path",
+        "opacity": 1
+      },
       "field": {
         "frames": ["furrowA", "furrowB", "furrowC", "furrowD"],
         "tint": "field",
@@ -223,7 +1359,11 @@
         "tint": "stream",
         "opacity": 1
       },
-      "wall": { "frames": ["floorA", "floorB", "floorC", "floorD"], "tint": "wall", "opacity": 1 }
+      "wall": {
+        "frames": ["floorA", "floorB", "floorC", "floorD"],
+        "tint": "wall",
+        "opacity": 1
+      }
     },
     "contours": {
       "profiles": {
@@ -231,16 +1371,28 @@
           "sampleSpacingCells": 0.25,
           "cornerRadiusCells": 0.8,
           "octaves": [
-            { "wavelengthCells": 9, "amplitudeCells": 0.2 },
-            { "wavelengthCells": 4.5, "amplitudeCells": 0.14 }
+            {
+              "wavelengthCells": 9,
+              "amplitudeCells": 0.2
+            },
+            {
+              "wavelengthCells": 4.5,
+              "amplitudeCells": 0.14
+            }
           ]
         },
         "water": {
           "sampleSpacingCells": 0.2,
           "cornerRadiusCells": 0.8,
           "octaves": [
-            { "wavelengthCells": 11, "amplitudeCells": 0.22 },
-            { "wavelengthCells": 5, "amplitudeCells": 0.15 }
+            {
+              "wavelengthCells": 11,
+              "amplitudeCells": 0.22
+            },
+            {
+              "wavelengthCells": 5,
+              "amplitudeCells": 0.15
+            }
           ]
         }
       },
@@ -248,7 +1400,11 @@
       "maxDeviationCells": 0.6
     },
     "seams": {
-      "pooling": { "widthCells": 0.45, "darken": 0.16, "opacity": 0.28 },
+      "pooling": {
+        "widthCells": 0.45,
+        "darken": 0.16,
+        "opacity": 0.28
+      },
       "ink": {
         "tint": "ink",
         "widthCells": 0.15,
@@ -275,7 +1431,12 @@
         "curve": {
           "sampleSpacingCells": 0.25,
           "cornerRadiusCells": 0.56,
-          "octaves": [{ "wavelengthCells": 6, "amplitudeCells": 0.05 }]
+          "octaves": [
+            {
+              "wavelengthCells": 6,
+              "amplitudeCells": 0.05
+            }
+          ]
         },
         "targetWidthCells": 2.1,
         "minimumWidthCells": 1.6,
@@ -286,7 +1447,12 @@
         "curve": {
           "sampleSpacingCells": 0.2,
           "cornerRadiusCells": 0.53,
-          "octaves": [{ "wavelengthCells": 7, "amplitudeCells": 0.04 }]
+          "octaves": [
+            {
+              "wavelengthCells": 7,
+              "amplitudeCells": 0.04
+            }
+          ]
         },
         "widthCells": 0.7,
         "edgeFadeCells": 0.01,
@@ -303,7 +1469,10 @@
       "shadowOffsetCells": 0.06,
       "textureBleedCells": 0.025
     },
-    "upperWall": { "frames": ["wallA", "wallB", "wallC", "wallD"], "tint": "wall" }
+    "upperWall": {
+      "frames": ["wallA", "wallB", "wallC", "wallD"],
+      "tint": "wall"
+    }
   },
   "roofs": {
     "clearAlpha": 0.18,
@@ -353,7 +1522,10 @@
       "frameRatio": 0.68,
       "deadZone": 0.05
     },
-    "visitor": { "detail": "visitorTie", "tint": "cinnabar" }
+    "visitor": {
+      "detail": "visitorTie",
+      "tint": "cinnabar"
+    }
   },
   "props": {
     "defaultScale": 0.14,
@@ -365,30 +1537,63 @@
       "board": 0.28,
       "plot": 0.17
     },
-    "effectAnchorByType": { "pump": { "x": 31, "y": -61 } },
+    "effectAnchorByType": {
+      "pump": {
+        "x": 31,
+        "y": -61
+      }
+    },
     "registeredPropByType": {
       "pump": {
         "textureDensityDivisor": 4,
-        "frameSize": { "width": 768, "height": 512 },
-        "sourceAnchorByRole": { "full": { "x": 344, "y": 384 } },
+        "frameSize": {
+          "width": 768,
+          "height": 512
+        },
+        "sourceAnchorByRole": {
+          "full": {
+            "x": 344,
+            "y": 384
+          }
+        },
         "splitY": 304
       },
       "bell": {
         "textureDensityDivisor": 16,
-        "frameSize": { "width": 1536, "height": 1024 },
+        "frameSize": {
+          "width": 1536,
+          "height": 1024
+        },
         "sourceAnchorByRole": {
-          "upper": { "x": 768, "y": 960 },
-          "moving": { "x": 768, "y": 960 },
-          "lower": { "x": 768, "y": 512 }
+          "upper": {
+            "x": 768,
+            "y": 960
+          },
+          "moving": {
+            "x": 768,
+            "y": 960
+          },
+          "lower": {
+            "x": 768,
+            "y": 512
+          }
         },
         "swing": {
-          "sourcePivot": { "x": 768, "y": 527 },
+          "sourcePivot": {
+            "x": 768,
+            "y": 527
+          },
           "amplitudeRadians": 0.18
         }
       }
     }
   },
-  "scenery": { "defaultScale": 0.25, "scaleByType": { "pine": 0.75 } },
+  "scenery": {
+    "defaultScale": 0.25,
+    "scaleByType": {
+      "pine": 0.75
+    }
+  },
   "propEffects": {
     "lantern": {
       "frames": ["glowFlicker", "glowLow", "glowHigh", "glow", "glowHigh", "glowLow"],
@@ -418,8 +1623,17 @@
       "frameRate": 1.5
     }
   },
-  "emissives": { "lantern": "gilt", "hearth": "cinnabar", "frame": "glow" },
-  "cranes": { "frames": ["craneA", "craneB"], "tint": "bone", "count": [1, 3], "frameMs": 260 },
+  "emissives": {
+    "lantern": "gilt",
+    "hearth": "cinnabar",
+    "frame": "glow"
+  },
+  "cranes": {
+    "frames": ["craneA", "craneB"],
+    "tint": "bone",
+    "count": [1, 3],
+    "frameMs": 260
+  },
   "expressions": {
     "frames": {
       "wave": "expressionWave",
@@ -436,5 +1650,12 @@
     "tint": "ink",
     "accentFrames": ["expressionAccentA", "expressionAccentB"],
     "frameRatio": 0.25
+  },
+  "thumbnail": {
+    "source": "./assets/source-art/thumbnail-source.png",
+    "path": "./assets/thumbnail.png",
+    "width": 320,
+    "height": 180,
+    "format": "full-color"
   }
 }

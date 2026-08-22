@@ -1,22 +1,23 @@
-import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
-
-import catalogDocument from '../catalog.json'
+import {
+  type AtlasBuildPageSpec,
+  type AtlasCell,
+  type AtlasFormat,
+  validateAtlasBuildPages,
+} from '@renderers/base/atlas/atlas.js'
 
 import presentationDocument from './assets/presentation.json'
 import type { FrameGrid } from './ui/tint.js'
 
-type AtlasFormat = 'grayscale-alpha' | 'full-color'
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 
-/** One generated source atlas and its optimized runtime counterpart. */
+type ThumbnailFormat = 'full-color'
+
 export interface ThreeBranchesRasterDraft {
-  source: string
-  sourceWidth: number
-  sourceHeight: number
   path: string
   width: number
   height: number
   frames: FrameGrid
+  cells: readonly AtlasCell[]
 }
 
 export interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft {
@@ -42,7 +43,15 @@ export interface ThreeBranchesLayeredAtlasDraft {
 
 export type ThreeBranchesAtlasDraft = ThreeBranchesSingleAtlasDraft | ThreeBranchesLayeredAtlasDraft
 
-/** Parse a complete JSON-owned catalog without accepting unknown fields or page shapes. */
+export interface ThreeBranchesThumbnailAsset {
+  source: string
+  path: string
+  width: number
+  height: number
+  format: ThumbnailFormat
+}
+
+/** Parse a complete JSON-owned source-art catalog without accepting unknown fields. */
 export function readThreeBranchesAssetCatalog(
   value: unknown,
   name = 'presentation.atlases',
@@ -57,21 +66,33 @@ export function readThreeBranchesAssetCatalog(
   if (new Set(catalog.map((atlas) => atlas.name)).size !== catalog.length) {
     throw new Error(`${name} must not contain duplicate atlas groups.`)
   }
-  const paths: string[] = []
-  for (const atlas of catalog) {
-    if ('layers' in atlas) paths.push(...atlas.layers.map((layer) => layer.path))
-    else paths.push(atlas.path)
-  }
+  const paths = catalog.flatMap((atlas) =>
+    'layers' in atlas ? atlas.layers.map((layer) => layer.path) : [atlas.path],
+  )
   if (new Set(paths).size !== paths.length) throw new Error(`${name} must not reuse runtime paths.`)
+  validateAtlasBuildPages(atlasBuildPages(catalog))
   return catalog
+}
+
+export function readThreeBranchesThumbnailAsset(
+  value: unknown,
+  name = 'presentation.thumbnail',
+): ThreeBranchesThumbnailAsset {
+  const source = record(value, name)
+  exact(source, name, ['source', 'path', 'width', 'height', 'format'])
+  const thumbnail = {
+    source: sourcePngPath(source.source, `${name}.source`),
+    path: thumbnailPngPath(source.path, `${name}.path`),
+    width: positiveInteger(source.width, `${name}.width`),
+    height: positiveInteger(source.height, `${name}.height`),
+    format: thumbnailFormat(source.format, `${name}.format`),
+  }
+  return thumbnail
 }
 
 function singleAtlas(source: Record<string, unknown>, name: string): ThreeBranchesSingleAtlasDraft {
   exact(source, name, [
     'name',
-    'source',
-    'sourceWidth',
-    'sourceHeight',
     'path',
     'width',
     'height',
@@ -103,21 +124,13 @@ function layeredAtlas(
   const layers = list(source.layers, `${name}.layers`).map((value, index) => {
     const layerName = `${name}.layers[${index}]`
     const layer = record(value, layerName)
-    exact(layer, layerName, [
-      'name',
-      'source',
-      'sourceWidth',
-      'sourceHeight',
-      'path',
-      'width',
-      'height',
-      'frames',
-    ])
+    exact(layer, layerName, ['name', 'path', 'width', 'height', 'frames'])
     return { name: pathSegment(layer.name, `${layerName}.name`), ...raster(layer, layerName) }
   })
   if (layers.length === 0) throw new Error(`${name}.layers must contain at least one layer.`)
-  if (new Set(layers.map((layer) => layer.name)).size !== layers.length)
+  if (new Set(layers.map((layer) => layer.name)).size !== layers.length) {
     throw new Error(`${name}.layers must not contain duplicate layer names.`)
+  }
   const atlas = {
     name: pathSegment(source.name, `${name}.name`),
     tintable: bool(source.tintable, `${name}.tintable`),
@@ -140,35 +153,88 @@ function raster(source: Record<string, unknown>, name: string): ThreeBranchesRas
     throw new Error(`${name} dimensions must match its frame grid.`)
   }
   return {
-    source: sourcePngPath(source.source, `${name}.source`),
-    sourceWidth: positiveInteger(source.sourceWidth, `${name}.sourceWidth`),
-    sourceHeight: positiveInteger(source.sourceHeight, `${name}.sourceHeight`),
     path: runtimePngPath(source.path, `${name}.path`),
     width,
     height,
     frames,
+    cells: parseCells(record(source.frames, `${name}.frames`).cells, `${name}.frames.cells`),
   }
 }
 
 function grid(value: unknown, name: string): FrameGrid {
   const source = record(value, name)
-  exact(source, name, ['width', 'height', 'columns', 'rows', 'names'])
+  exact(source, name, ['width', 'height', 'columns', 'rows', 'cells'])
+  const cells = parseCells(source.cells, `${name}.cells`)
   const result = {
     width: positiveInteger(source.width, `${name}.width`),
     height: positiveInteger(source.height, `${name}.height`),
     columns: positiveInteger(source.columns, `${name}.columns`),
     rows: positiveInteger(source.rows, `${name}.rows`),
-    names: list(source.names, `${name}.names`).map((frame, index) =>
-      filenameStem(frame, `${name}.names[${index}]`),
-    ),
+    names: cells.map((cell) => cell.name),
   }
   if (result.names.length === 0 || result.names.length > result.columns * result.rows) {
-    throw new Error(`${name}.names must fit its frame grid.`)
+    throw new Error(`${name}.cells must fit its frame grid.`)
   }
   if (new Set(result.names).size !== result.names.length) {
-    throw new Error(`${name}.names must not contain duplicates.`)
+    throw new Error(`${name}.cells must not contain duplicate names.`)
   }
   return result
+}
+
+function parseCells(value: unknown, name: string): readonly AtlasCell[] {
+  return list(value, name).map((value, index) => {
+    const cellName = `${name}[${index}]`
+    const cell = record(value, cellName)
+    exact(cell, cellName, ['name', 'source', 'render'])
+    const source = record(cell.source, `${cellName}.source`)
+    exact(source, `${cellName}.source`, ['path', 'crop'])
+    const parsed: AtlasCell = {
+      name: filenameStem(cell.name, `${cellName}.name`),
+      source: { path: sourcePngPath(source.path, `${cellName}.source.path`) },
+    }
+    if (source.crop !== undefined) parsed.source.crop = crop(source.crop, `${cellName}.source.crop`)
+    if (cell.render !== undefined) {
+      const render = record(cell.render, `${cellName}.render`)
+      validateRenderShape(render, `${cellName}.render`)
+      parsed.render = render as AtlasCell['render']
+    }
+    return parsed
+  })
+}
+
+function validateRenderShape(value: Record<string, unknown>, name: string): void {
+  if (value.kind === 'copy') exact(value, name, ['kind'])
+  else if (value.kind === 'resize') exact(value, name, ['kind', 'resampler', 'outputAlpha'])
+  else if (value.kind === 'fitVisible') {
+    exact(value, name, [
+      'kind',
+      'sourceAlpha',
+      'bounds',
+      'maxSize',
+      'anchor',
+      'resampler',
+      'outputAlpha',
+    ])
+    record(value.sourceAlpha, `${name}.sourceAlpha`)
+    record(value.bounds, `${name}.bounds`)
+    record(value.maxSize, `${name}.maxSize`)
+    record(value.anchor, `${name}.anchor`)
+    if (value.outputAlpha !== undefined) record(value.outputAlpha, `${name}.outputAlpha`)
+  } else throw new Error(`${name}.kind must be copy, resize, or fitVisible.`)
+}
+
+function crop(
+  value: unknown,
+  name: string,
+): { x: number; y: number; width: number; height: number } {
+  const source = record(value, name)
+  exact(source, name, ['x', 'y', 'width', 'height'])
+  return {
+    x: nonNegativeInteger(source.x, `${name}.x`),
+    y: nonNegativeInteger(source.y, `${name}.y`),
+    width: positiveInteger(source.width, `${name}.width`),
+    height: positiveInteger(source.height, `${name}.height`),
+  }
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -180,7 +246,7 @@ function record(value: unknown, name: string): Record<string, unknown> {
 
 function exact(value: Record<string, unknown>, name: string, keys: readonly string[]): void {
   const allowed = new Set(keys)
-  if (keys.some((key) => !(key in value)) || Object.keys(value).some((key) => !allowed.has(key))) {
+  if (Object.keys(value).some((key) => !allowed.has(key))) {
     throw new Error(`${name} keys do not match its contract.`)
   }
 }
@@ -208,11 +274,8 @@ function filenameStem(value: unknown, name: string): string {
 }
 
 function sourcePngPath(value: unknown, name: string): string {
-  return rendererPngPath(value, name, './assets/source-art/')
-}
-
-function rendererPngPath(value: unknown, name: string, prefix: string): string {
   const result = text(value, name)
+  const prefix = './assets/source-art/'
   const segments = result.slice(prefix.length).split('/')
   if (
     !result.startsWith(prefix) ||
@@ -233,9 +296,24 @@ function runtimePngPath(value: unknown, name: string): string {
   return result
 }
 
+function thumbnailPngPath(value: unknown, name: string): string {
+  const result = text(value, name)
+  if (!/^\.\/assets\/[A-Za-z0-9][A-Za-z0-9_-]*\.png$/.test(result)) {
+    throw new Error(`${name} must be a direct ./assets/<safe>.png path.`)
+  }
+  return result
+}
+
 function positiveInteger(value: unknown, name: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive integer.`)
+  }
+  return value
+}
+
+function nonNegativeInteger(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a nonnegative integer.`)
   }
   return value
 }
@@ -252,9 +330,19 @@ function format(value: unknown, name: string): AtlasFormat {
   return value
 }
 
+function thumbnailFormat(value: unknown, name: string): ThumbnailFormat {
+  if (value !== 'full-color') throw new Error(`${name} must be full-color.`)
+  return value
+}
+
 /** The complete JSON-owned catalog used by runtime loading and presentation validation. */
 export const THREE_BRANCHES_ASSET_CATALOG = readThreeBranchesAssetCatalog(
   presentationDocument.atlases,
+)
+
+/** The separate illustrative image used by the environment card. */
+export const THREE_BRANCHES_THUMBNAIL_ASSET = readThreeBranchesThumbnailAsset(
+  presentationDocument.thumbnail,
 )
 
 /** Resolve frame names from one JSON-owned atlas page. */
@@ -273,95 +361,40 @@ export function atlasFrameNames(group: string, layer?: string): readonly string[
   return page.frames.names
 }
 
-function flatFramePaths(names: readonly string[]): readonly string[] {
-  return names.map((name) => `${name}.png`)
+function atlasBuildPages(
+  catalog: readonly ThreeBranchesAtlasDraft[],
+): readonly AtlasBuildPageSpec[] {
+  return catalog.flatMap((atlas) =>
+    'layers' in atlas
+      ? atlas.layers.map((layer) =>
+          buildPage(atlas.name, `${atlas.name}/${layer.name}`, atlas.format, layer),
+        )
+      : [buildPage(atlas.name, atlas.name, atlas.format, atlas)],
+  )
 }
 
-function catalogPropFramePath(name: string): string {
-  const stall = name.match(/^stall([ABC])(Open|Closed)$/)
-  if (stall !== null) {
-    const state = stall[2]?.toLowerCase()
-    return stall[1] === 'A' ? `stall/${state}.png` : `stall/${stall[1]?.toLowerCase()}/${state}.png`
-  }
-  for (const prop of catalogDocument.props) {
-    const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-    const state = prop.states.find(
-      (value) => `${type}${value[0]?.toUpperCase()}${value.slice(1)}` === name,
-    )
-    if (state !== undefined) return `${prop.token}/${state}.png`
-  }
-  throw new Error(`Three Branches prop frame has no catalog state: ${name}`)
-}
-
-function monumentFramePath(name: string): string {
-  return name === 'pumpFlowing' ? 'pump/flowing.png' : 'pump/idle.png'
-}
-
-function bellFramePath(name: string): string {
-  if (name === 'bellFoundation') return 'foundation.png'
-  if (name === 'bellGantry') return 'gantry.png'
-  return 'moving.png'
-}
-
-function atlasPage(
+function buildPage(
   group: string,
-  format: ThreeBranchesSingleAtlasDraft['format'],
+  pageKey: string,
+  format: AtlasFormat,
   raster: ThreeBranchesRasterDraft,
-  framesPath: string,
-  framePaths: readonly string[],
-): AtlasPageSpec {
+): AtlasBuildPageSpec {
   return {
     group,
+    pageKey,
     pagePath: raster.path,
-    framesPath,
     format,
     width: raster.width,
     height: raster.height,
     columns: raster.frames.columns,
     rows: raster.frames.rows,
-    framePaths,
+    cells: raster.cells,
   }
 }
 
-/** The loose-frame manifests for the twelve compiled Three Branches atlas pages. */
-export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
-  if ('layers' in atlas) {
-    return atlas.layers.map((layer) =>
-      atlasPage(
-        atlas.name,
-        atlas.format,
-        layer,
-        `./assets/${atlas.name}/${layer.name}`,
-        flatFramePaths(layer.frames.names),
-      ),
-    )
-  }
+/** The source-art manifests for the twelve compiled Three Branches atlas pages. */
+export const ATLAS_PAGES = atlasBuildPages(THREE_BRANCHES_ASSET_CATALOG)
 
-  const framePaths =
-    atlas.name === 'props'
-      ? atlas.frames.names.map(catalogPropFramePath)
-      : atlas.name === 'monuments'
-        ? atlas.frames.names.map(monumentFramePath)
-        : atlas.name === 'bell'
-          ? atlas.frames.names.map(bellFramePath)
-          : atlas.name === 'lantern'
-            ? ['lit.png', 'unlit.png']
-            : flatFramePaths(atlas.frames.names)
-  return [atlasPage(atlas.name, atlas.format, atlas, `./assets/${atlas.name}`, framePaths)]
-}) satisfies readonly AtlasPageSpec[]
-
-/** The separate illustrative image used by the environment card. */
-export const THREE_BRANCHES_THUMBNAIL_ASSET = {
-  source: './assets/source-art/thumbnail-source.png',
-  sourceWidth: 1672,
-  sourceHeight: 941,
-  path: './assets/thumbnail.png',
-  width: 320,
-  height: 180,
-  format: 'full-color',
-} as const
-
-/** Runtime pages consumed after the terrain and character art units have landed. */
 export interface ThreeBranchesRuntimeAssets<T> {
   terrain: T
   props: T
@@ -370,16 +403,10 @@ export interface ThreeBranchesRuntimeAssets<T> {
   bell: T
   buildings: T
   scenery: T
-  characters: {
-    body: T
-    clothing: T
-    arms: T
-    details: T
-  }
+  characters: { body: T; clothing: T; arms: T; details: T }
   effects: T
 }
 
-/** Texture-source options needed by a specific runtime atlas. */
 export interface ThreeBranchesRuntimeAssetLoadOptions {
   autoGenerateMipmaps: true
 }
@@ -403,17 +430,17 @@ export async function loadThreeBranchesRuntimeAssets<T>(
   const loaded = new Map<string, T>()
   await Promise.all(
     runtimeAtlasPages().map(async (page) => {
-      const texture = await loadPath(
-        page.path,
-        page.mipmaps ? { autoGenerateMipmaps: true } : undefined,
+      loaded.set(
+        page.key,
+        await loadPath(page.path, page.mipmaps ? { autoGenerateMipmaps: true } : undefined),
       )
-      loaded.set(page.key, texture)
     }),
   )
   const required = (group: string, layer?: string): T => {
-    const key = runtimeAtlasPageKey(group, layer)
-    if (!loaded.has(key)) throw new Error(`Three Branches runtime atlas is missing: ${key}`)
-    return loaded.get(key) as T
+    const key = layer === undefined ? group : `${group}/${layer}`
+    const texture = loaded.get(key)
+    if (texture === undefined) throw new Error(`Three Branches runtime atlas is missing: ${key}`)
+    return texture
   }
   return {
     terrain: required('terrain'),
@@ -433,39 +460,27 @@ export async function loadThreeBranchesRuntimeAssets<T>(
   }
 }
 
-/** Ask Vite for production URLs for every shipped runtime atlas page. */
 function threeBranchesRuntimeAssetUrls(): Record<string, string> {
   const urls = import.meta.glob('./assets/*-atlas.png', {
     eager: true,
     import: 'default',
     query: '?url',
   }) as Record<string, string>
-  for (const path of runtimeAtlasPaths()) {
-    if (urls[path] === undefined) {
-      throw new Error(`Three Branches runtime atlas is not bundled: ${path}`)
-    }
+  for (const page of runtimeAtlasPages()) {
+    if (urls[page.path] === undefined)
+      throw new Error(`Three Branches runtime atlas is not bundled: ${page.path}`)
   }
   return urls
 }
 
-/** Expand every catalog group to the runtime page paths Vite must bundle. */
-function runtimeAtlasPaths(): readonly string[] {
-  return runtimeAtlasPages().map((page) => page.path)
-}
-
-/** Expand every configured page so new groups load without a TypeScript case. */
 function runtimeAtlasPages(): readonly RuntimeAtlasPage[] {
   return THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) =>
     'layers' in atlas
       ? atlas.layers.map((layer) => ({
-          key: runtimeAtlasPageKey(atlas.name, layer.name),
+          key: `${atlas.name}/${layer.name}`,
           path: layer.path,
           mipmaps: atlas.mipmaps,
         }))
-      : [{ key: runtimeAtlasPageKey(atlas.name), path: atlas.path, mipmaps: atlas.mipmaps }],
+      : [{ key: atlas.name, path: atlas.path, mipmaps: atlas.mipmaps }],
   )
-}
-
-function runtimeAtlasPageKey(group: string, layer?: string): string {
-  return layer === undefined ? group : `${group}/${layer}`
 }
