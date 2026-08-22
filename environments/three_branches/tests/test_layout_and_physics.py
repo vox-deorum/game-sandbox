@@ -95,7 +95,10 @@ def test_a_prop_footprint_turns_with_an_east_or_west_facing() -> None:
         assert (shape.width, shape.height) == expected
     # A circle prop measures the same either way, and scenery has no facing to turn with.
     assert footprint(PlacedProp("pump_turned", "pump", (10, 10), "east")) == (1, 1)
-    assert footprint(Scenery("crate", (10, 10))) == (1, 1)
+    crate = Scenery("crate", (10, 10))
+    assert footprint(crate) == (2, 2)
+    assert len(footprint_cells(crate)) == 4
+    assert layout.shape_for(crate) == Rect(10.0, 10.0, 2.0, 2.0)
 
 
 def test_circle_scenery_collision_scales_with_its_drawn_size() -> None:

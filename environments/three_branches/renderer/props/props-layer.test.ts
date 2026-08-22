@@ -40,13 +40,19 @@ function layerTargets(): PropLayerTargets {
 }
 
 function sceneryScene(): StaticScene {
-  const scenery = (id: string, type: string, collisionScale: number): StaticDrawable => ({
+  const scenery = (
+    id: string,
+    type: string,
+    shape: StaticDrawable['shape'],
+    collisionScale: number,
+    size: number,
+  ): StaticDrawable => ({
     id,
     type,
     label: type,
-    shape: 'circle',
+    shape,
     collisionScale,
-    rect: { x: 10, y: 20, width: 8, height: 8 },
+    rect: { x: 10, y: 20, width: size, height: size },
   })
   return {
     village: {
@@ -64,7 +70,10 @@ function sceneryScene(): StaticScene {
     topFirstRows: ['.'],
     buildings: [],
     props: [],
-    scenery: [scenery('pine-1', 'pine', 0.75), scenery('crate-1', 'crate', 0.4)],
+    scenery: [
+      scenery('pine-1', 'pine', 'circle', 0.75, 16),
+      scenery('crate-1', 'crate', 'box', 1, 32),
+    ],
   }
 }
 
@@ -119,8 +128,8 @@ describe('Three Branches prop art views', () => {
     // Every named view resolves to the manifest rectangle on its own atlas page, with the bell
     // foundation living only in the monuments atlas. The exact offsets are atlas calibration, so
     // they come from the manifest rather than being pinned in this suite.
-    expect(views.props.stallOpen?.source).toBe(source)
-    expect(views.props.stallOpen?.frame).toEqual(frameRectangle(frameGrid('props'), 'stallOpen'))
+    expect(views.props.stallAOpen?.source).toBe(source)
+    expect(views.props.stallAOpen?.frame).toEqual(frameRectangle(frameGrid('props'), 'stallAOpen'))
     expect(views.props.lanternLit).toBeUndefined()
     expect(views.lantern.lanternLit?.frame).toEqual(
       frameRectangle(frameGrid('lantern'), 'lanternLit'),
@@ -141,7 +150,7 @@ describe('Three Branches prop art views', () => {
     expect(views.effects.flameA?.frame).toEqual(frameRectangle(frameGrid('effects'), 'flameA'))
   })
 
-  it('installs full-color scenery at one eighth of its configured visual scale', () => {
+  it('scales circular scenery by collision size and box scenery by footprint', () => {
     const targets = layerTargets()
     const props = createPropLayer(targets, sceneryScene())
     props.install(completeArt())
@@ -157,7 +166,9 @@ describe('Three Branches prop art views', () => {
     expect(pine).toBeInstanceOf(Sprite)
     expect(crate).toBeInstanceOf(Sprite)
     expect((pine as Sprite).scale.x).toBe((sceneryVisualScale('pine') * 0.75) / 8)
-    expect((crate as Sprite).scale.x).toBe((sceneryVisualScale('crate') * 0.4) / 8)
+    expect((crate as Sprite).scale.x).toBe((sceneryVisualScale('crate') * 2) / 8)
+    expect((crate as Sprite).width).toBe(32)
+    expect(sceneryVisualScale('crate')).toBe(sceneryVisualScale('unknown'))
     expect((pine as Sprite).tint).toBe(0xffffff)
     expect((crate as Sprite).tint).toBe(0xffffff)
   })
@@ -252,6 +263,63 @@ describe('Three Branches registered prop layers', () => {
     expect(targets.effects.getChildByLabel('prop-upper:bench_0')).toBeNull()
   })
 
+  it('keeps each stall id on one construction across state, facing, reconcile, and reinstall', () => {
+    const targets = layerTargets()
+    const stalls = ['stall_0', 'stall_1', 'stall_2', 'stall_3', 'stall_4'].map((id) =>
+      drawable('stall', id),
+    )
+    const scene = propScene(...stalls)
+    const layer = createPropLayer(targets, scene)
+    const art = completeArt()
+    layer.install(art)
+
+    const stallFrames = () =>
+      stalls.map((item) => {
+        const root = targets.props.getChildByLabel(`prop-lower:${item.id}`) as Container
+        return sprite(root, 'prop-lower-art').texture.frame
+      })
+    expect(stallFrames()).toEqual(
+      ['stallAClosed', 'stallBClosed', 'stallCClosed', 'stallAClosed', 'stallBClosed'].map((name) =>
+        frameRectangle(frameGrid('props'), name),
+      ),
+    )
+
+    layer.reconcile(frame(scene, [], Object.fromEntries(stalls.map((item) => [item.id, 'open']))))
+    layer.advance(1)
+    expect(stallFrames()).toEqual(
+      ['stallAOpen', 'stallBOpen', 'stallCOpen', 'stallAOpen', 'stallBOpen'].map((name) =>
+        frameRectangle(frameGrid('props'), name),
+      ),
+    )
+    expect(
+      stalls.map((item) => {
+        const root = targets.props.getChildByLabel(`prop-lower:${item.id}`) as Container
+        return root.rotation
+      }),
+    ).toEqual(Array(5).fill(Math.PI / 2))
+
+    layer.install(art)
+    expect(stallFrames()).toEqual(
+      ['stallAOpen', 'stallBOpen', 'stallCOpen', 'stallAOpen', 'stallBOpen'].map((name) =>
+        frameRectangle(frameGrid('props'), name),
+      ),
+    )
+  })
+
+  it('preflights every approved stall construction and state', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('stall', 'stall_0'))
+    const layer = createPropLayer(targets, scene)
+    const art = completeArt()
+    const props = Object.fromEntries(
+      Object.entries(art.props).filter(([name]) => name !== 'stallCOpen'),
+    )
+
+    expect(() => layer.install({ ...art, props })).toThrow(
+      /prop frame is missing: props.stallCOpen/,
+    )
+  })
+
   it('splits the pump across layers with its registered density and anchor', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('pump', 'pump_0', 0.75))
@@ -266,9 +334,7 @@ describe('Three Branches registered prop layers', () => {
     expect(art.visible).toBe(true)
     expect(art.scale.x).toBe(0.33 / 4)
     expect(art.texture.frame).toEqual(new Rectangle(full.x, full.y, full.width, 304))
-    expect(lowerArt.texture.frame).toEqual(
-      new Rectangle(full.x, full.y + 304, full.width, 208),
-    )
+    expect(lowerArt.texture.frame).toEqual(new Rectangle(full.x, full.y + 304, full.width, 208))
     expect(art.anchor).toMatchObject({ x: 344 / 768, y: 384 / 304 })
     expect(lowerArt.anchor).toMatchObject({ x: 344 / 768, y: (384 - 304) / 208 })
     expect(lower.parent).toBe(targets.props)
@@ -370,7 +436,9 @@ describe('Three Branches registered prop layers', () => {
       Object.entries(art.lantern).filter(([name]) => name !== 'lanternLit'),
     )
 
-    expect(() => layer.install({ ...art, lantern })).toThrow(/prop frame is missing: lantern.lanternLit/)
+    expect(() => layer.install({ ...art, lantern })).toThrow(
+      /prop frame is missing: lantern.lanternLit/,
+    )
     expect(lower.texture).toBe(installedLower)
     expect(upper.texture).toBe(installedUpper)
   })

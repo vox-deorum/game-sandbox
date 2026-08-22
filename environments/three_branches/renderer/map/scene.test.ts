@@ -55,6 +55,10 @@ describe('Three Branches pure scene', () => {
     expect(scene.scenery.map((item) => item.collisionScale)).toEqual(
       village.scenery.map((item) => item.scale),
     )
+    const crate = scene.scenery.find((item) => item.type === 'crate')
+    const crateSize = 2 * village.size.cellSize * THREE_BRANCHES_PRESENTATION.unitsPerMetre
+    expect(crate?.rect.width).toBe(crateSize)
+    expect(crate?.rect.height).toBe(crateSize)
   })
 
   it('turns a prop rectangle a quarter turn when it faces east or west', () => {

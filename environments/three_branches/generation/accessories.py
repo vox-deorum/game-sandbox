@@ -17,9 +17,9 @@ blocked spot and carry on, and what fits is kept in the shipped village.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import atan2, dist, hypot, pi
-from typing import Callable
 
 from ..catalog import BUILDING_BY_TOKEN, CATALOG, PROP_BY_TOKEN
 from ..geometry import Circle, Point, Rect, circle_intersects_circle, circle_intersects_rect, nearest_point
@@ -340,7 +340,7 @@ def _crates(stream: random.Random, yard: _Yard, tuning: Accessories) -> None:
     for stall in [item for item in yard.props if item.type == "stall"]:
         wanted = 2 if stream.random() < crate.second_chance else 1
         stood = 0
-        for cell in _skirt(stall)[: crate.budget]:
+        for cell in _skirt(stall, "crate")[: crate.budget]:
             if stood == wanted:
                 break
             if yard.stand("crate", cell):
@@ -531,18 +531,30 @@ def _around(stream: random.Random, yard: _Yard, token: str, centre: Cell, budget
     return False
 
 
-def _skirt(item: PlacedProp) -> tuple[Cell, ...]:
-    """The ring of cells around a placement, nearest the middle of it first."""
+def _skirt(item: PlacedProp, token: str) -> tuple[Cell, ...]:
+    """Origins that place one scenery footprint around a prop, nearest its middle first."""
     width, height = footprint(item)
+    candidate_width, candidate_height = footprint(Scenery(token, (0, 0)))
     x, y = item.cell
     middle = (x + width / 2, y + height / 2)
     ring = [
         (column, row)
-        for row in range(y - 1, y + height + 1)
-        for column in range(x - 1, x + width + 1)
-        if not (x <= column < x + width and y <= row < y + height)
+        for row in range(y - candidate_height, y + height + 1)
+        for column in range(x - candidate_width, x + width + 1)
+        if column + candidate_width <= x
+        or column >= x + width
+        or row + candidate_height <= y
+        or row >= y + height
     ]
-    return tuple(sorted(ring, key=lambda cell: (dist(_centre(cell), middle), cell)))
+    return tuple(
+        sorted(
+            ring,
+            key=lambda cell: (
+                dist((cell[0] + candidate_width / 2, cell[1] + candidate_height / 2), middle),
+                cell,
+            ),
+        )
+    )
 
 
 def _spaced(yard: _Yard, cell: Cell, gap: int) -> bool:
@@ -566,9 +578,7 @@ def _span(shape: Rect | Circle) -> tuple[tuple[int, int], ...]:
     else:
         left, right = int(shape.x - shape.radius), int(shape.x + shape.radius)
         bottom, top = int(shape.y - shape.radius), int(shape.y + shape.radius)
-    return tuple(
-        (column, row) for row in range(bottom, top + 1) for column in range(left, right + 1)
-    )
+    return tuple((column, row) for row in range(bottom, top + 1) for column in range(left, right + 1))
 
 
 def _market_arc(road: Road, settlement: Settlement) -> float:

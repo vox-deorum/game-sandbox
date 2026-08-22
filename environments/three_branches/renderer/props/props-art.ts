@@ -37,8 +37,13 @@ const lantern = (frame: string): PropTreatment => ({
   upper: { page: 'lantern', frame, registrationRole: 'full', clip: 'upper' },
 })
 
+const STALL_TREATMENTS = [
+  { open: ordinary('stallAOpen'), closed: ordinary('stallAClosed') },
+  { open: ordinary('stallBOpen'), closed: ordinary('stallBClosed') },
+  { open: ordinary('stallCOpen'), closed: ordinary('stallCClosed') },
+] as const satisfies readonly TreatmentByState[]
+
 const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
-  stall: { open: ordinary('stallOpen'), closed: ordinary('stallClosed') },
   lantern: { lit: lantern('lanternLit'), unlit: lantern('lanternUnlit') },
   bench: { occupied: ordinary('benchOccupied'), empty: ordinary('benchEmpty') },
   shrine: { tended: ordinary('shrineTended'), untended: ordinary('shrineUntended') },
@@ -48,6 +53,12 @@ const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
   repair_bench: { busy: ordinary('repairBenchBusy'), idle: ordinary('repairBenchIdle') },
   pump: { flowing: pump('pumpFlowing'), idle: pump('pumpIdle') },
   bell: { ringing: bell('bellRinging'), silent: bell('bellSilent') },
+}
+
+/** Select one stall construction from its stable placement id. */
+export function stallVariantIndex(id: string): number {
+  const suffix = id.match(/(\d+)$/)?.[1]
+  return suffix === undefined ? 0 : Number.parseInt(suffix, 10) % STALL_TREATMENTS.length
 }
 
 /** Prop art types enabled for the current owner artwork review. */
@@ -77,9 +88,10 @@ export function isFixedFacingPropType(type: string): boolean {
   return FIXED_FACING_PROP_TYPES.has(type)
 }
 
-/** Resolve lower and upper artwork roles for one recorded prop state. */
-export function propTreatment(type: string, state: string): PropTreatment {
-  const byState = TREATMENTS[type]
+/** Resolve lower and upper artwork roles for one recorded prop state and stable placement id. */
+export function propTreatment(type: string, state: string, id: string): PropTreatment {
+  const byState: TreatmentByState | undefined =
+    type === 'stall' ? STALL_TREATMENTS[stallVariantIndex(id)] : TREATMENTS[type]
   if (byState === undefined)
     throw new Error(`Three Branches prop type has no art treatment: ${type}`)
   const treatment = byState[state]
@@ -93,13 +105,19 @@ export function propTreatment(type: string, state: string): PropTreatment {
 export function propRoleTreatment(
   type: string,
   state: string,
+  id: string,
   role: PropArtRole,
 ): PropArtFrame | null {
-  return propTreatment(type, state)[role] ?? null
+  return propTreatment(type, state, id)[role] ?? null
 }
 
 /** Whether any state of a shipped prop draws the requested retained sprite role. */
 export function hasPropArtRole(type: string, role: PropArtRole): boolean {
+  if (type === 'stall') {
+    return STALL_TREATMENTS.some((byState) =>
+      Object.values(byState).some((treatment) => treatment[role] !== undefined),
+    )
+  }
   return Object.values(TREATMENTS[type] ?? {}).some((treatment) => treatment[role] !== undefined)
 }
 

@@ -146,14 +146,14 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     syncPropRole(
       node.lower,
       node.item,
-      shipped ? propRoleTreatment(node.item.type, state, 'lower') : null,
+      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'lower') : null,
       art,
       clippedTextures,
     )
     syncPropRole(
       node.upper,
       node.item,
-      shipped ? propRoleTreatment(node.item.type, state, 'upper') : null,
+      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'upper') : null,
       art,
       clippedTextures,
     )
@@ -166,7 +166,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
       for (const item of scene.scenery) {
-        installScenery(item.type === 'pine' ? pines : layers.scenery, item, nextArt)
+        installScenery(item.type === 'pine' ? pines : layers.scenery, item, nextArt, cellSize)
       }
       for (const node of nodes.values()) {
         const state = node.state ?? start(starts, node.item.id)
@@ -307,11 +307,20 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   }
 }
 
-function installScenery(layer: Container, item: StaticDrawable, art: PropArt): void {
+function installScenery(
+  layer: Container,
+  item: StaticDrawable,
+  art: PropArt,
+  cellSize: number,
+): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
   if (!(root instanceof Container)) return
+  const footprintScale =
+    item.shape === 'box'
+      ? Math.max(item.rect.width, item.rect.height) / cellSize
+      : item.collisionScale
   const scale =
-    (sceneryVisualScale(item.type) * item.collisionScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
+    (sceneryVisualScale(item.type) * footprintScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
     existing.scale.set(scale)
@@ -365,8 +374,7 @@ function propShadow(item: StaticDrawable, cellSize: number): Sprite {
 
 function localFootprint(item: StaticDrawable): { width: number; height: number } {
   const turned =
-    !isFixedFacingPropType(item.type) &&
-    (item.facing === 'east' || item.facing === 'west')
+    !isFixedFacingPropType(item.type) && (item.facing === 'east' || item.facing === 'west')
   return {
     width: turned ? item.rect.height : item.rect.width,
     height: turned ? item.rect.width : item.rect.height,
@@ -417,10 +425,15 @@ function syncPropSprite(node: Sprite, type: string, treatment: PropArtFrame): vo
   }
   const anchor = registration.sourceAnchorByRole[treatment.registrationRole]
   if (anchor === undefined) {
-    throw new Error(`Three Branches prop source anchor is missing: ${type}.${treatment.registrationRole}`)
+    throw new Error(
+      `Three Branches prop source anchor is missing: ${type}.${treatment.registrationRole}`,
+    )
   }
   if (treatment.clip === undefined) {
-    node.anchor.set(anchor.x / registration.frameSize.width, anchor.y / registration.frameSize.height)
+    node.anchor.set(
+      anchor.x / registration.frameSize.width,
+      anchor.y / registration.frameSize.height,
+    )
     return
   }
   const splitY = registration.splitY
@@ -481,7 +494,8 @@ function clippedTexture(
   }
   const { width, height } = registration.frameSize
   const y = treatment.clip === 'lower' ? registration.splitY : 0
-  const clippedHeight = treatment.clip === 'lower' ? height - registration.splitY : registration.splitY
+  const clippedHeight =
+    treatment.clip === 'lower' ? height - registration.splitY : registration.splitY
   const clipped = new Texture({
     source: frame.source,
     frame: new Rectangle(frame.frame.x, frame.frame.y + y, width, clippedHeight),
@@ -540,12 +554,15 @@ function preflightArt(art: PropArt): void {
   }
   for (const prop of CATALOG.props) {
     if (!isShippedPropType(prop.token)) continue
+    const ids = prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : ['preflight']
     for (const state of prop.states) {
-      for (const role of ['lower', 'upper'] as const) {
-        const treatment = propRoleTreatment(prop.token, state, role)
-        if (treatment === null) continue
-        const frame = propTexture(art, treatment)
-        validateRegisteredFrame(prop.token, treatment, frame)
+      for (const id of ids) {
+        for (const role of ['lower', 'upper'] as const) {
+          const treatment = propRoleTreatment(prop.token, state, id, role)
+          if (treatment === null) continue
+          const frame = propTexture(art, treatment)
+          validateRegisteredFrame(prop.token, treatment, frame)
+        }
       }
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
       const emissive = emissiveSpec(prop.token, state)

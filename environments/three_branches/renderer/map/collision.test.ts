@@ -49,6 +49,14 @@ describe('Three Branches collision scene', () => {
     if (upright?.kind !== 'rect' || turned?.kind !== 'rect') throw new Error('a bench is a box.')
     expect(turned.rect.width).toBe(upright.rect.height)
     expect(turned.rect.height).toBe(upright.rect.width)
+
+    const crate = scene.scenery.find((item) => item.type === 'crate')
+    const crateCollision = shapes.find((item) => item.id === crate?.id)
+    expect(crateCollision).toEqual(
+      crate === undefined
+        ? undefined
+        : { id: crate.id, kind: 'rect', rect: crate.rect, label: crate.label, group: 'object' },
+    )
   })
 
   it('uses the configured character radius for the dynamic bodies', () => {

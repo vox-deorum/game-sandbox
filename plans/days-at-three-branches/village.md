@@ -71,7 +71,7 @@ The [canonical catalog](ruleset.md#canonical-catalog) owns interactive types, ac
 
 ## Scenery
 
-Scenery types are in the [canonical catalog](ruleset.md#canonical-catalog). Red pines occupy road stations and scattered open cells, with optional companions. Each planted pine ships with a size factor the generator draws within the configured `accessories.pine.size` bounds (1.5 to 2.0 by default). That one factor is the pine's whole physical size: the solid collision circle's radius and the drawn sprite both scale by it, so a bigger tree collides as big as it looks. Market crates sit beside stalls at the base 1.0 size. Scenery is solid but never blocks a doorway approach or a prop standing cell; connectivity of the walkable ground is asserted by the guarantee suite from the published layout.
+Scenery types are in the [canonical catalog](ruleset.md#canonical-catalog). Red pines occupy road stations and scattered open cells, with optional companions. Each planted pine ships with a size factor the generator draws within the configured `accessories.pine.size` bounds (1.5 to 2.0 by default). That one factor is the pine's whole physical size: the solid collision circle's radius and the drawn sprite both scale by it, so a bigger tree collides as big as it looks. Each square market crate reserves and fills a 2 by 2 box beside a stall. Scenery is solid but never blocks a doorway approach or a prop standing cell; connectivity of the walkable ground is asserted by the guarantee suite from the published layout.
 
 Reed flats and field furrows are ground, not objects. White cranes are renderer ambience with no cell, position, or rule.
 

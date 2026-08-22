@@ -128,8 +128,12 @@ export const BUILDINGS_ATLAS_FRAME_NAMES = [
 ] as const
 
 export const PROPS_ATLAS_FRAME_NAMES = [
-  'stallOpen',
-  'stallClosed',
+  'stallAOpen',
+  'stallAClosed',
+  'stallBOpen',
+  'stallBClosed',
+  'stallCOpen',
+  'stallCClosed',
   'benchOccupied',
   'benchEmpty',
   'shrineTended',
@@ -423,6 +427,13 @@ function flatFramePaths(names: readonly string[]): readonly string[] {
 }
 
 function catalogPropFramePath(name: string): string {
+  const stall = name.match(/^stall([ABC])(Open|Closed)$/)
+  if (stall !== null) {
+    const state = stall[2]?.toLowerCase()
+    return stall[1] === 'A'
+      ? `stall/${state}.png`
+      : `stall/${stall[1]?.toLowerCase()}/${state}.png`
+  }
   for (const prop of catalogDocument.props) {
     const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
     const state = prop.states.find(
@@ -478,7 +489,7 @@ export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
         ? atlas.frames.names.map(monumentFramePath)
         : atlas.name === 'lantern'
           ? ['lit.png', 'unlit.png']
-        : flatFramePaths(atlas.frames.names)
+          : flatFramePaths(atlas.frames.names)
   return [atlasPage(atlas.name, atlas.format, atlas, `./assets/${atlas.name}`, framePaths)]
 }) satisfies readonly AtlasPageSpec[]
 
@@ -522,20 +533,31 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
     return Promise.resolve(load(source))
   }
-  const [terrain, props, lantern, monuments, buildings, scenery, body, clothing, arms, details, effects] =
-    await Promise.all([
-      loadPath('./assets/terrain-atlas.png'),
-      loadPath('./assets/props-atlas.png'),
-      loadPath('./assets/lantern-atlas.png'),
-      loadPath('./assets/monuments-atlas.png'),
-      loadPath('./assets/buildings-atlas.png'),
-      loadPath('./assets/scenery-atlas.png'),
-      loadPath('./assets/characters-body-atlas.png'),
-      loadPath('./assets/characters-clothing-atlas.png'),
-      loadPath('./assets/characters-arms-atlas.png'),
-      loadPath('./assets/characters-details-atlas.png'),
-      loadPath('./assets/effects-atlas.png'),
-    ])
+  const [
+    terrain,
+    props,
+    lantern,
+    monuments,
+    buildings,
+    scenery,
+    body,
+    clothing,
+    arms,
+    details,
+    effects,
+  ] = await Promise.all([
+    loadPath('./assets/terrain-atlas.png'),
+    loadPath('./assets/props-atlas.png'),
+    loadPath('./assets/lantern-atlas.png'),
+    loadPath('./assets/monuments-atlas.png'),
+    loadPath('./assets/buildings-atlas.png'),
+    loadPath('./assets/scenery-atlas.png'),
+    loadPath('./assets/characters-body-atlas.png'),
+    loadPath('./assets/characters-clothing-atlas.png'),
+    loadPath('./assets/characters-arms-atlas.png'),
+    loadPath('./assets/characters-details-atlas.png'),
+    loadPath('./assets/effects-atlas.png'),
+  ])
   return {
     terrain,
     props,

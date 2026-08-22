@@ -15,6 +15,7 @@ import {
   propRoleTreatment,
   propTreatment,
   sceneryFrame,
+  stallVariantIndex,
 } from './props-art.js'
 
 const framesByPage = {
@@ -25,21 +26,21 @@ const framesByPage = {
 
 describe('Three Branches prop art treatments', () => {
   it('gives ordinary state stills only a lower role on the props page', () => {
-    expect(propRoleTreatment('bench', 'occupied', 'lower')).toMatchObject({
+    expect(propRoleTreatment('bench', 'occupied', 'bench_0', 'lower')).toMatchObject({
       page: 'props',
       frame: 'benchOccupied',
     })
-    expect(propRoleTreatment('bench', 'occupied', 'upper')).toBeNull()
+    expect(propRoleTreatment('bench', 'occupied', 'bench_0', 'upper')).toBeNull()
   })
 
   it('uses the pump monument state twice as complementary registered clips', () => {
-    expect(propRoleTreatment('pump', 'idle', 'lower')).toEqual({
+    expect(propRoleTreatment('pump', 'idle', 'pump_0', 'lower')).toEqual({
       page: 'monuments',
       frame: 'pumpIdle',
       registrationRole: 'full',
       clip: 'lower',
     })
-    expect(propRoleTreatment('pump', 'idle', 'upper')).toEqual({
+    expect(propRoleTreatment('pump', 'idle', 'pump_0', 'upper')).toEqual({
       page: 'monuments',
       frame: 'pumpIdle',
       registrationRole: 'full',
@@ -48,12 +49,12 @@ describe('Three Branches prop art treatments', () => {
   })
 
   it('keeps the bell foundation below and its state still above', () => {
-    expect(propRoleTreatment('bell', 'ringing', 'lower')).toEqual({
+    expect(propRoleTreatment('bell', 'ringing', 'bell_0', 'lower')).toEqual({
       page: 'monuments',
       frame: 'bellFoundation',
       registrationRole: 'lower',
     })
-    expect(propRoleTreatment('bell', 'ringing', 'upper')).toEqual({
+    expect(propRoleTreatment('bell', 'ringing', 'bell_0', 'upper')).toEqual({
       page: 'monuments',
       frame: 'bellRinging',
       registrationRole: 'upper',
@@ -61,13 +62,13 @@ describe('Three Branches prop art treatments', () => {
   })
 
   it('uses one lantern page frame twice as complementary registered clips', () => {
-    expect(propRoleTreatment('lantern', 'lit', 'lower')).toEqual({
+    expect(propRoleTreatment('lantern', 'lit', 'lantern_0', 'lower')).toEqual({
       page: 'lantern',
       frame: 'lanternLit',
       registrationRole: 'full',
       clip: 'lower',
     })
-    expect(propRoleTreatment('lantern', 'lit', 'upper')).toEqual({
+    expect(propRoleTreatment('lantern', 'lit', 'lantern_0', 'upper')).toEqual({
       page: 'lantern',
       frame: 'lanternLit',
       registrationRole: 'full',
@@ -88,8 +89,12 @@ describe('Three Branches prop art treatments', () => {
     for (const prop of CATALOG.props) {
       for (const state of prop.states) {
         for (const role of ['lower', 'upper'] as const) {
-          const treatment = propRoleTreatment(prop.token, state, role)
-          if (treatment !== null) expect(framesByPage[treatment.page]).toContain(treatment.frame)
+          const ids =
+            prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : [`${prop.token}_0`]
+          for (const id of ids) {
+            const treatment = propRoleTreatment(prop.token, state, id, role)
+            if (treatment !== null) expect(framesByPage[treatment.page]).toContain(treatment.frame)
+          }
         }
       }
     }
@@ -101,13 +106,34 @@ describe('Three Branches prop art treatments', () => {
   it('keeps every recorded state on its own state frame', () => {
     for (const prop of CATALOG.props) {
       const stateFrames = prop.states.map((state) => {
-        const treatment = propTreatment(prop.token, state)
+        const treatment = propTreatment(prop.token, state, `${prop.token}_0`)
         const stateRole = treatment.upper ?? treatment.lower
-        if (stateRole === undefined) throw new Error(`Prop state has no art role: ${prop.token}.${state}`)
+        if (stateRole === undefined)
+          throw new Error(`Prop state has no art role: ${prop.token}.${state}`)
         return `${stateRole.page}.${stateRole.frame}`
       })
       expect(new Set(stateFrames).size).toBe(stateFrames.length)
     }
+  })
+
+  it('cycles all three stall constructions by numeric suffix', () => {
+    expect(
+      ['stall_0', 'stall_1', 'stall_2', 'stall_3', 'stall_4'].map(
+        (id) => propRoleTreatment('stall', 'closed', id, 'lower')?.frame,
+      ),
+    ).toEqual(['stallAClosed', 'stallBClosed', 'stallCClosed', 'stallAClosed', 'stallBClosed'])
+  })
+
+  it('uses construction A when a stall id has no numeric suffix', () => {
+    expect(stallVariantIndex('market-stall')).toBe(0)
+    expect(propRoleTreatment('stall', 'closed', 'market-stall', 'lower')?.frame).toBe(
+      'stallAClosed',
+    )
+  })
+
+  it('keeps stall construction independent from its recorded state', () => {
+    expect(propRoleTreatment('stall', 'closed', 'stall_2', 'lower')?.frame).toBe('stallCClosed')
+    expect(propRoleTreatment('stall', 'open', 'stall_2', 'lower')?.frame).toBe('stallCOpen')
   })
 
   it('selects scenery variants from stable placement ids', () => {
@@ -119,7 +145,9 @@ describe('Three Branches prop art treatments', () => {
   })
 
   it('fails clearly for unsupported catalog values', () => {
-    expect(() => propTreatment('unknown', 'none')).toThrow(/type has no art treatment/)
-    expect(() => propTreatment('lantern', 'unknown')).toThrow(/state has no art treatment/)
+    expect(() => propTreatment('unknown', 'none', 'unknown_0')).toThrow(/type has no art treatment/)
+    expect(() => propTreatment('lantern', 'unknown', 'lantern_0')).toThrow(
+      /state has no art treatment/,
+    )
   })
 })

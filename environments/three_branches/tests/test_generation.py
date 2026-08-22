@@ -396,6 +396,22 @@ def test_pines_ship_a_drawn_visual_size_and_crates_keep_the_default(
     assert drew_big, "the randomized pine size must actually grow at least one planted tree"
 
 
+def test_market_crates_use_their_full_two_by_two_footprint_beside_stalls(
+    batch: dict[int, tuple[Layout, Report]],
+) -> None:
+    """A crate reserves four cells, and its rectangle touches the stall it dresses."""
+    for seed, (layout, _) in batch.items():
+        stalls = [item for item in layout.props if item.type == "stall"]
+        for crate in [item for item in layout.scenery if item.type == "crate"]:
+            crate_cells = set(footprint_cells(crate))
+            assert footprint(crate) == (2, 2), (seed, crate.cell)
+            assert len(crate_cells) == 4, (seed, crate.cell)
+            assert any(
+                any(spot in set(footprint_cells(stall)) for cell in crate_cells for spot in _around(cell))
+                for stall in stalls
+            ), (seed, crate.cell)
+
+
 def test_no_two_published_solids_overlap(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:

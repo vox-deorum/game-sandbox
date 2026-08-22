@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PNG } from 'pngjs'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -46,6 +47,42 @@ function readPngHeader(relativePath: string): PngHeader {
   }
 }
 
+function coloredTransparentPixelCount(relativePath: string): number {
+  const path = fileURLToPath(new URL(relativePath, import.meta.url))
+  const pixels = PNG.sync.read(readFileSync(path)).data
+  let count = 0
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (
+      pixels[index + 3] === 0 &&
+      ((pixels[index] ?? 0) !== 0 ||
+        (pixels[index + 1] ?? 0) !== 0 ||
+        (pixels[index + 2] ?? 0) !== 0)
+    ) {
+      count += 1
+    }
+  }
+  return count
+}
+
+function alphaBounds(relativePath: string): { width: number; height: number } {
+  const path = fileURLToPath(new URL(relativePath, import.meta.url))
+  const image = PNG.sync.read(readFileSync(path))
+  let left = image.width
+  let top = image.height
+  let right = -1
+  let bottom = -1
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      if ((image.data[(y * image.width + x) * 4 + 3] ?? 0) < 8) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x)
+      bottom = Math.max(bottom, y)
+    }
+  }
+  return { width: right - left + 1, height: bottom - top + 1 }
+}
+
 describe('Three Branches asset catalog', () => {
   it('catalogs the eight declared atlas groups with named frame prefixes', () => {
     expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
@@ -72,7 +109,17 @@ describe('Three Branches asset catalog', () => {
     }
 
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
-    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(13)
+    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(17)
+    expect(props && !('layers' in props) ? props.frames.names : []).toEqual(
+      expect.arrayContaining([
+        'stallAOpen',
+        'stallAClosed',
+        'stallBOpen',
+        'stallBClosed',
+        'stallCOpen',
+        'stallCClosed',
+      ]),
+    )
     expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
       expect.arrayContaining([
         'lanternLit',
@@ -137,7 +184,15 @@ describe('Three Branches asset catalog', () => {
   it('derives nested ordinary-prop paths and gives lantern frames their dedicated page', () => {
     const props = ATLAS_PAGES.find((page) => page.group === 'props')
     expect(props?.framePaths).toEqual(
-      expect.arrayContaining(['stall/open.png', 'repair_bench/busy.png']),
+      expect.arrayContaining([
+        'stall/open.png',
+        'stall/closed.png',
+        'stall/b/open.png',
+        'stall/b/closed.png',
+        'stall/c/open.png',
+        'stall/c/closed.png',
+        'repair_bench/busy.png',
+      ]),
     )
     expect(props?.framePaths).not.toEqual(
       expect.arrayContaining([
@@ -201,9 +256,31 @@ describe('Three Branches asset catalog', () => {
       width: lantern.sourceWidth,
       height: lantern.sourceHeight,
     })
-    expect(readPngHeader(lantern.path)).toMatchObject({ width: lantern.width, height: lantern.height })
+    expect(readPngHeader(lantern.path)).toMatchObject({
+      width: lantern.width,
+      height: lantern.height,
+    })
     expect(readPngHeader('./assets/lantern/lit.png')).toMatchObject({ width: 384, height: 512 })
     expect(readPngHeader('./assets/lantern/unlit.png')).toMatchObject({ width: 384, height: 512 })
+  })
+
+  it('clears hidden color from fully transparent lantern pixels', () => {
+    expect(coloredTransparentPixelCount('./assets/lantern/lit.png')).toBe(0)
+    expect(coloredTransparentPixelCount('./assets/lantern/unlit.png')).toBe(0)
+  })
+
+  it('keeps the market crate square in its runtime frame and retained source', () => {
+    const runtimePath = './assets/scenery/marketCrate.png'
+    const sourcePath = './assets/source-art/scenery/marketCrate.png'
+    expect(readPngHeader(runtimePath)).toMatchObject({ width: 512, height: 512 })
+    expect(readPngHeader(sourcePath)).toMatchObject({ width: 1254, height: 1254 })
+    for (const path of [runtimePath, sourcePath]) {
+      const bounds = alphaBounds(path)
+      expect(Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height)).toBeLessThan(
+        1.05,
+      )
+      expect(coloredTransparentPixelCount(path)).toBe(0)
+    }
   })
 
   it('loads all eleven shipped runtime pages including the dedicated lantern atlas', async () => {

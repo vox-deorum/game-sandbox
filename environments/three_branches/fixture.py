@@ -108,9 +108,9 @@ def build_fixture() -> Layout:
         Scenery("pine", (30, 60)),
         Scenery("pine", (58, 60)),
         Scenery("pine", (92, 60)),
-        Scenery("crate", (31, 45)),
+        Scenery("crate", (30, 45)),
         Scenery("crate", (38, 45)),
         Scenery("crate", (43, 45)),
-        Scenery("crate", (54, 45)),
+        Scenery("crate", (53, 45)),
     )
     return Layout(Grid(FRAME, rows), buildings, props, scenery, (4.5, 50.5))
