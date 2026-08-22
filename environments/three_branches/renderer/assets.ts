@@ -149,14 +149,11 @@ export const PROPS_ATLAS_FRAME_NAMES = [
 
 export const LANTERN_ATLAS_FRAME_NAMES = ['lanternLit', 'lanternUnlit'] as const
 
-/** Higher-density stills for the fixed north-facing pump and bell monuments. */
-export const MONUMENTS_ATLAS_FRAME_NAMES = [
-  'pumpFlowing',
-  'pumpIdle',
-  'bellRinging',
-  'bellSilent',
-  'bellFoundation',
-] as const
+/** Higher-density stills for the fixed north-facing pump monument. */
+export const MONUMENTS_ATLAS_FRAME_NAMES = ['pumpFlowing', 'pumpIdle'] as const
+
+/** High-resolution foundation, gantry, and moving bell stills. */
+export const BELL_ATLAS_FRAME_NAMES = ['bellFoundation', 'bellGantry', 'bellMoving'] as const
 
 export const SCENERY_ATLAS_FRAME_NAMES = [...PINE_FRAME_NAMES, 'marketCrate'] as const
 
@@ -212,7 +209,7 @@ export const EFFECTS_ATLAS_FRAME_NAMES = [
   'expressionAccentB',
 ] as const
 
-/** The eight generated atlases that make up the Hearthside Ink runtime art. */
+/** The nine generated atlases that make up the Hearthside Ink runtime art. */
 export const THREE_BRANCHES_ASSET_CATALOG = [
   {
     name: 'terrain',
@@ -301,13 +298,32 @@ export const THREE_BRANCHES_ASSET_CATALOG = [
     height: 1024,
     tintable: false,
     format: 'full-color',
-    consumer: 'higher-density fixed-north pump and bell stills, including the bell foundation',
+    consumer: 'higher-density fixed-north pump stills',
     frames: {
       width: 768,
       height: 512,
       columns: 3,
       rows: 2,
       names: MONUMENTS_ATLAS_FRAME_NAMES,
+    },
+  },
+  {
+    name: 'bell',
+    source: './assets/source-art/bell-atlas-source.png',
+    sourceWidth: 4608,
+    sourceHeight: 1024,
+    path: './assets/bell-atlas.png',
+    width: 4608,
+    height: 1024,
+    tintable: false,
+    format: 'full-color',
+    consumer: 'bell foundation, fixed gantry, and separately animated bell',
+    frames: {
+      width: 1536,
+      height: 1024,
+      columns: 3,
+      rows: 1,
+      names: BELL_ATLAS_FRAME_NAMES,
     },
   },
   {
@@ -430,9 +446,7 @@ function catalogPropFramePath(name: string): string {
   const stall = name.match(/^stall([ABC])(Open|Closed)$/)
   if (stall !== null) {
     const state = stall[2]?.toLowerCase()
-    return stall[1] === 'A'
-      ? `stall/${state}.png`
-      : `stall/${stall[1]?.toLowerCase()}/${state}.png`
+    return stall[1] === 'A' ? `stall/${state}.png` : `stall/${stall[1]?.toLowerCase()}/${state}.png`
   }
   for (const prop of catalogDocument.props) {
     const type = prop.token.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
@@ -445,7 +459,13 @@ function catalogPropFramePath(name: string): string {
 }
 
 function monumentFramePath(name: string): string {
-  return name === 'bellFoundation' ? 'bell/foundation.png' : catalogPropFramePath(name)
+  return name === 'pumpFlowing' ? 'pump/flowing.png' : 'pump/idle.png'
+}
+
+function bellFramePath(name: string): string {
+  if (name === 'bellFoundation') return 'foundation.png'
+  if (name === 'bellGantry') return 'gantry.png'
+  return 'moving.png'
 }
 
 function atlasPage(
@@ -468,7 +488,7 @@ function atlasPage(
   }
 }
 
-/** The loose-frame manifests for the eleven compiled Three Branches atlas pages. */
+/** The loose-frame manifests for the twelve compiled Three Branches atlas pages. */
 export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
   if ('layers' in atlas) {
     return atlas.layers.map((layer) =>
@@ -487,9 +507,11 @@ export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
       ? atlas.frames.names.map(catalogPropFramePath)
       : atlas.name === 'monuments'
         ? atlas.frames.names.map(monumentFramePath)
-        : atlas.name === 'lantern'
-          ? ['lit.png', 'unlit.png']
-          : flatFramePaths(atlas.frames.names)
+        : atlas.name === 'bell'
+          ? atlas.frames.names.map(bellFramePath)
+          : atlas.name === 'lantern'
+            ? ['lit.png', 'unlit.png']
+            : flatFramePaths(atlas.frames.names)
   return [atlasPage(atlas.name, atlas.format, atlas, `./assets/${atlas.name}`, framePaths)]
 }) satisfies readonly AtlasPageSpec[]
 
@@ -512,6 +534,7 @@ export interface ThreeBranchesRuntimeAssets<T> {
   props: T
   lantern: T
   monuments: T
+  bell: T
   buildings: T
   scenery: T
   characters: {
@@ -523,21 +546,27 @@ export interface ThreeBranchesRuntimeAssets<T> {
   effects: T
 }
 
+/** Texture-source options needed by a specific runtime atlas. */
+export interface ThreeBranchesRuntimeAssetLoadOptions {
+  autoGenerateMipmaps: true
+}
+
 /** Resolve and load the atlas pages consumed by shipped terrain, prop, and character art. */
 export async function loadThreeBranchesRuntimeAssets<T>(
-  load: (source: string) => Promise<T> | T,
+  load: (source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => Promise<T> | T,
 ): Promise<ThreeBranchesRuntimeAssets<T>> {
   const urls = threeBranchesRuntimeAssetUrls()
-  const loadPath = (path: string): Promise<T> => {
+  const loadPath = (path: string, options?: ThreeBranchesRuntimeAssetLoadOptions): Promise<T> => {
     const source = urls[path]
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
-    return Promise.resolve(load(source))
+    return Promise.resolve(load(source, options))
   }
   const [
     terrain,
     props,
     lantern,
     monuments,
+    bell,
     buildings,
     scenery,
     body,
@@ -547,9 +576,10 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     effects,
   ] = await Promise.all([
     loadPath('./assets/terrain-atlas.png'),
-    loadPath('./assets/props-atlas.png'),
-    loadPath('./assets/lantern-atlas.png'),
-    loadPath('./assets/monuments-atlas.png'),
+    loadPath('./assets/props-atlas.png', { autoGenerateMipmaps: true }),
+    loadPath('./assets/lantern-atlas.png', { autoGenerateMipmaps: true }),
+    loadPath('./assets/monuments-atlas.png', { autoGenerateMipmaps: true }),
+    loadPath('./assets/bell-atlas.png', { autoGenerateMipmaps: true }),
     loadPath('./assets/buildings-atlas.png'),
     loadPath('./assets/scenery-atlas.png'),
     loadPath('./assets/characters-body-atlas.png'),
@@ -563,6 +593,7 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     props,
     lantern,
     monuments,
+    bell,
     buildings,
     scenery,
     characters: { body, clothing, arms, details },
@@ -578,6 +609,7 @@ function threeBranchesRuntimeAssetUrls(): Record<string, string> {
       './assets/props-atlas.png',
       './assets/lantern-atlas.png',
       './assets/monuments-atlas.png',
+      './assets/bell-atlas.png',
       './assets/buildings-atlas.png',
       './assets/scenery-atlas.png',
       './assets/characters-body-atlas.png',

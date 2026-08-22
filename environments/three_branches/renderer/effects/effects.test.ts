@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
-import { emissiveSpec, propEffectSpec } from './effects.js'
+import { bellSwingRotation, emissiveSpec, propEffectSpec } from './effects.js'
 
 describe('Three Branches prop effects', () => {
   it('carries a stable id phase', () => {
@@ -13,6 +13,20 @@ describe('Three Branches prop effects', () => {
     expect(propEffectSpec('hearth', 'lit', 'hearth:one', 3.1)).not.toEqual(
       propEffectSpec('hearth', 'lit', 'hearth:one', 3.4),
     )
+  })
+
+  it('keeps the silent bell stationary and swings ringing bells deterministically', () => {
+    expect(bellSwingRotation('silent', 'bell:one', 3.1)).toBe(0)
+    expect(bellSwingRotation('ringing', 'bell:one', 3.1)).toBe(
+      bellSwingRotation('ringing', 'bell:one', 3.1),
+    )
+    expect(bellSwingRotation('ringing', 'bell:one', 3.1)).not.toBe(
+      bellSwingRotation('ringing', 'bell:two', 3.1),
+    )
+    expect(bellSwingRotation('ringing', 'bell:one', 3.1)).not.toBe(
+      bellSwingRotation('ringing', 'bell:one', 3.35),
+    )
+    expect(Math.abs(bellSwingRotation('ringing', 'bell:one', 3.1))).toBeLessThanOrEqual(0.18)
   })
 
   it('animates only the five configured active states', () => {

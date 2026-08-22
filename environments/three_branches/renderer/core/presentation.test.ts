@@ -5,6 +5,7 @@ import {
   measureDeliveryGap,
   propEffectAnchor,
   readHearthsideStyle,
+  registeredPropTreatment,
   smoothedDeliveryGapMs,
   type TerrainFillTreatment,
   transitionDurationMs,
@@ -26,6 +27,28 @@ describe('Hearthside Ink presentation', () => {
 
   it('defaults the lantern light anchor to the collision center', () => {
     expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
+  })
+
+  it('registers bell foundation, gantry, and moving art at doubled density', () => {
+    expect(registeredPropTreatment('bell')).toMatchObject({
+      textureDensityDivisor: 16,
+      frameSize: { width: 1536, height: 1024 },
+      sourceAnchorByRole: {
+        lower: { x: 768, y: 512 },
+        upper: { x: 768, y: 960 },
+        moving: { x: 768, y: 960 },
+      },
+      swing: {
+        sourcePivot: { x: 768, y: 527 },
+        amplitudeRadians: 0.18,
+      },
+    })
+  })
+
+  it('rejects a bell swing pivot outside its registered frame', () => {
+    const invalid = structuredClone(HEARTHSIDE_STYLE) as any
+    invalid.props.registeredPropByType.bell.swing.sourcePivot.y = 1024
+    expect(() => readHearthsideStyle(invalid)).toThrow('1536 by 1024 registered prop frame')
   })
 
   it('uses explicit host pace and scales unpaced delivery gaps by headroom, capped at natural', () => {

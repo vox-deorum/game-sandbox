@@ -680,7 +680,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private async loadArt(): Promise<void> {
     await runArtLoad({
-      load: () => loadThreeBranchesRuntimeAssets<Texture>((source) => Assets.load<Texture>(source)),
+      load: () =>
+        loadThreeBranchesRuntimeAssets<Texture>((source, options) =>
+          options?.autoGenerateMipmaps === true
+            ? Assets.load<Texture>({ src: source, data: { autoGenerateMipmaps: true } })
+            : Assets.load<Texture>(source),
+        ),
       active: () => !this.isDestroyed,
       install: (assets) => {
         const textures = [
@@ -688,6 +693,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           assets.props,
           assets.lantern,
           assets.monuments,
+          assets.bell,
           assets.buildings,
           assets.scenery,
           assets.characters.body,
@@ -704,6 +710,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           props: assets.props,
           lantern: assets.lantern,
           monuments: assets.monuments,
+          bell: assets.bell,
           scenery: assets.scenery,
           effects: assets.effects,
         })

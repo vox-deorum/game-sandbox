@@ -22,6 +22,7 @@ const framesByPage = {
   props: PROPS_ATLAS_FRAME_NAMES,
   monuments: MONUMENTS_ATLAS_FRAME_NAMES,
   lantern: LANTERN_ATLAS_FRAME_NAMES,
+  bell: ['bellFoundation', 'bellGantry', 'bellMoving'],
 } as const
 
 describe('Three Branches prop art treatments', () => {
@@ -50,14 +51,19 @@ describe('Three Branches prop art treatments', () => {
 
   it('keeps the bell foundation below and its state still above', () => {
     expect(propRoleTreatment('bell', 'ringing', 'bell_0', 'lower')).toEqual({
-      page: 'monuments',
+      page: 'bell',
       frame: 'bellFoundation',
       registrationRole: 'lower',
     })
     expect(propRoleTreatment('bell', 'ringing', 'bell_0', 'upper')).toEqual({
-      page: 'monuments',
-      frame: 'bellRinging',
+      page: 'bell',
+      frame: 'bellGantry',
       registrationRole: 'upper',
+    })
+    expect(propRoleTreatment('bell', 'ringing', 'bell_0', 'moving')).toEqual({
+      page: 'bell',
+      frame: 'bellMoving',
+      registrationRole: 'moving',
     })
   })
 
@@ -81,7 +87,7 @@ describe('Three Branches prop art treatments', () => {
   it('keeps every selected state frame in its dedicated atlas manifest', () => {
     for (const prop of CATALOG.props) {
       for (const state of prop.states) {
-        for (const role of ['lower', 'upper'] as const) {
+        for (const role of ['lower', 'upper', 'moving'] as const) {
           const ids =
             prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : [`${prop.token}_0`]
           for (const id of ids) {
@@ -98,6 +104,7 @@ describe('Three Branches prop art treatments', () => {
 
   it('keeps every recorded state on its own state frame', () => {
     for (const prop of CATALOG.props) {
+      if (prop.token === 'bell') continue
       const stateFrames = prop.states.map((state) => {
         const treatment = propTreatment(prop.token, state, `${prop.token}_0`)
         const stateRole = treatment.upper ?? treatment.lower

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { PNG } from 'pngjs'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ThreeBranchesRuntimeAssetLoadOptions } from './assets.js'
 import {
   ATLAS_PAGES,
   loadThreeBranchesRuntimeAssets,
@@ -84,13 +85,14 @@ function alphaBounds(relativePath: string): { width: number; height: number } {
 }
 
 describe('Three Branches asset catalog', () => {
-  it('catalogs the eight declared atlas groups with named frame prefixes', () => {
+  it('catalogs the nine declared atlas groups with named frame prefixes', () => {
     expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
       'terrain',
       'buildings',
       'props',
       'lantern',
       'monuments',
+      'bell',
       'scenery',
       'characters',
       'effects',
@@ -121,15 +123,7 @@ describe('Three Branches asset catalog', () => {
       ]),
     )
     expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
-      expect.arrayContaining([
-        'lanternLit',
-        'lanternUnlit',
-        'pumpFlowing',
-        'pumpIdle',
-        'bellRinging',
-        'bellSilent',
-        'bellFoundation',
-      ]),
+      expect.arrayContaining(['lanternLit', 'lanternUnlit', 'pumpFlowing', 'pumpIdle']),
     )
 
     const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
@@ -153,10 +147,25 @@ describe('Three Branches asset catalog', () => {
     expect(monuments && !('layers' in monuments) ? monuments.frames.names : []).toEqual([
       'pumpFlowing',
       'pumpIdle',
-      'bellRinging',
-      'bellSilent',
-      'bellFoundation',
     ])
+
+    const bell = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'bell')
+    expect(bell && !('layers' in bell) ? bell : null).toMatchObject({
+      sourceWidth: 4608,
+      sourceHeight: 1024,
+      width: 4608,
+      height: 1024,
+      tintable: false,
+      format: 'full-color',
+      consumer: 'bell foundation, fixed gantry, and separately animated bell',
+      frames: {
+        width: 1536,
+        height: 1024,
+        columns: 3,
+        rows: 1,
+        names: ['bellFoundation', 'bellGantry', 'bellMoving'],
+      },
+    })
 
     const scenery = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'scenery')
     expect(scenery && !('layers' in scenery) ? scenery : null).toMatchObject({
@@ -214,13 +223,16 @@ describe('Three Branches asset catalog', () => {
       rows: 1,
     })
     const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
-    expect(monuments?.framePaths).toEqual([
-      'pump/flowing.png',
-      'pump/idle.png',
-      'bell/ringing.png',
-      'bell/silent.png',
-      'bell/foundation.png',
-    ])
+    expect(monuments?.framePaths).toEqual(['pump/flowing.png', 'pump/idle.png'])
+    const bell = ATLAS_PAGES.find((page) => page.group === 'bell')
+    expect(bell).toMatchObject({
+      framesPath: './assets/bell',
+      framePaths: ['foundation.png', 'gantry.png', 'moving.png'],
+      width: 4608,
+      height: 1024,
+      columns: 3,
+      rows: 1,
+    })
     const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
     expect(scenery?.framePaths).toEqual([
       'pineA.png',
@@ -276,19 +288,19 @@ describe('Three Branches asset catalog', () => {
     expect(readPngHeader(sourcePath)).toMatchObject({ width: 1254, height: 1254 })
     for (const path of [runtimePath, sourcePath]) {
       const bounds = alphaBounds(path)
-      expect(Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height)).toBeLessThan(
-        1.05,
-      )
+      expect(
+        Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height),
+      ).toBeLessThan(1.05)
       expect(coloredTransparentPixelCount(path)).toBe(0)
     }
   })
 
-  it('loads all eleven shipped runtime pages including the dedicated lantern atlas', async () => {
+  it('loads all twelve shipped runtime pages including dedicated lantern and bell atlases', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
 
-    expect(load).toHaveBeenCalledTimes(11)
+    expect(load).toHaveBeenCalledTimes(12)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
     expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
@@ -297,11 +309,37 @@ describe('Three Branches asset catalog', () => {
     expect(assets.effects).toMatch(/effects-atlas\.png/)
     expect(assets.lantern).toMatch(/lantern-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
+    expect(assets.bell).toMatch(/bell-atlas\.png/)
     expect(assets.buildings).toMatch(/buildings-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /bell-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /buildings/.test(source))).toBe(true)
+  })
+
+  it('requests generated mipmaps only for the interactive prop atlases', async () => {
+    const load = vi.fn((source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => ({
+      source,
+      options,
+    }))
+
+    await loadThreeBranchesRuntimeAssets(load)
+
+    const mipmappedCalls = load.mock.calls.filter(([, options]) => options !== undefined)
+    const mipmappedSources = mipmappedCalls.map(([source]) => source)
+    expect(mipmappedSources).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/props-atlas\.png/),
+        expect.stringMatching(/lantern-atlas\.png/),
+        expect.stringMatching(/monuments-atlas\.png/),
+        expect.stringMatching(/bell-atlas\.png/),
+      ]),
+    )
+    expect(mipmappedSources).toHaveLength(4)
+    for (const [, options] of mipmappedCalls) {
+      expect(options).toEqual({ autoGenerateMipmaps: true })
+    }
   })
 })

@@ -308,7 +308,12 @@ export interface SourceFrameSize {
   height: number
 }
 
-export type RegisteredPropSpriteRole = 'lower' | 'upper' | 'full'
+export type RegisteredPropSpriteRole = 'lower' | 'upper' | 'moving' | 'full'
+
+export interface RegisteredPropSwingTreatment {
+  sourcePivot: SourcePixelAnchor
+  amplitudeRadians: number
+}
 
 /** Higher-density prop calibration that preserves one complete source-frame registration. */
 export interface RegisteredPropVisualTreatment {
@@ -316,6 +321,7 @@ export interface RegisteredPropVisualTreatment {
   frameSize: SourceFrameSize
   sourceAnchorByRole: Readonly<Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>>
   splitY?: number
+  swing?: RegisteredPropSwingTreatment
 }
 
 interface PropVisualTreatment extends VisualScaleTreatment {
@@ -865,16 +871,16 @@ function registeredPropVisualTreatment(
   type: string,
 ): RegisteredPropVisualTreatment {
   const requirements = registeredPropRequirements(type)
-  const source = exactRecord(
-    value,
-    name,
-    requirements.hasSplit
-      ? ['textureDensityDivisor', 'frameSize', 'sourceAnchorByRole', 'splitY']
-      : ['textureDensityDivisor', 'frameSize', 'sourceAnchorByRole'],
-  )
+  const source = exactRecord(value, name, [
+    'textureDensityDivisor',
+    'frameSize',
+    'sourceAnchorByRole',
+    ...(requirements.hasSplit ? ['splitY'] : []),
+    ...(requirements.hasSwing ? ['swing'] : []),
+  ])
   const divisor = positiveInteger(source.textureDensityDivisor, `${name}.textureDensityDivisor`)
-  if (divisor > 8) {
-    throw new Error(`${name}.textureDensityDivisor must be at most eight.`)
+  if (divisor > 16) {
+    throw new Error(`${name}.textureDensityDivisor must be at most sixteen.`)
   }
   const frameSize = sourceFrameSize(source.frameSize, `${name}.frameSize`)
   const roles = recordWithOptional(
@@ -886,6 +892,9 @@ function registeredPropVisualTreatment(
   const splitY = requirements.hasSplit
     ? splitInsideFrame(source.splitY, `${name}.splitY`, frameSize)
     : undefined
+  const swing = requirements.hasSwing
+    ? registeredPropSwingTreatment(source.swing, `${name}.swing`, frameSize)
+    : undefined
   return {
     textureDensityDivisor: divisor,
     frameSize,
@@ -896,16 +905,37 @@ function registeredPropVisualTreatment(
       ]),
     ) as Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>,
     ...(splitY === undefined ? {} : { splitY }),
+    ...(swing === undefined ? {} : { swing }),
   }
 }
 
 function registeredPropRequirements(type: string): {
   roles: readonly RegisteredPropSpriteRole[]
   hasSplit: boolean
+  hasSwing: boolean
 } {
-  if (type === 'pump') return { roles: ['full'], hasSplit: true }
-  if (type === 'bell') return { roles: ['lower', 'upper'], hasSplit: false }
+  if (type === 'pump') return { roles: ['full'], hasSplit: true, hasSwing: false }
+  if (type === 'bell') {
+    return { roles: ['lower', 'upper', 'moving'], hasSplit: false, hasSwing: true }
+  }
   throw new Error(`Three Branches registered prop type is unknown: ${type}`)
+}
+
+function registeredPropSwingTreatment(
+  value: unknown,
+  name: string,
+  frameSize: SourceFrameSize,
+): RegisteredPropSwingTreatment {
+  const source = exactRecord(value, name, ['sourcePivot', 'amplitudeRadians'])
+  return {
+    sourcePivot: sourcePixelAnchor(source.sourcePivot, `${name}.sourcePivot`, frameSize),
+    amplitudeRadians: boundedNumber(
+      source.amplitudeRadians,
+      `${name}.amplitudeRadians`,
+      0,
+      Math.PI / 2,
+    ),
+  }
 }
 
 function sourceFrameSize(value: unknown, name: string): SourceFrameSize {

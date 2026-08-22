@@ -13,6 +13,7 @@ import {
 } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import {
+  bellSwingRotation,
   emissiveSpec,
   hasPropEffect,
   propEffectFrames,
@@ -21,10 +22,10 @@ import {
 import { CATALOG } from '../ui/overlay.js'
 import { frameRectangle } from '../ui/tint.js'
 import {
+  hasPropArtRole,
   isFixedFacingPropType,
   isShippedPropType,
   PINE_FRAME_NAMES,
-  hasPropArtRole,
   type PropArtFrame,
   propRoleTreatment,
   sceneryFrame,
@@ -41,6 +42,7 @@ export interface PropAtlasTextures {
   props: Texture
   monuments: Texture
   lantern: Texture
+  bell: Texture
   scenery: Texture
   effects: Texture
 }
@@ -50,6 +52,7 @@ export interface PropArt {
   props: Readonly<Record<string, Texture>>
   monuments: Readonly<Record<string, Texture>>
   lantern: Readonly<Record<string, Texture>>
+  bell: Readonly<Record<string, Texture>>
   scenery: Readonly<Record<string, Texture>>
   effects: Readonly<Record<string, Texture>>
 }
@@ -70,6 +73,8 @@ interface PropNode {
   shadow: Sprite
   lower: Sprite
   upper: Sprite
+  movingRoot: Container
+  moving: Sprite
   effect: Sprite
   emissive: Sprite
   state: string | null
@@ -81,6 +86,7 @@ export function createPropArt(atlases: PropAtlasTextures): PropArt {
     props: framesFor('props', atlases.props),
     monuments: framesFor('monuments', atlases.monuments),
     lantern: framesFor('lantern', atlases.lantern),
+    bell: framesFor('bell', atlases.bell),
     scenery: framesFor('scenery', atlases.scenery),
     effects: framesFor('effects', atlases.effects),
   }
@@ -157,6 +163,13 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       art,
       clippedTextures,
     )
+    syncPropRole(
+      node.moving,
+      node.item,
+      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'moving') : null,
+      art,
+      clippedTextures,
+    )
   }
 
   return {
@@ -187,12 +200,13 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       for (const node of nodes.values()) {
         node.lowerRoot.rotation = visualFacing(node.item)
         node.upperRoot.rotation = visualFacing(node.item)
+        const state = node.state ?? start(starts, node.item.id)
+        node.movingRoot.rotation = bellSwingRotation(state, node.item.id, tick)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
           node.emissive.visible = false
           continue
         }
-        const state = node.state ?? start(starts, node.item.id)
         const effect = propEffectSpec(node.item.type, state, node.item.id, tick)
         const emissive = emissiveSpec(node.item.type, state)
         node.effect.visible = effect !== null
@@ -281,10 +295,15 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   const artScale = propArtScale(item)
   const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
   const upper = propSprite('prop-upper-art', Texture.EMPTY, artScale)
+  const moving = propSprite('prop-moving-art', Texture.EMPTY, artScale)
+  const movingRoot = new Container({ label: 'prop-moving-root' })
   lower.visible = false
   upper.visible = false
+  moving.visible = false
   lowerRoot.addChild(fallbackNode, lower)
-  upperRoot.addChild(upper)
+  movingRoot.addChild(moving)
+  upperRoot.addChild(upper, movingRoot)
+  syncSwingPivot(item.type, artScale, movingRoot)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.rotation = visualFacing(item)
@@ -299,6 +318,8 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
     shadow,
     lower,
     upper,
+    movingRoot,
+    moving,
     effect,
     emissive,
     state: null,
@@ -317,8 +338,7 @@ function installScenery(
     item.shape === 'box'
       ? Math.max(item.rect.width, item.rect.height) / cellSize
       : item.collisionScale
-  const scale =
-    (sceneryVisualScale(item.type) * footprintScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
+  const scale = (sceneryVisualScale(item.type) * footprintScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
     existing.scale.set(scale)
@@ -389,10 +409,22 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
 }
 
-function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'upper'>): void {
+function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'upper' | 'moving'>): void {
   const scale = propArtScale(node.item)
   node.lower.scale.set(scale)
   node.upper.scale.set(scale)
+  node.moving.scale.set(scale)
+}
+
+function syncSwingPivot(type: string, scale: number, root: Container): void {
+  const registration = registeredPropTreatment(type)
+  const movingAnchor = registration?.sourceAnchorByRole.moving
+  const sourcePivot = registration?.swing?.sourcePivot
+  if (movingAnchor === undefined || sourcePivot === undefined) return
+  const x = (sourcePivot.x - movingAnchor.x) * scale
+  const y = (sourcePivot.y - movingAnchor.y) * scale
+  root.pivot.set(x, y)
+  root.position.set(x, y)
 }
 
 function syncPropRole(
@@ -520,7 +552,7 @@ function texture(
   if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${displayName}`)
   return value
 }
-function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects') {
+function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects') {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) {
     throw new Error(`Three Branches ${name} atlas is missing.`)
@@ -532,7 +564,7 @@ function shadowSourceSize(): { width: number; height: number } {
   return { width: atlas.frames.width, height: atlas.frames.height }
 }
 function framesFor(
-  name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects',
+  name: 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects',
   atlasTexture: Texture,
 ): Readonly<Record<string, Texture>> {
   const atlas = atlasEntry(name)
@@ -555,7 +587,7 @@ function preflightArt(art: PropArt): void {
     const ids = prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : ['preflight']
     for (const state of prop.states) {
       for (const id of ids) {
-        for (const role of ['lower', 'upper'] as const) {
+        for (const role of ['lower', 'upper', 'moving'] as const) {
           const treatment = propRoleTreatment(prop.token, state, id, role)
           if (treatment === null) continue
           const frame = propTexture(art, treatment)

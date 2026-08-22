@@ -13,7 +13,7 @@ import {
   visualFacing,
 } from './props-layer.js'
 
-type PageName = 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects'
+type PageName = 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects'
 
 function frameGrid(name: PageName): FrameGrid {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
@@ -83,6 +83,7 @@ function completeArt() {
     props: page('props', source),
     monuments: page('monuments', source),
     lantern: page('lantern', source),
+    bell: page('bell', source),
     scenery: page('scenery', source),
     effects: page('effects', source),
   })
@@ -121,12 +122,13 @@ describe('Three Branches prop art views', () => {
       props: page('props', source),
       monuments: page('monuments', source),
       lantern: page('lantern', source),
+      bell: page('bell', source),
       scenery: page('scenery', source),
       effects: page('effects', source),
     })
 
-    // Every named view resolves to the manifest rectangle on its own atlas page, with the bell
-    // foundation living only in the monuments atlas. The exact offsets are atlas calibration, so
+    // Every named view resolves to the manifest rectangle on its own atlas page. The exact offsets
+    // are atlas calibration, so
     // they come from the manifest rather than being pinned in this suite.
     expect(views.props.stallAOpen?.source).toBe(source)
     expect(views.props.stallAOpen?.frame).toEqual(frameRectangle(frameGrid('props'), 'stallAOpen'))
@@ -135,8 +137,9 @@ describe('Three Branches prop art views', () => {
       frameRectangle(frameGrid('lantern'), 'lanternLit'),
     )
     expect(views.props.bellFoundation).toBeUndefined()
-    expect(views.monuments.bellFoundation?.frame).toEqual(
-      frameRectangle(frameGrid('monuments'), 'bellFoundation'),
+    expect(views.monuments.bellFoundation).toBeUndefined()
+    expect(views.bell.bellFoundation?.frame).toEqual(
+      frameRectangle(frameGrid('bell'), 'bellFoundation'),
     )
     expect(views.scenery.marketCrate?.frame).toEqual(
       frameRectangle(frameGrid('scenery'), 'marketCrate'),
@@ -344,7 +347,7 @@ describe('Three Branches registered prop layers', () => {
     expect(lower.rotation).toBe(upper.rotation)
   })
 
-  it('splits the bell foundation and state still across lower and upper roots', () => {
+  it('splits the bell foundation, fixed gantry, and moving upper piece across layers', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('bell', 'bell_0'))
     createPropLayer(targets, scene).install(completeArt())
@@ -357,11 +360,44 @@ describe('Three Branches registered prop layers', () => {
       targets.effects.getChildByLabel('prop-upper:bell_0') as Container,
       'prop-upper-art',
     )
-    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'bellFoundation'))
-    expect(lower.anchor).toMatchObject({ x: 384 / 768, y: 256 / 512 })
-    expect(upper.anchor).toMatchObject({ x: 384 / 768, y: 480 / 512 })
-    expect(lower.scale.x).toBe(0.36 / 8)
-    expect(upper.scale.x).toBe(0.36 / 8)
+    const movingRoot = upper.parent?.getChildByLabel('prop-moving-root') as Container
+    const moving = sprite(movingRoot, 'prop-moving-art')
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellFoundation'))
+    expect(upper.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellGantry'))
+    expect(moving.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellMoving'))
+    expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
+    expect(upper.anchor).toMatchObject({ x: 0.5, y: 960 / 1024 })
+    expect(moving.anchor).toMatchObject({ x: 0.5, y: 960 / 1024 })
+    expect(movingRoot.label).toBe('prop-moving-root')
+    expect(movingRoot.pivot).toMatchObject({ x: 0, y: (527 - 960) * (0.36 / 16) })
+    expect(movingRoot.position).toMatchObject({ x: 0, y: (527 - 960) * (0.36 / 16) })
+    expect(lower.scale.x).toBe(0.36 / 16)
+    expect(upper.scale.x).toBe(0.36 / 16)
+    expect(moving.scale.x).toBe(0.36 / 16)
+  })
+
+  it('keeps the silent bell registered and swings only its circular piece while ringing', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('bell', 'bell_0'))
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
+    layer.reconcile(frame(scene, [], { bell_0: 'silent' }))
+    const upper = targets.effects.getChildByLabel('prop-upper:bell_0') as Container
+    const movingRoot = upper.getChildByLabel('prop-moving-root') as Container
+    const moving = sprite(movingRoot, 'prop-moving-art')
+    const gantry = sprite(upper, 'prop-upper-art')
+    layer.advance(0.25)
+    expect(movingRoot.rotation).toBe(0)
+    expect(moving.position).toMatchObject({ x: 0, y: 0 })
+    layer.reconcile(frame(scene, [], { bell_0: 'ringing' }))
+    layer.advance(0.25)
+    const first = movingRoot.rotation
+    expect(first).not.toBe(0)
+    layer.advance(0.5)
+    expect(movingRoot.rotation).not.toBe(first)
+    expect(Math.abs(movingRoot.rotation)).toBeLessThanOrEqual(0.18)
+    expect(moving.position).toMatchObject({ x: 0, y: 0 })
+    expect(gantry.rotation).toBe(0)
   })
 
   it('keeps a centered lower-only lantern state stable across complete textures', () => {

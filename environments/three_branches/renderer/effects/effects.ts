@@ -22,6 +22,19 @@ export interface EmissiveSpec {
   scale: number
 }
 
+/** Resolve the seek-safe back-and-forth rotation of the bell around its authored suspension. */
+export function bellSwingRotation(state: string, propId: string, fractionalTick: number): number {
+  if (state !== 'ringing') return 0
+  const phase = stableHashParts('three-branches-prop-effect', 'bell', propId, state)
+  const treatment = HEARTHSIDE_STYLE.propEffects.bell
+  if (treatment === undefined) throw new Error('Three Branches bell effect treatment is missing.')
+  const swing = HEARTHSIDE_STYLE.props.registeredPropByType.bell?.swing
+  if (swing === undefined) throw new Error('Three Branches bell swing treatment is missing.')
+  const frameCount = requiredFrames(treatment.frames).length
+  const cycle = (fractionalTick * treatment.frameRate) / frameCount + phase / 0xffffffff
+  return Math.sin(cycle * Math.PI * 2) * swing.amplitudeRadians
+}
+
 /** Whether this type and state owns one of the five sustained visual effects. */
 export function hasPropEffect(type: string, state: string): boolean {
   return activeEffect(type, state) !== null

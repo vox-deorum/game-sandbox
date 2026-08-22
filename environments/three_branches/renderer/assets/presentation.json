@@ -219,11 +219,16 @@
         "splitY": 304
       },
       "bell": {
-        "textureDensityDivisor": 8,
-        "frameSize": { "width": 768, "height": 512 },
+        "textureDensityDivisor": 16,
+        "frameSize": { "width": 1536, "height": 1024 },
         "sourceAnchorByRole": {
-          "upper": { "x": 384, "y": 480 },
-          "lower": { "x": 384, "y": 256 }
+          "upper": { "x": 768, "y": 960 },
+          "moving": { "x": 768, "y": 960 },
+          "lower": { "x": 768, "y": 512 }
+        },
+        "swing": {
+          "sourcePivot": { "x": 768, "y": 527 },
+          "amplitudeRadians": 0.18
         }
       }
     }

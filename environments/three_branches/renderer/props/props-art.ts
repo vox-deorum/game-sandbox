@@ -3,9 +3,9 @@ import { stableHashParts } from '@renderers/base/math.js'
 /** Complete high-resolution pine stills available for stable placement selection. */
 export const PINE_FRAME_NAMES = ['pineA', 'pineB', 'pineC', 'pineD', 'pineE', 'pineF'] as const
 
-export type PropArtPage = 'props' | 'monuments' | 'lantern'
-export type PropArtRole = 'lower' | 'upper'
-type RegistrationRole = 'lower' | 'upper' | 'full'
+export type PropArtPage = 'props' | 'monuments' | 'lantern' | 'bell'
+export type PropArtRole = 'lower' | 'upper' | 'moving'
+type RegistrationRole = 'lower' | 'upper' | 'moving' | 'full'
 
 /** One sprite role selected from a dedicated atlas page and state frame. */
 export interface PropArtFrame {
@@ -15,10 +15,11 @@ export interface PropArtFrame {
   clip?: PropArtRole
 }
 
-/** The explicit lower and upper artwork roles for one recorded prop state. */
+/** The explicit retained artwork roles for one recorded prop state. */
 export interface PropTreatment {
   lower?: PropArtFrame
   upper?: PropArtFrame
+  moving?: PropArtFrame
 }
 
 type TreatmentByState = Readonly<Record<string, PropTreatment>>
@@ -28,9 +29,10 @@ const pump = (frame: string): PropTreatment => ({
   lower: { page: 'monuments', frame, registrationRole: 'full', clip: 'lower' },
   upper: { page: 'monuments', frame, registrationRole: 'full', clip: 'upper' },
 })
-const bell = (frame: string): PropTreatment => ({
-  lower: { page: 'monuments', frame: 'bellFoundation', registrationRole: 'lower' },
-  upper: { page: 'monuments', frame, registrationRole: 'upper' },
+const bell = (): PropTreatment => ({
+  lower: { page: 'bell', frame: 'bellFoundation', registrationRole: 'lower' },
+  upper: { page: 'bell', frame: 'bellGantry', registrationRole: 'upper' },
+  moving: { page: 'bell', frame: 'bellMoving', registrationRole: 'moving' },
 })
 const lantern = (frame: string): PropTreatment => ({
   lower: { page: 'lantern', frame },
@@ -51,7 +53,7 @@ const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
   hearth: { lit: ordinary('hearthLit'), unlit: ordinary('hearthUnlit') },
   repair_bench: { busy: ordinary('repairBenchBusy'), idle: ordinary('repairBenchIdle') },
   pump: { flowing: pump('pumpFlowing'), idle: pump('pumpIdle') },
-  bell: { ringing: bell('bellRinging'), silent: bell('bellSilent') },
+  bell: { ringing: bell(), silent: bell() },
 }
 
 /** Select one stall construction from its stable placement id. */

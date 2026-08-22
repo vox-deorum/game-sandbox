@@ -13,9 +13,11 @@ const OUTPUTS = {
   lanternLit: resolve(ASSETS, 'lantern/lit.png'),
   lanternUnlit: resolve(ASSETS, 'lantern/unlit.png'),
   bellSourceDirectory: resolve(ASSETS, 'source-art/monuments/bell'),
-  bellFoundation: resolve(ASSETS, 'monuments/bell/foundation.png'),
-  bellSilent: resolve(ASSETS, 'monuments/bell/silent.png'),
-  bellRinging: resolve(ASSETS, 'monuments/bell/ringing.png'),
+  bellSource: resolve(ASSETS, 'source-art/bell-atlas-source.png'),
+  monumentsSource: resolve(ASSETS, 'source-art/monuments-atlas-source.png'),
+  bellFoundation: resolve(ASSETS, 'bell/foundation.png'),
+  bellGantry: resolve(ASSETS, 'bell/gantry.png'),
+  bellMoving: resolve(ASSETS, 'bell/moving.png'),
 }
 
 function usage() {
@@ -24,8 +26,8 @@ function usage() {
     '  [--crate=<generated.png> [--crate-background=light-checker]]',
     '  [--lantern-lit=<generated.png> --lantern-unlit=<generated.png>]',
     '  [--recenter-lantern]',
-    '  [--bell-foundation=<generated.png> --bell-silent=<generated.png>',
-    '    --bell-ringing=<generated.png>]',
+    '  [--bell-gantry=<generated.png> --bell-moving=<generated.png>',
+    '    [--bell-foundation=<generated.png>] [--bell-background=light-checker]]',
     '',
     'Provide one or more complete asset families. --recenter-lantern centers the',
     'existing loose lantern frames without rebuilding their source provenance.',
@@ -44,7 +46,12 @@ function parseArguments(arguments_) {
     }
     const match = argument.match(/^--([^=]+)=(.+)$/)
     if (match === null) throw new Error(`Invalid argument: ${argument}\n\n${usage()}`)
-    values.set(match[1], match[1] === 'crate-background' ? match[2] : resolve(match[2]))
+    values.set(
+      match[1],
+      match[1] === 'crate-background' || match[1] === 'bell-background'
+        ? match[2]
+        : resolve(match[2]),
+    )
   }
 
   const pathNames = [
@@ -52,10 +59,15 @@ function parseArguments(arguments_) {
     'lantern-lit',
     'lantern-unlit',
     'bell-foundation',
-    'bell-silent',
-    'bell-ringing',
+    'bell-gantry',
+    'bell-moving',
   ]
-  const knownNames = new Set([...pathNames, 'crate-background', 'recenter-lantern'])
+  const knownNames = new Set([
+    ...pathNames,
+    'crate-background',
+    'bell-background',
+    'recenter-lantern',
+  ])
   for (const name of values.keys()) {
     if (!knownNames.has(name)) throw new Error(`Unknown --${name}.\n\n${usage()}`)
   }
@@ -69,19 +81,31 @@ function parseArguments(arguments_) {
     }
   }
   requireTogether(['lantern-lit', 'lantern-unlit'])
-  requireTogether(['bell-foundation', 'bell-silent', 'bell-ringing'])
+  requireTogether(['bell-gantry', 'bell-moving'])
+  if (values.has('bell-foundation') && !values.has('bell-gantry')) {
+    throw new Error(`--bell-foundation requires --bell-gantry and --bell-moving.\n\n${usage()}`)
+  }
   if (values.has('crate-background') && !values.has('crate')) {
     throw new Error(`--crate-background requires --crate.\n\n${usage()}`)
   }
+  if (values.has('bell-background') && !values.has('bell-gantry')) {
+    throw new Error(`--bell-background requires --bell-gantry and --bell-moving.\n\n${usage()}`)
+  }
   const crateBackground = values.get('crate-background') ?? 'transparent'
-  if (!['transparent', 'light-checker'].includes(crateBackground)) {
-    throw new Error(`--crate-background must be transparent or light-checker.\n\n${usage()}`)
+  const bellBackground = values.get('bell-background') ?? 'transparent'
+  for (const [name, background] of [
+    ['crate', crateBackground],
+    ['bell', bellBackground],
+  ]) {
+    if (!['transparent', 'light-checker'].includes(background)) {
+      throw new Error(`--${name}-background must be transparent or light-checker.\n\n${usage()}`)
+    }
   }
   if (
     !values.has('crate') &&
     !values.has('lantern-lit') &&
     !values.has('recenter-lantern') &&
-    !values.has('bell-foundation')
+    !values.has('bell-gantry')
   ) {
     throw new Error(`No asset family was provided.\n\n${usage()}`)
   }
@@ -90,6 +114,7 @@ function parseArguments(arguments_) {
       pathNames.filter((name) => values.has(name)).map((name) => [name, values.get(name)]),
     ),
     crateBackground,
+    bellBackground,
     recenterLantern: values.has('recenter-lantern'),
   }
 }
@@ -229,6 +254,10 @@ function sampleBilinear(image, x, y) {
 
 function fitTransparent(image, target) {
   const bounds = opaqueBounds(image, target.boundsThreshold)
+  return fitTransparentFromBounds(image, bounds, target)
+}
+
+function fitTransparentFromBounds(image, bounds, target) {
   const scale = Math.min(target.maxWidth / bounds.width, target.maxHeight / bounds.height)
   const width = Math.max(1, Math.round(bounds.width * scale))
   const height = Math.max(1, Math.round(bounds.height * scale))
@@ -341,14 +370,24 @@ function prepare() {
     prepared.push('lantern')
   }
 
-  if (paths['bell-foundation'] !== undefined) {
-    const bellFoundation = normalizeAlpha(load(paths['bell-foundation']), { discardBelow: 16 })
-    const bellSilent = normalizeAlpha(load(paths['bell-silent']), { discardBelow: 16 })
-    const bellRinging = normalizeAlpha(load(paths['bell-ringing']), { discardBelow: 16 })
+  if (paths['bell-gantry'] !== undefined) {
+    const bellFoundation = normalizeAlpha(
+      load(paths['bell-foundation'] ?? resolve(OUTPUTS.bellSourceDirectory, 'foundation.png')),
+      { discardBelow: 16 },
+    )
+    const normalizeBellLayer = (path) =>
+      normalizeAlpha(
+        paths.bellBackground === 'light-checker'
+          ? extractLightCheckerBackground(load(path))
+          : load(path),
+        { discardBelow: 16 },
+      )
+    const bellGantry = normalizeBellLayer(paths['bell-gantry'])
+    const bellMoving = normalizeBellLayer(paths['bell-moving'])
     for (const [name, image] of [
       ['bell foundation', bellFoundation],
-      ['silent bell', bellSilent],
-      ['ringing bell', bellRinging],
+      ['bell gantry', bellGantry],
+      ['moving bell', bellMoving],
     ]) {
       if (image.width !== 1536 || image.height !== 1024) {
         throw new Error(`${name} source must be 1536 by 1024.`)
@@ -357,34 +396,50 @@ function prepare() {
     mkdirSync(OUTPUTS.bellSourceDirectory, { recursive: true })
     for (const [name, source] of [
       ['foundation.png', bellFoundation],
-      ['silent.png', bellSilent],
-      ['ringing.png', bellRinging],
+      ['gantry.png', bellGantry],
+      ['moving.png', bellMoving],
     ]) {
       save(resolve(OUTPUTS.bellSourceDirectory, name), source)
     }
     save(
       OUTPUTS.bellFoundation,
       fitTransparent(bellFoundation, {
-        width: 768,
-        height: 512,
-        maxWidth: 384,
-        maxHeight: 344,
-        centerX: 384,
-        centerY: 252,
+        width: 1536,
+        height: 1024,
+        maxWidth: 768,
+        maxHeight: 688,
+        centerX: 768,
+        centerY: 504,
         boundsThreshold: 16,
       }),
     )
     const bellFrame = {
-      width: 768,
-      height: 512,
-      maxWidth: 384,
-      maxHeight: 456,
-      centerX: 384,
-      bottom: 488,
+      width: 1536,
+      height: 1024,
+      maxWidth: 768,
+      maxHeight: 912,
+      centerX: 768,
+      bottom: 976,
       boundsThreshold: 16,
     }
-    save(OUTPUTS.bellSilent, fitTransparent(bellSilent, bellFrame))
-    save(OUTPUTS.bellRinging, fitTransparent(bellRinging, bellFrame))
+    const gantryBounds = opaqueBounds(bellGantry, bellFrame.boundsThreshold)
+    save(OUTPUTS.bellGantry, fitTransparentFromBounds(bellGantry, gantryBounds, bellFrame))
+    save(OUTPUTS.bellMoving, fitTransparentFromBounds(bellMoving, gantryBounds, bellFrame))
+    const bellSource = blank(4608, 1024)
+    place(bellSource, bellFoundation, 0, 0)
+    place(bellSource, bellGantry, 1536, 0)
+    place(bellSource, bellMoving, 3072, 0)
+    save(OUTPUTS.bellSource, bellSource)
+    const monumentsSource = load(OUTPUTS.monumentsSource)
+    for (const [left, top] of [
+      [1536, 0],
+      [0, 512],
+      [768, 512],
+      [1536, 512],
+    ]) {
+      replace(monumentsSource, blank(768, 512), left, top)
+    }
+    save(OUTPUTS.monumentsSource, monumentsSource)
     prepared.push('bell')
   }
 
