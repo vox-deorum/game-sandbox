@@ -661,6 +661,29 @@
             "name": "boardNone",
             "source": {
               "path": "./assets/source-art/frames/props/boardNone.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": {
+                "clearAtOrBelow": 0,
+                "opaqueAtOrAbove": 255
+              },
+              "bounds": {
+                "alphaAbove": 0
+              },
+              "maxSize": {
+                "width": 252,
+                "height": 252
+              },
+              "anchor": {
+                "x": 192,
+                "y": 128
+              },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": {
+                "clearAtOrBelow": 0,
+                "clearColorAtZero": true
+              }
             }
           },
           {
@@ -1534,7 +1557,7 @@
       "pump": 0.33,
       "lantern": 0.1,
       "shrine": 0.2,
-      "board": 0.28,
+      "board": 0.12444444444444444,
       "plot": 0.17
     },
     "effectAnchorByType": {

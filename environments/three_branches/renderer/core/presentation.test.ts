@@ -269,28 +269,17 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(unknownTint)).toThrow('reedMarks.tint is unknown')
   })
 
-  it('rejects malformed role-keyed roof frames', () => {
-    const unknownRole = structuredClone(HEARTHSIDE_STYLE) as any
-    unknownRole.roofs.frames.home.mode = 'gable'
-    expect(() => readHearthsideStyle(unknownRole)).toThrow('roofs.frames.home keys do not match')
+  it('requires one matching full-roof frame for each building type', () => {
+    const frameObject = structuredClone(HEARTHSIDE_STYLE) as any
+    frameObject.roofs.frames.home = { frame: 'homeRoof' }
+    expect(() => readHearthsideStyle(frameObject)).toThrow('roofs.frames.home must be text')
 
     const unknownFrame = structuredClone(HEARTHSIDE_STYLE) as any
-    unknownFrame.roofs.frames.inn.edge = 'missingFrame'
-    expect(() => readHearthsideStyle(unknownFrame)).toThrow('roofs.frames.inn.edge is unknown')
-
-    const emptyFills = structuredClone(HEARTHSIDE_STYLE) as any
-    emptyFills.roofs.frames.shed.fills = []
-    expect(() => readHearthsideStyle(emptyFills)).toThrow(
-      'roofs.frames.shed.fills must contain at least one frame',
-    )
+    unknownFrame.roofs.frames.inn = 'missingFrame'
+    expect(() => readHearthsideStyle(unknownFrame)).toThrow('roofs.frames.inn is unknown')
 
     const extraBuilding = structuredClone(HEARTHSIDE_STYLE) as any
-    extraBuilding.roofs.frames.barn = {
-      fills: ['homeFill', 'homeFillAlt'],
-      edge: 'homeEdge',
-      corner: 'homeCorner',
-      ridge: 'homeRidge',
-    }
+    extraBuilding.roofs.frames.barn = 'barnRoof'
     expect(() => readHearthsideStyle(extraBuilding)).toThrow(
       'roofs.frames keys do not match its contract',
     )

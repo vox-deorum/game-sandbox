@@ -229,6 +229,26 @@ describe('Three Branches asset catalog', () => {
         './assets/source-art/frames/props/repairBenchBusy.png',
       ]),
     )
+    const board = props?.cells.find((cell) => cell.name === 'boardNone')
+    expect(board).toEqual({
+      name: 'boardNone',
+      source: { path: './assets/source-art/frames/props/boardNone.png' },
+      render: {
+        kind: 'fitVisible',
+        sourceAlpha: { clearAtOrBelow: 0, opaqueAtOrAbove: 255 },
+        bounds: { alphaAbove: 0 },
+        maxSize: { width: 252, height: 252 },
+        anchor: { x: 192, y: 128 },
+        resampler: 'bilinear-premultiplied-encoded-rgb',
+        outputAlpha: { clearAtOrBelow: 0, clearColorAtZero: true },
+      },
+    })
+    expect(readPngHeader(board?.source.path ?? '')).toMatchObject({
+      width: 512,
+      height: 512,
+      colorType: 6,
+    })
+    expect(coloredTransparentPixelCount(board?.source.path ?? '')).toBe(0)
     const lantern = ATLAS_PAGES.find((page) => page.group === 'lantern')
     expect(lantern).toMatchObject({
       pageKey: 'lantern',

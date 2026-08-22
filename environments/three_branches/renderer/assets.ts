@@ -401,7 +401,7 @@ export interface ThreeBranchesRuntimeAssets<T> {
   lantern: T
   monuments: T
   bell: T
-  buildings: T
+  buildings: { home: T; inn: T; shed: T }
   scenery: T
   characters: { body: T; clothing: T; arms: T; details: T }
   effects: T
@@ -417,7 +417,7 @@ interface RuntimeAtlasPage {
   mipmaps: boolean
 }
 
-/** Resolve and load the atlas pages consumed by shipped terrain, prop, and character art. */
+/** Resolve and load the atlas pages consumed by shipped world and character art. */
 export async function loadThreeBranchesRuntimeAssets<T>(
   load: (source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => Promise<T> | T,
 ): Promise<ThreeBranchesRuntimeAssets<T>> {
@@ -448,7 +448,11 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     lantern: required('lantern'),
     monuments: required('monuments'),
     bell: required('bell'),
-    buildings: required('buildings'),
+    buildings: {
+      home: required('buildings', 'home'),
+      inn: required('buildings', 'inn'),
+      shed: required('buildings', 'shed'),
+    },
     scenery: required('scenery'),
     characters: {
       body: required('characters', 'body'),
