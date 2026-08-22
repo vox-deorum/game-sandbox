@@ -1,6 +1,10 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
-import { HEARTHSIDE_STYLE, type HearthsidePaletteKey } from '../core/presentation.js'
+import {
+  HEARTHSIDE_STYLE,
+  type HearthsidePaletteKey,
+  type PropEffectOpacityAnimation,
+} from '../core/presentation.js'
 
 /** One seek-safe animated accent placed above the character layer. */
 export interface PropEffectSpec {
@@ -61,9 +65,10 @@ export function propEffectSpec(
   const frameClock = fractionalTick * treatment.frameRate + (phase / 0xffffffff) * frames.length
   const frame = frameAt(frames, Math.floor(frameClock))
   const wave = Math.sin((frameClock / frames.length) * Math.PI * 2)
+  let spec: PropEffectSpec
   switch (effect) {
     case 'lantern':
-      return {
+      spec = {
         frame,
         tint: 'gilt',
         alpha: 0.7 + wave * 0.16,
@@ -73,8 +78,9 @@ export function propEffectSpec(
         rotation: 0,
         phase,
       }
+      break
     case 'hearth':
-      return {
+      spec = {
         frame,
         tint: 'cinnabar',
         alpha: 0.82 + wave * 0.12,
@@ -84,19 +90,21 @@ export function propEffectSpec(
         rotation: 0,
         phase,
       }
+      break
     case 'shrine':
-      return {
+      spec = {
         frame,
         tint: 'violet',
-        alpha: 0.45 + wave * 0.16,
-        scale: 0.86 + wave * 0.1,
+        alpha: 1,
+        scale: 1.6,
         offsetX: 0,
-        offsetY: -4 - wave * 3,
-        rotation: wave * 0.08,
+        offsetY: 0,
+        rotation: 0,
         phase,
       }
+      break
     case 'pump':
-      return {
+      spec = {
         frame,
         tint: 'water',
         alpha: 0.72 + wave * 0.14,
@@ -106,8 +114,9 @@ export function propEffectSpec(
         rotation: 0,
         phase,
       }
+      break
     case 'bell':
-      return {
+      spec = {
         frame,
         tint: 'gilt',
         alpha: 0.58 + wave * 0.2,
@@ -117,8 +126,23 @@ export function propEffectSpec(
         rotation: wave * 0.12,
         phase,
       }
+      break
+    default:
+      throw new Error('Three Branches prop effect is unsupported.')
   }
-  throw new Error('Three Branches prop effect is unsupported.')
+  return applyOpacityAnimation(spec, treatment.opacityAnimation, fractionalTick)
+}
+
+/** Resolve absolute opacity through one complete 0 to 1 to 0 cycle. */
+export function pingPongOpacity(
+  animation: PropEffectOpacityAnimation,
+  fractionalTick: number,
+  phase: number,
+): number {
+  const cycle = fractionalTick / animation.periodTicks + phase / 0xffffffff
+  const progress = cycle - Math.floor(cycle)
+  const peak = progress <= 0.5 ? progress * 2 : (1 - progress) * 2
+  return animation.min + (animation.max - animation.min) * peak
 }
 
 /** Resolve the configured post-grade glow for the two light-producing prop states. */
@@ -153,4 +177,13 @@ function requiredFrames(frames: readonly string[] | undefined): readonly string[
 
 function frameAt(frames: readonly string[], elapsed: number): string {
   return frames[elapsed % frames.length]!
+}
+
+function applyOpacityAnimation(
+  spec: PropEffectSpec,
+  animation: PropEffectOpacityAnimation | undefined,
+  fractionalTick: number,
+): PropEffectSpec {
+  if (animation === undefined) return spec
+  return { ...spec, alpha: pingPongOpacity(animation, fractionalTick, spec.phase) }
 }

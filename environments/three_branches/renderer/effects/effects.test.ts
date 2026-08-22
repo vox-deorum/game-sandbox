@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
-import { bellSwingRotation, emissiveSpec, propEffectSpec } from './effects.js'
+import { bellSwingRotation, emissiveSpec, pingPongOpacity, propEffectSpec } from './effects.js'
 
 describe('Three Branches prop effects', () => {
   it('carries a stable id phase', () => {
@@ -13,6 +13,54 @@ describe('Three Branches prop effects', () => {
     expect(propEffectSpec('hearth', 'lit', 'hearth:one', 3.1)).not.toEqual(
       propEffectSpec('hearth', 'lit', 'hearth:one', 3.4),
     )
+  })
+
+  it('moves configured opacity through one complete ping-pong cycle', () => {
+    const animation = { mode: 'pingPong' as const, min: 0, max: 1, periodTicks: 8 }
+    expect(pingPongOpacity(animation, 0, 0)).toBe(0)
+    expect(pingPongOpacity(animation, 2, 0)).toBe(0.5)
+    expect(pingPongOpacity(animation, 4, 0)).toBe(1)
+    expect(pingPongOpacity(animation, 6, 0)).toBe(0.5)
+    expect(pingPongOpacity(animation, 8, 0)).toBe(0)
+  })
+
+  it('applies a configured opacity animation after the effect-specific behavior', () => {
+    const effect = HEARTHSIDE_STYLE.propEffects.shrine
+    if (effect === undefined) throw new Error('Shrine effect treatment is missing.')
+    const previous = effect.opacityAnimation
+    effect.opacityAnimation = { mode: 'pingPong', min: 0, max: 1, periodTicks: 8 }
+
+    try {
+      const initial = requiredPropEffect('shrine', 'tended', 'shrine:one', 0)
+      const troughTick = (1 - initial.phase / 0xffffffff) * 8
+      const trough = requiredPropEffect('shrine', 'tended', 'shrine:one', troughTick)
+      const peak = requiredPropEffect('shrine', 'tended', 'shrine:one', troughTick + 4)
+
+      delete effect.opacityAnimation
+      const unmodulatedPeak = requiredPropEffect('shrine', 'tended', 'shrine:one', troughTick + 4)
+
+      expect(trough.alpha).toBeCloseTo(0)
+      expect(peak.alpha).toBeCloseTo(1)
+      expect(unmodulatedPeak).toMatchObject({
+        alpha: 1,
+        scale: 1.6,
+        offsetX: 0,
+        offsetY: 0,
+        rotation: 0,
+      })
+      expect(peak).toMatchObject({
+        frame: unmodulatedPeak.frame,
+        tint: unmodulatedPeak.tint,
+        scale: unmodulatedPeak.scale,
+        offsetX: unmodulatedPeak.offsetX,
+        offsetY: unmodulatedPeak.offsetY,
+        rotation: unmodulatedPeak.rotation,
+        phase: unmodulatedPeak.phase,
+      })
+    } finally {
+      if (previous === undefined) delete effect.opacityAnimation
+      else effect.opacityAnimation = previous
+    }
   })
 
   it('keeps the silent bell stationary and swings ringing bells deterministically', () => {
@@ -53,3 +101,14 @@ describe('Three Branches prop effects', () => {
     expect(emissiveSpec('shrine', 'tended')).toBeNull()
   })
 })
+
+function requiredPropEffect(
+  type: string,
+  state: string,
+  propId: string,
+  fractionalTick: number,
+): NonNullable<ReturnType<typeof propEffectSpec>> {
+  const effect = propEffectSpec(type, state, propId, fractionalTick)
+  if (effect === null) throw new Error(`${type} ${state} effect is missing.`)
+  return effect
+}

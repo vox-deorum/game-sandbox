@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { sceneryVisualScale } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
+import { propEffectSpec } from '../effects/effects.js'
 import type { FrameGrid } from '../ui/tint.js'
 import { frameRectangle } from '../ui/tint.js'
 import {
@@ -431,6 +432,37 @@ describe('Three Branches registered prop layers', () => {
 
     layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
     expect(lower.texture).toBe(litLower)
+  })
+
+  it('aligns the tended shrine cloud and reproduces its full opacity cycle on seek', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('shrine', 'shrine_0'))
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
+    layer.reconcile(frame(scene, [], { shrine_0: 'tended' }))
+
+    const effect = targets.effects.getChildByLabel('prop-effect:shrine_0') as Sprite
+    const initial = propEffectSpec('shrine', 'tended', 'shrine_0', 0)
+    if (initial === null) throw new Error('Expected a tended shrine effect.')
+    const troughTick = (1 - initial.phase / 0xffffffff) * 8
+    const peakTick = troughTick + 4
+
+    layer.advance(troughTick)
+    expect(effect.visible).toBe(true)
+    expect(effect.texture.frame).toEqual(frameRectangle(frameGrid('effects'), 'shrineCloud'))
+    expect(effect.position).toMatchObject({ x: 8, y: 8 })
+    expect(effect.scale.x).toBeCloseTo(0.4)
+    expect(effect.rotation).toBe(0)
+    expect(effect.alpha).toBeCloseTo(0)
+
+    layer.advance(peakTick)
+    expect(effect.alpha).toBeCloseTo(1)
+    layer.advance(troughTick)
+    expect(effect.alpha).toBeCloseTo(0)
+
+    layer.reconcile(frame(scene, [], { shrine_0: 'untended' }))
+    layer.advance(troughTick)
+    expect(effect.visible).toBe(false)
   })
 
   it('keeps a one-cell lantern shadow and highlight independent of dedicated artwork', () => {

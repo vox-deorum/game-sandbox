@@ -11,6 +11,26 @@ import {
   transitionDurationMs,
 } from './presentation.js'
 
+type MutableOpacityAnimation = {
+  mode: string
+  min: number
+  max: number
+  periodTicks: number
+  [key: string]: unknown
+}
+
+type MutableOpacityAnimationDocument = {
+  propEffects: {
+    shrine: {
+      opacityAnimation: MutableOpacityAnimation
+    }
+  }
+}
+
+function mutableOpacityAnimationDocument(): MutableOpacityAnimationDocument {
+  return structuredClone(HEARTHSIDE_STYLE) as unknown as MutableOpacityAnimationDocument
+}
+
 // The palette, curve profiles, seam calibration, route widths, and fill tints are presentation
 // configuration that art passes are meant to move freely, so nothing here pins their values. What
 // the suite guards is the reader: every malformed shape below must still be rejected.
@@ -41,6 +61,44 @@ describe('Hearthside Ink presentation', () => {
 
   it('defaults the lantern light anchor to the collision center', () => {
     expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
+  })
+
+  it('validates optional prop-effect ping-pong opacity animation', () => {
+    const valid = mutableOpacityAnimationDocument()
+    valid.propEffects.shrine.opacityAnimation = {
+      mode: 'pingPong',
+      min: 0,
+      max: 1,
+      periodTicks: 24,
+    }
+    expect(readHearthsideStyle(valid).propEffects.shrine?.opacityAnimation).toEqual(
+      valid.propEffects.shrine.opacityAnimation,
+    )
+
+    const invalidMode = structuredClone(valid)
+    invalidMode.propEffects.shrine.opacityAnimation.mode = 'pulse'
+    expect(() => readHearthsideStyle(invalidMode)).toThrow('opacityAnimation.mode')
+
+    const invalidRange = structuredClone(valid)
+    invalidRange.propEffects.shrine.opacityAnimation.max = 1.01
+    expect(() => readHearthsideStyle(invalidRange)).toThrow('opacityAnimation.max')
+
+    const negativeRange = structuredClone(valid)
+    negativeRange.propEffects.shrine.opacityAnimation.min = -0.01
+    expect(() => readHearthsideStyle(negativeRange)).toThrow('opacityAnimation.min')
+
+    const reversedRange = structuredClone(valid)
+    reversedRange.propEffects.shrine.opacityAnimation.min = 0.8
+    reversedRange.propEffects.shrine.opacityAnimation.max = 0.2
+    expect(() => readHearthsideStyle(reversedRange)).toThrow('opacityAnimation.min must be at most')
+
+    const invalidPeriod = structuredClone(valid)
+    invalidPeriod.propEffects.shrine.opacityAnimation.periodTicks = 0
+    expect(() => readHearthsideStyle(invalidPeriod)).toThrow('opacityAnimation.periodTicks')
+
+    const extraKey = structuredClone(valid)
+    extraKey.propEffects.shrine.opacityAnimation.ease = 'linear'
+    expect(() => readHearthsideStyle(extraKey)).toThrow('opacityAnimation keys do not match')
   })
 
   it('registers bell foundation, gantry, and moving art at doubled density', () => {

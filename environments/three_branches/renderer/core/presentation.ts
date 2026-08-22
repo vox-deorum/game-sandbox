@@ -334,6 +334,20 @@ interface PropVisualTreatment extends VisualScaleTreatment {
   registeredPropByType: Readonly<Record<string, RegisteredPropVisualTreatment>>
 }
 
+/** A reusable, seek-safe opacity cycle applied to an active prop effect. */
+export interface PropEffectOpacityAnimation {
+  mode: 'pingPong'
+  min: number
+  max: number
+  periodTicks: number
+}
+
+export interface PropEffectTreatment {
+  frames: readonly string[]
+  frameRate: number
+  opacityAnimation?: PropEffectOpacityAnimation
+}
+
 export interface HearthsideStyle {
   /** The validated config-owned atlas definitions, retained for round-trip validation. */
   atlases: unknown
@@ -366,7 +380,7 @@ export interface HearthsideStyle {
   }
   props: PropVisualTreatment
   scenery: VisualScaleTreatment
-  propEffects: Readonly<Record<string, { frames: readonly string[]; frameRate: number }>>
+  propEffects: Readonly<Record<string, PropEffectTreatment>>
   emissives: { lantern: HearthsidePaletteKey; hearth: HearthsidePaletteKey; frame: string }
   cranes: {
     frames: readonly string[]
@@ -647,10 +661,19 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   ])
   const propEffects = Object.fromEntries(
     Object.entries(propEffectsSource).map(([name, frameValue]) => {
-      const effectSource = exactRecord(frameValue, `presentation.propEffects.${name}`, [
-        'frames',
-        'frameRate',
-      ])
+      const effectSource = recordWithOptional(
+        frameValue,
+        `presentation.propEffects.${name}`,
+        ['frames', 'frameRate'],
+        ['opacityAnimation'],
+      )
+      const opacityAnimation =
+        effectSource.opacityAnimation === undefined
+          ? undefined
+          : propEffectOpacityAnimation(
+              effectSource.opacityAnimation,
+              `presentation.propEffects.${name}.opacityAnimation`,
+            )
       return [
         name,
         {
@@ -663,6 +686,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
             effectSource.frameRate,
             `presentation.propEffects.${name}.frameRate`,
           ),
+          ...(opacityAnimation === undefined ? {} : { opacityAnimation }),
         },
       ]
     }),
@@ -986,6 +1010,20 @@ function splitInsideFrame(value: unknown, name: string, frameSize: SourceFrameSi
 
 function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {
   return treatment.scaleByType[type] ?? treatment.defaultScale
+}
+
+function propEffectOpacityAnimation(value: unknown, name: string): PropEffectOpacityAnimation {
+  const source = exactRecord(value, name, ['mode', 'min', 'max', 'periodTicks'])
+  if (source.mode !== 'pingPong') throw new Error(`${name}.mode must be pingPong.`)
+  const min = unitNumber(source.min, `${name}.min`)
+  const max = unitNumber(source.max, `${name}.max`)
+  if (min > max) throw new Error(`${name}.min must be at most ${name}.max.`)
+  return {
+    mode: 'pingPong',
+    min,
+    max,
+    periodTicks: positiveNumber(source.periodTicks, `${name}.periodTicks`),
+  }
 }
 
 function contourTreatment(value: unknown, name: string): TerrainContourTreatment {

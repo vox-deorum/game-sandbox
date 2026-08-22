@@ -19,6 +19,15 @@ interface PngHeader {
   colorType: number
 }
 
+interface AlphaGeometry {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  centroidX: number
+  centroidY: number
+}
+
 function readPngHeader(relativePath: string): PngHeader {
   const path = fileURLToPath(new URL(relativePath, import.meta.url))
   const bytes = readFileSync(path)
@@ -64,6 +73,40 @@ function alphaBounds(relativePath: string): { width: number; height: number } {
     }
   }
   return { width: right - left + 1, height: bottom - top + 1 }
+}
+
+function alphaGeometry(relativePath: string): AlphaGeometry {
+  const path = fileURLToPath(new URL(relativePath, import.meta.url))
+  const image = PNG.sync.read(readFileSync(path))
+  let left = image.width
+  let top = image.height
+  let right = -1
+  let bottom = -1
+  let alphaTotal = 0
+  let weightedX = 0
+  let weightedY = 0
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const alpha = image.data[(y * image.width + x) * 4 + 3] ?? 0
+      if (alpha < 8) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x)
+      bottom = Math.max(bottom, y)
+      alphaTotal += alpha
+      weightedX += x * alpha
+      weightedY += y * alpha
+    }
+  }
+  if (alphaTotal === 0) throw new Error(`Asset has no visible pixels: ${relativePath}`)
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    centroidX: weightedX / alphaTotal,
+    centroidY: weightedY / alphaTotal,
+  }
 }
 
 function mutableCatalog(): Record<string, unknown>[] {
@@ -250,6 +293,23 @@ describe('Three Branches asset catalog', () => {
     expect(
       coloredTransparentPixelCount('./assets/source-art/frames/lantern/lanternUnlit.png'),
     ).toBe(0)
+  })
+
+  it('keeps shrine state art on one centered registration', () => {
+    const untendedPath = './assets/source-art/frames/props/shrineUntended.png'
+    const tendedPath = './assets/source-art/frames/props/shrineTended.png'
+    expect(readPngHeader(untendedPath)).toMatchObject({ width: 384, height: 256, colorType: 6 })
+    expect(readPngHeader(tendedPath)).toMatchObject({ width: 384, height: 256, colorType: 6 })
+    expect(coloredTransparentPixelCount(untendedPath)).toBe(0)
+    expect(coloredTransparentPixelCount(tendedPath)).toBe(0)
+
+    const untended = alphaGeometry(untendedPath)
+    const tended = alphaGeometry(tendedPath)
+    for (const edge of ['left', 'top', 'right', 'bottom'] as const) {
+      expect(Math.abs(tended[edge] - untended[edge])).toBeLessThanOrEqual(1)
+    }
+    expect(Math.abs(tended.centroidX - untended.centroidX)).toBeLessThanOrEqual(1)
+    expect(Math.abs(tended.centroidY - untended.centroidY)).toBeLessThanOrEqual(1)
   })
 
   it('keeps the market crate square in its canonical source', () => {

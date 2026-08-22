@@ -1083,9 +1083,9 @@
             }
           },
           {
-            "name": "smokeA",
+            "name": "shrineCloud",
             "source": {
-              "path": "./assets/source-art/frames/effects/smokeA.png"
+              "path": "./assets/source-art/frames/effects/shrineCloud.png"
             }
           },
           {
@@ -1604,8 +1604,14 @@
       "frameRate": 1
     },
     "shrine": {
-      "frames": ["smokeA", "smokeC", "smokeD", "smokeB", "smokeD", "smokeC"],
-      "frameRate": 0.5
+      "frames": ["shrineCloud"],
+      "frameRate": 1,
+      "opacityAnimation": {
+        "mode": "pingPong",
+        "min": 0,
+        "max": 1,
+        "periodTicks": 8
+      }
     },
     "pump": {
       "frames": ["waterA", "waterC", "waterD", "waterB", "waterD", "waterC"],
