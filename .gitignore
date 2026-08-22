@@ -18,6 +18,7 @@ venv/
 .codex-pytest-budget-*/
 .test-tmp-*/
 .tmp-*/
+tmp/
 
 # Node
 node_modules/

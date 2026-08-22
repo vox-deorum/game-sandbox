@@ -2,441 +2,290 @@ import type { AtlasPageSpec } from '@renderers/base/atlas/atlas.js'
 
 import catalogDocument from '../catalog.json'
 
-import { PINE_FRAME_NAMES } from './props/props-art.js'
+import presentationDocument from './assets/presentation.json'
 import type { FrameGrid } from './ui/tint.js'
 
+type AtlasFormat = 'grayscale-alpha' | 'full-color'
+const SAFE_PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+
 /** One generated source atlas and its optimized runtime counterpart. */
-interface ThreeBranchesRasterDraft {
-  source: `./assets/source-art/${string}.png`
+export interface ThreeBranchesRasterDraft {
+  source: string
   sourceWidth: number
   sourceHeight: number
-  path: `./assets/${string}.png`
+  path: string
   width: number
   height: number
   frames: FrameGrid
 }
 
-interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft {
+export interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft {
   name: string
   tintable: boolean
-  format: 'grayscale-alpha' | 'full-color'
+  format: AtlasFormat
   consumer: string
+  mipmaps: boolean
 }
 
-interface ThreeBranchesLayerDraft extends ThreeBranchesRasterDraft {
+export interface ThreeBranchesLayerDraft extends ThreeBranchesRasterDraft {
   name: string
 }
 
-interface ThreeBranchesLayeredAtlasDraft {
+export interface ThreeBranchesLayeredAtlasDraft {
   name: string
   tintable: boolean
-  format: 'grayscale-alpha' | 'full-color'
+  format: AtlasFormat
   consumer: string
+  mipmaps: boolean
   layers: readonly ThreeBranchesLayerDraft[]
 }
 
-type ThreeBranchesAtlasDraft = ThreeBranchesSingleAtlasDraft | ThreeBranchesLayeredAtlasDraft
+export type ThreeBranchesAtlasDraft = ThreeBranchesSingleAtlasDraft | ThreeBranchesLayeredAtlasDraft
 
-export const TERRAIN_ATLAS_FRAME_NAMES = [
-  'washA',
-  'washB',
-  'washC',
-  'washD',
-  'roadA',
-  'roadB',
-  'roadC',
-  'roadD',
-  'furrowA',
-  'furrowB',
-  'furrowC',
-  'furrowD',
-  'reedsA',
-  'reedsB',
-  'reedsC',
-  'reedsD',
-  'rippleA',
-  'rippleB',
-  'rippleC',
-  'rippleD',
-  'floorA',
-  'floorB',
-  'floorC',
-  'floorD',
-  'wallA',
-  'wallB',
-  'wallC',
-  'wallD',
-  'doorway',
-  'bridgeA',
-  'bridgeB',
-  'bridgeC',
-  'edge00',
-  'edge01',
-  'edge02',
-  'edge03',
-  'edge04',
-  'edge05',
-  'edge06',
-  'edge07',
-  'edge08',
-  'edge09',
-  'edge10',
-  'edge11',
-  'edge12',
-  'edge13',
-  'edge14',
-  'edge15',
-  'cornerA',
-  'cornerB',
-  'cornerC',
-  'cornerD',
-  'cornerE',
-  'cornerF',
-  'cornerG',
-  'cornerH',
-  'bankShoulder',
-  'reedShoulderA',
-  'reedShoulderB',
-  'reedShoulderC',
-  'furrowEndA',
-  'furrowEndB',
-  'furrowEndC',
-  'bankStones',
-  'pathA',
-  'pathB',
-  'pathC',
-  'pathD',
-] as const
+/** Parse a complete JSON-owned catalog without accepting unknown fields or page shapes. */
+export function readThreeBranchesAssetCatalog(
+  value: unknown,
+  name = 'presentation.atlases',
+): readonly ThreeBranchesAtlasDraft[] {
+  const entries = list(value, name)
+  if (entries.length === 0) throw new Error(`${name} must contain at least one atlas group.`)
+  const catalog = entries.map((entry, index) => {
+    const entryName = `${name}[${index}]`
+    const source = record(entry, entryName)
+    return 'layers' in source ? layeredAtlas(source, entryName) : singleAtlas(source, entryName)
+  })
+  if (new Set(catalog.map((atlas) => atlas.name)).size !== catalog.length) {
+    throw new Error(`${name} must not contain duplicate atlas groups.`)
+  }
+  const paths: string[] = []
+  for (const atlas of catalog) {
+    if ('layers' in atlas) paths.push(...atlas.layers.map((layer) => layer.path))
+    else paths.push(atlas.path)
+  }
+  if (new Set(paths).size !== paths.length) throw new Error(`${name} must not reuse runtime paths.`)
+  return catalog
+}
 
-export const BUILDINGS_ATLAS_FRAME_NAMES = [
-  'homeFill',
-  'homeEdge',
-  'homeCorner',
-  'homeRidge',
-  'innFill',
-  'innEdge',
-  'innCorner',
-  'innRidge',
-  'shedFill',
-  'shedEdge',
-  'shedCorner',
-  'shedRidge',
-  'homeFillAlt',
-  'innFillAlt',
-  'shedFillAlt',
-  'eaveShadow',
-] as const
+function singleAtlas(source: Record<string, unknown>, name: string): ThreeBranchesSingleAtlasDraft {
+  exact(source, name, [
+    'name',
+    'source',
+    'sourceWidth',
+    'sourceHeight',
+    'path',
+    'width',
+    'height',
+    'tintable',
+    'format',
+    'consumer',
+    'mipmaps',
+    'frames',
+  ])
+  const atlas = {
+    name: pathSegment(source.name, `${name}.name`),
+    ...raster(source, name),
+    tintable: bool(source.tintable, `${name}.tintable`),
+    format: format(source.format, `${name}.format`),
+    consumer: text(source.consumer, `${name}.consumer`),
+    mipmaps: bool(source.mipmaps, `${name}.mipmaps`),
+  }
+  if (atlas.tintable !== (atlas.format === 'grayscale-alpha')) {
+    throw new Error(`${name}.tintable must match its format.`)
+  }
+  return atlas
+}
 
-export const PROPS_ATLAS_FRAME_NAMES = [
-  'stallAOpen',
-  'stallAClosed',
-  'stallBOpen',
-  'stallBClosed',
-  'stallCOpen',
-  'stallCClosed',
-  'benchOccupied',
-  'benchEmpty',
-  'shrineTended',
-  'shrineUntended',
-  'boardNone',
-  'plotTended',
-  'plotOvergrown',
-  'hearthLit',
-  'hearthUnlit',
-  'repairBenchBusy',
-  'repairBenchIdle',
-] as const
+function layeredAtlas(
+  source: Record<string, unknown>,
+  name: string,
+): ThreeBranchesLayeredAtlasDraft {
+  exact(source, name, ['name', 'tintable', 'format', 'consumer', 'mipmaps', 'layers'])
+  const layers = list(source.layers, `${name}.layers`).map((value, index) => {
+    const layerName = `${name}.layers[${index}]`
+    const layer = record(value, layerName)
+    exact(layer, layerName, [
+      'name',
+      'source',
+      'sourceWidth',
+      'sourceHeight',
+      'path',
+      'width',
+      'height',
+      'frames',
+    ])
+    return { name: pathSegment(layer.name, `${layerName}.name`), ...raster(layer, layerName) }
+  })
+  if (layers.length === 0) throw new Error(`${name}.layers must contain at least one layer.`)
+  if (new Set(layers.map((layer) => layer.name)).size !== layers.length)
+    throw new Error(`${name}.layers must not contain duplicate layer names.`)
+  const atlas = {
+    name: pathSegment(source.name, `${name}.name`),
+    tintable: bool(source.tintable, `${name}.tintable`),
+    format: format(source.format, `${name}.format`),
+    consumer: text(source.consumer, `${name}.consumer`),
+    mipmaps: bool(source.mipmaps, `${name}.mipmaps`),
+    layers,
+  }
+  if (atlas.tintable !== (atlas.format === 'grayscale-alpha')) {
+    throw new Error(`${name}.tintable must match its format.`)
+  }
+  return atlas
+}
 
-export const LANTERN_ATLAS_FRAME_NAMES = ['lanternLit', 'lanternUnlit'] as const
+function raster(source: Record<string, unknown>, name: string): ThreeBranchesRasterDraft {
+  const frames = grid(source.frames, `${name}.frames`)
+  const width = positiveInteger(source.width, `${name}.width`)
+  const height = positiveInteger(source.height, `${name}.height`)
+  if (width !== frames.width * frames.columns || height !== frames.height * frames.rows) {
+    throw new Error(`${name} dimensions must match its frame grid.`)
+  }
+  return {
+    source: sourcePngPath(source.source, `${name}.source`),
+    sourceWidth: positiveInteger(source.sourceWidth, `${name}.sourceWidth`),
+    sourceHeight: positiveInteger(source.sourceHeight, `${name}.sourceHeight`),
+    path: runtimePngPath(source.path, `${name}.path`),
+    width,
+    height,
+    frames,
+  }
+}
 
-/** Higher-density stills for the fixed north-facing pump monument. */
-export const MONUMENTS_ATLAS_FRAME_NAMES = ['pumpFlowing', 'pumpIdle'] as const
+function grid(value: unknown, name: string): FrameGrid {
+  const source = record(value, name)
+  exact(source, name, ['width', 'height', 'columns', 'rows', 'names'])
+  const result = {
+    width: positiveInteger(source.width, `${name}.width`),
+    height: positiveInteger(source.height, `${name}.height`),
+    columns: positiveInteger(source.columns, `${name}.columns`),
+    rows: positiveInteger(source.rows, `${name}.rows`),
+    names: list(source.names, `${name}.names`).map((frame, index) =>
+      filenameStem(frame, `${name}.names[${index}]`),
+    ),
+  }
+  if (result.names.length === 0 || result.names.length > result.columns * result.rows) {
+    throw new Error(`${name}.names must fit its frame grid.`)
+  }
+  if (new Set(result.names).size !== result.names.length) {
+    throw new Error(`${name}.names must not contain duplicates.`)
+  }
+  return result
+}
 
-/** High-resolution foundation, gantry, and moving bell stills. */
-export const BELL_ATLAS_FRAME_NAMES = ['bellFoundation', 'bellGantry', 'bellMoving'] as const
+function record(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`)
+  }
+  return value as Record<string, unknown>
+}
 
-export const SCENERY_ATLAS_FRAME_NAMES = [...PINE_FRAME_NAMES, 'marketCrate'] as const
+function exact(value: Record<string, unknown>, name: string, keys: readonly string[]): void {
+  const allowed = new Set(keys)
+  if (keys.some((key) => !(key in value)) || Object.keys(value).some((key) => !allowed.has(key))) {
+    throw new Error(`${name} keys do not match its contract.`)
+  }
+}
 
-export const CHARACTER_POSE_FRAME_NAMES = ['rest', 'leftForward', 'pass', 'rightForward'] as const
+function list(value: unknown, name: string): readonly unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${name} must be an array.`)
+  return value
+}
 
-export const CHARACTER_DETAIL_FRAME_NAMES = [
-  'hairKnot',
-  'reedCap',
-  'headscarf',
-  'visitorTie',
-] as const
+function text(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} must be text.`)
+  return value
+}
 
-export const EFFECTS_ATLAS_FRAME_NAMES = [
-  'characterShadow',
-  'directionMark',
-  'glow',
-  'glowFlicker',
-  'flameA',
-  'flameB',
-  'flameC',
-  'flameD',
-  'smokeA',
-  'smokeB',
-  'waterA',
-  'waterB',
-  'bellLinesA',
-  'bellLinesB',
-  'craneA',
-  'craneB',
-  'glowLow',
-  'glowHigh',
-  'flameE',
-  'flameF',
-  'smokeC',
-  'smokeD',
-  'waterC',
-  'waterD',
-  'bellLinesC',
-  'bellLinesD',
-  'bellLinesE',
-  'bellLinesF',
-  'expressionWave',
-  'expressionNod',
-  'expressionShakeHead',
-  'expressionPoint',
-  'expressionLaugh',
-  'expressionShrug',
-  'expressionStartle',
-  'expressionSleep',
-  'expressionSweep',
-  'expressionUse',
-  'expressionAccentA',
-  'expressionAccentB',
-] as const
+function pathSegment(value: unknown, name: string): string {
+  const result = text(value, name)
+  if (!SAFE_PATH_SEGMENT.test(result)) throw new Error(`${name} must be a safe path segment.`)
+  return result
+}
 
-/** The nine generated atlases that make up the Hearthside Ink runtime art. */
-export const THREE_BRANCHES_ASSET_CATALOG = [
-  {
-    name: 'terrain',
-    source: './assets/source-art/terrain-atlas-source.png',
-    sourceWidth: 1536,
-    sourceHeight: 1152,
-    path: './assets/terrain-atlas.png',
-    width: 1024,
-    height: 1152,
-    tintable: true,
-    format: 'grayscale-alpha',
-    consumer: 'terrain fills, transitions, bridge planks, and the upper-wall repaint',
-    frames: {
-      width: 128,
-      height: 128,
-      columns: 8,
-      rows: 9,
-      names: TERRAIN_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'buildings',
-    source: './assets/source-art/buildings-atlas-source.png',
-    sourceWidth: 1254,
-    sourceHeight: 1254,
-    path: './assets/buildings-atlas.png',
-    width: 256,
-    height: 256,
-    tintable: false,
-    format: 'full-color',
-    consumer: 'home, inn, and repair-shed roof tiles',
-    frames: {
-      width: 64,
-      height: 64,
-      columns: 4,
-      rows: 4,
-      names: BUILDINGS_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'props',
-    source: './assets/source-art/props-atlas-source.png',
-    sourceWidth: 2304,
-    sourceHeight: 1536,
-    path: './assets/props-atlas.png',
-    width: 2304,
-    height: 1536,
-    tintable: false,
-    format: 'full-color',
-    consumer:
-      'complete ordinary interactive prop state stills, with separate effects and emissives',
-    frames: {
-      width: 384,
-      height: 256,
-      columns: 6,
-      rows: 6,
-      names: PROPS_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'lantern',
-    source: './assets/source-art/lantern-atlas-source.png',
-    sourceWidth: 2048,
-    sourceHeight: 1536,
-    path: './assets/lantern-atlas.png',
-    width: 768,
-    height: 512,
-    tintable: false,
-    format: 'full-color',
-    consumer: 'centered one-cell lantern state stills on a dedicated page',
-    frames: {
-      width: 384,
-      height: 512,
-      columns: 2,
-      rows: 1,
-      names: LANTERN_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'monuments',
-    source: './assets/source-art/monuments-atlas-source.png',
-    sourceWidth: 2304,
-    sourceHeight: 1024,
-    path: './assets/monuments-atlas.png',
-    width: 2304,
-    height: 1024,
-    tintable: false,
-    format: 'full-color',
-    consumer: 'higher-density fixed-north pump stills',
-    frames: {
-      width: 768,
-      height: 512,
-      columns: 3,
-      rows: 2,
-      names: MONUMENTS_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'bell',
-    source: './assets/source-art/bell-atlas-source.png',
-    sourceWidth: 4608,
-    sourceHeight: 1024,
-    path: './assets/bell-atlas.png',
-    width: 4608,
-    height: 1024,
-    tintable: false,
-    format: 'full-color',
-    consumer: 'bell foundation, fixed gantry, and separately animated bell',
-    frames: {
-      width: 1536,
-      height: 1024,
-      columns: 3,
-      rows: 1,
-      names: BELL_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'scenery',
-    source: './assets/source-art/scenery-atlas-source.png',
-    sourceWidth: 2048,
-    sourceHeight: 1024,
-    path: './assets/scenery-atlas.png',
-    width: 2048,
-    height: 1024,
-    tintable: false,
-    format: 'full-color',
-    consumer: 'six complete high-resolution pine variants and the market crate',
-    frames: {
-      width: 512,
-      height: 512,
-      columns: 4,
-      rows: 2,
-      names: SCENERY_ATLAS_FRAME_NAMES,
-    },
-  },
-  {
-    name: 'characters',
-    tintable: true,
-    format: 'grayscale-alpha',
-    consumer: 'independently registered overhead body, clothing, arm, and detail masks',
-    layers: [
-      {
-        name: 'body',
-        source: './assets/source-art/characters-body-atlas-source.png',
-        sourceWidth: 2172,
-        sourceHeight: 724,
-        path: './assets/characters-body-atlas.png',
-        width: 768,
-        height: 192,
-        frames: {
-          width: 192,
-          height: 192,
-          columns: 4,
-          rows: 1,
-          names: CHARACTER_POSE_FRAME_NAMES,
-        },
-      },
-      {
-        name: 'clothing',
-        source: './assets/source-art/characters-clothing-atlas-source.png',
-        sourceWidth: 2022,
-        sourceHeight: 778,
-        path: './assets/characters-clothing-atlas.png',
-        width: 768,
-        height: 192,
-        frames: {
-          width: 192,
-          height: 192,
-          columns: 4,
-          rows: 1,
-          names: CHARACTER_POSE_FRAME_NAMES,
-        },
-      },
-      {
-        name: 'arms',
-        source: './assets/source-art/characters-arms-atlas-source.png',
-        sourceWidth: 2137,
-        sourceHeight: 736,
-        path: './assets/characters-arms-atlas.png',
-        width: 768,
-        height: 192,
-        frames: {
-          width: 192,
-          height: 192,
-          columns: 4,
-          rows: 1,
-          names: CHARACTER_POSE_FRAME_NAMES,
-        },
-      },
-      {
-        name: 'details',
-        source: './assets/source-art/characters-details-atlas-source.png',
-        sourceWidth: 2103,
-        sourceHeight: 748,
-        path: './assets/characters-details-atlas.png',
-        width: 768,
-        height: 192,
-        frames: {
-          width: 192,
-          height: 192,
-          columns: 4,
-          rows: 1,
-          names: CHARACTER_DETAIL_FRAME_NAMES,
-        },
-      },
-    ],
-  },
-  {
-    name: 'effects',
-    source: './assets/source-art/effects-atlas-source.png',
-    sourceWidth: 3840,
-    sourceHeight: 1024,
-    path: './assets/effects-atlas.png',
-    width: 1920,
-    height: 512,
-    tintable: true,
-    format: 'grayscale-alpha',
-    consumer: 'character marks, expression chips, prop effects, and white-crane dressing',
-    frames: {
-      width: 192,
-      height: 128,
-      columns: 10,
-      rows: 4,
-      names: EFFECTS_ATLAS_FRAME_NAMES,
-    },
-  },
-] as const satisfies readonly ThreeBranchesAtlasDraft[]
+function filenameStem(value: unknown, name: string): string {
+  const result = text(value, name)
+  if (!SAFE_PATH_SEGMENT.test(result)) throw new Error(`${name} must be a safe filename stem.`)
+  return result
+}
+
+function sourcePngPath(value: unknown, name: string): string {
+  return rendererPngPath(value, name, './assets/source-art/')
+}
+
+function rendererPngPath(value: unknown, name: string, prefix: string): string {
+  const result = text(value, name)
+  const segments = result.slice(prefix.length).split('/')
+  if (
+    !result.startsWith(prefix) ||
+    !result.endsWith('.png') ||
+    result.includes('\\') ||
+    segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+  ) {
+    throw new Error(`${name} must be a renderer-relative POSIX PNG path under ${prefix}.`)
+  }
+  return result
+}
+
+function runtimePngPath(value: unknown, name: string): string {
+  const result = text(value, name)
+  if (!/^\.\/assets\/[A-Za-z0-9][A-Za-z0-9_-]*-atlas\.png$/.test(result)) {
+    throw new Error(`${name} must be a direct ./assets/<safe>-atlas.png path.`)
+  }
+  return result
+}
+
+function positiveInteger(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer.`)
+  }
+  return value
+}
+
+function bool(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${name} must be boolean.`)
+  return value
+}
+
+function format(value: unknown, name: string): AtlasFormat {
+  if (value !== 'grayscale-alpha' && value !== 'full-color') {
+    throw new Error(`${name} must be grayscale-alpha or full-color.`)
+  }
+  return value
+}
+
+/** The complete JSON-owned catalog used by runtime loading and presentation validation. */
+export const THREE_BRANCHES_ASSET_CATALOG = readThreeBranchesAssetCatalog(
+  presentationDocument.atlases,
+)
+
+function singleFrameNames(name: string): readonly string[] {
+  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
+  if (atlas === undefined || 'layers' in atlas)
+    throw new Error(`Three Branches manifest has no ${name} atlas.`)
+  return atlas.frames.names
+}
+
+export const TERRAIN_ATLAS_FRAME_NAMES = singleFrameNames('terrain')
+export const BUILDINGS_ATLAS_FRAME_NAMES = singleFrameNames('buildings')
+export const PROPS_ATLAS_FRAME_NAMES = singleFrameNames('props')
+export const LANTERN_ATLAS_FRAME_NAMES = singleFrameNames('lantern')
+export const MONUMENTS_ATLAS_FRAME_NAMES = singleFrameNames('monuments')
+export const BELL_ATLAS_FRAME_NAMES = singleFrameNames('bell')
+export const SCENERY_ATLAS_FRAME_NAMES = singleFrameNames('scenery')
+export const EFFECTS_ATLAS_FRAME_NAMES = singleFrameNames('effects')
+
+function characterFrameNames(name: string): readonly string[] {
+  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'characters')
+  const layer =
+    atlas !== undefined && 'layers' in atlas
+      ? atlas.layers.find((item) => item.name === name)
+      : undefined
+  if (layer === undefined)
+    throw new Error(`Three Branches manifest has no characters.${name} layer.`)
+  return layer.frames.names
+}
+
+export const CHARACTER_POSE_FRAME_NAMES = characterFrameNames('body')
+export const CHARACTER_DETAIL_FRAME_NAMES = characterFrameNames('details')
 
 function flatFramePaths(names: readonly string[]): readonly string[] {
   return names.map((name) => `${name}.png`)
@@ -469,7 +318,7 @@ function bellFramePath(name: string): string {
 }
 
 function atlasPage(
-  group: ThreeBranchesAtlasName,
+  group: string,
   format: ThreeBranchesSingleAtlasDraft['format'],
   raster: ThreeBranchesRasterDraft,
   framesPath: string,
@@ -496,7 +345,7 @@ export const ATLAS_PAGES = THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) => {
         atlas.name,
         atlas.format,
         layer,
-        `./assets/characters/${layer.name}`,
+        `./assets/${atlas.name}/${layer.name}`,
         flatFramePaths(layer.frames.names),
       ),
     )
@@ -525,8 +374,6 @@ export const THREE_BRANCHES_THUMBNAIL_ASSET = {
   height: 180,
   format: 'full-color',
 } as const
-
-export type ThreeBranchesAtlasName = (typeof THREE_BRANCHES_ASSET_CATALOG)[number]['name']
 
 /** Runtime pages consumed after the terrain and character art units have landed. */
 export interface ThreeBranchesRuntimeAssets<T> {
@@ -561,6 +408,21 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
     return Promise.resolve(load(source, options))
   }
+  const loadAtlas = (name: string, layer?: string): Promise<T> => {
+    const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
+    if (atlas === undefined) throw new Error(`Three Branches manifest has no ${name} atlas.`)
+    const raster =
+      layer === undefined
+        ? 'layers' in atlas
+          ? undefined
+          : atlas
+        : 'layers' in atlas
+          ? atlas.layers.find((item) => item.name === layer)
+          : undefined
+    if (raster === undefined)
+      throw new Error(`Three Branches manifest has no ${name} runtime page.`)
+    return loadPath(raster.path, atlas.mipmaps ? { autoGenerateMipmaps: true } : undefined)
+  }
   const [
     terrain,
     props,
@@ -575,18 +437,18 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     details,
     effects,
   ] = await Promise.all([
-    loadPath('./assets/terrain-atlas.png'),
-    loadPath('./assets/props-atlas.png', { autoGenerateMipmaps: true }),
-    loadPath('./assets/lantern-atlas.png', { autoGenerateMipmaps: true }),
-    loadPath('./assets/monuments-atlas.png', { autoGenerateMipmaps: true }),
-    loadPath('./assets/bell-atlas.png', { autoGenerateMipmaps: true }),
-    loadPath('./assets/buildings-atlas.png'),
-    loadPath('./assets/scenery-atlas.png'),
-    loadPath('./assets/characters-body-atlas.png'),
-    loadPath('./assets/characters-clothing-atlas.png'),
-    loadPath('./assets/characters-arms-atlas.png'),
-    loadPath('./assets/characters-details-atlas.png'),
-    loadPath('./assets/effects-atlas.png'),
+    loadAtlas('terrain'),
+    loadAtlas('props'),
+    loadAtlas('lantern'),
+    loadAtlas('monuments'),
+    loadAtlas('bell'),
+    loadAtlas('buildings'),
+    loadAtlas('scenery'),
+    loadAtlas('characters', 'body'),
+    loadAtlas('characters', 'clothing'),
+    loadAtlas('characters', 'arms'),
+    loadAtlas('characters', 'details'),
+    loadAtlas('effects'),
   ])
   return {
     terrain,
@@ -603,25 +465,22 @@ export async function loadThreeBranchesRuntimeAssets<T>(
 
 /** Ask Vite for production URLs for every shipped runtime atlas page. */
 function threeBranchesRuntimeAssetUrls(): Record<string, string> {
-  return import.meta.glob(
-    [
-      './assets/terrain-atlas.png',
-      './assets/props-atlas.png',
-      './assets/lantern-atlas.png',
-      './assets/monuments-atlas.png',
-      './assets/bell-atlas.png',
-      './assets/buildings-atlas.png',
-      './assets/scenery-atlas.png',
-      './assets/characters-body-atlas.png',
-      './assets/characters-clothing-atlas.png',
-      './assets/characters-arms-atlas.png',
-      './assets/characters-details-atlas.png',
-      './assets/effects-atlas.png',
-    ],
-    {
-      eager: true,
-      import: 'default',
-      query: '?url',
-    },
-  ) as Record<string, string>
+  const urls = import.meta.glob('./assets/*-atlas.png', {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  }) as Record<string, string>
+  for (const path of runtimeAtlasPaths()) {
+    if (urls[path] === undefined) {
+      throw new Error(`Three Branches runtime atlas is not bundled: ${path}`)
+    }
+  }
+  return urls
+}
+
+/** Expand every catalog group to the runtime page paths Vite must bundle. */
+function runtimeAtlasPaths(): readonly string[] {
+  return THREE_BRANCHES_ASSET_CATALOG.flatMap((atlas) =>
+    'layers' in atlas ? atlas.layers.map((layer) => layer.path) : [atlas.path],
+  )
 }

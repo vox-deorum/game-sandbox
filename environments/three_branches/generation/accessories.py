@@ -132,7 +132,7 @@ def dress(
     yard = _Yard(rows, settlement, tuning, clearance)
     market = _market_arc(road, settlement)
     _stalls(stream, yard, road, market, tuning)
-    _crates(stream, yard, tuning)
+    _crates(stream, yard, settlement, tuning)
     _board(stream, yard, road, market, tuning)
     _benches(stream, yard, settlement, tuning)
     _shrines(stream, yard, road, shrines, tuning)
@@ -334,17 +334,16 @@ def _stalls(stream: random.Random, yard: _Yard, road: Road, market: float, tunin
             raise Retry("a market stall found nowhere to stand beside the road")
 
 
-def _crates(stream: random.Random, yard: _Yard, tuning: Accessories) -> None:
-    """Stack one crate beside each stall, and sometimes a second. A crowded stall gets neither."""
+def _crates(stream: random.Random, yard: _Yard, settlement: Settlement, tuning: Accessories) -> None:
+    """Litter the market with loose crates, skipping the spots that cannot take one."""
     crate = tuning.crate
-    for stall in [item for item in yard.props if item.type == "stall"]:
-        wanted = 2 if stream.random() < crate.second_chance else 1
-        stood = 0
-        for cell in _skirt(stall, "crate")[: crate.budget]:
-            if stood == wanted:
-                break
-            if yard.stand("crate", cell):
-                stood += 1
+    x, y = settlement.anchors[1]
+    for _ in range(crate.count):
+        cell = (
+            x + stream.randint(-crate.span, crate.span),
+            y + stream.randint(-crate.span, crate.span),
+        )
+        yard.stand("crate", cell)
 
 
 def _board(stream: random.Random, yard: _Yard, road: Road, market: float, tuning: Accessories) -> None:
@@ -529,32 +528,6 @@ def _around(stream: random.Random, yard: _Yard, token: str, centre: Cell, budget
         if yard.place(token, cell, _FACINGS[stream.randrange(len(_FACINGS))]):
             return True
     return False
-
-
-def _skirt(item: PlacedProp, token: str) -> tuple[Cell, ...]:
-    """Origins that place one scenery footprint around a prop, nearest its middle first."""
-    width, height = footprint(item)
-    candidate_width, candidate_height = footprint(Scenery(token, (0, 0)))
-    x, y = item.cell
-    middle = (x + width / 2, y + height / 2)
-    ring = [
-        (column, row)
-        for row in range(y - candidate_height, y + height + 1)
-        for column in range(x - candidate_width, x + width + 1)
-        if column + candidate_width <= x
-        or column >= x + width
-        or row + candidate_height <= y
-        or row >= y + height
-    ]
-    return tuple(
-        sorted(
-            ring,
-            key=lambda cell: (
-                dist((cell[0] + candidate_width / 2, cell[1] + candidate_height / 2), middle),
-                cell,
-            ),
-        )
-    )
 
 
 def _spaced(yard: _Yard, cell: Cell, gap: int) -> bool:

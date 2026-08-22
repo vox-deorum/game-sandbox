@@ -7,6 +7,7 @@ import type { ThreeBranchesRuntimeAssetLoadOptions } from './assets.js'
 import {
   ATLAS_PAGES,
   loadThreeBranchesRuntimeAssets,
+  readThreeBranchesAssetCatalog,
   THREE_BRANCHES_ASSET_CATALOG,
   THREE_BRANCHES_THUMBNAIL_ASSET,
 } from './assets.js'
@@ -15,26 +16,6 @@ interface PngHeader {
   width: number
   height: number
   colorType: number
-}
-
-interface RasterAsset {
-  source: string
-  sourceWidth: number
-  sourceHeight: number
-  path: string
-  width: number
-  height: number
-  frames: {
-    width: number
-    height: number
-    columns: number
-    rows: number
-    names: readonly string[]
-  }
-}
-
-function rastersFor(atlas: (typeof THREE_BRANCHES_ASSET_CATALOG)[number]): readonly RasterAsset[] {
-  return 'layers' in atlas ? atlas.layers : [atlas]
 }
 
 function readPngHeader(relativePath: string): PngHeader {
@@ -84,110 +65,102 @@ function alphaBounds(relativePath: string): { width: number; height: number } {
   return { width: right - left + 1, height: bottom - top + 1 }
 }
 
-describe('Three Branches asset catalog', () => {
-  it('catalogs the nine declared atlas groups with named frame prefixes', () => {
-    expect(THREE_BRANCHES_ASSET_CATALOG.map((atlas) => atlas.name)).toEqual([
-      'terrain',
-      'buildings',
-      'props',
-      'lantern',
-      'monuments',
-      'bell',
-      'scenery',
-      'characters',
-      'effects',
-    ])
+function mutableCatalog(): Record<string, unknown>[] {
+  return structuredClone(THREE_BRANCHES_ASSET_CATALOG) as unknown as Record<string, unknown>[]
+}
 
-    for (const atlas of THREE_BRANCHES_ASSET_CATALOG) {
-      expect(atlas.tintable).toBe(atlas.format === 'grayscale-alpha')
-      for (const raster of rastersFor(atlas)) {
-        expect(raster.frames.names.length).toBeLessThanOrEqual(
-          raster.frames.columns * raster.frames.rows,
-        )
-        expect(new Set(raster.frames.names).size).toBe(raster.frames.names.length)
-        expect(raster.frames.width * raster.frames.columns).toBe(raster.width)
-        expect(raster.frames.height * raster.frames.rows).toBe(raster.height)
-      }
+function catalogEntry(catalog: Record<string, unknown>[], index: number): Record<string, unknown> {
+  const entry = catalog[index]
+  if (entry === undefined) throw new Error(`Catalog entry ${index} is missing.`)
+  return entry
+}
+
+function catalogLayers(entry: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(entry.layers)) throw new Error('Layered atlas is missing layers.')
+  return entry.layers as Record<string, unknown>[]
+}
+
+function frameGrid(entry: Record<string, unknown>): Record<string, unknown> {
+  const frames = entry.frames
+  if (typeof frames !== 'object' || frames === null || Array.isArray(frames)) {
+    throw new Error('Atlas is missing frames.')
+  }
+  return frames as Record<string, unknown>
+}
+
+describe('Three Branches asset catalog', () => {
+  it('keeps stalls and pines on mipmapped atlas groups', () => {
+    const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
+    const scenery = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'scenery')
+    if (props === undefined || scenery === undefined || 'layers' in props || 'layers' in scenery) {
+      throw new Error('Props and scenery atlas groups are required.')
     }
 
-    const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
-    expect(props && !('layers' in props) ? props.frames.names : []).toHaveLength(17)
-    expect(props && !('layers' in props) ? props.frames.names : []).toEqual(
-      expect.arrayContaining([
-        'stallAOpen',
-        'stallAClosed',
-        'stallBOpen',
-        'stallBClosed',
-        'stallCOpen',
-        'stallCClosed',
-      ]),
+    expect(props.mipmaps).toBe(true)
+    expect(props.frames.names).toEqual(
+      expect.arrayContaining(['stallAOpen', 'stallBOpen', 'stallCOpen']),
     )
-    expect(props && !('layers' in props) ? props.frames.names : []).not.toEqual(
-      expect.arrayContaining(['lanternLit', 'lanternUnlit', 'pumpFlowing', 'pumpIdle']),
+    expect(scenery.mipmaps).toBe(true)
+    expect(scenery.frames.names).toEqual(
+      expect.arrayContaining(['pineA', 'pineB', 'pineC', 'pineD', 'pineE', 'pineF']),
     )
+  })
 
-    const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
-    expect(lantern && !('layers' in lantern) ? lantern : null).toMatchObject({
-      sourceWidth: 2048,
-      sourceHeight: 1536,
-      width: 768,
-      height: 512,
-      tintable: false,
-      format: 'full-color',
-      frames: {
-        width: 384,
-        height: 512,
-        columns: 2,
-        rows: 1,
-        names: ['lanternLit', 'lanternUnlit'],
-      },
-    })
-
-    const monuments = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'monuments')
-    expect(monuments && !('layers' in monuments) ? monuments.frames.names : []).toEqual([
-      'pumpFlowing',
-      'pumpIdle',
-    ])
-
-    const bell = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'bell')
-    expect(bell && !('layers' in bell) ? bell : null).toMatchObject({
-      sourceWidth: 4608,
-      sourceHeight: 1024,
-      width: 4608,
-      height: 1024,
-      tintable: false,
-      format: 'full-color',
-      consumer: 'bell foundation, fixed gantry, and separately animated bell',
-      frames: {
-        width: 1536,
-        height: 1024,
-        columns: 3,
-        rows: 1,
-        names: ['bellFoundation', 'bellGantry', 'bellMoving'],
-      },
-    })
-
-    const scenery = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'scenery')
-    expect(scenery && !('layers' in scenery) ? scenery : null).toMatchObject({
-      sourceWidth: 2048,
-      sourceHeight: 1024,
-      width: 2048,
-      height: 1024,
-      tintable: false,
-      format: 'full-color',
-      frames: {
-        width: 512,
-        height: 512,
-        columns: 4,
-        rows: 2,
-        names: ['pineA', 'pineB', 'pineC', 'pineD', 'pineE', 'pineF', 'marketCrate'],
-      },
-    })
-
-    const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
+  it('accepts arbitrary catalog group and layer names while rejecting duplicate and malformed entries', () => {
+    const arbitraryNames = mutableCatalog()
+    catalogEntry(arbitraryNames, 0).name = 'meadows'
+    const residents = catalogEntry(arbitraryNames, 7)
+    residents.name = 'residents'
+    catalogEntry(catalogLayers(residents), 0).name = 'forms'
+    const parsed = readThreeBranchesAssetCatalog(arbitraryNames)
+    expect(parsed.map((atlas) => atlas.name)).toContain('meadows')
+    const parsedResidents = parsed.find((atlas) => atlas.name === 'residents')
     expect(
-      characters && 'layers' in characters ? characters.layers.map((layer) => layer.name) : [],
-    ).toEqual(['body', 'clothing', 'arms', 'details'])
+      parsedResidents && 'layers' in parsedResidents ? parsedResidents.layers[0]?.name : null,
+    ).toBe('forms')
+
+    const duplicateNames = mutableCatalog()
+    catalogEntry(duplicateNames, 1).name = 'terrain'
+    expect(() => readThreeBranchesAssetCatalog(duplicateNames)).toThrow(
+      'must not contain duplicate atlas groups',
+    )
+
+    const duplicateLayers = mutableCatalog()
+    const layers = catalogLayers(catalogEntry(duplicateLayers, 7))
+    catalogEntry(layers, 1).name = catalogEntry(layers, 0).name
+    expect(() => readThreeBranchesAssetCatalog(duplicateLayers)).toThrow(
+      'must not contain duplicate layer names',
+    )
+
+    const duplicatePaths = mutableCatalog()
+    catalogEntry(duplicatePaths, 1).path = catalogEntry(duplicatePaths, 0).path
+    expect(() => readThreeBranchesAssetCatalog(duplicatePaths)).toThrow(
+      'must not reuse runtime paths',
+    )
+
+    const unsafeGroup = mutableCatalog()
+    catalogEntry(unsafeGroup, 0).name = '../meadows'
+    expect(() => readThreeBranchesAssetCatalog(unsafeGroup)).toThrow('must be a safe path segment')
+
+    const unsafeFrame = mutableCatalog()
+    frameGrid(catalogEntry(unsafeFrame, 2)).names = ['../stall']
+    expect(() => readThreeBranchesAssetCatalog(unsafeFrame)).toThrow('must be a safe filename stem')
+
+    const nestedRuntimePath = mutableCatalog()
+    catalogEntry(nestedRuntimePath, 0).path = './assets/nested/terrain-atlas.png'
+    expect(() => readThreeBranchesAssetCatalog(nestedRuntimePath)).toThrow(
+      'must be a direct ./assets/<safe>-atlas.png path',
+    )
+
+    const unsafeSourcePath = mutableCatalog()
+    catalogEntry(unsafeSourcePath, 0).source = './assets/source-art/../terrain-atlas-source.png'
+    expect(() => readThreeBranchesAssetCatalog(unsafeSourcePath)).toThrow(
+      'must be a renderer-relative POSIX PNG path',
+    )
+
+    const malformedEntry = mutableCatalog()
+    catalogEntry(malformedEntry, 2).mipmaps = 'yes'
+    expect(() => readThreeBranchesAssetCatalog(malformedEntry)).toThrow('mipmaps must be boolean')
   })
 
   it('derives nested ordinary-prop paths and gives lantern frames their dedicated page', () => {
@@ -319,7 +292,7 @@ describe('Three Branches asset catalog', () => {
     expect(sources.some((source) => /buildings/.test(source))).toBe(true)
   })
 
-  it('requests generated mipmaps only for the interactive prop atlases', async () => {
+  it('requests generated mipmaps for every runtime page in the configured atlas groups', async () => {
     const load = vi.fn((source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => ({
       source,
       options,
@@ -335,11 +308,27 @@ describe('Three Branches asset catalog', () => {
         expect.stringMatching(/lantern-atlas\.png/),
         expect.stringMatching(/monuments-atlas\.png/),
         expect.stringMatching(/bell-atlas\.png/),
+        expect.stringMatching(/scenery-atlas\.png/),
       ]),
     )
-    expect(mipmappedSources).toHaveLength(4)
+    expect(mipmappedSources).toHaveLength(5)
     for (const [, options] of mipmappedCalls) {
       expect(options).toEqual({ autoGenerateMipmaps: true })
+    }
+  })
+
+  it('keeps every character layer non-mipmapped when its catalog group disables mipmaps', async () => {
+    const load = vi.fn((source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => ({
+      source,
+      options,
+    }))
+
+    await loadThreeBranchesRuntimeAssets(load)
+
+    for (const [source, options] of load.mock.calls) {
+      if (/characters-(body|clothing|arms|details)-atlas\.png/.test(source)) {
+        expect(options).toBeUndefined()
+      }
     }
   })
 })

@@ -113,7 +113,7 @@
     "lantern": {"spacing": 9, "market_spacing": 5},
     "bell": {"budget": 20},
     "pump": {"budget": 12},
-    "crate": {"second_chance": 0.5, "budget": 8},
+    "crate": {"count": 9, "span": 6},
     "pine": {"spacing": 6, "scatter": 70, "gap": 3, "companion_chance": 0.55, "companions": 3, "size": [1.0, 2.0]}
   },
   "redraw": {"cap": 64}

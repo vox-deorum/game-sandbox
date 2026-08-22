@@ -1,6 +1,6 @@
 import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 import presentationDocument from '../assets/presentation.json'
-import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
+import { readThreeBranchesAssetCatalog, type ThreeBranchesAtlasDraft } from '../assets.js'
 import { smoothingPassesFor } from '../terrain/terrain-curves.js'
 import { CATALOG, RULES } from '../ui/overlay.js'
 import { mixedTint } from '../ui/tint.js'
@@ -330,6 +330,7 @@ interface PropVisualTreatment extends VisualScaleTreatment {
 }
 
 export interface HearthsideStyle {
+  atlases: readonly ThreeBranchesAtlasDraft[]
   palette: HearthsidePalette
   transition: { naturalMs: number; settleGraceMs: number; headroom: number }
   terrain: {
@@ -447,6 +448,7 @@ export function sceneryVisualScale(type: string): number {
 /** Validate an injected document for tests and future configuration edits. */
 export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const source = exactRecord(value, 'presentation', [
+    'atlases',
     'palette',
     'transition',
     'terrain',
@@ -460,6 +462,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'cranes',
     'expressions',
   ])
+  const atlases = readThreeBranchesAssetCatalog(source.atlases)
   const paletteSource = exactRecord(source.palette, 'presentation.palette', HEARTHSIDE_PALETTE_KEYS)
   const palette = Object.fromEntries(
     HEARTHSIDE_PALETTE_KEYS.map((key) => [
@@ -483,7 +486,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     headroom: positiveNumber(transitionSource.headroom, 'presentation.transition.headroom'),
   }
 
-  const terrainFrames = framesFor('terrain')
+  const terrainFrames = framesFor(atlases, 'terrain')
   const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
     'fills',
     'contours',
@@ -540,7 +543,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'presentation.roofs.frames',
     CATALOG.buildings.map((building) => building.token),
   )
-  const buildingFrames = framesFor('buildings')
+  const buildingFrames = framesFor(atlases, 'buildings')
   const roofs = {
     clearAlpha: unitNumber(roofsSource.clearAlpha, 'presentation.roofs.clearAlpha'),
     fadeMs: positiveNumber(roofsSource.fadeMs, 'presentation.roofs.fadeMs'),
@@ -575,8 +578,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'walk',
     'visitor',
   ])
-  const detailFrames = framesFor('characters', 'details')
-  const poseFrames = framesFor('characters', 'body')
+  const detailFrames = framesFor(atlases, 'characters', 'details')
+  const poseFrames = framesFor(atlases, 'characters', 'body')
   const walkSource = exactRecord(charactersSource.walk, 'presentation.characters.walk', [
     'frames',
     'frameRatio',
@@ -625,7 +628,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     CATALOG.scenery.map((item) => item.token),
   )
 
-  const effectsFrames = framesFor('effects')
+  const effectsFrames = framesFor(atlases, 'effects')
   const propEffectsSource = exactRecord(source.propEffects, 'presentation.propEffects', [
     'lantern',
     'hearth',
@@ -724,6 +727,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   return {
+    atlases,
     palette,
     transition,
     terrain,
@@ -1210,8 +1214,12 @@ function plankTreatment(
     ),
   }
 }
-function framesFor(group: string, layer?: string): ReadonlySet<string> {
-  const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
+function framesFor(
+  catalog: readonly ThreeBranchesAtlasDraft[],
+  group: string,
+  layer?: string,
+): ReadonlySet<string> {
+  const atlas = catalog.find((item) => item.name === group)
   if (atlas === undefined) throw new Error(`Three Branches manifest has no ${group} atlas.`)
   if ('layers' in atlas) {
     const raster = atlas.layers.find((item) => item.name === layer)

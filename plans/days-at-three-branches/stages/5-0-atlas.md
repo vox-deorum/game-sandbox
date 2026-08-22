@@ -20,13 +20,13 @@ Every named atlas frame lives as one loose PNG beside the compiled page. A page 
 | `characters-<layer>-atlas.png` (4 pages) | `assets/characters/{body,clothing,arms,details}/` | 4 each |
 | `effects-atlas.png` | `assets/effects/` | 40 |
 
-The Frames column counts loose files, not frame pixels. Each page's current frame dimensions, count, and names live in `renderer/assets.ts` and change only with the consuming art unit, its loose files, compiled page, source-art metadata, plan facts, and tests in the same change set.
+The Frames column counts loose files, not frame pixels. Each page's current frame dimensions, count, and names live in `renderer/assets/presentation.json` and change only with the consuming art unit, its loose files, compiled page, source-art metadata, plan facts, and tests in the same change set.
 
 A frame's name is the camel case of its path under the frames directory: `terrain/washA.png` is `washA`, `props/repair_bench/busy.png` is `repairBenchBusy`, and `characters/body/rest.png` is `rest` in the body layer. Frame files must be exactly the page's declared frame size.
 
 The terrain page is an 8 by 9 grid of 128 px frames on a 1024 by 1152 runtime page. Its 68 named frames leave the final four cells transparent. The 1536 by 1152 source page uses 192 by 128 preview cells.
 
-The props frame names in `assets.ts` derive from ordinary catalog tokens and states. Slots 0 through 5 contain `stallAOpen`, `stallAClosed`, `stallBOpen`, `stallBClosed`, `stallCOpen`, and `stallCClosed`. Slots 6 through 16 contain the remaining complete prop states in catalog order, from `benchOccupied` through `repairBenchIdle`. Slots 17 through 35 are an unnamed trailing suffix that the packer fills transparently. Stall A keeps the original `assets/props/stall/<state>.png` paths. Variants B and C use `assets/props/stall/<variant>/<state>.png`; other ordinary props use `assets/props/<type>/<state>.png`. The runtime page remains 2304 by 1536, with 384 by 256 runtime frames and no downsampling. `assets/props/` contains no lantern, pump, or bell files. The six stall frames, compiled page, and source provenance are promoted together as one art unit.
+The props frame names in `assets/presentation.json` derive from ordinary catalog tokens and states. Slots 0 through 5 contain `stallAOpen`, `stallAClosed`, `stallBOpen`, `stallBClosed`, `stallCOpen`, and `stallCClosed`. Slots 6 through 16 contain the remaining complete prop states in catalog order, from `benchOccupied` through `repairBenchIdle`. Slots 17 through 35 are an unnamed trailing suffix that the packer fills transparently. Stall A keeps the original `assets/props/stall/<state>.png` paths. Variants B and C use `assets/props/stall/<variant>/<state>.png`; other ordinary props use `assets/props/<type>/<state>.png`. The runtime page remains 2304 by 1536, with 384 by 256 runtime frames and no downsampling. `assets/props/` contains no lantern, pump, or bell files. The six stall frames, compiled page, and source provenance are promoted together as one art unit.
 
 The lantern page is a 2 by 1 grid of 384 by 512 frames on a 768 by 512 runtime page. It names `lanternLit` and `lanternUnlit` from `assets/lantern/lit.png` and `assets/lantern/unlit.png`. Its high-resolution provenance page is 2048 by 1536.
 
@@ -58,7 +58,7 @@ Freshness is pixel defined, never byte defined: checks decode both sides and com
 
 ## Incremental runtime loading
 
-`assets.ts` keeps the catalog, page paths, grids, dimensions, and runtime load function. The runtime loader includes its twelve shipped pages: terrain, props, lantern, monuments, bell, buildings, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
+`assets/presentation.json` keeps the catalog, page paths, grids, dimensions, and sampling flags. `assets.ts` validates that catalog and loads its twelve shipped pages: terrain, props, lantern, monuments, bell, buildings, scenery, the four character layers, and effects. Later approved visual units add pages when their consumers land. `source-art/` keeps the high-resolution provenance for every authored page and grows with approved art. Skirmish at Crane Reach ships loose ungridded files and needs nothing from this stage.
 
 `assets/source-art/road-material-source.png` retains the accepted 1254 by 1254 packed-earth master. The four road runtime frames share its even base so deterministic frame selection cannot create tonal blocks. `assets/source-art/path-material-source.png` retains the four-quadrant worn-stone path source. The terrain source page keeps grayscale previews for road slots 4 through 7 and path slots 64 through 67. Loose runtime frames remain the packer's editable input.
 

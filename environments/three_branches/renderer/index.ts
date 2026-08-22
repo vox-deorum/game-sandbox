@@ -681,7 +681,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private async loadArt(): Promise<void> {
     await runArtLoad({
       load: () =>
-        loadThreeBranchesRuntimeAssets<Texture>((source, options) =>
+        loadThreeBranchesRuntimeAssets((source, options) =>
           options?.autoGenerateMipmaps === true
             ? Assets.load<Texture>({ src: source, data: { autoGenerateMipmaps: true } })
             : Assets.load<Texture>(source),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BELL_ATLAS_FRAME_NAMES,
   EFFECTS_ATLAS_FRAME_NAMES,
   LANTERN_ATLAS_FRAME_NAMES,
   MONUMENTS_ATLAS_FRAME_NAMES,
@@ -22,7 +23,7 @@ const framesByPage = {
   props: PROPS_ATLAS_FRAME_NAMES,
   monuments: MONUMENTS_ATLAS_FRAME_NAMES,
   lantern: LANTERN_ATLAS_FRAME_NAMES,
-  bell: ['bellFoundation', 'bellGantry', 'bellMoving'],
+  bell: BELL_ATLAS_FRAME_NAMES,
 } as const
 
 describe('Three Branches prop art treatments', () => {
@@ -99,7 +100,9 @@ describe('Three Branches prop art treatments', () => {
     }
     Object.values(HEARTHSIDE_STYLE.propEffects)
       .flatMap((effect) => effect.frames)
-      .forEach((frame) => expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame))
+      .forEach((frame) => {
+        expect(EFFECTS_ATLAS_FRAME_NAMES).toContain(frame)
+      })
   })
 
   it('keeps every recorded state on its own state frame', () => {

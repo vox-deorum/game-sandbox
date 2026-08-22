@@ -78,7 +78,7 @@ The wall ring takes a cell off each side, so a site's floor is its cells less tw
 | Token | Physical cells and collision | Count |
 | --- | --- | --- |
 | pine | 1 by 1, solid inscribed circle | road stations and seeded scatter candidates |
-| crate | 2 by 2, solid box filling its rect | one or two beside each stall |
+| crate | 2 by 2, solid box filling its rect | loose scatter around the market |
 
 Props and scenery are solid but never block sight. Only interactive props participate in use selection, holding, transitions, and dynamic prop-state observations. Scenery is static layout knowledge.
 

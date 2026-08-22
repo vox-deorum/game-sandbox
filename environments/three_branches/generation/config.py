@@ -405,10 +405,11 @@ class Lantern:
 
 @dataclass(frozen=True, slots=True)
 class Crate:
-    """Market crates. Each stall gets one, and sometimes a second."""
+    """Market crates, littered loosely around the market. Optional: a blocked spot is skipped."""
 
-    second_chance: float
-    budget: int
+    # Crates tried per village, and the cells either side of the market anchor they scatter over.
+    count: int
+    span: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -668,8 +669,8 @@ def _accessories(value: Any) -> Accessories:
         _spot(data["bell"], "accessories.bell"),
         _spot(data["pump"], "accessories.pump"),
         Crate(
-            _fraction(crate["second_chance"], "accessories.crate.second_chance"),
-            positive_int(crate["budget"], "accessories.crate.budget"),
+            positive_int(crate["count"], "accessories.crate.count"),
+            positive_int(crate["span"], "accessories.crate.span"),
         ),
         Pine(
             positive_int(pine["spacing"], "accessories.pine.spacing"),
