@@ -380,7 +380,7 @@ def _clear(rows: list[list[str]], site: Site, reserved: set[Cell], band: tuple[i
             return False
         if band[0] <= cell[1] <= band[1]:
             return False
-    return all(_inside(cell) and rows[cell[1]][cell[0]] not in _KEEP_CLEAR for cell in site.approaches)
+    return _open(rows, site.approaches)
 
 
 def _open(rows: list[list[str]], cells: tuple[Cell, ...]) -> bool:

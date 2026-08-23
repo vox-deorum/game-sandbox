@@ -36,10 +36,7 @@ from .water import Water
 class Crossing:
     """One proved bridge: where it cuts, how far it reaches, and the deck it paints."""
 
-    channel: int
     row: int
-    # The water the cut spans, and that widened by an apron of bank at each end.
-    water_span: tuple[int, int]
     span: tuple[int, int]
     corridor: frozenset[Cell]
     deck: frozenset[Cell]
@@ -54,7 +51,6 @@ class Road:
     """Everything the road stage committed."""
 
     width: int
-    entry_row: int
     centreline: tuple[Point, ...]
     cells: frozenset[Cell]
     crossings: tuple[Crossing, ...]
@@ -149,7 +145,7 @@ def _crossing(
         deck_cells = frozenset(cell for cell in corridor if cell in water)
         score = (span[1] - span[0], abs(row - previous), row)
         if best is None or score < best[0]:
-            best = (score, Crossing(channel, row, cut, span, corridor, deck_cells))
+            best = (score, Crossing(row, span, corridor, deck_cells))
     return None if best is None else best[1]
 
 
@@ -242,7 +238,6 @@ class _Walk:
             raise Retry("the road left no road cell under the spawn")
         return Road(
             road.width,
-            entry_row,
             tuple(centreline),
             frozenset(self.cells),
             self.crossings,

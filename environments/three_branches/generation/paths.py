@@ -69,7 +69,6 @@ class Crossing:
 class Footpaths:
     """Everything the footpath stage committed."""
 
-    cells: frozenset[Cell]
     crossings: tuple[Crossing, ...]
 
 
@@ -129,7 +128,6 @@ def lay_footpaths(
     grows a bundle of separate lines that happen to run alongside each other. A channel one route
     bridged is closed to the rest, which is what holds every channel to at most one crossing.
     """
-    painted: set[Cell] = set()
     crossings: list[Crossing] = []
     for group in _farthest_first(rows, courses, targets, forbidden, tuning):
         wanted = frozenset(group)
@@ -146,16 +144,13 @@ def lay_footpaths(
         )
         if target is None:
             raise Retry("a footpath target could not be reached from the road")
-        worn, crossed = _wear(stream, rows, _plan(rows, (target, came)), forbidden, tuning)
-        painted.update(worn)
-        crossings.extend(crossed)
+        crossings.extend(_wear(stream, rows, _plan(rows, (target, came)), forbidden, tuning))
         # A route arrives at one cell of a doorway's approach. The rest of it is the same doorstep,
         # so it is worn too, and the whole run opens onto path rather than half of it.
         for cell in sorted(wanted):
             if rows[cell[1]][cell[0]] in _PAINTABLE:
                 rows[cell[1]][cell[0]] = "p"
-                painted.add(cell)
-    return Footpaths(frozenset(painted), tuple(crossings))
+    return Footpaths(tuple(crossings))
 
 
 # How each cell was reached: from where, over which water, and which channel that water was.
@@ -256,7 +251,7 @@ def _wear(
     legs: tuple[_Leg, ...],
     forbidden: frozenset[Cell],
     tuning: Path,
-) -> tuple[frozenset[Cell], tuple[Crossing, ...]]:
+) -> tuple[Crossing, ...]:
     """Walk a plan and paint what the walk wore, leg by leg.
 
     A walk that meets a way already carrying people has arrived, and the rest of the plan is not
@@ -268,7 +263,6 @@ def _wear(
     wavelength = float(stream.randint(*walker.meander_wavelength))
     phase = stream.uniform(0.0, 2.0 * pi)
     momentum = stream.uniform(*walker.momentum)
-    painted: set[Cell] = set()
     crossings: list[Crossing] = []
     for index, leg in enumerate(legs):
         start = leg.cells[0]
@@ -277,19 +271,19 @@ def _wear(
         worn = _wander(stream, rows, start, leg.cells[-1], forbidden, (momentum, wavelength, phase), tuning)
         if worn is None:
             for rest in legs[index:]:
-                painted |= _paint(rows, rest.cells, tuning)
+                _paint(rows, rest.cells, tuning)
                 if rest.crossing is not None:
-                    painted |= _paint(rows, rest.crossing.cells, tuning)
+                    _paint(rows, rest.crossing.cells, tuning)
                     crossings.append(rest.crossing)
             break
         cells, joined = worn
-        painted |= _paint(rows, cells, tuning)
+        _paint(rows, cells, tuning)
         if joined:
             break
         if leg.crossing is not None:
-            painted |= _paint(rows, leg.crossing.cells, tuning)
+            _paint(rows, leg.crossing.cells, tuning)
             crossings.append(leg.crossing)
-    return frozenset(painted), tuple(crossings)
+    return tuple(crossings)
 
 
 def _wander(
@@ -369,9 +363,8 @@ def _free(
     return True
 
 
-def _paint(rows: list[list[str]], cells: Iterable[Cell], tuning: Path) -> frozenset[Cell]:
+def _paint(rows: list[list[str]], cells: Iterable[Cell], tuning: Path) -> None:
     """Wear a run of cells into path, and any water among them into bridge."""
-    painted: set[Cell] = set()
     for spot in cells:
         for column, row in carve.stamp(spot, tuning.width):
             code = rows[row][column]
@@ -379,10 +372,6 @@ def _paint(rows: list[list[str]], cells: Iterable[Cell], tuning: Path) -> frozen
                 rows[row][column] = "b"
             elif code in _PAINTABLE:
                 rows[row][column] = "p"
-            else:
-                continue
-            painted.add((column, row))
-    return frozenset(painted)
 
 
 def _moves(

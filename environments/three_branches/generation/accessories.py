@@ -412,7 +412,7 @@ def _pump(stream: random.Random, yard: _Yard, settlement: Settlement, tuning: Ac
 def _bell(stream: random.Random, yard: _Yard, road: Road, tuning: Accessories) -> None:
     """Hang the bell beside the west stretch of the road."""
     posts = tuple(station for station in _posts(road, 2.0) if station.point[0] < FRAME.cells_x / 3)
-    if not posts or not _try(stream, yard, "bell", posts, 1, tuning, tuning.bell.budget):
+    if not _try(stream, yard, "bell", posts, 1, tuning, tuning.bell.budget):
         raise Retry("the beacon bell found nowhere to hang beside the west road")
 
 

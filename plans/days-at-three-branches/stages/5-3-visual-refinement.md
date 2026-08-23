@@ -101,6 +101,8 @@ The approved concept and material board define the art language for all interact
 
 The current bench uses balanced field ink, clear warm cedar, controlled hand tint, and no paper haze. Empty and occupied states share construction and registration; a bold indigo-violet cloth supplies the occupied cue.
 
+The bench and storage-crate direction has a new three-choice Gate A comparison in `../art/ordinary-props-production-1/`. Neither comparison changes runtime art until the owner selects a construction. The repair bench keeps its approved construction and state cues. Its idle state receives the owner-approved bounded RGB correction from the busy state while preserving every alpha value, visible bound, tool, and registration coordinate.
+
 The current shrine is a decorated riven conduit arch in warm gray-ochre stone, with indigo-violet cloth, an ochre beaded cord, brass votive discs, a bone aperture, and an indigo iron brace. The tended state adds fruit, a green sprig, incense, aperture light, and warm conductor light. Both states keep the centered lower-layer role, fixed-north presentation, and existing gameplay contract.
 
 The current notice board combines decisive dry-brush structural ink with clear warm cedar. Its pictorial notices cover a river route, market fruit, an herb sprig, a lantern, and a repair task without readable writing. Indigo iron clips, a bone ceramic insulator, and one brass conductor path carry the shared magic-punk language. It keeps its ordinary centered treatment, fixed-north presentation, shared props page, and existing gameplay contract.

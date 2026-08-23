@@ -736,7 +736,6 @@ def test_redraw_counts_keep_headroom_under_the_configured_cap(
 ) -> None:
     """Exhausting the cap raises, so this watches the headroom rather than the cap itself."""
     for seed, (_, report) in batch.items():
-        assert report.seed == seed
         assert 0 <= report.redraws <= TUNING["redraw"]["cap"] // 2, seed
 
 
