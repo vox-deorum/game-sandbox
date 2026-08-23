@@ -61,6 +61,8 @@ Keep the tintable terrain composition, deterministic patterning, routes, bridge 
 
 The live renderer has no daytime authored grade. Terrain uses dedicated material colours, an even road base, and worn-stone path art. The current path treatment awaits owner visual approval, and both unit gates remain open.
 
+The bridge-only direct pass keeps the terrain source atlas unmipmapped. Its three tinted, canvas-baked plank textures generate mipmaps independently, so terrain fills, transitions, upper walls, and route art keep their existing sampling. Bridge tint is `#a17d58`; deck-mask shadows use 0.10 opacity with a southward offset of 0.025 cells; the existing 0.025-cell texture bleed remains. The pass retains bridge geometry, orientation mapping, route ownership, portal and deck masks, water semantics, collision, and layer order.
+
 ### 2. High-resolution pines
 
 Desired result: pines create readable village massing at fitted view, while base, canopy, and line work hold up nearby.
@@ -73,13 +75,13 @@ The shared market crate is a closed square magic-punk supply coffer with indigo 
 
 Generate the market crate with the approved lantern and closed stall as direct colour references. Keep its timber close to their warm medium-brown tone, its iron close to their charcoal-indigo, and its ceramic and brass accents equally restrained. Preserve its closed square coffer role, exact overhead projection, and configured gameplay footprint.
 
-### 3. Ordinary props and a dedicated lantern page
+### 3. Ordinary props on a shared atlas
 
 Desired result: ordinary props clearly express their states, and the lantern becomes a warm overhead beacon landmark that reads at night without crowding the day scene.
 
-Keep prop state meanings and interaction and collision footprints. Keep the lantern on its dedicated page while treating it as an ordinary centered prop. Its art, contact shadow, selection, runtime flicker, and emissive light share the collision center. Treat the pump, which is the gameplay well, and the bell as ordinary centered props as well.
+Keep prop state meanings and interaction and collision footprints. Keep the lantern in the shared props atlas while treating it as an ordinary centered prop. Its art, contact shadow, selection, runtime flicker, and emissive light share the collision center. Treat the pump, which is the gameplay well, and the bell as ordinary centered props as well.
 
-The lantern, pump, and bell use compact, prior-equivalent centered base sprites without the registered monument system. The pump uses one regular well base for both idle and flowing states, with a separate water ripple effect shown only while flowing, using the same presentation pattern as the tended shrine cloud. The ripple fits inside the water opening, and its subpixel motion follows a slow circular ellipse with minimal scale travel. The bell base and striker share the ordinary prop atlas. The striker is registered to a presentation-owned hinge: it remains stationary while silent and makes a slow, restrained, seek-safe swing while ringing, alongside its separate sound-line effect. The notice board, lantern, shrine, pump, and bell remain fixed north. All prop pages use the configured sampling treatment, and every prop retains its placement, collision, selection, shadow, and highlight contracts.
+The lantern, pump, and bell use compact, prior-equivalent centered base sprites in the ordinary props atlas. The pump uses one regular well base for both idle and flowing states, with a separate water ripple effect shown only while flowing, using the same presentation pattern as the tended shrine cloud. The ripple fits inside the water opening, and its subpixel motion follows a slow circular ellipse with minimal scale travel. The bell base and striker share the ordinary prop atlas. The striker is registered to a presentation-owned hinge: it remains stationary while silent and makes a slow, restrained, seek-safe swing while ringing, alongside its separate sound-line effect. The notice board, lantern, shrine, pump, and bell remain fixed north. The shared props atlas uses the configured sampling treatment, and every prop retains its placement, collision, selection, shadow, and highlight contracts.
 
 The current lantern is a compact octagonal beacon in exact overhead projection. Lit and unlit states share construction and centered registration; the lit state adds its approved core, baked light, runtime flicker, and glow. Its runtime glow is corrected for the authored mask's low visual centroid and uses two overlapping adjacent frames with a smooth opacity crossfade, so the effect stays centered and continuous instead of stepping between frames.
 

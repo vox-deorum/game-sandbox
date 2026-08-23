@@ -22,10 +22,16 @@ export function frameRectangle(grid: FrameGrid, name: string): Rectangle {
 }
 
 /** Stable cache key for a tint baked from one atlas frame. */
-export function tintedMaskCacheKey(frame: string, tint: string, opacity = 1): string {
+export function tintedMaskCacheKey(
+  frame: string,
+  tint: string,
+  opacity = 1,
+  autoGenerateMipmaps = false,
+): string {
   const normalized = maskOpacity(opacity)
   const base = `${frame}:${tint.toLowerCase()}`
-  return normalized === 1 ? base : `${base}:${normalized}`
+  const opacityKey = normalized === 1 ? base : `${base}:${normalized}`
+  return autoGenerateMipmaps ? `${opacityKey}:mipmaps` : opacityKey
 }
 
 const tintedMasks = new WeakMap<Texture, Map<string, Texture>>()
@@ -37,8 +43,9 @@ export function tintedMaskFrame(
   name: string,
   tint: string,
   opacity = 1,
+  autoGenerateMipmaps = false,
 ): Texture {
-  const key = tintedMaskCacheKey(name, tint, opacity)
+  const key = tintedMaskCacheKey(name, tint, opacity, autoGenerateMipmaps)
   let cached = tintedMasks.get(atlas)
   if (cached === undefined) {
     cached = new Map()
@@ -69,7 +76,7 @@ export function tintedMaskFrame(
   const pixels = context.getImageData(0, 0, frame.width, frame.height)
   tintedMaskPixels(pixels.data, tint, opacity)
   context.putImageData(pixels, 0, 0)
-  const baked = Texture.from(canvas)
+  const baked = Texture.from({ resource: canvas, autoGenerateMipmaps })
   cached.set(key, baked)
   return baked
 }

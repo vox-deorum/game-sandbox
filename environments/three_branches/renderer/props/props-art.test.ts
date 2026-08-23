@@ -21,14 +21,14 @@ const effectFrames = atlasFrameNames('effects')
 describe('Three Branches prop art treatments', () => {
   it('gives ordinary state stills a centered props-page frame', () => {
     expect(propTreatment('bench', 'occupied', 'bench_0').lower).toEqual({
-      page: 'props',
+      page: 'monuments',
       frame: 'benchOccupied',
     })
   })
 
   it('uses one centered pump frame for both recorded states', () => {
     expect(propTreatment('pump', 'idle', 'pump_0').lower).toEqual({
-      page: 'monuments',
+      page: 'props',
       frame: 'pump',
     })
     expect(propTreatment('pump', 'flowing', 'pump_0').lower).toEqual(

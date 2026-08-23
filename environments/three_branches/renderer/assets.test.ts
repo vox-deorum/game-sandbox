@@ -75,6 +75,36 @@ function alphaBounds(relativePath: string): { width: number; height: number } {
   return { width: right - left + 1, height: bottom - top + 1 }
 }
 
+function brightNeutralAlphaEdgePixelCount(relativePath: string): number {
+  const image = PNG.sync.read(readFileSync(fileURLToPath(new URL(relativePath, import.meta.url))))
+  const alphaAt = (x: number, y: number): number => {
+    if (x < 0 || x >= image.width || y < 0 || y >= image.height) return 0
+    return image.data[(y * image.width + x) * 4 + 3] ?? 0
+  }
+  let count = 0
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const index = (y * image.width + x) * 4
+      if (alphaAt(x, y) < 8) continue
+      if (
+        ![alphaAt(x - 1, y), alphaAt(x + 1, y), alphaAt(x, y - 1), alphaAt(x, y + 1)].some(
+          (alpha) => alpha < 8,
+        )
+      )
+        continue
+      const red = image.data[index] ?? 0
+      const green = image.data[index + 1] ?? 0
+      const blue = image.data[index + 2] ?? 0
+      if (
+        Math.max(red, green, blue) - Math.min(red, green, blue) <= 16 &&
+        (red + green + blue) / 3 >= 150
+      )
+        count += 1
+    }
+  }
+  return count
+}
+
 function alphaGeometry(relativePath: string): AlphaGeometry {
   const path = fileURLToPath(new URL(relativePath, import.meta.url))
   const image = PNG.sync.read(readFileSync(path))
@@ -286,6 +316,9 @@ describe('Three Branches asset catalog', () => {
         './assets/source-art/frames/props/repairBenchBusy.png',
         './assets/source-art/frames/bell/bellBase.png',
         './assets/source-art/frames/bell/bellStriker.png',
+        './assets/source-art/frames/monuments/pump.png',
+        './assets/source-art/frames/lantern/lanternLit.png',
+        './assets/source-art/frames/lantern/lanternUnlit.png',
       ]),
     )
     const board = props?.cells.find((cell) => cell.name === 'boardNone')
@@ -308,22 +341,25 @@ describe('Three Branches asset catalog', () => {
       colorType: 6,
     })
     expect(coloredTransparentPixelCount(board?.source.path ?? '')).toBe(0)
-    const lantern = ATLAS_PAGES.find((page) => page.group === 'lantern')
-    expect(lantern).toMatchObject({
-      pageKey: 'lantern',
-      width: 768,
-      height: 512,
-      columns: 2,
-      rows: 1,
-    })
-    expect(lantern?.cells.map((cell) => cell.source.path)).toEqual([
-      './assets/source-art/frames/lantern/lanternLit.png',
-      './assets/source-art/frames/lantern/lanternUnlit.png',
+    expect(props?.cells.slice(-3)).toEqual([
+      { name: 'pump', source: { path: './assets/source-art/frames/monuments/pump.png' } },
+      {
+        name: 'lanternLit',
+        source: {
+          path: './assets/source-art/frames/lantern/lanternLit.png',
+          crop: { x: 0, y: 128, width: 384, height: 256 },
+        },
+      },
+      {
+        name: 'lanternUnlit',
+        source: {
+          path: './assets/source-art/frames/lantern/lanternUnlit.png',
+          crop: { x: 0, y: 128, width: 384, height: 256 },
+        },
+      },
     ])
-    const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
-    expect(monuments?.cells.map((cell) => cell.source.path)).toEqual([
-      './assets/source-art/frames/monuments/pump.png',
-    ])
+    expect(ATLAS_PAGES.some((page) => page.group === 'lantern')).toBe(false)
+    expect(ATLAS_PAGES.some((page) => page.group === 'monuments')).toBe(false)
     expect(ATLAS_PAGES.some((page) => page.group === 'bell')).toBe(false)
     const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
     expect(scenery?.cells.at(-1)?.source.path).toBe(
@@ -344,16 +380,18 @@ describe('Three Branches asset catalog', () => {
     })
   })
 
-  it('keeps the dedicated lantern source, frames, and packed page at their declared dimensions', () => {
-    const lantern = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'lantern')
-    if (lantern === undefined || 'layers' in lantern) throw new Error('Lantern atlas is missing')
-
-    expect(readPngHeader(lantern.path)).toMatchObject({
-      width: lantern.width,
-      height: lantern.height,
-    })
-    for (const cell of lantern.cells) {
-      expect(readPngHeader(cell.source.path)).toMatchObject({ width: 384, height: 512 })
+  it('keeps lantern sources centered when cropped into shared props frames', () => {
+    for (const sourcePath of [
+      './assets/source-art/frames/lantern/lanternLit.png',
+      './assets/source-art/frames/lantern/lanternUnlit.png',
+    ]) {
+      expect(readPngHeader(sourcePath)).toMatchObject({ width: 384, height: 512 })
+      expect(alphaGeometry(sourcePath)).toMatchObject({
+        left: 76,
+        top: 140,
+        right: 307,
+        bottom: 371,
+      })
     }
   })
 
@@ -402,9 +440,10 @@ describe('Three Branches asset catalog', () => {
     expect(alphaBounds(strikerPath)).toEqual({ width: 41, height: 124 })
     expect(coloredTransparentPixelCount(basePath)).toBe(0)
     expect(coloredTransparentPixelCount(strikerPath)).toBe(0)
+    expect(brightNeutralAlphaEdgePixelCount(strikerPath)).toBe(0)
   })
 
-  it('loads every configured runtime page including the dedicated lantern atlas', async () => {
+  it('loads every configured runtime page without superseded prop atlases', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
@@ -413,14 +452,12 @@ describe('Three Branches asset catalog', () => {
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
     expect(assets.characters).toMatch(/characters-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
-    expect(assets.lantern).toMatch(/lantern-atlas\.png/)
-    expect(assets.monuments).toMatch(/monuments-atlas\.png/)
     expect(assets.buildings.home).toMatch(/buildings-home-atlas\.png/)
     expect(assets.buildings.inn).toMatch(/buildings-inn-atlas\.png/)
     expect(assets.buildings.shed).toMatch(/buildings-shed-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
-    expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(true)
-    expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(false)
+    expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(false)
     expect(sources.some((source) => /bell-atlas/.test(source))).toBe(false)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /buildings/.test(source))).toBe(true)
@@ -439,18 +476,15 @@ describe('Three Branches asset catalog', () => {
     expect(mipmappedSources).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/props-atlas\.png/),
-        expect.stringMatching(/lantern-atlas\.png/),
-        expect.stringMatching(/monuments-atlas\.png/),
         expect.stringMatching(/scenery-atlas\.png/),
         expect.stringMatching(/buildings-home-atlas\.png/),
         expect.stringMatching(/buildings-inn-atlas\.png/),
         expect.stringMatching(/buildings-shed-atlas\.png/),
       ]),
     )
-    expect(mipmappedSources).toHaveLength(8)
+    expect(mipmappedSources).toHaveLength(6)
     for (const [, options] of mipmappedCalls) {
       expect(options).toEqual({ autoGenerateMipmaps: true })
     }
   })
-
 })

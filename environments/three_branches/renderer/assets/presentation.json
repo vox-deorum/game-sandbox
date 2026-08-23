@@ -688,59 +688,35 @@
             "source": {
               "path": "./assets/source-art/frames/bell/bellStriker.png"
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "lantern",
-      "path": "./assets/lantern-atlas.png",
-      "width": 768,
-      "height": 512,
-      "tintable": false,
-      "format": "full-color",
-      "consumer": "centered one-cell lantern state stills on a dedicated page",
-      "mipmaps": true,
-      "frames": {
-        "width": 384,
-        "height": 512,
-        "columns": 2,
-        "rows": 1,
-        "cells": [
+          },
+          {
+            "name": "pump",
+            "source": {
+              "path": "./assets/source-art/frames/monuments/pump.png"
+            }
+          },
           {
             "name": "lanternLit",
             "source": {
-              "path": "./assets/source-art/frames/lantern/lanternLit.png"
+              "path": "./assets/source-art/frames/lantern/lanternLit.png",
+              "crop": {
+                "x": 0,
+                "y": 128,
+                "width": 384,
+                "height": 256
+              }
             }
           },
           {
             "name": "lanternUnlit",
             "source": {
-              "path": "./assets/source-art/frames/lantern/lanternUnlit.png"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "monuments",
-      "path": "./assets/monuments-atlas.png",
-      "width": 384,
-      "height": 256,
-      "tintable": false,
-      "format": "full-color",
-      "consumer": "centered one-cell well still",
-      "mipmaps": true,
-      "frames": {
-        "width": 384,
-        "height": 256,
-        "columns": 1,
-        "rows": 1,
-        "cells": [
-          {
-            "name": "pump",
-            "source": {
-              "path": "./assets/source-art/frames/monuments/pump.png"
+              "path": "./assets/source-art/frames/lantern/lanternUnlit.png",
+              "crop": {
+                "x": 0,
+                "y": 128,
+                "width": 384,
+                "height": 256
+              }
             }
           }
         ]
@@ -1099,7 +1075,7 @@
     "stream": "#536666",
     "floor": "#765b3d",
     "wall": "#484238",
-    "bridge": "#685038"
+    "bridge": "#a17d58"
   },
   "transition": {
     "naturalMs": 1000,
@@ -1264,8 +1240,8 @@
       "compact": "bridgeC",
       "tint": "bridge",
       "shadowTint": "backdrop",
-      "shadowOpacity": 0.25,
-      "shadowOffsetCells": 0.06,
+      "shadowOpacity": 0.10,
+      "shadowOffsetCells": 0.025,
       "textureBleedCells": 0.025
     },
     "upperWall": {

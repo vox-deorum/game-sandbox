@@ -39,8 +39,6 @@ const SHADOW_SOURCE = shadowSourceSize()
 /** Pages that become artwork for props, scenery, and their effects. */
 export interface PropAtlasTextures {
   props: Texture
-  monuments: Texture
-  lantern: Texture
   scenery: Texture
   effects: Texture
 }
@@ -48,8 +46,6 @@ export interface PropAtlasTextures {
 /** Named frame views shared by retained scenery, prop, and accent nodes. */
 export interface PropArt {
   props: Readonly<Record<string, Texture>>
-  monuments: Readonly<Record<string, Texture>>
-  lantern: Readonly<Record<string, Texture>>
   scenery: Readonly<Record<string, Texture>>
   effects: Readonly<Record<string, Texture>>
 }
@@ -80,8 +76,6 @@ interface PropNode {
 export function createPropArt(atlases: PropAtlasTextures): PropArt {
   return {
     props: framesFor('props', atlases.props),
-    monuments: framesFor('monuments', atlases.monuments),
-    lantern: framesFor('lantern', atlases.lantern),
     scenery: framesFor('scenery', atlases.scenery),
     effects: framesFor('effects', atlases.effects),
   }
@@ -284,7 +278,10 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   syncMovingArtRegistration(item, movingRoot, moving)
   lowerRoot.addChild(fallbackNode, lower, movingRoot)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
-  const effectBlend = item.type === 'lantern' ? sprite(`prop-effect-blend:${item.id}`, Texture.EMPTY, EFFECT_SCALE) : null
+  const effectBlend =
+    item.type === 'lantern'
+      ? sprite(`prop-effect-blend:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
+      : null
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.rotation = visualFacing(item)
   emissive.rotation = visualFacing(item)
@@ -395,11 +392,7 @@ function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'movingRoot' | 'mo
   syncMovingArtRegistration(node.item, node.movingRoot, node.moving)
 }
 
-function syncPropRole(
-  node: Sprite,
-  treatment: PropArtFrame | null,
-  art: PropArt,
-): void {
+function syncPropRole(node: Sprite, treatment: PropArtFrame | null, art: PropArt): void {
   node.visible = treatment !== null
   if (treatment === null) {
     node.texture = Texture.EMPTY
@@ -488,7 +481,7 @@ function texture(
   if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${displayName}`)
   return value
 }
-function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects') {
+function atlasEntry(name: 'props' | 'scenery' | 'effects') {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) {
     throw new Error(`Three Branches ${name} atlas is missing.`)
@@ -500,7 +493,7 @@ function shadowSourceSize(): { width: number; height: number } {
   return { width: atlas.frames.width, height: atlas.frames.height }
 }
 function framesFor(
-  name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects',
+  name: 'props' | 'scenery' | 'effects',
   atlasTexture: Texture,
 ): Readonly<Record<string, Texture>> {
   const atlas = atlasEntry(name)

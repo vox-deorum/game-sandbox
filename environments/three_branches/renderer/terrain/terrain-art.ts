@@ -60,7 +60,13 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
   const planks = HEARTHSIDE_STYLE.terrain.planks
   for (const [orientation, code] of Object.entries(BRIDGE_PLANK_CODES)) {
     const frame = planks[orientation as keyof typeof BRIDGE_PLANK_CODES]
-    textures[code] = framesFor(atlas, manifest.frames, [frame], planks.tint)
+    textures[code] = framesFor(
+      atlas,
+      manifest.frames,
+      [frame],
+      planks.tint,
+      terrainMaskMipmaps(code),
+    )
     counts.set(code, 1)
   }
   const patterns: Record<string, Texture> = {}
@@ -133,11 +139,7 @@ export function createTerrainArt(atlas: Texture, scene: StaticScene): TerrainArt
     variant,
     patterns,
     routes,
-    contours: planTerrainContours(
-      routes.visualRows,
-      names,
-      HEARTHSIDE_STYLE.terrain.contours,
-    ),
+    contours: planTerrainContours(routes.visualRows, names, HEARTHSIDE_STYLE.terrain.contours),
     plankLayer,
     upperWallTileset,
     upperWallGrid,
@@ -211,6 +213,13 @@ export function plankRowsFor(routes: TerrainRoutePlan): readonly string[] {
   }
   return result.map((row) => row.join(''))
 }
+
+/** Only repeated bridge plank masks need mipmaps when the map is scaled down. */
+export function terrainMaskMipmaps(code: string): boolean {
+  return Object.values(BRIDGE_PLANK_CODES).includes(
+    code as (typeof BRIDGE_PLANK_CODES)[keyof typeof BRIDGE_PLANK_CODES],
+  )
+}
 /** The transparent base grid under the upper wall overlay. */
 export function transparentUpperGrid(columns: number, rows: number): TileGrid {
   return { columns, rows: Array.from({ length: rows }, () => TRANSPARENT_CODE.repeat(columns)) }
@@ -232,6 +241,9 @@ function framesFor(
   grid: Parameters<typeof tintedMaskFrame>[1],
   frames: readonly string[],
   tint: keyof typeof HEARTHSIDE_STYLE.palette,
+  autoGenerateMipmaps = false,
 ): readonly Texture[] {
-  return frames.map((frame) => tintedMaskFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]))
+  return frames.map((frame) =>
+    tintedMaskFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint], 1, autoGenerateMipmaps),
+  )
 }

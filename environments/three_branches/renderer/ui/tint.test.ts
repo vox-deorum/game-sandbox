@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { Texture } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   frameRectangle,
   opaqueFillCacheKey,
   opaqueFillPixels,
   tintedMaskCacheKey,
+  tintedMaskFrame,
   tintedMaskPixels,
 } from './tint.js'
 
@@ -26,6 +28,26 @@ describe('Three Branches atlas tinting', () => {
   it('keeps resolved family opacity variants in separate cache entries', () => {
     expect(tintedMaskCacheKey('washA', '#A9AE8A')).toBe('washA:#a9ae8a')
     expect(tintedMaskCacheKey('washA', '#A9AE8A', 0.75)).toBe('washA:#a9ae8a:0.75')
+    expect(tintedMaskCacheKey('bridgeA', '#A17D58', 1, true)).toBe('bridgeA:#a17d58:mipmaps')
+  })
+
+  it('creates a separate mipmapped source when a baked mask requests it', () => {
+    const context = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(64 * 32 * 4) })),
+      putImageData: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context as never)
+
+    const ordinary = tintedMaskFrame(Texture.WHITE, grid, 'a', '#a9ae8a')
+    const mipmapped = tintedMaskFrame(Texture.WHITE, grid, 'a', '#a9ae8a', 1, true)
+
+    expect(ordinary).not.toBe(mipmapped)
+    expect(ordinary.source.autoGenerateMipmaps).toBe(false)
+    expect(mipmapped.source.autoGenerateMipmaps).toBe(true)
+    getContext.mockRestore()
   })
 
   it('applies one resolved opacity without multiplying it by a global detail alpha', () => {

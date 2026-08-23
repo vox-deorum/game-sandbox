@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import type { TerrainRoutePlan } from '../core/types.js'
-import { BRIDGE_PLANK_CODES, plankRowsFor } from './terrain-art.js'
+import { BRIDGE_PLANK_CODES, plankRowsFor, terrainMaskMipmaps } from './terrain-art.js'
 import { planTerrainContours } from './terrain-contours.js'
 import { planTerrainRoutes } from './terrain-routes.js'
 
@@ -49,5 +49,12 @@ describe('Three Branches terrain art planning', () => {
     expect(plankRowsFor(roadRoutes)[1]?.[2]).toBe(BRIDGE_PLANK_CODES.horizontal)
     expect(plankRowsFor(pathRoutes)[2]?.[2]).toBe(BRIDGE_PLANK_CODES.vertical)
     expect(plankRowsFor(compactRoutes)[2]?.[2]).toBe(BRIDGE_PLANK_CODES.compact)
+  })
+
+  it('requests mipmaps only for baked bridge plank masks', () => {
+    for (const code of Object.values(BRIDGE_PLANK_CODES))
+      expect(terrainMaskMipmaps(code)).toBe(true)
+    expect(terrainMaskMipmaps('U')).toBe(false)
+    expect(terrainMaskMipmaps('g')).toBe(false)
   })
 })
