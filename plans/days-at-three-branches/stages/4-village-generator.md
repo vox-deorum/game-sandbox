@@ -97,7 +97,7 @@ This gate implements [buildings and interiors](../village.md#buildings-and-inter
 ### Accessories
 
 - A road-arc helper supplies positions and facings, skipping the stretches where the road is up on a bridge. Anchored spots serve stalls, board, shrines, hearth, bench, pump, and bell. Stalls and shrines front the nearest road cell, or the nearest path cell when no road is close, instead of the station's tangent.
-- Benches split across plaza, market, and inn front. Gardens centre and flush their long edge to the home wall opposite the doorway, use lower-index placement for an ambiguous centre, and never slide. Hearth and bench are on interior floor against that opposite wall.
+- Benches split across plaza, market, and inn front. Each home's garden stands on the wall opposite its doorway, drawing a gap of up to `sites.garden_gap` cells off the wall and a slide of up to `sites.garden_slide` past either end, so it never lands in the same place twice. Hearth and bench are on interior floor against that opposite wall.
 - Square 2 by 2 market crates are littered around the market anchor, drawing random origins within `accessories.crate.span` and skipping spots that will not take one. Shrines take the sharpest turns of the road centreline, may slide along it to find room, and only ever stand on the road's north side.
 - Lanterns alternate seeded road sides, try the other side once, and skip blocked stations. Pines place last through optional anchors and companions, each drawing a size from `accessories.pine.size` and shrinking to the base size when the drawn solid would not fit. Catalog placement tokens and `accessories` tuning drive all counts, footprints, districts, spacing, scatter, companions, and budgets.
 
