@@ -35,9 +35,14 @@ const STALL_TREATMENTS = [
   { open: ordinary('stallCOpen'), closed: ordinary('stallCClosed') },
 ] as const satisfies readonly TreatmentByState[]
 
+const BENCH_TREATMENTS = [
+  { occupied: ordinary('benchAOccupied'), empty: ordinary('benchAEmpty') },
+  { occupied: ordinary('benchBOccupied'), empty: ordinary('benchBEmpty') },
+  { occupied: ordinary('benchCOccupied'), empty: ordinary('benchCEmpty') },
+] as const satisfies readonly TreatmentByState[]
+
 const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
   lantern: { lit: ordinary('lanternLit'), unlit: ordinary('lanternUnlit') },
-  bench: { occupied: ordinary('benchOccupied'), empty: ordinary('benchEmpty') },
   shrine: { tended: ordinary('shrineTended'), untended: ordinary('shrineUntended') },
   board: { none: ordinary('boardNone') },
   plot: { tended: ordinary('plotTended'), overgrown: ordinary('plotOvergrown') },
@@ -47,10 +52,19 @@ const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
   bell: { ringing: bell(), silent: bell() },
 }
 
+function variantIndex(id: string, count: number): number {
+  const suffix = id.match(/(\d+)$/)?.[1]
+  return suffix === undefined ? 0 : Number.parseInt(suffix, 10) % count
+}
+
 /** Select one stall construction from its stable placement id. */
 export function stallVariantIndex(id: string): number {
-  const suffix = id.match(/(\d+)$/)?.[1]
-  return suffix === undefined ? 0 : Number.parseInt(suffix, 10) % STALL_TREATMENTS.length
+  return variantIndex(id, STALL_TREATMENTS.length)
+}
+
+/** Select one fabric-bench construction from its stable placement id. */
+export function benchVariantIndex(id: string): number {
+  return variantIndex(id, BENCH_TREATMENTS.length)
 }
 
 /** Prop art types enabled for the current owner artwork review. */
@@ -83,7 +97,11 @@ export function isFixedFacingPropType(type: string): boolean {
 /** Resolve the centered artwork still for one recorded prop state and stable placement id. */
 export function propTreatment(type: string, state: string, id: string): PropTreatment {
   const byState: TreatmentByState | undefined =
-    type === 'stall' ? STALL_TREATMENTS[stallVariantIndex(id)] : TREATMENTS[type]
+    type === 'stall'
+      ? STALL_TREATMENTS[stallVariantIndex(id)]
+      : type === 'bench'
+        ? BENCH_TREATMENTS[benchVariantIndex(id)]
+        : TREATMENTS[type]
   if (byState === undefined)
     throw new Error(`Three Branches prop type has no art treatment: ${type}`)
   const treatment = byState[state]

@@ -337,6 +337,12 @@ describe('Three Branches asset catalog', () => {
         './assets/source-art/stall/b/closed.png',
         './assets/source-art/stall/c/open.png',
         './assets/source-art/stall/c/closed.png',
+        './assets/source-art/frames/props/benchAEmpty.png',
+        './assets/source-art/frames/props/benchAOccupied.png',
+        './assets/source-art/frames/props/benchBEmpty.png',
+        './assets/source-art/frames/props/benchBOccupied.png',
+        './assets/source-art/frames/props/benchCEmpty.png',
+        './assets/source-art/frames/props/benchCOccupied.png',
         './assets/source-art/frames/props/repairBenchBusy.png',
         './assets/source-art/frames/bell/bellBase.png',
         './assets/source-art/frames/bell/bellStriker.png',
@@ -402,6 +408,39 @@ describe('Three Branches asset catalog', () => {
     ]) {
       expect(readPngHeader(sourcePath)).toEqual({ width: 1536, height: 1024, colorType: 6 })
       expect(coloredTransparentPixelCount(sourcePath)).toBe(0)
+    }
+  })
+
+  it('keeps every fabric-bench state on one clean shared registration', () => {
+    const pairs = [
+      ['benchAEmpty', 'benchAOccupied'],
+      ['benchBEmpty', 'benchBOccupied'],
+      ['benchCEmpty', 'benchCOccupied'],
+    ] as const
+    for (const [empty, occupied] of pairs) {
+      const emptyPath = `./assets/source-art/frames/props/${empty}.png`
+      const occupiedPath = `./assets/source-art/frames/props/${occupied}.png`
+      expect(readPngHeader(emptyPath)).toEqual({ width: 384, height: 256, colorType: 6 })
+      expect(readPngHeader(occupiedPath)).toEqual({ width: 384, height: 256, colorType: 6 })
+      expect(coloredTransparentPixelCount(emptyPath)).toBe(0)
+      expect(coloredTransparentPixelCount(occupiedPath)).toBe(0)
+
+      const emptyPixels = PNG.sync.read(readFileSync(fileURLToPath(new URL(emptyPath, import.meta.url)))).data
+      const occupiedPixels = PNG.sync.read(
+        readFileSync(fileURLToPath(new URL(occupiedPath, import.meta.url))),
+      ).data
+      expect(emptyPixels.some((value, index) => value !== occupiedPixels[index])).toBe(true)
+
+      const emptyGeometry = alphaGeometry(emptyPath)
+      const occupiedGeometry = alphaGeometry(occupiedPath)
+      expect(occupiedGeometry).toMatchObject({
+        left: emptyGeometry.left,
+        top: emptyGeometry.top,
+        right: emptyGeometry.right,
+        bottom: emptyGeometry.bottom,
+      })
+      expect(Math.abs(occupiedGeometry.centroidX - emptyGeometry.centroidX)).toBeLessThanOrEqual(1)
+      expect(Math.abs(occupiedGeometry.centroidY - emptyGeometry.centroidY)).toBeLessThanOrEqual(1)
     }
   })
 

@@ -4,6 +4,7 @@ import { atlasFrameNames } from '../assets.js'
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { CATALOG } from '../ui/overlay.js'
 import {
+  benchVariantIndex,
   isFixedFacingPropType,
   PINE_FRAME_NAMES,
   propTreatment,
@@ -20,7 +21,7 @@ describe('Three Branches prop art treatments', () => {
   it('gives ordinary state stills a centered props-page frame', () => {
     expect(propTreatment('bench', 'occupied', 'bench_0').lower).toEqual({
       page: 'props',
-      frame: 'benchOccupied',
+      frame: 'benchAOccupied',
     })
   })
 
@@ -107,6 +108,31 @@ describe('Three Branches prop art treatments', () => {
   it('keeps stall construction independent from its recorded state', () => {
     expect(propTreatment('stall', 'closed', 'stall_2').lower.frame).toBe('stallCClosed')
     expect(propTreatment('stall', 'open', 'stall_2').lower.frame).toBe('stallCOpen')
+  })
+
+  it('cycles all three fabric-bench constructions by numeric suffix', () => {
+    expect(
+      ['bench_0', 'bench_1', 'bench_2', 'bench_3', 'bench_4'].map(
+        (id) => propTreatment('bench', 'empty', id).lower.frame,
+      ),
+    ).toEqual(['benchAEmpty', 'benchBEmpty', 'benchCEmpty', 'benchAEmpty', 'benchBEmpty'])
+  })
+
+  it('uses fabric bench A when an id has no numeric suffix', () => {
+    expect(benchVariantIndex('village-bench')).toBe(0)
+    expect(propTreatment('bench', 'empty', 'village-bench').lower.frame).toBe('benchAEmpty')
+  })
+
+  it('keeps every fabric-bench construction paired across its recorded states', () => {
+    const expected = [
+      { id: 'bench_0', empty: 'benchAEmpty', occupied: 'benchAOccupied' },
+      { id: 'bench_1', empty: 'benchBEmpty', occupied: 'benchBOccupied' },
+      { id: 'bench_2', empty: 'benchCEmpty', occupied: 'benchCOccupied' },
+    ]
+    for (const bench of expected) {
+      expect(propTreatment('bench', 'empty', bench.id).lower.frame).toBe(bench.empty)
+      expect(propTreatment('bench', 'occupied', bench.id).lower.frame).toBe(bench.occupied)
+    }
   })
 
   it('selects scenery variants from stable placement ids', () => {

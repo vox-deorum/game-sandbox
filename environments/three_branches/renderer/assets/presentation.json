@@ -595,15 +595,39 @@
             }
           },
           {
-            "name": "benchOccupied",
+            "name": "benchAEmpty",
             "source": {
-              "path": "./assets/source-art/frames/props/benchOccupied.png"
+              "path": "./assets/source-art/frames/props/benchAEmpty.png"
             }
           },
           {
-            "name": "benchEmpty",
+            "name": "benchAOccupied",
             "source": {
-              "path": "./assets/source-art/frames/props/benchEmpty.png"
+              "path": "./assets/source-art/frames/props/benchAOccupied.png"
+            }
+          },
+          {
+            "name": "benchBEmpty",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchBEmpty.png"
+            }
+          },
+          {
+            "name": "benchBOccupied",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchBOccupied.png"
+            }
+          },
+          {
+            "name": "benchCEmpty",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchCEmpty.png"
+            }
+          },
+          {
+            "name": "benchCOccupied",
+            "source": {
+              "path": "./assets/source-art/frames/props/benchCOccupied.png"
             }
           },
           {
