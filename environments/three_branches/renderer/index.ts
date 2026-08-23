@@ -691,8 +691,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         const textures = [
           assets.terrain,
           assets.props,
-          assets.lantern,
-          assets.monuments,
           assets.buildings.home,
           assets.buildings.inn,
           assets.buildings.shed,
@@ -706,8 +704,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         const terrain = createTerrainArt(assets.terrain, this.staticScene)
         const propArt = createPropArt({
           props: assets.props,
-          lantern: assets.lantern,
-          monuments: assets.monuments,
           scenery: assets.scenery,
           effects: assets.effects,
         })

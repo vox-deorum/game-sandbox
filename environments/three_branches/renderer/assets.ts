@@ -398,8 +398,6 @@ export const ATLAS_PAGES = atlasBuildPages(THREE_BRANCHES_ASSET_CATALOG)
 export interface ThreeBranchesRuntimeAssets<T> {
   terrain: T
   props: T
-  lantern: T
-  monuments: T
   buildings: { home: T; inn: T; shed: T }
   scenery: T
   characters: T
@@ -444,8 +442,6 @@ export async function loadThreeBranchesRuntimeAssets<T>(
   return {
     terrain: required('terrain'),
     props: required('props'),
-    lantern: required('lantern'),
-    monuments: required('monuments'),
     buildings: {
       home: required('buildings', 'home'),
       inn: required('buildings', 'inn'),

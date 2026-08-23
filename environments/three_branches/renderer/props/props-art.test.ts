@@ -13,15 +13,13 @@ import {
 
 const framesByPage = {
   props: atlasFrameNames('props'),
-  monuments: atlasFrameNames('monuments'),
-  lantern: atlasFrameNames('lantern'),
 } as const
 const effectFrames = atlasFrameNames('effects')
 
 describe('Three Branches prop art treatments', () => {
   it('gives ordinary state stills a centered props-page frame', () => {
     expect(propTreatment('bench', 'occupied', 'bench_0').lower).toEqual({
-      page: 'monuments',
+      page: 'props',
       frame: 'benchOccupied',
     })
   })
@@ -50,9 +48,9 @@ describe('Three Branches prop art treatments', () => {
     )
   })
 
-  it('uses one complete lantern page frame as a centered lower-only prop', () => {
+  it('uses one complete props frame as a centered lower-only lantern', () => {
     expect(propTreatment('lantern', 'lit', 'lantern_0').lower).toEqual({
-      page: 'lantern',
+      page: 'props',
       frame: 'lanternLit',
     })
   })
@@ -65,7 +63,7 @@ describe('Three Branches prop art treatments', () => {
     expect(isFixedFacingPropType('board')).toBe(true)
   })
 
-  it('keeps every selected state frame in its dedicated atlas manifest', () => {
+  it('keeps every selected state frame in its atlas manifest', () => {
     for (const prop of CATALOG.props) {
       for (const state of prop.states) {
         const ids = prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : [`${prop.token}_0`]

@@ -7,7 +7,7 @@ export const PINE_FRAME_NAMES = atlasFrameNames('scenery').filter((name) =>
   /^pine[A-Z]$/.test(name),
 )
 
-export type PropArtPage = 'props' | 'monuments' | 'lantern'
+export type PropArtPage = 'props'
 
 /** One sprite role selected from a dedicated atlas page and state frame. */
 export interface PropArtFrame {
@@ -24,13 +24,9 @@ export interface PropTreatment {
 type TreatmentByState = Readonly<Record<string, PropTreatment>>
 
 const ordinary = (frame: string): PropTreatment => ({ lower: { page: 'props', frame } })
-const pump = (): PropTreatment => ({ lower: { page: 'monuments', frame: 'pump' } })
 const bell = (): PropTreatment => ({
   lower: { page: 'props', frame: 'bellBase' },
   moving: { page: 'props', frame: 'bellStriker' },
-})
-const lantern = (frame: string): PropTreatment => ({
-  lower: { page: 'lantern', frame },
 })
 
 const STALL_TREATMENTS = [
@@ -40,14 +36,14 @@ const STALL_TREATMENTS = [
 ] as const satisfies readonly TreatmentByState[]
 
 const TREATMENTS: Readonly<Record<string, TreatmentByState>> = {
-  lantern: { lit: lantern('lanternLit'), unlit: lantern('lanternUnlit') },
+  lantern: { lit: ordinary('lanternLit'), unlit: ordinary('lanternUnlit') },
   bench: { occupied: ordinary('benchOccupied'), empty: ordinary('benchEmpty') },
   shrine: { tended: ordinary('shrineTended'), untended: ordinary('shrineUntended') },
   board: { none: ordinary('boardNone') },
   plot: { tended: ordinary('plotTended'), overgrown: ordinary('plotOvergrown') },
   hearth: { lit: ordinary('hearthLit'), unlit: ordinary('hearthUnlit') },
   repair_bench: { busy: ordinary('repairBenchBusy'), idle: ordinary('repairBenchIdle') },
-  pump: { flowing: pump(), idle: pump() },
+  pump: { flowing: ordinary('pump'), idle: ordinary('pump') },
   bell: { ringing: bell(), silent: bell() },
 }
 
