@@ -676,6 +676,18 @@
             "source": {
               "path": "./assets/source-art/frames/props/repairBenchIdle.png"
             }
+          },
+          {
+            "name": "bellBase",
+            "source": {
+              "path": "./assets/source-art/frames/bell/bellBase.png"
+            }
+          },
+          {
+            "name": "bellStriker",
+            "source": {
+              "path": "./assets/source-art/frames/bell/bellStriker.png"
+            }
           }
         ]
       }
@@ -729,30 +741,6 @@
             "name": "pump",
             "source": {
               "path": "./assets/source-art/frames/monuments/pump.png"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "bell",
-      "path": "./assets/bell-atlas.png",
-      "width": 384,
-      "height": 256,
-      "tintable": false,
-      "format": "full-color",
-      "consumer": "centered one-cell bell still",
-      "mipmaps": true,
-      "frames": {
-        "width": 384,
-        "height": 256,
-        "columns": 1,
-        "rows": 1,
-        "cells": [
-          {
-            "name": "bell",
-            "source": {
-              "path": "./assets/source-art/frames/bell/bell.png"
             }
           }
         ]
@@ -1355,14 +1343,19 @@
   "props": {
     "defaultScale": 0.14,
     "scaleByType": {
-      "bell": 0.2,
-      "pump": 0.2,
-      "lantern": 0.13,
+      "bell": 0.1,
+      "pump": 0.09,
+      "lantern": 0.07,
       "shrine": 0.2,
       "board": 0.12444444444444444,
       "plot": 0.17
     },
-    "effectAnchorByType": {}
+    "effectAnchorByType": {},
+    "bellStriker": {
+      "pivot": { "x": 192, "y": 39 },
+      "amplitudeRadians": 0.14,
+      "periodTicks": 8
+    }
   },
   "scenery": {
     "defaultScale": 0.25,
@@ -1391,7 +1384,7 @@
     },
     "pump": {
       "frames": ["waterRipple"],
-      "frameRate": 1
+      "frameRate": 0.15
     },
     "bell": {
       "frames": [

@@ -3,6 +3,7 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { buildingOccupied } from '../buildings/buildings.js'
 import {
+  bellStrikerTreatment,
   HEARTHSIDE_STYLE,
   PALETTE,
   propEffectAnchor,
@@ -11,7 +12,13 @@ import {
   THREE_BRANCHES_PRESENTATION,
 } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
-import { emissiveSpec, hasPropEffect, propEffectFrames, propEffectSpec } from '../effects/effects.js'
+import {
+  bellStrikerRotation,
+  emissiveSpec,
+  hasPropEffect,
+  propEffectFrames,
+  propEffectSpec,
+} from '../effects/effects.js'
 import { CATALOG } from '../ui/overlay.js'
 import { frameRectangle } from '../ui/tint.js'
 import {
@@ -34,7 +41,6 @@ export interface PropAtlasTextures {
   props: Texture
   monuments: Texture
   lantern: Texture
-  bell: Texture
   scenery: Texture
   effects: Texture
 }
@@ -44,7 +50,6 @@ export interface PropArt {
   props: Readonly<Record<string, Texture>>
   monuments: Readonly<Record<string, Texture>>
   lantern: Readonly<Record<string, Texture>>
-  bell: Readonly<Record<string, Texture>>
   scenery: Readonly<Record<string, Texture>>
   effects: Readonly<Record<string, Texture>>
 }
@@ -63,7 +68,10 @@ interface PropNode {
   fallback: Graphics
   shadow: Sprite
   lower: Sprite
+  movingRoot: Container
+  moving: Sprite
   effect: Sprite
+  effectBlend: Sprite | null
   emissive: Sprite
   state: string | null
 }
@@ -74,7 +82,6 @@ export function createPropArt(atlases: PropAtlasTextures): PropArt {
     props: framesFor('props', atlases.props),
     monuments: framesFor('monuments', atlases.monuments),
     lantern: framesFor('lantern', atlases.lantern),
-    bell: framesFor('bell', atlases.bell),
     scenery: framesFor('scenery', atlases.scenery),
     effects: framesFor('effects', atlases.effects),
   }
@@ -115,6 +122,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     layers.shadows.addChild(node.shadow)
     layers.props.addChild(node.lowerRoot)
     layers.effects.addChild(node.effect)
+    if (node.effectBlend !== null) layers.effects.addChild(node.effectBlend)
     layers.emissives.addChild(node.emissive)
   }
   for (const item of scene.scenery) {
@@ -140,6 +148,11 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       shipped ? propTreatment(node.item.type, state, node.item.id).lower : null,
       art,
     )
+    const movingTreatment = shipped
+      ? (propTreatment(node.item.type, state, node.item.id).moving ?? null)
+      : null
+    syncPropRole(node.moving, movingTreatment, art)
+    node.movingRoot.visible = movingTreatment !== null
   }
 
   return {
@@ -171,9 +184,11 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         const state = node.state ?? start(starts, node.item.id)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
+          if (node.effectBlend !== null) node.effectBlend.visible = false
           node.emissive.visible = false
           continue
         }
+        node.movingRoot.rotation = bellStrikerRotation(state, node.item.id, tick)
         const effect = propEffectSpec(node.item.type, state, node.item.id, tick)
         const emissive = emissiveSpec(node.item.type, state)
         node.effect.visible = effect !== null
@@ -193,6 +208,9 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
             centerY(node.item) + anchor.y * propScale + effect.offsetY,
           )
           node.effect.rotation = visualFacing(node.item) + effect.rotation
+          syncEffectBlend(node.effectBlend, node.effect, effect, art.effects)
+        } else if (node.effectBlend !== null) {
+          node.effectBlend.visible = false
         }
         if (emissive !== null) {
           node.emissive.texture = texture(art.effects, emissive.frame)
@@ -258,12 +276,20 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   const artScale = propArtScale(item)
   const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
   lower.visible = false
-  lowerRoot.addChild(fallbackNode, lower)
+  const movingRoot = new Container({ label: `prop-moving:${item.id}` })
+  const moving = propSprite('prop-moving-art', Texture.EMPTY, artScale)
+  moving.visible = false
+  movingRoot.visible = false
+  movingRoot.addChild(moving)
+  syncMovingArtRegistration(item, movingRoot, moving)
+  lowerRoot.addChild(fallbackNode, lower, movingRoot)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
+  const effectBlend = item.type === 'lantern' ? sprite(`prop-effect-blend:${item.id}`, Texture.EMPTY, EFFECT_SCALE) : null
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.rotation = visualFacing(item)
   emissive.rotation = visualFacing(item)
   effect.visible = false
+  if (effectBlend !== null) effectBlend.visible = false
   emissive.visible = false
   return {
     item,
@@ -271,7 +297,10 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
     fallback: fallbackNode,
     shadow,
     lower,
+    movingRoot,
+    moving,
     effect,
+    effectBlend,
     emissive,
     state: null,
   }
@@ -360,9 +389,10 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
 }
 
-function syncArtScale(node: Pick<PropNode, 'item' | 'lower'>): void {
+function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'movingRoot' | 'moving'>): void {
   const scale = propArtScale(node.item)
   node.lower.scale.set(scale)
+  syncMovingArtRegistration(node.item, node.movingRoot, node.moving)
 }
 
 function syncPropRole(
@@ -378,6 +408,37 @@ function syncPropRole(
   const frame = propTexture(art, treatment)
   node.texture = frame
   node.anchor.set(0.5)
+}
+
+function syncMovingArtRegistration(item: StaticDrawable, root: Container, node: Sprite): void {
+  const scale = propArtScale(item)
+  node.scale.set(scale)
+  if (item.type !== 'bell') {
+    root.position.set(0, 0)
+    return
+  }
+  const pivot = bellStrikerTreatment().pivot
+  const offsetX = (pivot.x - 384 / 2) * scale
+  const offsetY = (pivot.y - 256 / 2) * scale
+  root.position.set(offsetX, offsetY)
+  node.position.set(-offsetX, -offsetY)
+}
+
+function syncEffectBlend(
+  blendNode: Sprite | null,
+  primary: Sprite,
+  effect: NonNullable<ReturnType<typeof propEffectSpec>>,
+  effects: Readonly<Record<string, Texture>>,
+): void {
+  if (blendNode === null || effect.nextFrame === undefined || effect.blend === undefined) return
+  blendNode.visible = true
+  blendNode.texture = texture(effects, effect.nextFrame)
+  blendNode.tint = primary.tint
+  blendNode.alpha = effect.alpha * effect.blend
+  blendNode.scale.copyFrom(primary.scale)
+  blendNode.position.copyFrom(primary.position)
+  blendNode.rotation = primary.rotation
+  primary.alpha = effect.alpha * (1 - effect.blend)
 }
 
 function centerX(item: StaticDrawable): number {
@@ -427,7 +488,7 @@ function texture(
   if (value === undefined) throw new Error(`Three Branches prop frame is missing: ${displayName}`)
   return value
 }
-function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects') {
+function atlasEntry(name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects') {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
   if (atlas === undefined || 'layers' in atlas) {
     throw new Error(`Three Branches ${name} atlas is missing.`)
@@ -439,7 +500,7 @@ function shadowSourceSize(): { width: number; height: number } {
   return { width: atlas.frames.width, height: atlas.frames.height }
 }
 function framesFor(
-  name: 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects',
+  name: 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects',
   atlasTexture: Texture,
 ): Readonly<Record<string, Texture>> {
   const atlas = atlasEntry(name)
@@ -462,8 +523,9 @@ function preflightArt(art: PropArt): void {
     const ids = prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : ['preflight']
     for (const state of prop.states) {
       for (const id of ids) {
-        const treatment = propTreatment(prop.token, state, id).lower
-        propTexture(art, treatment)
+        const treatment = propTreatment(prop.token, state, id)
+        propTexture(art, treatment.lower)
+        if (treatment.moving !== undefined) propTexture(art, treatment.moving)
       }
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
       const emissive = emissiveSpec(prop.token, state)

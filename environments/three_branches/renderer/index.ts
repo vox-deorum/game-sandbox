@@ -693,7 +693,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           assets.props,
           assets.lantern,
           assets.monuments,
-          assets.bell,
           assets.buildings.home,
           assets.buildings.inn,
           assets.buildings.shed,
@@ -709,7 +708,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           props: assets.props,
           lantern: assets.lantern,
           monuments: assets.monuments,
-          bell: assets.bell,
           scenery: assets.scenery,
           effects: assets.effects,
         })

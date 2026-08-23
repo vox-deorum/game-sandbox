@@ -400,7 +400,6 @@ export interface ThreeBranchesRuntimeAssets<T> {
   props: T
   lantern: T
   monuments: T
-  bell: T
   buildings: { home: T; inn: T; shed: T }
   scenery: T
   characters: T
@@ -447,7 +446,6 @@ export async function loadThreeBranchesRuntimeAssets<T>(
     props: required('props'),
     lantern: required('lantern'),
     monuments: required('monuments'),
-    bell: required('bell'),
     buildings: {
       home: required('buildings', 'home'),
       inn: required('buildings', 'inn'),

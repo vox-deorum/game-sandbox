@@ -7,7 +7,7 @@ export const PINE_FRAME_NAMES = atlasFrameNames('scenery').filter((name) =>
   /^pine[A-Z]$/.test(name),
 )
 
-export type PropArtPage = 'props' | 'monuments' | 'lantern' | 'bell'
+export type PropArtPage = 'props' | 'monuments' | 'lantern'
 
 /** One sprite role selected from a dedicated atlas page and state frame. */
 export interface PropArtFrame {
@@ -18,13 +18,17 @@ export interface PropArtFrame {
 /** The one centered still selected for one recorded prop state. */
 export interface PropTreatment {
   lower: PropArtFrame
+  moving?: PropArtFrame
 }
 
 type TreatmentByState = Readonly<Record<string, PropTreatment>>
 
 const ordinary = (frame: string): PropTreatment => ({ lower: { page: 'props', frame } })
 const pump = (): PropTreatment => ({ lower: { page: 'monuments', frame: 'pump' } })
-const bell = (): PropTreatment => ({ lower: { page: 'bell', frame: 'bell' } })
+const bell = (): PropTreatment => ({
+  lower: { page: 'props', frame: 'bellBase' },
+  moving: { page: 'props', frame: 'bellStriker' },
+})
 const lantern = (frame: string): PropTreatment => ({
   lower: { page: 'lantern', frame },
 })

@@ -15,7 +15,6 @@ const framesByPage = {
   props: atlasFrameNames('props'),
   monuments: atlasFrameNames('monuments'),
   lantern: atlasFrameNames('lantern'),
-  bell: atlasFrameNames('bell'),
 } as const
 const effectFrames = atlasFrameNames('effects')
 
@@ -39,8 +38,12 @@ describe('Three Branches prop art treatments', () => {
 
   it('uses one centered bell frame for both recorded states', () => {
     expect(propTreatment('bell', 'ringing', 'bell_0').lower).toEqual({
-      page: 'bell',
-      frame: 'bell',
+      page: 'props',
+      frame: 'bellBase',
+    })
+    expect(propTreatment('bell', 'ringing', 'bell_0').moving).toEqual({
+      page: 'props',
+      frame: 'bellStriker',
     })
     expect(propTreatment('bell', 'silent', 'bell_0').lower).toEqual(
       propTreatment('bell', 'ringing', 'bell_0').lower,

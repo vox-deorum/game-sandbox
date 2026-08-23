@@ -284,6 +284,8 @@ describe('Three Branches asset catalog', () => {
         './assets/source-art/stall/c/open.png',
         './assets/source-art/stall/c/closed.png',
         './assets/source-art/frames/props/repairBenchBusy.png',
+        './assets/source-art/frames/bell/bellBase.png',
+        './assets/source-art/frames/bell/bellStriker.png',
       ]),
     )
     const board = props?.cells.find((cell) => cell.name === 'boardNone')
@@ -322,17 +324,7 @@ describe('Three Branches asset catalog', () => {
     expect(monuments?.cells.map((cell) => cell.source.path)).toEqual([
       './assets/source-art/frames/monuments/pump.png',
     ])
-    const bell = ATLAS_PAGES.find((page) => page.group === 'bell')
-    expect(bell).toMatchObject({
-      pageKey: 'bell',
-      width: 384,
-      height: 256,
-      columns: 1,
-      rows: 1,
-    })
-    expect(bell?.cells.map((cell) => cell.source.path)).toEqual([
-      './assets/source-art/frames/bell/bell.png',
-    ])
+    expect(ATLAS_PAGES.some((page) => page.group === 'bell')).toBe(false)
     const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
     expect(scenery?.cells.at(-1)?.source.path).toBe(
       './assets/source-art/frames/scenery/marketCrate.png',
@@ -401,7 +393,18 @@ describe('Three Branches asset catalog', () => {
     expect(coloredTransparentPixelCount(sourcePath)).toBe(0)
   })
 
-  it('loads every configured runtime page including dedicated lantern and bell atlases', async () => {
+  it('preserves the approved bell proportions in its canonical source layers', () => {
+    const basePath = './assets/source-art/frames/bell/bellBase.png'
+    const strikerPath = './assets/source-art/frames/bell/bellStriker.png'
+    expect(readPngHeader(basePath)).toMatchObject({ width: 384, height: 256 })
+    expect(readPngHeader(strikerPath)).toMatchObject({ width: 384, height: 256 })
+    expect(alphaBounds(basePath)).toEqual({ width: 232, height: 232 })
+    expect(alphaBounds(strikerPath)).toEqual({ width: 41, height: 124 })
+    expect(coloredTransparentPixelCount(basePath)).toBe(0)
+    expect(coloredTransparentPixelCount(strikerPath)).toBe(0)
+  })
+
+  it('loads every configured runtime page including the dedicated lantern atlas', async () => {
     const load = vi.fn((source: string) => source)
     const assets = await loadThreeBranchesRuntimeAssets(load)
     const sources = load.mock.calls.map(([source]) => source)
@@ -412,14 +415,13 @@ describe('Three Branches asset catalog', () => {
     expect(assets.effects).toMatch(/effects-atlas\.png/)
     expect(assets.lantern).toMatch(/lantern-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
-    expect(assets.bell).toMatch(/bell-atlas\.png/)
     expect(assets.buildings.home).toMatch(/buildings-home-atlas\.png/)
     expect(assets.buildings.inn).toMatch(/buildings-inn-atlas\.png/)
     expect(assets.buildings.shed).toMatch(/buildings-shed-atlas\.png/)
     expect(sources.some((source) => /props-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /lantern-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /monuments-atlas/.test(source))).toBe(true)
-    expect(sources.some((source) => /bell-atlas/.test(source))).toBe(true)
+    expect(sources.some((source) => /bell-atlas/.test(source))).toBe(false)
     expect(sources.some((source) => /scenery-atlas/.test(source))).toBe(true)
     expect(sources.some((source) => /buildings/.test(source))).toBe(true)
   })
@@ -439,14 +441,13 @@ describe('Three Branches asset catalog', () => {
         expect.stringMatching(/props-atlas\.png/),
         expect.stringMatching(/lantern-atlas\.png/),
         expect.stringMatching(/monuments-atlas\.png/),
-        expect.stringMatching(/bell-atlas\.png/),
         expect.stringMatching(/scenery-atlas\.png/),
         expect.stringMatching(/buildings-home-atlas\.png/),
         expect.stringMatching(/buildings-inn-atlas\.png/),
         expect.stringMatching(/buildings-shed-atlas\.png/),
       ]),
     )
-    expect(mipmappedSources).toHaveLength(9)
+    expect(mipmappedSources).toHaveLength(8)
     for (const [, options] of mipmappedCalls) {
       expect(options).toEqual({ autoGenerateMipmaps: true })
     }

@@ -1,6 +1,7 @@
 import { stableHashParts } from '@renderers/base/math.js'
 
 import {
+  bellStrikerTreatment,
   HEARTHSIDE_STYLE,
   type HearthsidePaletteKey,
   type PropEffectOpacityAnimation,
@@ -9,6 +10,9 @@ import {
 /** One seek-safe animated accent placed above the character layer. */
 export interface PropEffectSpec {
   frame: string
+  /** The overlap frame and smooth blend weight used only by the lantern glow. */
+  nextFrame?: string
+  blend?: number
   tint: HearthsidePaletteKey
   alpha: number
   scale: number
@@ -51,17 +55,20 @@ export function propEffectSpec(
   const frames = requiredFrames(treatment.frames)
   const frameClock = fractionalTick * treatment.frameRate + (phase / 0xffffffff) * frames.length
   const frame = frameAt(frames, Math.floor(frameClock))
-  const wave = Math.sin((frameClock / frames.length) * Math.PI * 2)
+  const cycleAngle = (frameClock / frames.length) * Math.PI * 2
+  const wave = Math.sin(cycleAngle)
   let spec: PropEffectSpec
   switch (effect) {
     case 'lantern':
       spec = {
         frame,
+        nextFrame: frameAt(frames, Math.floor(frameClock) + 1),
+        blend: smoothBlend(frameClock - Math.floor(frameClock)),
         tint: 'gilt',
         alpha: 0.7 + wave * 0.16,
         scale: 0.92 + wave * 0.08,
         offsetX: 0,
-        offsetY: 0,
+        offsetY: -2.6,
         rotation: 0,
         phase,
       }
@@ -94,10 +101,10 @@ export function propEffectSpec(
       spec = {
         frame,
         tint: 'water',
-        alpha: 0.72 + wave * 0.14,
-        scale: 0.94 + wave * 0.06,
-        offsetX: 0,
-        offsetY: wave * 2,
+        alpha: 0.72 + wave * 0.08,
+        scale: 0.55 + wave * 0.0055,
+        offsetX: Math.cos(cycleAngle) * 0.3,
+        offsetY: Math.sin(cycleAngle) * 0.18,
         rotation: 0,
         phase,
       }
@@ -118,6 +125,14 @@ export function propEffectSpec(
       throw new Error('Three Branches prop effect is unsupported.')
   }
   return applyOpacityAnimation(spec, treatment.opacityAnimation, fractionalTick)
+}
+
+/** Rotate the one physical bell striker around its configured hinge while ringing. */
+export function bellStrikerRotation(state: string, propId: string, fractionalTick: number): number {
+  if (state !== 'ringing') return 0
+  const phase = stableHashParts('three-branches-bell-striker', propId)
+  const cycle = fractionalTick / bellStrikerTreatment().periodTicks + phase / 0xffffffff
+  return Math.sin(cycle * Math.PI * 2) * bellStrikerTreatment().amplitudeRadians
 }
 
 /** Resolve absolute opacity through one complete 0 to 1 to 0 cycle. */
@@ -164,6 +179,10 @@ function requiredFrames(frames: readonly string[] | undefined): readonly string[
 
 function frameAt(frames: readonly string[], elapsed: number): string {
   return frames[elapsed % frames.length]!
+}
+
+function smoothBlend(progress: number): number {
+  return progress * progress * (3 - 2 * progress)
 }
 
 function applyOpacityAnimation(

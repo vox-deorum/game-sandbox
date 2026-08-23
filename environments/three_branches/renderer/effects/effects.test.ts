@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
-import { emissiveSpec, pingPongOpacity, propEffectSpec } from './effects.js'
+import { bellStrikerRotation, emissiveSpec, pingPongOpacity, propEffectSpec } from './effects.js'
 
 describe('Three Branches prop effects', () => {
   it('carries a stable id phase', () => {
@@ -77,6 +77,43 @@ describe('Three Branches prop effects', () => {
     expect(requiredPropEffect('bell', 'ringing', 'bell:one', 3).frame).toMatch(
       /^bellLines[A-F]$/,
     )
+  })
+
+  it('moves the well ripple in a slow, subpixel ellipse instead of shaking it', () => {
+    expect(HEARTHSIDE_STYLE.propEffects.pump?.frameRate).toBe(0.15)
+    const initial = requiredPropEffect('pump', 'flowing', 'pump:one', 0)
+    const tick = 2.5
+    const moved = requiredPropEffect('pump', 'flowing', 'pump:one', tick)
+    const angle = (tick * 0.15 + initial.phase / 0xffffffff) * Math.PI * 2
+
+    expect(Math.abs(initial.offsetX)).toBeLessThanOrEqual(0.3)
+    expect(Math.abs(initial.offsetY)).toBeLessThanOrEqual(0.18)
+    expect(moved.offsetX).toBeCloseTo(Math.cos(angle) * 0.3)
+    expect(moved.offsetY).toBeCloseTo(Math.sin(angle) * 0.18)
+    expect(initial.scale).toBeGreaterThanOrEqual(0.5445)
+    expect(initial.scale).toBeLessThanOrEqual(0.5555)
+    expect(moved.scale).toBeCloseTo(0.55 + Math.sin(angle) * 0.0055)
+  })
+
+  it('keeps the bell striker still when silent and seek-safe while ringing', () => {
+    expect(bellStrikerRotation('silent', 'bell:one', 2)).toBe(0)
+    const first = bellStrikerRotation('ringing', 'bell:one', 2)
+    expect(first).toBeGreaterThanOrEqual(-0.14)
+    expect(first).toBeLessThanOrEqual(0.14)
+    expect(bellStrikerRotation('ringing', 'bell:one', 3)).not.toBeCloseTo(first)
+    expect(bellStrikerRotation('ringing', 'bell:one', 10)).toBeCloseTo(first)
+  })
+
+  it('crossfades overlapping lantern glow frames with a constant opacity envelope', () => {
+    const initial = requiredPropEffect('lantern', 'lit', 'lantern:one', 0)
+    const initialClock = (initial.phase / 0xffffffff) * 6
+    const tick = ((Math.floor(initialClock) + 0.25 - initialClock + 1) % 1) / 0.5
+    const effect = requiredPropEffect('lantern', 'lit', 'lantern:one', tick)
+    expect(effect.nextFrame).toBeDefined()
+    expect(effect.blend).toBeCloseTo(0.15625)
+    expect(effect.offsetY).toBe(-2.6)
+    const overlap = effect.alpha * (1 - (effect.blend ?? 0)) + effect.alpha * (effect.blend ?? 0)
+    expect(overlap).toBeCloseTo(effect.alpha)
   })
 
   it('emits post-grade light only for active lanterns and hearths, in the configured tints', () => {

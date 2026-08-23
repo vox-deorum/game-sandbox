@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  bellStrikerTreatment,
   HEARTHSIDE_STYLE,
   measureDeliveryGap,
   propEffectAnchor,
@@ -50,6 +51,26 @@ describe('Hearthside Ink presentation', () => {
 
   it('defaults the lantern light anchor to the collision center', () => {
     expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
+  })
+
+  it('keeps the bell striker hinge and restrained swing in presentation calibration', () => {
+    expect(bellStrikerTreatment()).toEqual({
+      pivot: { x: 192, y: 39 },
+      amplitudeRadians: 0.14,
+      periodTicks: 8,
+    })
+
+    const outsideFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    outsideFrame.props.bellStriker.pivot.y = 256
+    expect(() => readHearthsideStyle(outsideFrame)).toThrow('bellStriker.pivot')
+
+    const excessiveAmplitude = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveAmplitude.props.bellStriker.amplitudeRadians = Math.PI / 4 + 0.01
+    expect(() => readHearthsideStyle(excessiveAmplitude)).toThrow('bellStriker.amplitudeRadians')
+
+    const invalidPeriod = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidPeriod.props.bellStriker.periodTicks = 0
+    expect(() => readHearthsideStyle(invalidPeriod)).toThrow('bellStriker.periodTicks')
   })
 
   it('validates optional prop-effect ping-pong opacity animation', () => {

@@ -296,6 +296,13 @@ export interface SourcePixelAnchor {
   y: number
 }
 
+/** The calibrated rotating hinge and travel for the bell's single full-cell striker. */
+export interface BellStrikerTreatment {
+  pivot: SourcePixelAnchor
+  amplitudeRadians: number
+  periodTicks: number
+}
+
 /** One full-color arm sprite registered to a static cast base. */
 export interface CharacterArmTreatment {
   frame: string
@@ -314,6 +321,7 @@ export interface CharacterCastSet {
 
 interface PropVisualTreatment extends VisualScaleTreatment {
   effectAnchorByType: Readonly<Record<string, SourceAnchor>>
+  bellStriker: BellStrikerTreatment
 }
 
 /** A reusable, seek-safe opacity cycle applied to an active prop effect. */
@@ -441,6 +449,11 @@ export function propVisualScale(type: string): number {
 /** Resolve an effect anchor measured from the center of a complete prop source canvas. */
 export function propEffectAnchor(type: string): SourceAnchor {
   return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
+}
+
+/** Resolve the source-frame hinge and angular travel for the bell striker. */
+export function bellStrikerTreatment(): BellStrikerTreatment {
+  return HEARTHSIDE_STYLE.props.bellStriker
 }
 
 /** Resolve one scenery sprite scale from the validated visual calibration. */
@@ -871,6 +884,7 @@ function propVisualTreatment(
     'defaultScale',
     'scaleByType',
     'effectAnchorByType',
+    'bellStriker',
   ])
   const scales = visualScaleTreatment(
     { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
@@ -897,6 +911,27 @@ function propVisualTreatment(
         ]
       }),
     ),
+    bellStriker: readBellStrikerTreatment(source.bellStriker, `${name}.bellStriker`),
+  }
+}
+
+function readBellStrikerTreatment(value: unknown, name: string): BellStrikerTreatment {
+  const source = exactRecord(value, name, ['pivot', 'amplitudeRadians', 'periodTicks'])
+  const pivotSource = exactRecord(source.pivot, `${name}.pivot`, ['x', 'y'])
+  const x = nonnegativeInteger(pivotSource.x, `${name}.pivot.x`)
+  const y = nonnegativeInteger(pivotSource.y, `${name}.pivot.y`)
+  if (x >= 384 || y >= 256) {
+    throw new Error(`${name}.pivot must be inside its 384 by 256 bell striker frame.`)
+  }
+  return {
+    pivot: { x, y },
+    amplitudeRadians: boundedNumber(
+      source.amplitudeRadians,
+      `${name}.amplitudeRadians`,
+      0,
+      Math.PI / 4,
+    ),
+    periodTicks: positiveNumber(source.periodTicks, `${name}.periodTicks`),
   }
 }
 

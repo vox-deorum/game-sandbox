@@ -14,7 +14,7 @@ import {
   visualFacing,
 } from './props-layer.js'
 
-type PageName = 'props' | 'monuments' | 'lantern' | 'bell' | 'scenery' | 'effects'
+type PageName = 'props' | 'monuments' | 'lantern' | 'scenery' | 'effects'
 
 function frameGrid(name: PageName): FrameGrid {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === name)
@@ -84,7 +84,6 @@ function completeArt() {
     props: page('props', source),
     monuments: page('monuments', source),
     lantern: page('lantern', source),
-    bell: page('bell', source),
     scenery: page('scenery', source),
     effects: page('effects', source),
   })
@@ -123,7 +122,6 @@ describe('Three Branches prop art views', () => {
       props: page('props', source),
       monuments: page('monuments', source),
       lantern: page('lantern', source),
-      bell: page('bell', source),
       scenery: page('scenery', source),
       effects: page('effects', source),
     })
@@ -137,10 +135,12 @@ describe('Three Branches prop art views', () => {
     expect(views.lantern.lanternLit?.frame).toEqual(
       frameRectangle(frameGrid('lantern'), 'lanternLit'),
     )
-    expect(views.props.bell).toBeUndefined()
-    expect(views.monuments.bell).toBeUndefined()
-    expect(views.bell.bell?.frame).toEqual(
-      frameRectangle(frameGrid('bell'), 'bell'),
+    expect(views.monuments.bellBase).toBeUndefined()
+    expect(views.props.bellBase?.frame).toEqual(
+      frameRectangle(frameGrid('props'), 'bellBase'),
+    )
+    expect(views.props.bellStriker?.frame).toEqual(
+      frameRectangle(frameGrid('props'), 'bellStriker'),
     )
     expect(views.scenery.marketCrate?.frame).toEqual(
       frameRectangle(frameGrid('scenery'), 'marketCrate'),
@@ -337,7 +337,7 @@ describe('Three Branches prop layers', () => {
     expect(lowerArt.visible).toBe(true)
     expect(lowerArt.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'pump'))
     expect(lowerArt.anchor).toMatchObject({ x: 0.5, y: 0.5 })
-    expect(lowerArt.scale.x).toBe(propVisualScale('pump'))
+    expect(lowerArt.scale.x).toBe(0.09)
     expect(shadow.scale.x).toBeCloseTo(0.075)
     expect(shadow.scale.y).toBeCloseTo(0.0703125)
     expect(lower.parent).toBe(targets.props)
@@ -350,9 +350,13 @@ describe('Three Branches prop layers', () => {
     expect(lowerArt.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'pump'))
     expect(effect.visible).toBe(true)
     expect(effect.texture.frame).toEqual(frameRectangle(frameGrid('effects'), 'waterRipple'))
+    const rippleSpec = propEffectSpec('pump', 'flowing', 'pump_0', 1)
+    if (rippleSpec === null) throw new Error('Expected a flowing pump ripple.')
+    expect(effect.scale.x).toBeCloseTo(0.25 * rippleSpec.scale)
+    expect(effect.scale.x).toBeLessThan(0.14)
   })
 
-  it('keeps the bell centered below characters and uses sound lines while ringing', () => {
+  it('keeps the bell centered below characters and swings its striker while ringing', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('bell', 'bell_0', 0.6))
     const layer = createPropLayer(targets, scene)
@@ -364,17 +368,25 @@ describe('Three Branches prop layers', () => {
     )
     const effect = targets.effects.getChildByLabel('prop-effect:bell_0') as Sprite
     const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:bell_0') as Sprite
-    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bell'))
+    const root = targets.props.getChildByLabel('prop-lower:bell_0') as Container
+    const movingRoot = root.getChildByLabel('prop-moving:bell_0') as Container
+    const striker = sprite(movingRoot, 'prop-moving-art')
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'bellBase'))
     expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
-    expect(lower.scale.x).toBe(propVisualScale('bell'))
+    expect(lower.scale.x).toBe(0.1)
+    expect(striker.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'bellStriker'))
+    expect(movingRoot.position).toMatchObject({ x: 0, y: -8.9 })
     expect(shadow.scale.x).toBeCloseTo(0.06)
     expect(shadow.scale.y).toBeCloseTo(0.05625)
     expect(targets.effects.getChildByLabel('prop-upper:bell_0')).toBeNull()
     layer.advance(0.25)
     expect(effect.visible).toBe(false)
+    expect(movingRoot.rotation).toBe(0)
     layer.reconcile(frame(scene, [], { bell_0: 'ringing' }))
     layer.advance(0.25)
-    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bell'))
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'bellBase'))
+    expect(Math.abs(movingRoot.rotation)).toBeLessThanOrEqual(0.14)
+    expect(movingRoot.rotation).not.toBe(0)
     expect(effect.visible).toBe(true)
     expect(
       ['bellLinesA', 'bellLinesB', 'bellLinesC', 'bellLinesD', 'bellLinesE', 'bellLinesF'].map(
@@ -397,12 +409,24 @@ describe('Three Branches prop layers', () => {
     )
     expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('lantern'), 'lanternLit'))
     expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
-    expect(lower.scale.x).toBe(propVisualScale('lantern'))
+    expect(lower.scale.x).toBe(0.07)
     expect(targets.effects.getChildByLabel('prop-upper:lantern_0')).toBeNull()
     expect(targets.effects.getChildByLabel('prop-effect:lantern_0')?.position).toMatchObject({
       x: 8,
-      y: 8,
+      y: 5.4,
     })
+    expect(targets.effects.getChildByLabel('prop-effect-blend:lantern_0')).toBeInstanceOf(Sprite)
+    const glow = targets.effects.getChildByLabel('prop-effect:lantern_0') as Sprite
+    const glowBlend = targets.effects.getChildByLabel('prop-effect-blend:lantern_0') as Sprite
+    const glowSpec = propEffectSpec('lantern', 'lit', 'lantern_0', 1)
+    if (glowSpec === null) throw new Error('Expected a lit lantern glow.')
+    expect(glow.visible).toBe(true)
+    expect(glowBlend.visible).toBe(true)
+    expect(glow.texture.frame).toEqual(frameRectangle(frameGrid('effects'), glowSpec.frame))
+    expect(glowBlend.texture.frame).toEqual(
+      frameRectangle(frameGrid('effects'), glowSpec.nextFrame ?? ''),
+    )
+    expect(glow.alpha + glowBlend.alpha).toBeCloseTo(glowSpec.alpha)
     expect(targets.emissives.getChildByLabel('prop-emissive:lantern_0')?.position).toMatchObject({
       x: 8,
       y: 8,
@@ -411,6 +435,9 @@ describe('Three Branches prop layers', () => {
 
     layer.reconcile(frame(scene, [], { lantern_0: 'unlit' }))
     expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('lantern'), 'lanternUnlit'))
+    layer.advance(1)
+    expect(glow.visible).toBe(false)
+    expect(glowBlend.visible).toBe(false)
 
     layer.reconcile(frame(scene, [], { lantern_0: 'lit' }))
     expect(lower.texture).toBe(litLower)
