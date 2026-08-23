@@ -255,7 +255,9 @@ export interface PlankTreatment {
   widthVariation: number
   portalOverlapCells: number
   sideOverhangCells: number
-  backingTint: HearthsidePaletteKey
+  sourceOverscanCells: number
+  sourcePhaseCells: number
+  portalSourceOverscanCells: number
   seam: {
     tint: HearthsidePaletteKey
     opacity: number
@@ -1170,7 +1172,9 @@ function plankTreatment(
     'widthVariation',
     'portalOverlapCells',
     'sideOverhangCells',
-    'backingTint',
+    'sourceOverscanCells',
+    'sourcePhaseCells',
+    'portalSourceOverscanCells',
     'seam',
   ])
   const boardsPerCell = positiveInteger(source.boardsPerCell, `${name}.boardsPerCell`)
@@ -1186,7 +1190,7 @@ function plankTreatment(
       source.portalOverlapCells,
       `${name}.portalOverlapCells`,
       0,
-      0.25,
+      0.5,
       true,
     ),
     sideOverhangCells: boundedNumber(
@@ -1196,7 +1200,26 @@ function plankTreatment(
       0.1,
       true,
     ),
-    backingTint: paletteKey(source.backingTint, palette, `${name}.backingTint`),
+    sourceOverscanCells: boundedNumber(
+      source.sourceOverscanCells,
+      `${name}.sourceOverscanCells`,
+      0,
+      0.15,
+    ),
+    sourcePhaseCells: boundedNumber(
+      source.sourcePhaseCells,
+      `${name}.sourcePhaseCells`,
+      0,
+      finiteNumber(source.sourceOverscanCells, `${name}.sourceOverscanCells`) / 2,
+      true,
+    ),
+    portalSourceOverscanCells: boundedNumber(
+      source.portalSourceOverscanCells,
+      `${name}.portalSourceOverscanCells`,
+      0,
+      0.1,
+      true,
+    ),
     seam: {
       tint: paletteKey(seamSource.tint, palette, `${name}.seam.tint`),
       opacity: unitNumber(seamSource.opacity, `${name}.seam.opacity`),

@@ -348,19 +348,25 @@ describe('Hearthside Ink presentation', () => {
       frame: 'boards',
       boardsPerCell: 3,
       widthVariation: 0.1,
-      portalOverlapCells: 0.1,
+      portalOverlapCells: 0.5,
       sideOverhangCells: 0.05,
-      backingTint: 'wall',
-      seam: { tint: 'backdrop', opacity: 0.55, widthCells: 0.018 },
+      sourceOverscanCells: 0.08,
+      sourcePhaseCells: 0.04,
+      portalSourceOverscanCells: 0.05,
+      seam: { tint: 'backdrop', opacity: 0.35, widthCells: 0.025 },
     })
 
     const unknownKey = structuredClone(HEARTHSIDE_STYLE) as any
     unknownKey.terrain.planks.tint = 'backdrop'
     expect(() => readHearthsideStyle(unknownKey)).toThrow('planks keys do not match')
 
-    const badPalette = structuredClone(HEARTHSIDE_STYLE) as any
-    badPalette.terrain.planks.backingTint = 'orange'
-    expect(() => readHearthsideStyle(badPalette)).toThrow('backingTint is unknown')
+    const removedKey = structuredClone(HEARTHSIDE_STYLE) as any
+    delete removedKey.terrain.planks.sourcePhaseCells
+    expect(() => readHearthsideStyle(removedKey)).toThrow('planks keys do not match')
+
+    const obsoleteKey = structuredClone(HEARTHSIDE_STYLE) as any
+    obsoleteKey.terrain.planks.backingTint = 'wall'
+    expect(() => readHearthsideStyle(obsoleteKey)).toThrow('planks keys do not match')
 
     const fractionalCount = structuredClone(HEARTHSIDE_STYLE) as any
     fractionalCount.terrain.planks.boardsPerCell = 2.5
@@ -377,8 +383,12 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(invalidFrame)).toThrow('planks.frame is unknown')
 
     const excessiveOverlap = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveOverlap.terrain.planks.portalOverlapCells = 0.251
+    excessiveOverlap.terrain.planks.portalOverlapCells = 0.501
     expect(() => readHearthsideStyle(excessiveOverlap)).toThrow('portalOverlapCells')
+
+    const maximumOverlap = structuredClone(HEARTHSIDE_STYLE) as any
+    maximumOverlap.terrain.planks.portalOverlapCells = 0.5
+    expect(readHearthsideStyle(maximumOverlap).terrain.planks.portalOverlapCells).toBe(0.5)
 
     const invalidOverhang = structuredClone(HEARTHSIDE_STYLE) as any
     invalidOverhang.terrain.planks.sideOverhangCells = -0.01
@@ -395,6 +405,60 @@ describe('Hearthside Ink presentation', () => {
     const excessiveOverhang = structuredClone(HEARTHSIDE_STYLE) as any
     excessiveOverhang.terrain.planks.sideOverhangCells = 0.101
     expect(() => readHearthsideStyle(excessiveOverhang)).toThrow('sideOverhangCells')
+
+    const maximumOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    maximumOverscan.terrain.planks.sourceOverscanCells = 0.15
+    maximumOverscan.terrain.planks.sourcePhaseCells = 0.075
+    expect(readHearthsideStyle(maximumOverscan).terrain.planks).toMatchObject({
+      sourceOverscanCells: 0.15,
+      sourcePhaseCells: 0.075,
+    })
+
+    const zeroPhase = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroPhase.terrain.planks.sourcePhaseCells = 0
+    zeroPhase.terrain.planks.portalSourceOverscanCells = 0
+    expect(readHearthsideStyle(zeroPhase).terrain.planks).toMatchObject({
+      sourcePhaseCells: 0,
+      portalSourceOverscanCells: 0,
+    })
+
+    const zeroOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroOverscan.terrain.planks.sourceOverscanCells = 0
+    expect(() => readHearthsideStyle(zeroOverscan)).toThrow('sourceOverscanCells')
+
+    const excessivePhase = structuredClone(HEARTHSIDE_STYLE) as any
+    excessivePhase.terrain.planks.sourcePhaseCells = 0.041
+    expect(() => readHearthsideStyle(excessivePhase)).toThrow('sourcePhaseCells')
+
+    const negativePhase = structuredClone(HEARTHSIDE_STYLE) as any
+    negativePhase.terrain.planks.sourcePhaseCells = -0.001
+    expect(() => readHearthsideStyle(negativePhase)).toThrow('sourcePhaseCells')
+
+    const excessiveOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveOverscan.terrain.planks.sourceOverscanCells = 0.151
+    expect(() => readHearthsideStyle(excessiveOverscan)).toThrow('sourceOverscanCells')
+
+    const excessivePortalOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    excessivePortalOverscan.terrain.planks.portalSourceOverscanCells = 0.101
+    expect(() => readHearthsideStyle(excessivePortalOverscan)).toThrow(
+      'portalSourceOverscanCells',
+    )
+
+    const negativePortalOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    negativePortalOverscan.terrain.planks.portalSourceOverscanCells = -0.001
+    expect(() => readHearthsideStyle(negativePortalOverscan)).toThrow(
+      'portalSourceOverscanCells',
+    )
+
+    const nonFiniteOverscan = structuredClone(HEARTHSIDE_STYLE) as any
+    nonFiniteOverscan.terrain.planks.sourceOverscanCells = Number.NaN
+    expect(() => readHearthsideStyle(nonFiniteOverscan)).toThrow(
+      'sourceOverscanCells must be finite',
+    )
+
+    const infinitePhase = structuredClone(HEARTHSIDE_STYLE) as any
+    infinitePhase.terrain.planks.sourcePhaseCells = Number.POSITIVE_INFINITY
+    expect(() => readHearthsideStyle(infinitePhase)).toThrow('sourcePhaseCells must be finite')
 
     const invalidEdgeOpacity = structuredClone(HEARTHSIDE_STYLE) as any
     invalidEdgeOpacity.terrain.planks.seam.opacity = 1.01

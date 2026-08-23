@@ -30,7 +30,12 @@ export interface PlannedBridgeBoard {
   readonly width: number
   readonly height: number
   readonly sourceIndex: number
+  /** Flip the material across the narrow deck axis. */
   readonly mirrored: boolean
+  /** Flip the plank end-to-end across the deck's cross axis. */
+  readonly reversed: boolean
+  /** Signed cross-axis material offset in cell units. */
+  readonly crossAxisPhase: number
 }
 
 export interface BridgeBoardPlan {
@@ -104,6 +109,10 @@ export function planBridgeBoards(
       ...board,
       sourceIndex,
       mirrored: hashUnit(stableHashParts('bridge-board-mirror', component.id, index)) >= 0.5,
+      reversed: hashUnit(stableHashParts('bridge-board-reverse', component.id, index)) >= 0.5,
+      crossAxisPhase:
+        (hashUnit(stableHashParts('bridge-board-phase', component.id, index)) * 2 - 1) *
+        treatment.sourcePhaseCells,
     })
     cursor += runSize
   }
@@ -267,17 +276,15 @@ function composeBridgeDeck(
   )
   const canvas = makeCanvas(width, height)
   const context = requiredContext(canvas, `Bridge component ${component.id} canvas`)
-  context.fillStyle = HEARTHSIDE_STYLE.palette[treatment.backingTint]
-  context.fillRect(0, 0, width, height)
   const sourceCanvases = sources.map((source) => boardCanvas(source, plan.sourceRotation))
+  drawBoardSeams(context, plan, treatment, width, height)
   for (const board of plan.boards) {
     const source = sourceCanvases[board.sourceIndex]
     if (source === undefined)
       throw new Error(`Bridge component ${component.id} board source is missing.`)
-    const rect = sourceRect(board, plan.bounds)
-    drawBoardSource(context, source, rect, board.mirrored)
+    const rect = sourceRect(component, plan, board, treatment)
+    drawBoardSource(context, source, rect, plan.bounds.runAxis, board)
   }
-  drawBoardSeams(context, plan, treatment, width, height)
   return canvas
 }
 
@@ -292,7 +299,7 @@ function drawBoardSeams(
   context.globalAlpha = treatment.seam.opacity
   const seam = treatment.seam.widthCells * BRIDGE_DECK_SOURCE_CELLS
   for (const board of plan.boards.slice(0, -1)) {
-    const rect = sourceRect(board, plan.bounds)
+    const rect = baseSourceRect(board, plan.bounds)
     if (plan.bounds.runAxis === 'horizontal') {
       context.fillRect(rect.x + rect.width - seam / 2, 0, seam, height)
     } else {
@@ -302,7 +309,7 @@ function drawBoardSeams(
   context.globalAlpha = 1
 }
 
-function sourceRect(
+function baseSourceRect(
   board: PlannedBridgeBoard,
   bounds: BridgeDeckBounds,
 ): { x: number; y: number; width: number; height: number } {
@@ -312,6 +319,41 @@ function sourceRect(
     width: sourceWidth(board),
     height: sourceHeight(board),
   }
+}
+
+function sourceRect(
+  component: TerrainBridgeComponent,
+  plan: BridgeBoardPlan,
+  board: PlannedBridgeBoard,
+  treatment: BridgeDeckTreatment,
+): { x: number; y: number; width: number; height: number } {
+  const rect = baseSourceRect(board, plan.bounds)
+  const crossOverscan = treatment.sourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
+  const phase = board.crossAxisPhase * BRIDGE_DECK_SOURCE_CELLS
+  const axisOverscan =
+    component.deck.kind === 'axis'
+      ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
+      : 0
+  const first = board.index === 0
+  const last = board.index === plan.boards.length - 1
+  if (plan.bounds.runAxis === 'horizontal') {
+    rect.y -= crossOverscan - phase
+    rect.height += crossOverscan * 2
+    if (first) {
+      rect.x -= axisOverscan
+      rect.width += axisOverscan
+    }
+    if (last) rect.width += axisOverscan
+  } else {
+    rect.x -= crossOverscan - phase
+    rect.width += crossOverscan * 2
+    if (first) {
+      rect.y -= axisOverscan
+      rect.height += axisOverscan
+    }
+    if (last) rect.height += axisOverscan
+  }
+  return rect
 }
 
 function sourceX(board: PlannedBridgeBoard, bounds: BridgeDeckBounds): number {
@@ -331,30 +373,40 @@ function drawBoardSource(
   context: CanvasRenderingContext2D,
   source: HTMLCanvasElement,
   rect: { x: number; y: number; width: number; height: number },
-  mirrored: boolean,
+  runAxis: BridgeDeckBounds['runAxis'],
+  board: PlannedBridgeBoard,
 ): void {
   context.save()
-  if (mirrored) {
-    context.translate(rect.x * 2 + rect.width, 0)
-    context.scale(-1, 1)
-  }
-  context.drawImage(source, rect.x, rect.y, rect.width, rect.height)
+  const flipX = runAxis === 'horizontal' ? board.mirrored : board.reversed
+  const flipY = runAxis === 'horizontal' ? board.reversed : board.mirrored
+  context.translate(rect.x + (flipX ? rect.width : 0), rect.y + (flipY ? rect.height : 0))
+  context.scale(flipX ? -1 : 1, flipY ? -1 : 1)
+  context.drawImage(source, 0, 0, rect.width, rect.height)
   context.restore()
 }
 
 function boardCanvas(board: BridgeBoardSource, rotation: 0 | 1): HTMLCanvasElement {
-  const width = rotation === 0 ? board.width : board.height
-  const height = rotation === 0 ? board.height : board.width
+  const rows = visibleBoardRows(board)
+  const sourceHeight = rows.end - rows.start
+  const width = rotation === 0 ? board.width : sourceHeight
+  const height = rotation === 0 ? sourceHeight : board.width
   const canvas = makeCanvas(width, height)
   const context = requiredContext(canvas, 'Bridge board source canvas')
   const image = context.createImageData(width, height)
   if (rotation === 0) {
-    image.data.set(board.pixels)
+    for (let sourceY = rows.start; sourceY < rows.end; sourceY += 1) {
+      const sourceOffset = sourceY * board.width * 4
+      const targetOffset = (sourceY - rows.start) * board.width * 4
+      image.data.set(
+        board.pixels.subarray(sourceOffset, sourceOffset + board.width * 4),
+        targetOffset,
+      )
+    }
   } else {
-    for (let sourceY = 0; sourceY < board.height; sourceY += 1) {
+    for (let sourceY = rows.start; sourceY < rows.end; sourceY += 1) {
       for (let sourceX = 0; sourceX < board.width; sourceX += 1) {
         const sourceOffset = (sourceY * board.width + sourceX) * 4
-        const targetX = board.height - sourceY - 1
+        const targetX = sourceHeight - (sourceY - rows.start) - 1
         const targetY = sourceX
         const targetOffset = (targetY * width + targetX) * 4
         image.data.set(board.pixels.subarray(sourceOffset, sourceOffset + 4), targetOffset)
@@ -363,6 +415,24 @@ function boardCanvas(board: BridgeBoardSource, rotation: 0 | 1): HTMLCanvasEleme
   }
   context.putImageData(image, 0, 0)
   return canvas
+}
+
+function visibleBoardRows(board: BridgeBoardSource): { start: number; end: number } {
+  const minimumVisible = board.width * 0.1
+  let start = 0
+  while (start < board.height && visiblePixelsInRow(board, start) < minimumVisible) start += 1
+  let end = board.height
+  while (end > start && visiblePixelsInRow(board, end - 1) < minimumVisible) end -= 1
+  if (start === end) throw new Error('Bridge board source has no visible material rows.')
+  return { start, end }
+}
+
+function visiblePixelsInRow(board: BridgeBoardSource, row: number): number {
+  let visible = 0
+  for (let column = 0; column < board.width; column += 1) {
+    if ((board.pixels[(row * board.width + column) * 4 + 3] ?? 0) > 16) visible += 1
+  }
+  return visible
 }
 
 /** Create the exact visual deck mask shared by component canvases and map route cutouts. */

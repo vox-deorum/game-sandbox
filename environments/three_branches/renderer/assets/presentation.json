@@ -1243,13 +1243,15 @@
       "frame": "boards",
       "boardsPerCell": 3,
       "widthVariation": 0.10,
-      "portalOverlapCells": 0.10,
+      "portalOverlapCells": 0.50,
       "sideOverhangCells": 0.05,
-      "backingTint": "wall",
+      "sourceOverscanCells": 0.08,
+      "sourcePhaseCells": 0.04,
+      "portalSourceOverscanCells": 0.05,
       "seam": {
         "tint": "backdrop",
-        "opacity": 0.55,
-        "widthCells": 0.018
+        "opacity": 0.35,
+        "widthCells": 0.025
       }
     },
     "upperWall": {
