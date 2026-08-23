@@ -254,11 +254,17 @@ export interface PlankTreatment {
   boardsPerCell: number
   widthVariation: number
   portalOverlapCells: number
+  portalMaskInsetCells: number
   sideOverhangCells: number
   sourceOverscanCells: number
   sourcePhaseCells: number
   portalSourceOverscanCells: number
   seam: {
+    tint: HearthsidePaletteKey
+    opacity: number
+    widthCells: number
+  }
+  edgeShadow: {
     tint: HearthsidePaletteKey
     opacity: number
     widthCells: number
@@ -1171,26 +1177,41 @@ function plankTreatment(
     'boardsPerCell',
     'widthVariation',
     'portalOverlapCells',
+    'portalMaskInsetCells',
     'sideOverhangCells',
     'sourceOverscanCells',
     'sourcePhaseCells',
     'portalSourceOverscanCells',
     'seam',
+    'edgeShadow',
   ])
   const boardsPerCell = positiveInteger(source.boardsPerCell, `${name}.boardsPerCell`)
   if (boardsPerCell > 8) {
     throw new Error(`${name}.boardsPerCell must be at most eight.`)
   }
   const seamSource = exactRecord(source.seam, `${name}.seam`, ['tint', 'opacity', 'widthCells'])
+  const edgeShadowSource = exactRecord(source.edgeShadow, `${name}.edgeShadow`, [
+    'tint',
+    'opacity',
+    'widthCells',
+  ])
+  const portalOverlapCells = boundedNumber(
+    source.portalOverlapCells,
+    `${name}.portalOverlapCells`,
+    0,
+    0.5,
+    true,
+  )
   return {
     frame: knownText(source.frame, knownFrames, `${name}.frame`),
     boardsPerCell,
     widthVariation: boundedNumber(source.widthVariation, `${name}.widthVariation`, 0, 0.5, true),
-    portalOverlapCells: boundedNumber(
-      source.portalOverlapCells,
-      `${name}.portalOverlapCells`,
+    portalOverlapCells,
+    portalMaskInsetCells: boundedNumber(
+      source.portalMaskInsetCells,
+      `${name}.portalMaskInsetCells`,
       0,
-      0.5,
+      portalOverlapCells,
       true,
     ),
     sideOverhangCells: boundedNumber(
@@ -1224,6 +1245,16 @@ function plankTreatment(
       tint: paletteKey(seamSource.tint, palette, `${name}.seam.tint`),
       opacity: unitNumber(seamSource.opacity, `${name}.seam.opacity`),
       widthCells: boundedNumber(seamSource.widthCells, `${name}.seam.widthCells`, 0, 0.05),
+    },
+    edgeShadow: {
+      tint: paletteKey(edgeShadowSource.tint, palette, `${name}.edgeShadow.tint`),
+      opacity: unitNumber(edgeShadowSource.opacity, `${name}.edgeShadow.opacity`),
+      widthCells: boundedNumber(
+        edgeShadowSource.widthCells,
+        `${name}.edgeShadow.widthCells`,
+        0,
+        0.15,
+      ),
     },
   }
 }

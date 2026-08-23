@@ -285,7 +285,49 @@ function composeBridgeDeck(
     const rect = sourceRect(component, plan, board, treatment)
     drawBoardSource(context, source, rect, plan.bounds.runAxis, board)
   }
+  drawCrossEdgeShadows(context, plan, treatment, width, height)
   return canvas
+}
+
+function drawCrossEdgeShadows(
+  context: CanvasRenderingContext2D,
+  plan: BridgeBoardPlan,
+  treatment: BridgeDeckTreatment,
+  width: number,
+  height: number,
+): void {
+  const shadowWidth = treatment.edgeShadow.widthCells * BRIDGE_DECK_SOURCE_CELLS
+  const tint = HEARTHSIDE_STYLE.palette[treatment.edgeShadow.tint]
+  const transparentTint = `${tint}00`
+  context.save()
+  context.globalAlpha = treatment.edgeShadow.opacity
+  context.globalCompositeOperation = 'source-atop'
+  if (plan.bounds.runAxis === 'horizontal') {
+    const north = context.createLinearGradient(0, 0, 0, shadowWidth)
+    north.addColorStop(0, tint)
+    north.addColorStop(1, transparentTint)
+    context.fillStyle = north
+    context.fillRect(0, 0, width, shadowWidth)
+
+    const south = context.createLinearGradient(0, height - shadowWidth, 0, height)
+    south.addColorStop(0, transparentTint)
+    south.addColorStop(1, tint)
+    context.fillStyle = south
+    context.fillRect(0, height - shadowWidth, width, shadowWidth)
+  } else {
+    const west = context.createLinearGradient(0, 0, shadowWidth, 0)
+    west.addColorStop(0, tint)
+    west.addColorStop(1, transparentTint)
+    context.fillStyle = west
+    context.fillRect(0, 0, shadowWidth, height)
+
+    const east = context.createLinearGradient(width - shadowWidth, 0, width, 0)
+    east.addColorStop(0, transparentTint)
+    east.addColorStop(1, tint)
+    context.fillStyle = east
+    context.fillRect(width - shadowWidth, 0, shadowWidth, height)
+  }
+  context.restore()
 }
 
 function drawBoardSeams(
@@ -441,7 +483,7 @@ export function bridgeDeckMask(
   cellSize: number,
   treatment: Pick<
     BridgeDeckTreatment,
-    'portalOverlapCells' | 'sideOverhangCells'
+    'portalOverlapCells' | 'portalMaskInsetCells' | 'sideOverhangCells'
   > = HEARTHSIDE_STYLE.terrain.planks,
   outerPaddingCells = 0,
 ): Graphics {
@@ -457,7 +499,7 @@ export function appendBridgeDeckMask(
   cellSize: number,
   treatment: Pick<
     BridgeDeckTreatment,
-    'portalOverlapCells' | 'sideOverhangCells'
+    'portalOverlapCells' | 'portalMaskInsetCells' | 'sideOverhangCells'
   > = HEARTHSIDE_STYLE.terrain.planks,
   outerPaddingCells = 0,
 ): void {
@@ -480,12 +522,17 @@ export function appendBridgeDeckMask(
     return
   }
   const bounds = deckBounds(component, treatment, outerPaddingCells)
+  const portalInset = treatment.portalMaskInsetCells
+  const maskedBounds =
+    bounds.runAxis === 'horizontal'
+      ? { ...bounds, minX: bounds.minX + portalInset, maxX: bounds.maxX - portalInset }
+      : { ...bounds, minY: bounds.minY + portalInset, maxY: bounds.maxY - portalInset }
   mask
     .rect(
-      bounds.minX * cellSize,
-      bounds.minY * cellSize,
-      (bounds.maxX - bounds.minX) * cellSize,
-      (bounds.maxY - bounds.minY) * cellSize,
+      maskedBounds.minX * cellSize,
+      maskedBounds.minY * cellSize,
+      (maskedBounds.maxX - maskedBounds.minX) * cellSize,
+      (maskedBounds.maxY - maskedBounds.minY) * cellSize,
     )
     .fill('#ffffff')
 }

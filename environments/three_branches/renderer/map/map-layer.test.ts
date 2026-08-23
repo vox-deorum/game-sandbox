@@ -59,6 +59,7 @@ function canvasContext(): CanvasRenderingContext2D {
     rect: vi.fn(),
     clip: vi.fn(),
     fillRect: vi.fn(),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
     drawImage: vi.fn(),
     restore: vi.fn(),
     translate: vi.fn(),

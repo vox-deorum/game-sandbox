@@ -391,6 +391,20 @@ describe('Three Branches asset catalog', () => {
     )
   })
 
+  it('keeps canonical stall sources as clean 1536x1024 RGBA images', () => {
+    for (const sourcePath of [
+      './assets/source-art/stall/a/open.png',
+      './assets/source-art/stall/a/closed.png',
+      './assets/source-art/stall/b/open.png',
+      './assets/source-art/stall/b/closed.png',
+      './assets/source-art/stall/c/open.png',
+      './assets/source-art/stall/c/closed.png',
+    ]) {
+      expect(readPngHeader(sourcePath)).toEqual({ width: 1536, height: 1024, colorType: 6 })
+      expect(coloredTransparentPixelCount(sourcePath)).toBe(0)
+    }
+  })
+
   it('keeps the configured thumbnail source decodable and the runtime image at output dimensions', () => {
     const source = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.source)
     const runtime = readPngHeader(THREE_BRANCHES_THUMBNAIL_ASSET.path)

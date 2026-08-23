@@ -349,11 +349,13 @@ describe('Hearthside Ink presentation', () => {
       boardsPerCell: 3,
       widthVariation: 0.1,
       portalOverlapCells: 0.5,
+      portalMaskInsetCells: 0.1,
       sideOverhangCells: 0.05,
       sourceOverscanCells: 0.08,
       sourcePhaseCells: 0.04,
       portalSourceOverscanCells: 0.05,
       seam: { tint: 'backdrop', opacity: 0.35, widthCells: 0.025 },
+      edgeShadow: { tint: 'backdrop', opacity: 0.24, widthCells: 0.08 },
     })
 
     const unknownKey = structuredClone(HEARTHSIDE_STYLE) as any
@@ -390,15 +392,29 @@ describe('Hearthside Ink presentation', () => {
     maximumOverlap.terrain.planks.portalOverlapCells = 0.5
     expect(readHearthsideStyle(maximumOverlap).terrain.planks.portalOverlapCells).toBe(0.5)
 
+    const excessiveMaskInset = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveMaskInset.terrain.planks.portalMaskInsetCells = 0.501
+    expect(() => readHearthsideStyle(excessiveMaskInset)).toThrow('portalMaskInsetCells')
+
+    const overlapBelowMaskInset = structuredClone(HEARTHSIDE_STYLE) as any
+    overlapBelowMaskInset.terrain.planks.portalOverlapCells = 0.09
+    expect(() => readHearthsideStyle(overlapBelowMaskInset)).toThrow('portalMaskInsetCells')
+
+    const zeroMaskInset = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroMaskInset.terrain.planks.portalMaskInsetCells = 0
+    expect(readHearthsideStyle(zeroMaskInset).terrain.planks.portalMaskInsetCells).toBe(0)
+
     const invalidOverhang = structuredClone(HEARTHSIDE_STYLE) as any
     invalidOverhang.terrain.planks.sideOverhangCells = -0.01
     expect(() => readHearthsideStyle(invalidOverhang)).toThrow('sideOverhangCells')
 
     const zeroOverlap = structuredClone(HEARTHSIDE_STYLE) as any
     zeroOverlap.terrain.planks.portalOverlapCells = 0
+    zeroOverlap.terrain.planks.portalMaskInsetCells = 0
     zeroOverlap.terrain.planks.sideOverhangCells = 0
     expect(readHearthsideStyle(zeroOverlap).terrain.planks).toMatchObject({
       portalOverlapCells: 0,
+      portalMaskInsetCells: 0,
       sideOverhangCells: 0,
     })
 
@@ -440,15 +456,11 @@ describe('Hearthside Ink presentation', () => {
 
     const excessivePortalOverscan = structuredClone(HEARTHSIDE_STYLE) as any
     excessivePortalOverscan.terrain.planks.portalSourceOverscanCells = 0.101
-    expect(() => readHearthsideStyle(excessivePortalOverscan)).toThrow(
-      'portalSourceOverscanCells',
-    )
+    expect(() => readHearthsideStyle(excessivePortalOverscan)).toThrow('portalSourceOverscanCells')
 
     const negativePortalOverscan = structuredClone(HEARTHSIDE_STYLE) as any
     negativePortalOverscan.terrain.planks.portalSourceOverscanCells = -0.001
-    expect(() => readHearthsideStyle(negativePortalOverscan)).toThrow(
-      'portalSourceOverscanCells',
-    )
+    expect(() => readHearthsideStyle(negativePortalOverscan)).toThrow('portalSourceOverscanCells')
 
     const nonFiniteOverscan = structuredClone(HEARTHSIDE_STYLE) as any
     nonFiniteOverscan.terrain.planks.sourceOverscanCells = Number.NaN
@@ -471,6 +483,22 @@ describe('Hearthside Ink presentation', () => {
     const excessiveEdgeWidth = structuredClone(HEARTHSIDE_STYLE) as any
     excessiveEdgeWidth.terrain.planks.seam.widthCells = 0.051
     expect(() => readHearthsideStyle(excessiveEdgeWidth)).toThrow('seam.widthCells')
+
+    const invalidShadowTint = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidShadowTint.terrain.planks.edgeShadow.tint = 'orange'
+    expect(() => readHearthsideStyle(invalidShadowTint)).toThrow('edgeShadow.tint is unknown')
+
+    const invalidShadowOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidShadowOpacity.terrain.planks.edgeShadow.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidShadowOpacity)).toThrow('edgeShadow.opacity')
+
+    const invalidShadowWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidShadowWidth.terrain.planks.edgeShadow.widthCells = 0
+    expect(() => readHearthsideStyle(invalidShadowWidth)).toThrow('edgeShadow.widthCells')
+
+    const excessiveShadowWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveShadowWidth.terrain.planks.edgeShadow.widthCells = 0.151
+    expect(() => readHearthsideStyle(excessiveShadowWidth)).toThrow('edgeShadow.widthCells')
   })
 
   it('requires the character walk frame ratio to fit within one recorded tick', () => {

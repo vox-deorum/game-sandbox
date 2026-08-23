@@ -1244,6 +1244,7 @@
       "boardsPerCell": 3,
       "widthVariation": 0.10,
       "portalOverlapCells": 0.50,
+      "portalMaskInsetCells": 0.20,
       "sideOverhangCells": 0.05,
       "sourceOverscanCells": 0.08,
       "sourcePhaseCells": 0.04,
@@ -1252,6 +1253,11 @@
         "tint": "backdrop",
         "opacity": 0.35,
         "widthCells": 0.025
+      },
+      "edgeShadow": {
+        "tint": "backdrop",
+        "opacity": 0.24,
+        "widthCells": 0.1
       }
     },
     "upperWall": {
