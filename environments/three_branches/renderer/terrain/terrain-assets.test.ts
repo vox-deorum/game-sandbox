@@ -86,6 +86,47 @@ function transparentSeamRuns(pixels: Uint8ClampedArray, direction: 'columns' | '
   return runs
 }
 
+function opaquePlankRuns(pixels: Uint8ClampedArray, direction: 'columns' | 'rows'): number[] {
+  const planks = Array.from({ length: SIZE }, (_, primary) => {
+    let alpha = 0
+    for (let secondary = 0; secondary < SIZE; secondary += 1) {
+      const x = direction === 'columns' ? primary : secondary
+      const y = direction === 'columns' ? secondary : primary
+      alpha += channel(pixels, x, y, 3)
+    }
+    return alpha / SIZE >= 160
+  })
+  const runs: number[] = []
+  for (let index = 0; index < planks.length; ) {
+    if (!planks[index]) {
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (planks[end]) end += 1
+    runs.push(end - index)
+    index = end
+  }
+  return runs
+}
+
+function edgeHalfGapWidths(pixels: Uint8ClampedArray, direction: 'columns' | 'rows'): [number, number] {
+  const nearTransparent = (primary: number): boolean => {
+    let clear = 0
+    for (let secondary = 0; secondary < SIZE; secondary += 1) {
+      const x = direction === 'columns' ? primary : secondary
+      const y = direction === 'columns' ? secondary : primary
+      if (channel(pixels, x, y, 3) <= 16) clear += 1
+    }
+    return clear >= SIZE * 0.6
+  }
+  let start = 0
+  while (start < SIZE && nearTransparent(start)) start += 1
+  let end = 0
+  while (end < SIZE && nearTransparent(SIZE - end - 1)) end += 1
+  return [start, end]
+}
+
 function edge(pixels: Uint8ClampedArray, side: 'top' | 'right' | 'bottom' | 'left'): number[] {
   return Array.from({ length: SIZE }, (_, offset) => {
     const x = side === 'left' ? 0 : side === 'right' ? SIZE - 1 : offset
@@ -126,11 +167,11 @@ describe('Three Branches terrain raster contract', () => {
     }
   })
 
-  it('preserves transparency in bridge planks and shallow upper walls', () => {
+  it('preserves broad water gaps in bridge planks and shallow upper walls', () => {
     for (const name of ['bridgeA', 'bridgeB', 'bridgeC']) {
       const coverage = alphaMassCoverage(frame(name))
-      expect(coverage).toBeGreaterThanOrEqual(0.88)
-      expect(coverage).toBeLessThanOrEqual(0.96)
+      expect(coverage).toBeGreaterThanOrEqual(0.8)
+      expect(coverage).toBeLessThanOrEqual(0.87)
     }
     for (const name of ['wallA', 'wallB', 'wallC', 'wallD']) {
       const pixels = frame(name)
@@ -141,17 +182,40 @@ describe('Three Branches terrain raster contract', () => {
     }
   })
 
-  it('uses narrow perpendicular water seams for semantic horizontal and vertical decks', () => {
+  it('uses three broad plank spans with 5 to 8 pixel water gaps in each deck orientation', () => {
     const horizontal = frame('bridgeA')
     const vertical = frame('bridgeB')
+    const compact = frame('bridgeC')
     const horizontalSeams = transparentSeamRuns(horizontal, 'columns')
     const horizontalCrossSeams = transparentSeamRuns(horizontal, 'rows')
     const verticalSeams = transparentSeamRuns(vertical, 'rows')
     const verticalCrossSeams = transparentSeamRuns(vertical, 'columns')
-    expect(horizontalSeams.length).toBeGreaterThanOrEqual(3)
-    expect(verticalSeams.length).toBeGreaterThanOrEqual(3)
-    expect(Math.max(...horizontalSeams)).toBeLessThanOrEqual(5)
-    expect(Math.max(...verticalSeams)).toBeLessThanOrEqual(5)
+    const compactSeams = transparentSeamRuns(compact, 'columns')
+    const plankSpans = [
+      opaquePlankRuns(horizontal, 'columns'),
+      opaquePlankRuns(vertical, 'rows'),
+      opaquePlankRuns(compact, 'columns'),
+    ]
+    const edgeHalfGaps = [
+      edgeHalfGapWidths(horizontal, 'columns'),
+      edgeHalfGapWidths(vertical, 'rows'),
+      edgeHalfGapWidths(compact, 'columns'),
+    ]
+    for (const seams of [horizontalSeams, verticalSeams, compactSeams]) {
+      expect(seams).toHaveLength(4)
+      for (const width of seams.slice(1, -1)) {
+        expect(width).toBeGreaterThanOrEqual(5)
+        expect(width).toBeLessThanOrEqual(8)
+      }
+    }
+    for (const spans of plankSpans) {
+      expect(spans).toHaveLength(3)
+      for (const width of spans) {
+        expect(width).toBeGreaterThanOrEqual(30)
+        expect(width).toBeLessThanOrEqual(40)
+      }
+    }
+    for (const halves of edgeHalfGaps) expect(halves).toEqual([4, 4])
     expect(horizontalSeams.length).toBeGreaterThan(horizontalCrossSeams.length)
     expect(verticalSeams.length).toBeGreaterThan(verticalCrossSeams.length)
   })
@@ -168,20 +232,22 @@ describe('Three Branches terrain pixel composition', () => {
     expect(Math.max(...first.filter((_, index) => index % 4 === 0))).toBeLessThanOrEqual(180)
   })
 
-  it('leaves water visible between bridge planks', () => {
+  it('leaves water visible between every bridge plank treatment', () => {
     const water = frame('rippleB')
-    const planks = frame('bridgeA')
     opaqueFillPixels(water, '#6480a0')
-    tintedMaskPixels(planks, '#6d4a36')
-    const result = sourceOver(water, planks)
-    let unchanged = 0
-    let changed = 0
-    for (let index = 0; index < result.length; index += 4) {
-      if (result[index] === water[index] && result[index + 1] === water[index + 1]) unchanged += 1
-      else changed += 1
+    for (const name of ['bridgeA', 'bridgeB', 'bridgeC']) {
+      const planks = frame(name)
+      tintedMaskPixels(planks, '#6d4a36')
+      const result = sourceOver(water, planks)
+      let unchanged = 0
+      let changed = 0
+      for (let index = 0; index < result.length; index += 4) {
+        if (result[index] === water[index] && result[index + 1] === water[index + 1]) unchanged += 1
+        else changed += 1
+      }
+      expect(unchanged).toBeGreaterThan(0)
+      expect(changed).toBeGreaterThan(0)
     }
-    expect(unchanged).toBeGreaterThan(0)
-    expect(changed).toBeGreaterThan(0)
   })
 
   it('repaints only a shallow upper-wall band', () => {

@@ -59,7 +59,9 @@ Desired result: terrain carries the Hearthside Ink material character and route 
 
 Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
 
-The live renderer has no daytime authored grade. Terrain uses dedicated material colours, an even road base, and worn-stone path art. The current path treatment awaits owner visual approval, and both unit gates remain open.
+The live renderer has no daytime authored grade. Terrain uses dedicated material colours, an even road base, and worn-stone path art. The current path treatment awaits owner visual approval, and terrain Gate B remains open.
+
+The owner selected the broad-hewn plank direction for the bridge texture. Each tile uses three broad boards with two 5 to 8 pixel water gaps, plus half-gaps at its repeating edges, so the deck retains a low-frequency read at fitted scale. The selected generated source, prompt, and reusable normalization recipe are retained in `../art/bridge-texture-production-1/`. Gate A records this owner choice. Gate B remains pending visual integration in the fixture and generated villages.
 
 The bridge-only direct pass keeps the terrain source atlas unmipmapped. Its three tinted, canvas-baked plank textures generate mipmaps independently, so terrain fills, transitions, upper walls, and route art keep their existing sampling. Bridge tint is `#a17d58`; deck-mask shadows use 0.10 opacity with a southward offset of 0.025 cells; the existing 0.025-cell texture bleed remains. The pass retains bridge geometry, orientation mapping, route ownership, portal and deck masks, water semantics, collision, and layer order.
 
