@@ -40,7 +40,7 @@ Daytime is ungraded. The night grade covers terrain and authored world art durin
 
 ## Characters, props, and dressing
 
-Characters use a conventional directly overhead projection. Assemble the complete character around its centre, rotate it to recorded heading, and advance its walk cycle from displayed movement so it slows and stops with the character. Shadows, direction marks, tint combinations, and optional clothing details remain deterministic. The visitor retains a small cinnabar distinction. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
+Characters use a conventional directly overhead projection. Assemble each full-colour cast set from one static base and one canonical arm pair around its centre, then rotate the complete character to recorded heading. Drive opposing shoulder rotation from displayed walk distance so movement is seek-safe and settles to rest with the character. Visitor identity and villager hat selection remain deterministic. Shadows and direction marks remain deterministic, and the visitor retains a small cinnabar far mark. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 

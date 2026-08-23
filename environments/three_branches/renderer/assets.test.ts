@@ -150,6 +150,35 @@ describe('Three Branches asset catalog', () => {
     )
   })
 
+  it('keeps the four cast sets on one full-color registered page', () => {
+    const characters = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'characters')
+    if (characters === undefined || 'layers' in characters) {
+      throw new Error('Character atlas group is required.')
+    }
+    expect(characters).toMatchObject({
+      width: 576,
+      height: 768,
+      tintable: false,
+      format: 'full-color',
+      mipmaps: true,
+      frames: { width: 192, height: 192, columns: 3, rows: 4 },
+    })
+    expect(characters.frames.names).toEqual([
+      'visitorBase',
+      'visitorLeftArm',
+      'visitorRightArm',
+      'feltCapBase',
+      'feltCapLeftArm',
+      'feltCapRightArm',
+      'quiltedCapBase',
+      'quiltedCapLeftArm',
+      'quiltedCapRightArm',
+      'linenBonnetBase',
+      'linenBonnetLeftArm',
+      'linenBonnetRightArm',
+    ])
+  })
+
   it('keeps one clean, mipmapped full-roof page for each semantic building type', () => {
     const buildings = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'buildings')
     if (buildings === undefined || !('layers' in buildings)) {
@@ -181,7 +210,7 @@ describe('Three Branches asset catalog', () => {
   it('accepts arbitrary catalog group and layer names while rejecting duplicate and malformed entries', () => {
     const arbitraryNames = mutableCatalog()
     catalogEntry(arbitraryNames, 0).name = 'meadows'
-    const residents = catalogEntry(arbitraryNames, 7)
+    const residents = catalogEntry(arbitraryNames, 1)
     residents.name = 'residents'
     catalogEntry(catalogLayers(residents), 0).name = 'forms'
     const parsed = readThreeBranchesAssetCatalog(arbitraryNames)
@@ -198,7 +227,7 @@ describe('Three Branches asset catalog', () => {
     )
 
     const duplicateLayers = mutableCatalog()
-    const layers = catalogLayers(catalogEntry(duplicateLayers, 7))
+    const layers = catalogLayers(catalogEntry(duplicateLayers, 1))
     catalogEntry(layers, 1).name = catalogEntry(layers, 0).name
     expect(() => readThreeBranchesAssetCatalog(duplicateLayers)).toThrow(
       'must not contain duplicate layer names',
@@ -377,10 +406,7 @@ describe('Three Branches asset catalog', () => {
 
     expect(load).toHaveBeenCalledTimes(ATLAS_PAGES.length)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
-    expect(assets.characters.body).toMatch(/characters-body-atlas\.png/)
-    expect(assets.characters.clothing).toMatch(/characters-clothing-atlas\.png/)
-    expect(assets.characters.arms).toMatch(/characters-arms-atlas\.png/)
-    expect(assets.characters.details).toMatch(/characters-details-atlas\.png/)
+    expect(assets.characters).toMatch(/characters-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
     expect(assets.lantern).toMatch(/lantern-atlas\.png/)
     expect(assets.monuments).toMatch(/monuments-atlas\.png/)
@@ -418,24 +444,10 @@ describe('Three Branches asset catalog', () => {
         expect.stringMatching(/buildings-shed-atlas\.png/),
       ]),
     )
-    expect(mipmappedSources).toHaveLength(8)
+    expect(mipmappedSources).toHaveLength(9)
     for (const [, options] of mipmappedCalls) {
       expect(options).toEqual({ autoGenerateMipmaps: true })
     }
   })
 
-  it('keeps every character layer non-mipmapped when its catalog group disables mipmaps', async () => {
-    const load = vi.fn((source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => ({
-      source,
-      options,
-    }))
-
-    await loadThreeBranchesRuntimeAssets(load)
-
-    for (const [source, options] of load.mock.calls) {
-      if (/characters-(body|clothing|arms|details)-atlas\.png/.test(source)) {
-        expect(options).toBeUndefined()
-      }
-    }
-  })
 })

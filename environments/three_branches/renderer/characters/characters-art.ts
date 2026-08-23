@@ -1,55 +1,42 @@
 import { degreesToRadians, stableHashParts } from '@renderers/base/math.js'
 
-import { HEARTHSIDE_STYLE, type HearthsidePaletteKey } from '../core/presentation.js'
+import {
+  HEARTHSIDE_STYLE,
+  type CharacterCastSet,
+  type HearthsidePaletteKey,
+} from '../core/presentation.js'
 
-const walkFrames = HEARTHSIDE_STYLE.characters.walk.frames
-
-/** Configured still frame shared by every assembled character. */
-export const CHARACTER_REST_FRAME = requiredFrame(walkFrames[0], 'rest')
-
-/** The configured short seek-safe walking loop shared by every assembled character. */
-export const CHARACTER_WALK_CYCLE = [
-  requiredFrame(walkFrames[1], 'first walking'),
-  requiredFrame(walkFrames[2], 'passing'),
-  requiredFrame(walkFrames[3], 'second walking'),
-  requiredFrame(walkFrames[2], 'passing'),
-] as const
-
-/** Stable palette and optional clothing detail selected for one player id. */
+/** The selected full-color cast set and its far-view mark treatment. */
 export interface CharacterStyle {
-  clothingTint: HearthsidePaletteKey
-  detail: string | null
-  detailTint: HearthsidePaletteKey
-  markTint: HearthsidePaletteKey
+  set: CharacterCastSet
+  farMarkTint: HearthsidePaletteKey
 }
 
-/** Select one character treatment without depending on roster order or renderer history. */
+/** Select a cast set without depending on roster order or renderer history. */
 export function characterStyle(playerId: string): CharacterStyle {
-  const tints = HEARTHSIDE_STYLE.characters.clothingTints
-  const clothingTint = pick(tints, stableHashParts('character-clothing', playerId))
-  if (playerId === 'player_0') {
-    const visitor = HEARTHSIDE_STYLE.characters.visitor
-    return {
-      clothingTint,
-      detail: visitor.detail,
-      detailTint: visitor.tint,
-      markTint: visitor.tint,
-    }
-  }
-
-  const details = HEARTHSIDE_STYLE.characters.details
-  const detailIndex = stableHashParts('character-detail', playerId) % (details.length + 1)
-  const detail = detailIndex === details.length ? null : (details[detailIndex] ?? null)
-  const detailTint = pick(tints, stableHashParts('character-detail-tint', playerId))
-  return { clothingTint, detail, detailTint, markTint: clothingTint }
+  const set =
+    playerId === 'player_0'
+      ? HEARTHSIDE_STYLE.characters.cast.visitor
+      : pick(
+          HEARTHSIDE_STYLE.characters.cast.villagers,
+          stableHashParts('character-cast', playerId),
+        )
+  return { set, farMarkTint: set.farMarkTint }
 }
 
-/** Resolve the exact pose at one walked distance. A still character always rests. */
-export function characterWalkFrame(playerId: string, walkDistance: number, moved: number): string {
-  if (moved <= 0) return CHARACTER_REST_FRAME
-  const elapsedPoses = Math.floor(walkDistance / HEARTHSIDE_STYLE.characters.walk.frameRatio)
-  const playerPhase = stableHashParts('character-walk', playerId) % CHARACTER_WALK_CYCLE.length
-  return CHARACTER_WALK_CYCLE[(elapsedPoses + playerPhase) % CHARACTER_WALK_CYCLE.length]!
+/** Compute the seek-safe opposing shoulder swing at one displayed walked distance. */
+export function characterArmAngles(
+  playerId: string,
+  walkDistance: number,
+  moved: number,
+): { left: number; right: number } {
+  const { frameRatio, armAmplitudeRadians } = HEARTHSIDE_STYLE.characters.walk
+  const phaseOffset = stableHashParts('character-walk', playerId) % 4
+  const phase = (2 * Math.PI * walkDistance) / (frameRatio * 4) + phaseOffset * (Math.PI / 2)
+  const strength = Math.max(0, Math.min(1, moved / frameRatio))
+  if (strength === 0) return { left: 0, right: 0 }
+  const swing = armAmplitudeRadians * Math.sin(phase) * strength
+  return { left: swing, right: -swing }
 }
 
 /** Turn a north-authored sprite to an exact environment heading in Pixi screen axes. */
@@ -59,11 +46,6 @@ export function characterRotation(heading: number): number {
 
 function pick<Value>(values: readonly Value[], hash: number): Value {
   const value = values[hash % values.length]
-  if (value === undefined) throw new Error('Three Branches character style pool is empty.')
+  if (value === undefined) throw new Error('Three Branches character cast pool is empty.')
   return value
-}
-
-function requiredFrame(frame: string | undefined, role: string): string {
-  if (frame === undefined) throw new Error(`Three Branches character ${role} frame is missing.`)
-  return frame
 }

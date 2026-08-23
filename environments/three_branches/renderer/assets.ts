@@ -392,7 +392,7 @@ function buildPage(
   }
 }
 
-/** The source-art manifests for the twelve compiled Three Branches atlas pages. */
+/** The source-art manifests for the configured Three Branches atlas pages. */
 export const ATLAS_PAGES = atlasBuildPages(THREE_BRANCHES_ASSET_CATALOG)
 
 export interface ThreeBranchesRuntimeAssets<T> {
@@ -403,7 +403,7 @@ export interface ThreeBranchesRuntimeAssets<T> {
   bell: T
   buildings: { home: T; inn: T; shed: T }
   scenery: T
-  characters: { body: T; clothing: T; arms: T; details: T }
+  characters: T
   effects: T
 }
 
@@ -454,12 +454,7 @@ export async function loadThreeBranchesRuntimeAssets<T>(
       shed: required('buildings', 'shed'),
     },
     scenery: required('scenery'),
-    characters: {
-      body: required('characters', 'body'),
-      clothing: required('characters', 'clothing'),
-      arms: required('characters', 'arms'),
-      details: required('characters', 'details'),
-    },
+    characters: required('characters'),
     effects: required('effects'),
   }
 }

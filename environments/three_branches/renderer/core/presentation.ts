@@ -301,6 +301,22 @@ export interface SourceFrameSize {
   height: number
 }
 
+/** One full-color arm sprite registered to a static cast base. */
+export interface CharacterArmTreatment {
+  frame: string
+  pivot: SourcePixelAnchor
+  anchor: SourcePixelAnchor
+}
+
+/** One deterministic full-color character cast set. */
+export interface CharacterCastSet {
+  id: string
+  base: string
+  leftArm: CharacterArmTreatment
+  rightArm: CharacterArmTreatment
+  farMarkTint: HearthsidePaletteKey
+}
+
 export type RegisteredPropSpriteRole = 'lower' | 'upper' | 'moving' | 'full'
 
 export interface RegisteredPropSwingTreatment {
@@ -361,10 +377,8 @@ export interface HearthsideStyle {
     propContactShadow: PropContactShadowTreatment
   }
   characters: {
-    clothingTints: readonly HearthsidePaletteKey[]
-    details: readonly string[]
-    walk: { frames: readonly string[]; frameRatio: number; deadZone: number }
-    visitor: { detail: string; tint: HearthsidePaletteKey }
+    cast: { visitor: CharacterCastSet; villagers: readonly CharacterCastSet[] }
+    walk: { frameRatio: number; deadZone: number; armAmplitudeRadians: number }
   }
   props: PropVisualTreatment
   scenery: VisualScaleTreatment
@@ -587,32 +601,46 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   const charactersSource = exactRecord(source.characters, 'presentation.characters', [
-    'clothingTints',
-    'details',
+    'cast',
     'walk',
-    'visitor',
   ])
-  const detailFrames = framesFor(atlases, 'characters', 'details')
-  const poseFrames = framesFor(atlases, 'characters', 'body')
+  const characterFrames = framesFor(atlases, 'characters')
+  const castSource = exactRecord(charactersSource.cast, 'presentation.characters.cast', [
+    'visitor',
+    'villagers',
+  ])
+  const visitor = characterCastSet(
+    castSource.visitor,
+    'presentation.characters.cast.visitor',
+    characterFrames,
+    paletteNames,
+  )
+  const villagersSource = array(
+    castSource.villagers,
+    'presentation.characters.cast.villagers',
+  )
+  if (villagersSource.length !== 3) {
+    throw new Error('presentation.characters.cast.villagers must contain exactly three sets.')
+  }
+  const villagers = villagersSource.map((value, index) =>
+    characterCastSet(
+      value,
+      `presentation.characters.cast.villagers[${index}]`,
+      characterFrames,
+      paletteNames,
+    ),
+  )
+  if (new Set(villagers.map((set) => set.id)).size !== villagers.length) {
+    throw new Error('presentation.characters.cast.villagers must not repeat ids.')
+  }
   const walkSource = exactRecord(charactersSource.walk, 'presentation.characters.walk', [
-    'frames',
     'frameRatio',
     'deadZone',
-  ])
-  const visitorSource = exactRecord(charactersSource.visitor, 'presentation.characters.visitor', [
-    'detail',
-    'tint',
+    'armAmplitudeRadians',
   ])
   const characters = {
-    clothingTints: array(
-      charactersSource.clothingTints,
-      'presentation.characters.clothingTints',
-    ).map((item, index) =>
-      paletteKey(item, paletteNames, `presentation.characters.clothingTints[${index}]`),
-    ),
-    details: frameNames(charactersSource.details, 'presentation.characters.details', detailFrames),
+    cast: { visitor, villagers },
     walk: {
-      frames: frameNames(walkSource.frames, 'presentation.characters.walk.frames', poseFrames),
       frameRatio: boundedNumber(
         walkSource.frameRatio,
         'presentation.characters.walk.frameRatio',
@@ -620,14 +648,13 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
         1,
       ),
       deadZone: boundedNumber(walkSource.deadZone, 'presentation.characters.walk.deadZone', 0, 1),
-    },
-    visitor: {
-      detail: knownText(
-        visitorSource.detail,
-        detailFrames,
-        'presentation.characters.visitor.detail',
+      armAmplitudeRadians: boundedNumber(
+        walkSource.armAmplitudeRadians,
+        'presentation.characters.walk.armAmplitudeRadians',
+        0,
+        Math.PI / 2,
+        true,
       ),
-      tint: paletteKey(visitorSource.tint, paletteNames, 'presentation.characters.visitor.tint'),
     },
   }
 
@@ -1267,6 +1294,47 @@ function frameTreatment(
   return {
     frames: frameNames(source.frames, `${name}.frames`, knownFrames),
     tint: paletteKey(source.tint, palette, `${name}.tint`),
+  }
+}
+
+function characterCastSet(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+  palette: ReadonlySet<string>,
+): CharacterCastSet {
+  const source = exactRecord(value, name, ['id', 'base', 'leftArm', 'rightArm', 'farMarkTint'])
+  if (typeof source.id !== 'string' || source.id.length === 0) {
+    throw new Error(`${name}.id must be a non-empty string.`)
+  }
+  return {
+    id: source.id,
+    base: knownText(source.base, knownFrames, `${name}.base`),
+    leftArm: characterArmTreatment(
+      source.leftArm,
+      `${name}.leftArm`,
+      knownFrames,
+    ),
+    rightArm: characterArmTreatment(
+      source.rightArm,
+      `${name}.rightArm`,
+      knownFrames,
+    ),
+    farMarkTint: paletteKey(source.farMarkTint, palette, `${name}.farMarkTint`),
+  }
+}
+
+function characterArmTreatment(
+  value: unknown,
+  name: string,
+  knownFrames: ReadonlySet<string>,
+): CharacterArmTreatment {
+  const source = exactRecord(value, name, ['frame', 'pivot', 'anchor'])
+  const frameSize = { width: 192, height: 192 }
+  return {
+    frame: knownText(source.frame, knownFrames, `${name}.frame`),
+    pivot: sourcePixelAnchor(source.pivot, `${name}.pivot`, frameSize),
+    anchor: sourcePixelAnchor(source.anchor, `${name}.anchor`, frameSize),
   }
 }
 

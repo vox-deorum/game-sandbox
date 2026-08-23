@@ -1,25 +1,21 @@
 import { Container, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
-import { THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording } from '../core/test-helpers.js'
 import type { FrameScene } from '../core/types.js'
 import { buildStaticScene, computeScene } from '../map/scene.js'
 import { expectedCharacterIds, readStatic } from '../ui/overlay.js'
 import { type CharacterArt, createCharacterLayer } from './characters.js'
 
-const POSES = ['rest', 'leftForward', 'pass', 'rightForward'] as const
-const DETAILS = ['hairKnot', 'reedCap', 'headscarf', 'visitorTie'] as const
-
-function textures(names: readonly string[]): Readonly<Record<string, Texture>> {
-  return Object.fromEntries(names.map((name) => [name, Texture.WHITE]))
-}
-
 function characterArt(): CharacterArt {
+  const sets = [HEARTHSIDE_STYLE.characters.cast.visitor, ...HEARTHSIDE_STYLE.characters.cast.villagers]
   return {
-    body: textures(POSES),
-    clothing: textures(POSES),
-    arms: textures(POSES),
-    details: textures(DETAILS),
+    sets: Object.fromEntries(
+      sets.map((set) => [
+        set.id,
+        { base: Texture.WHITE, leftArm: Texture.WHITE, rightArm: Texture.WHITE },
+      ]),
+    ),
     shadow: Texture.WHITE,
     directionMark: Texture.WHITE,
   }
@@ -65,10 +61,9 @@ describe('Three Branches retained characters', () => {
     for (const label of [
       'character-shadow',
       'character-rotor',
-      'character-body',
-      'character-clothing',
-      'character-arms',
-      'character-detail',
+      'character-base',
+      'character-left-arm',
+      'character-right-arm',
       'character-direction-mark',
     ]) {
       expect(descendant(visitorBefore, label)).toBeDefined()
@@ -97,5 +92,27 @@ describe('Three Branches retained characters', () => {
     characters.reconcile(scene, threshold, fittedZoom)
     expect(descendant(visitor, 'character-far-mark').visible).toBe(false)
     expect(descendant(visitor, 'character-rotor').visible).toBe(true)
+  })
+
+  it('keeps the full-color base static while opposing arms follow the displayed walk phase', () => {
+    const view = new Container()
+    const characters = createCharacterLayer(view)
+    const scene = fixtureScene()
+    characters.install(characterArt())
+    const walking = {
+      ...scene,
+      characters: scene.characters.map((character, index) =>
+        index === 0 ? { ...character, walkDistance: 0.23, moved: 0.5 } : character,
+      ),
+    }
+
+    characters.reconcile(walking, 8, 2)
+    const visitor = descendant(view, 'character:player_0')
+    const base = descendant(visitor, 'character-base') as unknown as { texture: Texture }
+    const left = descendant(visitor, 'character-left-arm') as unknown as { rotation: number }
+    const right = descendant(visitor, 'character-right-arm') as unknown as { rotation: number }
+    expect(base.texture).toBe(Texture.WHITE)
+    expect(left.rotation).toBeCloseTo(-right.rotation)
+    expect(descendant(visitor, 'character-shadow').visible).toBe(true)
   })
 })

@@ -369,6 +369,34 @@ describe('Hearthside Ink presentation', () => {
     )
   })
 
+  it('requires four registered full-color cast sets with bounded arm registrations', () => {
+    expect(HEARTHSIDE_STYLE.characters.cast.villagers).toHaveLength(3)
+    expect(HEARTHSIDE_STYLE.characters.cast.visitor.leftArm.pivot).toEqual({ x: 49, y: 78 })
+    expect(HEARTHSIDE_STYLE.characters.cast.visitor.rightArm.pivot).toEqual({ x: 143, y: 78 })
+
+    const invalidPivot = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidPivot.characters.cast.visitor.leftArm.pivot.x = 192
+    expect(() => readHearthsideStyle(invalidPivot)).toThrow('must be inside its 192 by 192')
+
+    const invalidCount = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidCount.characters.cast.villagers.pop()
+    expect(() => readHearthsideStyle(invalidCount)).toThrow('exactly three sets')
+
+    const duplicateId = structuredClone(HEARTHSIDE_STYLE) as any
+    duplicateId.characters.cast.villagers[1].id = duplicateId.characters.cast.villagers[0].id
+    expect(() => readHearthsideStyle(duplicateId)).toThrow('must not repeat ids')
+  })
+
+  it('requires arm amplitude to remain within a quarter turn', () => {
+    const zero = structuredClone(HEARTHSIDE_STYLE) as any
+    zero.characters.walk.armAmplitudeRadians = 0
+    expect(readHearthsideStyle(zero).characters.walk.armAmplitudeRadians).toBe(0)
+
+    const excessive = structuredClone(HEARTHSIDE_STYLE) as any
+    excessive.characters.walk.armAmplitudeRadians = Math.PI / 2 + 0.01
+    expect(() => readHearthsideStyle(excessive)).toThrow('armAmplitudeRadians')
+  })
+
   it('requires a positive walk dead zone below one', () => {
     const zeroDeadZone = structuredClone(HEARTHSIDE_STYLE) as any
     zeroDeadZone.characters.walk.deadZone = 0

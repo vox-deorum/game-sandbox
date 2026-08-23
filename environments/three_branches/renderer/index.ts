@@ -698,10 +698,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           assets.buildings.inn,
           assets.buildings.shed,
           assets.scenery,
-          assets.characters.body,
-          assets.characters.clothing,
-          assets.characters.arms,
-          assets.characters.details,
+          assets.characters,
           assets.effects,
         ]
         if (!textures.every((texture) => texture instanceof Texture)) {
@@ -716,7 +713,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           scenery: assets.scenery,
           effects: assets.effects,
         })
-        const characterArt = createCharacterArt({ ...assets.characters, effects: assets.effects })
+        const characterArt = createCharacterArt({
+          characters: assets.characters,
+          effects: assets.effects,
+        })
         let nextMapView: MapLayerView | null = null
         const nextCharacterLayer = new Container()
         const nextUpperLayer = new Container()

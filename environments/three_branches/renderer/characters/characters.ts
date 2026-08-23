@@ -1,32 +1,29 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
+import type { CharacterCastSet } from '../core/presentation.js'
 import type { CharacterDrawable, FrameScene } from '../core/types.js'
 import { type FrameGrid, frameRectangle } from '../ui/tint.js'
-import {
-  CHARACTER_REST_FRAME,
-  characterRotation,
-  characterStyle,
-  characterWalkFrame,
-} from './characters-art.js'
+import { characterArmAngles, characterRotation, characterStyle } from './characters-art.js'
 
 const CHARACTER_SCALE = (THREE_BRANCHES_PRESENTATION.unitsPerMetre / 128) * 0.85
+const CHARACTER_FRAME_SIZE = 192
 
 /** Loaded pages needed to assemble the retained character art. */
 export interface CharacterAtlasTextures {
-  body: Texture
-  clothing: Texture
-  arms: Texture
-  details: Texture
+  characters: Texture
   effects: Texture
+}
+
+interface CharacterSetArt {
+  base: Texture
+  leftArm: Texture
+  rightArm: Texture
 }
 
 /** Named atlas views shared by every retained character node. */
 export interface CharacterArt {
-  body: Readonly<Record<string, Texture>>
-  clothing: Readonly<Record<string, Texture>>
-  arms: Readonly<Record<string, Texture>>
-  details: Readonly<Record<string, Texture>>
+  sets: Readonly<Record<string, CharacterSetArt>>
   shadow: Texture
   directionMark: Texture
 }
@@ -45,34 +42,39 @@ interface CharacterNode {
   farMark: Graphics
   shadow: Sprite | null
   rotor: Container | null
-  body: Sprite | null
-  clothing: Sprite | null
-  arms: Sprite | null
-  detail: Sprite | null
+  base: Sprite | null
+  leftArm: Sprite | null
+  rightArm: Sprite | null
   directionMark: Sprite | null
 }
 
-/** Slice the four character pages and two shared effect frames without changing their sources. */
+/** Slice the full-color character page and two shared effect frames without changing their sources. */
 export function createCharacterArt(atlases: CharacterAtlasTextures): CharacterArt {
   const manifest = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'characters')
-  if (manifest === undefined || !('layers' in manifest)) {
-    throw new Error('Three Branches character atlases are missing.')
-  }
-  const layer = (name: string) => {
-    const found = manifest.layers.find((item) => item.name === name)
-    if (found === undefined) throw new Error(`Three Branches character layer is missing: ${name}`)
-    return found
+  if (manifest === undefined || 'layers' in manifest) {
+    throw new Error('Three Branches character atlas is missing.')
   }
   const effects = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === 'effects')
   if (effects === undefined || 'layers' in effects) {
     throw new Error('Three Branches effects atlas is missing.')
   }
+  const frames = textureViews(atlases.characters, manifest.frames)
   const effectFrames = textureViews(atlases.effects, effects.frames)
+  const sets = [
+    HEARTHSIDE_STYLE.characters.cast.visitor,
+    ...HEARTHSIDE_STYLE.characters.cast.villagers,
+  ]
   return {
-    body: textureViews(atlases.body, layer('body').frames),
-    clothing: textureViews(atlases.clothing, layer('clothing').frames),
-    arms: textureViews(atlases.arms, layer('arms').frames),
-    details: textureViews(atlases.details, layer('details').frames),
+    sets: Object.fromEntries(
+      sets.map((set) => [
+        set.id,
+        {
+          base: requiredTexture(frames, set.base),
+          leftArm: requiredTexture(frames, set.leftArm.frame),
+          rightArm: requiredTexture(frames, set.rightArm.frame),
+        },
+      ]),
+    ),
     shadow: requiredTexture(effectFrames, 'characterShadow'),
     directionMark: requiredTexture(effectFrames, 'directionMark'),
   }
@@ -124,10 +126,9 @@ function createNode(id: string): CharacterNode {
     farMark,
     shadow: null,
     rotor: null,
-    body: null,
-    clothing: null,
-    arms: null,
-    detail: null,
+    base: null,
+    leftArm: null,
+    rightArm: null,
     directionMark: null,
   }
 }
@@ -139,25 +140,28 @@ function installNodeArt(node: CharacterNode, art: CharacterArt): void {
   shadow.alpha = 0.45
   const rotor = new Container({ label: 'character-rotor' })
   const directionMark = characterSprite('character-direction-mark', art.directionMark)
-  const body = characterSprite('character-body', requiredTexture(art.body, CHARACTER_REST_FRAME))
-  const clothing = characterSprite(
-    'character-clothing',
-    requiredTexture(art.clothing, CHARACTER_REST_FRAME),
+  const visitor = requiredSet(art.sets, HEARTHSIDE_STYLE.characters.cast.visitor.id)
+  const base = characterSprite(
+    'character-base',
+    visitor.base,
   )
-  const arms = characterSprite('character-arms', requiredTexture(art.arms, CHARACTER_REST_FRAME))
-  const detail = characterSprite('character-detail', Texture.EMPTY)
+  const leftArm = characterSprite(
+    'character-left-arm',
+    visitor.leftArm,
+  )
+  const rightArm = characterSprite(
+    'character-right-arm',
+    visitor.rightArm,
+  )
   directionMark.tint = HEARTHSIDE_STYLE.palette.ink
-  body.tint = HEARTHSIDE_STYLE.palette.bone
-  arms.tint = HEARTHSIDE_STYLE.palette.parchment
-  rotor.addChild(directionMark, body, clothing, arms, detail)
+  rotor.addChild(directionMark, leftArm, rightArm, base)
   node.root.addChildAt(shadow, 0)
   node.root.addChildAt(rotor, 1)
   node.shadow = shadow
   node.rotor = rotor
-  node.body = body
-  node.clothing = clothing
-  node.arms = arms
-  node.detail = detail
+  node.base = base
+  node.leftArm = leftArm
+  node.rightArm = rightArm
   node.directionMark = directionMark
 }
 
@@ -186,9 +190,10 @@ function drawCharacter(
 
   node.fallback.visible = false
   const style = characterStyle(character.id)
+  const set = requiredSet(art.sets, style.set.id)
   const farView = zoom < fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
   node.farMark.visible = farView
-  drawFarMark(node.farMark, character.radius, style.markTint, rotation)
+  drawFarMark(node.farMark, character.radius, style.farMarkTint, rotation)
   const shadow = requiredPart(node.shadow, 'shadow')
   const rotor = requiredPart(node.rotor, 'rotor')
   shadow.visible = !farView
@@ -196,16 +201,25 @@ function drawCharacter(
   rotor.rotation = rotation
   if (farView) return
 
-  const pose = characterWalkFrame(character.id, character.walkDistance, character.moved)
-  requiredPart(node.body, 'body').texture = requiredTexture(art.body, pose)
-  const clothing = requiredPart(node.clothing, 'clothing')
-  clothing.texture = requiredTexture(art.clothing, pose)
-  clothing.tint = HEARTHSIDE_STYLE.palette[style.clothingTint]
-  requiredPart(node.arms, 'arms').texture = requiredTexture(art.arms, pose)
-  const detail = requiredPart(node.detail, 'detail')
-  detail.visible = style.detail !== null
-  if (style.detail !== null) detail.texture = requiredTexture(art.details, style.detail)
-  detail.tint = HEARTHSIDE_STYLE.palette[style.detailTint]
+  const base = requiredPart(node.base, 'base')
+  const leftArm = requiredPart(node.leftArm, 'left arm')
+  const rightArm = requiredPart(node.rightArm, 'right arm')
+  base.texture = set.base
+  leftArm.texture = set.leftArm
+  rightArm.texture = set.rightArm
+  registerArm(leftArm, style.set.leftArm)
+  registerArm(rightArm, style.set.rightArm)
+  const angles = characterArmAngles(character.id, character.walkDistance, character.moved)
+  leftArm.rotation = angles.left
+  rightArm.rotation = angles.right
+}
+
+function registerArm(sprite: Sprite, arm: CharacterCastSet['leftArm']): void {
+  sprite.anchor.set(arm.pivot.x / CHARACTER_FRAME_SIZE, arm.pivot.y / CHARACTER_FRAME_SIZE)
+  sprite.position.set(
+    (arm.anchor.x - CHARACTER_FRAME_SIZE / 2) * CHARACTER_SCALE,
+    (arm.anchor.y - CHARACTER_FRAME_SIZE / 2) * CHARACTER_SCALE,
+  )
 }
 
 function drawFallback(fallback: Graphics, character: CharacterDrawable, rotation: number): void {
@@ -250,6 +264,15 @@ function requiredTexture(textures: Readonly<Record<string, Texture>>, name: stri
   const texture = textures[name]
   if (texture === undefined) throw new Error(`Three Branches character frame is missing: ${name}`)
   return texture
+}
+
+function requiredSet(
+  sets: Readonly<Record<string, CharacterSetArt>>,
+  name: string,
+): CharacterSetArt {
+  const set = sets[name]
+  if (set === undefined) throw new Error(`Three Branches character cast set is missing: ${name}`)
+  return set
 }
 
 function requiredPart<Value>(value: Value | null, name: string): Value {

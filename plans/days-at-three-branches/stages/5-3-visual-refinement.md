@@ -117,11 +117,17 @@ Keep semantic building extents, collision, and the existing occupancy fade and r
 
 Current roof sources use the approved wash-led family with clean alpha and configured mipmaps. Gate B remains pending until integrated manual review.
 
-### 5. Four layered cast sets
+### 5. Four registered cast sets
 
 Desired result: the visitor and villagers are distinct, legible people at close and middle scale, with clear far marks at fitted view.
 
-Create one visitor set and three villager sets across the existing body, clothing, and arm layers. Keep the visitor identity, deterministic villager selection, recorded heading, walk cadence, shadows, far marks, nameplates, and chip-and-text expressions. Do not add the retired embodied-arm study.
+The owner selected the indigo conical traveler hat for the visitor. The villager appearance pool uses the soft round felt cap, quilted work cap, and pleated linen bonnet. Selection remains deterministic by player identity.
+
+Each cast set uses static body and clothing art plus one canonical left and right arm. Walking animates those arms through seek-safe scripted shoulder rotation driven by displayed walk distance. Do not create raster pose sets or embodied expression poses. Keep recorded heading, walk cadence, shadows, far marks, nameplates, and chip-and-text expressions.
+
+The owner approved the visitor Gate A parts proof in `../art/visitor-rig-comparison-1/`, followed by the felt-cap, quilted-cap, and linen-bonnet villager choices in `../art/villager-comparison-1/`. Production sources, registration data, normalization, prompts, and the assembled cast preview live in `../art/character-rig-production-1/`.
+
+The live renderer uses one full-colour 576 by 768 character atlas. Its four rows are the visitor and three villager sets, and its three columns are the base, left arm, and right arm. The visitor is fixed to `player_0`; villagers select one of the three approved hats through a stable player-id hash. Each arm rotates independently around its registered shoulder, with opposing continuous motion scaled by displayed movement so stopping returns smoothly to rest. The superseded tintable raster pose pages are removed. Gate B remains open for owner review of the integrated scale, movement, projection, and identity read.
 
 ### 6. Monument and effect completion
 

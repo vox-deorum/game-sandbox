@@ -1,0 +1,40 @@
+{
+  "cellSize": 192,
+  "pivot": { "x": 96, "y": 96 },
+  "leftShoulder": { "x": 49, "y": 78 },
+  "rightShoulder": { "x": 143, "y": 78 },
+  "sets": [
+    {
+      "id": "visitor",
+      "sheet": "../visitor-rig-comparison-1/visitor-indigo-rig-proof.png",
+      "scale": 0.26,
+      "base": { "source": [522, 42, 487, 473], "target": [32.69, 18.0] },
+      "leftArm": { "source": [264, 629, 155, 292], "target": [41.0, 78.0] },
+      "rightArm": { "source": [1110, 629, 156, 293], "target": [111.0, 78.0] }
+    },
+    {
+      "id": "feltCap",
+      "sheet": "villager-felt-cap-rig.png",
+      "scale": 0.26,
+      "base": { "source": [522, 102, 483, 494], "target": [33.21, 18.0] },
+      "leftArm": { "source": [240, 611, 151, 311], "target": [41.0, 78.0] },
+      "rightArm": { "source": [1158, 612, 152, 310], "target": [111.0, 78.0] }
+    },
+    {
+      "id": "quiltedCap",
+      "sheet": "villager-quilted-cap-rig.png",
+      "scale": 0.26,
+      "base": { "source": [523, 27, 483, 491], "target": [33.21, 18.0] },
+      "leftArm": { "source": [250, 618, 154, 302], "target": [41.0, 78.0] },
+      "rightArm": { "source": [1105, 618, 155, 302], "target": [111.0, 78.0] }
+    },
+    {
+      "id": "linenBonnet",
+      "sheet": "villager-linen-bonnet-rig.png",
+      "scale": 0.203,
+      "base": { "source": [457, 62, 621, 561], "target": [32.97, 18.0] },
+      "leftArm": { "source": [252, 628, 161, 307], "target": [43.0, 78.0] },
+      "rightArm": { "source": [1121, 627, 162, 308], "target": [116.0, 78.0] }
+    }
+  ]
+}

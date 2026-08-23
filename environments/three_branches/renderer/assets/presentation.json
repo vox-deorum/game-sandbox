@@ -838,164 +838,33 @@
     },
     {
       "name": "characters",
-      "tintable": true,
-      "format": "grayscale-alpha",
-      "consumer": "independently registered overhead body, clothing, arm, and detail masks",
-      "mipmaps": false,
-      "layers": [
-        {
-          "name": "body",
-          "path": "./assets/characters-body-atlas.png",
-          "width": 768,
-          "height": 192,
-          "frames": {
-            "width": 192,
-            "height": 192,
-            "columns": 4,
-            "rows": 1,
-            "cells": [
-              {
-                "name": "rest",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/body/rest.png"
-                }
-              },
-              {
-                "name": "leftForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/body/leftForward.png"
-                }
-              },
-              {
-                "name": "pass",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/body/pass.png"
-                }
-              },
-              {
-                "name": "rightForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/body/rightForward.png"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "clothing",
-          "path": "./assets/characters-clothing-atlas.png",
-          "width": 768,
-          "height": 192,
-          "frames": {
-            "width": 192,
-            "height": 192,
-            "columns": 4,
-            "rows": 1,
-            "cells": [
-              {
-                "name": "rest",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/clothing/rest.png"
-                }
-              },
-              {
-                "name": "leftForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/clothing/leftForward.png"
-                }
-              },
-              {
-                "name": "pass",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/clothing/pass.png"
-                }
-              },
-              {
-                "name": "rightForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/clothing/rightForward.png"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "arms",
-          "path": "./assets/characters-arms-atlas.png",
-          "width": 768,
-          "height": 192,
-          "frames": {
-            "width": 192,
-            "height": 192,
-            "columns": 4,
-            "rows": 1,
-            "cells": [
-              {
-                "name": "rest",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/arms/rest.png"
-                }
-              },
-              {
-                "name": "leftForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/arms/leftForward.png"
-                }
-              },
-              {
-                "name": "pass",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/arms/pass.png"
-                }
-              },
-              {
-                "name": "rightForward",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/arms/rightForward.png"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "details",
-          "path": "./assets/characters-details-atlas.png",
-          "width": 768,
-          "height": 192,
-          "frames": {
-            "width": 192,
-            "height": 192,
-            "columns": 4,
-            "rows": 1,
-            "cells": [
-              {
-                "name": "hairKnot",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/details/hairKnot.png"
-                }
-              },
-              {
-                "name": "reedCap",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/details/reedCap.png"
-                }
-              },
-              {
-                "name": "headscarf",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/details/headscarf.png"
-                }
-              },
-              {
-                "name": "visitorTie",
-                "source": {
-                  "path": "./assets/source-art/frames/characters/details/visitorTie.png"
-                }
-              }
-            ]
-          }
-        }
-      ]
+      "path": "./assets/characters-atlas.png",
+      "width": 576,
+      "height": 768,
+      "tintable": false,
+      "format": "full-color",
+      "consumer": "four full-color static cast bases with independently rotated left and right arms",
+      "mipmaps": true,
+      "frames": {
+        "width": 192,
+        "height": 192,
+        "columns": 3,
+        "rows": 4,
+        "cells": [
+          { "name": "visitorBase", "source": { "path": "./assets/source-art/frames/characters/visitor/base.png" } },
+          { "name": "visitorLeftArm", "source": { "path": "./assets/source-art/frames/characters/visitor/leftArm.png" } },
+          { "name": "visitorRightArm", "source": { "path": "./assets/source-art/frames/characters/visitor/rightArm.png" } },
+          { "name": "feltCapBase", "source": { "path": "./assets/source-art/frames/characters/feltCap/base.png" } },
+          { "name": "feltCapLeftArm", "source": { "path": "./assets/source-art/frames/characters/feltCap/leftArm.png" } },
+          { "name": "feltCapRightArm", "source": { "path": "./assets/source-art/frames/characters/feltCap/rightArm.png" } },
+          { "name": "quiltedCapBase", "source": { "path": "./assets/source-art/frames/characters/quiltedCap/base.png" } },
+          { "name": "quiltedCapLeftArm", "source": { "path": "./assets/source-art/frames/characters/quiltedCap/leftArm.png" } },
+          { "name": "quiltedCapRightArm", "source": { "path": "./assets/source-art/frames/characters/quiltedCap/rightArm.png" } },
+          { "name": "linenBonnetBase", "source": { "path": "./assets/source-art/frames/characters/linenBonnet/base.png" } },
+          { "name": "linenBonnetLeftArm", "source": { "path": "./assets/source-art/frames/characters/linenBonnet/leftArm.png" } },
+          { "name": "linenBonnetRightArm", "source": { "path": "./assets/source-art/frames/characters/linenBonnet/rightArm.png" } }
+        ]
+      }
     },
     {
       "name": "effects",
@@ -1478,17 +1347,39 @@
     }
   },
   "characters": {
-    "clothingTints": ["reed", "pine", "indigo", "violet", "parchment", "timber"],
-    "details": ["hairKnot", "reedCap", "headscarf"],
-    "walk": {
-      "frames": ["rest", "leftForward", "pass", "rightForward"],
-      "frameRatio": 0.68,
-      "deadZone": 0.05
+    "cast": {
+      "visitor": {
+        "id": "visitor",
+        "base": "visitorBase",
+        "leftArm": { "frame": "visitorLeftArm", "pivot": { "x": 49, "y": 78 }, "anchor": { "x": 49, "y": 78 } },
+        "rightArm": { "frame": "visitorRightArm", "pivot": { "x": 143, "y": 78 }, "anchor": { "x": 143, "y": 78 } },
+        "farMarkTint": "cinnabar"
+      },
+      "villagers": [
+        {
+          "id": "feltCap",
+          "base": "feltCapBase",
+          "leftArm": { "frame": "feltCapLeftArm", "pivot": { "x": 49, "y": 78 }, "anchor": { "x": 49, "y": 78 } },
+          "rightArm": { "frame": "feltCapRightArm", "pivot": { "x": 143, "y": 78 }, "anchor": { "x": 143, "y": 78 } },
+          "farMarkTint": "reed"
+        },
+        {
+          "id": "quiltedCap",
+          "base": "quiltedCapBase",
+          "leftArm": { "frame": "quiltedCapLeftArm", "pivot": { "x": 49, "y": 78 }, "anchor": { "x": 49, "y": 78 } },
+          "rightArm": { "frame": "quiltedCapRightArm", "pivot": { "x": 143, "y": 78 }, "anchor": { "x": 143, "y": 78 } },
+          "farMarkTint": "violet"
+        },
+        {
+          "id": "linenBonnet",
+          "base": "linenBonnetBase",
+          "leftArm": { "frame": "linenBonnetLeftArm", "pivot": { "x": 49, "y": 78 }, "anchor": { "x": 49, "y": 78 } },
+          "rightArm": { "frame": "linenBonnetRightArm", "pivot": { "x": 143, "y": 78 }, "anchor": { "x": 143, "y": 78 } },
+          "farMarkTint": "pine"
+        }
+      ]
     },
-    "visitor": {
-      "detail": "visitorTie",
-      "tint": "cinnabar"
-    }
+    "walk": { "frameRatio": 0.68, "deadZone": 0.05, "armAmplitudeRadians": 0.28 }
   },
   "props": {
     "defaultScale": 0.14,
