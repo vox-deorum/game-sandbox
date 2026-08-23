@@ -57,7 +57,7 @@ Building types and dimensions are in the [canonical catalog](ruleset.md#canonica
 - A site is an unrotated axis-aligned rectangle. Its selected doorway side paints floor inside, wall around the perimeter, and a 2-cell door run through that side.
 - Doorways face their planned footpath approach and open to walkable cells, never water, another footprint, or the boundary. A door never opens away from the road: a building north of the road band may not face north, and one south of it may not face south.
 - Walls block movement, sight, presence, and speech. Doorways carry all four.
-- The inn hearth and repair bench sit inside against the wall opposite the doorway. Homes have no interior props. Each home has an outside garden plot flush with the exterior wall opposite its doorway. When centering an odd-size difference, use the lower-index position.
+- The inn hearth and repair bench sit inside against the wall opposite the doorway. Homes have no interior props. Each home has an outside garden plot on the side opposite its doorway: drawn up to `sites.garden_gap` cells away from the wall and slid along it, up to `sites.garden_slide` cells past either end, so no two homes plant theirs alike.
 - Homes are numbered `home_0` through `home_4` in placement order. [Ruleset home assignment](ruleset.md#the-village) maps NPCs to them. Cast size does not change the layout.
 
 ## Props
@@ -102,7 +102,7 @@ The connectivity guarantee is established over the pinned batch alone: the gener
 | `water` | Frame-relative entry and fork bands, mouth spacing, margins, fork size, walker travel budget, and meander wavelengths. Channel and trunk widths, clearances, brush step, and steering weights remain metre-scale. |
 | `grounds` | Moisture and elevation thresholds for reed and field, plus majority-smoothing passes. |
 | `network` | Frame-relative road band, anchor swing and reach, plus road and path walker travel budgets and wavelengths. Road and path widths, crossings, clearances, and spawn placement remain metre-scale. |
-| `sites` | `margin`, `plaza_radius`, frame-relative `reach_percent`, candidate `budget`, and home scores for bank proximity, flatness, dryness, and separation. |
+| `sites` | `margin`, `garden_gap`, `garden_slide`, `plaza_radius`, frame-relative `reach_percent`, candidate `budget`, and home scores for bank proximity, flatness, dryness, and separation. |
 | `accessories` | One nested catalog-placement group, such as `accessories.pine`, `accessories.lantern`, and `accessories.stall`, with spacing, candidate budgets, scatter probability, and companion rules. |
 | `redraw` | Redraw cap. |
 

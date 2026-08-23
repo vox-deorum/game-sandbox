@@ -137,10 +137,23 @@ def _grown(rectangle: frozenset[Cell], margin: int) -> frozenset[Cell]:
     )
 
 
-def _beside(item: object, building: Building) -> bool:
-    """Whether a placement touches a building's rectangle, which is where a garden belongs."""
-    rectangle = _rectangle(building)
-    return any(spot in rectangle for cell in footprint_cells(item) for spot in _around(cell))
+def _garden_offsets(plot: object, building: Building) -> tuple[int, int]:
+    """The gap and slide of a plot against its home, read from the cells alone.
+
+    The gap is cells of open ground between the wall and the plot's near edge. The slide is how far
+    the plot's near corner sits from the home's origin along the wall.
+    """
+    kind = BUILDING_BY_TOKEN[building.type]
+    width, height = footprint(plot)
+    x, y = building.cell
+    px, py = plot.cell
+    if building.facing == "north":
+        return y - py - height, px - x
+    if building.facing == "south":
+        return py - y - kind.height, px - x
+    if building.facing == "east":
+        return x - px - width, py - y
+    return px - x - kind.width, py - y
 
 
 def _decks(layout: Layout, channel: frozenset[Cell]) -> tuple[frozenset[Cell], frozenset[Cell]]:
@@ -472,29 +485,45 @@ def test_sites_keep_their_margin_and_are_painted_from_the_catalog(
                 )
 
 
-def test_gardens_sit_flush_against_the_wall_opposite_the_doorway(
+def test_gardens_face_away_from_the_doorway_within_the_garden_offsets(
     batch: dict[int, tuple[Layout, Report]],
 ) -> None:
-    """The plot is centred on the far wall, taking the lower index when the difference is odd."""
+    """Each plot stands on the wall opposite its home's doorway, at a drawn gap and slide.
+
+    Bounds come from the tuning, and the batch has to show variety: somewhere a plot clears the
+    wall, and somewhere one is not planted at the same place on it.
+    """
+    gap_max = TUNING["sites"]["garden_gap"]
+    slide = TUNING["sites"]["garden_slide"]
+    gaps: set[int] = set()
+    slides: set[int] = set()
     for seed, (layout, _) in batch.items():
-        plots = {item.cell: item for item in layout.props if item.type == "plot"}
-        for building in layout.buildings:
-            if building.type != "home":
-                continue
+        homes = [building for building in layout.buildings if building.type == "home"]
+        plots = [item for item in layout.props if item.type == "plot"]
+        assert len(plots) == len(homes), seed
+        for plot in plots:
+            building = min(homes, key=lambda home: _centre_distance(plot, home))
             kind = BUILDING_BY_TOKEN[building.type]
-            x, y = building.cell
-            plot = next(
-                item for item in plots.values() if item.facing == building.facing and _beside(item, building)
-            )
             width, height = footprint(plot)
-            if building.facing in {"north", "south"}:
-                assert plot.cell[0] == x + (kind.width - width) // 2, (seed, building.id)
-                wanted = y - height if building.facing == "north" else y + kind.height
-                assert plot.cell[1] == wanted, (seed, building.id)
-            else:
-                assert plot.cell[1] == y + (kind.height - height) // 2, (seed, building.id)
-                wanted = x - width if building.facing == "east" else x + kind.width
-                assert plot.cell[0] == wanted, (seed, building.id)
+            gap, offset = _garden_offsets(plot, building)
+            assert 0 <= gap <= gap_max, (seed, building.id, gap)
+            wall, plot_len = (
+                (kind.width, width) if building.facing in {"north", "south"} else (kind.height, height)
+            )
+            assert -slide <= offset <= wall - plot_len + slide, (seed, building.id, offset)
+            gaps.add(gap)
+            slides.add(offset)
+    assert len(gaps) > 1, "the garden gap must not always be zero"
+    assert len(slides) > 1, "the garden must not always sit at the same place on the wall"
+
+
+def _centre_distance(plot: object, building: Building) -> float:
+    """The distance between a plot's footprint centre and a home's rectangle centre."""
+    width, height = footprint(plot)
+    px, py = plot.cell
+    kind = BUILDING_BY_TOKEN[building.type]
+    x, y = building.cell
+    return math.dist((px + width / 2, py + height / 2), (x + kind.width / 2, y + kind.height / 2))
 
 
 def test_interior_props_stay_on_floor_and_leave_the_doorway_open(

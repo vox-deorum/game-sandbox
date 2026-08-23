@@ -14,7 +14,7 @@ The generator paints cells and places rectangles over step 2 grid types. Engine,
 
 `generation.json` owns every tunable number in the groups [village.md](../village.md#generation-tuning) names. Tests read bounds from that file, except frame-derived arithmetic tests that intentionally own their number. Gate A generated the land and padded the rest of the layout with fixture content so the browser still received a complete `Layout`. Gate B generates all of it, and the padding is gone from the generation package. `fixture.py` remains the engine-test map and the input for the engine, physics, and perception tests, which do not build through `build_village`.
 
-A prop carries its catalog rectangle turned to its facing, so an east or west facing trades the rectangle's width and height. Without that a garden could only lie flush along a north or south wall, which would decide every home's doorway for it. The shape stays axis-aligned, and `layout.footprint` is the one place that turn is worked out.
+A prop carries its catalog rectangle turned to its facing, so an east or west facing trades the rectangle's width and height. Without that a garden could only lie flush along a north or south wall, which would decide every home's doorway for it. The shape stays axis-aligned, and `layout.footprint` is the one place that turn is worked out. Each home's garden still stands on the wall opposite its doorway, but it draws a gap of up to `sites.garden_gap` cells off the wall and slides along it up to `sites.garden_slide` past the ends, so the plot is never planted twice in the same place.
 
 | Area | Ownership |
 | --- | --- |

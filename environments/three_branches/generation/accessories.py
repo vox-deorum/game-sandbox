@@ -386,13 +386,13 @@ def _shrines(
 
 
 def _gardens(yard: _Yard, settlement: Settlement) -> None:
-    """Stand each home's garden on the cells its site already set aside. It never slides."""
+    """Stand each home's garden on the cells its site already set aside behind the wall."""
     for site in settlement.sites:
         if not site.garden:
             continue
         origin = (min(x for x, _ in site.garden), min(y for _, y in site.garden))
         if not yard.place("plot", origin, site.building.facing):
-            raise Retry("a garden would not fit against the wall its home left for it")
+            raise Retry("a garden would not fit beside the wall its home left for it")
 
 
 def _interiors(yard: _Yard, settlement: Settlement) -> None:

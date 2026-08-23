@@ -340,8 +340,12 @@ class Scores:
 class Sites:
     """District anchors and the building sites placed against them."""
 
-    # Clear cells kept around every site, which is also the room a garden grows in.
+    # Clear cells kept around every site, keeping its routes and dressing out of it.
     margin: int
+    # Cells of open ground a home may leave between its wall and its garden plot, drawn per home.
+    garden_gap: int
+    # Cells past a home wall's ends its garden may extend to, drawn per home.
+    garden_slide: int
     # How far the well plaza reaches around its centre.
     plaza_radius: float
     # Frame-relative JSON distance resolved to cells at load time. How far from what a search is
@@ -613,6 +617,8 @@ def _sites(value: Any) -> Sites:
     scores = mapping(data["scores"], "sites.scores", set(Scores.__dataclass_fields__))
     return Sites(
         positive_int(data["margin"], "sites.margin"),
+        positive_int(data["garden_gap"], "sites.garden_gap"),
+        positive_int(data["garden_slide"], "sites.garden_slide"),
         positive_number(data["plaza_radius"], "sites.plaza_radius"),
         _scaled_cells(
             _percent(data["reach_percent"], "sites.reach_percent"),
@@ -829,7 +835,7 @@ def _check_frame_arithmetic(tuning: Generation) -> None:
     if tuning.network.spawn.edge_inset > road.edge_straight:
         raise ValueError("network.spawn.edge_inset must land on the road's straight entry run")
     if tuning.sites.margin < PROP_BY_TOKEN["plot"].height:
-        raise ValueError("sites.margin must leave room for a garden against a home wall")
+        raise ValueError("sites.margin must keep at least a plot's depth of clearance around a site")
     stall = tuning.accessories.stall
     if 2 * (stall.span // stall.spacing) + 1 < stall.count:
         raise ValueError("accessories.stall.span and spacing leave too few stations for the stalls")

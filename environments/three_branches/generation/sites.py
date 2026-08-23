@@ -285,7 +285,7 @@ def _candidate(
     facings = _facings(origin[1], band)
     start = stream.randrange(len(facings))
     for turn in range(len(facings)):
-        site = _site(building_id, kind, origin, facings[(start + turn) % len(facings)], tuning)
+        site = _site(stream, building_id, kind, origin, facings[(start + turn) % len(facings)], tuning)
         if site is None or not _clear(rows, site, reserved, band):
             continue
         # The doorway has to open toward ground a footpath can carry back to the road.
@@ -308,41 +308,55 @@ def _facings(row: int, band: tuple[int, int]) -> tuple[str, ...]:
     return _FACINGS
 
 
-def _site(building_id: str, kind: BuildingType, origin: Cell, facing: str, tuning: Sites) -> Site | None:
+def _site(
+    stream: random.Random, building_id: str, kind: BuildingType, origin: Cell, facing: str, tuning: Sites
+) -> Site | None:
     """Assemble one candidate site, or report that its geometry leaves the frame."""
     x, y = origin
     if x < 1 or y < 1 or x + kind.width >= FRAME.cells_x or y + kind.height >= FRAME.cells_y:
         return None
     building = Building(building_id, _type_of(building_id), origin, facing)
-    garden = _garden(kind, origin, facing) if building.type == "home" else ()
+    garden = _garden(stream, kind, origin, facing, tuning) if building.type == "home" else ()
     if any(not _inside(cell) for cell in garden):
         return None
-    reserved = frozenset(
+    # The margin is the site's clearance, and the garden, which may reach beyond it, is reserved
+    # too, so a later site, the road, or a footpath never crosses either.
+    reserved = set(
         (column, row)
         for row in range(y - tuning.margin, y + kind.height + tuning.margin)
         for column in range(x - tuning.margin, x + kind.width + tuning.margin)
         if _inside((column, row))
     )
-    return Site(building, reserved, garden, _approaches(building, kind))
+    reserved.update(garden)
+    return Site(building, frozenset(reserved), garden, _approaches(building, kind))
 
 
-def _garden(kind: BuildingType, origin: Cell, facing: str) -> tuple[Cell, ...]:
-    """Place the garden flush against the wall opposite the doorway, centred on it.
+def _garden(
+    stream: random.Random, kind: BuildingType, origin: Cell, facing: str, tuning: Sites
+) -> tuple[Cell, ...]:
+    """Place the garden on the wall opposite the doorway, drawn a gap away and slid along it.
 
-    An odd difference centres on the lower index, and the plot never slides: a candidate whose
-    garden does not fit is a candidate the site rejects.
+    The gap is cells of open ground between the home wall and the plot's near edge, from zero up to
+    the tuning. The slide moves the plot along the wall, at most a ``garden_slide`` past either
+    end, so no two homes yield the same plot. A candidate whose garden does not hold together is a
+    candidate the site rejects.
     """
     plot = PROP_BY_TOKEN["plot"]
     width, height = (plot.height, plot.width) if facing in {"east", "west"} else (plot.width, plot.height)
+    gap = stream.randint(0, tuning.garden_gap)
     x, y = origin
-    if facing == "north":
-        spot = (x + (kind.width - width) // 2, y - height)
-    elif facing == "south":
-        spot = (x + (kind.width - width) // 2, y + kind.height)
-    elif facing == "east":
-        spot = (x - width, y + (kind.height - height) // 2)
+    if facing in {"north", "south"}:
+        slide = stream.randint(-tuning.garden_slide, kind.width - width + tuning.garden_slide)
+        spot = (
+            x + slide,
+            y - height - gap if facing == "north" else y + kind.height + gap,
+        )
     else:
-        spot = (x + kind.width, y + (kind.height - height) // 2)
+        slide = stream.randint(-tuning.garden_slide, kind.height - height + tuning.garden_slide)
+        spot = (
+            x - width - gap if facing == "east" else x + kind.width + gap,
+            y + slide,
+        )
     return tuple((spot[0] + column, spot[1] + row) for row in range(height) for column in range(width))
 
 

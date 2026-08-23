@@ -99,6 +99,8 @@
   },
   "sites": {
     "margin": 2,
+    "garden_gap": 2,
+    "garden_slide": 2,
     "plaza_radius": 3.5,
     "reach_percent": 14,
     "budget": 120,
