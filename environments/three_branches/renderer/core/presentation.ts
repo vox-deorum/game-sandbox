@@ -166,7 +166,6 @@ export const HEARTHSIDE_PALETTE_KEYS = [
   'stream',
   'floor',
   'wall',
-  'bridge',
 ] as const
 
 export type HearthsidePaletteKey = (typeof HEARTHSIDE_PALETTE_KEYS)[number]
@@ -251,14 +250,17 @@ export interface TerrainRouteTreatment {
 
 /** Semantic bridge deck frames selected once per connected bridge component. */
 export interface PlankTreatment {
-  horizontal: string
-  vertical: string
-  compact: string
-  tint: HearthsidePaletteKey
-  shadowTint: HearthsidePaletteKey
-  shadowOpacity: number
-  shadowOffsetCells: number
-  textureBleedCells: number
+  frame: string
+  boardsPerCell: number
+  widthVariation: number
+  portalOverlapCells: number
+  sideOverhangCells: number
+  backingTint: HearthsidePaletteKey
+  seam: {
+    tint: HearthsidePaletteKey
+    opacity: number
+    widthCells: number
+  }
 }
 
 /** A restrained affine colour treatment applied to a world composite. */
@@ -505,6 +507,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   const terrainFrames = framesFor(atlases, 'terrain')
+  const bridgeFrames = framesFor(atlases, 'bridges')
   const terrainSource = exactRecord(source.terrain, 'presentation.terrain', [
     'fills',
     'contours',
@@ -527,6 +530,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       ),
     ]),
   )
+  const routes = routeTreatment(terrainSource.routes, 'presentation.terrain.routes')
   const terrain = {
     fills,
     contours: contourTreatment(terrainSource.contours, 'presentation.terrain.contours'),
@@ -536,11 +540,11 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       'presentation.terrain.reedMarks',
       paletteNames,
     ),
-    routes: routeTreatment(terrainSource.routes, 'presentation.terrain.routes'),
+    routes,
     planks: plankTreatment(
       terrainSource.planks,
       'presentation.terrain.planks',
-      terrainFrames,
+      bridgeFrames,
       paletteNames,
     ),
     upperWall: frameTreatment(
@@ -608,10 +612,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     characterFrames,
     paletteNames,
   )
-  const villagersSource = array(
-    castSource.villagers,
-    'presentation.characters.cast.villagers',
-  )
+  const villagersSource = array(castSource.villagers, 'presentation.characters.cast.villagers')
   if (villagersSource.length !== 3) {
     throw new Error('presentation.characters.cast.villagers must contain exactly three sets.')
   }
@@ -1164,29 +1165,43 @@ function plankTreatment(
   palette: ReadonlySet<string>,
 ): PlankTreatment {
   const source = exactRecord(value, name, [
-    'horizontal',
-    'vertical',
-    'compact',
-    'tint',
-    'shadowTint',
-    'shadowOpacity',
-    'shadowOffsetCells',
-    'textureBleedCells',
+    'frame',
+    'boardsPerCell',
+    'widthVariation',
+    'portalOverlapCells',
+    'sideOverhangCells',
+    'backingTint',
+    'seam',
   ])
+  const boardsPerCell = positiveInteger(source.boardsPerCell, `${name}.boardsPerCell`)
+  if (boardsPerCell > 8) {
+    throw new Error(`${name}.boardsPerCell must be at most eight.`)
+  }
+  const seamSource = exactRecord(source.seam, `${name}.seam`, ['tint', 'opacity', 'widthCells'])
   return {
-    horizontal: knownText(source.horizontal, knownFrames, `${name}.horizontal`),
-    vertical: knownText(source.vertical, knownFrames, `${name}.vertical`),
-    compact: knownText(source.compact, knownFrames, `${name}.compact`),
-    tint: paletteKey(source.tint, palette, `${name}.tint`),
-    shadowTint: paletteKey(source.shadowTint, palette, `${name}.shadowTint`),
-    shadowOpacity: unitNumber(source.shadowOpacity, `${name}.shadowOpacity`),
-    shadowOffsetCells: boundedNumber(source.shadowOffsetCells, `${name}.shadowOffsetCells`, 0, 1),
-    textureBleedCells: boundedNumber(
-      source.textureBleedCells,
-      `${name}.textureBleedCells`,
+    frame: knownText(source.frame, knownFrames, `${name}.frame`),
+    boardsPerCell,
+    widthVariation: boundedNumber(source.widthVariation, `${name}.widthVariation`, 0, 0.5, true),
+    portalOverlapCells: boundedNumber(
+      source.portalOverlapCells,
+      `${name}.portalOverlapCells`,
       0,
       0.25,
+      true,
     ),
+    sideOverhangCells: boundedNumber(
+      source.sideOverhangCells,
+      `${name}.sideOverhangCells`,
+      0,
+      0.1,
+      true,
+    ),
+    backingTint: paletteKey(source.backingTint, palette, `${name}.backingTint`),
+    seam: {
+      tint: paletteKey(seamSource.tint, palette, `${name}.seam.tint`),
+      opacity: unitNumber(seamSource.opacity, `${name}.seam.opacity`),
+      widthCells: boundedNumber(seamSource.widthCells, `${name}.seam.widthCells`, 0, 0.05),
+    },
   }
 }
 function framesFor(
@@ -1233,16 +1248,8 @@ function characterCastSet(
   return {
     id: source.id,
     base: knownText(source.base, knownFrames, `${name}.base`),
-    leftArm: characterArmTreatment(
-      source.leftArm,
-      `${name}.leftArm`,
-      knownFrames,
-    ),
-    rightArm: characterArmTreatment(
-      source.rightArm,
-      `${name}.rightArm`,
-      knownFrames,
-    ),
+    leftArm: characterArmTreatment(source.leftArm, `${name}.leftArm`, knownFrames),
+    rightArm: characterArmTreatment(source.rightArm, `${name}.rightArm`, knownFrames),
     farMarkTint: paletteKey(source.farMarkTint, palette, `${name}.farMarkTint`),
   }
 }

@@ -163,6 +163,16 @@ function frameGrid(entry: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('Three Branches asset catalog', () => {
+  it('keeps the dedicated bridge material page full-colour and non-tintable', () => {
+    const bridges = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'bridges')
+    if (bridges === undefined || 'layers' in bridges) {
+      throw new Error('The dedicated bridges atlas group is required.')
+    }
+    expect(bridges.format).toBe('full-color')
+    expect(bridges.tintable).toBe(false)
+    expect(bridges.frames.names).toEqual(['boards'])
+  })
+
   it('keeps stalls and pines on mipmapped atlas groups', () => {
     const props = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'props')
     const scenery = THREE_BRANCHES_ASSET_CATALOG.find((atlas) => atlas.name === 'scenery')
@@ -240,7 +250,8 @@ describe('Three Branches asset catalog', () => {
   it('accepts arbitrary catalog group and layer names while rejecting duplicate and malformed entries', () => {
     const arbitraryNames = mutableCatalog()
     catalogEntry(arbitraryNames, 0).name = 'meadows'
-    const residents = catalogEntry(arbitraryNames, 1)
+    const residents = arbitraryNames.find((entry) => entry.name === 'buildings')
+    if (residents === undefined) throw new Error('Buildings catalog entry is missing.')
     residents.name = 'residents'
     catalogEntry(catalogLayers(residents), 0).name = 'forms'
     const parsed = readThreeBranchesAssetCatalog(arbitraryNames)
@@ -251,20 +262,29 @@ describe('Three Branches asset catalog', () => {
     ).toBe('forms')
 
     const duplicateNames = mutableCatalog()
-    catalogEntry(duplicateNames, 1).name = 'terrain'
+    const duplicateNameEntry = duplicateNames.find((entry) => entry.name === 'bridges')
+    if (duplicateNameEntry === undefined) throw new Error('Bridges catalog entry is missing.')
+    duplicateNameEntry.name = 'terrain'
     expect(() => readThreeBranchesAssetCatalog(duplicateNames)).toThrow(
       'must not contain duplicate atlas groups',
     )
 
     const duplicateLayers = mutableCatalog()
-    const layers = catalogLayers(catalogEntry(duplicateLayers, 1))
+    const buildings = duplicateLayers.find((entry) => entry.name === 'buildings')
+    if (buildings === undefined) throw new Error('Buildings catalog entry is missing.')
+    const layers = catalogLayers(buildings)
     catalogEntry(layers, 1).name = catalogEntry(layers, 0).name
     expect(() => readThreeBranchesAssetCatalog(duplicateLayers)).toThrow(
       'must not contain duplicate layer names',
     )
 
     const duplicatePaths = mutableCatalog()
-    catalogEntry(duplicatePaths, 2).path = catalogEntry(duplicatePaths, 0).path
+    const duplicatePathEntry = duplicatePaths.find((entry) => entry.name === 'props')
+    const terrainPathEntry = duplicatePaths.find((entry) => entry.name === 'terrain')
+    if (duplicatePathEntry === undefined || terrainPathEntry === undefined) {
+      throw new Error('Terrain and props catalog entries are missing.')
+    }
+    duplicatePathEntry.path = terrainPathEntry.path
     expect(() => readThreeBranchesAssetCatalog(duplicatePaths)).toThrow(
       'must not reuse runtime paths',
     )
@@ -274,7 +294,9 @@ describe('Three Branches asset catalog', () => {
     expect(() => readThreeBranchesAssetCatalog(unsafeGroup)).toThrow('must be a safe path segment')
 
     const unsafeFrame = mutableCatalog()
-    const cells = frameGrid(catalogEntry(unsafeFrame, 2)).cells as Record<string, unknown>[]
+    const propsEntry = unsafeFrame.find((entry) => entry.name === 'props')
+    if (propsEntry === undefined) throw new Error('Props catalog entry is missing.')
+    const cells = frameGrid(propsEntry).cells as Record<string, unknown>[]
     const firstCell = cells[0]
     if (firstCell === undefined) throw new Error('Props cell is missing.')
     firstCell.name = '../stall'
@@ -299,7 +321,9 @@ describe('Three Branches asset catalog', () => {
     )
 
     const malformedEntry = mutableCatalog()
-    catalogEntry(malformedEntry, 2).mipmaps = 'yes'
+    const malformedProps = malformedEntry.find((entry) => entry.name === 'props')
+    if (malformedProps === undefined) throw new Error('Props catalog entry is missing.')
+    malformedProps.mipmaps = 'yes'
     expect(() => readThreeBranchesAssetCatalog(malformedEntry)).toThrow('mipmaps must be boolean')
   })
 
@@ -452,6 +476,7 @@ describe('Three Branches asset catalog', () => {
 
     expect(load).toHaveBeenCalledTimes(ATLAS_PAGES.length)
     expect(assets.terrain).toMatch(/terrain-atlas\.png/)
+    expect(assets.bridges).toMatch(/bridges-atlas\.png/)
     expect(assets.characters).toMatch(/characters-atlas\.png/)
     expect(assets.effects).toMatch(/effects-atlas\.png/)
     expect(assets.buildings.home).toMatch(/buildings-home-atlas\.png/)

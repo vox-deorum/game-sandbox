@@ -7,7 +7,7 @@
       "height": 1152,
       "tintable": true,
       "format": "grayscale-alpha",
-      "consumer": "terrain fills, transitions, bridge planks, and the upper-wall repaint",
+      "consumer": "terrain fills, transitions, and the upper-wall repaint",
       "mipmaps": false,
       "frames": {
         "width": 128,
@@ -187,24 +187,6 @@
             "name": "doorway",
             "source": {
               "path": "./assets/source-art/frames/terrain/doorway.png"
-            }
-          },
-          {
-            "name": "bridgeA",
-            "source": {
-              "path": "./assets/source-art/frames/terrain/bridgeA.png"
-            }
-          },
-          {
-            "name": "bridgeB",
-            "source": {
-              "path": "./assets/source-art/frames/terrain/bridgeB.png"
-            }
-          },
-          {
-            "name": "bridgeC",
-            "source": {
-              "path": "./assets/source-art/frames/terrain/bridgeC.png"
             }
           },
           {
@@ -421,6 +403,30 @@
             "name": "pathD",
             "source": {
               "path": "./assets/source-art/frames/terrain/pathD.png"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "bridges",
+      "path": "./assets/bridges-atlas.png",
+      "width": 128,
+      "height": 128,
+      "tintable": false,
+      "format": "full-color",
+      "consumer": "component-wide bridge decks",
+      "mipmaps": false,
+      "frames": {
+        "width": 128,
+        "height": 128,
+        "columns": 1,
+        "rows": 1,
+        "cells": [
+          {
+            "name": "boards",
+            "source": {
+              "path": "./assets/source-art/frames/bridges/boards.png"
             }
           }
         ]
@@ -1074,8 +1080,7 @@
     "bank": "#747453",
     "stream": "#536666",
     "floor": "#765b3d",
-    "wall": "#484238",
-    "bridge": "#a17d58"
+    "wall": "#484238"
   },
   "transition": {
     "naturalMs": 1000,
@@ -1235,14 +1240,17 @@
       }
     },
     "planks": {
-      "horizontal": "bridgeA",
-      "vertical": "bridgeB",
-      "compact": "bridgeC",
-      "tint": "bridge",
-      "shadowTint": "backdrop",
-      "shadowOpacity": 0.10,
-      "shadowOffsetCells": 0.025,
-      "textureBleedCells": 0.025
+      "frame": "boards",
+      "boardsPerCell": 3,
+      "widthVariation": 0.10,
+      "portalOverlapCells": 0.10,
+      "sideOverhangCells": 0.05,
+      "backingTint": "wall",
+      "seam": {
+        "tint": "backdrop",
+        "opacity": 0.55,
+        "widthCells": 0.018
+      }
     },
     "upperWall": {
       "frames": ["wallA", "wallB", "wallC", "wallD"],

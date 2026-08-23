@@ -339,8 +339,74 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(badTint)).toThrow('tint is unknown')
 
     const badPlank = structuredClone(HEARTHSIDE_STYLE) as any
-    badPlank.terrain.planks.horizontal = 'missingFrame'
-    expect(() => readHearthsideStyle(badPlank)).toThrow('planks.horizontal is unknown')
+    badPlank.terrain.planks.frame = 'missingFrame'
+    expect(() => readHearthsideStyle(badPlank)).toThrow('planks.frame is unknown')
+  })
+
+  it('reads the full-color bridge deck treatment and rejects unsafe calibration', () => {
+    expect(HEARTHSIDE_STYLE.terrain.planks).toMatchObject({
+      frame: 'boards',
+      boardsPerCell: 3,
+      widthVariation: 0.1,
+      portalOverlapCells: 0.1,
+      sideOverhangCells: 0.05,
+      backingTint: 'wall',
+      seam: { tint: 'backdrop', opacity: 0.55, widthCells: 0.018 },
+    })
+
+    const unknownKey = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownKey.terrain.planks.tint = 'backdrop'
+    expect(() => readHearthsideStyle(unknownKey)).toThrow('planks keys do not match')
+
+    const badPalette = structuredClone(HEARTHSIDE_STYLE) as any
+    badPalette.terrain.planks.backingTint = 'orange'
+    expect(() => readHearthsideStyle(badPalette)).toThrow('backingTint is unknown')
+
+    const fractionalCount = structuredClone(HEARTHSIDE_STYLE) as any
+    fractionalCount.terrain.planks.boardsPerCell = 2.5
+    expect(() => readHearthsideStyle(fractionalCount)).toThrow(
+      'boardsPerCell must be a positive integer',
+    )
+
+    const excessiveCount = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveCount.terrain.planks.boardsPerCell = 9
+    expect(() => readHearthsideStyle(excessiveCount)).toThrow('boardsPerCell must be at most eight')
+
+    const invalidFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidFrame.terrain.planks.frame = 'missing'
+    expect(() => readHearthsideStyle(invalidFrame)).toThrow('planks.frame is unknown')
+
+    const excessiveOverlap = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveOverlap.terrain.planks.portalOverlapCells = 0.251
+    expect(() => readHearthsideStyle(excessiveOverlap)).toThrow('portalOverlapCells')
+
+    const invalidOverhang = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidOverhang.terrain.planks.sideOverhangCells = -0.01
+    expect(() => readHearthsideStyle(invalidOverhang)).toThrow('sideOverhangCells')
+
+    const zeroOverlap = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroOverlap.terrain.planks.portalOverlapCells = 0
+    zeroOverlap.terrain.planks.sideOverhangCells = 0
+    expect(readHearthsideStyle(zeroOverlap).terrain.planks).toMatchObject({
+      portalOverlapCells: 0,
+      sideOverhangCells: 0,
+    })
+
+    const excessiveOverhang = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveOverhang.terrain.planks.sideOverhangCells = 0.101
+    expect(() => readHearthsideStyle(excessiveOverhang)).toThrow('sideOverhangCells')
+
+    const invalidEdgeOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidEdgeOpacity.terrain.planks.seam.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidEdgeOpacity)).toThrow('seam.opacity')
+
+    const invalidEdgeWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidEdgeWidth.terrain.planks.seam.widthCells = 0
+    expect(() => readHearthsideStyle(invalidEdgeWidth)).toThrow('seam.widthCells')
+
+    const excessiveEdgeWidth = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveEdgeWidth.terrain.planks.seam.widthCells = 0.051
+    expect(() => readHearthsideStyle(excessiveEdgeWidth)).toThrow('seam.widthCells')
   })
 
   it('requires the character walk frame ratio to fit within one recorded tick', () => {

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ATLAS_PAGES } from '../assets.js'
 import { opaqueFillPixels, tintedMaskPixels } from '../ui/tint.js'
+import { extractBridgeBoardSources } from './bridge-board-sources.js'
 
 const SIZE = 128
 const FILL_FAMILIES = [
@@ -16,22 +17,24 @@ const FILL_FAMILIES = [
   ['rippleA', 'rippleB', 'rippleC', 'rippleD'],
   ['floorA', 'floorB', 'floorC', 'floorD'],
 ] as const
-function frame(name: string): Uint8ClampedArray {
-  const terrain = ATLAS_PAGES.find((page) => page.group === 'terrain')
-  if (terrain === undefined) throw new Error('Terrain atlas page is missing.')
-  const index = terrain.cells.findIndex((cell) => cell.name === name)
-  if (index < 0) throw new Error(`Terrain frame is missing: ${name}`)
+function frameFrom(
+  group: string,
+  name: string,
+): { pixels: Uint8ClampedArray; width: number; height: number } {
+  const page = ATLAS_PAGES.find((item) => item.group === group)
+  if (page === undefined) throw new Error(`${group} atlas page is missing.`)
+  const index = page.cells.findIndex((cell) => cell.name === name)
+  if (index < 0) throw new Error(`${group} frame is missing: ${name}`)
   const path = resolve(
     process.cwd(),
-    `../environments/three_branches/renderer/${terrain.pagePath.slice(2)}`,
+    `../environments/three_branches/renderer/${page.pagePath.slice(2)}`,
   )
   const image = PNG.sync.read(readFileSync(path))
-  const width = terrain.width / terrain.columns
-  const height = terrain.height / terrain.rows
-  expect({ width, height }).toEqual({ width: SIZE, height: SIZE })
+  const width = page.width / page.columns
+  const height = page.height / page.rows
   const pixels = new Uint8ClampedArray(width * height * 4)
-  const left = (index % terrain.columns) * width
-  const top = Math.floor(index / terrain.columns) * height
+  const left = (index % page.columns) * width
+  const top = Math.floor(index / page.columns) * height
   for (let row = 0; row < height; row += 1) {
     pixels.set(
       image.data.subarray(
@@ -41,7 +44,13 @@ function frame(name: string): Uint8ClampedArray {
       row * width * 4,
     )
   }
-  return pixels
+  return { pixels, width, height }
+}
+
+function frame(name: string): Uint8ClampedArray {
+  const result = frameFrom('terrain', name)
+  expect({ width: result.width, height: result.height }).toEqual({ width: SIZE, height: SIZE })
+  return result.pixels
 }
 
 function channel(pixels: Uint8ClampedArray, x: number, y: number, offset: number): number {
@@ -54,77 +63,6 @@ function alphaCoverage(pixels: Uint8ClampedArray): number {
     if ((pixels[index] ?? 0) > 0) visible += 1
   }
   return visible / (SIZE * SIZE)
-}
-
-function alphaMassCoverage(pixels: Uint8ClampedArray): number {
-  let alpha = 0
-  for (let index = 3; index < pixels.length; index += 4) alpha += pixels[index] ?? 0
-  return alpha / (SIZE * SIZE * 255)
-}
-
-function transparentSeamRuns(pixels: Uint8ClampedArray, direction: 'columns' | 'rows'): number[] {
-  const seams = Array.from({ length: SIZE }, (_, primary) => {
-    let alpha = 0
-    for (let secondary = 0; secondary < SIZE; secondary += 1) {
-      const x = direction === 'columns' ? primary : secondary
-      const y = direction === 'columns' ? secondary : primary
-      alpha += channel(pixels, x, y, 3)
-    }
-    return alpha / SIZE < 160
-  })
-  const runs: number[] = []
-  for (let index = 0; index < seams.length; ) {
-    if (!seams[index]) {
-      index += 1
-      continue
-    }
-    let end = index + 1
-    while (seams[end]) end += 1
-    runs.push(end - index)
-    index = end
-  }
-  return runs
-}
-
-function opaquePlankRuns(pixels: Uint8ClampedArray, direction: 'columns' | 'rows'): number[] {
-  const planks = Array.from({ length: SIZE }, (_, primary) => {
-    let alpha = 0
-    for (let secondary = 0; secondary < SIZE; secondary += 1) {
-      const x = direction === 'columns' ? primary : secondary
-      const y = direction === 'columns' ? secondary : primary
-      alpha += channel(pixels, x, y, 3)
-    }
-    return alpha / SIZE >= 160
-  })
-  const runs: number[] = []
-  for (let index = 0; index < planks.length; ) {
-    if (!planks[index]) {
-      index += 1
-      continue
-    }
-    let end = index + 1
-    while (planks[end]) end += 1
-    runs.push(end - index)
-    index = end
-  }
-  return runs
-}
-
-function edgeHalfGapWidths(pixels: Uint8ClampedArray, direction: 'columns' | 'rows'): [number, number] {
-  const nearTransparent = (primary: number): boolean => {
-    let clear = 0
-    for (let secondary = 0; secondary < SIZE; secondary += 1) {
-      const x = direction === 'columns' ? primary : secondary
-      const y = direction === 'columns' ? secondary : primary
-      if (channel(pixels, x, y, 3) <= 16) clear += 1
-    }
-    return clear >= SIZE * 0.6
-  }
-  let start = 0
-  while (start < SIZE && nearTransparent(start)) start += 1
-  let end = 0
-  while (end < SIZE && nearTransparent(SIZE - end - 1)) end += 1
-  return [start, end]
 }
 
 function edge(pixels: Uint8ClampedArray, side: 'top' | 'right' | 'bottom' | 'left'): number[] {
@@ -167,12 +105,7 @@ describe('Three Branches terrain raster contract', () => {
     }
   })
 
-  it('preserves broad water gaps in bridge planks and shallow upper walls', () => {
-    for (const name of ['bridgeA', 'bridgeB', 'bridgeC']) {
-      const coverage = alphaMassCoverage(frame(name))
-      expect(coverage).toBeGreaterThanOrEqual(0.8)
-      expect(coverage).toBeLessThanOrEqual(0.87)
-    }
+  it('preserves shallow upper walls in the terrain atlas', () => {
     for (const name of ['wallA', 'wallB', 'wallC', 'wallD']) {
       const pixels = frame(name)
       expect(alphaCoverage(pixels)).toBeLessThan(0.25)
@@ -182,42 +115,34 @@ describe('Three Branches terrain raster contract', () => {
     }
   })
 
-  it('uses three broad plank spans with 5 to 8 pixel water gaps in each deck orientation', () => {
-    const horizontal = frame('bridgeA')
-    const vertical = frame('bridgeB')
-    const compact = frame('bridgeC')
-    const horizontalSeams = transparentSeamRuns(horizontal, 'columns')
-    const horizontalCrossSeams = transparentSeamRuns(horizontal, 'rows')
-    const verticalSeams = transparentSeamRuns(vertical, 'rows')
-    const verticalCrossSeams = transparentSeamRuns(vertical, 'columns')
-    const compactSeams = transparentSeamRuns(compact, 'columns')
-    const plankSpans = [
-      opaquePlankRuns(horizontal, 'columns'),
-      opaquePlankRuns(vertical, 'rows'),
-      opaquePlankRuns(compact, 'columns'),
-    ]
-    const edgeHalfGaps = [
-      edgeHalfGapWidths(horizontal, 'columns'),
-      edgeHalfGapWidths(vertical, 'rows'),
-      edgeHalfGapWidths(compact, 'columns'),
-    ]
-    for (const seams of [horizontalSeams, verticalSeams, compactSeams]) {
-      expect(seams).toHaveLength(4)
-      for (const width of seams.slice(1, -1)) {
-        expect(width).toBeGreaterThanOrEqual(5)
-        expect(width).toBeLessThanOrEqual(8)
+  it('supplies three independent full-colour board sources from the bridge atlas', () => {
+    const sourceFrame = frameFrom('bridges', 'boards')
+    const sources = extractBridgeBoardSources(
+      sourceFrame.pixels,
+      sourceFrame.width,
+      sourceFrame.height,
+      'boards',
+    )
+    expect(sources).toHaveLength(3)
+    for (const source of sources) {
+      let visible = 0
+      let coloured = false
+      for (let index = 0; index < source.pixels.length; index += 4) {
+        const alpha = source.pixels[index + 3] ?? 0
+        if (alpha === 0) {
+          expect(Array.from(source.pixels.slice(index, index + 3))).toEqual([0, 0, 0])
+          continue
+        }
+        visible += 1
+        if (
+          source.pixels[index] !== source.pixels[index + 1] ||
+          source.pixels[index + 1] !== source.pixels[index + 2]
+        )
+          coloured = true
       }
+      expect(visible).toBeGreaterThan(0)
+      expect(coloured).toBe(true)
     }
-    for (const spans of plankSpans) {
-      expect(spans).toHaveLength(3)
-      for (const width of spans) {
-        expect(width).toBeGreaterThanOrEqual(30)
-        expect(width).toBeLessThanOrEqual(40)
-      }
-    }
-    for (const halves of edgeHalfGaps) expect(halves).toEqual([4, 4])
-    expect(horizontalSeams.length).toBeGreaterThan(horizontalCrossSeams.length)
-    expect(verticalSeams.length).toBeGreaterThan(verticalCrossSeams.length)
   })
 })
 
@@ -230,24 +155,6 @@ describe('Three Branches terrain pixel composition', () => {
     expect(edge(first, 'right')).toEqual(edge(second, 'left'))
     expect(Math.min(...first.filter((_, index) => index % 4 === 0))).toBeGreaterThanOrEqual(157)
     expect(Math.max(...first.filter((_, index) => index % 4 === 0))).toBeLessThanOrEqual(180)
-  })
-
-  it('leaves water visible between every bridge plank treatment', () => {
-    const water = frame('rippleB')
-    opaqueFillPixels(water, '#6480a0')
-    for (const name of ['bridgeA', 'bridgeB', 'bridgeC']) {
-      const planks = frame(name)
-      tintedMaskPixels(planks, '#6d4a36')
-      const result = sourceOver(water, planks)
-      let unchanged = 0
-      let changed = 0
-      for (let index = 0; index < result.length; index += 4) {
-        if (result[index] === water[index] && result[index + 1] === water[index + 1]) unchanged += 1
-        else changed += 1
-      }
-      expect(unchanged).toBeGreaterThan(0)
-      expect(changed).toBeGreaterThan(0)
-    }
   })
 
   it('repaints only a shallow upper-wall band', () => {

@@ -1,5 +1,5 @@
 import { Container, FillPattern, type Graphics, Texture } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import type {
   StaticScene,
@@ -7,12 +7,7 @@ import type {
   TerrainContourPoint,
   TerrainRoutePlan,
 } from '../core/types.js'
-import {
-  BRIDGE_PLANK_CODES,
-  PATTERN_MATERIALS,
-  plankRowsFor,
-  type TerrainArt,
-} from '../terrain/terrain-art.js'
+import { PATTERN_MATERIALS, type TerrainArt } from '../terrain/terrain-art.js'
 import { findCurveCrossings } from '../terrain/terrain-contour-validation.js'
 import { planTerrainContours } from '../terrain/terrain-contours.js'
 import { pointToSegmentDistance } from '../terrain/terrain-helpers.js'
@@ -51,6 +46,45 @@ function contourPoint(x: number): TerrainContourPoint {
 }
 
 const INK_SPEC = HEARTHSIDE_STYLE.terrain.seams.ink
+const canvasContextDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLCanvasElement.prototype,
+  'getContext',
+)
+
+function canvasContext(): CanvasRenderingContext2D {
+  return {
+    clearRect: vi.fn(),
+    save: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    fillRect: vi.fn(),
+    drawImage: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
+    createImageData: (width: number, height: number) =>
+      ({ data: new Uint8ClampedArray(width * height * 4) }) as ImageData,
+    putImageData: vi.fn(),
+    fillStyle: '#000000',
+    globalAlpha: 1,
+    globalCompositeOperation: 'source-over',
+  } as unknown as CanvasRenderingContext2D
+}
+
+beforeEach(() => {
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    configurable: true,
+    value: (kind: string) => (kind === '2d' ? canvasContext() : null),
+  })
+})
+
+afterEach(() => {
+  if (canvasContextDescriptor !== undefined) {
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', canvasContextDescriptor)
+  }
+  vi.restoreAllMocks()
+})
 
 function visibleLength(runs: readonly SeamStrokeRun[]): number {
   return runs.reduce((total, run) => {
@@ -67,11 +101,7 @@ function routePlan(rows: readonly string[]): TerrainRoutePlan {
 }
 
 function contourPlan(rows: readonly string[]): TerrainContourPlan {
-  return planTerrainContours(
-    rows,
-    names,
-    HEARTHSIDE_STYLE.terrain.contours,
-  )
+  return planTerrainContours(rows, names, HEARTHSIDE_STYLE.terrain.contours)
 }
 
 function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
@@ -106,12 +136,7 @@ function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
     props: [],
     scenery: [],
   }
-  const textures = Object.fromEntries(
-    [...Object.keys(names), ...Object.values(BRIDGE_PLANK_CODES)].map((code) => [
-      code,
-      Texture.EMPTY,
-    ]),
-  )
+  const textures = Object.fromEntries(Object.keys(names).map((code) => [code, Texture.EMPTY]))
   const routes = routePlan(rows)
   const art: TerrainArt = {
     tileset: { tileSize: 1, textures },
@@ -121,17 +146,24 @@ function sparseLayerFixture(): { scene: StaticScene; art: TerrainArt } {
       ink: Texture.WHITE,
     },
     routes,
-    contours: planTerrainContours(
-      routes.visualRows,
-      names,
-      HEARTHSIDE_STYLE.terrain.contours,
-    ),
-    plankLayer: { columns: 5, rows: plankRowsFor(routes) },
+    contours: planTerrainContours(routes.visualRows, names, HEARTHSIDE_STYLE.terrain.contours),
+    bridgeBoards: bridgeBoardsFixture(),
     upperWallTileset: { tileSize: 1, textures: { U: Texture.EMPTY, '.': Texture.EMPTY } },
     upperWallGrid: { columns: 5, rows: ['     ', '     ', '     ', 'UUUUU'] },
     upperWallVariant: () => 0,
   }
   return { scene, art }
+}
+
+function bridgeBoardsFixture(): TerrainArt['bridgeBoards'] {
+  const board = () => ({
+    width: 2,
+    height: 2,
+    pixels: new Uint8ClampedArray([
+      128, 128, 128, 255, 160, 160, 160, 255, 160, 160, 160, 255, 128, 128, 128, 255,
+    ]),
+  })
+  return [board(), board(), board()]
 }
 
 describe('Three Branches map layer', () => {
@@ -407,6 +439,76 @@ describe('Three Branches map layer', () => {
     view.destroy()
   })
 
+  it('puts one mipmapped deck sprite and its mask after the structure layer for each bridge', () => {
+    const { scene, art } = sparseLayerFixture()
+    const view = drawMap(scene, art)
+    const structures = view.architectureView.children.find(
+      (child) => child.label === 'terrain-structures',
+    )
+    const decks = required(
+      view.architectureView.children.find((child) => child.label === 'terrain-bridge-decks'),
+      'Component-wide bridge layer is missing.',
+    ) as Container
+
+    expect(view.architectureView.children.indexOf(decks)).toBeGreaterThan(
+      view.architectureView.children.indexOf(required(structures, 'Structure layer is missing.')),
+    )
+    expect(decks.children).toHaveLength(art.routes.bridgeComponents.length)
+    const component = required(decks.children[0], 'Bridge deck component is missing.') as Container
+    expect(component.label).toBe(`terrain-bridge-deck:${art.routes.bridgeComponents[0]?.id}`)
+    expect(
+      component.children.filter((child) => child.label === 'terrain-bridge-deck-sprite'),
+    ).toHaveLength(1)
+    expect(
+      component.children.filter((child) => child.label?.startsWith('terrain-bridge-deck-mask:')),
+    ).toHaveLength(1)
+    expect(component.children.some((child) => child.label === 'terrain-planks-shadow')).toBe(false)
+    view.destroy()
+    view.destroy()
+  })
+
+  it('rolls back map containers and generated decks when a later bridge cannot be composed', () => {
+    const { scene, art } = sparseLayerFixture()
+    const first = required(art.routes.bridgeComponents[0], 'Bridge fixture is missing.')
+    const second = {
+      ...first,
+      id: 'bridge-later-failure',
+      orientation: 'vertical' as const,
+      cells: [{ column: 4, row: 2 }],
+      bounds: { minColumn: 4, maxColumn: 4, minRow: 2, maxRow: 2 },
+      deck: {
+        kind: 'axis' as const,
+        widthCells: first.deck.widthCells,
+        cap: 'butt' as const,
+        center: { x: 4.5, y: 2.5 },
+        axis: [
+          { x: 4.5, y: 2 },
+          { x: 4.5, y: 3 },
+        ] as const,
+      },
+    }
+    art.routes = { ...art.routes, bridgeComponents: [first, second] }
+    const originalTextureFrom = Texture.from
+    let calls = 0
+    const textureFrom = vi.spyOn(Texture, 'from').mockImplementation((input) => {
+      if (calls === 1) throw new Error('second bridge texture failed')
+      calls += 1
+      return originalTextureFrom(input)
+    })
+    const destroyContainer = vi.spyOn(Container.prototype, 'destroy')
+
+    expect(() => drawMap(scene, art)).toThrow('second bridge texture failed')
+
+    const generated = textureFrom.mock.results[0]?.value as Texture | undefined
+    expect(generated?.destroyed).toBe(true)
+    expect(generated?.source).toBeNull()
+    const destroyedLabels = destroyContainer.mock.contexts.map(
+      (container) => (container as Container).label,
+    )
+    expect(destroyedLabels).toContain('terrain-structures')
+    expect(destroyedLabels).toContain('terrain-bridge-decks')
+  })
+
   it('strokes the road and path guides with their configured pattern fills', () => {
     const { art } = sparseLayerFixture()
     const fill = new FillPattern(Texture.WHITE, 'repeat')
@@ -461,7 +563,7 @@ describe('Three Branches map layer', () => {
     path.destroy()
   })
 
-  it('clips oriented and compact bridge components to their configured deck widths', () => {
+  it('uses the shared extended visual geometry for oriented and compact bridge masks', () => {
     const roadRoutes = routePlan(['ggggg', 'rrbrr', 'ggpgg'])
     const pathRoutes = routePlan(['rrrrr', 'ggpgg', 'ggbgg', 'ggpgg'])
     const compactRoutes = routePlan(['rrrrr', 'ggpgg', 'gpbpg', 'ggpgg'])
@@ -472,10 +574,20 @@ describe('Three Branches map layer', () => {
     const mask = bridgeDeckMask([roadBridge, pathBridge, compactBridge], 16)
     expect(
       mask.context.instructions.filter((instruction) => instruction.action === 'stroke'),
-    ).toHaveLength(2)
+    ).toHaveLength(0)
     expect(
       mask.context.instructions.filter((instruction) => instruction.action === 'fill'),
-    ).toHaveLength(1)
+    ).toHaveLength(3)
+    const baseMask = bridgeDeckMask([roadBridge], 16)
+    const fadedMask = bridgeDeckMask([roadBridge], 16, 0.2)
+    const base = baseMask.getLocalBounds()
+    const faded = fadedMask.getLocalBounds()
+    expect(faded.x).toBeCloseTo(base.x - 1.6, 10)
+    expect(faded.y).toBeCloseTo(base.y - 1.6, 10)
+    expect(faded.width).toBeCloseTo(base.width + 3.2, 10)
+    expect(faded.height).toBeCloseTo(base.height + 3.2, 10)
+    baseMask.destroy()
+    fadedMask.destroy()
     mask.destroy()
   })
   it('covers every cell of a tied multi-cell compact bridge mask', () => {

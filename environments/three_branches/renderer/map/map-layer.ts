@@ -23,6 +23,11 @@ import type {
 } from '../core/types.js'
 import { PATTERN_CELLS, type TerrainArt, transparentUpperGrid } from '../terrain/terrain-art.js'
 import { pointToSegmentDistance } from '../terrain/terrain-helpers.js'
+import {
+  appendBridgeDeckMask,
+  type BridgeDeckLayer,
+  createBridgeDeckLayer,
+} from './bridge-deck-art.js'
 
 /** The natural surface materials whose shared boundaries take the seam treatments. */
 const NATURAL_SEAM_MATERIALS = new Set(['ground', 'field', 'reeds', 'water'])
@@ -65,6 +70,7 @@ export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
   const architectureView = new Container()
   const grounds: GroundView[] = []
   const graphics: Graphics[] = []
+  const owned: { destroy(): void }[] = []
   const span = {
     width: scene.village.size.cellsX * cellSize,
     height: scene.village.size.cellsY * cellSize,
@@ -80,106 +86,101 @@ export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
     graphics.push(graphic)
   }
 
-  const ground = new Graphics()
-  ground.rect(0, 0, span.width, span.height).fill(fillPatternFor(art, 'ground', cellSize))
-  addNatural(ground, 'terrain-ground')
+  try {
+    const ground = new Graphics()
+    ground.rect(0, 0, span.width, span.height).fill(fillPatternFor(art, 'ground', cellSize))
+    addNatural(ground, 'terrain-ground')
 
-  for (const material of OVERLAY_MATERIALS) {
-    const surface = new Graphics()
-    const pattern = fillPatternFor(art, material, cellSize)
-    for (const path of componentPaths(art.contours, material, cellSize)) {
-      surface.path(path).fill(pattern)
+    for (const material of OVERLAY_MATERIALS) {
+      const surface = new Graphics()
+      const pattern = fillPatternFor(art, material, cellSize)
+      for (const path of componentPaths(art.contours, material, cellSize)) {
+        surface.path(path).fill(pattern)
+      }
+      surface.alpha = materialLayerAlpha(material)
+      addNatural(surface, `terrain-${material}`)
     }
-    surface.alpha = materialLayerAlpha(material)
-    addNatural(surface, `terrain-${material}`)
+
+    const names = Object.fromEntries(scene.ground.map((ground) => [ground.code, ground.name]))
+    const seamCover = routeCoverGraphics(art.routes, cellSize)
+    const seams = [
+      poolingGraphics(art.contours, cellSize),
+      reedMarksGraphics(art.contours, art.routes.visualRows, names, cellSize),
+      inkGraphics(art.contours, cellSize, fillPatternFor(art, 'ink', cellSize)),
+      hatchGraphics(art.contours, cellSize),
+    ] as const
+    for (const seam of seams) seam.setMask?.({ mask: seamCover, inverse: true })
+    addNatural(seams[0], 'terrain-seam-pooling')
+    addNatural(seams[1], 'terrain-reed-marks')
+    addNatural(seams[2], 'terrain-seam-ink')
+    addNatural(seams[3], 'terrain-seam-hatch')
+    addNatural(seamCover, 'terrain-seam-cover')
+
+    const pathTreatment = HEARTHSIDE_STYLE.terrain.routes.path
+    const pathPattern = fillPatternFor(art, 'path', cellSize)
+    const pathLayers = routeFadeLayers(
+      'terrain-path',
+      pathTreatment.edgeFadeCells,
+      materialLayerAlpha('path'),
+      (extraWidthCells) => pathGuideGraphics(art.routes, cellSize, pathPattern, extraWidthCells),
+    )
+    const pathBridgeCutout = bridgeDeckMask(
+      art.routes.bridgeComponents,
+      cellSize,
+      pathTreatment.edgeFadeCells * 2,
+    )
+    pathLayers.view.setMask?.({ mask: pathBridgeCutout, inverse: true })
+    naturalView.addChild(pathLayers.view, pathBridgeCutout)
+    owned.push(pathLayers.view)
+    graphics.push(...pathLayers.graphics)
+    pathBridgeCutout.label = 'terrain-path-bridge-cutout'
+    graphics.push(pathBridgeCutout)
+
+    const roadTreatment = HEARTHSIDE_STYLE.terrain.routes.road
+    const roadPattern = fillPatternFor(art, 'road', cellSize)
+    const roadLayers = routeFadeLayers(
+      'terrain-road',
+      roadTreatment.edgeFadeCells,
+      materialLayerAlpha('road'),
+      (extraWidthCells) => roadGuideGraphics(art.routes, cellSize, roadPattern, extraWidthCells),
+    )
+    const roadBridgeCutout = bridgeDeckMask(
+      art.routes.bridgeComponents,
+      cellSize,
+      roadTreatment.edgeFadeCells * 2,
+    )
+    roadLayers.view.setMask?.({ mask: roadBridgeCutout, inverse: true })
+    naturalView.addChild(roadLayers.view, roadBridgeCutout)
+    owned.push(roadLayers.view)
+    graphics.push(...roadLayers.graphics)
+    roadBridgeCutout.label = 'terrain-road-bridge-cutout'
+    graphics.push(roadBridgeCutout)
+
+    const structures = createSparseTiledGround(
+      exactTerrainGrid(scene.topFirstRows, names, STRUCTURE_NAMES),
+      art.tileset,
+      { cellSize, variant: art.variant },
+    )
+    structures.view.label = 'terrain-structures'
+    architectureView.addChild(structures.view)
+    grounds.push(structures)
+
+    const bridgeLayer: BridgeDeckLayer = createBridgeDeckLayer(
+      art,
+      art.routes.bridgeComponents,
+      cellSize,
+    )
+    architectureView.addChild(bridgeLayer.view)
+    owned.push(bridgeLayer)
+    return ownedMapLayerView(naturalView, architectureView, grounds, graphics, span, owned)
+  } catch (error) {
+    for (const ground of grounds) ground.destroy()
+    for (const graphic of graphics) graphic.destroy()
+    for (const item of owned) item.destroy()
+    naturalView.destroy({ children: false })
+    architectureView.destroy({ children: false })
+    throw error
   }
-
-  const names = Object.fromEntries(scene.ground.map((ground) => [ground.code, ground.name]))
-  const seamCover = routeCoverGraphics(art.routes, cellSize)
-  const seams = [
-    poolingGraphics(art.contours, cellSize),
-    reedMarksGraphics(art.contours, art.routes.visualRows, names, cellSize),
-    inkGraphics(art.contours, cellSize, fillPatternFor(art, 'ink', cellSize)),
-    hatchGraphics(art.contours, cellSize),
-  ] as const
-  for (const seam of seams) seam.setMask?.({ mask: seamCover, inverse: true })
-  addNatural(seams[0], 'terrain-seam-pooling')
-  addNatural(seams[1], 'terrain-reed-marks')
-  addNatural(seams[2], 'terrain-seam-ink')
-  addNatural(seams[3], 'terrain-seam-hatch')
-  addNatural(seamCover, 'terrain-seam-cover')
-
-  const pathTreatment = HEARTHSIDE_STYLE.terrain.routes.path
-  const pathPattern = fillPatternFor(art, 'path', cellSize)
-  const pathLayers = routeFadeLayers(
-    'terrain-path',
-    pathTreatment.edgeFadeCells,
-    materialLayerAlpha('path'),
-    (extraWidthCells) => pathGuideGraphics(art.routes, cellSize, pathPattern, extraWidthCells),
-  )
-  const pathBridgeCutout = bridgeDeckMask(
-    art.routes.bridgeComponents,
-    cellSize,
-    pathTreatment.edgeFadeCells * 2,
-  )
-  pathLayers.view.setMask?.({ mask: pathBridgeCutout, inverse: true })
-  naturalView.addChild(pathLayers.view, pathBridgeCutout)
-  graphics.push(...pathLayers.graphics)
-  pathBridgeCutout.label = 'terrain-path-bridge-cutout'
-  graphics.push(pathBridgeCutout)
-
-  const roadTreatment = HEARTHSIDE_STYLE.terrain.routes.road
-  const roadPattern = fillPatternFor(art, 'road', cellSize)
-  const roadLayers = routeFadeLayers(
-    'terrain-road',
-    roadTreatment.edgeFadeCells,
-    materialLayerAlpha('road'),
-    (extraWidthCells) => roadGuideGraphics(art.routes, cellSize, roadPattern, extraWidthCells),
-  )
-  const roadBridgeCutout = bridgeDeckMask(
-    art.routes.bridgeComponents,
-    cellSize,
-    roadTreatment.edgeFadeCells * 2,
-  )
-  roadLayers.view.setMask?.({ mask: roadBridgeCutout, inverse: true })
-  naturalView.addChild(roadLayers.view, roadBridgeCutout)
-  graphics.push(...roadLayers.graphics)
-  roadBridgeCutout.label = 'terrain-road-bridge-cutout'
-  graphics.push(roadBridgeCutout)
-
-  const structures = createSparseTiledGround(
-    exactTerrainGrid(scene.topFirstRows, names, STRUCTURE_NAMES),
-    art.tileset,
-    { cellSize, variant: art.variant },
-  )
-  structures.view.label = 'terrain-structures'
-  architectureView.addChild(structures.view)
-  grounds.push(structures)
-
-  const plankTreatment = HEARTHSIDE_STYLE.terrain.planks
-  const plankShadow = bridgeDeckMask(art.routes.bridgeComponents, cellSize)
-  plankShadow.tint = HEARTHSIDE_STYLE.palette[plankTreatment.shadowTint]
-  plankShadow.alpha = plankTreatment.shadowOpacity
-  plankShadow.y = plankTreatment.shadowOffsetCells * cellSize
-  addArchitecture(plankShadow, 'terrain-planks-shadow')
-
-  const planks = createSparseTiledGround(art.plankLayer, art.tileset, {
-    cellSize,
-    variant: art.variant,
-  })
-  const deckClip = bridgeDeckMask(
-    art.routes.bridgeComponents,
-    cellSize,
-    plankTreatment.textureBleedCells * 2,
-  )
-  planks.view.label = 'terrain-planks'
-  deckClip.label = 'terrain-planks-mask'
-  planks.view.mask = deckClip
-  architectureView.addChild(planks.view, deckClip)
-  grounds.push(planks)
-  graphics.push(deckClip)
-
-  return ownedMapLayerView(naturalView, architectureView, grounds, graphics, span)
 }
 
 /** Wrap one repeating pattern texture so world cells and the pattern grid stay aligned. */
@@ -839,41 +840,14 @@ function appendBridgeDecks(
   cellSize: number,
   extraWidthCells = 0,
 ): void {
-  for (const component of components) {
-    const { deck } = component
-    if (deck.kind === 'compact') {
-      if (component.cells.length > 1) {
-        for (const cell of component.cells) {
-          target
-            .rect(cell.column * cellSize, cell.row * cellSize, cellSize, cellSize)
-            .fill('#ffffff')
-        }
-        continue
-      }
-      const size = deck.widthCells * cellSize
-      target
-        .roundRect(
-          deck.center.x * cellSize - size / 2,
-          deck.center.y * cellSize - size / 2,
-          size,
-          size,
-          size / 4,
-        )
-        .fill('#ffffff')
-      continue
-    }
-    const axis = deck.axis
-    if (axis === undefined) throw new Error(`Bridge component ${component.id} has no deck axis.`)
-    target
-      .moveTo(axis[0].x * cellSize, axis[0].y * cellSize)
-      .lineTo(axis[1].x * cellSize, axis[1].y * cellSize)
-      .stroke({
-        color: '#ffffff',
-        width: (deck.widthCells + extraWidthCells) * cellSize,
-        cap: deck.cap,
-        join: 'round',
-      })
-  }
+  for (const component of components)
+    appendBridgeDeckMask(
+      target,
+      component,
+      cellSize,
+      HEARTHSIDE_STYLE.terrain.planks,
+      extraWidthCells / 2,
+    )
 }
 
 /**
@@ -1058,6 +1032,7 @@ export function ownedMapLayerView(
   grounds: readonly GroundView[],
   graphics: readonly Graphics[],
   span: GroundSpan,
+  owned: readonly { destroy(): void }[] = [],
 ): MapLayerView {
   let destroyed = false
   return {
@@ -1069,6 +1044,7 @@ export function ownedMapLayerView(
       destroyed = true
       for (const ground of grounds) ground.destroy()
       for (const graphic of graphics) graphic.destroy()
+      for (const item of owned) item.destroy()
       naturalView.destroy({ children: false })
       architectureView.destroy({ children: false })
     },

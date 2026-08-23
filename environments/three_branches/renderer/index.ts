@@ -690,6 +690,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       install: (assets) => {
         const textures = [
           assets.terrain,
+          assets.bridges,
           assets.props,
           assets.buildings.home,
           assets.buildings.inn,
@@ -701,7 +702,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
         if (!textures.every((texture) => texture instanceof Texture)) {
           throw new Error('Three Branches runtime atlases must be textures.')
         }
-        const terrain = createTerrainArt(assets.terrain, this.staticScene)
+        const terrain = createTerrainArt(assets.terrain, assets.bridges, this.staticScene)
         const propArt = createPropArt({
           props: assets.props,
           scenery: assets.scenery,
