@@ -8,9 +8,6 @@ import type { BridgeBoardSource, BridgeBoardSources } from '../terrain/bridge-bo
 /** Source resolution used for a component-wide bridge deck canvas. */
 export const BRIDGE_DECK_SOURCE_CELLS = 128
 
-/** Presentation values consumed by the component-wide deck compositor. */
-export type BridgeDeckTreatment = PlankTreatment
-
 export interface BridgeDeckArt {
   readonly bridgeBoards: BridgeBoardSources
 }
@@ -40,7 +37,6 @@ export interface PlannedBridgeBoard {
 
 export interface BridgeBoardPlan {
   readonly bounds: BridgeDeckBounds
-  readonly sourceRotation: 0 | 1
   readonly boards: readonly PlannedBridgeBoard[]
 }
 
@@ -55,7 +51,7 @@ export interface BridgeDeckLayer {
  */
 export function planBridgeBoards(
   component: TerrainBridgeComponent,
-  treatment: BridgeDeckTreatment,
+  treatment: PlankTreatment,
 ): BridgeBoardPlan {
   const bounds = deckBounds(component, treatment)
   const gameplayBounds = gameplayDeckBounds(component)
@@ -118,7 +114,6 @@ export function planBridgeBoards(
   }
   return {
     bounds,
-    sourceRotation: bounds.runAxis === 'vertical' ? 1 : 0,
     boards,
   }
 }
@@ -127,14 +122,14 @@ export function planBridgeBoards(
 export function deckBounds(
   component: TerrainBridgeComponent,
   treatment: Pick<
-    BridgeDeckTreatment,
-    'portalOverlapCells' | 'sideOverhangCells'
+    PlankTreatment,
+    'portalOverlapCells' | 'portalMaskInsetCells' | 'sideOverhangCells'
   > = HEARTHSIDE_STYLE.terrain.planks,
   outerPaddingCells = 0,
 ): BridgeDeckBounds {
   const bounds = gameplayDeckBounds(component)
   if (component.deck.kind === 'compact') return bounds
-  const portal = treatment.portalOverlapCells + outerPaddingCells
+  const portal = treatment.portalOverlapCells + treatment.portalMaskInsetCells + outerPaddingCells
   const side = treatment.sideOverhangCells + outerPaddingCells
   return bounds.runAxis === 'horizontal'
     ? {
@@ -212,7 +207,7 @@ export function createBridgeDeckLayer(
   art: BridgeDeckArt,
   components: readonly TerrainBridgeComponent[],
   cellSize: number,
-  treatment: BridgeDeckTreatment = HEARTHSIDE_STYLE.terrain.planks,
+  treatment: PlankTreatment = HEARTHSIDE_STYLE.terrain.planks,
 ): BridgeDeckLayer {
   const view = new Container({ label: 'terrain-bridge-decks' })
   const owned: { container: Container; sprite: Sprite; mask: Graphics; texture: Texture }[] = []
@@ -264,7 +259,7 @@ function composeBridgeDeck(
   component: TerrainBridgeComponent,
   plan: BridgeBoardPlan,
   sources: readonly BridgeBoardSource[],
-  treatment: BridgeDeckTreatment,
+  treatment: PlankTreatment,
 ): HTMLCanvasElement {
   const width = Math.max(
     1,
@@ -276,7 +271,8 @@ function composeBridgeDeck(
   )
   const canvas = makeCanvas(width, height)
   const context = requiredContext(canvas, `Bridge component ${component.id} canvas`)
-  const sourceCanvases = sources.map((source) => boardCanvas(source, plan.sourceRotation))
+  const rotation = plan.bounds.runAxis === 'vertical' ? 1 : 0
+  const sourceCanvases = sources.map((source) => boardCanvas(source, rotation))
   drawBoardSeams(context, plan, treatment, width, height)
   for (const board of plan.boards) {
     const source = sourceCanvases[board.sourceIndex]
@@ -292,7 +288,7 @@ function composeBridgeDeck(
 function drawCrossEdgeShadows(
   context: CanvasRenderingContext2D,
   plan: BridgeBoardPlan,
-  treatment: BridgeDeckTreatment,
+  treatment: PlankTreatment,
   width: number,
   height: number,
 ): void {
@@ -333,7 +329,7 @@ function drawCrossEdgeShadows(
 function drawBoardSeams(
   context: CanvasRenderingContext2D,
   plan: BridgeBoardPlan,
-  treatment: BridgeDeckTreatment,
+  treatment: PlankTreatment,
   width: number,
   height: number,
 ): void {
@@ -356,10 +352,10 @@ function baseSourceRect(
   bounds: BridgeDeckBounds,
 ): { x: number; y: number; width: number; height: number } {
   return {
-    x: sourceX(board, bounds),
-    y: sourceY(board, bounds),
-    width: sourceWidth(board),
-    height: sourceHeight(board),
+    x: (board.x - bounds.minX) * BRIDGE_DECK_SOURCE_CELLS,
+    y: (board.y - bounds.minY) * BRIDGE_DECK_SOURCE_CELLS,
+    width: board.width * BRIDGE_DECK_SOURCE_CELLS,
+    height: board.height * BRIDGE_DECK_SOURCE_CELLS,
   }
 }
 
@@ -367,7 +363,7 @@ function sourceRect(
   component: TerrainBridgeComponent,
   plan: BridgeBoardPlan,
   board: PlannedBridgeBoard,
-  treatment: BridgeDeckTreatment,
+  treatment: PlankTreatment,
 ): { x: number; y: number; width: number; height: number } {
   const rect = baseSourceRect(board, plan.bounds)
   const crossOverscan = treatment.sourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
@@ -396,19 +392,6 @@ function sourceRect(
     if (last) rect.height += axisOverscan
   }
   return rect
-}
-
-function sourceX(board: PlannedBridgeBoard, bounds: BridgeDeckBounds): number {
-  return (board.x - bounds.minX) * BRIDGE_DECK_SOURCE_CELLS
-}
-function sourceY(board: PlannedBridgeBoard, bounds: BridgeDeckBounds): number {
-  return (board.y - bounds.minY) * BRIDGE_DECK_SOURCE_CELLS
-}
-function sourceWidth(board: PlannedBridgeBoard): number {
-  return board.width * BRIDGE_DECK_SOURCE_CELLS
-}
-function sourceHeight(board: PlannedBridgeBoard): number {
-  return board.height * BRIDGE_DECK_SOURCE_CELLS
 }
 
 function drawBoardSource(
@@ -482,7 +465,7 @@ export function bridgeDeckMask(
   component: TerrainBridgeComponent,
   cellSize: number,
   treatment: Pick<
-    BridgeDeckTreatment,
+    PlankTreatment,
     'portalOverlapCells' | 'portalMaskInsetCells' | 'sideOverhangCells'
   > = HEARTHSIDE_STYLE.terrain.planks,
   outerPaddingCells = 0,
@@ -498,7 +481,7 @@ export function appendBridgeDeckMask(
   component: TerrainBridgeComponent,
   cellSize: number,
   treatment: Pick<
-    BridgeDeckTreatment,
+    PlankTreatment,
     'portalOverlapCells' | 'portalMaskInsetCells' | 'sideOverhangCells'
   > = HEARTHSIDE_STYLE.terrain.planks,
   outerPaddingCells = 0,
@@ -521,18 +504,13 @@ export function appendBridgeDeckMask(
       .fill('#ffffff')
     return
   }
-  const bounds = deckBounds(component, treatment, outerPaddingCells)
-  const portalInset = treatment.portalMaskInsetCells
-  const maskedBounds =
-    bounds.runAxis === 'horizontal'
-      ? { ...bounds, minX: bounds.minX + portalInset, maxX: bounds.maxX - portalInset }
-      : { ...bounds, minY: bounds.minY + portalInset, maxY: bounds.maxY - portalInset }
+  const bounds = deckBounds(component, { ...treatment, portalMaskInsetCells: 0 }, outerPaddingCells)
   mask
     .rect(
-      maskedBounds.minX * cellSize,
-      maskedBounds.minY * cellSize,
-      (maskedBounds.maxX - maskedBounds.minX) * cellSize,
-      (maskedBounds.maxY - maskedBounds.minY) * cellSize,
+      bounds.minX * cellSize,
+      bounds.minY * cellSize,
+      (bounds.maxX - bounds.minX) * cellSize,
+      (bounds.maxY - bounds.minY) * cellSize,
     )
     .fill('#ffffff')
 }

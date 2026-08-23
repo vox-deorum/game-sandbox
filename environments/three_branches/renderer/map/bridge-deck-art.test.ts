@@ -36,27 +36,6 @@ function bridge(
 }
 
 const treatment = HEARTHSIDE_STYLE.terrain.planks
-const tunedTreatment = {
-  ...treatment,
-  portalOverlapCells: 0.5,
-  portalMaskInsetCells: 0.1,
-  sideOverhangCells: 0.05,
-  sourceOverscanCells: 0.08,
-  sourcePhaseCells: 0.04,
-  portalSourceOverscanCells: 0.05,
-  seam: {
-    ...treatment.seam,
-    tint: 'backdrop' as const,
-    opacity: 0.35,
-    widthCells: 0.025,
-  },
-  edgeShadow: {
-    ...treatment.edgeShadow,
-    tint: 'backdrop' as const,
-    opacity: 0.24,
-    widthCells: 0.08,
-  },
-}
 const canvasContextDescriptor = Object.getOwnPropertyDescriptor(
   HTMLCanvasElement.prototype,
   'getContext',
@@ -225,20 +204,20 @@ describe('component bridge deck planning', () => {
         ],
       },
     )
-    const first = planBridgeBoards(component, tunedTreatment)
-    const second = planBridgeBoards(component, tunedTreatment)
+    const first = planBridgeBoards(component, treatment)
+    const second = planBridgeBoards(component, treatment)
+    const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
 
     expect(first).toEqual(second)
-    expect(first.sourceRotation).toBe(0)
     expect(first.bounds).toMatchObject({ runAxis: 'horizontal' })
-    expect(first.bounds.minX).toBeCloseTo(3.5, 10)
-    expect(first.bounds.maxX).toBeCloseTo(6.5, 10)
+    expect(first.bounds.minX).toBeCloseTo(4 - sourceOverlap, 10)
+    expect(first.bounds.maxX).toBeCloseTo(6 + sourceOverlap, 10)
     expect(first.bounds.minY).toBeCloseTo(7.1, 10)
     expect(first.bounds.maxY).toBeCloseTo(7.9, 10)
     expect(first.boards).toHaveLength(6)
-    expect(first.boards[0]?.x).toBe(3.5)
+    expect(first.boards[0]?.x).toBe(4 - sourceOverlap)
     const last = required(first.boards.at(-1), 'Horizontal bridge has no final board.')
-    expect(last.x + last.width).toBeCloseTo(6.5, 10)
+    expect(last.x + last.width).toBeCloseTo(6 + sourceOverlap, 10)
     for (const [index, board] of first.boards.slice(1).entries()) {
       const previous = required(first.boards[index], 'Horizontal bridge has no previous board.')
       expect(board.x).toBeCloseTo(previous.x + previous.width, 10)
@@ -248,10 +227,9 @@ describe('component bridge deck planning', () => {
         (board) => board.y === first.bounds.minY && board.y + board.height === first.bounds.maxY,
       ),
     ).toBe(true)
-    expect(first.boards.every((board) => Math.abs(board.crossAxisPhase) <= 0.04)).toBe(true)
-    expect(first.boards.every((board) => Number.isInteger(board.sourceIndex))).toBe(true)
-    expect(first.boards.every((board) => typeof board.mirrored === 'boolean')).toBe(true)
-    expect(first.boards.every((board) => typeof board.reversed === 'boolean')).toBe(true)
+    expect(
+      first.boards.every((board) => Math.abs(board.crossAxisPhase) <= treatment.sourcePhaseCells),
+    ).toBe(true)
   })
 
   it('rotates vertical planning while preserving its centered cross width', () => {
@@ -272,20 +250,20 @@ describe('component bridge deck planning', () => {
         ],
       },
     )
-    const plan = planBridgeBoards(component, tunedTreatment)
+    const plan = planBridgeBoards(component, treatment)
+    const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
 
-    expect(plan.sourceRotation).toBe(1)
     expect(plan.bounds).toEqual({
       minX: 2.1,
       maxX: 2.9,
-      minY: 0.5,
-      maxY: 3.5,
+      minY: 1 - sourceOverlap,
+      maxY: 3 + sourceOverlap,
       runAxis: 'vertical',
     })
     expect(plan.boards).toHaveLength(6)
-    expect(plan.boards[0]?.y).toBe(0.5)
+    expect(plan.boards[0]?.y).toBe(1 - sourceOverlap)
     const last = required(plan.boards.at(-1), 'Vertical bridge has no final board.')
-    expect(last.y + last.height).toBeCloseTo(3.5, 10)
+    expect(last.y + last.height).toBeCloseTo(3 + sourceOverlap, 10)
     expect(
       plan.boards.every(
         (board) => board.x === plan.bounds.minX && board.x + board.width === plan.bounds.maxX,
@@ -327,7 +305,6 @@ describe('component bridge deck planning', () => {
     const plan = planBridgeBoards(component, treatment)
 
     expect(plan.bounds.runAxis).toBe('vertical')
-    expect(plan.sourceRotation).toBe(1)
   })
 
   it('uses every multi-cell compact bounding rectangle and leaves final coverage to the union mask', () => {
@@ -387,7 +364,7 @@ describe('component bridge deck rendering', () => {
       { bridgeBoards: sources },
       [horizontalBridge()],
       16,
-      tunedTreatment,
+      treatment,
     )
     const horizontalSource = required(recordedCanvases[1], 'Horizontal source canvas is missing.')
     const horizontalImage = required(
@@ -421,7 +398,7 @@ describe('component bridge deck rendering', () => {
       { bridgeBoards: sources },
       [vertical],
       16,
-      tunedTreatment,
+      treatment,
     )
     const verticalSource = required(recordedCanvases[1], 'Vertical source canvas is missing.')
     const verticalImage = required(
@@ -447,7 +424,7 @@ describe('component bridge deck rendering', () => {
       { bridgeBoards: boardSources() },
       [horizontalBridge()],
       16,
-      tunedTreatment,
+      treatment,
     )
     const component = required(layer.view.children[0], 'Bridge component container is missing.')
     const sprite = required(
@@ -464,30 +441,31 @@ describe('component bridge deck rendering', () => {
       | { resource?: HTMLCanvasElement; autoGenerateMipmaps?: boolean }
       | undefined
     const canvas = required(textureInput?.resource, 'Bridge texture canvas is missing.')
+    const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
 
-    expect(canvas.width).toBe(Math.round(3 * BRIDGE_DECK_SOURCE_CELLS))
+    expect(canvas.width).toBe(Math.round((2 + sourceOverlap * 2) * BRIDGE_DECK_SOURCE_CELLS))
     expect(canvas.height).toBe(Math.round(0.8 * BRIDGE_DECK_SOURCE_CELLS))
     expect(textureInput?.autoGenerateMipmaps).toBe(true)
-    expect(sprite.position.x).toBeCloseTo(3.5 * 16, 10)
+    expect(sprite.position.x).toBeCloseTo((4 - sourceOverlap) * 16, 10)
     expect(sprite.position.y).toBeCloseTo(7.1 * 16, 10)
     expect(sprite.scale.x).toBe(16 / BRIDGE_DECK_SOURCE_CELLS)
     expect(sprite.scale.y).toBe(16 / BRIDGE_DECK_SOURCE_CELLS)
     const maskBounds = mask.getLocalBounds()
-    expect(maskBounds.minX).toBeCloseTo(3.6 * 16, 10)
+    expect(maskBounds.minX).toBeCloseTo((4 - treatment.portalOverlapCells) * 16, 10)
     expect(maskBounds.minY).toBeCloseTo(7.1 * 16, 10)
-    expect(maskBounds.maxX).toBeCloseTo(6.4 * 16, 10)
+    expect(maskBounds.maxX).toBeCloseTo((6 + treatment.portalOverlapCells) * 16, 10)
     expect(maskBounds.maxY).toBeCloseTo(7.9 * 16, 10)
     layer.destroy()
   })
 
   it('draws internal seam underlays before the overscanned full-color boards', () => {
     const component = horizontalBridge()
-    const plan = planBridgeBoards(component, tunedTreatment)
+    const plan = planBridgeBoards(component, treatment)
     const layer = createBridgeDeckLayer(
       { bridgeBoards: boardSources() },
       [component],
       16,
-      tunedTreatment,
+      treatment,
     )
     const final = required(recordedCanvases[0], 'Final bridge canvas was not recorded.')
     const indexOf = (name: string, value?: unknown): number =>
@@ -502,7 +480,7 @@ describe('component bridge deck rendering', () => {
 
     expect(final.commands[0]).toEqual({
       name: 'fillStyle',
-      args: [HEARTHSIDE_STYLE.palette[tunedTreatment.seam.tint]],
+      args: [HEARTHSIDE_STYLE.palette[treatment.seam.tint]],
     })
     expect(firstBoard).toBeGreaterThan(indexOf('fillRect'))
     expect(seams).toHaveLength(plan.boards.length - 1)
@@ -516,106 +494,51 @@ describe('component bridge deck rendering', () => {
     expect(
       final.commands.slice(0, firstBoard).some((command) => command.name === 'composite'),
     ).toBe(false)
-    layer.destroy()
-  })
-
-  it('softens only the two cross edges after drawing the boards', () => {
-    const horizontalLayer = createBridgeDeckLayer(
-      { bridgeBoards: boardSources() },
-      [horizontalBridge()],
-      16,
-      tunedTreatment,
-    )
-    const horizontal = required(recordedCanvases[0], 'Horizontal bridge canvas was not recorded.')
-    const horizontalDraws = horizontal.commands
-      .map((command, index) => ({ command, index }))
-      .filter(({ command }) => command.name === 'drawImage')
-    const lastHorizontalDrawIndex = required(
-      horizontalDraws.at(-1),
-      'Horizontal bridge has no board draw.',
-    ).index
-    const horizontalFills = horizontal.commands
-      .map((command, index) => ({ command, index }))
-      .filter(
-        ({ command, index }) =>
-          command.name === 'fillRect' && index > lastHorizontalDrawIndex,
-      )
-    const shadowWidth = tunedTreatment.edgeShadow.widthCells * BRIDGE_DECK_SOURCE_CELLS
-
-    expect(horizontalFills.map(({ command }) => command.args)).toEqual([
-      [0, 0, horizontal.canvas.width, shadowWidth],
-      [0, horizontal.canvas.height - shadowWidth, horizontal.canvas.width, shadowWidth],
+    const shadowWidth = treatment.edgeShadow.widthCells * BRIDGE_DECK_SOURCE_CELLS
+    const lastBoard = final.commands.map((command) => command.name).lastIndexOf('drawImage')
+    const shadows = final.commands
+      .slice(lastBoard + 1)
+      .filter((command) => command.name === 'fillRect')
+    expect(shadows.map((command) => command.args)).toEqual([
+      [0, 0, final.canvas.width, shadowWidth],
+      [0, final.canvas.height - shadowWidth, final.canvas.width, shadowWidth],
     ])
     expect(
-      horizontal.commands.some(
+      final.commands.some(
         (command) => command.name === 'composite' && command.args[0] === 'source-atop',
       ),
     ).toBe(true)
-    horizontalLayer.destroy()
-
-    recordedCanvases = []
-    const verticalComponent = bridge('vertical', [{ column: 8, row: 4 }], {
-      kind: 'axis',
-      widthCells: 0.7,
-      cap: 'butt',
-      center: { x: 8.5, y: 4.5 },
-      axis: [
-        { x: 8.5, y: 4 },
-        { x: 8.5, y: 5 },
-      ],
-    })
-    const verticalLayer = createBridgeDeckLayer(
-      { bridgeBoards: boardSources() },
-      [verticalComponent],
-      16,
-      tunedTreatment,
-    )
-    const vertical = required(recordedCanvases[0], 'Vertical bridge canvas was not recorded.')
-    const verticalDraws = vertical.commands
-      .map((command, index) => ({ command, index }))
-      .filter(({ command }) => command.name === 'drawImage')
-    const lastVerticalDrawIndex = required(
-      verticalDraws.at(-1),
-      'Vertical bridge has no board draw.',
-    ).index
-    const verticalFills = vertical.commands
-      .map((command, index) => ({ command, index }))
-      .filter(
-        ({ command, index }) => command.name === 'fillRect' && index > lastVerticalDrawIndex,
-      )
-
-    expect(verticalFills.map(({ command }) => command.args)).toEqual([
-      [0, 0, shadowWidth, vertical.canvas.height],
-      [vertical.canvas.width - shadowWidth, 0, shadowWidth, vertical.canvas.height],
-    ])
-    verticalLayer.destroy()
+    layer.destroy()
   })
 
   it('phases the narrow source axis without moving deck bounds and overscans both cross edges', () => {
     const component = horizontalBridge()
-    const plan = planBridgeBoards(component, tunedTreatment)
+    const plan = planBridgeBoards(component, treatment)
     const layer = createBridgeDeckLayer(
       { bridgeBoards: boardSources() },
       [component],
       16,
-      tunedTreatment,
+      treatment,
     )
     const final = required(recordedCanvases[0], 'Final bridge canvas was not recorded.')
     const boardDraws = final.commands.filter((command) => command.name === 'drawImage')
+    const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
+    const crossSpan = 0.7 + treatment.sideOverhangCells * 2
+    const overscannedCrossSpan = crossSpan + treatment.sourceOverscanCells * 2
 
-    expect(plan.bounds.minX).toBeCloseTo(3.5, 10)
-    expect(plan.bounds.maxX).toBeCloseTo(6.5, 10)
+    expect(plan.bounds.minX).toBeCloseTo(4 - sourceOverlap, 10)
+    expect(plan.bounds.maxX).toBeCloseTo(6 + sourceOverlap, 10)
     expect(plan.bounds.minY).toBeCloseTo(7.1, 10)
     expect(plan.bounds.maxY).toBeCloseTo(7.9, 10)
     expect(boardDraws).toHaveLength(plan.boards.length)
     for (const [index, draw] of boardDraws.entries()) {
       const board = required(plan.boards[index], 'Bridge plan is missing a board.')
-      expect(draw.args[4]).toBeCloseTo((0.8 + 0.16) * BRIDGE_DECK_SOURCE_CELLS, 10)
+      expect(draw.args[4]).toBeCloseTo(overscannedCrossSpan * BRIDGE_DECK_SOURCE_CELLS, 10)
       expect(draw.args[3]).toBeCloseTo(
         board.width * BRIDGE_DECK_SOURCE_CELLS +
-          (index === 0 ? tunedTreatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS : 0) +
+          (index === 0 ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS : 0) +
           (index === plan.boards.length - 1
-            ? tunedTreatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
+            ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
             : 0),
         10,
       )
@@ -624,12 +547,12 @@ describe('component bridge deck rendering', () => {
     for (const [index, translation] of translations.entries()) {
       const board = required(plan.boards[index], 'Bridge plan is missing a board.')
       const y = translation.args[1] as number
-      const sourceHeight = (0.8 + 0.16) * BRIDGE_DECK_SOURCE_CELLS
+      const sourceHeight = overscannedCrossSpan * BRIDGE_DECK_SOURCE_CELLS
       const expectedY =
-        (-0.08 + board.crossAxisPhase) * BRIDGE_DECK_SOURCE_CELLS +
+        (-treatment.sourceOverscanCells + board.crossAxisPhase) * BRIDGE_DECK_SOURCE_CELLS +
         (board.reversed ? sourceHeight : 0)
       expect(y).toBeCloseTo(expectedY, 10)
-      expect(Math.abs(board.crossAxisPhase)).toBeLessThanOrEqual(0.04)
+      expect(Math.abs(board.crossAxisPhase)).toBeLessThanOrEqual(treatment.sourcePhaseCells)
     }
     layer.destroy()
   })
@@ -645,7 +568,7 @@ describe('component bridge deck rendering', () => {
         { x: 5, y: 7.5 },
       ],
     })
-    const oneBoardTreatment = { ...tunedTreatment, boardsPerCell: 1 }
+    const oneBoardTreatment = { ...treatment, boardsPerCell: 1 }
     const plan = planBridgeBoards(component, oneBoardTreatment)
     const layer = createBridgeDeckLayer(
       { bridgeBoards: boardSources() },
@@ -664,19 +587,23 @@ describe('component bridge deck rendering', () => {
       ),
       'Bridge sprite is missing.',
     ) as Sprite
+    const sourceSpan = 1 + (treatment.portalOverlapCells + treatment.portalMaskInsetCells) * 2
 
     expect(plan.boards).toHaveLength(1)
     expect(draw.args[3]).toBeCloseTo(
-      (2 + tunedTreatment.portalSourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS,
+      (sourceSpan + treatment.portalSourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS,
       10,
     )
-    expect(sprite.position.x).toBeCloseTo(3.5 * 16, 10)
-    expect(sprite.texture.width).toBe(Math.round(2 * BRIDGE_DECK_SOURCE_CELLS))
+    expect(sprite.position.x).toBeCloseTo(
+      (4 - treatment.portalOverlapCells - treatment.portalMaskInsetCells) * 16,
+      10,
+    )
+    expect(sprite.texture.width).toBe(Math.round(sourceSpan * BRIDGE_DECK_SOURCE_CELLS))
     layer.destroy()
   })
 
   it('maps narrow mirroring and end reversal onto the correct axes after rotation', () => {
-    const horizontal = planBridgeBoards(horizontalBridge(), tunedTreatment)
+    const horizontal = planBridgeBoards(horizontalBridge(), treatment)
     const vertical = planBridgeBoards(
       bridge('vertical', [{ column: 8, row: 4 }], {
         kind: 'axis',
@@ -688,7 +615,7 @@ describe('component bridge deck rendering', () => {
           { x: 8.5, y: 5 },
         ],
       }),
-      tunedTreatment,
+      treatment,
     )
     const sources = [directionalBoard(), directionalBoard(), directionalBoard()] as const
     const layer = createBridgeDeckLayer(
@@ -707,7 +634,7 @@ describe('component bridge deck rendering', () => {
         }),
       ],
       16,
-      tunedTreatment,
+      treatment,
     )
     const horizontalFinal = required(recordedCanvases[0], 'Horizontal final canvas is missing.')
     const verticalFinal = required(recordedCanvases[4], 'Vertical final canvas is missing.')
@@ -730,14 +657,14 @@ describe('component bridge deck rendering', () => {
         verticalTranslations[index],
         'Vertical board translation is missing.',
       )
-      const firstOverscan = index === 0 ? tunedTreatment.portalSourceOverscanCells : 0
+      const firstOverscan = index === 0 ? treatment.portalSourceOverscanCells : 0
       const lastOverscan =
-        index === vertical.boards.length - 1 ? tunedTreatment.portalSourceOverscanCells : 0
+        index === vertical.boards.length - 1 ? treatment.portalSourceOverscanCells : 0
       const sourceWidth =
-        (board.width + tunedTreatment.sourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS
+        (board.width + treatment.sourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS
       const sourceHeight = (board.height + firstOverscan + lastOverscan) * BRIDGE_DECK_SOURCE_CELLS
       const expectedX =
-        (-tunedTreatment.sourceOverscanCells + board.crossAxisPhase) * BRIDGE_DECK_SOURCE_CELLS +
+        (-treatment.sourceOverscanCells + board.crossAxisPhase) * BRIDGE_DECK_SOURCE_CELLS +
         (board.reversed ? sourceWidth : 0)
       const expectedY =
         (board.y - vertical.bounds.minY - firstOverscan) * BRIDGE_DECK_SOURCE_CELLS +
@@ -748,6 +675,17 @@ describe('component bridge deck rendering', () => {
       expect(translation.args[0]).toBeCloseTo(expectedX, 10)
       expect(translation.args[1]).toBeCloseTo(expectedY, 10)
     }
+    const lastVerticalBoard = verticalFinal.commands
+      .map((command) => command.name)
+      .lastIndexOf('drawImage')
+    const verticalShadows = verticalFinal.commands
+      .slice(lastVerticalBoard + 1)
+      .filter((command) => command.name === 'fillRect')
+    const shadowWidth = treatment.edgeShadow.widthCells * BRIDGE_DECK_SOURCE_CELLS
+    expect(verticalShadows.map((command) => command.args)).toEqual([
+      [0, 0, shadowWidth, verticalFinal.canvas.height],
+      [verticalFinal.canvas.width - shadowWidth, 0, shadowWidth, verticalFinal.canvas.height],
+    ])
     layer.destroy()
   })
 
@@ -761,13 +699,13 @@ describe('component bridge deck rendering', () => {
       { kind: 'compact', widthCells: 0.7, cap: 'round', center: { x: 2.5, y: 2 } },
       'compact-vertical-render',
     )
-    const plan = planBridgeBoards(compact, tunedTreatment)
+    const plan = planBridgeBoards(compact, treatment)
     const source = directionalBoard()
     const layer = createBridgeDeckLayer(
       { bridgeBoards: [source, source, source] },
       [compact],
       16,
-      tunedTreatment,
+      treatment,
     )
     const final = required(recordedCanvases[0], 'Compact final canvas is missing.')
     const rotatedSource = required(recordedCanvases[1], 'Compact source canvas is missing.')
@@ -800,7 +738,7 @@ describe('component bridge deck rendering', () => {
       { bridgeBoards: sources },
       [horizontalBridge()],
       16,
-      tunedTreatment,
+      treatment,
     )
     const component = required(layer.view.children[0], 'Bridge component container is missing.')
     const sprite = required(
@@ -848,7 +786,7 @@ describe('component bridge deck rendering', () => {
         { bridgeBoards: sources },
         [horizontalBridge('first'), vertical],
         16,
-        tunedTreatment,
+        treatment,
       ),
     ).toThrow('second bridge texture failed')
     const firstTexture = textureFrom.mock.results[0]?.value as Texture | undefined

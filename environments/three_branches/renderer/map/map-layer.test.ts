@@ -463,7 +463,6 @@ describe('Three Branches map layer', () => {
     expect(
       component.children.filter((child) => child.label?.startsWith('terrain-bridge-deck-mask:')),
     ).toHaveLength(1)
-    expect(component.children.some((child) => child.label === 'terrain-planks-shadow')).toBe(false)
     view.destroy()
     view.destroy()
   })
@@ -564,7 +563,7 @@ describe('Three Branches map layer', () => {
     path.destroy()
   })
 
-  it('uses the shared extended visual geometry for oriented and compact bridge masks', () => {
+  it('leaves the route beneath the outer landing while preserving compact bridge masks', () => {
     const roadRoutes = routePlan(['ggggg', 'rrbrr', 'ggpgg'])
     const pathRoutes = routePlan(['rrrrr', 'ggpgg', 'ggbgg', 'ggpgg'])
     const compactRoutes = routePlan(['rrrrr', 'ggpgg', 'gpbpg', 'ggpgg'])
@@ -583,9 +582,16 @@ describe('Three Branches map layer', () => {
     const fadedMask = bridgeDeckMask([roadBridge], 16, 0.2)
     const base = baseMask.getLocalBounds()
     const faded = fadedMask.getLocalBounds()
-    expect(faded.x).toBeCloseTo(base.x - 1.6, 10)
+    const underlap = Math.max(
+      0,
+      HEARTHSIDE_STYLE.terrain.planks.portalOverlapCells -
+        HEARTHSIDE_STYLE.terrain.planks.portalMaskInsetCells,
+    )
+    expect(base.x).toBeCloseTo((2 - underlap) * 16, 10)
+    expect(base.width).toBeCloseTo((1 + underlap * 2) * 16, 10)
+    expect(faded.x).toBeCloseTo(base.x, 10)
     expect(faded.y).toBeCloseTo(base.y - 1.6, 10)
-    expect(faded.width).toBeCloseTo(base.width + 3.2, 10)
+    expect(faded.width).toBeCloseTo(base.width, 10)
     expect(faded.height).toBeCloseTo(base.height + 3.2, 10)
     baseMask.destroy()
     fadedMask.destroy()

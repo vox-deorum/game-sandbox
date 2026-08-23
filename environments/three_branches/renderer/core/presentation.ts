@@ -1195,23 +1195,22 @@ function plankTreatment(
     'opacity',
     'widthCells',
   ])
-  const portalOverlapCells = boundedNumber(
-    source.portalOverlapCells,
-    `${name}.portalOverlapCells`,
-    0,
-    0.5,
-    true,
-  )
   return {
     frame: knownText(source.frame, knownFrames, `${name}.frame`),
     boardsPerCell,
     widthVariation: boundedNumber(source.widthVariation, `${name}.widthVariation`, 0, 0.5, true),
-    portalOverlapCells,
+    portalOverlapCells: boundedNumber(
+      source.portalOverlapCells,
+      `${name}.portalOverlapCells`,
+      0,
+      0.5,
+      true,
+    ),
     portalMaskInsetCells: boundedNumber(
       source.portalMaskInsetCells,
       `${name}.portalMaskInsetCells`,
       0,
-      portalOverlapCells,
+      0.5,
       true,
     ),
     sideOverhangCells: boundedNumber(

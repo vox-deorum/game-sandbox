@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { PNG } from 'pngjs'
 import type { Texture } from 'pixi.js'
+import { PNG } from 'pngjs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ATLAS_PAGES } from '../assets.js'
@@ -186,12 +186,13 @@ describe('Three Branches bridge board sources', () => {
         ),
       )
     const maximumBoardWidth =
-      ((1 + treatment.portalOverlapCells * 2) * (1 + treatment.widthVariation)) /
+      ((1 + (treatment.portalOverlapCells + treatment.portalMaskInsetCells) * 2) *
+        (1 + treatment.widthVariation)) /
       (1 +
         treatment.widthVariation +
         (treatment.boardsPerCell - 1) * (1 - treatment.widthVariation))
     const portalInset =
-      treatment.portalSourceOverscanCells /
+      (treatment.portalMaskInsetCells + treatment.portalSourceOverscanCells) /
       (maximumBoardWidth + treatment.portalSourceOverscanCells)
 
     for (const source of sources) {
@@ -211,22 +212,10 @@ describe('Three Branches bridge board sources', () => {
         Math.ceil((1 - portalInset) * source.width) - 1,
       )
       expect(
-        columnCoverage(
-          source.pixels,
-          source.width,
-          rows.start,
-          rows.end - 1,
-          firstPortalColumn,
-        ),
+        columnCoverage(source.pixels, source.width, rows.start, rows.end - 1, firstPortalColumn),
       ).toBeGreaterThanOrEqual(0.6)
       expect(
-        columnCoverage(
-          source.pixels,
-          source.width,
-          rows.start,
-          rows.end - 1,
-          lastPortalColumn,
-        ),
+        columnCoverage(source.pixels, source.width, rows.start, rows.end - 1, lastPortalColumn),
       ).toBeGreaterThanOrEqual(0.6)
     }
   })

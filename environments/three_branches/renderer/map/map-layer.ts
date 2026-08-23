@@ -725,10 +725,9 @@ export function roadGuideGraphics(
 
 /** White coverage of the road, every path, and every bridge deck, cutting seams under routes. */
 export function routeCoverGraphics(routes: TerrainRoutePlan, cellSize: number): Graphics {
-  const cover = new Graphics()
+  const cover = bridgeDeckMask(routes.bridgeComponents, cellSize)
   appendRoadGuide(cover, routes, cellSize, '#ffffff')
   appendPathGuides(cover, routes, cellSize, '#ffffff')
-  appendBridgeDecks(cover, routes.bridgeComponents, cellSize)
   return cover
 }
 
@@ -830,24 +829,21 @@ export function bridgeDeckMask(
   extraWidthCells = 0,
 ): Graphics {
   const mask = new Graphics()
-  appendBridgeDecks(mask, components, cellSize, extraWidthCells)
-  return mask
-}
-
-function appendBridgeDecks(
-  target: Graphics,
-  components: readonly TerrainBridgeComponent[],
-  cellSize: number,
-  extraWidthCells = 0,
-): void {
+  const planks = HEARTHSIDE_STYLE.terrain.planks
+  const outerPaddingCells = extraWidthCells / 2
+  const routeOverlap = Math.max(
+    0,
+    planks.portalOverlapCells - planks.portalMaskInsetCells - outerPaddingCells,
+  )
   for (const component of components)
     appendBridgeDeckMask(
-      target,
+      mask,
       component,
       cellSize,
-      HEARTHSIDE_STYLE.terrain.planks,
-      extraWidthCells / 2,
+      { ...planks, portalOverlapCells: routeOverlap },
+      outerPaddingCells,
     )
+  return mask
 }
 
 /**
