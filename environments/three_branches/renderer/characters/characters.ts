@@ -1,10 +1,10 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { CharacterCastSet } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { CharacterDrawable, FrameScene } from '../core/types.js'
 import { type FrameGrid, frameRectangle } from '../ui/tint.js'
-import { characterArmAngles, characterRotation, characterStyle } from './characters-art.js'
+import { characterGait, characterRotation, characterStyle } from './characters-art.js'
 
 const CHARACTER_SCALE = (THREE_BRANCHES_PRESENTATION.unitsPerMetre / 128) * 0.85
 const CHARACTER_FRAME_SIZE = 192
@@ -42,6 +42,7 @@ interface CharacterNode {
   farMark: Graphics
   shadow: Sprite | null
   rotor: Container | null
+  gait: Container | null
   base: Sprite | null
   leftArm: Sprite | null
   rightArm: Sprite | null
@@ -126,6 +127,7 @@ function createNode(id: string): CharacterNode {
     farMark,
     shadow: null,
     rotor: null,
+    gait: null,
     base: null,
     leftArm: null,
     rightArm: null,
@@ -139,26 +141,20 @@ function installNodeArt(node: CharacterNode, art: CharacterArt): void {
   shadow.tint = HEARTHSIDE_STYLE.palette.backdrop
   shadow.alpha = 0.45
   const rotor = new Container({ label: 'character-rotor' })
+  const gait = new Container({ label: 'character-gait' })
   const directionMark = characterSprite('character-direction-mark', art.directionMark)
   const visitor = requiredSet(art.sets, HEARTHSIDE_STYLE.characters.cast.visitor.id)
-  const base = characterSprite(
-    'character-base',
-    visitor.base,
-  )
-  const leftArm = characterSprite(
-    'character-left-arm',
-    visitor.leftArm,
-  )
-  const rightArm = characterSprite(
-    'character-right-arm',
-    visitor.rightArm,
-  )
+  const base = characterSprite('character-base', visitor.base)
+  const leftArm = characterSprite('character-left-arm', visitor.leftArm)
+  const rightArm = characterSprite('character-right-arm', visitor.rightArm)
   directionMark.tint = HEARTHSIDE_STYLE.palette.ink
-  rotor.addChild(directionMark, leftArm, rightArm, base)
+  gait.addChild(leftArm, rightArm, base)
+  rotor.addChild(directionMark, gait)
   node.root.addChildAt(shadow, 0)
   node.root.addChildAt(rotor, 1)
   node.shadow = shadow
   node.rotor = rotor
+  node.gait = gait
   node.base = base
   node.leftArm = leftArm
   node.rightArm = rightArm
@@ -204,21 +200,24 @@ function drawCharacter(
   const base = requiredPart(node.base, 'base')
   const leftArm = requiredPart(node.leftArm, 'left arm')
   const rightArm = requiredPart(node.rightArm, 'right arm')
+  const gaitContainer = requiredPart(node.gait, 'gait')
   base.texture = set.base
   leftArm.texture = set.leftArm
   rightArm.texture = set.rightArm
-  registerArm(leftArm, style.set.leftArm)
-  registerArm(rightArm, style.set.rightArm)
-  const angles = characterArmAngles(character.id, character.walkDistance, character.moved)
-  leftArm.rotation = angles.left
-  rightArm.rotation = angles.right
+  const gait = characterGait(character.walkDistance, character.walkBlend)
+  registerArm(leftArm, style.set.leftArm, gait.leftArm.travel)
+  registerArm(rightArm, style.set.rightArm, gait.rightArm.travel)
+  leftArm.rotation = gait.leftArm.rotation
+  rightArm.rotation = gait.rightArm.rotation
+  gaitContainer.rotation = gait.body.rotation
+  gaitContainer.position.set(0, gait.body.bob * CHARACTER_SCALE)
 }
 
-function registerArm(sprite: Sprite, arm: CharacterCastSet['leftArm']): void {
+function registerArm(sprite: Sprite, arm: CharacterCastSet['leftArm'], travelPixels: number): void {
   sprite.anchor.set(arm.pivot.x / CHARACTER_FRAME_SIZE, arm.pivot.y / CHARACTER_FRAME_SIZE)
   sprite.position.set(
     (arm.anchor.x - CHARACTER_FRAME_SIZE / 2) * CHARACTER_SCALE,
-    (arm.anchor.y - CHARACTER_FRAME_SIZE / 2) * CHARACTER_SCALE,
+    (arm.anchor.y - CHARACTER_FRAME_SIZE / 2 + travelPixels) * CHARACTER_SCALE,
   )
 }
 

@@ -320,17 +320,19 @@ describe('Three Branches asset catalog', () => {
     ])
     const monuments = ATLAS_PAGES.find((page) => page.group === 'monuments')
     expect(monuments?.cells.map((cell) => cell.source.path)).toEqual([
-      './assets/source-art/frames/monuments/pumpFlowing.png',
-      './assets/source-art/frames/monuments/pumpIdle.png',
+      './assets/source-art/frames/monuments/pump.png',
     ])
     const bell = ATLAS_PAGES.find((page) => page.group === 'bell')
     expect(bell).toMatchObject({
       pageKey: 'bell',
-      width: 4608,
-      height: 1024,
-      columns: 3,
+      width: 384,
+      height: 256,
+      columns: 1,
       rows: 1,
     })
+    expect(bell?.cells.map((cell) => cell.source.path)).toEqual([
+      './assets/source-art/frames/bell/bell.png',
+    ])
     const scenery = ATLAS_PAGES.find((page) => page.group === 'scenery')
     expect(scenery?.cells.at(-1)?.source.path).toBe(
       './assets/source-art/frames/scenery/marketCrate.png',

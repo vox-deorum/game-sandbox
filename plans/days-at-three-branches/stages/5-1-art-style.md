@@ -29,7 +29,7 @@ Build static terrain, roofs, scenery, and permanent prop bases once from the rec
 Draw world layers in this order:
 
 1. Night-ink surround and natural terrain, including seams, reeds, and inset routes.
-2. The authored world composite: lower architecture, scenery, prop contact shadows, prop stills and foundations, character shadows and characters, upper walls and roofs, then monument uppers and sustained effects.
+2. The authored world composite: lower architecture, scenery, prop contact shadows, prop stills and foundations, character shadows and characters, upper walls and roofs, then sustained effects.
 3. The night grade, when the scene is in the `night` phase.
 4. Emissives.
 5. The prop interaction highlight.
@@ -40,11 +40,11 @@ Daytime is ungraded. The night grade covers terrain and authored world art durin
 
 ## Characters, props, and dressing
 
-Characters use a conventional directly overhead projection. Assemble each full-colour cast set from one static base and one canonical arm pair around its centre, then rotate the complete character to recorded heading. Drive opposing shoulder rotation from displayed walk distance so movement is seek-safe and settles to rest with the character. Visitor identity and villager hat selection remain deterministic. Shadows and direction marks remain deterministic, and the visitor retains a small cinnabar far mark. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
+Characters use a conventional directly overhead projection. Assemble each full-colour cast set from one static base and one canonical arm pair around its centre, turn the authored cast 180 degrees, then rotate the complete character to recorded heading. Drive alternating fore-and-aft hand travel, small shoulder rotation, and restrained body sway from displayed walk distance and an interpolated movement envelope. The gait remains seek-safe and settles to rest with the character. Visitor identity and villager hat selection remain deterministic. Shadows and direction marks remain deterministic, and the visitor retains a small cinnabar far mark. The owner approved [the top-down shooter direction](../art/top-down-shooter-direction.png).
 
 ![Approved top-down shooter direction](../art/top-down-shooter-direction.png)
 
-Every ordinary prop state has a complete, immediately distinguishable north-facing still across its existing catalog footprint. Ordinary props rotate with recorded facing. The lantern, roadside shrine, notice board, pump, and bell remain fixed north. The lantern is an ordinary collision-centered prop with its own complete state art, selection, contact shadow, flicker, and emissive treatment. The pump and bell remain registered monuments: their art roles stay collision-centered, while their visible mechanisms and effects may extend beyond the solid footprint. The bell foundation remains below characters, and its fixed gantry and moving bell remain above them.
+Every ordinary prop state has a complete, immediately distinguishable north-facing still across its existing catalog footprint. Ordinary props rotate with recorded facing. The lantern, roadside shrine, notice board, pump, and bell remain fixed north. The lantern, pump, and bell use complete standard top-down assets centered on their collision footprints, with their state art, selection, contact shadows, and effects sharing that center. The pump's flowing state adds a separate water ripple effect, and the bell's ringing state adds separate sound lines. These presentation layers may extend beyond the solid footprint without changing gameplay truth.
 
 Prop states communicate their gameplay change at runtime size. A market stall distinguishes open goods and awning from a closed shutter, an occupied bench from bare slats, tended work from untended or idle work, and lit hearths or lanterns from their unlit states. The garden remains a directly overhead flat ground-inlaid boundary: its tended and overgrown states preserve the same gameplay footprint while clearly changing soil and growth. Art may add a visual cue, but it must not enlarge the prop or change its registration, collision, selection, generation placement, or interaction.
 

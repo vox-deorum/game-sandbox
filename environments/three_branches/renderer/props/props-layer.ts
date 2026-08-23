@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js'
+import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { buildingOccupied } from '../buildings/buildings.js'
@@ -7,27 +7,19 @@ import {
   PALETTE,
   propEffectAnchor,
   propVisualScale,
-  registeredPropTreatment,
   sceneryVisualScale,
   THREE_BRANCHES_PRESENTATION,
 } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
-import {
-  bellSwingRotation,
-  emissiveSpec,
-  hasPropEffect,
-  propEffectFrames,
-  propEffectSpec,
-} from '../effects/effects.js'
+import { emissiveSpec, hasPropEffect, propEffectFrames, propEffectSpec } from '../effects/effects.js'
 import { CATALOG } from '../ui/overlay.js'
 import { frameRectangle } from '../ui/tint.js'
 import {
-  hasPropArtRole,
   isFixedFacingPropType,
   isShippedPropType,
   PINE_FRAME_NAMES,
   type PropArtFrame,
-  propRoleTreatment,
+  propTreatment,
   sceneryFrame,
 } from './props-art.js'
 
@@ -68,13 +60,9 @@ export interface PropLayer {
 interface PropNode {
   item: StaticDrawable
   lowerRoot: Container
-  upperRoot: Container
   fallback: Graphics
   shadow: Sprite
   lower: Sprite
-  upper: Sprite
-  movingRoot: Container
-  moving: Sprite
   effect: Sprite
   emissive: Sprite
   state: string | null
@@ -98,7 +86,7 @@ export interface PropLayerTargets {
   /** Contact shadows, in world space below every prop so one prop's shadow never covers another. */
   shadows: Container
   props: Container
-  /** Monument uppers and sustained effects that belong above characters. */
+  /** Sustained prop effects that belong above characters. */
   effects: Container
   emissives: Container
   /** The interaction highlight, drawn after the world grades so hovering never shifts colour. */
@@ -117,7 +105,6 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   )
   const nodes = new Map<string, PropNode>()
   let art: PropArt | null = null
-  const clippedTextures = new Map<Texture, Map<string, Texture>>()
   const pines = new Container({ label: 'pines' })
   const pineBuildingCutout = new Graphics({ label: 'pine-building-cutout' })
   pines.setMask({ mask: pineBuildingCutout, inverse: true })
@@ -127,7 +114,6 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     nodes.set(item.id, node)
     layers.shadows.addChild(node.shadow)
     layers.props.addChild(node.lowerRoot)
-    if (hasPropArtRole(item.type, 'upper')) layers.effects.addChild(node.upperRoot)
     layers.effects.addChild(node.effect)
     layers.emissives.addChild(node.emissive)
   }
@@ -135,7 +121,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     const target = item.type === 'pine' ? pines : layers.scenery
     target.addChild(createSceneryNode(item))
   }
-  // Effects and monument uppers are added first, then pines sit over the entire authored village.
+  // Effects are added first, then pines sit over the entire authored village.
   // The inverse mask leaves only occupied building interiors clear.
   layers.effects.addChild(pines, pineBuildingCutout)
   const highlightNode = new Graphics({ label: 'prop-highlight' })
@@ -151,31 +137,14 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
     syncPropRole(
       node.lower,
-      node.item,
-      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'lower') : null,
+      shipped ? propTreatment(node.item.type, state, node.item.id).lower : null,
       art,
-      clippedTextures,
-    )
-    syncPropRole(
-      node.upper,
-      node.item,
-      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'upper') : null,
-      art,
-      clippedTextures,
-    )
-    syncPropRole(
-      node.moving,
-      node.item,
-      shipped ? propRoleTreatment(node.item.type, state, node.item.id, 'moving') : null,
-      art,
-      clippedTextures,
     )
   }
 
   return {
     install(nextArt) {
       preflightArt(nextArt)
-      clearClippedTextures(clippedTextures)
       for (const node of nodes.values()) syncArtScale(node)
       art = nextArt
       for (const item of scene.scenery) {
@@ -199,9 +168,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       let active = false
       for (const node of nodes.values()) {
         node.lowerRoot.rotation = visualFacing(node.item)
-        node.upperRoot.rotation = visualFacing(node.item)
         const state = node.state ?? start(starts, node.item.id)
-        node.movingRoot.rotation = bellSwingRotation(state, node.item.id, tick)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
           node.emissive.visible = false
@@ -211,9 +178,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         const emissive = emissiveSpec(node.item.type, state)
         node.effect.visible = effect !== null
         node.emissive.visible = emissive !== null
-        // The effect anchor is where a prop's generated accent sits on its own artwork. The same
-        // anchor also positions the emissive pool below. An ordinary centered prop such as the
-        // lantern uses the default zero anchor, while a registered prop may move both treatments.
+        // The effect anchor places a generated accent over its centered base artwork. The same
+        // anchor also positions the emissive pool below.
         const propScale = propVisualScale(node.item.type)
         const anchor = propEffectAnchor(node.item.type)
         if (effect !== null) {
@@ -287,23 +253,12 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   const lowerRoot = new Container({ label: `prop-lower:${item.id}` })
   lowerRoot.position.set(centerX(item), centerY(item))
   lowerRoot.rotation = visualFacing(item)
-  const upperRoot = new Container({ label: `prop-upper:${item.id}` })
-  upperRoot.position.set(centerX(item), centerY(item))
-  upperRoot.rotation = visualFacing(item)
   const shadow = propShadow(item, cellSize)
   const fallbackNode = fallback(item, true)
   const artScale = propArtScale(item)
   const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
-  const upper = propSprite('prop-upper-art', Texture.EMPTY, artScale)
-  const moving = propSprite('prop-moving-art', Texture.EMPTY, artScale)
-  const movingRoot = new Container({ label: 'prop-moving-root' })
   lower.visible = false
-  upper.visible = false
-  moving.visible = false
   lowerRoot.addChild(fallbackNode, lower)
-  movingRoot.addChild(moving)
-  upperRoot.addChild(upper, movingRoot)
-  syncSwingPivot(item.type, artScale, movingRoot)
   const effect = sprite(`prop-effect:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
   effect.rotation = visualFacing(item)
@@ -313,13 +268,9 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
   return {
     item,
     lowerRoot,
-    upperRoot,
     fallback: fallbackNode,
     shadow,
     lower,
-    upper,
-    movingRoot,
-    moving,
     effect,
     emissive,
     state: null,
@@ -409,30 +360,15 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
 }
 
-function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'upper' | 'moving'>): void {
+function syncArtScale(node: Pick<PropNode, 'item' | 'lower'>): void {
   const scale = propArtScale(node.item)
   node.lower.scale.set(scale)
-  node.upper.scale.set(scale)
-  node.moving.scale.set(scale)
-}
-
-function syncSwingPivot(type: string, scale: number, root: Container): void {
-  const registration = registeredPropTreatment(type)
-  const movingAnchor = registration?.sourceAnchorByRole.moving
-  const sourcePivot = registration?.swing?.sourcePivot
-  if (movingAnchor === undefined || sourcePivot === undefined) return
-  const x = (sourcePivot.x - movingAnchor.x) * scale
-  const y = (sourcePivot.y - movingAnchor.y) * scale
-  root.pivot.set(x, y)
-  root.position.set(x, y)
 }
 
 function syncPropRole(
   node: Sprite,
-  item: StaticDrawable,
   treatment: PropArtFrame | null,
   art: PropArt,
-  clippedTextures: Map<Texture, Map<string, Texture>>,
 ): void {
   node.visible = treatment !== null
   if (treatment === null) {
@@ -440,37 +376,8 @@ function syncPropRole(
     return
   }
   const frame = propTexture(art, treatment)
-  node.texture = clippedTexture(frame, treatment, item.type, clippedTextures)
-  syncPropSprite(node, item.type, treatment)
-}
-
-function syncPropSprite(node: Sprite, type: string, treatment: PropArtFrame): void {
-  if (treatment.registrationRole === undefined) {
-    node.anchor.set(0.5)
-    return
-  }
-  const registration = registeredPropTreatment(type)
-  if (registration === null) {
-    throw new Error(`Three Branches prop registration is missing: ${type}`)
-  }
-  const anchor = registration.sourceAnchorByRole[treatment.registrationRole]
-  if (anchor === undefined) {
-    throw new Error(
-      `Three Branches prop source anchor is missing: ${type}.${treatment.registrationRole}`,
-    )
-  }
-  if (treatment.clip === undefined) {
-    node.anchor.set(
-      anchor.x / registration.frameSize.width,
-      anchor.y / registration.frameSize.height,
-    )
-    return
-  }
-  const splitY = registration.splitY
-  if (splitY === undefined) throw new Error(`Three Branches prop split is missing: ${type}`)
-  const clipTop = treatment.clip === 'lower' ? splitY : 0
-  const clipHeight = treatment.clip === 'lower' ? registration.frameSize.height - splitY : splitY
-  node.anchor.set(anchor.x / registration.frameSize.width, (anchor.y - clipTop) / clipHeight)
+  node.texture = frame
+  node.anchor.set(0.5)
 }
 
 function centerX(item: StaticDrawable): number {
@@ -480,14 +387,14 @@ function centerY(item: StaticDrawable): number {
   return item.rect.y + item.rect.height / 2
 }
 function propArtScale(item: StaticDrawable): number {
-  const registration = registeredPropTreatment(item.type)
-  return propVisualScale(item.type) / (registration?.textureDensityDivisor ?? 1)
+  return propVisualScale(item.type)
 }
 
-/** Pump and bell retain collision-scaled contact shadows despite separate art registration. */
+/** Keep circular landmark shadows fitted to their configured collision footprint. */
 function usesCollisionScaledContactShadow(type: string): boolean {
   return type === 'pump' || type === 'bell'
 }
+
 export function visualFacing(item: StaticDrawable): number {
   if (isFixedFacingPropType(item.type)) return 0
   // The stall texture's front reads the opposite way from the recorded facing, so its sprite is
@@ -509,41 +416,6 @@ function start(starts: ReadonlyMap<string, string>, id: string): string {
 
 function propTexture(art: PropArt, treatment: PropArtFrame): Texture {
   return texture(art[treatment.page], treatment.frame, `${treatment.page}.${treatment.frame}`)
-}
-
-function clippedTexture(
-  frame: Texture,
-  treatment: PropArtFrame,
-  type: string,
-  cache: Map<Texture, Map<string, Texture>>,
-): Texture {
-  if (treatment.clip === undefined) return frame
-  const cacheKey = `${type}:${treatment.clip}`
-  const existing = cache.get(frame)?.get(cacheKey)
-  if (existing !== undefined) return existing
-  const registration = registeredPropTreatment(type)
-  if (registration === null || registration.splitY === undefined) {
-    throw new Error(`Three Branches prop split is missing: ${type}`)
-  }
-  const { width, height } = registration.frameSize
-  const y = treatment.clip === 'lower' ? registration.splitY : 0
-  const clippedHeight =
-    treatment.clip === 'lower' ? height - registration.splitY : registration.splitY
-  const clipped = new Texture({
-    source: frame.source,
-    frame: new Rectangle(frame.frame.x, frame.frame.y + y, width, clippedHeight),
-  })
-  const byRole = cache.get(frame) ?? new Map<string, Texture>()
-  byRole.set(cacheKey, clipped)
-  cache.set(frame, byRole)
-  return clipped
-}
-
-function clearClippedTextures(cache: Map<Texture, Map<string, Texture>>): void {
-  for (const byRole of cache.values()) {
-    for (const clipped of byRole.values()) clipped.destroy(false)
-  }
-  cache.clear()
 }
 
 function texture(
@@ -590,31 +462,13 @@ function preflightArt(art: PropArt): void {
     const ids = prop.token === 'stall' ? ['stall_0', 'stall_1', 'stall_2'] : ['preflight']
     for (const state of prop.states) {
       for (const id of ids) {
-        for (const role of ['lower', 'upper', 'moving'] as const) {
-          const treatment = propRoleTreatment(prop.token, state, id, role)
-          if (treatment === null) continue
-          const frame = propTexture(art, treatment)
-          validateRegisteredFrame(prop.token, treatment, frame)
-        }
+        const treatment = propTreatment(prop.token, state, id).lower
+        propTexture(art, treatment)
       }
       for (const frame of propEffectFrames(prop.token, state)) texture(art.effects, frame)
       const emissive = emissiveSpec(prop.token, state)
       if (emissive !== null) texture(art.effects, emissive.frame)
     }
-  }
-}
-
-function validateRegisteredFrame(type: string, treatment: PropArtFrame, frame: Texture): void {
-  if (treatment.registrationRole === undefined) return
-  const registration = registeredPropTreatment(type)
-  if (registration === null) throw new Error(`Three Branches prop registration is missing: ${type}`)
-  if (
-    frame.width !== registration.frameSize.width ||
-    frame.height !== registration.frameSize.height
-  ) {
-    throw new Error(
-      `Three Branches registered prop frame has the wrong dimensions: ${type}.${treatment.frame}.`,
-    )
   }
 }
 

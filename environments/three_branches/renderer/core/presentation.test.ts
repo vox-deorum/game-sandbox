@@ -5,7 +5,6 @@ import {
   measureDeliveryGap,
   propEffectAnchor,
   readHearthsideStyle,
-  registeredPropTreatment,
   smoothedDeliveryGapMs,
   type TerrainFillTreatment,
   transitionDurationMs,
@@ -49,16 +48,6 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(invalid)).toThrow('thumbnail.format must be full-color')
   })
 
-  it('validates each registered prop against its own frame and role contract', () => {
-    const missingFoundation = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingFoundation.props.registeredPropByType.bell.sourceAnchorByRole.lower
-    expect(() => readHearthsideStyle(missingFoundation)).toThrow('sourceAnchorByRole keys')
-
-    const pumpOutOfBounds = structuredClone(HEARTHSIDE_STYLE) as any
-    pumpOutOfBounds.props.registeredPropByType.pump.sourceAnchorByRole.full.x = 768
-    expect(() => readHearthsideStyle(pumpOutOfBounds)).toThrow('768 by 512 registered prop frame')
-  })
-
   it('defaults the lantern light anchor to the collision center', () => {
     expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
   })
@@ -99,28 +88,6 @@ describe('Hearthside Ink presentation', () => {
     const extraKey = structuredClone(valid)
     extraKey.propEffects.shrine.opacityAnimation.ease = 'linear'
     expect(() => readHearthsideStyle(extraKey)).toThrow('opacityAnimation keys do not match')
-  })
-
-  it('registers bell foundation, gantry, and moving art at doubled density', () => {
-    expect(registeredPropTreatment('bell')).toMatchObject({
-      textureDensityDivisor: 16,
-      frameSize: { width: 1536, height: 1024 },
-      sourceAnchorByRole: {
-        lower: { x: 768, y: 512 },
-        upper: { x: 768, y: 960 },
-        moving: { x: 768, y: 960 },
-      },
-      swing: {
-        sourcePivot: { x: 768, y: 527 },
-        amplitudeRadians: 0.18,
-      },
-    })
-  })
-
-  it('rejects a bell swing pivot outside its registered frame', () => {
-    const invalid = structuredClone(HEARTHSIDE_STYLE) as any
-    invalid.props.registeredPropByType.bell.swing.sourcePivot.y = 1024
-    expect(() => readHearthsideStyle(invalid)).toThrow('1536 by 1024 registered prop frame')
   })
 
   it('uses explicit host pace and scales unpaced delivery gaps by headroom, capped at natural', () => {
@@ -387,7 +354,7 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(duplicateId)).toThrow('must not repeat ids')
   })
 
-  it('requires arm amplitude to remain within a quarter turn', () => {
+  it('bounds the scripted character gait calibration', () => {
     const zero = structuredClone(HEARTHSIDE_STYLE) as any
     zero.characters.walk.armAmplitudeRadians = 0
     expect(readHearthsideStyle(zero).characters.walk.armAmplitudeRadians).toBe(0)
@@ -395,6 +362,18 @@ describe('Hearthside Ink presentation', () => {
     const excessive = structuredClone(HEARTHSIDE_STYLE) as any
     excessive.characters.walk.armAmplitudeRadians = Math.PI / 2 + 0.01
     expect(() => readHearthsideStyle(excessive)).toThrow('armAmplitudeRadians')
+
+    const excessiveTravel = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveTravel.characters.walk.armTravelPixels = 12.01
+    expect(() => readHearthsideStyle(excessiveTravel)).toThrow('armTravelPixels')
+
+    const excessiveSway = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveSway.characters.walk.bodySwayRadians = Math.PI / 16 + 0.01
+    expect(() => readHearthsideStyle(excessiveSway)).toThrow('bodySwayRadians')
+
+    const excessiveBob = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveBob.characters.walk.bodyBobPixels = 4.01
+    expect(() => readHearthsideStyle(excessiveBob)).toThrow('bodyBobPixels')
   })
 
   it('requires a positive walk dead zone below one', () => {

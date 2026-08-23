@@ -9,13 +9,13 @@ import {
   computeScene,
   expressionTitleFor,
   interpolateScene,
+  type MovementActionInput,
+  movementAction,
   pointToWorld,
   rectToWorld,
   sceneCharactersMoved,
   sceneVisitorMoved,
   settleGlideOnto,
-  movementAction,
-  type MovementActionInput,
 } from './scene.js'
 
 describe('Three Branches pure scene', () => {
@@ -124,7 +124,12 @@ describe('interpolateScene walk displacement', () => {
     overrides: Readonly<
       Record<
         string,
-        Partial<Pick<CharacterDrawable, 'point' | 'x' | 'y' | 'moved' | 'heading' | 'walkDistance'>>
+        Partial<
+          Pick<
+            CharacterDrawable,
+            'point' | 'x' | 'y' | 'moved' | 'heading' | 'walkDistance' | 'walkBlend'
+          >
+        >
       >
     >,
   ): FrameScene {
@@ -146,26 +151,51 @@ describe('interpolateScene walk displacement', () => {
       throw new Error('the walk fixture needs at least two characters.')
     }
     const movedFrom = rewriteCharacters(from, {
-      [mover.id]: { point: { x: 40, y: 80 }, x: 4, y: 8 },
+      [mover.id]: { point: { x: 40, y: 80 }, x: 4, y: 8, walkBlend: 0 },
     })
     const movedTo = rewriteCharacters(to, {
-      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 0.6 },
-      [still.id]: { point: still.point, x: still.x, y: still.y, moved: 0 },
+      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 0.6, walkBlend: 1 },
+      [still.id]: { point: still.point, x: still.x, y: still.y, moved: 0, walkBlend: 0 },
     })
     const halfway = interpolateScene(movedFrom, movedTo, 0.5)
     expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(0.6)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.walkBlend).toBe(0.5)
     expect(halfway.characters.find((character) => character.id === still.id)?.moved).toBe(0)
   })
 
-  it('rests feet when the source and target points are equal despite a landed flag', () => {
+  it('eases the gait to rest when target points are equal despite a landed flag', () => {
     const from = computeScene(states[0] as (typeof states)[number], scene, roster)
     const mover = from.characters[0]
     if (mover === undefined) throw new Error('the walk fixture needs at least one character.')
     const to = rewriteCharacters(from, {
-      [mover.id]: { point: mover.point, x: mover.x, y: mover.y, moved: 0.6 },
+      [mover.id]: { point: mover.point, x: mover.x, y: mover.y, moved: 0.6, walkBlend: 1 },
     })
     const halfway = interpolateScene(from, to, 0.5)
     expect(halfway.characters.find((character) => character.id === mover.id)?.moved).toBe(0)
+    expect(halfway.characters.find((character) => character.id === mover.id)?.walkBlend).toBe(0.5)
+    const landed = interpolateScene(from, to, 1)
+    expect(landed.characters.find((character) => character.id === mover.id)?.walkBlend).toBe(0)
+  })
+
+  it('eases the gait envelope during starts and stops', () => {
+    const base = computeScene(states[0] as (typeof states)[number], scene, roster)
+    const mover = base.characters[0]
+    if (mover === undefined) throw new Error('the gait envelope fixture needs a character.')
+    const still = rewriteCharacters(base, {
+      [mover.id]: { point: { x: 40, y: 80 }, x: 4, y: 8, moved: 0, walkBlend: 0 },
+    })
+    const moving = rewriteCharacters(base, {
+      [mover.id]: { point: { x: 50, y: 80 }, x: 5, y: 8, moved: 0.6, walkBlend: 1 },
+    })
+
+    const starting = interpolateScene(still, moving, 0.25)
+    const stopping = interpolateScene(moving, still, 0.25)
+    expect(
+      starting.characters.find((character) => character.id === mover.id)?.walkBlend,
+    ).toBeCloseTo(0.15625)
+    expect(
+      stopping.characters.find((character) => character.id === mover.id)?.walkBlend,
+    ).toBeCloseTo(0.84375)
   })
 
   it('lerps the walk phase distance between the source and target frames', () => {
@@ -201,7 +231,9 @@ describe('interpolateScene walk displacement', () => {
     }
     const landed = computeScene(patched, scene, roster)
     expect(landed.characters.find((character) => character.id === drift.id)?.moved).toBe(0)
+    expect(landed.characters.find((character) => character.id === drift.id)?.walkBlend).toBe(0)
     expect(landed.characters.find((character) => character.id === stride.id)?.moved).toBe(0.5)
+    expect(landed.characters.find((character) => character.id === stride.id)?.walkBlend).toBe(1)
   })
 
   it('advances, holds, and re-anchors the walked phase accumulator', () => {

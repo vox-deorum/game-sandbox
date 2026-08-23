@@ -713,28 +713,22 @@
     {
       "name": "monuments",
       "path": "./assets/monuments-atlas.png",
-      "width": 2304,
-      "height": 1024,
+      "width": 384,
+      "height": 256,
       "tintable": false,
       "format": "full-color",
-      "consumer": "higher-density fixed-north pump stills",
+      "consumer": "centered one-cell well still",
       "mipmaps": true,
       "frames": {
-        "width": 768,
-        "height": 512,
-        "columns": 3,
-        "rows": 2,
+        "width": 384,
+        "height": 256,
+        "columns": 1,
+        "rows": 1,
         "cells": [
           {
-            "name": "pumpFlowing",
+            "name": "pump",
             "source": {
-              "path": "./assets/source-art/frames/monuments/pumpFlowing.png"
-            }
-          },
-          {
-            "name": "pumpIdle",
-            "source": {
-              "path": "./assets/source-art/frames/monuments/pumpIdle.png"
+              "path": "./assets/source-art/frames/monuments/pump.png"
             }
           }
         ]
@@ -743,34 +737,22 @@
     {
       "name": "bell",
       "path": "./assets/bell-atlas.png",
-      "width": 4608,
-      "height": 1024,
+      "width": 384,
+      "height": 256,
       "tintable": false,
       "format": "full-color",
-      "consumer": "bell foundation, fixed gantry, and separately animated bell",
+      "consumer": "centered one-cell bell still",
       "mipmaps": true,
       "frames": {
-        "width": 1536,
-        "height": 1024,
-        "columns": 3,
+        "width": 384,
+        "height": 256,
+        "columns": 1,
         "rows": 1,
         "cells": [
           {
-            "name": "bellFoundation",
+            "name": "bell",
             "source": {
-              "path": "./assets/source-art/frames/bell/bellFoundation.png"
-            }
-          },
-          {
-            "name": "bellGantry",
-            "source": {
-              "path": "./assets/source-art/frames/bell/bellGantry.png"
-            }
-          },
-          {
-            "name": "bellMoving",
-            "source": {
-              "path": "./assets/source-art/frames/bell/bellMoving.png"
+              "path": "./assets/source-art/frames/bell/bell.png"
             }
           }
         ]
@@ -942,15 +924,9 @@
             }
           },
           {
-            "name": "waterA",
+            "name": "waterRipple",
             "source": {
-              "path": "./assets/source-art/frames/effects/waterA.png"
-            }
-          },
-          {
-            "name": "waterB",
-            "source": {
-              "path": "./assets/source-art/frames/effects/waterB.png"
+              "path": "./assets/source-art/frames/effects/waterRipple.png"
             }
           },
           {
@@ -1011,18 +987,6 @@
             "name": "smokeD",
             "source": {
               "path": "./assets/source-art/frames/effects/smokeD.png"
-            }
-          },
-          {
-            "name": "waterC",
-            "source": {
-              "path": "./assets/source-art/frames/effects/waterC.png"
-            }
-          },
-          {
-            "name": "waterD",
-            "source": {
-              "path": "./assets/source-art/frames/effects/waterD.png"
             }
           },
           {
@@ -1379,68 +1343,26 @@
         }
       ]
     },
-    "walk": { "frameRatio": 0.68, "deadZone": 0.05, "armAmplitudeRadians": 0.28 }
+    "walk": {
+      "frameRatio": 0.68,
+      "deadZone": 0.05,
+      "armAmplitudeRadians": 0.1,
+      "armTravelPixels": 5.5,
+      "bodySwayRadians": 0.018,
+      "bodyBobPixels": 1.5
+    }
   },
   "props": {
     "defaultScale": 0.14,
     "scaleByType": {
-      "bell": 0.36,
-      "pump": 0.33,
-      "lantern": 0.1,
+      "bell": 0.2,
+      "pump": 0.2,
+      "lantern": 0.13,
       "shrine": 0.2,
       "board": 0.12444444444444444,
       "plot": 0.17
     },
-    "effectAnchorByType": {
-      "pump": {
-        "x": 31,
-        "y": -61
-      }
-    },
-    "registeredPropByType": {
-      "pump": {
-        "textureDensityDivisor": 4,
-        "frameSize": {
-          "width": 768,
-          "height": 512
-        },
-        "sourceAnchorByRole": {
-          "full": {
-            "x": 344,
-            "y": 384
-          }
-        },
-        "splitY": 304
-      },
-      "bell": {
-        "textureDensityDivisor": 16,
-        "frameSize": {
-          "width": 1536,
-          "height": 1024
-        },
-        "sourceAnchorByRole": {
-          "upper": {
-            "x": 768,
-            "y": 960
-          },
-          "moving": {
-            "x": 768,
-            "y": 960
-          },
-          "lower": {
-            "x": 768,
-            "y": 512
-          }
-        },
-        "swing": {
-          "sourcePivot": {
-            "x": 768,
-            "y": 527
-          },
-          "amplitudeRadians": 0.18
-        }
-      }
-    }
+    "effectAnchorByType": {}
   },
   "scenery": {
     "defaultScale": 0.25,
@@ -1462,13 +1384,13 @@
       "frameRate": 1,
       "opacityAnimation": {
         "mode": "pingPong",
-        "min": 0,
+        "min": 0.45,
         "max": 1,
-        "periodTicks": 8
+        "periodTicks": 10
       }
     },
     "pump": {
-      "frames": ["waterA", "waterC", "waterD", "waterB", "waterD", "waterC"],
+      "frames": ["waterRipple"],
       "frameRate": 1
     },
     "bell": {

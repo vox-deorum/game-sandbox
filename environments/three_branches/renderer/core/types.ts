@@ -194,6 +194,8 @@ export interface CharacterDrawable extends DynamicCharacter {
   label: string
   /** Cumulative on-screen distance walked, the deterministic phase driver for the walk cycle. */
   walkDistance: number
+  /** Seek-safe interpolation envelope for starting and stopping the scripted gait. */
+  walkBlend: number
   /** The expression chip's title-cased text, or null when the character has no expression. */
   expressionTitle: string | null
 }

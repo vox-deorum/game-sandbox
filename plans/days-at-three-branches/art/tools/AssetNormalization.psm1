@@ -81,6 +81,82 @@ namespace ThreeBranches.Art
             }
         }
 
+        public static void NormalizeTransparentProof(
+            string sourcePath,
+            string destinationPath,
+            int outputWidth,
+            int outputHeight,
+            int alphaClearThreshold,
+            int alphaOpaqueThreshold,
+            int minimumIslandPixels,
+            bool whiteMask,
+            bool alignVisibleBounds,
+            int targetLeft,
+            int targetTop,
+            int targetWidth,
+            int targetHeight)
+        {
+            ValidateRamp(alphaClearThreshold, alphaOpaqueThreshold, "alpha");
+            using (Bitmap source = LoadArgb(sourcePath))
+            using (Bitmap resized = Resize(source, outputWidth, outputHeight))
+            {
+                NormalizeAlpha(resized, alphaClearThreshold, alphaOpaqueThreshold);
+                RemoveSmallIslands(resized, minimumIslandPixels);
+                if (!alignVisibleBounds)
+                {
+                    if (whiteMask) ConvertExistingAlphaToWhiteMask(resized);
+                    resized.Save(destinationPath, ImageFormat.Png);
+                    return;
+                }
+
+                Rectangle targetBounds = new Rectangle(targetLeft, targetTop, targetWidth, targetHeight);
+                using (Bitmap aligned = AlignVisibleBounds(resized, targetBounds))
+                {
+                    NormalizeAlpha(aligned, alphaClearThreshold, alphaOpaqueThreshold);
+                    RemoveSmallIslands(aligned, minimumIslandPixels);
+                    if (whiteMask) ConvertExistingAlphaToWhiteMask(aligned);
+                    aligned.Save(destinationPath, ImageFormat.Png);
+                }
+            }
+        }
+
+        public static void ComposeCircularStatePatch(
+            string basePath,
+            string patchPath,
+            string destinationPath,
+            int centerX,
+            int centerY,
+            int radius)
+        {
+            if (radius <= 0) throw new ArgumentException("Patch radius must be positive.", "radius");
+            using (Bitmap output = new Bitmap(basePath))
+            using (Bitmap patch = new Bitmap(patchPath))
+            {
+                if (output.Width != patch.Width || output.Height != patch.Height)
+                {
+                    throw new ArgumentException("Base and patch images must have matching dimensions.");
+                }
+                if (centerX - radius < 0 || centerY - radius < 0 ||
+                    centerX + radius >= output.Width || centerY + radius >= output.Height)
+                {
+                    throw new ArgumentException("Circular patch must remain inside the image bounds.");
+                }
+
+                int radiusSquared = radius * radius;
+                for (int y = centerY - radius; y <= centerY + radius; y++)
+                {
+                    for (int x = centerX - radius; x <= centerX + radius; x++)
+                    {
+                        int deltaX = x - centerX;
+                        int deltaY = y - centerY;
+                        if (deltaX * deltaX + deltaY * deltaY > radiusSquared) continue;
+                        output.SetPixel(x, y, patch.GetPixel(x, y));
+                    }
+                }
+                output.Save(destinationPath, ImageFormat.Png);
+            }
+        }
+
         private static Bitmap LoadArgb(string path)
         {
             using (Bitmap source = new Bitmap(path))
@@ -268,6 +344,28 @@ namespace ThreeBranches.Art
             });
         }
 
+        private static void ConvertExistingAlphaToWhiteMask(Bitmap bitmap)
+        {
+            WithPixels(bitmap, delegate(byte[] pixels, int stride)
+            {
+                for (int y = 0; y < bitmap.Height; y++)
+                {
+                    for (int x = 0; x < bitmap.Width; x++)
+                    {
+                        int index = y * stride + x * 4;
+                        if (pixels[index + 3] == 0)
+                        {
+                            ClearPixel(pixels, index);
+                            continue;
+                        }
+                        pixels[index] = 255;
+                        pixels[index + 1] = 255;
+                        pixels[index + 2] = 255;
+                    }
+                }
+            });
+        }
+
         private static void RemoveSmallIslands(Bitmap bitmap, int minimumPixels)
         {
             if (minimumPixels <= 1) return;
@@ -446,4 +544,80 @@ function Convert-WhiteProofToAlphaMask {
     )
 }
 
-Export-ModuleMember -Function Convert-MatteProof, Convert-WhiteProofToAlphaMask
+function Convert-TransparentProof {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $SourcePath,
+        [Parameter(Mandatory)] [string] $DestinationPath,
+        [Parameter(Mandatory)] [int] $OutputWidth,
+        [Parameter(Mandatory)] [int] $OutputHeight,
+        [int] $AlphaClearThreshold = 20,
+        [int] $AlphaOpaqueThreshold = 80,
+        [int] $MinimumIslandPixels = 12,
+        [switch] $WhiteMask,
+        [int[]] $TargetVisibleBounds
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        throw "Source image does not exist: $SourcePath"
+    }
+    if ($null -ne $TargetVisibleBounds -and $TargetVisibleBounds.Count -ne 4) {
+        throw "TargetVisibleBounds must contain left, top, width, and height."
+    }
+
+    $destinationDirectory = Split-Path -Parent $DestinationPath
+    if (-not (Test-Path -LiteralPath $destinationDirectory -PathType Container)) {
+        New-Item -ItemType Directory -Path $destinationDirectory | Out-Null
+    }
+
+    $align = $null -ne $TargetVisibleBounds
+    $bounds = if ($align) { $TargetVisibleBounds } else { @(0, 0, 0, 0) }
+    [ThreeBranches.Art.RasterAssetNormalizer]::NormalizeTransparentProof(
+        $SourcePath,
+        $DestinationPath,
+        $OutputWidth,
+        $OutputHeight,
+        $AlphaClearThreshold,
+        $AlphaOpaqueThreshold,
+        $MinimumIslandPixels,
+        $WhiteMask.IsPresent,
+        $align,
+        $bounds[0],
+        $bounds[1],
+        $bounds[2],
+        $bounds[3]
+    )
+}
+
+function Merge-CircularStatePatch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $BasePath,
+        [Parameter(Mandatory)] [string] $PatchPath,
+        [Parameter(Mandatory)] [string] $DestinationPath,
+        [Parameter(Mandatory)] [int] $CenterX,
+        [Parameter(Mandatory)] [int] $CenterY,
+        [Parameter(Mandatory)] [int] $Radius
+    )
+
+    foreach ($sourcePath in @($BasePath, $PatchPath)) {
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "Source image does not exist: $sourcePath"
+        }
+    }
+    $destinationDirectory = Split-Path -Parent $DestinationPath
+    if (-not (Test-Path -LiteralPath $destinationDirectory -PathType Container)) {
+        New-Item -ItemType Directory -Path $destinationDirectory | Out-Null
+    }
+
+    [ThreeBranches.Art.RasterAssetNormalizer]::ComposeCircularStatePatch(
+        $BasePath,
+        $PatchPath,
+        $DestinationPath,
+        $CenterX,
+        $CenterY,
+        $Radius
+    )
+}
+
+Export-ModuleMember -Function Convert-MatteProof, Convert-WhiteProofToAlphaMask, Convert-TransparentProof, Merge-CircularStatePatch

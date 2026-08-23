@@ -125,6 +125,7 @@ export function computeScene(
     // zeroes out below the walk dead zone and the renderer stamps the cumulative distance later.
     moved: character.moved < HEARTHSIDE_STYLE.characters.walk.deadZone ? 0 : character.moved,
     walkDistance: 0,
+    walkBlend: character.moved < HEARTHSIDE_STYLE.characters.walk.deadZone ? 0 : 1,
     expressionTitle: expressionTitleFor(staticScene, character.expression),
   }))
   return { static: staticScene, dynamic, presentationTick: dynamic?.tick ?? 0, characters }
@@ -163,6 +164,7 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
     characters: to.characters.map((character) => {
       const start = prior.get(character.id)
       if (start === undefined) return character
+      const displaced = start.point.x !== character.point.x || start.point.y !== character.point.y
       return {
         ...character,
         x: lerp(start.x, character.x, amount),
@@ -172,14 +174,16 @@ export function interpolateScene(from: FrameScene, to: FrameScene, progress: num
           x: lerp(start.point.x, character.point.x, amount),
           y: lerp(start.point.y, character.point.y, amount),
         },
-        moved:
-          start.point.x === character.point.x && start.point.y === character.point.y
-            ? 0
-            : character.moved,
+        moved: displaced ? character.moved : 0,
         walkDistance: lerp(start.walkDistance, character.walkDistance, amount),
+        walkBlend: lerp(start.walkBlend, displaced ? character.walkBlend : 0, smoothstep(amount)),
       }
     }),
   }
+}
+
+function smoothstep(value: number): number {
+  return value * value * (3 - 2 * value)
 }
 
 /**

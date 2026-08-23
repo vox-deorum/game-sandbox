@@ -8,7 +8,10 @@ import { expectedCharacterIds, readStatic } from '../ui/overlay.js'
 import { type CharacterArt, createCharacterLayer } from './characters.js'
 
 function characterArt(): CharacterArt {
-  const sets = [HEARTHSIDE_STYLE.characters.cast.visitor, ...HEARTHSIDE_STYLE.characters.cast.villagers]
+  const sets = [
+    HEARTHSIDE_STYLE.characters.cast.visitor,
+    ...HEARTHSIDE_STYLE.characters.cast.villagers,
+  ]
   return {
     sets: Object.fromEntries(
       sets.map((set) => [
@@ -61,6 +64,7 @@ describe('Three Branches retained characters', () => {
     for (const label of [
       'character-shadow',
       'character-rotor',
+      'character-gait',
       'character-base',
       'character-left-arm',
       'character-right-arm',
@@ -94,7 +98,7 @@ describe('Three Branches retained characters', () => {
     expect(descendant(visitor, 'character-rotor').visible).toBe(true)
   })
 
-  it('keeps the full-color base static while opposing arms follow the displayed walk phase', () => {
+  it('keeps the full-color base static while the gait moves the canonical arm pair', () => {
     const view = new Container()
     const characters = createCharacterLayer(view)
     const scene = fixtureScene()
@@ -102,17 +106,25 @@ describe('Three Branches retained characters', () => {
     const walking = {
       ...scene,
       characters: scene.characters.map((character, index) =>
-        index === 0 ? { ...character, walkDistance: 0.23, moved: 0.5 } : character,
+        index === 0 ? { ...character, walkDistance: 0.23, moved: 0.5, walkBlend: 1 } : character,
       ),
     }
 
     characters.reconcile(walking, 8, 2)
     const visitor = descendant(view, 'character:player_0')
     const base = descendant(visitor, 'character-base') as unknown as { texture: Texture }
-    const left = descendant(visitor, 'character-left-arm') as unknown as { rotation: number }
-    const right = descendant(visitor, 'character-right-arm') as unknown as { rotation: number }
+    const left = descendant(visitor, 'character-left-arm') as unknown as {
+      rotation: number
+      position: { y: number }
+    }
+    const right = descendant(visitor, 'character-right-arm') as unknown as {
+      rotation: number
+      position: { y: number }
+    }
     expect(base.texture).toBe(Texture.WHITE)
-    expect(left.rotation).toBeCloseTo(-right.rotation)
+    expect(left.rotation).not.toBe(0)
+    expect(right.rotation).not.toBe(0)
+    expect(left.position.y).not.toBe(right.position.y)
     expect(descendant(visitor, 'character-shadow').visible).toBe(true)
   })
 })

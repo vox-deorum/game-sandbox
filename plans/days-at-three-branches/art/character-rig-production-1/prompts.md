@@ -56,4 +56,4 @@ Preserve its warm parchment pleated linen bonnet with broad fabric segments, blu
 
 Each `*-raw.png` file is the direct generator output with a baked neutral checkerboard. `normalize-assets.ps1` uses the shared normalization module to create the corresponding full-colour transparent proof without redrawing it.
 
-`registration.json` records every source crop, shared per-rig scale, target placement, root pivot, and shoulder coordinate. `build-assets.ps1` writes the twelve registered 192 by 192 full-colour source cells and an assembled four-cast preview without cosmetically changing the generated art.
+`registration.json` records every source crop, shared per-rig scale, target placement, root pivot, and shoulder coordinate. `build-assets.ps1` writes the twelve registered 192 by 192 full-colour source cells and an assembled four-cast preview without cosmetically changing the generated art. `build-motion-preview.ps1` renders the visitor at eight evenly spaced runtime gait phases from the catalog calibration.

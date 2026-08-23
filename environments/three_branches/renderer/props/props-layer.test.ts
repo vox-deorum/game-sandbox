@@ -2,7 +2,7 @@ import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import { sceneryVisualScale } from '../core/presentation.js'
+import { propVisualScale, sceneryVisualScale } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { propEffectSpec } from '../effects/effects.js'
 import type { FrameGrid } from '../ui/tint.js'
@@ -137,10 +137,10 @@ describe('Three Branches prop art views', () => {
     expect(views.lantern.lanternLit?.frame).toEqual(
       frameRectangle(frameGrid('lantern'), 'lanternLit'),
     )
-    expect(views.props.bellFoundation).toBeUndefined()
-    expect(views.monuments.bellFoundation).toBeUndefined()
-    expect(views.bell.bellFoundation?.frame).toEqual(
-      frameRectangle(frameGrid('bell'), 'bellFoundation'),
+    expect(views.props.bell).toBeUndefined()
+    expect(views.monuments.bell).toBeUndefined()
+    expect(views.bell.bell?.frame).toEqual(
+      frameRectangle(frameGrid('bell'), 'bell'),
     )
     expect(views.scenery.marketCrate?.frame).toEqual(
       frameRectangle(frameGrid('scenery'), 'marketCrate'),
@@ -148,8 +148,8 @@ describe('Three Branches prop art views', () => {
     expect(views.scenery.pineA?.frame).toEqual(new Rectangle(0, 0, 512, 512))
     expect(views.scenery.pineF?.frame).toEqual(new Rectangle(512, 512, 512, 512))
     expect(views.scenery.marketCrate?.frame).toEqual(new Rectangle(1024, 512, 512, 512))
-    expect(views.monuments.pumpFlowing?.frame).toEqual(
-      frameRectangle(frameGrid('monuments'), 'pumpFlowing'),
+    expect(views.monuments.pump?.frame).toEqual(
+      frameRectangle(frameGrid('monuments'), 'pump'),
     )
     expect(views.effects.flameA?.frame).toEqual(frameRectangle(frameGrid('effects'), 'flameA'))
   })
@@ -256,7 +256,7 @@ function sprite(root: Container, label: string): Sprite {
   return node
 }
 
-describe('Three Branches registered prop layers', () => {
+describe('Three Branches prop layers', () => {
   it('keeps ordinary artwork in the lower prop layer only', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('bench', 'bench_0'))
@@ -324,81 +324,63 @@ describe('Three Branches registered prop layers', () => {
     )
   })
 
-  it('splits the pump across layers with its registered density and anchor', () => {
+  it('keeps the pump centered below characters and adds ripples only while flowing', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('pump', 'pump_0', 0.75))
-    createPropLayer(targets, scene).install(completeArt())
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
 
     const lower = targets.props.getChildByLabel('prop-lower:pump_0') as Container
-    const upper = targets.effects.getChildByLabel('prop-upper:pump_0') as Container
     const lowerArt = sprite(lower, 'prop-lower-art')
+    const effect = targets.effects.getChildByLabel('prop-effect:pump_0') as Sprite
+    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:pump_0') as Sprite
     expect(lowerArt.visible).toBe(true)
-    const art = sprite(upper, 'prop-upper-art')
-    const full = frameRectangle(frameGrid('monuments'), 'pumpIdle')
-    expect(art.visible).toBe(true)
-    expect(art.scale.x).toBe(0.33 / 4)
-    expect(art.texture.frame).toEqual(new Rectangle(full.x, full.y, full.width, 304))
-    expect(lowerArt.texture.frame).toEqual(new Rectangle(full.x, full.y + 304, full.width, 208))
-    expect(art.anchor).toMatchObject({ x: 344 / 768, y: 384 / 304 })
-    expect(lowerArt.anchor).toMatchObject({ x: 344 / 768, y: (384 - 304) / 208 })
+    expect(lowerArt.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'pump'))
+    expect(lowerArt.anchor).toMatchObject({ x: 0.5, y: 0.5 })
+    expect(lowerArt.scale.x).toBe(propVisualScale('pump'))
+    expect(shadow.scale.x).toBeCloseTo(0.075)
+    expect(shadow.scale.y).toBeCloseTo(0.0703125)
     expect(lower.parent).toBe(targets.props)
-    expect(upper.parent).toBe(targets.effects)
-    expect(lower.position.x).toBe(upper.position.x)
-    expect(lower.position.y).toBe(upper.position.y)
-    expect(lower.rotation).toBe(upper.rotation)
+    expect(targets.effects.getChildByLabel('prop-upper:pump_0')).toBeNull()
+    layer.advance(1)
+    expect(effect.visible).toBe(false)
+
+    layer.reconcile(frame(scene, [], { pump_0: 'flowing' }))
+    layer.advance(1)
+    expect(lowerArt.texture.frame).toEqual(frameRectangle(frameGrid('monuments'), 'pump'))
+    expect(effect.visible).toBe(true)
+    expect(effect.texture.frame).toEqual(frameRectangle(frameGrid('effects'), 'waterRipple'))
   })
 
-  it('splits the bell foundation, fixed gantry, and moving upper piece across layers', () => {
+  it('keeps the bell centered below characters and uses sound lines while ringing', () => {
     const targets = layerTargets()
-    const scene = propScene(drawable('bell', 'bell_0'))
-    createPropLayer(targets, scene).install(completeArt())
+    const scene = propScene(drawable('bell', 'bell_0', 0.6))
+    const layer = createPropLayer(targets, scene)
+    layer.install(completeArt())
 
     const lower = sprite(
       targets.props.getChildByLabel('prop-lower:bell_0') as Container,
       'prop-lower-art',
     )
-    const upper = sprite(
-      targets.effects.getChildByLabel('prop-upper:bell_0') as Container,
-      'prop-upper-art',
-    )
-    const movingRoot = upper.parent?.getChildByLabel('prop-moving-root') as Container
-    const moving = sprite(movingRoot, 'prop-moving-art')
-    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellFoundation'))
-    expect(upper.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellGantry'))
-    expect(moving.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bellMoving'))
+    const effect = targets.effects.getChildByLabel('prop-effect:bell_0') as Sprite
+    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:bell_0') as Sprite
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bell'))
     expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
-    expect(upper.anchor).toMatchObject({ x: 0.5, y: 960 / 1024 })
-    expect(moving.anchor).toMatchObject({ x: 0.5, y: 960 / 1024 })
-    expect(movingRoot.label).toBe('prop-moving-root')
-    expect(movingRoot.pivot).toMatchObject({ x: 0, y: (527 - 960) * (0.36 / 16) })
-    expect(movingRoot.position).toMatchObject({ x: 0, y: (527 - 960) * (0.36 / 16) })
-    expect(lower.scale.x).toBe(0.36 / 16)
-    expect(upper.scale.x).toBe(0.36 / 16)
-    expect(moving.scale.x).toBe(0.36 / 16)
-  })
-
-  it('keeps the silent bell registered and swings only its circular piece while ringing', () => {
-    const targets = layerTargets()
-    const scene = propScene(drawable('bell', 'bell_0'))
-    const layer = createPropLayer(targets, scene)
-    layer.install(completeArt())
-    layer.reconcile(frame(scene, [], { bell_0: 'silent' }))
-    const upper = targets.effects.getChildByLabel('prop-upper:bell_0') as Container
-    const movingRoot = upper.getChildByLabel('prop-moving-root') as Container
-    const moving = sprite(movingRoot, 'prop-moving-art')
-    const gantry = sprite(upper, 'prop-upper-art')
+    expect(lower.scale.x).toBe(propVisualScale('bell'))
+    expect(shadow.scale.x).toBeCloseTo(0.06)
+    expect(shadow.scale.y).toBeCloseTo(0.05625)
+    expect(targets.effects.getChildByLabel('prop-upper:bell_0')).toBeNull()
     layer.advance(0.25)
-    expect(movingRoot.rotation).toBe(0)
-    expect(moving.position).toMatchObject({ x: 0, y: 0 })
+    expect(effect.visible).toBe(false)
     layer.reconcile(frame(scene, [], { bell_0: 'ringing' }))
     layer.advance(0.25)
-    const first = movingRoot.rotation
-    expect(first).not.toBe(0)
-    layer.advance(0.5)
-    expect(movingRoot.rotation).not.toBe(first)
-    expect(Math.abs(movingRoot.rotation)).toBeLessThanOrEqual(0.18)
-    expect(moving.position).toMatchObject({ x: 0, y: 0 })
-    expect(gantry.rotation).toBe(0)
+    expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('bell'), 'bell'))
+    expect(effect.visible).toBe(true)
+    expect(
+      ['bellLinesA', 'bellLinesB', 'bellLinesC', 'bellLinesD', 'bellLinesE', 'bellLinesF'].map(
+        (name) => frameRectangle(frameGrid('effects'), name),
+      ),
+    ).toContainEqual(effect.texture.frame)
   })
 
   it('keeps a centered lower-only lantern state stable across complete textures', () => {
@@ -415,7 +397,7 @@ describe('Three Branches registered prop layers', () => {
     )
     expect(lower.texture.frame).toEqual(frameRectangle(frameGrid('lantern'), 'lanternLit'))
     expect(lower.anchor).toMatchObject({ x: 0.5, y: 0.5 })
-    expect(lower.scale.x).toBe(0.1)
+    expect(lower.scale.x).toBe(propVisualScale('lantern'))
     expect(targets.effects.getChildByLabel('prop-upper:lantern_0')).toBeNull()
     expect(targets.effects.getChildByLabel('prop-effect:lantern_0')?.position).toMatchObject({
       x: 8,
@@ -434,7 +416,7 @@ describe('Three Branches registered prop layers', () => {
     expect(lower.texture).toBe(litLower)
   })
 
-  it('aligns the tended shrine cloud and reproduces its full opacity cycle on seek', () => {
+  it('aligns the enlarged tended shrine cloud and reproduces its configured opacity cycle on seek', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('shrine', 'shrine_0'))
     const layer = createPropLayer(targets, scene)
@@ -444,21 +426,21 @@ describe('Three Branches registered prop layers', () => {
     const effect = targets.effects.getChildByLabel('prop-effect:shrine_0') as Sprite
     const initial = propEffectSpec('shrine', 'tended', 'shrine_0', 0)
     if (initial === null) throw new Error('Expected a tended shrine effect.')
-    const troughTick = (1 - initial.phase / 0xffffffff) * 8
-    const peakTick = troughTick + 4
+    const troughTick = (1 - initial.phase / 0xffffffff) * 10
+    const peakTick = troughTick + 5
 
     layer.advance(troughTick)
     expect(effect.visible).toBe(true)
     expect(effect.texture.frame).toEqual(frameRectangle(frameGrid('effects'), 'shrineCloud'))
     expect(effect.position).toMatchObject({ x: 8, y: 8 })
-    expect(effect.scale.x).toBeCloseTo(0.4)
+    expect(effect.scale.x).toBeCloseTo(0.5)
     expect(effect.rotation).toBe(0)
-    expect(effect.alpha).toBeCloseTo(0)
+    expect(effect.alpha).toBeCloseTo(0.45)
 
     layer.advance(peakTick)
     expect(effect.alpha).toBeCloseTo(1)
     layer.advance(troughTick)
-    expect(effect.alpha).toBeCloseTo(0)
+    expect(effect.alpha).toBeCloseTo(0.45)
 
     layer.reconcile(frame(scene, [], { shrine_0: 'untended' }))
     layer.advance(troughTick)

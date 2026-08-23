@@ -77,9 +77,9 @@ Generate the market crate with the approved lantern and closed stall as direct c
 
 Desired result: ordinary props clearly express their states, and the lantern becomes a warm overhead beacon landmark that reads at night without crowding the day scene.
 
-Keep prop state meanings and interaction and collision footprints. Keep the lantern on its dedicated page while treating it as an ordinary centered prop. Its art, contact shadow, selection, runtime flicker, and emissive light share the collision center. Pump and bell remain monuments.
+Keep prop state meanings and interaction and collision footprints. Keep the lantern on its dedicated page while treating it as an ordinary centered prop. Its art, contact shadow, selection, runtime flicker, and emissive light share the collision center. Treat the pump, which is the gameplay well, and the bell as ordinary centered props as well.
 
-The lantern uses complete lower-layer state sprites without registered anchors or split layers. Pump and bell keep their registered monument treatments and separate lower, fixed, and moving roles. The notice board, lantern, shrine, pump, and bell remain fixed north. All prop pages use the configured sampling treatment, and every prop retains its placement, collision, selection, shadow, and highlight contracts.
+The lantern, pump, and bell use complete lower-layer state sprites without registered anchors or split layers. The pump uses one regular well base for both idle and flowing states, with a separate water ripple effect shown only while flowing, using the same presentation pattern as the tended shrine cloud. The bell remains mechanically still and uses exactly one striker; its ringing state is communicated by a separate sound-line effect. The notice board, lantern, shrine, pump, and bell remain fixed north. All prop pages use the configured sampling treatment, and every prop retains its placement, collision, selection, shadow, and highlight contracts.
 
 The current lantern is a compact octagonal beacon in exact overhead projection. Lit and unlit states share construction and centered registration; the lit state adds its approved core, baked light, runtime flicker, and glow.
 
@@ -101,13 +101,13 @@ The current notice board combines decisive dry-brush structural ink with clear w
 
 The production garden is a flat, exact-overhead, ground-inlaid prop with no vertical faces, rim thickness, shadows, perspective, or directional facade. Its balanced medium cedar uses the bench for the target warm midtone and restrained highlight, and the notice board for dark seams, end-grain, structural ink, and weathering. Contrast comes from dark soil, distinct plant greens, charcoal-indigo plates, pale bone ceramic, restrained brass, and violet and ochre flowers rather than bright wood. Overgrown and tended states share the ordinary centered treatment, rotate with recorded facing, and preserve their names, footprint, collision, selection, and interaction behavior.
 
-The tended shrine's drifting violet cloud is a separate grayscale-alpha effect. The base still contains no drifting wisps or detached motes. The reusable configured opacity animation is seek-safe and uses fractional presentation tick plus the stable prop phase. Only opacity animates, with no gameplay state, collision rule, mutable effect clock, or shrine emissive.
+The tended shrine's drifting violet cloud is a separate grayscale-alpha effect and is made more salient by its configured presentation pulse. The base still contains no drifting wisps or detached motes. The reusable configured opacity animation is seek-safe and uses fractional presentation tick plus the stable prop phase. Only opacity animates, with no gameplay state, collision rule, mutable effect clock, or shrine emissive. The flowing pump uses the same separate-effect pattern for its water ripple, while its regular well base remains unchanged.
 
-The lantern and bell use an exact 90 degree overhead projection, including bases that read entirely from above. Both keep their one-cell gameplay footprint, state meanings, and shared timber, indigo iron, bone ceramic, and sparse gilt material tones. The lantern uses its ordinary centered prop contract. The bell keeps registered foundation, fixed-gantry, and moving-bell roles.
+The lantern, well, and bell use an exact 90 degree overhead projection, including bases that read entirely from above. All three keep their one-cell gameplay footprint, state meanings, and shared timber, indigo iron, bone ceramic, and sparse gilt material tones. Each uses the ordinary centered prop contract. The well's ripple and the bell's sound lines are separate presentation effects, not alternate solid bases or gameplay layers.
 
-The compact octagonal lantern conveys height through concentric top surfaces. The bell's gantry rails and circular bell are visible only from above. Lit and unlit lantern states share construction, while silent and ringing bell states share registered art layers. The ringing state applies seek-safe motion to the circular bell alone. State names and gameplay contracts remain unchanged.
+The compact octagonal lantern conveys height through concentric top surfaces. The well reads as a compact circular stone structure with a distinct ripple layer when flowing. The bell's compact circular body and single striker read only from above. Lit and unlit lantern states share construction, idle and flowing well states share the regular base, and silent and ringing bell states share the still bell. State names and gameplay contracts remain unchanged.
 
-Formal Gate A waits for one sheet containing every revised prop state and the crate. After approval, update source art, `presentation.json`, compiled pages, and focused tests. Revise 5.0 only when the compiler or catalog contract changes, and revise 5.1 only when the visual direction changes. Gate B checks the pinned fixture and representative generated villages for fitted hierarchy, material unity, state readability, night behavior, registered-prop placement, and crate collision.
+Formal Gate A waits for one sheet containing every revised prop state and the crate. After approval, update source art, `presentation.json`, compiled pages, and focused tests. Revise 5.0 only when the compiler or catalog contract changes, and revise 5.1 only when the visual direction changes. Gate B checks the pinned fixture and representative generated villages for fitted hierarchy, material unity, state readability, night behavior, centered-prop placement, and crate collision.
 
 ### 4. Full-roof building sprites
 
@@ -127,13 +127,13 @@ Each cast set uses static body and clothing art plus one canonical left and righ
 
 The owner approved the visitor Gate A parts proof in `../art/visitor-rig-comparison-1/`, followed by the felt-cap, quilted-cap, and linen-bonnet villager choices in `../art/villager-comparison-1/`. Production sources, registration data, normalization, prompts, and the assembled cast preview live in `../art/character-rig-production-1/`.
 
-The live renderer uses one full-colour 576 by 768 character atlas. Its four rows are the visitor and three villager sets, and its three columns are the base, left arm, and right arm. The visitor is fixed to `player_0`; villagers select one of the three approved hats through a stable player-id hash. Each arm rotates independently around its registered shoulder, with opposing continuous motion scaled by displayed movement so stopping returns smoothly to rest. The superseded tintable raster pose pages are removed. Gate B remains open for owner review of the integrated scale, movement, projection, and identity read.
+The live renderer uses one full-colour 576 by 768 character atlas. Its four rows are the visitor and three villager sets, and its three columns are the base, left arm, and right arm. The visitor is fixed to `player_0`; villagers select one of the three approved hats through a stable player-id hash. Runtime assembly turns the authored cast 180 degrees before applying recorded heading. One hand travels forward while the other travels back, supported by a small shared shoulder turn, restrained body sway, and an interpolated start and stop envelope. Every transform remains a seek-safe function of displayed walk distance and frame interpolation. The superseded tintable raster pose pages are removed. Gate B remains open for owner review of the integrated scale, movement, projection, and identity read.
 
-### 6. Monument and effect completion
+### 6. Effect and expression completion
 
-Desired result: monuments feel like memorable village anchors, while effects make activity, light, and expression readable without visual noise.
+Desired result: village landmarks feel memorable, while effects make activity, light, and expression readable without visual noise.
 
-Complete the monument treatments, effect set, and expression marks. Keep monument registration, fixed orientation, collision, effect timing, and layer order. Contact shadows remain below props, and emissives retain their night behavior.
+Complete the remaining effect set and expression marks. Keep fixed prop orientation, collision, effect timing, and layer order. Contact shadows remain below props, and emissives retain their night behavior.
 
 ### 7. District representation at fitted view
 

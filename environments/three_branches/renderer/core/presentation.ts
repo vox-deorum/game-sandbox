@@ -290,15 +290,10 @@ export interface SourceAnchor {
   y: number
 }
 
-/** An absolute pixel position inside a registered prop source frame. */
+/** An absolute pixel position inside a registered character source frame. */
 export interface SourcePixelAnchor {
   x: number
   y: number
-}
-
-export interface SourceFrameSize {
-  width: number
-  height: number
 }
 
 /** One full-color arm sprite registered to a static cast base. */
@@ -317,25 +312,8 @@ export interface CharacterCastSet {
   farMarkTint: HearthsidePaletteKey
 }
 
-export type RegisteredPropSpriteRole = 'lower' | 'upper' | 'moving' | 'full'
-
-export interface RegisteredPropSwingTreatment {
-  sourcePivot: SourcePixelAnchor
-  amplitudeRadians: number
-}
-
-/** Higher-density prop calibration that preserves one complete source-frame registration. */
-export interface RegisteredPropVisualTreatment {
-  textureDensityDivisor: number
-  frameSize: SourceFrameSize
-  sourceAnchorByRole: Readonly<Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>>
-  splitY?: number
-  swing?: RegisteredPropSwingTreatment
-}
-
 interface PropVisualTreatment extends VisualScaleTreatment {
   effectAnchorByType: Readonly<Record<string, SourceAnchor>>
-  registeredPropByType: Readonly<Record<string, RegisteredPropVisualTreatment>>
 }
 
 /** A reusable, seek-safe opacity cycle applied to an active prop effect. */
@@ -378,7 +356,14 @@ export interface HearthsideStyle {
   }
   characters: {
     cast: { visitor: CharacterCastSet; villagers: readonly CharacterCastSet[] }
-    walk: { frameRatio: number; deadZone: number; armAmplitudeRadians: number }
+    walk: {
+      frameRatio: number
+      deadZone: number
+      armAmplitudeRadians: number
+      armTravelPixels: number
+      bodySwayRadians: number
+      bodyBobPixels: number
+    }
   }
   props: PropVisualTreatment
   scenery: VisualScaleTreatment
@@ -456,11 +441,6 @@ export function propVisualScale(type: string): number {
 /** Resolve an effect anchor measured from the center of a complete prop source canvas. */
 export function propEffectAnchor(type: string): SourceAnchor {
   return HEARTHSIDE_STYLE.props.effectAnchorByType[type] ?? { x: 0, y: 0 }
-}
-
-/** Resolve complete-source registration for a prop that needs it. */
-export function registeredPropTreatment(type: string): RegisteredPropVisualTreatment | null {
-  return HEARTHSIDE_STYLE.props.registeredPropByType[type] ?? null
 }
 
 /** Resolve one scenery sprite scale from the validated visual calibration. */
@@ -637,6 +617,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'frameRatio',
     'deadZone',
     'armAmplitudeRadians',
+    'armTravelPixels',
+    'bodySwayRadians',
+    'bodyBobPixels',
   ])
   const characters = {
     cast: { visitor, villagers },
@@ -653,6 +636,27 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
         'presentation.characters.walk.armAmplitudeRadians',
         0,
         Math.PI / 2,
+        true,
+      ),
+      armTravelPixels: boundedNumber(
+        walkSource.armTravelPixels,
+        'presentation.characters.walk.armTravelPixels',
+        0,
+        12,
+        true,
+      ),
+      bodySwayRadians: boundedNumber(
+        walkSource.bodySwayRadians,
+        'presentation.characters.walk.bodySwayRadians',
+        0,
+        Math.PI / 16,
+        true,
+      ),
+      bodyBobPixels: boundedNumber(
+        walkSource.bodyBobPixels,
+        'presentation.characters.walk.bodyBobPixels',
+        0,
+        4,
         true,
       ),
     },
@@ -867,7 +871,6 @@ function propVisualTreatment(
     'defaultScale',
     'scaleByType',
     'effectAnchorByType',
-    'registeredPropByType',
   ])
   const scales = visualScaleTreatment(
     { defaultScale: source.defaultScale, scaleByType: source.scaleByType },
@@ -880,10 +883,6 @@ function propVisualTreatment(
     [],
     knownTypes,
   )
-  const registrations = exactRecord(source.registeredPropByType, `${name}.registeredPropByType`, [
-    'pump',
-    'bell',
-  ])
   return {
     ...scales,
     effectAnchorByType: Object.fromEntries(
@@ -898,118 +897,7 @@ function propVisualTreatment(
         ]
       }),
     ),
-    registeredPropByType: Object.fromEntries(
-      Object.entries(registrations).map(([type, value]) => [
-        type,
-        registeredPropVisualTreatment(value, `${name}.registeredPropByType.${type}`, type),
-      ]),
-    ),
   }
-}
-
-function registeredPropVisualTreatment(
-  value: unknown,
-  name: string,
-  type: string,
-): RegisteredPropVisualTreatment {
-  const requirements = registeredPropRequirements(type)
-  const source = exactRecord(value, name, [
-    'textureDensityDivisor',
-    'frameSize',
-    'sourceAnchorByRole',
-    ...(requirements.hasSplit ? ['splitY'] : []),
-    ...(requirements.hasSwing ? ['swing'] : []),
-  ])
-  const divisor = positiveInteger(source.textureDensityDivisor, `${name}.textureDensityDivisor`)
-  if (divisor > 16) {
-    throw new Error(`${name}.textureDensityDivisor must be at most sixteen.`)
-  }
-  const frameSize = sourceFrameSize(source.frameSize, `${name}.frameSize`)
-  const roles = recordWithOptional(
-    source.sourceAnchorByRole,
-    `${name}.sourceAnchorByRole`,
-    requirements.roles,
-    [],
-  )
-  const splitY = requirements.hasSplit
-    ? splitInsideFrame(source.splitY, `${name}.splitY`, frameSize)
-    : undefined
-  const swing = requirements.hasSwing
-    ? registeredPropSwingTreatment(source.swing, `${name}.swing`, frameSize)
-    : undefined
-  return {
-    textureDensityDivisor: divisor,
-    frameSize,
-    sourceAnchorByRole: Object.fromEntries(
-      Object.entries(roles).map(([role, anchor]) => [
-        role,
-        sourcePixelAnchor(anchor, `${name}.sourceAnchorByRole.${role}`, frameSize),
-      ]),
-    ) as Partial<Record<RegisteredPropSpriteRole, SourcePixelAnchor>>,
-    ...(splitY === undefined ? {} : { splitY }),
-    ...(swing === undefined ? {} : { swing }),
-  }
-}
-
-function registeredPropRequirements(type: string): {
-  roles: readonly RegisteredPropSpriteRole[]
-  hasSplit: boolean
-  hasSwing: boolean
-} {
-  if (type === 'pump') return { roles: ['full'], hasSplit: true, hasSwing: false }
-  if (type === 'bell') {
-    return { roles: ['lower', 'upper', 'moving'], hasSplit: false, hasSwing: true }
-  }
-  throw new Error(`Three Branches registered prop type is unknown: ${type}`)
-}
-
-function registeredPropSwingTreatment(
-  value: unknown,
-  name: string,
-  frameSize: SourceFrameSize,
-): RegisteredPropSwingTreatment {
-  const source = exactRecord(value, name, ['sourcePivot', 'amplitudeRadians'])
-  return {
-    sourcePivot: sourcePixelAnchor(source.sourcePivot, `${name}.sourcePivot`, frameSize),
-    amplitudeRadians: boundedNumber(
-      source.amplitudeRadians,
-      `${name}.amplitudeRadians`,
-      0,
-      Math.PI / 2,
-    ),
-  }
-}
-
-function sourceFrameSize(value: unknown, name: string): SourceFrameSize {
-  const source = exactRecord(value, name, ['width', 'height'])
-  return {
-    width: positiveInteger(source.width, `${name}.width`),
-    height: positiveInteger(source.height, `${name}.height`),
-  }
-}
-
-function sourcePixelAnchor(
-  value: unknown,
-  name: string,
-  frameSize: SourceFrameSize,
-): SourcePixelAnchor {
-  const source = exactRecord(value, name, ['x', 'y'])
-  const x = nonnegativeInteger(source.x, `${name}.x`)
-  const y = nonnegativeInteger(source.y, `${name}.y`)
-  if (x >= frameSize.width || y >= frameSize.height) {
-    throw new Error(
-      `${name} must be inside its ${frameSize.width} by ${frameSize.height} registered prop frame.`,
-    )
-  }
-  return { x, y }
-}
-
-function splitInsideFrame(value: unknown, name: string, frameSize: SourceFrameSize): number {
-  const splitY = nonnegativeInteger(value, name)
-  if (splitY <= 0 || splitY >= frameSize.height) {
-    throw new Error(`${name} must be strictly inside its ${frameSize.height}-pixel frame height.`)
-  }
-  return splitY
 }
 
 function visualScaleFor(type: string, treatment: VisualScaleTreatment): number {
@@ -1330,12 +1218,21 @@ function characterArmTreatment(
   knownFrames: ReadonlySet<string>,
 ): CharacterArmTreatment {
   const source = exactRecord(value, name, ['frame', 'pivot', 'anchor'])
-  const frameSize = { width: 192, height: 192 }
   return {
     frame: knownText(source.frame, knownFrames, `${name}.frame`),
-    pivot: sourcePixelAnchor(source.pivot, `${name}.pivot`, frameSize),
-    anchor: sourcePixelAnchor(source.anchor, `${name}.anchor`, frameSize),
+    pivot: characterPixelAnchor(source.pivot, `${name}.pivot`),
+    anchor: characterPixelAnchor(source.anchor, `${name}.anchor`),
   }
+}
+
+function characterPixelAnchor(value: unknown, name: string): SourcePixelAnchor {
+  const source = exactRecord(value, name, ['x', 'y'])
+  const x = nonnegativeInteger(source.x, `${name}.x`)
+  const y = nonnegativeInteger(source.y, `${name}.y`)
+  if (x >= 192 || y >= 192) {
+    throw new Error(`${name} must be inside its 192 by 192 character frame.`)
+  }
+  return { x, y }
 }
 
 function terrainFillTreatment(
