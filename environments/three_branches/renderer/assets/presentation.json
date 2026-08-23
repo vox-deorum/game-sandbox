@@ -1248,7 +1248,6 @@
       "sideOverhangCells": 0.05,
       "sourceOverscanCells": 0.08,
       "sourcePhaseCells": 0.04,
-      "portalSourceOverscanCells": 0.05,
       "seam": {
         "tint": "backdrop",
         "opacity": 0.35,

@@ -158,7 +158,7 @@ describe('Three Branches bridge board sources', () => {
     )
   })
 
-  it('retains wood at both deck cross edges under worst configured overscan and phase', () => {
+  it('retains wood at both deck cross edges and exposes rough authored terminal candidates', () => {
     const frame = atlasFrame('bridges', 'boards')
     const sources = extractBridgeBoardSources(frame.pixels, frame.width, frame.height, 'boards')
     const treatment = HEARTHSIDE_STYLE.terrain.planks
@@ -185,16 +185,6 @@ describe('Three Branches bridge board sources', () => {
             ),
         ),
       )
-    const maximumBoardWidth =
-      ((1 + (treatment.portalOverlapCells + treatment.portalMaskInsetCells) * 2) *
-        (1 + treatment.widthVariation)) /
-      (1 +
-        treatment.widthVariation +
-        (treatment.boardsPerCell - 1) * (1 - treatment.widthVariation))
-    const portalInset =
-      (treatment.portalMaskInsetCells + treatment.portalSourceOverscanCells) /
-      (maximumBoardWidth + treatment.portalSourceOverscanCells)
-
     for (const source of sources) {
       const rows = visibleRowBounds(source.pixels, source.width, source.height)
       for (const crossSpan of crossSpans) {
@@ -205,18 +195,20 @@ describe('Three Branches bridge board sources', () => {
           expect(rowCoverage(source.pixels, source.width, lastRow)).toBeGreaterThanOrEqual(0.7)
         }
       }
-
-      const firstPortalColumn = Math.floor(portalInset * source.width)
-      const lastPortalColumn = Math.min(
-        source.width - 1,
-        Math.ceil((1 - portalInset) * source.width) - 1,
-      )
-      expect(
-        columnCoverage(source.pixels, source.width, rows.start, rows.end - 1, firstPortalColumn),
-      ).toBeGreaterThanOrEqual(0.6)
-      expect(
-        columnCoverage(source.pixels, source.width, rows.start, rows.end - 1, lastPortalColumn),
-      ).toBeGreaterThanOrEqual(0.6)
     }
+
+    const roughCandidates = sources
+      .flatMap((source, sourceIndex) => {
+        const rows = visibleRowBounds(source.pixels, source.width, source.height)
+        return [0, source.width - 1].map((column) => ({
+          sourceIndex,
+          coverage: columnCoverage(source.pixels, source.width, rows.start, rows.end - 1, column),
+        }))
+      })
+      .sort((left, right) => left.coverage - right.coverage || left.sourceIndex - right.sourceIndex)
+      .slice(0, 3)
+
+    expect(roughCandidates).toHaveLength(3)
+    expect(roughCandidates.every((candidate) => candidate.coverage < 0.9)).toBe(true)
   })
 })

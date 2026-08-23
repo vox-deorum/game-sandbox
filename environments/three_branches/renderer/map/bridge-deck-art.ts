@@ -36,7 +36,10 @@ export interface PlannedBridgeBoard {
 }
 
 export interface BridgeBoardPlan {
+  /** Full source-canvas bounds, including transparent portal padding. */
   readonly bounds: BridgeDeckBounds
+  /** Bounds occupied by board material before the component mask is applied. */
+  readonly materialBounds: BridgeDeckBounds
   readonly boards: readonly PlannedBridgeBoard[]
 }
 
@@ -52,15 +55,19 @@ export interface BridgeDeckLayer {
 export function planBridgeBoards(
   component: TerrainBridgeComponent,
   treatment: PlankTreatment,
+  sources: BridgeBoardSources,
 ): BridgeBoardPlan {
   const bounds = deckBounds(component, treatment)
+  const materialBounds = deckMaterialBounds(component, treatment, bounds)
   const gameplayBounds = gameplayDeckBounds(component)
   const gameplayAxisSpan =
     gameplayBounds.runAxis === 'horizontal'
       ? gameplayBounds.maxX - gameplayBounds.minX
       : gameplayBounds.maxY - gameplayBounds.minY
   const visualAxisSpan =
-    bounds.runAxis === 'horizontal' ? bounds.maxX - bounds.minX : bounds.maxY - bounds.minY
+    materialBounds.runAxis === 'horizontal'
+      ? materialBounds.maxX - materialBounds.minX
+      : materialBounds.maxY - materialBounds.minY
   const count = Math.max(1, Math.round(gameplayAxisSpan * treatment.boardsPerCell))
   const weights = Array.from(
     { length: count },
@@ -73,19 +80,24 @@ export function planBridgeBoards(
   )
   const scale = visualAxisSpan / weights.reduce((sum, weight) => sum + weight, 0)
   const crossSpan =
-    bounds.runAxis === 'horizontal' ? bounds.maxY - bounds.minY : bounds.maxX - bounds.minX
-  let cursor = bounds.runAxis === 'horizontal' ? bounds.minX : bounds.minY
+    materialBounds.runAxis === 'horizontal'
+      ? materialBounds.maxY - materialBounds.minY
+      : materialBounds.maxX - materialBounds.minX
+  let cursor = materialBounds.runAxis === 'horizontal' ? materialBounds.minX : materialBounds.minY
   const boards: PlannedBridgeBoard[] = []
   for (let index = 0; index < count; index += 1) {
     const weight = weights[index]
     if (weight === undefined)
       throw new Error(`Bridge component ${component.id} has no board weight.`)
     const runSize = weight * scale
-    const crossStart = bounds.runAxis === 'horizontal' ? bounds.minY : bounds.minX
+    const crossStart =
+      materialBounds.runAxis === 'horizontal' ? materialBounds.minY : materialBounds.minX
     const crossSize = crossSpan
-    const sourceIndex = Math.floor(
-      hashUnit(stableHashParts('bridge-board-source', component.id, index)) * 3,
-    )
+    const terminal = component.deck.kind === 'axis' ? terminalFor(index, count) : undefined
+    const material =
+      terminal === undefined
+        ? hashedBoardMaterial(component.id, index)
+        : terminalBoardMaterial(component.id, terminal, sources)
     const board =
       bounds.runAxis === 'horizontal'
         ? {
@@ -103,8 +115,7 @@ export function planBridgeBoards(
     boards.push({
       index,
       ...board,
-      sourceIndex,
-      mirrored: hashUnit(stableHashParts('bridge-board-mirror', component.id, index)) >= 0.5,
+      ...material,
       reversed: hashUnit(stableHashParts('bridge-board-reverse', component.id, index)) >= 0.5,
       crossAxisPhase:
         (hashUnit(stableHashParts('bridge-board-phase', component.id, index)) * 2 - 1) *
@@ -114,8 +125,99 @@ export function planBridgeBoards(
   }
   return {
     bounds,
+    materialBounds,
     boards,
   }
+}
+
+function deckMaterialBounds(
+  component: TerrainBridgeComponent,
+  treatment: PlankTreatment,
+  bounds: BridgeDeckBounds,
+): BridgeDeckBounds {
+  if (component.deck.kind === 'compact') return bounds
+  const inset = treatment.portalMaskInsetCells
+  return bounds.runAxis === 'horizontal'
+    ? { ...bounds, minX: bounds.minX + inset, maxX: bounds.maxX - inset }
+    : { ...bounds, minY: bounds.minY + inset, maxY: bounds.maxY - inset }
+}
+
+function terminalFor(index: number, count: number): 'first' | 'last' | 'both' | undefined {
+  if (count === 1) return 'both'
+  if (index === 0) return 'first'
+  if (index === count - 1) return 'last'
+  return undefined
+}
+
+function hashedBoardMaterial(
+  componentId: string,
+  index: number,
+): Pick<PlannedBridgeBoard, 'sourceIndex' | 'mirrored'> {
+  return {
+    sourceIndex: Math.floor(
+      hashUnit(stableHashParts('bridge-board-source', componentId, index)) * 3,
+    ),
+    mirrored: hashUnit(stableHashParts('bridge-board-mirror', componentId, index)) >= 0.5,
+  }
+}
+
+function terminalBoardMaterial(
+  componentId: string,
+  terminal: 'first' | 'last' | 'both',
+  sources: BridgeBoardSources,
+): Pick<PlannedBridgeBoard, 'sourceIndex' | 'mirrored'> {
+  if (terminal === 'both') {
+    const sourceIndex = sources
+      .map((source, index) => ({
+        index,
+        coverage: sourceSideCoverage(source, 'left') + sourceSideCoverage(source, 'right'),
+      }))
+      .sort((left, right) => left.coverage - right.coverage || left.index - right.index)[0]?.index
+    if (sourceIndex === undefined)
+      throw new Error(`Bridge component ${componentId} has no board material.`)
+    return {
+      sourceIndex,
+      mirrored: hashUnit(stableHashParts('bridge-board-terminal-pair-mirror', componentId)) >= 0.5,
+    }
+  }
+  const candidates = sources
+    .flatMap((source, sourceIndex) =>
+      (['left', 'right'] as const).map((side) => ({
+        sourceIndex,
+        side,
+        coverage: sourceSideCoverage(source, side),
+      })),
+    )
+    .sort(
+      (left, right) =>
+        left.coverage - right.coverage ||
+        left.sourceIndex - right.sourceIndex ||
+        left.side.localeCompare(right.side),
+    )
+    .slice(0, 3)
+  const candidate =
+    candidates[
+      Math.floor(
+        hashUnit(stableHashParts('bridge-board-terminal-source', componentId, terminal)) *
+          candidates.length,
+      )
+    ]
+  if (candidate === undefined)
+    throw new Error(`Bridge component ${componentId} has no board material.`)
+  return {
+    sourceIndex: candidate.sourceIndex,
+    mirrored: terminal === 'first' ? candidate.side === 'right' : candidate.side === 'left',
+  }
+}
+
+function sourceSideCoverage(source: BridgeBoardSource, side: 'left' | 'right'): number {
+  const rows = visibleBoardRows(source)
+  const column = side === 'left' ? 0 : source.width - 1
+  let visible = 0
+  for (let row = rows.start; row < rows.end; row += 1) {
+    if ((source.pixels[(row * source.width + column) * 4 + 3] ?? 0) > 16) visible += 1
+  }
+  return visible / (rows.end - rows.start)
 }
 
 /** Return the visual canvas bounds for a bridge component. */
@@ -213,10 +315,10 @@ export function createBridgeDeckLayer(
   const owned: { container: Container; sprite: Sprite; mask: Graphics; texture: Texture }[] = []
   try {
     for (const component of components) {
-      const plan = planBridgeBoards(component, treatment)
       const source = art.bridgeBoards
       if (source.length !== 3)
         throw new Error(`Bridge component ${component.id} has no three-board art.`)
+      const plan = planBridgeBoards(component, treatment, source)
       const canvas = composeBridgeDeck(component, plan, source, treatment)
       const container = new Container({ label: `terrain-bridge-deck:${component.id}` })
       const mask = bridgeDeckMask(component, cellSize, treatment)
@@ -278,7 +380,7 @@ function composeBridgeDeck(
     const source = sourceCanvases[board.sourceIndex]
     if (source === undefined)
       throw new Error(`Bridge component ${component.id} board source is missing.`)
-    const rect = sourceRect(component, plan, board, treatment)
+    const rect = sourceRect(plan, board, treatment)
     drawBoardSource(context, source, rect, plan.bounds.runAxis, board)
   }
   drawCrossEdgeShadows(context, plan, treatment, width, height)
@@ -360,7 +462,6 @@ function baseSourceRect(
 }
 
 function sourceRect(
-  component: TerrainBridgeComponent,
   plan: BridgeBoardPlan,
   board: PlannedBridgeBoard,
   treatment: PlankTreatment,
@@ -368,28 +469,12 @@ function sourceRect(
   const rect = baseSourceRect(board, plan.bounds)
   const crossOverscan = treatment.sourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
   const phase = board.crossAxisPhase * BRIDGE_DECK_SOURCE_CELLS
-  const axisOverscan =
-    component.deck.kind === 'axis'
-      ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
-      : 0
-  const first = board.index === 0
-  const last = board.index === plan.boards.length - 1
   if (plan.bounds.runAxis === 'horizontal') {
     rect.y -= crossOverscan - phase
     rect.height += crossOverscan * 2
-    if (first) {
-      rect.x -= axisOverscan
-      rect.width += axisOverscan
-    }
-    if (last) rect.width += axisOverscan
   } else {
     rect.x -= crossOverscan - phase
     rect.width += crossOverscan * 2
-    if (first) {
-      rect.y -= axisOverscan
-      rect.height += axisOverscan
-    }
-    if (last) rect.height += axisOverscan
   }
   return rect
 }

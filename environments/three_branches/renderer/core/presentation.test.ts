@@ -384,10 +384,6 @@ describe('Hearthside Ink presentation', () => {
     excessivePhase.terrain.planks.sourcePhaseCells = 0.041
     expect(() => readHearthsideStyle(excessivePhase)).toThrow('sourcePhaseCells')
 
-    const excessivePortalOverscan = structuredClone(HEARTHSIDE_STYLE) as any
-    excessivePortalOverscan.terrain.planks.portalSourceOverscanCells = 0.101
-    expect(() => readHearthsideStyle(excessivePortalOverscan)).toThrow('portalSourceOverscanCells')
-
     const invalidEdgeWidth = structuredClone(HEARTHSIDE_STYLE) as any
     invalidEdgeWidth.terrain.planks.seam.widthCells = 0
     expect(() => readHearthsideStyle(invalidEdgeWidth)).toThrow('seam.widthCells')

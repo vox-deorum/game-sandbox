@@ -258,7 +258,6 @@ export interface PlankTreatment {
   sideOverhangCells: number
   sourceOverscanCells: number
   sourcePhaseCells: number
-  portalSourceOverscanCells: number
   seam: {
     tint: HearthsidePaletteKey
     opacity: number
@@ -1181,7 +1180,6 @@ function plankTreatment(
     'sideOverhangCells',
     'sourceOverscanCells',
     'sourcePhaseCells',
-    'portalSourceOverscanCells',
     'seam',
     'edgeShadow',
   ])
@@ -1231,13 +1229,6 @@ function plankTreatment(
       `${name}.sourcePhaseCells`,
       0,
       finiteNumber(source.sourceOverscanCells, `${name}.sourceOverscanCells`) / 2,
-      true,
-    ),
-    portalSourceOverscanCells: boundedNumber(
-      source.portalSourceOverscanCells,
-      `${name}.portalSourceOverscanCells`,
-      0,
-      0.1,
       true,
     ),
     seam: {

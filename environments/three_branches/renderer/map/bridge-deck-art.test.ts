@@ -159,6 +159,24 @@ function directionalBoard() {
   }
 }
 
+function roughBoard(leftCoverage: number, rightCoverage: number) {
+  const height = 8
+  const pixels = new Uint8ClampedArray(2 * height * 4)
+  for (let row = 0; row < height; row += 1) {
+    for (const [column, coverage] of [
+      [0, leftCoverage],
+      [1, rightCoverage],
+    ] as const) {
+      const offset = (row * 2 + column) * 4
+      pixels[offset] = 128
+      pixels[offset + 1] = 96
+      pixels[offset + 2] = 64
+      pixels[offset + 3] = row / height < coverage ? 255 : 0
+    }
+  }
+  return { width: 2, height, pixels }
+}
+
 function horizontalBridge(id = 'bridge-horizontal'): TerrainBridgeComponent {
   return bridge(
     'horizontal',
@@ -204,8 +222,9 @@ describe('component bridge deck planning', () => {
         ],
       },
     )
-    const first = planBridgeBoards(component, treatment)
-    const second = planBridgeBoards(component, treatment)
+    const sources = boardSources()
+    const first = planBridgeBoards(component, treatment, sources)
+    const second = planBridgeBoards(component, treatment, sources)
     const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
 
     expect(first).toEqual(second)
@@ -215,16 +234,20 @@ describe('component bridge deck planning', () => {
     expect(first.bounds.minY).toBeCloseTo(7.1, 10)
     expect(first.bounds.maxY).toBeCloseTo(7.9, 10)
     expect(first.boards).toHaveLength(6)
-    expect(first.boards[0]?.x).toBe(4 - sourceOverlap)
+    expect(first.materialBounds.minX).toBeCloseTo(4 - treatment.portalOverlapCells, 10)
+    expect(first.materialBounds.maxX).toBeCloseTo(6 + treatment.portalOverlapCells, 10)
+    expect(first.boards[0]?.x).toBe(4 - treatment.portalOverlapCells)
     const last = required(first.boards.at(-1), 'Horizontal bridge has no final board.')
-    expect(last.x + last.width).toBeCloseTo(6 + sourceOverlap, 10)
+    expect(last.x + last.width).toBeCloseTo(6 + treatment.portalOverlapCells, 10)
     for (const [index, board] of first.boards.slice(1).entries()) {
       const previous = required(first.boards[index], 'Horizontal bridge has no previous board.')
       expect(board.x).toBeCloseTo(previous.x + previous.width, 10)
     }
     expect(
       first.boards.every(
-        (board) => board.y === first.bounds.minY && board.y + board.height === first.bounds.maxY,
+        (board) =>
+          board.y === first.materialBounds.minY &&
+          board.y + board.height === first.materialBounds.maxY,
       ),
     ).toBe(true)
     expect(
@@ -250,7 +273,7 @@ describe('component bridge deck planning', () => {
         ],
       },
     )
-    const plan = planBridgeBoards(component, treatment)
+    const plan = planBridgeBoards(component, treatment, boardSources())
     const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
 
     expect(plan.bounds).toEqual({
@@ -261,14 +284,79 @@ describe('component bridge deck planning', () => {
       runAxis: 'vertical',
     })
     expect(plan.boards).toHaveLength(6)
-    expect(plan.boards[0]?.y).toBe(1 - sourceOverlap)
+    expect(plan.materialBounds).toEqual({
+      minX: 2.1,
+      maxX: 2.9,
+      minY: 1 - treatment.portalOverlapCells,
+      maxY: 3 + treatment.portalOverlapCells,
+      runAxis: 'vertical',
+    })
+    expect(plan.boards[0]?.y).toBe(1 - treatment.portalOverlapCells)
     const last = required(plan.boards.at(-1), 'Vertical bridge has no final board.')
-    expect(last.y + last.height).toBeCloseTo(3 + sourceOverlap, 10)
+    expect(last.y + last.height).toBeCloseTo(3 + treatment.portalOverlapCells, 10)
     expect(
       plan.boards.every(
-        (board) => board.x === plan.bounds.minX && board.x + board.width === plan.bounds.maxX,
+        (board) =>
+          board.x === plan.materialBounds.minX &&
+          board.x + board.width === plan.materialBounds.maxX,
       ),
     ).toBe(true)
+  })
+
+  it('uses authored rough sides at axis terminals while leaving compact selection source-independent', () => {
+    const roughSources = [roughBoard(0.1, 1), roughBoard(0.25, 1), roughBoard(0.4, 1)] as const
+    const vertical = bridge('vertical', [{ column: 2, row: 1 }], {
+      kind: 'axis',
+      widthCells: 0.7,
+      cap: 'butt',
+      center: { x: 2.5, y: 1.5 },
+      axis: [
+        { x: 2.5, y: 1 },
+        { x: 2.5, y: 2 },
+      ],
+    })
+    for (const component of [horizontalBridge('rough-horizontal'), vertical]) {
+      const first = planBridgeBoards(component, treatment, roughSources)
+      const second = planBridgeBoards(component, treatment, roughSources)
+      const last = required(first.boards.at(-1), 'Bridge plan is missing its last board.')
+
+      expect(first).toEqual(second)
+      expect(first.boards[0]).toMatchObject({ mirrored: false })
+      expect(last).toMatchObject({ mirrored: true })
+      expect(first.boards[0]?.sourceIndex).toBeGreaterThanOrEqual(0)
+      expect(first.boards[0]?.sourceIndex).toBeLessThan(3)
+      expect(last.sourceIndex).toBeGreaterThanOrEqual(0)
+      expect(last.sourceIndex).toBeLessThan(3)
+    }
+
+    const compact = bridge('compact', [{ column: 3, row: 4 }], {
+      kind: 'compact',
+      widthCells: 0.7,
+      cap: 'round',
+      center: { x: 3.5, y: 4.5 },
+    })
+    expect(planBridgeBoards(compact, treatment, roughSources)).toEqual(
+      planBridgeBoards(compact, treatment, boardSources()),
+    )
+  })
+
+  it('uses one source with the roughest combined ends for a one-board axis deck', () => {
+    const component = bridge('horizontal', [{ column: 4, row: 7 }], {
+      kind: 'axis',
+      widthCells: 0.7,
+      cap: 'butt',
+      center: { x: 4.5, y: 7.5 },
+      axis: [
+        { x: 4, y: 7.5 },
+        { x: 5, y: 7.5 },
+      ],
+    })
+    const sources = [roughBoard(0.1, 0.2), roughBoard(0.5, 0.5), roughBoard(0.8, 0.8)] as const
+    const singleBoardTreatment = { ...treatment, boardsPerCell: 1 }
+
+    expect(planBridgeBoards(component, singleBoardTreatment, sources).boards[0]).toMatchObject({
+      sourceIndex: 0,
+    })
   })
 
   it('uses the centered deck square for a single compact bridge', () => {
@@ -302,7 +390,7 @@ describe('component bridge deck planning', () => {
       },
     )
 
-    const plan = planBridgeBoards(component, treatment)
+    const plan = planBridgeBoards(component, treatment, boardSources())
 
     expect(plan.bounds.runAxis).toBe('vertical')
   })
@@ -352,7 +440,7 @@ describe('component bridge deck planning', () => {
       minY: 2,
       maxY: 4,
     })
-    expect(planBridgeBoards(elbow, treatment).boards).toHaveLength(6)
+    expect(planBridgeBoards(elbow, treatment, boardSources()).boards).toHaveLength(6)
   })
 })
 
@@ -460,13 +548,9 @@ describe('component bridge deck rendering', () => {
 
   it('draws internal seam underlays before the overscanned full-color boards', () => {
     const component = horizontalBridge()
-    const plan = planBridgeBoards(component, treatment)
-    const layer = createBridgeDeckLayer(
-      { bridgeBoards: boardSources() },
-      [component],
-      16,
-      treatment,
-    )
+    const sources = boardSources()
+    const plan = planBridgeBoards(component, treatment, sources)
+    const layer = createBridgeDeckLayer({ bridgeBoards: sources }, [component], 16, treatment)
     const final = required(recordedCanvases[0], 'Final bridge canvas was not recorded.')
     const indexOf = (name: string, value?: unknown): number =>
       final.commands.findIndex(
@@ -511,15 +595,11 @@ describe('component bridge deck rendering', () => {
     layer.destroy()
   })
 
-  it('phases the narrow source axis without moving deck bounds and overscans both cross edges', () => {
+  it('keeps portal padding transparent while phasing the narrow source axis', () => {
     const component = horizontalBridge()
-    const plan = planBridgeBoards(component, treatment)
-    const layer = createBridgeDeckLayer(
-      { bridgeBoards: boardSources() },
-      [component],
-      16,
-      treatment,
-    )
+    const sources = boardSources()
+    const plan = planBridgeBoards(component, treatment, sources)
+    const layer = createBridgeDeckLayer({ bridgeBoards: sources }, [component], 16, treatment)
     const final = required(recordedCanvases[0], 'Final bridge canvas was not recorded.')
     const boardDraws = final.commands.filter((command) => command.name === 'drawImage')
     const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
@@ -534,16 +614,31 @@ describe('component bridge deck rendering', () => {
     for (const [index, draw] of boardDraws.entries()) {
       const board = required(plan.boards[index], 'Bridge plan is missing a board.')
       expect(draw.args[4]).toBeCloseTo(overscannedCrossSpan * BRIDGE_DECK_SOURCE_CELLS, 10)
-      expect(draw.args[3]).toBeCloseTo(
-        board.width * BRIDGE_DECK_SOURCE_CELLS +
-          (index === 0 ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS : 0) +
-          (index === plan.boards.length - 1
-            ? treatment.portalSourceOverscanCells * BRIDGE_DECK_SOURCE_CELLS
-            : 0),
-        10,
-      )
+      expect(draw.args[3]).toBeCloseTo(board.width * BRIDGE_DECK_SOURCE_CELLS, 10)
     }
+    const portalInset = treatment.portalMaskInsetCells * BRIDGE_DECK_SOURCE_CELLS
+    expect(((plan.boards[0]?.x ?? 0) - plan.bounds.minX) * BRIDGE_DECK_SOURCE_CELLS).toBeCloseTo(
+      portalInset,
+      10,
+    )
+    const last = required(plan.boards.at(-1), 'Bridge plan is missing its last board.')
+    expect((plan.bounds.maxX - (last.x + last.width)) * BRIDGE_DECK_SOURCE_CELLS).toBeCloseTo(
+      portalInset,
+      10,
+    )
     const translations = final.commands.filter((command) => command.name === 'translate')
+    const first = required(plan.boards[0], 'Bridge plan is missing its first board.')
+    const firstTranslation = required(translations[0], 'First board translation is missing.')
+    const lastTranslation = required(translations.at(-1), 'Last board translation is missing.')
+    const firstDraw = required(boardDraws[0], 'First board draw is missing.')
+    const lastDraw = required(boardDraws.at(-1), 'Last board draw is missing.')
+    const firstWidth = firstDraw.args[3] as number
+    const lastWidth = lastDraw.args[3] as number
+    const firstMaterialStart =
+      (firstTranslation.args[0] as number) - (first.mirrored ? firstWidth : 0)
+    const lastMaterialEnd = (lastTranslation.args[0] as number) + (last.mirrored ? 0 : lastWidth)
+    expect(firstMaterialStart).toBeCloseTo(portalInset, 10)
+    expect(final.canvas.width - lastMaterialEnd).toBeCloseTo(portalInset, 0)
     for (const [index, translation] of translations.entries()) {
       const board = required(plan.boards[index], 'Bridge plan is missing a board.')
       const y = translation.args[1] as number
@@ -557,7 +652,7 @@ describe('component bridge deck rendering', () => {
     layer.destroy()
   })
 
-  it('expands both portal ends for a one-board axis deck without changing sprite bounds', () => {
+  it('keeps a one-board axis deck inside the visible portal bounds without changing sprite bounds', () => {
     const component = bridge('horizontal', [{ column: 4, row: 7 }], {
       kind: 'axis',
       widthCells: 0.7,
@@ -569,9 +664,10 @@ describe('component bridge deck rendering', () => {
       ],
     })
     const oneBoardTreatment = { ...treatment, boardsPerCell: 1 }
-    const plan = planBridgeBoards(component, oneBoardTreatment)
+    const sources = boardSources()
+    const plan = planBridgeBoards(component, oneBoardTreatment, sources)
     const layer = createBridgeDeckLayer(
-      { bridgeBoards: boardSources() },
+      { bridgeBoards: sources },
       [component],
       16,
       oneBoardTreatment,
@@ -591,9 +687,10 @@ describe('component bridge deck rendering', () => {
 
     expect(plan.boards).toHaveLength(1)
     expect(draw.args[3]).toBeCloseTo(
-      (sourceSpan + treatment.portalSourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS,
+      (1 + treatment.portalOverlapCells * 2) * BRIDGE_DECK_SOURCE_CELLS,
       10,
     )
+    expect(plan.boards[0]?.x).toBeCloseTo(4 - treatment.portalOverlapCells, 10)
     expect(sprite.position.x).toBeCloseTo(
       (4 - treatment.portalOverlapCells - treatment.portalMaskInsetCells) * 16,
       10,
@@ -603,7 +700,8 @@ describe('component bridge deck rendering', () => {
   })
 
   it('maps narrow mirroring and end reversal onto the correct axes after rotation', () => {
-    const horizontal = planBridgeBoards(horizontalBridge(), treatment)
+    const sources = [directionalBoard(), directionalBoard(), directionalBoard()] as const
+    const horizontal = planBridgeBoards(horizontalBridge(), treatment, sources)
     const vertical = planBridgeBoards(
       bridge('vertical', [{ column: 8, row: 4 }], {
         kind: 'axis',
@@ -616,8 +714,8 @@ describe('component bridge deck rendering', () => {
         ],
       }),
       treatment,
+      sources,
     )
-    const sources = [directionalBoard(), directionalBoard(), directionalBoard()] as const
     const layer = createBridgeDeckLayer(
       { bridgeBoards: sources },
       [
@@ -657,17 +755,14 @@ describe('component bridge deck rendering', () => {
         verticalTranslations[index],
         'Vertical board translation is missing.',
       )
-      const firstOverscan = index === 0 ? treatment.portalSourceOverscanCells : 0
-      const lastOverscan =
-        index === vertical.boards.length - 1 ? treatment.portalSourceOverscanCells : 0
       const sourceWidth =
         (board.width + treatment.sourceOverscanCells * 2) * BRIDGE_DECK_SOURCE_CELLS
-      const sourceHeight = (board.height + firstOverscan + lastOverscan) * BRIDGE_DECK_SOURCE_CELLS
+      const sourceHeight = board.height * BRIDGE_DECK_SOURCE_CELLS
       const expectedX =
         (-treatment.sourceOverscanCells + board.crossAxisPhase) * BRIDGE_DECK_SOURCE_CELLS +
         (board.reversed ? sourceWidth : 0)
       const expectedY =
-        (board.y - vertical.bounds.minY - firstOverscan) * BRIDGE_DECK_SOURCE_CELLS +
+        (board.y - vertical.bounds.minY) * BRIDGE_DECK_SOURCE_CELLS +
         (board.mirrored ? sourceHeight : 0)
 
       expect(draw.args[3]).toBeCloseTo(sourceWidth, 10)
@@ -675,6 +770,30 @@ describe('component bridge deck rendering', () => {
       expect(translation.args[0]).toBeCloseTo(expectedX, 10)
       expect(translation.args[1]).toBeCloseTo(expectedY, 10)
     }
+    const firstVertical = required(vertical.boards[0], 'Vertical bridge has no first board.')
+    const lastVertical = required(vertical.boards.at(-1), 'Vertical bridge has no last board.')
+    const firstVerticalTranslation = required(
+      verticalTranslations[0],
+      'Vertical first-board translation is missing.',
+    )
+    const lastVerticalTranslation = required(
+      verticalTranslations.at(-1),
+      'Vertical last-board translation is missing.',
+    )
+    const firstVerticalHeight = required(verticalDraws[0], 'Vertical first-board draw is missing.')
+      .args[4] as number
+    const lastVerticalHeight = required(
+      verticalDraws.at(-1),
+      'Vertical last-board draw is missing.',
+    ).args[4] as number
+    const portalInset = treatment.portalMaskInsetCells * BRIDGE_DECK_SOURCE_CELLS
+    const firstVerticalStart =
+      (firstVerticalTranslation.args[1] as number) -
+      (firstVertical.mirrored ? firstVerticalHeight : 0)
+    const lastVerticalEnd =
+      (lastVerticalTranslation.args[1] as number) + (lastVertical.mirrored ? 0 : lastVerticalHeight)
+    expect(firstVerticalStart).toBeCloseTo(portalInset, 10)
+    expect(verticalFinal.canvas.height - lastVerticalEnd).toBeCloseTo(portalInset, 0)
     const lastVerticalBoard = verticalFinal.commands
       .map((command) => command.name)
       .lastIndexOf('drawImage')
@@ -699,14 +818,10 @@ describe('component bridge deck rendering', () => {
       { kind: 'compact', widthCells: 0.7, cap: 'round', center: { x: 2.5, y: 2 } },
       'compact-vertical-render',
     )
-    const plan = planBridgeBoards(compact, treatment)
     const source = directionalBoard()
-    const layer = createBridgeDeckLayer(
-      { bridgeBoards: [source, source, source] },
-      [compact],
-      16,
-      treatment,
-    )
+    const sources = [source, source, source] as const
+    const plan = planBridgeBoards(compact, treatment, sources)
+    const layer = createBridgeDeckLayer({ bridgeBoards: sources }, [compact], 16, treatment)
     const final = required(recordedCanvases[0], 'Compact final canvas is missing.')
     const rotatedSource = required(recordedCanvases[1], 'Compact source canvas is missing.')
     const image = required(
