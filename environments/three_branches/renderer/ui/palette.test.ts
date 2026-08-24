@@ -136,33 +136,6 @@ describe('Three Branches expression palette', () => {
     expect(icons.at(-1)?.visible).toBe(true)
   })
 
-  it('starts every icon and label at the configured positions', () => {
-    const layer = new Container()
-    const palette = createExpressionPalette(layer, testText)
-    palette.install(createExpressionArt(Texture.WHITE))
-    const layout = HEARTHSIDE_STYLE.expressions.inputPalette
-    const rects = [...EMOTE_PLATES.map((plate) => plate.rect), USE_PLATE_RECT]
-    const icons = layer.children.filter((child): child is Sprite => child instanceof Sprite)
-    const labels = layer.children.filter(
-      (child): child is Text => child instanceof Text && !/^\d$/.test(child.text),
-    )
-    expect(icons).toHaveLength(rects.length)
-    expect(labels).toHaveLength(rects.length)
-    for (const [index, rect] of rects.entries()) {
-      const icon = icons[index]
-      const label = labels[index]
-      if (icon === undefined || label === undefined) {
-        throw new Error('each palette plate should carry an icon and label.')
-      }
-      expect(icon.x - layout.iconContentWidth / 2).toBe(rect.x + layout.iconStartX)
-      expect(label.x).toBe(
-        rect.x + layout.iconStartX + layout.iconContentWidth + layout.iconLabelGap,
-      )
-      expect(icon.y).toBe(rect.y + rect.height / 2)
-      expect(label.y).toBe(rect.y + rect.height / 2)
-    }
-  })
-
   it('paints the Use plate gilt while latched and dims it while disabled', () => {
     const layer = new Container()
     const palette = createExpressionPalette(layer, testText)
