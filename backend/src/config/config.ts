@@ -148,8 +148,9 @@ export interface Config {
    */
   siteName: string
   /**
-   * The browser-visible brand icon used by the app chrome and favicon. A root-relative path resolves
-   * against this deployment; an absolute HTTP(S) URL lets an operator host custom artwork elsewhere.
+   * The browser-visible brand icon used by the app chrome and, when customized, the favicon. A
+   * root-relative path resolves against this deployment; an absolute HTTP(S) URL lets an operator
+   * host custom artwork elsewhere.
    */
   siteIconUrl: string
   /**

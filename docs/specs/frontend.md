@@ -21,7 +21,7 @@ An [**operator**](overview.md) is an authenticated user with `admin` status who 
 
 ## Deployment branding
 
-The global sidebar and mobile bar show the deployment name with its brand icon. The same icon is the browser favicon. Game Sandbox ships with its charcoal, crimson, and gold sandbox emblem. A deployment may replace the name, compact name, and icon URL through the public deployment configuration without rebuilding the frontend. Until that configuration loads, or if it cannot be read, the bundled Game Sandbox brand remains visible.
+The global sidebar and mobile bar show the deployment name with its brand icon. Game Sandbox ships with a charcoal, oxblood, and antique-gold flame emblem, plus a tiny oxblood-and-flame favicon designed for browser tabs. A deployment may replace the name, compact name, and icon URL through the public deployment configuration without rebuilding the frontend. A replacement icon is also used as that deployment's favicon. Until that configuration loads, or if it cannot be read, the bundled Game Sandbox brand remains visible.
 
 ## Pages
 

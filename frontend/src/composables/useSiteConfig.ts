@@ -14,6 +14,7 @@ import { getSiteConfig } from '../api/client.js'
 /** The frontend placeholder brand, matching the backend's `DEFAULT_SITE_NAME` so the two never diverge. */
 export const DEFAULT_SITE_NAME = 'Game Sandbox'
 export const DEFAULT_SITE_ICON_URL = '/game-sandbox-icon.png'
+export const DEFAULT_FAVICON_URL = '/game-sandbox-favicon.png'
 
 const siteName = ref(DEFAULT_SITE_NAME)
 const siteIconUrl = ref(DEFAULT_SITE_ICON_URL)
@@ -38,7 +39,10 @@ export async function loadSiteConfig(): Promise<void> {
       siteIconUrl.value = config.site_icon_url
       const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
       if (favicon !== null) {
-        favicon.href = config.site_icon_url
+        favicon.href =
+          config.site_icon_url === DEFAULT_SITE_ICON_URL
+            ? DEFAULT_FAVICON_URL
+            : config.site_icon_url
       }
     }
     // The short name mirrors the full name unless the deployment set a distinct one.

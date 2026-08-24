@@ -269,7 +269,7 @@ export async function getMe(): Promise<Me> {
 /** Public deployment branding, read once at startup to drive the sidebar brand and the document title. */
 export interface SiteConfig {
   site_name: string
-  /** Brand icon used by the app chrome and browser favicon. */
+  /** Brand icon used by the app chrome and, when customized, the browser favicon. */
   site_icon_url: string
   /** A compact brand for space-sensitive chrome; equals `site_name` unless `SITE_SHORT_NAME` is set. */
   site_short_name: string

@@ -29,7 +29,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP and WebSocket port |
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
-| `SITE_ICON_URL` | `/game-sandbox-icon.png` | Brand icon used in the sidebar, mobile bar, and browser favicon. Set a root-relative path or absolute HTTP(S) URL to use deployment-specific artwork. |
+| `SITE_ICON_URL` | `/game-sandbox-icon.png` | Brand icon used in the sidebar and mobile bar. Custom artwork also replaces the bundled flame-only favicon. Set a root-relative path or absolute HTTP(S) URL. |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
 | `DATA_DIR` | `backend/data` | Repository-relative runtime-data root. Container deployments need identical absolute host and Compose `app` container paths; see [Run the app in Docker](docker.md) and [Data folders](../data/folders.md). |
 | `LOAD_LOCAL_ENV` | `true` | Whether the machine-local Git-ignored `.env` is loaded. `false` skips it entirely, so a launcher (such as the browser e2e suite) can boot immune to a deployment's `.env` left in the tree. |

@@ -25,7 +25,7 @@ describe('useSiteConfig', () => {
   it('applies the fetched brand to the chrome, document title, and favicon', async () => {
     const favicon = document.createElement('link')
     favicon.rel = 'icon'
-    favicon.href = '/game-sandbox-icon.png'
+    favicon.href = '/game-sandbox-favicon.png'
     document.head.append(favicon)
     stubFetch(async () =>
       jsonResponse({
@@ -42,6 +42,23 @@ describe('useSiteConfig', () => {
     expect(siteShortName.value).toBe('Acme')
     expect(document.title).toBe('Acme Arena')
     expect(favicon.href).toBe('https://cdn.example.edu/acme.svg')
+  })
+
+  it('keeps the tiny bundled favicon when the backend returns the default icon', async () => {
+    const favicon = document.createElement('link')
+    favicon.rel = 'icon'
+    favicon.href = '/game-sandbox-favicon.png'
+    document.head.append(favicon)
+    stubFetch(async () =>
+      jsonResponse({
+        site_name: 'Game Sandbox',
+        site_icon_url: '/game-sandbox-icon.png',
+        site_short_name: 'Game Sandbox',
+      }),
+    )
+    const { loadSiteConfig } = await freshSiteConfig()
+    await loadSiteConfig()
+    expect(favicon.getAttribute('href')).toBe('/game-sandbox-favicon.png')
   })
 
   it('keeps the default brand when the config fetch fails', async () => {
