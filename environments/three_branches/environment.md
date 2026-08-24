@@ -42,27 +42,69 @@ Ground, walls, doorways, buildings, props, and scenery are standing knowledge in
 
 ## Helpers
 
-Import only the namespaces you use:
+Import the helpers you need at the top of `agent.py`:
 
 ```python
 from sandbox.village import action, day, geometry, layout, me, people, props
 ```
 
-| Namespace | Main helpers |
-| --- | --- |
-| `action` | `walk`, `stand`, and `EMOTES` |
-| `me` | `player_id`, position, heading, `moved`, expression, home, and `rng` |
-| `people` | seen people, nearby people, roster, and player-id predicates |
-| `props` | all placements, seen state, reach, use preview, and `TYPES` |
-| `layout` | cells, ground, safe standing and steps, sight, buildings, and doorways |
-| `geometry` | distance, heading, wrapping, vision cone, and ranges |
-| `day` | tick, phase, `bell_ringing`, and resolved parameters |
+Functions that inspect the village take `observation` first. `action` builds your next order and `geometry` does calculations, so neither needs an observation. Positions are `{"x": float, "y": float}` mappings in metres from the village southwest corner.
 
-Helpers that read village state take `observation` first. `action` and `geometry` are pure builders or calculations and do not take an observation. `me.rng(observation, session_seed)` gives each player a stable independent `random.Random` stream for that session seed.
+`people.seen`, `people.nearby`, and prop states only describe what your villager can currently perceive. The roster and village layout are available in every observation and do not change during the day. Use `layout.walkable` and `layout.can_step` to test a route because water, walls, props, and scenery can block movement.
+
+| Group | Helper | Result |
+| --- | --- | --- |
+| Orders | `action.walk(heading, speed=1.0, expression="none")` | Builds a walking order. It wraps heading into `0.0` through `< 360.0`, clamps speed to `0.0` through `1.0`, and accepts `"none"`, `"use"`, or an emote. |
+| Orders | `action.stand(heading, expression="none")` | Builds a zero-speed order, including an order to emote or use a prop. |
+| Orders | `action.EMOTES` | The available emote names: use one as the `expression` argument. |
+| Self | `me.player_id(observation)` | Your stable player id, such as `"player_1"`. Use it for chat recipients. |
+| Self | `me.position(observation)`, `me.heading(observation)` | Your current position and facing. Heading is degrees, with `0.0` east and `90.0` north. |
+| Self | `me.moved(observation)` | How many metres you moved on the previous tick, or `0.0` when you stood still. |
+| Self | `me.expression(observation)` | Your current `{"type", "target"}` expression. `target` names the prop in use, or is `"none"`. |
+| Self | `me.home(observation)` | Your home building id from the roster. |
+| Self | `me.rng(observation, session_seed)` | A stable, private `random.Random` stream for this player and session seed. |
+| Other villagers | `people.seen(observation)` | Villagers in your vision cone with no wall between you, including id, position, heading, previous movement, and expression. |
+| Other villagers | `people.nearby(observation)` | Villagers within hearing range and a clear line, with id and position only. |
+| Other villagers | `people.roster(observation)` | Every villager's stable id and home. It does not show where they are now. |
+| Other villagers | `people.is_visitor(player_id)`, `people.is_npc(player_id)` | Whether an id is the visitor (`"player_0"`) or has the normal NPC id form. |
+| Props | `props.all(observation)` | Every static prop placement, in layout order, including id, type, cell, and facing. |
+| Props | `props.seen(observation)` | Visible prop records with a prop id and current state. A prop outside your vision cone or behind a wall is absent. |
+| Props | `props.state(observation, prop_id)` | The visible state string for one prop, or `None` when that prop is not visible. |
+| Props | `props.in_reach(observation)` | Static props close enough to use by distance alone. It does not test whether a wall is in the way. |
+| Props | `props.usable(observation)` | The nearest prop a use action would select, or `None`. It checks distance and walls, but not whether another villager holds the prop. |
+| Props | `props.TYPES` | Every available prop type token. |
+| Village | `layout.frame(observation)` | Grid dimensions and cell size as `cells_x`, `cells_y`, and `cell_size`. |
+| Village | `layout.cell_at(observation, position)`, `layout.ground_at(observation, cell)` | The grid cell containing a position, or `None` outside the village, and that cell's ground name, also `None` outside. |
+| Village | `layout.walkable(observation, cell)` | Whether a villager can stand in a cell, including ground, walls, blocking props, and scenery. |
+| Village | `layout.can_step(observation, start_cell, end_cell)` | Whether a cardinal one-cell move is clear and both cells are walkable. |
+| Village | `layout.line_of_sight(observation, start_pos, end_pos)` | Whether a straight line crosses no sight-blocking ground. It ignores props and vision-cone range, and returns `False` outside the village. |
+| Village | `layout.buildings(observation)`, `layout.building(observation, building_id)` | Every static building, or one building by id and `None` when it does not exist. |
+| Village | `layout.doorway(observation, building_id)` | The nearest doorway position for a building, or `None` when the building or a doorway is absent. |
+| Village | `layout.spawn(observation)` | The village spawn position. |
+| Village | `layout.SPEED_LIMITS` | The maximum movement speed for each ground name. |
+| Geometry | `geometry.distance(first, second)` | Straight-line distance between two positions, in metres. |
+| Geometry | `geometry.heading_to(start, end)`, `geometry.wrap(heading)` | The heading toward a position, or a heading wrapped into `0.0` through `< 360.0`. |
+| Geometry | `geometry.in_cone(origin, heading, point, degrees_wide=geometry.VISION_DEGREES, reach=geometry.VISION_RANGE)` | Whether a point lies in a cone. The defaults match your vision cone but do not test walls. |
+| Geometry | `geometry.BODY_RADIUS`, `geometry.VISION_DEGREES`, `geometry.VISION_RANGE`, `geometry.HEARING_RANGE`, `geometry.PROP_REACH` | Fixed distances and angle limits in metres or degrees. |
+| Day | `day.tick(observation)`, `day.phase(observation)` | The tick, starting at `1`, and the current phase. A season without day and night reports `"day"`. |
+| Day | `day.bell_ringing(observation)` | Whether the village bell is ringing now. |
+| Day | `day.parameters(observation)` | The resolved settings for this day, such as the seat plan and whether day and night is on. |
 
 ### Using props
 
-Return `action.stand(heading, "use")` to use a prop. Use requires speed `0`, a clear line, and being within reach of the prop's collision shape. You never name the prop: `props.usable(observation)` previews the nearest prop the engine would select. Check that preview before using when your behavior needs a particular prop. A use lasts one tick and must be repeated every tick to stay engaged, so keep returning `use` while you intend to hold the prop.
+Call `props.state` with a static prop's id to get its visible state. `None` means your villager cannot currently see that prop, not that the prop has a state named `None`.
+
+```python
+bench = next((prop for prop in props.all(observation) if prop["type"] == "bench"), None)
+if bench is not None:
+    bench_state = props.state(observation, bench["id"])
+    if bench_state is None:
+        print("The bench is not visible.")
+    elif bench_state == "empty":
+        print("The bench is empty.")
+```
+
+To use a prop, return `action.stand(heading, "use")`. Use requires speed `0`, no wall between you and the prop, and being within reach of its collision shape. You never name the prop: `props.usable(observation)` previews the nearest prop the engine would select. Check that preview before using when you need a particular prop. Use can still fail when another villager already holds that prop. A use lasts one tick, so keep returning `use` while you intend to hold the prop.
 
 ## Season settings and limits
 

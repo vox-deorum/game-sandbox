@@ -45,7 +45,7 @@ Add `("three_branches", "sweeper")` to `scripts/tests/test_compose.py`'s example
 
 ## Tests
 
-- Reader pins compare every `me`, `people`, `props`, and `day` accessor with real observations. Action pins require in-space `walk` and `stand` orders and reject unknown expressions.
+- Reader pins compare every `me`, `people`, `props`, and `day` accessor with real observations. They pin `props.state` to matching visible prop records and `None` for props outside the current observation. Action pins require in-space `walk` and `stand` orders and reject unknown expressions.
 - Layout pins compare `ground_at`, `walkable`, `can_step`, and `line_of_sight` with the engine grid, catalog shapes, and sight rules across pinned seeds. They cover water and wall clearance, prop and scenery shapes, the boundary, and wall-only sight blocking.
 - Use pins match `props.usable` with `env.step` across reach, ties, stillness, and blocked lines. Pin `props.TYPES` to `catalog.json` and geometry constants to `rules.json`.
 - Messaging pins use raw player ids and cover broadcasts, exact direct addressees, hearing and wall eligibility, and T/T+1/T+2 delivery timing without an id translation layer.

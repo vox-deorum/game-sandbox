@@ -197,12 +197,12 @@ The implementation includes the factory, default action, overlay extractor, regi
 | `action` | `EMOTES`, `walk(heading, speed=1.0, expression="none")`, `stand(heading, expression="none")`. Both wrap heading and clamp speed; expression is `"none"`, an emote, or `"use"`. |
 | `me` | `player_id`, `position`, `heading`, `moved`, `expression`, `home`, `rng(observation, session_seed)`. |
 | `people` | `seen`, `nearby`, `roster`, `is_visitor(player_id)`, and `is_npc(player_id)`. |
-| `props` | `all`, `seen`, `in_reach`, `usable`, and `TYPES` from `catalog.json`. |
+| `props` | `all`, `seen`, `state(observation, prop_id)`, `in_reach`, `usable`, and `TYPES` from `catalog.json`. `state` returns the visible state or `None` when that prop is absent from current perception. |
 | `layout` | `frame`, `cell_at`, `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `doorway`, `spawn`, and `SPEED_LIMITS`. |
 | `geometry` | `BODY_RADIUS`, `VISION_RANGE`, `VISION_DEGREES`, `HEARING_RANGE`, `PROP_REACH`, `distance`, `heading_to`, `wrap`, and `in_cone`. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
 
-`layout.line_of_sight` walks the ground grid and only wall cells block it. `can_step` checks a straight static-map step against impassable ground, catalog prop shapes, and the boundary, ignoring characters. `walkable` checks whether a body can stand at a point. Both use the engine's grid and catalog shapes.
+`layout.line_of_sight` walks the ground grid and only wall cells block it. `can_step` checks a straight static-map step against impassable ground, catalog prop and scenery shapes, and the boundary, ignoring characters. `walkable` checks whether a body can stand at a point. Both use the engine's grid and catalog shapes.
 
 No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. Season 4's starter example owns routing.
 

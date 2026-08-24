@@ -214,6 +214,15 @@ def test_props_preview_real_shape_reach_and_preserve_observation_records():
     assert set(props.TYPES) == {prop["type"] for prop in props.all(observation)}
 
 
+def test_props_state_returns_a_visible_prop_state_or_none():
+    _env, observations = _observations()
+    observation = observations["player_0"]
+    visible_prop = props.seen(observation)[0]
+
+    assert props.state(observation, visible_prop["prop"]) == visible_prop["state"]
+    assert props.state(observation, "not-visible") is None
+
+
 def test_doorway_returns_none_or_the_nearest_deterministic_multi_cell_run():
     _env, observations = _observations()
     observation = copy.deepcopy(observations["player_1"])

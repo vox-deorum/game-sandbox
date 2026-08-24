@@ -25,6 +25,11 @@ def seen(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     return cast(tuple[Mapping[str, object], ...], observation["props"])
 
 
+def state(observation: Mapping[str, object], prop_id: str) -> str | None:
+    """Return a visible prop's state, or None when it is not visible."""
+    return next((cast(str, prop["state"]) for prop in seen(observation) if prop["prop"] == prop_id), None)
+
+
 def in_reach(observation: Mapping[str, object]):
     """Return static props within geometric use reach, without considering walls."""
     village_model = model(observation)
