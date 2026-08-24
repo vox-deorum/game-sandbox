@@ -283,7 +283,7 @@ export interface ColorGradeTreatment {
 export interface TextureOutlineTreatment {
   tint: HearthsidePaletteKey
   opacity: number
-  scaleFactor: number
+  blurStrength: number
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
@@ -412,6 +412,9 @@ export interface HearthsideStyle {
       contentMargin: number
       labelFontSize: number
       iconFrameWidth: number
+      iconContentWidth: number
+      iconStartX: number
+      iconLabelGap: number
     }
   }
 }
@@ -825,6 +828,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       'contentMargin',
       'labelFontSize',
       'iconFrameWidth',
+      'iconContentWidth',
+      'iconStartX',
+      'iconLabelGap',
     ],
   )
   const expressions = {
@@ -899,10 +905,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
         inputPaletteSource.plateHeight,
         'presentation.expressions.inputPalette.plateHeight',
       ),
-      gap: nonnegativeNumber(
-        inputPaletteSource.gap,
-        'presentation.expressions.inputPalette.gap',
-      ),
+      gap: nonnegativeNumber(inputPaletteSource.gap, 'presentation.expressions.inputPalette.gap'),
       contentMargin: nonnegativeNumber(
         inputPaletteSource.contentMargin,
         'presentation.expressions.inputPalette.contentMargin',
@@ -914,6 +917,18 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       iconFrameWidth: positiveNumber(
         inputPaletteSource.iconFrameWidth,
         'presentation.expressions.inputPalette.iconFrameWidth',
+      ),
+      iconContentWidth: positiveNumber(
+        inputPaletteSource.iconContentWidth,
+        'presentation.expressions.inputPalette.iconContentWidth',
+      ),
+      iconStartX: nonnegativeNumber(
+        inputPaletteSource.iconStartX,
+        'presentation.expressions.inputPalette.iconStartX',
+      ),
+      iconLabelGap: nonnegativeNumber(
+        inputPaletteSource.iconLabelGap,
+        'presentation.expressions.inputPalette.iconLabelGap',
       ),
     },
   }
@@ -962,11 +977,11 @@ function textureOutlineTreatment(
   name: string,
   palette: ReadonlySet<string>,
 ): TextureOutlineTreatment {
-  const source = exactRecord(value, name, ['tint', 'opacity', 'scaleFactor'])
+  const source = exactRecord(value, name, ['tint', 'opacity', 'blurStrength'])
   return {
     tint: paletteKey(source.tint, palette, `${name}.tint`),
     opacity: unitNumber(source.opacity, `${name}.opacity`),
-    scaleFactor: boundedNumber(source.scaleFactor, `${name}.scaleFactor`, 1, 1.25, true),
+    blurStrength: boundedNumber(source.blurStrength, `${name}.blurStrength`, 0.25, 8, true),
   }
 }
 

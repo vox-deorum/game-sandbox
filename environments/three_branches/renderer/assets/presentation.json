@@ -1447,8 +1447,8 @@
     },
     "textureOutline": {
       "tint": "backdrop",
-      "opacity": 0.20,
-      "scaleFactor": 1.06
+      "opacity": 0.26,
+      "blurStrength": 2.5
     }
   },
   "characters": {
@@ -1587,7 +1587,7 @@
       "working_pump": "expressionWorkingPump",
       "ringing_bell": "expressionRingingBell"
     },
-    "tint": "ink",
+    "tint": "bone",
     "accentFrames": ["expressionAccentA", "expressionAccentB"],
     "frameRatio": 0.25,
     "worldLabel": {
@@ -1604,8 +1604,11 @@
       "plateHeight": 52,
       "gap": 10,
       "contentMargin": 18,
-      "labelFontSize": 20,
-      "iconFrameWidth": 40
+      "labelFontSize": 21,
+      "iconFrameWidth": 40,
+      "iconContentWidth": 27,
+      "iconStartX": 32,
+      "iconLabelGap": 6
     }
   },
   "thumbnail": {

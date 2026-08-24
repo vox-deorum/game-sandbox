@@ -53,9 +53,9 @@ Gate B is a concise integrated-scene approval. Show the approved art in the fixt
 
 ### Current compositing comparison
 
-The exact top-down projection uses no directional prop contact shadows. Interactive props and the market crate instead receive a centered, texture-shaped outline below their artwork. The outline duplicates the current atlas frame, state, scale, and visual rotation, then uses a low-opacity backdrop tint and a small uniform expansion. It has no world offset, footprint ellipse, cast direction, or dependency on the character-shadow frame. Pines receive no outline, and no outline or cast shadow is baked into raster art.
+The exact top-down projection uses no directional prop contact shadows. Interactive props and the market crate instead receive a centered, texture-shaped falloff below their artwork. The outline duplicates the current atlas frame, state, scale, and visual rotation, then uses a low-opacity backdrop tint and Gaussian blur. It has no scale expansion, world offset, footprint ellipse, cast direction, or dependency on the character-shadow frame. Pines receive no outline, and no outline or cast shadow is baked into raster art.
 
-The provisional shared outline candidate uses backdrop tint, `0.20` opacity, and a `1.06` scale factor. These values are comparison candidates, not Gate B approval. Review the fixture and representative generated villages at fitted, middle, and close scales before accepting or revising them. Review night separately for emissive balance. Do not add a daytime grade, change raster colour, or move gameplay, collision, or art registration during this pass.
+The provisional shared outline candidate uses backdrop tint, `0.26` opacity, and `2.5` blur strength. Its offscreen margin lets the Gaussian tail reach transparency without exposing a rectangular filter boundary. The filter is shared across prop outlines and explicitly released with the prop layer. These values are comparison candidates, not Gate B approval. Review the fixture and representative generated villages at fitted, middle, and close scales before accepting or revising them. Review night separately for emissive balance. Do not add a daytime grade, change raster colour, or move gameplay, collision, or art registration during this pass.
 
 ## Ordered visual units
 

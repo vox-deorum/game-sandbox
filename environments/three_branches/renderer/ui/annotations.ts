@@ -140,7 +140,9 @@ export function createAnnotationLayer(
 
         const retained = chips.get(character.id)
         const expressionShown =
-          art !== null && plateAlpha === 1 && (retained !== undefined || character.expressionIcon !== null)
+          art !== null &&
+          plateAlpha === 1 &&
+          (retained !== undefined || character.expressionIcon !== null)
         const expressionIcon = retained?.icon ?? character.expressionIcon ?? 'use'
         const expressionAlpha = retained === undefined ? 1 : displayedChipAlpha(retained)
         const plateBottom = -(character.radius * zoom + PLATE_CLEARANCE)
@@ -471,8 +473,7 @@ function drawPlate(
   node.plateLabel.resolution = resolution
   const accent =
     character.id === 'player_0' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
-  const nameWidth =
-    character.id.length * WORLD_LABEL.characterWidth + WORLD_LABEL.paddingX * 2
+  const nameWidth = character.id.length * WORLD_LABEL.characterWidth + WORLD_LABEL.paddingX * 2
   const height = WORLD_LABEL.lineHeight + WORLD_LABEL.paddingY * 2
   const left = -nameWidth / 2 - (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
   const width = nameWidth + (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
@@ -483,10 +484,13 @@ function drawPlate(
     .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 })
   if (expressionShown) {
     const dividerX = -nameWidth / 2
-    node.plate.moveTo(dividerX, bottomY - height + 3).lineTo(dividerX, bottomY - 3).stroke({
-      color: HEARTHSIDE_STYLE.palette.gilt,
-      width: 1,
-    })
+    node.plate
+      .moveTo(dividerX, bottomY - height + 3)
+      .lineTo(dividerX, bottomY - 3)
+      .stroke({
+        color: HEARTHSIDE_STYLE.palette.gilt,
+        width: 1,
+      })
   }
   node.plateLabel.position.set(0, bottomY - height / 2)
   node.expression.visible = expressionShown && art !== null

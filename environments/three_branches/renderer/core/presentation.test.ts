@@ -62,9 +62,9 @@ describe('Hearthside Ink presentation', () => {
     delete missingTreatment.postEffects.textureOutline
     expect(() => readHearthsideStyle(missingTreatment)).toThrow('postEffects keys do not match')
 
-    const excessiveScale = structuredClone(HEARTHSIDE_STYLE) as any
-    excessiveScale.postEffects.textureOutline.scaleFactor = 1.26
-    expect(() => readHearthsideStyle(excessiveScale)).toThrow('textureOutline.scaleFactor')
+    const excessiveBlur = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveBlur.postEffects.textureOutline.blurStrength = 8.01
+    expect(() => readHearthsideStyle(excessiveBlur)).toThrow('textureOutline.blurStrength')
   })
 
   it('keeps the bell striker hinge and restrained swing in presentation calibration', () => {
@@ -534,9 +534,12 @@ describe('Hearthside Ink presentation', () => {
   it('validates the expression world-label and input-palette layout', () => {
     expect(HEARTHSIDE_STYLE.expressions.worldLabel.fontSize).toBe(20)
     expect(HEARTHSIDE_STYLE.expressions.worldLabel.iconFrameWidth).toBe(40)
+    expect(HEARTHSIDE_STYLE.expressions.tint).toBe('bone')
     expect(HEARTHSIDE_STYLE.expressions.inputPalette.plateWidth).toBe(152)
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.labelFontSize).toBe(20)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.labelFontSize).toBe(21)
     expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconFrameWidth).toBe(40)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconContentWidth).toBe(27)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconStartX).toBe(32)
 
     const zeroFont = structuredClone(HEARTHSIDE_STYLE) as any
     zeroFont.expressions.worldLabel.fontSize = 0

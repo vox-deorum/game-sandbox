@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { testText } from '../core/test-helpers.js'
+import { createExpressionArt } from './annotations.js'
 import { EMOTE_TOKENS } from './input.js'
 import {
   createExpressionPalette,
@@ -10,7 +11,6 @@ import {
   plateProbe,
   USE_PLATE_RECT,
 } from './palette.js'
-import { createExpressionArt } from './annotations.js'
 
 function center(rect: { x: number; y: number; width: number; height: number }) {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
@@ -99,7 +99,9 @@ describe('Three Branches expression palette', () => {
     expect(labels).toHaveLength(20)
     const waveLabel = labels.find((label) => label.text === 'Wave')
     if (waveLabel === undefined) throw new Error('the palette should label the wave plate.')
-    expect(labels.some((label) => label.text === 'Shake Head')).toBe(true)
+    expect(waveLabel.anchor.y).toBe(0.5)
+    expect(labels.some((label) => label.text === 'Shake')).toBe(true)
+    expect(labels.some((label) => label.text === 'Shake Head')).toBe(false)
     expect(labels.some((label) => label.text === 'Use')).toBe(true)
     expect(labels.some((label) => label.text === '0')).toBe(true)
     expect(
@@ -132,6 +134,33 @@ describe('Three Branches expression palette', () => {
     expect(icons.every((icon) => icon.visible)).toBe(true)
     palette.setUseIcon('missing_activity')
     expect(icons.at(-1)?.visible).toBe(true)
+  })
+
+  it('starts every icon and label at the configured positions', () => {
+    const layer = new Container()
+    const palette = createExpressionPalette(layer, testText)
+    palette.install(createExpressionArt(Texture.WHITE))
+    const layout = HEARTHSIDE_STYLE.expressions.inputPalette
+    const rects = [...EMOTE_PLATES.map((plate) => plate.rect), USE_PLATE_RECT]
+    const icons = layer.children.filter((child): child is Sprite => child instanceof Sprite)
+    const labels = layer.children.filter(
+      (child): child is Text => child instanceof Text && !/^\d$/.test(child.text),
+    )
+    expect(icons).toHaveLength(rects.length)
+    expect(labels).toHaveLength(rects.length)
+    for (const [index, rect] of rects.entries()) {
+      const icon = icons[index]
+      const label = labels[index]
+      if (icon === undefined || label === undefined) {
+        throw new Error('each palette plate should carry an icon and label.')
+      }
+      expect(icon.x - layout.iconContentWidth / 2).toBe(rect.x + layout.iconStartX)
+      expect(label.x).toBe(
+        rect.x + layout.iconStartX + layout.iconContentWidth + layout.iconLabelGap,
+      )
+      expect(icon.y).toBe(rect.y + rect.height / 2)
+      expect(label.y).toBe(rect.y + rect.height / 2)
+    }
   })
 
   it('paints the Use plate gilt while latched and dims it while disabled', () => {

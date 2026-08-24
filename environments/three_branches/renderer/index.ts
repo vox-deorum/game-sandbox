@@ -441,6 +441,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.mapView.destroy()
     this.upperGround?.destroy()
     this.upperGround = null
+    this.props.destroy()
     this.world.destroy()
     super.destroy()
   }

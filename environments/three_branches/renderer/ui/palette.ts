@@ -7,11 +7,12 @@ import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics, Sprite, type Text, Texture } from 'pixi.js'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { titleFor } from '../map/scene.js'
-import { EMOTE_TOKENS } from './input.js'
 import type { ExpressionArt } from './annotations.js'
+import { EMOTE_TOKENS } from './input.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
 const LAYOUT = HEARTHSIDE_STYLE.expressions.inputPalette
+const LABEL_OVERRIDES: Readonly<Record<string, string>> = { shake_head: 'Shake' }
 
 type Rect = { x: number; y: number; width: number; height: number }
 
@@ -92,7 +93,13 @@ export function createExpressionPalette(
   createText: RendererTextFactory,
 ): ExpressionPalette {
   const plates = EMOTE_PLATES.map((emote) =>
-    buildPlate(layer, createText, emote.rect, titleFor(emote.token), emote.hotkey),
+    buildPlate(
+      layer,
+      createText,
+      emote.rect,
+      LABEL_OVERRIDES[emote.token] ?? titleFor(emote.token),
+      emote.hotkey,
+    ),
   )
   const usePlate = buildPlate(layer, createText, USE_PLATE_RECT, 'Use', '0')
   let art: ExpressionArt | null = null
@@ -151,7 +158,7 @@ export function createExpressionPalette(
   }
 }
 
-/** One timber plate: a rounded panel, a centered label, and a small hotkey digit. */
+/** One timber plate: a rounded panel, an aligned icon and label, and a small hotkey digit. */
 interface Plate {
   panel: Graphics
   icon: Sprite
@@ -171,11 +178,16 @@ function buildPlate(
   const icon = new Sprite({ texture: Texture.EMPTY, label: 'expression-palette-icon' })
   icon.anchor.set(0.5)
   icon.tint = PALETTE.bone
-  icon.position.set(rect.x + LAYOUT.iconFrameWidth / 2, rect.y + rect.height / 2)
   icon.visible = false
   layer.addChild(icon)
   const label = createText(labelText, LAYOUT.labelFontSize, PALETTE.bone, 'left')
-  label.position.set(rect.x + LAYOUT.iconFrameWidth, rect.y + rect.height / 2)
+  label.anchor.set(0, 0.5)
+  const iconLeft = rect.x + LAYOUT.iconStartX
+  icon.position.set(iconLeft + LAYOUT.iconContentWidth / 2, rect.y + rect.height / 2)
+  label.position.set(
+    iconLeft + LAYOUT.iconContentWidth + LAYOUT.iconLabelGap,
+    rect.y + rect.height / 2,
+  )
   layer.addChild(label)
   const hotkey = createText(hotkeyText, 11, PALETTE.bone, 'right')
   hotkey.position.set(rect.x + rect.width - 6, rect.y + 4)

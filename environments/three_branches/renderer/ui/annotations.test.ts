@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording, testText } from '../core/test-helpers.js'
 import type { CharacterExpression, FrameScene, SpeechLine } from '../core/types.js'
-import { buildStaticScene, computeScene, expressionIconFor, expressionTitleFor } from '../map/scene.js'
+import {
+  buildStaticScene,
+  computeScene,
+  expressionIconFor,
+  expressionTitleFor,
+} from '../map/scene.js'
 import {
   createAnnotationLayer,
   createExpressionArt,
@@ -13,7 +18,7 @@ import {
   speechTag,
   wrapSpeech,
 } from './annotations.js'
-import { expectedCharacterIds, RULES, readStatic } from './overlay.js'
+import { expectedCharacterIds, readStatic } from './overlay.js'
 
 const { nameplateZoomFactor, nameplateFadeFactor, speechHoldMs, speechFadeMs, speechMaxLines } =
   THREE_BRANCHES_PRESENTATION
@@ -314,7 +319,9 @@ describe('merged expression nameplates', () => {
       annotations.reconcile(sceneWithExpression(expression), closeZoom, fittedZoom, 1)
       const marker = expressionOf(layer)
       expect(marker.visible).toBe(true)
-      expect(descendant(marker, 'annotation-expression-icon').visible).toBe(true)
+      const icon = descendant(marker, 'annotation-expression-icon') as unknown as Sprite
+      expect(icon.visible).toBe(true)
+      expect(icon.tint).toBe(Number.parseInt(HEARTHSIDE_STYLE.palette.bone.slice(1), 16))
     }
   })
 
@@ -325,9 +332,16 @@ describe('merged expression nameplates', () => {
     annotations.reconcile(idle, closeZoom, fittedZoom, 1)
     const root = layer.children[0] as Container
     const name = collectTextNodes(root).find((text) => text.text === 'player_0')
-    const idleWidth = (root.children.find((child) => child instanceof Container) as Container | undefined)
+    const idleWidth = root.children.find((child) => child instanceof Container) as
+      | Container
+      | undefined
     expect(name?.position.x).toBe(0)
-    annotations.reconcile(sceneWithExpression({ type: 'wave', target: 'none' }), closeZoom, fittedZoom, 1)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'wave', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
     expect(name?.position.x).toBe(0)
     expect(expressionOf(layer).visible).toBe(false)
     expect(idleWidth).toBeDefined()
@@ -344,7 +358,12 @@ describe('merged expression nameplates', () => {
     annotations.reconcile(active, closeZoom, fittedZoom, 1)
     const root = layer.children[0] as Container
     const activeY = bubbleLabelY(descendant(root, 'annotation-bubble'))
-    annotations.reconcile(sceneWithExpression({ type: 'none', target: 'none' }), closeZoom, fittedZoom, 1)
+    annotations.reconcile(
+      sceneWithExpression({ type: 'none', target: 'none' }),
+      closeZoom,
+      fittedZoom,
+      1,
+    )
     expect(bubbleLabelY(descendant(root, 'annotation-bubble'))).toBe(activeY)
   })
 

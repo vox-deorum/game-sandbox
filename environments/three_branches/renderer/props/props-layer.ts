@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Texture } from 'pixi.js'
+import { BlurFilter, Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import { buildingOccupied } from '../buildings/buildings.js'
@@ -53,6 +53,7 @@ export interface PropLayer {
   reconcile(scene: FrameScene): void
   advance(value: number | FrameScene): boolean
   highlight(propId: string | null): void
+  destroy(): void
 }
 
 interface PropNode {
@@ -103,14 +104,25 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   )
   const nodes = new Map<string, PropNode>()
   let art: PropArt | null = null
+  let destroyed = false
+  const outlineTreatment = HEARTHSIDE_STYLE.postEffects.textureOutline
+  const outlineFilter = new BlurFilter({
+    strength: outlineTreatment.blurStrength,
+    quality: 2,
+    kernelSize: 5,
+  })
+  // Leave enough transparent filter area for the Gaussian tail to fade before Pixi clips it.
+  outlineFilter.padding = Math.ceil(outlineTreatment.blurStrength * 4)
+  const outlineSprites: Sprite[] = []
   const pines = new Container({ label: 'pines' })
   const pineBuildingCutout = new Graphics({ label: 'pine-building-cutout' })
   pines.setMask({ mask: pineBuildingCutout, inverse: true })
 
   for (const item of scene.props) {
-    const node = createPropNode(item)
+    const node = createPropNode(item, outlineFilter)
     nodes.set(item.id, node)
     layers.outlines.addChild(node.outline)
+    outlineSprites.push(node.outline)
     layers.props.addChild(node.lowerRoot)
     layers.effects.addChild(node.effect)
     if (node.effectBlend !== null) layers.effects.addChild(node.effectBlend)
@@ -119,7 +131,11 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   for (const item of scene.scenery) {
     const target = item.type === 'pine' ? pines : layers.scenery
     target.addChild(createSceneryNode(item))
-    if (item.type === 'crate') layers.outlines.addChild(marketCrateOutline(item, cellSize))
+    if (item.type === 'crate') {
+      const outline = marketCrateOutline(item, cellSize, outlineFilter)
+      layers.outlines.addChild(outline)
+      outlineSprites.push(outline)
+    }
   }
   // Effects are added first, then pines sit over the entire authored village.
   // The inverse mask leaves only occupied building interiors clear.
@@ -238,6 +254,14 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
           .stroke(stroke)
       }
     },
+    destroy() {
+      if (destroyed) return
+      destroyed = true
+      for (const outline of outlineSprites) outline.filters = []
+      outlineFilter.blurXFilter.destroy()
+      outlineFilter.blurYFilter.destroy()
+      outlineFilter.destroy()
+    },
   }
 }
 
@@ -259,7 +283,7 @@ function createSceneryNode(item: StaticDrawable): Container {
   return root
 }
 
-function createPropNode(item: StaticDrawable): PropNode {
+function createPropNode(item: StaticDrawable, outlineFilter: BlurFilter): PropNode {
   const lowerRoot = new Container({ label: `prop-lower:${item.id}` })
   lowerRoot.position.set(centerX(item), centerY(item))
   lowerRoot.rotation = visualFacing(item)
@@ -268,12 +292,13 @@ function createPropNode(item: StaticDrawable): PropNode {
   const outline = sprite(
     `prop-texture-outline:${item.id}`,
     Texture.EMPTY,
-    artScale * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor,
+    artScale,
   )
   outline.position.set(centerX(item), centerY(item))
   outline.rotation = visualFacing(item)
   outline.tint = HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.postEffects.textureOutline.tint]
   outline.alpha = HEARTHSIDE_STYLE.postEffects.textureOutline.opacity
+  outline.filters = [outlineFilter]
   outline.visible = false
   const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
   lower.visible = false
@@ -349,16 +374,21 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
 }
 
 /** Outline the market crate without adding an outline to the pine scenery family. */
-function marketCrateOutline(item: StaticDrawable, cellSize: number): Sprite {
+function marketCrateOutline(
+  item: StaticDrawable,
+  cellSize: number,
+  outlineFilter: BlurFilter,
+): Sprite {
   const treatment = HEARTHSIDE_STYLE.postEffects.textureOutline
   const outline = sprite(
     `market-crate-texture-outline:${item.id}`,
     Texture.EMPTY,
-    sceneryArtScale(item, cellSize) * treatment.scaleFactor,
+    sceneryArtScale(item, cellSize),
   )
   outline.position.set(centerX(item), centerY(item))
   outline.tint = HEARTHSIDE_STYLE.palette[treatment.tint]
   outline.alpha = treatment.opacity
+  outline.filters = [outlineFilter]
   outline.visible = false
   return outline
 }
@@ -400,7 +430,7 @@ function syncArtScale(
   node: Pick<PropNode, 'item' | 'outline' | 'lower' | 'movingRoot' | 'moving'>,
 ): void {
   const scale = propArtScale(node.item)
-  node.outline.scale.set(scale * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor)
+  node.outline.scale.set(scale)
   node.lower.scale.set(scale)
   syncMovingArtRegistration(node.item, node.movingRoot, node.moving)
 }
