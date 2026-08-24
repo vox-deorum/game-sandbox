@@ -57,7 +57,7 @@ The backend, sessions, and Docker-gated checks need a running Docker daemon; see
 | Run the full local suite (every non-Docker workflow job) | `uv run python scripts/ci.py all` |
 | Run the publish dry run for the template and examples | `uv run python scripts/ci.py publish-dry-run` |
 | Run the app from the browser e2e fixture | `npm run demo` |
-| Rebuild the demo fixture, then run the app | `npm run demo -- --rerun-e2e` |
+| Rebuild the demo fixture without the slow E2E arcs, then run the app | `npm run demo -- --rerun-e2e` |
 
 `npm run demo` serves a disposable browser e2e fixture on port 8080 and prints bootstrap administrator and student credentials. See [Data folders](../data/folders.md) for its lifecycle.
 

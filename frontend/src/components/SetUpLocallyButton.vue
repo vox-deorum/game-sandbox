@@ -43,10 +43,9 @@ function begin(): void {
   <UiDialog v-model:open="open" title="Set up on your computer">
     <ol class="setup-steps">
       <li>
-        Copy the season template and make the copy your own:
+        Send the command in your terminal to clone the template: 
         <UiCodeBlock class="setup-code" :code="setupCommands" copy-label="Copy setup commands" />
-        The last command disconnects your copy from the template, so the first time you push, your
-        editor offers to publish the project to your own GitHub account.
+        Once you edit something, push it to your own GitHub account.
       </li>
       <li v-if="file !== null">
         Move the downloaded <code>season.json</code> next to

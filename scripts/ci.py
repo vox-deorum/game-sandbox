@@ -148,6 +148,7 @@ def job_frontend_e2e(
     *,
     include_slow: bool | None = None,
     build: bool = True,
+    demo_fixture: bool = False,
 ) -> None:
     """Run the browser suite. With no arguments this is the complete run.
 
@@ -159,14 +160,17 @@ def job_frontend_e2e(
     A narrowed run also drops the long ``@slow`` season arcs, since the point of picking a group is a
     fast loop; pass ``include_slow=True`` to keep them.
 
-    Only a complete run claims the data dir ``npm run demo`` serves, by setting ``E2E_DATA_SUBDIR``.
+    Only a complete run claims the data dir ``npm run demo`` serves by default. The demo launcher can
+    explicitly claim it with ``demo_fixture=True`` when rebuilding the fixture without the slow tier.
     The Playwright config defaults to the throwaway dir, so a narrowed run here, and any hand-typed
     ``playwright test``, leaves that fixture alone without having to remember to.
 
-    scripts/demo.py calls this with no arguments to build that fixture, and CI runs the bare
-    ``ci.py frontend-e2e``, so "every group, arcs included, freshly built" must stay the default.
+    CI runs the bare ``ci.py frontend-e2e``, so "every group, arcs included, freshly built" stays the
+    command-line default. ``scripts/demo.py`` uses the explicit fixture option for its fast rebuild.
     """
     selected = sorted(set(groups or []))
+    if demo_fixture and selected:
+        raise ValueError("A demo fixture rebuild must run every E2E group.")
     slow = include_slow if include_slow is not None else not selected
     complete = not selected and slow
 
@@ -193,9 +197,9 @@ def job_frontend_e2e(
     _run(install_chromium)
     if build:
         _run([_NPM, "run", "e2e:build", "--workspace", "@game-sandbox/frontend"])
-    # Claim the demo's data dir only for a complete run. The config defaults to the throwaway one, so a
-    # narrowed run here, and any direct Playwright invocation, leaves the fixture alone by default.
-    subdir = E2E_MAIN_DATA_SUBDIR if complete else E2E_PARTIAL_DATA_SUBDIR
+    # Claim the demo's data dir for a complete run or the demo launcher's explicit fast rebuild. The
+    # config defaults to the throwaway one, so narrowed and direct invocations leave main/ alone.
+    subdir = E2E_MAIN_DATA_SUBDIR if complete or demo_fixture else E2E_PARTIAL_DATA_SUBDIR
     env = {**os.environ, "E2E_DATA_SUBDIR": subdir}
     _run(
         [_NPM, "exec", "--workspace", "@game-sandbox/frontend", "--", "playwright", "test"]

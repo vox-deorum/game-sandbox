@@ -9,7 +9,7 @@ For the wider verification matrix and how this job fits the pipeline, see [Testi
 Each directory under `frontend/e2e/` is a group, and each group is a Playwright project. Run the group that covers your change while you iterate, then run the whole suite before handing the change over.
 
 ```console
-# Everything. This is what CI runs and what builds the demo fixture.
+# Everything. This is what CI runs and builds the complete demo fixture.
 uv run python scripts/ci.py frontend-e2e
 
 # One group, skipping the long season arcs. Repeat --group to pick several.
@@ -53,9 +53,9 @@ Do not add a test to the `submissions` group if it submits a ready agent to the 
 
 ## The slow tier
 
-Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group` and `--fast` skip them; `--include-slow` keeps them; a bare run always includes them. The leaderboards arc leaves its flappy season unreleased with the play window open (ready for peer rating), while the Hearts, Spades, and Crane Reach arcs each end released so the demo serves a mix of live and historical seasons.
+Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group`, `--fast`, and `npm run demo -- --rerun-e2e` skip them. `--include-slow` keeps them in a narrowed run, and a bare helper run always includes them. The leaderboards arc leaves its flappy season unreleased with the play window open (ready for peer rating), while the Hearts, Spades, and Crane Reach arcs each end released so the complete demo fixture serves a mix of live and historical seasons.
 
-The configuration applies no filter of its own. Hiding `@slow` by default would make a complete run omit the season arcs the demo fixture needs.
+The configuration applies no filter of its own. Hiding `@slow` by default would make the complete CI run omit these season arcs.
 
 ## Suite setup
 
@@ -84,9 +84,9 @@ GitHub OAuth depends on an external provider, so the frontend Vitest suite cover
 
 ## The demo source fixture
 
-The e2e suite creates the demo source fixture, including recordings, submissions, real sign-in accounts, and a spread of peer ratings: the flappy leaderboards arc leaves Updraft Open play-open and unreleased ("ready for peer rating"), the Hearts arc seeds a full rating set, and the Spades and Crane Reach arcs seed part of one. After changing journey-created data, run `npm run demo -- --rerun-e2e` before starting the demo.
+The e2e suite creates the demo source fixture, including recordings, submissions, and real sign-in accounts. A bare `uv run python scripts/ci.py frontend-e2e` also runs the slow arcs: the flappy leaderboards arc leaves Updraft Open play-open and unreleased ("ready for peer rating"), the Hearts arc seeds a full rating set, and the Spades and Crane Reach arcs seed part of one. `npm run demo -- --rerun-e2e` refreshes the fixture from every faster journey and omits those slow arcs.
 
-The bare unrestricted helper run rebuilds `main/` by default. Narrowed and direct runs cannot replace it by default, which protects the complete demo fixture from a partial run.
+The bare unrestricted helper run rebuilds `main/` by default. The demo launcher's explicit fast rebuild also owns `main/`. Narrowed and direct runs cannot replace it, which protects the demo fixture from an accidental partial run.
 
 ## Naming and shared helpers
 

@@ -13,7 +13,8 @@ e2e data and demo play never mutates the ``main/`` fixture that local e2e runs r
 Forcing a rerun: the e2e job runs only when the database is missing, so a successful run is
 reused indefinitely. Pass ``--rerun-e2e`` (``npm run demo -- --rerun-e2e``) to rebuild the
 fixture from a fresh frontend-e2e run regardless of any prior result. The existing database is
-discarded and the suite is run again, picking up source changes since it was last built.
+discarded and the suite is run again without the ``@slow`` season arcs, picking up source changes
+since it was last built.
 
 Sign-in, not a baked identity: the backend embeds Better Auth (Stage 12), so there is no more
 mock request header or session/operator allowlist to fabricate a user with. The backend runs with
@@ -89,7 +90,7 @@ def rebuild_e2e_db() -> None:
     """
     if E2E_MAIN_DATA_DIR.exists():
         shutil.rmtree(E2E_MAIN_DATA_DIR)
-    job_frontend_e2e()
+    job_frontend_e2e(include_slow=False, demo_fixture=True)
     if not E2E_MAIN_DB.exists():
         raise SystemExit("e2e rebuild did not produce frontend/e2e/.data/main/sandbox.db")
 
@@ -198,17 +199,18 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help=(
             "Force a fresh frontend-e2e run before starting, rebuilding the fixture database "
-            "from scratch even when one already exists. By default an existing e2e database is "
-            "reused as-is; with this flag the prior database is discarded and the suite is run "
-            "again regardless of any prior result. Use it to recover from stale-schema SQLite "
-            "startup errors. Invoke as `npm run demo -- --rerun-e2e`."
+            "from scratch without the @slow season arcs even when one already exists. By default "
+            "an existing e2e database is reused as-is; with this flag the prior database is "
+            "discarded and the fast suite is run again regardless of any prior result. Use it to "
+            "recover from stale-schema SQLite startup errors. Invoke as "
+            "`npm run demo -- --rerun-e2e`."
         ),
     )
     args = parser.parse_args(argv)
 
     if args.rerun_e2e:
         print(
-            "--rerun-e2e -> discarding any prior e2e database and rebuilding it from a fresh run",
+            "--rerun-e2e -> discarding any prior e2e database and rebuilding it without @slow tests",
             flush=True,
         )
         rebuild_e2e_db()

@@ -32,7 +32,7 @@ Browser e2e data lives in `frontend/e2e/.data/`.
 | Directory | Lifecycle |
 | --- | --- |
 | `partial/` | Default for direct Playwright and narrowed helper runs. The selected directory is deleted before the backend starts. |
-| `main/` | Data directory used and rebuilt by a bare unrestricted `uv run python scripts/ci.py frontend-e2e`; the demo source fixture. |
+| `main/` | Demo source fixture, rebuilt by a bare unrestricted `uv run python scripts/ci.py frontend-e2e` or the fast `npm run demo -- --rerun-e2e` path. |
 | `demo/` | Recreated from `main/` for each `npm run demo` launch. |
 
 See [Browser end-to-end tests](../testing/browser-e2e.md) for the rationale and commands.

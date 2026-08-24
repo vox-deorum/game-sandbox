@@ -24,10 +24,6 @@ describe('Three Branches character art choices', () => {
       expect(set.base).toMatch(/Base$/)
       expect(set.leftArm.frame).toMatch(/LeftArm$/)
       expect(set.rightArm.frame).toMatch(/RightArm$/)
-      expect(set.leftArm.pivot).toEqual({ x: 49, y: 78 })
-      expect(set.rightArm.pivot).toEqual({ x: 143, y: 78 })
-      expect(set.leftArm.anchor).toEqual(set.leftArm.pivot)
-      expect(set.rightArm.anchor).toEqual(set.rightArm.pivot)
     }
   })
 

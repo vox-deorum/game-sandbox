@@ -18,7 +18,7 @@ Run these commands from `backend/` unless noted:
 | `npm test` | Run Docker-free unit tests |
 | `npm run test:integration` | Run real-container integration tests |
 | `npm run demo` | From the repository root, launch the app with the populated e2e fixture and print sign-ins for the admin and an ordinary member (`ada-lovelace`) |
-| `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after discarding and rebuilding the fixture |
+| `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after rebuilding the fixture without the slow E2E arcs |
 
 Starting the backend requires Docker because it reaps managed containers during startup. Unit tests use an in-memory SQLite database and fake driver.
 

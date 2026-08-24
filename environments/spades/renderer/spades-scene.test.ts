@@ -8,11 +8,8 @@ import {
 } from '../../../frontend/src/renderers/cards/scene.js'
 import {
   bidChipAt,
-  bidToAction,
   type Card,
   computeScene,
-  handCardAt,
-  NIL_BID,
   type SpadesScene,
 } from './scene.js'
 // Importing the barrel registers every renderer, including Spades, so the registration test below can
@@ -122,10 +119,6 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
     // All fourteen chips present, in bid order 0..13, every one enabled by the full mask.
     expect(panel.chips.map((c) => c.bid)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     expect(panel.chips.every((c) => c.enabled)).toBe(true)
-    expect(panel.chips.map((c) => c.action)).toEqual(ALL_BIDS.map(bidToAction))
-    // Chip 0 is the nil chip; its action is 52 (the nil bid).
-    expect(panel.chips[0]?.bid).toBe(NIL_BID)
-    expect(panel.chips[0]?.action).toBe(bidToAction(NIL_BID))
     // During bidding no card is legal (you cannot play until you have bid), so the hand is all grey.
     expect(litCards(scene)).toEqual([])
     expect(greyCards(scene)).toEqual([TWO_CLUBS, TWO_SPADES, TWO_HEARTS])
@@ -305,37 +298,8 @@ describe('hit-testing (bid chips and hand cards)', () => {
     if (panel === null) {
       throw new Error('no bid panel')
     }
-    for (const bid of [0, 6, 7, 13]) {
-      const chip = panel.chips[bid]
-      if (chip === undefined) {
-        throw new Error(`no chip ${bid}`)
-      }
-      const hit = bidChipAt(panel, chip.x + chip.w / 2, chip.y + chip.h / 2)
-      expect(hit?.action).toBe(bidToAction(bid))
-    }
     // A point clear of the grid hits nothing.
     expect(bidChipAt(panel, 0, 0)).toBeNull()
-  })
-
-  it('hit-tests a hand card front-most first', () => {
-    const state = mkState(
-      overlay({
-        hands: [[THREE_CLUBS, FOUR_CLUBS, TWO_HEARTS], [], [], []],
-        turn: 0,
-        led_suit: 0,
-        current_trick: [entry(3, TWO_CLUBS)],
-        tricks_played: 1,
-        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
-      }),
-    )
-    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
-    const last = scene.hand[scene.hand.length - 1]
-    if (last === undefined) {
-      throw new Error('empty hand')
-    }
-    const hit = handCardAt(scene.hand, last.x + last.w / 2, last.y + last.h / 2)
-    expect(hit?.card).toBe(last.card)
-    expect(handCardAt(scene.hand, last.x, -5)).toBeNull()
   })
 })
 

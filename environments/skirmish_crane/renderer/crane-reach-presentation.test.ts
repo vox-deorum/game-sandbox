@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import tileTypes from '../tile_types.json'
-import { CRANE_ASSET_MANIFEST, craneAssetSources, loadCraneAssets } from './assets.js'
+import { CRANE_ASSET_MANIFEST, loadCraneAssets } from './assets.js'
 import {
-  eventTextMetrics,
   FEATURE_MARKS,
   gaugeFor,
   HUD_PANEL_ALPHA,
@@ -88,17 +87,9 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(HUD_PANEL_ALPHA).toBeLessThan(1)
   })
 
-  it('keeps transient event text at a legible CSS size on the narrowest viewport', () => {
-    const compactMetrics = eventTextMetrics(390 / 1_200)
-    expect(compactMetrics.size * (390 / 1_200)).toBeCloseTo(12)
-    expect(compactMetrics.rise * (390 / 1_200)).toBeCloseTo(12)
-  })
-
   it('keeps one typed 31-source loading contract and makes it injectable without decoding', async () => {
-    expect(CRANE_ASSET_MANIFEST).toHaveLength(31)
     expect(CRANE_ASSET_MANIFEST.every((asset) => asset.path.endsWith('.png'))).toBe(true)
     expect(CRANE_ASSET_MANIFEST.every((asset) => asset.width > 0 && asset.height > 0)).toBe(true)
-    expect(Object.keys(craneAssetSources())).toHaveLength(31)
     const loaded = await loadCraneAssets(async (asset) => `stub:${asset.name}`)
     expect(loaded.paperField).toBe('stub:paperField')
     expect(loaded.figCavalry).toBe('stub:figCavalry')

@@ -28,6 +28,22 @@ def test_fast_run_drops_the_slow_arcs() -> None:
     assert ci._e2e_playwright_args([], include_slow=False) == ["--grep-invert", "@slow"]
 
 
+def test_demo_can_build_main_fixture_without_the_slow_arcs(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def capture(args: list[str], *, env: dict[str, str] | None = None, **_: object) -> None:
+        calls.append((args, env))
+
+    monkeypatch.setattr(ci, "_run", capture)
+
+    ci.job_frontend_e2e(include_slow=False, demo_fixture=True)
+
+    args, env = calls[-1]
+    assert args[-2:] == ["--grep-invert", "@slow"]
+    assert env is not None
+    assert env["E2E_DATA_SUBDIR"] == ci.E2E_MAIN_DATA_SUBDIR
+
+
 def test_a_group_becomes_a_project_and_skips_the_arcs() -> None:
     assert ci._e2e_playwright_args(["hearts"], include_slow=False) == [
         "--project",

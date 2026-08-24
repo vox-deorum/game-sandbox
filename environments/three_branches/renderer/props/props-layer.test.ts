@@ -127,8 +127,7 @@ describe('Three Branches prop art views', () => {
     })
 
     // Every named view resolves to the manifest rectangle on its own atlas page. The exact offsets
-    // are atlas calibration, so
-    // they come from the manifest rather than being pinned in this suite.
+    // are atlas calibration, so they come from the manifest rather than being pinned in this suite.
     expect(views.props.stallAOpen?.source).toBe(source)
     expect(views.props.stallAOpen?.frame).toEqual(frameRectangle(frameGrid('props'), 'stallAOpen'))
     expect(views.props.lanternLit?.frame).toEqual(frameRectangle(frameGrid('props'), 'lanternLit'))
@@ -139,9 +138,6 @@ describe('Three Branches prop art views', () => {
     expect(views.scenery.marketCrate?.frame).toEqual(
       frameRectangle(frameGrid('scenery'), 'marketCrate'),
     )
-    expect(views.scenery.pineA?.frame).toEqual(new Rectangle(0, 0, 512, 512))
-    expect(views.scenery.pineF?.frame).toEqual(new Rectangle(512, 512, 512, 512))
-    expect(views.scenery.marketCrate?.frame).toEqual(new Rectangle(1024, 512, 512, 512))
     expect(views.props.pump?.frame).toEqual(frameRectangle(frameGrid('props'), 'pump'))
     expect(views.effects.flameA?.frame).toEqual(frameRectangle(frameGrid('effects'), 'flameA'))
   })

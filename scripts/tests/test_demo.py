@@ -77,6 +77,29 @@ def test_rerun_help_explains_stale_schema_recovery(capsys):
     assert "schema SQLite startup errors" in out
 
 
+def test_rebuild_skips_slow_tests_and_replaces_the_main_fixture(tmp_path, monkeypatch):
+    main = tmp_path / "main"
+    database = main / "sandbox.db"
+    main.mkdir()
+    (main / "stale.txt").write_text("stale", encoding="utf-8")
+    calls = []
+
+    def run_e2e(**kwargs):
+        calls.append(kwargs)
+        main.mkdir()
+        database.write_bytes(b"fresh")
+
+    monkeypatch.setattr(demo, "E2E_MAIN_DATA_DIR", main)
+    monkeypatch.setattr(demo, "E2E_MAIN_DB", database)
+    monkeypatch.setattr(demo, "job_frontend_e2e", run_e2e)
+
+    demo.rebuild_e2e_db()
+
+    assert calls == [{"include_slow": False, "demo_fixture": True}]
+    assert database.read_bytes() == b"fresh"
+    assert not (main / "stale.txt").exists()
+
+
 def test_bootstrap_admin_and_ordinary_member_are_distinct_personas():
     # The bootstrap account is role `admin`; the e2e member fixture stays role `user`. There is no
     # allowlist left to encode that distinction in env, so it is encoded in the two separate

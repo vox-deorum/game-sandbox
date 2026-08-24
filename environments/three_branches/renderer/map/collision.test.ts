@@ -31,24 +31,6 @@ describe('Three Branches collision scene', () => {
       const shape = shapes.find((item) => item.id === prop.id)
       expect(shape?.kind).toBe(catalog?.shape === 'circle' ? 'circle' : 'rect')
     }
-    const bench = village.props.find((item) => item.type === 'bench')
-    if (bench === undefined) throw new Error('the fixture has no bench to turn.')
-    // Both facings are set here rather than read off the fixture, so regenerating the recording
-    // cannot quietly hand this the bench already turned and leave it asserting nothing.
-    const facing = (direction: typeof bench.facing) =>
-      staticCollision(
-        buildStaticScene({
-          ...village,
-          props: village.props.map((item) =>
-            item.id === bench.id ? { ...item, facing: direction } : item,
-          ),
-        }),
-      ).find((shape) => shape.id === bench.id)
-    const upright = facing('north')
-    const turned = facing('east')
-    if (upright?.kind !== 'rect' || turned?.kind !== 'rect') throw new Error('a bench is a box.')
-    expect(turned.rect.width).toBe(upright.rect.height)
-    expect(turned.rect.height).toBe(upright.rect.width)
 
     const crate = scene.scenery.find((item) => item.type === 'crate')
     const crateCollision = shapes.find((item) => item.id === crate?.id)

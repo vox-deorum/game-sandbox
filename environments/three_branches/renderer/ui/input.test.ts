@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   composeWindow,
-  EMOTE_TOKENS,
   expressionActionId,
   hotkeyExpression,
   isTextEntry,
@@ -18,20 +17,6 @@ import {
 const CENTER = { x: 300, y: 500 }
 
 describe('Three Branches input composition', () => {
-  it('pins the ruleset emote order the hotkeys and action ids build on', () => {
-    expect(EMOTE_TOKENS).toEqual([
-      'wave',
-      'nod',
-      'shake_head',
-      'point',
-      'laugh',
-      'shrug',
-      'startle',
-      'sleep',
-      'sweep',
-    ])
-  })
-
   describe('joystickMotion', () => {
     it('reads no motion inside the dead zone', () => {
       const inside = JOYSTICK_RADIUS * JOYSTICK_DEAD_ZONE

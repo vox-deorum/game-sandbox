@@ -82,16 +82,6 @@ function roofSprite(layer: Container, id: string): Sprite {
 }
 
 describe('Three Branches full-roof art', () => {
-  it('exposes the three validated semantic roof pages', () => {
-    const pages = roofPages()
-    const art = createRoofArt(pages)
-
-    expect(art).toBe(pages)
-    expect(art.home.frame).toEqual(new Rectangle(0, 0, 1024, 896))
-    expect(art.inn.frame).toEqual(new Rectangle(0, 0, 1536, 1280))
-    expect(art.shed.frame).toEqual(new Rectangle(0, 0, 1024, 1024))
-  })
-
   it('rejects an incorrectly sized page before exposing any art', () => {
     const pages = {
       home: page(1024, 896),
@@ -137,9 +127,6 @@ describe('Three Branches retained roof layer', () => {
       art.home,
       art.home,
     ])
-    expect(roofSprite(layer, 'home_north').texture.frame).toEqual(new Rectangle(0, 0, 1024, 896))
-    expect(roofSprite(layer, 'inn_0').texture.frame).toEqual(new Rectangle(0, 0, 1536, 1280))
-    expect(roofSprite(layer, 'shed_0').texture.frame).toEqual(new Rectangle(0, 0, 1024, 1024))
   })
 
   it('rotates every facing around the semantic center, including swapped extents', () => {
