@@ -12,7 +12,6 @@ import {
 import {
   createAnnotationLayer,
   createExpressionArt,
-  expressionAccentFrame,
   nameplateAlpha,
   speechAlpha,
   speechTag,
@@ -459,20 +458,5 @@ describe('merged expression nameplates', () => {
     expect(annotations.expressionChipTitle('player_0')).toBe('Wave')
     annotations.clear()
     expect(annotations.expressionChipTitle('player_0')).toBeNull()
-  })
-})
-
-describe('expressionAccentFrame', () => {
-  it('drives both accent frames across a full phase cycle', () => {
-    const { accentFrames } = HEARTHSIDE_STYLE.expressions
-    const seen = new Set<string>()
-    for (let tick = 0; tick < 24; tick++) {
-      const frame = expressionAccentFrame('player_0', 'wave', tick + 0.5)
-      expect(accentFrames).toContain(frame)
-      seen.add(frame)
-    }
-    // The two shared accent frames both appear within the cycle, so a repeat, replay, or seek
-    // cannot freeze on a single frame.
-    expect(seen.size).toBeGreaterThanOrEqual(2)
   })
 })

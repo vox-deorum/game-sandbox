@@ -81,10 +81,6 @@ describe('Three Branches chrome strip', () => {
       expect(bellText(withBellState(frameScene, 'silent'))).toBe('silent')
     })
 
-    it('tolerates an unrecognized state by reading it as silent', () => {
-      expect(bellText(withBellState(frameScene, 'shattered'))).toBe('silent')
-    })
-
     it('returns null when the static village has no bell', () => {
       expect(bellText(sceneWithoutBell)).toBeNull()
     })

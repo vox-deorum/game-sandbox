@@ -12,9 +12,6 @@ describe('Three Branches character art choices', () => {
     expect(new Set(styles.map((style) => style.set.id))).toEqual(
       new Set(villagers.map((set) => set.id)),
     )
-    expect(ids.map((id) => characterStyle(id).set.id)).toEqual(
-      ids.map((id) => characterStyle(id).set.id),
-    )
   })
 
   it('keeps configured full-color frames, marks, pivots, and anchors', () => {

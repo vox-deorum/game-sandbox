@@ -112,8 +112,6 @@ describe('Three Branches prop effects', () => {
     expect(effect.nextFrame).toBeDefined()
     expect(effect.blend).toBeCloseTo(0.15625)
     expect(effect.offsetY).toBe(-2.6)
-    const overlap = effect.alpha * (1 - (effect.blend ?? 0)) + effect.alpha * (effect.blend ?? 0)
-    expect(overlap).toBeCloseTo(effect.alpha)
   })
 
   it('emits post-grade light only for active lanterns and hearths, in the configured tints', () => {

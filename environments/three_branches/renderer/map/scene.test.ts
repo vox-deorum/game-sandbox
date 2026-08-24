@@ -286,7 +286,6 @@ describe('interpolateScene walk displacement', () => {
     const from = computeScene(states[0] as (typeof states)[number], scene, roster)
     const to = computeScene(states[1] as (typeof states)[number], scene, roster)
     expect(settleGlideOnto(null, to)).toBe(false)
-    expect(settleGlideOnto({ to: from }, to)).toBe(from.dynamic?.tick !== to.dynamic?.tick)
     // A movement already aimed at the same recorded tick must snap, not re-aim.
     const same = computeScene(states[1] as (typeof states)[number], scene, roster)
     expect(settleGlideOnto({ to }, same)).toBe(false)

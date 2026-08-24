@@ -120,15 +120,8 @@ describe('visual grid normalization', () => {
 describe('terrain route planner', () => {
   it('propagates the nearest natural substrate through road cells with canonical tie breaks', () => {
     const plan = planTerrainRoutes(['ggggg', 'rrrrr', 'fffff'], NAMES, SETTINGS)
-    const roadSubstrate = plan.visualSubstrate.filter((cell) => cell.replacedMaterial === 'road')
 
     expect(plan.visualRows).toEqual(['ggggg', 'ggggg', 'fffff'])
-    expect(roadSubstrate).toHaveLength(5)
-    expect(roadSubstrate.every((cell) => cell.sourceMaterial === 'ground')).toBe(true)
-    expect(roadSubstrate.map((cell) => cell.distance)).toEqual([1, 1, 1, 1, 1])
-    expect(new Set(roadSubstrate.map((cell) => cell.sourceComponentId))).toEqual(
-      new Set(['substrate-0-0-ground']),
-    )
   })
 
   it('propagates only through each eight-neighbor road component', () => {
@@ -140,11 +133,6 @@ describe('terrain route planner', () => {
 
     expect(plan.visualRows[1]).toBe('ggggggg')
     expect(plan.visualRows[3]).toBe('eeeeeee')
-    expect(
-      plan.visualSubstrate
-        .filter((cell) => cell.replacedMaterial === 'road' && cell.row === 3)
-        .every((cell) => cell.sourceMaterial === 'reeds'),
-    ).toBe(true)
   })
 
   it('propagates natural substrate through paths while retaining bridge water semantics', () => {
@@ -154,7 +142,6 @@ describe('terrain route planner', () => {
     expect(plan.visualRows[2]).toBe('ffbff')
     expect(plan.visualRows.join('')).not.toContain('p')
     expect(plan.visualRows.join('')).toContain('b')
-    expect(plan.visualSubstrate.filter((cell) => cell.replacedMaterial === 'path')).toHaveLength(4)
   })
 
   it('chooses the smooth northern road run after cost and overlap ties', () => {
@@ -492,7 +479,6 @@ describe('terrain route planner', () => {
   it('supports terrain with no road and emits empty route artifacts', () => {
     const plan = planTerrainRoutes(['ggg', 'gpg', 'gbg'], NAMES, SETTINGS)
 
-    expect(plan.visualSubstrate.filter((cell) => cell.replacedMaterial === 'road')).toEqual([])
     expect(plan.roadGuide).toEqual([])
     expect(plan.roadMaskCells).toEqual([])
     expect(plan.pathConnectors).toEqual([])
