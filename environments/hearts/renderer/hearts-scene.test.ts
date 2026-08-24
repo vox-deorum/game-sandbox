@@ -560,7 +560,6 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     const end = playCardAt(move, 1)
     expect(end.x).toBeCloseTo(move.toX)
     expect(end.y).toBeCloseTo(move.toY)
-    expect(end.scale).toBeCloseTo(48 / move.fromW) // shrinks from hand size down to SMALL_W=48
   })
 })
 

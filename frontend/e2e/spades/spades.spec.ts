@@ -428,10 +428,9 @@ test('Spades watchers see complete chat live and in replay', async ({
   }
 })
 
-test('human Spades self-controls both face-up partnership hands to game over', async ({
-  page,
-  admin,
-}) => {
+test('human Spades self-controls both face-up partnership hands to game over', {
+  tag: '@slow',
+}, async ({ page, admin }) => {
   test.setTimeout(900_000)
   await authenticateBrowser(page.context(), admin)
 

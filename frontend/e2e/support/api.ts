@@ -505,3 +505,48 @@ export async function seedRatings(
     ),
   )
 }
+
+// --- Workflow runs -----------------------------------------------------------------------------
+
+/**
+ * Trigger a season's scheduled run through the API and return the new run id. The operator console's
+ * "Run workflow" button drives the same endpoint; the demo fixture seed (z-demo-seed) calls it
+ * directly so no browser has to be open. The run returns immediately as `pending` and the runner
+ * picks it up from the queue.
+ */
+export async function startSeasonRun(
+  admin: APIRequestContext,
+  seasonId: string,
+): Promise<string> {
+  const res = await admin.post(`/api/admin/seasons/${seasonId}/runs`)
+  expect(res.status(), await res.text()).toBe(201)
+  return ((await res.json()) as { id: string }).id
+}
+
+/**
+ * Wait for a season's most recent run to leave the in-progress states and return its summary. The
+ * runs list is newest first, so its head row is the run {@link startSeasonRun} just triggered. Used
+ * by the demo fixture seed to build released seasons without a browser open; the given timeout must
+ * cover the scheduled container games, like the arcs' wide per-run windows.
+ */
+export async function waitForRunTerminal(
+  admin: APIRequestContext,
+  seasonId: string,
+  timeout = 420_000,
+): Promise<{ id: string; status: string }> {
+  let row: { id: string; status: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const res = await admin.get(`/api/admin/seasons/${seasonId}/runs`)
+        expect(res.ok(), await res.text()).toBe(true)
+        const runs = (await res.json()) as Array<{ id: string; status: string }>
+        row = runs[0]
+        return row?.status ?? 'missing'
+      },
+      { timeout, intervals: [2_000, 5_000, 10_000] },
+    )
+    .not.toMatch(/pending|running|missing/)
+  if (row === undefined) throw new Error('season run never appeared')
+  return row
+}

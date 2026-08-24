@@ -22,6 +22,8 @@ uv run python scripts/ci.py frontend-e2e --fast
 uv run python scripts/ci.py frontend-e2e --group spades --include-slow --no-build
 ```
 
+`npm run demo -- --rerun-e2e` is a fourth variety: it rebuilds the demo fixture with the arcs skipped, then runs `z-demo-seed` so the fast build still serves the demo's released and play-open seasons.
+
 Once the session image and Chromium are in place, run Playwright directly:
 
 ```console
@@ -45,7 +47,7 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey, human seat play, and replay attribution. | `environments/hearts/renderer/` |
 | `spades` | Chat filtering and replay, seat-ranked results on both seat plans, and the partnership matchup. | `environments/spades/renderer/` |
 | `crane-reach` | A skirmish watched to game over with exact replay seeking, an army season built from the Season 5 preset with a submitted example agent, and an order composed by clicking the board. | `environments/skirmish_crane/renderer/` |
-| `three-branches` | A seeded village watch session with camera and collision interaction plus repeatable replay seeking, and a human visitor journey: keyboard walking, the emote palette, the use preview, broadcast and direct chat, watcher completeness, and the replay transcript. | `environments/three_branches/renderer/` |
+| `z-demo-seed` | The demo fixture seed: reproduces the demo's released and play-open seasons over the API (no browser), so a fast frontend-e2e rebuild serves the same rich state a complete run builds with the season arcs. | `scripts/demo.py` |
 
 A change to something shared, such as `src/renderers/base/`, `components/ui/`, `styles/tokens.css`, or `api/client.ts`, needs the whole suite. A change to `src/renderers/cards/` needs `hearts` and `spades`.
 
@@ -53,7 +55,7 @@ Do not add a test to the `submissions` group if it submits a ready agent to the 
 
 ## The slow tier
 
-Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. `--group`, `--fast`, and `npm run demo -- --rerun-e2e` skip them. `--include-slow` keeps them in a narrowed run, and a bare helper run always includes them. The leaderboards arc leaves its flappy season unreleased with the play window open (ready for peer rating), while the Hearts, Spades, and Crane Reach arcs each end released so the complete demo fixture serves a mix of live and historical seasons.
+Four season arcs carry a `@slow` tag: the Hearts, Spades, Crane Reach, and leaderboards seasons. Each submits real agents, builds a container image per ordered seating, and runs the scheduled games, so each takes minutes. So does the Spades self-control test, a live session a human drives through all thirteen tricks. `--group`, `--fast`, and `npm run demo -- --rerun-e2e` skip them. `--include-slow` keeps them in a narrowed run, and a bare helper run always includes them. The leaderboards arc leaves its flappy season unreleased with the play window open (ready for peer rating), while the Hearts, Spades, and Crane Reach arcs each end released so the complete demo fixture serves a mix of live and historical seasons.
 
 The configuration applies no filter of its own. Hiding `@slow` by default would make the complete CI run omit these season arcs.
 
@@ -84,7 +86,7 @@ GitHub OAuth depends on an external provider, so the frontend Vitest suite cover
 
 ## The demo source fixture
 
-The e2e suite creates the demo source fixture, including recordings, submissions, and real sign-in accounts. A bare `uv run python scripts/ci.py frontend-e2e` also runs the slow arcs: the flappy leaderboards arc leaves Updraft Open play-open and unreleased ("ready for peer rating"), the Hearts arc seeds a full rating set, and the Spades and Crane Reach arcs seed part of one. `npm run demo -- --rerun-e2e` refreshes the fixture from every faster journey and omits those slow arcs.
+The e2e suite creates the demo source fixture, including recordings, submissions, and real sign-in accounts. The complete run's slow arcs set the fixture apart: the flappy leaderboards arc leaves Updraft Open play-open and unreleased ("ready for peer rating"), the Hearts arc seeds a full rating set, and the Spades and Crane Reach arcs seed part of one. The fast demo rebuild (`npm run demo -- --rerun-e2e`) skips those arcs and instead runs the `z-demo-seed` group, which reproduces the same released and play-open seasons over the API, so the fast rebuild serves the same substantial demo without the slow tier.
 
 The bare unrestricted helper run rebuilds `main/` by default. The demo launcher's explicit fast rebuild also owns `main/`. Narrowed and direct runs cannot replace it, which protects the demo fixture from an accidental partial run.
 
@@ -99,7 +101,7 @@ Shared identities live in `e2e/support/names.ts` and shared API flows in `e2e/su
 ## Adding a test or fixture
 
 - Put the spec in the group whose area it covers. To add a group, create a directory under `e2e/` and put a spec in it. A group is any directory holding at least one `*.spec.ts`; both `playwright.config.ts` and `scripts/ci.py` discover groups this way, so neither has a list to update. `support/` and `fixtures/` are not groups because they hold no specs.
-- Tag a test `@slow` when it submits agents and runs a scheduled season. Anything cheaper belongs in the default tier, where contributors will actually run it.
+- Tag a test `@slow` when it submits agents and runs a scheduled season, or when it drives a live session to a real game over (the Spades self-control test plays all thirteen tricks). Anything cheaper belongs in the default tier, where contributors will actually run it.
 - Prefer the jsdom suite under `frontend/test/`. A browser test earns its place by needing a real container, a real socket, a second browser context, a painted canvas, a real download, or real navigation and cookies. Assertions about text, disabled controls, validation, and markup structure belong in jsdom, where they run in milliseconds.
 - Add identities to `support/names.ts` and flows to `support/api.ts`; keep specs declarative.
 - A new submission fixture is a folder under `fixtures/submission/` with a `manifest.json` (mirror `good/manifest.json`) and an `agent.py` exposing a callable `Agent` with `reset`/`act`.

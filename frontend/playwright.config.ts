@@ -57,8 +57,9 @@ const MAIN_USE = {
  * once per dependent project, so selecting several groups still pays for it once. Never pass
  * `--no-deps`, which would skip that setup and fail those assertions against an unmodified season.
  *
- * The long season arcs carry a `@slow` tag rather than living in a project or a file suffix, so each
- * stays beside its siblings in the environment it belongs to. Drop them with `--grep-invert @slow`.
+ * The slow tier (the season arcs plus a full human-driven Spades hand) carries a `@slow` tag rather
+ * than living in a project or a file suffix, so it stays beside its siblings in the environment it
+ * belongs to. Drop it with `--grep-invert @slow`.
  * This config deliberately applies no filter of its own: a default that hid `@slow` would make a bare
  * `npm run e2e` quietly produce a run missing every season arc the demo fixture needs.
  *

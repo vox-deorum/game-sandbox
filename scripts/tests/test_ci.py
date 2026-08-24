@@ -42,6 +42,25 @@ def test_demo_can_build_main_fixture_without_the_slow_arcs(monkeypatch: pytest.M
     assert args[-2:] == ["--grep-invert", "@slow"]
     assert env is not None
     assert env["E2E_DATA_SUBDIR"] == ci.E2E_MAIN_DATA_SUBDIR
+    # The fast rebuild arms the demo-seed group so it reproduces the released/open seasons the arcs
+    # skipped; a complete run leaves it disarmed so the arcs and the seed cannot double-build.
+    assert env["E2E_DEMO_SEED"] == "1"
+
+
+def test_complete_run_leaves_the_demo_seed_disarmed(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def capture(args: list[str], *, env: dict[str, str] | None = None, **_: object) -> None:
+        calls.append((args, env))
+
+    monkeypatch.setattr(ci, "_run", capture)
+
+    ci.job_frontend_e2e()
+
+    _, env = calls[-1]
+    assert env is not None
+    assert env["E2E_DATA_SUBDIR"] == ci.E2E_MAIN_DATA_SUBDIR
+    assert "E2E_DEMO_SEED" not in env
 
 
 def test_a_group_becomes_a_project_and_skips_the_arcs() -> None:

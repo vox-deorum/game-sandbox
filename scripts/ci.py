@@ -161,9 +161,11 @@ def job_frontend_e2e(
     fast loop; pass ``include_slow=True`` to keep them.
 
     Only a complete run claims the data dir ``npm run demo`` serves by default. The demo launcher can
-    explicitly claim it with ``demo_fixture=True`` when rebuilding the fixture without the slow tier.
-    The Playwright config defaults to the throwaway dir, so a narrowed run here, and any hand-typed
-    ``playwright test``, leaves that fixture alone without having to remember to.
+    explicitly claim it with ``demo_fixture=True`` when rebuilding the fixture without the slow tier;
+    that rebuild also sets ``E2E_DEMO_SEED`` so the ``z-demo-seed`` group reproduces the released and
+    play-open demo seasons the arcs otherwise leave behind. The Playwright config defaults to the
+    throwaway dir, so a narrowed run here, and any hand-typed ``playwright test``, leaves that fixture
+    alone without having to remember to.
 
     CI runs the bare ``ci.py frontend-e2e``, so "every group, arcs included, freshly built" stays the
     command-line default. ``scripts/demo.py`` uses the explicit fixture option for its fast rebuild.
@@ -201,6 +203,10 @@ def job_frontend_e2e(
     # config defaults to the throwaway one, so narrowed and direct invocations leave main/ alone.
     subdir = E2E_MAIN_DATA_SUBDIR if complete or demo_fixture else E2E_PARTIAL_DATA_SUBDIR
     env = {**os.environ, "E2E_DATA_SUBDIR": subdir}
+    if demo_fixture:
+        # Let the z-demo-seed group rebuild the released and play-open demo seasons over the API, so
+        # a fast rebuild (arcs skipped) still serves a rich demo. Every other run skips that group.
+        env["E2E_DEMO_SEED"] = "1"
     _run(
         [_NPM, "exec", "--workspace", "@game-sandbox/frontend", "--", "playwright", "test"]
         + _e2e_playwright_args(selected, include_slow=slow),
