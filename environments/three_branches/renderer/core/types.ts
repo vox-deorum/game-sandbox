@@ -196,8 +196,10 @@ export interface CharacterDrawable extends DynamicCharacter {
   walkDistance: number
   /** Seek-safe interpolation envelope for starting and stopping the scripted gait. */
   walkBlend: number
-  /** The expression chip's title-cased text, or null when the character has no expression. */
+  /** The expression's title-cased semantic text, or null when the character has no expression. */
   expressionTitle: string | null
+  /** The pictogram token for the live expression, or null when the character has no expression. */
+  expressionIcon: string | null
 }
 
 /**

@@ -206,7 +206,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.props = createPropLayer(
       {
         scenery: this.world.scenery,
-        shadows: this.world.shadows,
+        outlines: this.world.outlines,
         props: this.world.props,
         effects: this.world.effects,
         emissives: this.world.emissives,
@@ -262,6 +262,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           prop === undefined ? undefined : CATALOG.props.find((item) => item.token === prop.type)
         return kind?.transition ?? 'none'
       },
+      targetActivity: (propId) => {
+        const prop = this.staticScene.props.find((item) => item.id === propId)
+        const kind =
+          prop === undefined ? undefined : CATALOG.props.find((item) => item.token === prop.type)
+        return kind?.activity ?? null
+      },
       onPreview: (propId) => {
         this.props.highlight(propId)
         this.redrawCurrentFrame()
@@ -310,8 +316,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     if (options?.seek === true) this.annotations.clear()
     this.annotations.deliver(readSpeech(state, this.expectedIds))
     const durationMs = transitionDurationMs(options, this.gapEstimateMs)
-    // A snap re-presentation is not a landed state, so it must not move the expression chip tails;
-    // only real states age a held chip or close out a fade over one state's presentation time.
+    // A snap re-presentation is not a landed state, so it must not move expression marker tails.
     if (options?.snap !== true) {
       this.annotations.observeExpressions(
         scene,
@@ -401,7 +406,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     }
     this.advanceCameraReturn(dtMs, false)
     // A still frame repaints the bubbles and any expression tails that aged this frame, including
-    // the frame that retires the last bubble or completes the last chip fade, so neither holds its
+    // the frame that retires the last bubble or completes the last marker fade, so neither holds its
     // final opacity. The probe follows that same screen when it changes.
     if (speaking || wasSpeaking) {
       this.redrawAnnotations()
@@ -578,7 +583,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // Plates and bubbles counter-scale against the camera to hold one readable size, so they follow
     // every camera change as well as every frame.
     this.redrawAnnotations()
-    // The expression chip shows only at the full-nameplate zoom, so its probe follows the camera
+    // The expression marker shows only at the full-nameplate zoom, so its probe follows the camera
     // too, not just the landed states that {@link updateProbes} observes.
     this.updateExpressionChipProbe()
     if (this.collisionTextZoom !== this.visitorCamera.camera.zoom) {
@@ -588,11 +593,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   /**
-   * The expression chip title the annotation layer draws above the visitor, or none while no
-   * expression shows or the camera sits below the full-nameplate zoom. The retained tail map is
+   * The expression title the annotation layer retains for the visitor, or none while no expression
+   * shows or the camera sits below the full-nameplate zoom. The retained tail map is
    * authoritative once a state has been observed, but a snap presentation (a replay seek, an asset
    * redraw, the very first state) reconciles the live scene without any tail, so the presented
-   * scene's own expression title stands in then. Zooming below full-plate opacity hides the chip,
+   * scene's own expression title stands in then. Zooming below full-plate opacity hides the marker,
    * so the probe reports the same visibility the layer draws.
    */
   private updateExpressionChipProbe(): void {
@@ -733,9 +738,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
           if (this.presentedScene !== null) this.props.advance(this.presentedScene)
           this.roofs.install(createRoofArt(assets.buildings))
           if (this.presentedScene !== null) this.roofs.setTargets(this.presentedScene, true)
-          this.annotations.install(createExpressionArt(assets.effects))
-          // The expression chip's pictogram and accent textures only resolve once a state named the
-          // character's expression, so reconcile re-applies them to the retained nodes right away.
+          const expressionArt = createExpressionArt(assets.effects)
+          this.annotations.install(expressionArt)
+          this.visitorInput?.installExpressionArt(expressionArt)
+          // Reconcile applies the newly loaded expression pictograms to retained nodes right away.
           if (this.presentedScene !== null) {
             this.annotations.reconcile(
               this.presentedScene,

@@ -845,16 +845,16 @@
     {
       "name": "effects",
       "path": "./assets/effects-atlas.png",
-      "width": 1920,
+      "width": 2304,
       "height": 512,
       "tintable": true,
       "format": "grayscale-alpha",
-      "consumer": "character marks, expression chips, prop effects, and white-crane dressing",
+      "consumer": "character marks, merged name-pills, prop effects, and white-crane dressing",
       "mipmaps": false,
       "frames": {
         "width": 192,
         "height": 128,
-        "columns": 10,
+        "columns": 12,
         "rows": 4,
         "cells": [
           {
@@ -1011,61 +1011,201 @@
             "name": "expressionWave",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionWave.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionNod",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionNod.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionShakeHead",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionShakeHead.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionPoint",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionPoint.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionLaugh",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionLaugh.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionShrug",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionShrug.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionStartle",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionStartle.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionSleep",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionSleep.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionSweep",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionSweep.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
           },
           {
             "name": "expressionUse",
             "source": {
               "path": "./assets/source-art/frames/effects/expressionUse.png"
+            },
+            "render": {
+              "kind": "fitVisible",
+              "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 },
+              "bounds": { "alphaAbove": 0 },
+              "maxSize": { "width": 128, "height": 96 },
+              "anchor": { "x": 96, "y": 64 },
+              "resampler": "bilinear-premultiplied-encoded-rgb",
+              "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true }
             }
+          },
+          {
+            "name": "expressionTendingStall",
+            "source": { "path": "./assets/source-art/frames/effects/expressionTendingStall.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionLighting",
+            "source": { "path": "./assets/source-art/frames/effects/expressionLighting.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionSitting",
+            "source": { "path": "./assets/source-art/frames/effects/expressionSitting.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionTendingShrine",
+            "source": { "path": "./assets/source-art/frames/effects/expressionTendingShrine.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionReadingBoard",
+            "source": { "path": "./assets/source-art/frames/effects/expressionReadingBoard.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionTendingPlot",
+            "source": { "path": "./assets/source-art/frames/effects/expressionTendingPlot.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionTendingHearth",
+            "source": { "path": "./assets/source-art/frames/effects/expressionTendingHearth.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionWorkingBench",
+            "source": { "path": "./assets/source-art/frames/effects/expressionWorkingBench.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionWorkingPump",
+            "source": { "path": "./assets/source-art/frames/effects/expressionWorkingPump.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+          },
+          {
+            "name": "expressionRingingBell",
+            "source": { "path": "./assets/source-art/frames/effects/expressionRingingBell.png" },
+            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
           },
           {
             "name": "expressionAccentA",
@@ -1305,12 +1445,10 @@
       "tint": "indigo",
       "tintMix": 0.18
     },
-    "propContactShadow": {
+    "textureOutline": {
       "tint": "backdrop",
-      "opacity": 0.26,
-      "widthFactor": 1.2,
-      "heightFactor": 0.75,
-      "offsetYCells": 0.06
+      "opacity": 0.20,
+      "scaleFactor": 1.06
     }
   },
   "characters": {
@@ -1437,9 +1575,38 @@
       "sweep": "expressionSweep",
       "use": "expressionUse"
     },
+    "activityFrames": {
+      "tending_stall": "expressionTendingStall",
+      "lighting": "expressionLighting",
+      "sitting": "expressionSitting",
+      "tending_shrine": "expressionTendingShrine",
+      "reading_board": "expressionReadingBoard",
+      "tending_plot": "expressionTendingPlot",
+      "tending_hearth": "expressionTendingHearth",
+      "working_bench": "expressionWorkingBench",
+      "working_pump": "expressionWorkingPump",
+      "ringing_bell": "expressionRingingBell"
+    },
     "tint": "ink",
     "accentFrames": ["expressionAccentA", "expressionAccentB"],
-    "frameRatio": 0.25
+    "frameRatio": 0.25,
+    "worldLabel": {
+      "fontSize": 20,
+      "characterWidth": 12.5,
+      "lineHeight": 22,
+      "paddingX": 8,
+      "paddingY": 4,
+      "iconSlotWidth": 36,
+      "iconFrameWidth": 40
+    },
+    "inputPalette": {
+      "plateWidth": 152,
+      "plateHeight": 52,
+      "gap": 10,
+      "contentMargin": 18,
+      "labelFontSize": 20,
+      "iconFrameWidth": 40
+    }
   },
   "thumbnail": {
     "source": "./assets/source-art/thumbnail-source.png",

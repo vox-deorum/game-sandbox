@@ -32,6 +32,7 @@ import {
   plateProbe,
   USE_PLATE_RECT,
 } from './palette.js'
+import type { ExpressionArt } from './annotations.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
 
@@ -74,6 +75,8 @@ export interface VisitorInputOptions {
   previewTarget(): string | null
   /** The catalog transition of one prop id: toggle, occupancy, timed, or none. */
   targetTransition(propId: string): string
+  /** The catalog activity token for one prop id, or null when its icon is unknown. */
+  targetActivity(propId: string): string | null
   /** Show or clear the use-preview highlight on the props layer. */
   onPreview(propId: string | null): void
   /** Repaint the frame after a pad or palette change outside a state update. */
@@ -88,6 +91,8 @@ export interface VisitorInputController {
    * composing nothing.
    */
   handleFrame(terminal: boolean, send?: boolean): void
+  /** Install the effects-atlas pictograms once they are ready. */
+  installExpressionArt(art: ExpressionArt): void
   /** Release every browser listener and the send loop. */
   destroy(): void
 }
@@ -98,7 +103,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   const data = options.container.dataset
   if (sendAction === undefined || !options.controlledPlayers.includes(VISITOR_PLAYER)) {
     data.threeBranchesInput = 'none'
-    return { handleFrame() {}, destroy() {} }
+    return { handleFrame() {}, installExpressionArt() {}, destroy() {} }
   }
 
   const palette = createExpressionPalette(options.paletteLayer, options.createText)
@@ -239,7 +244,9 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   const setUseHover = (hovered: boolean): void => {
     if (useHovered === hovered) return
     useHovered = hovered
-    setPreview(hovered ? options.previewTarget() : null)
+    const target = hovered ? options.previewTarget() : null
+    palette.setUseIcon(target === null ? null : options.targetActivity(target))
+    setPreview(target)
     paintPalette()
   }
 
@@ -407,7 +414,9 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
         return
       }
       // A latched use drops when the landing pose no longer puts a prop in reach.
-      if (latched && options.previewTarget() === null) releaseLatch()
+      const target = options.previewTarget()
+      palette.setUseIcon(target === null ? null : options.targetActivity(target))
+      if (latched && target === null) releaseLatch()
       if (send) {
         expressionInFlight = false
         const action = sendWindow()
@@ -421,7 +430,12 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
         }
       }
       // The landed pose moved, so a held hover re-answers which prop a use would select now.
-      if (useHovered) setPreview(options.previewTarget())
+      if (useHovered) {
+        setPreview(target)
+      }
+    },
+    installExpressionArt(art) {
+      palette.install(art)
     },
     destroy() {
       ended = true

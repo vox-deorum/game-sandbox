@@ -8,34 +8,33 @@ import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentat
 import type { CharacterDrawable, FrameScene, SpeechLine } from '../core/types.js'
 import { frameRectangle } from './tint.js'
 
-/** Operations exposed by the retained nameplate, speech bubble, and expression chip layer. */
+/** Operations exposed by the retained nameplate, expression marker, and speech bubble layer. */
 export interface AnnotationLayer {
-  /** Reconcile plates, chips, and bubbles toward one frame at one camera zoom. */
+  /** Reconcile plates, pictograms, and bubbles toward one frame at one camera zoom. */
   reconcile(scene: FrameScene, zoom: number, fittedZoom: number, resolution: number): void
-  /** Slice the expression chip's effects textures into the retained chip nodes. */
+  /** Slice the expression pictograms into the retained annotation nodes. */
   install(art: ExpressionArt): void
   /**
-   * Advance the per-character expression chip machines by one delivered state. A live chip stays
-   * live; a chip whose expression read `none` holds {@link EXPRESSION_HOLD_TICKS} more states at full
-   * opacity and then fades across one state of `tickMs`. Called once per landed state, never on a
-   * redraw, so the tail survives movement animation and replay cadence.
+   * Advance the per-character expression marker machines by one delivered state. A live marker
+   * stays live, then holds {@link EXPRESSION_HOLD_TICKS} more states and fades across one state of
+   * `tickMs`. Called once per landed state, never on a redraw.
    */
   observeExpressions(scene: FrameScene, tickMs: number): void
-  /** The expression chip title currently drawn above one character, or null for none. */
+  /** The semantic title of one visible or retained expression, or null for none. */
   expressionChipTitle(characterId: string): string | null
   /** Retain the lines one state delivered, replacing each speaker's previous line. */
   deliver(lines: readonly SpeechLine[]): void
   /**
-   * Drop every retained line and expression chip tail, as an arbitrary replay seek must.
+   * Drop every retained line and expression marker tail, as an arbitrary replay seek must.
    */
   clear(): void
   /** Age retained lines and expression fades, and report whether any still needs drawing. */
   advance(dtMs: number): boolean
 }
 
-/** Slice the expression chip's ten pictograms and two shared accent frames. */
+/** Slice expression and prop-activity pictograms from the effects page. */
 export interface ExpressionArt {
-  /** Per-expression-token pictogram textures, keyed by emote token and 'use'. */
+  /** Per-expression-token pictogram textures, keyed by emote and activity token. */
   icon: Readonly<Record<string, Texture>>
   /** Shared accent textures, keyed by their effects-page frame name. */
   accent: Readonly<Record<string, Texture>>
@@ -48,15 +47,15 @@ interface RetainedBubble {
 }
 
 /**
- * The per-character expression chip tail. A `live` entry draws the target expression at full opacity;
+ * The per-character expression marker tail. A `live` entry draws the target expression at full opacity;
  * when the expression reads `none`, the same entry enters `hold` for {@link EXPRESSION_HOLD_TICKS}
- * delivered states and finally `fade`, ramping the chip's alpha to zero across one state. Only one
+ * delivered states and finally `fade`, ramping the icon's alpha to zero across one state. Only one
  * entry exists per character, so a newer expression always replaces the older one.
  */
 interface ExpressionChip {
   readonly title: string
-  /** The expression token, for the chip's accent frame and pictogram. */
-  readonly type: string
+  /** The resolved emote or prop-activity token for the pictogram. */
+  readonly icon: string
   phase: 'live' | 'hold' | 'fade'
   /** Delivered states yet to show at full opacity in the hold phase. */
   remainTicks: number
@@ -66,16 +65,13 @@ interface ExpressionChip {
   elapsedMs: number
 }
 
-/** The plate, chip, and bubble display objects retained for one character, keyed by its stable id. */
+/** The fused plate, pictogram, and bubble display objects retained for one character. */
 interface CharacterNode {
   readonly root: Container
   readonly plate: Graphics
   readonly plateLabel: Text
-  readonly chip: Container
-  readonly chipPlate: Graphics
-  readonly chipAccent: Sprite
-  readonly chipIcon: Sprite
-  readonly chipLabel: Text
+  readonly expression: Container
+  readonly expressionIcon: Sprite
   readonly bubble: Container
   readonly bubbleBackground: Graphics
   readonly bubbleLabel: Text
@@ -83,22 +79,8 @@ interface CharacterNode {
 
 // Screen-space layout, in the constant units each character node's `1 / zoom` scale exposes to it.
 const PLATE_CLEARANCE = 14
-const PLATE_PADDING_X = 8
-const PLATE_PADDING_Y = 4
-const PLATE_FONT_SIZE = 15
-const PLATE_CHAR_WIDTH = 9.375
-const PLATE_LINE_HEIGHT = 17
-const CHIP_GAP = 6
-const CHIP_PADDING_X = 8
-const CHIP_PADDING_Y = 3
-const CHIP_FONT_SIZE = 16
-const CHIP_CHAR_WIDTH = 9.6667
-const CHIP_TEXT_GAP = 6
-const CHIP_ICON_SIZE = 18
-const CHIP_ACCENT_SIZE = 22
-const CHIP_LINE_HEIGHT = 20
-const CHIP_ACCENT_ALPHA = 0.45
-// The expression chip lingers this many delivered states at full opacity once its expression reads
+const WORLD_LABEL = HEARTHSIDE_STYLE.expressions.worldLabel
+// The expression marker lingers this many delivered states at full opacity once its expression reads
 // `none`, then fades out across the next delivered state. Counting delivered states (never redraws)
 // keeps the tail deterministic through movement animation and replay cadence.
 const EXPRESSION_HOLD_TICKS = 2
@@ -127,7 +109,7 @@ export function createAnnotationLayer(
 ): AnnotationLayer {
   const nodes = new Map<string, CharacterNode>()
   const bubbles = new Map<string, RetainedBubble>()
-  // One expression chip tail per character, replaced by the newest expression and aged by delivery.
+  // One expression marker tail per character, replaced by the newest expression and aged by delivery.
   const chips = new Map<string, ExpressionChip>()
   // Every key in the last delivered state, so redrawing a multi-line state never restarts the final
   // bubble. Replacing the set on each delivery keeps memory bounded by one state.
@@ -156,43 +138,31 @@ export function createAnnotationLayer(
         node.root.position.set(character.point.x, character.point.y)
         node.root.scale.set(inverseZoom)
 
+        const retained = chips.get(character.id)
+        const expressionShown =
+          art !== null && plateAlpha === 1 && (retained !== undefined || character.expressionIcon !== null)
+        const expressionIcon = retained?.icon ?? character.expressionIcon ?? 'use'
+        const expressionAlpha = retained === undefined ? 1 : displayedChipAlpha(retained)
         const plateBottom = -(character.radius * zoom + PLATE_CLEARANCE)
-        const plateTop = drawPlate(node, character, plateBottom, resolution)
+        const plateTop = drawPlate(
+          node,
+          character,
+          plateBottom,
+          resolution,
+          expressionShown,
+          expressionAlpha,
+          art,
+          expressionIcon,
+        )
         node.plate.alpha = plateAlpha
         node.plateLabel.alpha = plateAlpha
-
-        // The expression chip appears only where the nameplate is fully opaque, and the bubble
-        // stacks above it when one is drawn, otherwise above the plate. The chip's content and
-        // alpha come from the tail machine when one is held or fading, else from the live expression.
-        let stackTop = plateTop
-        const retained = chips.get(character.id)
-        const chipShown =
-          plateAlpha === 1 && (retained !== undefined || character.expressionTitle !== null)
-        node.chip.visible = chipShown
-        if (chipShown) {
-          const title = retained?.title ?? character.expressionTitle ?? ''
-          const type = retained?.type ?? character.expression.type
-          const accentFrame = expressionAccentFrame(character.id, type, scene.presentationTick)
-          stackTop = drawChip(node, title, plateTop - CHIP_GAP, resolution, art)
-          node.chip.alpha = retained === undefined ? 1 : displayedChipAlpha(retained)
-          if (art !== null) {
-            // The retained sprites carry no intrinsic scale: the effects grid frames are 192 by 128
-            // units at 1:1, so each one is scaled down into its reserved chip lane as its texture lands.
-            const icon = art.icon[type] ?? Texture.EMPTY
-            const accent = art.accent[accentFrame] ?? Texture.EMPTY
-            node.chipIcon.texture = icon
-            node.chipIcon.scale.set(chipSpriteScale(icon, CHIP_ICON_SIZE))
-            node.chipAccent.texture = accent
-            node.chipAccent.scale.set(chipSpriteScale(accent, CHIP_ACCENT_SIZE))
-          }
-        }
 
         const bubble = bubbles.get(character.id)
         if (bubble === undefined) {
           node.bubble.visible = false
         } else {
           node.bubble.visible = true
-          drawBubble(node, bubble.line, stackTop - BUBBLE_GAP, resolution)
+          drawBubble(node, bubble.line, plateTop - BUBBLE_GAP, resolution)
           node.bubble.alpha = speechAlpha(bubble.ageMs)
         }
       }
@@ -211,7 +181,7 @@ export function createAnnotationLayer(
           // A live expression (new or repeated) replaces and resets any hold or fade tail.
           chips.set(character.id, {
             title,
-            type: character.expression.type,
+            icon: character.expressionIcon ?? 'use',
             phase: 'live',
             remainTicks: 0,
             fadeMs: 0,
@@ -264,8 +234,8 @@ export function createAnnotationLayer(
       chips.clear()
       for (const node of nodes.values()) {
         node.bubble.visible = false
-        node.chip.visible = false
-        node.chip.alpha = 1
+        node.expression.visible = false
+        node.expression.alpha = 1
       }
     },
 
@@ -398,10 +368,11 @@ export function createExpressionArt(atlas: Texture): ExpressionArt {
   }
   return {
     icon: Object.fromEntries(
-      Object.entries(HEARTHSIDE_STYLE.expressions.frames).map(([token, frame]) => [
-        token,
-        required(frame),
-      ]),
+      Object.entries({
+        ...HEARTHSIDE_STYLE.expressions.frames,
+        ...(HEARTHSIDE_STYLE.expressions as { activityFrames?: Readonly<Record<string, string>> })
+          .activityFrames,
+      }).map(([token, frame]) => [token, required(frame)]),
     ),
     accent: Object.fromEntries(
       HEARTHSIDE_STYLE.expressions.accentFrames.map((frame) => [frame, required(frame)]),
@@ -411,7 +382,7 @@ export function createExpressionArt(atlas: Texture): ExpressionArt {
 
 /**
  * The scale that sizes one expression-chip sprite into its reserved layout lane. Effects atlas
- * frames are 192 by 128 units at 1:1, so each is shrunk by `targetWidth / frameWidth` — preserving
+ * frames are 192 by 128 units at 1:1, so each is shrunk by `targetWidth / frameWidth`, preserving
  * the design's aspect while keeping the artwork inside the pill, whatever frame lands later.
  */
 function chipSpriteScale(texture: Texture, targetWidth: number): number {
@@ -453,100 +424,36 @@ function createCharacterNode(
   const plate = new Graphics()
   const plateLabel = createText(
     id,
-    PLATE_FONT_SIZE,
+    WORLD_LABEL.fontSize,
     HEARTHSIDE_STYLE.palette.bone,
     'center',
     'ui-monospace, monospace',
   )
 
-  // The chip's plate and text exist before any artwork so a pending or failed art load leaves a
-  // readable text-only chip. Artwork only fills the retained pictogram and accent sprites.
-  const chip = new Container({ label: 'annotation-chip' })
-  const chipPlate = new Graphics()
-  const chipAccent = new Sprite({ label: 'annotation-chip-accent', texture: Texture.EMPTY })
-  chipAccent.anchor.set(0.5)
-  chipAccent.visible = false
-  chipAccent.tint = HEARTHSIDE_STYLE.palette.gilt
-  chipAccent.alpha = CHIP_ACCENT_ALPHA
-  const chipIcon = new Sprite({ label: 'annotation-chip-icon', texture: Texture.EMPTY })
-  chipIcon.anchor.set(0.5)
-  chipIcon.visible = false
-  chipIcon.tint = HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.expressions.tint]
-  const chipLabel = createText(
-    '',
-    CHIP_FONT_SIZE,
-    HEARTHSIDE_STYLE.palette.ink,
-    'center',
-    'ui-monospace, monospace',
-  )
-  chip.visible = false
-  chip.addChild(chipPlate, chipAccent, chipIcon, chipLabel)
+  const expression = new Container({ label: 'annotation-expression' })
+  const expressionIcon = new Sprite({ label: 'annotation-expression-icon', texture: Texture.EMPTY })
+  expressionIcon.anchor.set(0.5)
+  expressionIcon.tint = HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.expressions.tint]
+  expression.visible = false
+  expression.addChild(expressionIcon)
 
   const root = new Container()
-  root.addChild(chip, bubble, plate, plateLabel)
+  root.addChild(bubble, plate, plateLabel, expression)
   parent.addChild(root)
   return {
     root,
     plate,
     plateLabel,
-    chip,
-    chipPlate,
-    chipAccent,
-    chipIcon,
-    chipLabel,
+    expression,
+    expressionIcon,
     bubble,
     bubbleBackground,
     bubbleLabel,
   }
 }
 
-/** Paint the chip at `bottomY` and return its top edge, keeping the stack above the nameplate. */
-function drawChip(
-  node: CharacterNode,
-  title: string,
-  bottomY: number,
-  resolution: number,
-  art: ExpressionArt | null,
-): number {
-  node.chipLabel.text = title
-  node.chipLabel.resolution = resolution
-  const textWidth = codePointLength(title) * CHIP_CHAR_WIDTH
-  const width =
-    CHIP_PADDING_X * 2 +
-    CHIP_ACCENT_SIZE +
-    CHIP_TEXT_GAP +
-    CHIP_ICON_SIZE +
-    CHIP_TEXT_GAP +
-    textWidth
-  const height = Math.max(CHIP_ACCENT_SIZE, CHIP_ICON_SIZE, CHIP_LINE_HEIGHT) + CHIP_PADDING_Y * 2
-  const chipLeft = -width / 2
-  const centerY = bottomY - height / 2
-  const accentX = chipLeft + CHIP_PADDING_X + CHIP_ACCENT_SIZE / 2
-  const iconX = chipLeft + CHIP_PADDING_X + CHIP_ACCENT_SIZE + CHIP_TEXT_GAP + CHIP_ICON_SIZE / 2
-  const labelX =
-    chipLeft +
-    CHIP_PADDING_X +
-    CHIP_ACCENT_SIZE +
-    CHIP_TEXT_GAP +
-    CHIP_ICON_SIZE +
-    CHIP_TEXT_GAP +
-    textWidth / 2
-  node.chipPlate
-    .clear()
-    .roundRect(chipLeft, bottomY - height, width, height, height / 2)
-    .fill(HEARTHSIDE_STYLE.palette.parchment)
-    .stroke({ color: HEARTHSIDE_STYLE.palette.timber, width: 1 })
-  node.chipAccent.position.set(accentX, centerY)
-  node.chipIcon.position.set(iconX, centerY)
-  node.chipLabel.position.set(labelX, centerY)
-  // The pictogram and accent only exist once their effects textures are installed.
-  node.chipAccent.visible = art !== null
-  node.chipIcon.visible = art !== null
-  return bottomY - height
-}
-
-/** Paint the pill at its local bottom edge `bottomY` and return the pill's top edge, so a chip
- * or bubble can stack above it. Sizing comes from the character id's length rather than measured
+/** Paint the fused pill at its local bottom edge `bottomY` and return its top edge. Sizing comes
+ * from the character id's length rather than measured
  * text bounds: Pixi can only measure text against a real canvas context, which a headless host
  * does not always provide, and the pill never needs pixel-exact sizing to read clearly.
  */
@@ -555,19 +462,44 @@ function drawPlate(
   character: CharacterDrawable,
   bottomY: number,
   resolution: number,
+  expressionShown: boolean,
+  expressionAlpha: number,
+  art: ExpressionArt | null,
+  expressionIcon: string,
 ): number {
   node.plateLabel.text = character.id
   node.plateLabel.resolution = resolution
   const accent =
     character.id === 'player_0' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
-  const width = character.id.length * PLATE_CHAR_WIDTH + PLATE_PADDING_X * 2
-  const height = PLATE_LINE_HEIGHT + PLATE_PADDING_Y * 2
+  const nameWidth =
+    character.id.length * WORLD_LABEL.characterWidth + WORLD_LABEL.paddingX * 2
+  const height = WORLD_LABEL.lineHeight + WORLD_LABEL.paddingY * 2
+  const left = -nameWidth / 2 - (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
+  const width = nameWidth + (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
   node.plate.clear()
   node.plate
-    .roundRect(-width / 2, bottomY - height, width, height, height / 2)
+    .roundRect(left, bottomY - height, width, height, height / 2)
     .fill(accent)
     .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 })
+  if (expressionShown) {
+    const dividerX = -nameWidth / 2
+    node.plate.moveTo(dividerX, bottomY - height + 3).lineTo(dividerX, bottomY - 3).stroke({
+      color: HEARTHSIDE_STYLE.palette.gilt,
+      width: 1,
+    })
+  }
   node.plateLabel.position.set(0, bottomY - height / 2)
+  node.expression.visible = expressionShown && art !== null
+  node.expression.alpha = expressionAlpha
+  if (node.expression.visible && art !== null) {
+    const icon = art.icon[expressionIcon] ?? art.icon.use ?? Texture.EMPTY
+    node.expressionIcon.texture = icon
+    node.expressionIcon.scale.set(chipSpriteScale(icon, WORLD_LABEL.iconFrameWidth))
+    node.expressionIcon.position.set(
+      -nameWidth / 2 - WORLD_LABEL.iconSlotWidth / 2,
+      bottomY - height / 2,
+    )
+  }
   return bottomY - height
 }
 

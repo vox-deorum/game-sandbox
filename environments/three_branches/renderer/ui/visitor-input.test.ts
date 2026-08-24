@@ -2,7 +2,7 @@ import { Container, Text } from 'pixi.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import { testText } from '../core/test-helpers.js'
-import { EMOTE_PLATES, USE_PLATE_RECT } from './palette.js'
+import { EMOTE_PLATES, plateProbe, USE_PLATE_RECT } from './palette.js'
 import {
   createVisitorInput,
   JOYSTICK_CENTER,
@@ -59,6 +59,7 @@ interface Mounted {
   sendAction: ReturnType<typeof vi.fn>
   previewTarget: ReturnType<typeof vi.fn>
   targetTransition: ReturnType<typeof vi.fn>
+  targetActivity: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   controller: VisitorInputController
 }
@@ -72,6 +73,7 @@ describe('Three Branches visitor input', () => {
       sendAction?: ((playerId: string, action: unknown) => void) | undefined
       previewTarget?: () => string | null
       targetTransition?: (propId: string) => string
+      targetActivity?: (propId: string) => string | null
     } = {},
   ): Mounted {
     const container = document.createElement('div')
@@ -84,6 +86,7 @@ describe('Three Branches visitor input', () => {
     const sendAction = vi.fn()
     const previewTarget = vi.fn(overrides.previewTarget ?? ((): string | null => 'stall_0'))
     const targetTransition = vi.fn(overrides.targetTransition ?? ((): string => 'toggle'))
+    const targetActivity = vi.fn(overrides.targetActivity ?? ((): string | null => 'tending_stall'))
     const onPreview = vi.fn()
     const controller = createVisitorInput({
       container,
@@ -97,6 +100,7 @@ describe('Three Branches visitor input', () => {
       resolution: () => 1,
       previewTarget,
       targetTransition,
+      targetActivity,
       onPreview,
       redraw: vi.fn(),
     })
@@ -108,6 +112,7 @@ describe('Three Branches visitor input', () => {
       sendAction,
       previewTarget,
       targetTransition,
+      targetActivity,
       onPreview,
       controller,
     }
@@ -161,9 +166,15 @@ describe('Three Branches visitor input', () => {
     it('publishes the palette geometry probes while controlled', () => {
       const { container, padLayer } = mount()
       expect(container.getAttribute('data-three-branches-input')).toBe('ready')
-      expect(container.getAttribute('data-three-branches-use-button')).toBe('608,930,136,52')
-      expect(container.getAttribute('data-three-branches-emote-wave')).toBe('754,806,136,52')
-      expect(container.getAttribute('data-three-branches-emote-shake-head')).toBe('1046,806,136,52')
+      expect(container.getAttribute('data-three-branches-use-button')).toBe(
+        plateProbe(USE_PLATE_RECT),
+      )
+      expect(container.getAttribute('data-three-branches-emote-wave')).toBe(
+        plateProbe(emoteRect('wave')),
+      )
+      expect(container.getAttribute('data-three-branches-emote-shake-head')).toBe(
+        plateProbe(emoteRect('shake_head')),
+      )
       expect(container.getAttribute('data-three-branches-queued')).toBe('none')
       expect(container.getAttribute('data-three-branches-last-action')).toBe('none')
       expect(container.getAttribute('data-three-branches-joystick')).toBe('88,912')

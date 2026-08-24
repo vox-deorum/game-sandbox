@@ -33,9 +33,6 @@ import {
 const EFFECT_SCALE = 0.25
 const SCENERY_TEXTURE_DENSITY_DIVISOR = 8
 
-/** The effects-atlas cell the contact shadow is drawn from, so its scale reaches a real footprint. */
-const SHADOW_SOURCE = shadowSourceSize()
-
 /** Pages that become artwork for props, scenery, and their effects. */
 export interface PropAtlasTextures {
   props: Texture
@@ -62,7 +59,7 @@ interface PropNode {
   item: StaticDrawable
   lowerRoot: Container
   fallback: Graphics
-  shadow: Sprite
+  outline: Sprite
   lower: Sprite
   movingRoot: Container
   moving: Sprite
@@ -84,8 +81,8 @@ export function createPropArt(atlases: PropAtlasTextures): PropArt {
 /** The world containers a prop draws into, each owned by the world-art stack. */
 export interface PropLayerTargets {
   scenery: Container
-  /** Contact shadows, in world space below every prop so one prop's shadow never covers another. */
-  shadows: Container
+  /** Texture silhouettes below scenery and props, so their expansion never stains artwork. */
+  outlines: Container
   props: Container
   /** Sustained prop effects that belong above characters. */
   effects: Container
@@ -111,9 +108,9 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   pines.setMask({ mask: pineBuildingCutout, inverse: true })
 
   for (const item of scene.props) {
-    const node = createPropNode(item, cellSize)
+    const node = createPropNode(item)
     nodes.set(item.id, node)
-    layers.shadows.addChild(node.shadow)
+    layers.outlines.addChild(node.outline)
     layers.props.addChild(node.lowerRoot)
     layers.effects.addChild(node.effect)
     if (node.effectBlend !== null) layers.effects.addChild(node.effectBlend)
@@ -122,6 +119,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   for (const item of scene.scenery) {
     const target = item.type === 'pine' ? pines : layers.scenery
     target.addChild(createSceneryNode(item))
+    if (item.type === 'crate') layers.outlines.addChild(marketCrateOutline(item, cellSize))
   }
   // Effects are added first, then pines sit over the entire authored village.
   // The inverse mask leaves only occupied building interiors clear.
@@ -135,16 +133,14 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     if (art === null) return
     const shipped = isShippedPropType(node.item.type)
     node.fallback.visible = !shipped
-    node.shadow.visible = shipped
-    node.shadow.texture = shipped ? texture(art.effects, 'characterShadow') : Texture.EMPTY
+    const treatment = shipped ? propTreatment(node.item.type, state, node.item.id) : null
+    syncPropRole(node.outline, treatment?.lower ?? null, art)
     syncPropRole(
       node.lower,
-      shipped ? propTreatment(node.item.type, state, node.item.id).lower : null,
+      treatment?.lower ?? null,
       art,
     )
-    const movingTreatment = shipped
-      ? (propTreatment(node.item.type, state, node.item.id).moving ?? null)
-      : null
+    const movingTreatment = treatment?.moving ?? null
     syncPropRole(node.moving, movingTreatment, art)
     node.movingRoot.visible = movingTreatment !== null
   }
@@ -156,6 +152,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       art = nextArt
       for (const item of scene.scenery) {
         installScenery(item.type === 'pine' ? pines : layers.scenery, item, nextArt, cellSize)
+        if (item.type === 'crate') installMarketCrateOutline(layers.outlines, item, nextArt)
       }
       for (const node of nodes.values()) {
         const state = node.state ?? start(starts, node.item.id)
@@ -175,6 +172,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       let active = false
       for (const node of nodes.values()) {
         node.lowerRoot.rotation = visualFacing(node.item)
+        node.outline.rotation = visualFacing(node.item)
         const state = node.state ?? start(starts, node.item.id)
         if (!isShippedPropType(node.item.type)) {
           node.effect.visible = false
@@ -261,13 +259,22 @@ function createSceneryNode(item: StaticDrawable): Container {
   return root
 }
 
-function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
+function createPropNode(item: StaticDrawable): PropNode {
   const lowerRoot = new Container({ label: `prop-lower:${item.id}` })
   lowerRoot.position.set(centerX(item), centerY(item))
   lowerRoot.rotation = visualFacing(item)
-  const shadow = propShadow(item, cellSize)
   const fallbackNode = fallback(item, true)
   const artScale = propArtScale(item)
+  const outline = sprite(
+    `prop-texture-outline:${item.id}`,
+    Texture.EMPTY,
+    artScale * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor,
+  )
+  outline.position.set(centerX(item), centerY(item))
+  outline.rotation = visualFacing(item)
+  outline.tint = HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.postEffects.textureOutline.tint]
+  outline.alpha = HEARTHSIDE_STYLE.postEffects.textureOutline.opacity
+  outline.visible = false
   const lower = propSprite('prop-lower-art', Texture.EMPTY, artScale)
   lower.visible = false
   const movingRoot = new Container({ label: `prop-moving:${item.id}` })
@@ -292,7 +299,7 @@ function createPropNode(item: StaticDrawable, cellSize: number): PropNode {
     item,
     lowerRoot,
     fallback: fallbackNode,
-    shadow,
+    outline,
     lower,
     movingRoot,
     moving,
@@ -311,13 +318,10 @@ function installScenery(
 ): void {
   const root = layer.children.find((child) => child.label === `scenery:${item.id}`)
   if (!(root instanceof Container)) return
-  const footprintScale =
-    item.shape === 'box'
-      ? Math.max(item.rect.width, item.rect.height) / cellSize
-      : item.collisionScale
-  const scale = (sceneryVisualScale(item.type) * footprintScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
+  const scale = sceneryArtScale(item, cellSize)
   const existing = root.getChildByLabel('scenery-art')
   if (existing instanceof Sprite) {
+    existing.texture = texture(art.scenery, sceneryFrame(item.type, item.id))
     existing.scale.set(scale)
     return
   }
@@ -344,32 +348,38 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
   return node
 }
 
-/**
- * Ground one prop in world space. The sprite carries the facing rotation itself and the southward
- * offset is added to its world position afterwards, so the offset stays south whichever way the
- * prop turns. Sizing keeps reading the unrotated footprint, which preserves the east and west
- * behaviour the rotating prop root used to give for free.
- */
-function propShadow(item: StaticDrawable, cellSize: number): Sprite {
-  const treatment = HEARTHSIDE_STYLE.postEffects.propContactShadow
-  const shadow = sprite(`prop-contact-shadow:${item.id}`, Texture.EMPTY, 1)
-  const { width, height } = localFootprint(item)
-  const collisionScale = usesCollisionScaledContactShadow(item.type) ? item.collisionScale : 1
-  shadow.scale.set(
-    (width * collisionScale * treatment.widthFactor) / SHADOW_SOURCE.width,
-    (height * collisionScale * treatment.heightFactor) / SHADOW_SOURCE.height,
+/** Outline the market crate without adding an outline to the pine scenery family. */
+function marketCrateOutline(item: StaticDrawable, cellSize: number): Sprite {
+  const treatment = HEARTHSIDE_STYLE.postEffects.textureOutline
+  const outline = sprite(
+    `market-crate-texture-outline:${item.id}`,
+    Texture.EMPTY,
+    sceneryArtScale(item, cellSize) * treatment.scaleFactor,
   )
-  shadow.rotation = visualFacing(item)
-  shadow.position.set(centerX(item), centerY(item) + treatment.offsetYCells * cellSize)
-  shadow.tint = HEARTHSIDE_STYLE.palette[treatment.tint]
-  shadow.alpha = treatment.opacity
-  shadow.visible = false
-  return shadow
+  outline.position.set(centerX(item), centerY(item))
+  outline.tint = HEARTHSIDE_STYLE.palette[treatment.tint]
+  outline.alpha = treatment.opacity
+  outline.visible = false
+  return outline
+}
+
+function installMarketCrateOutline(layer: Container, item: StaticDrawable, art: PropArt): void {
+  const outline = layer.getChildByLabel(`market-crate-texture-outline:${item.id}`)
+  if (!(outline instanceof Sprite)) return
+  outline.texture = texture(art.scenery, sceneryFrame(item.type, item.id))
+  outline.visible = true
+}
+
+function sceneryArtScale(item: StaticDrawable, cellSize: number): number {
+  const footprintScale =
+    item.shape === 'box'
+      ? Math.max(item.rect.width, item.rect.height) / cellSize
+      : item.collisionScale
+  return (sceneryVisualScale(item.type) * footprintScale) / SCENERY_TEXTURE_DENSITY_DIVISOR
 }
 
 function localFootprint(item: StaticDrawable): { width: number; height: number } {
-  const turned =
-    !isFixedFacingPropType(item.type) && (item.facing === 'east' || item.facing === 'west')
+  const turned = item.facing === 'east' || item.facing === 'west'
   return {
     width: turned ? item.rect.height : item.rect.width,
     height: turned ? item.rect.width : item.rect.height,
@@ -386,8 +396,11 @@ function propSprite(label: string, frame: Texture, scale: number): Sprite {
   return sprite(label, frame, scale)
 }
 
-function syncArtScale(node: Pick<PropNode, 'item' | 'lower' | 'movingRoot' | 'moving'>): void {
+function syncArtScale(
+  node: Pick<PropNode, 'item' | 'outline' | 'lower' | 'movingRoot' | 'moving'>,
+): void {
   const scale = propArtScale(node.item)
+  node.outline.scale.set(scale * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor)
   node.lower.scale.set(scale)
   syncMovingArtRegistration(node.item, node.movingRoot, node.moving)
 }
@@ -444,11 +457,6 @@ function propArtScale(item: StaticDrawable): number {
   return propVisualScale(item.type)
 }
 
-/** Keep circular landmark shadows fitted to their configured collision footprint. */
-function usesCollisionScaledContactShadow(type: string): boolean {
-  return type === 'pump' || type === 'bell'
-}
-
 export function visualFacing(item: StaticDrawable): number {
   if (isFixedFacingPropType(item.type)) return 0
   // The stall texture's front reads the opposite way from the recorded facing, so its sprite is
@@ -488,10 +496,6 @@ function atlasEntry(name: 'props' | 'scenery' | 'effects') {
   }
   return atlas
 }
-function shadowSourceSize(): { width: number; height: number } {
-  const atlas = atlasEntry('effects')
-  return { width: atlas.frames.width, height: atlas.frames.height }
-}
 function framesFor(
   name: 'props' | 'scenery' | 'effects',
   atlasTexture: Texture,
@@ -505,7 +509,6 @@ function framesFor(
   )
 }
 function preflightArt(art: PropArt): void {
-  texture(art.effects, 'characterShadow')
   for (const scenery of CATALOG.scenery) {
     if (scenery.token === 'pine') {
       for (const frame of PINE_FRAME_NAMES) texture(art.scenery, frame)

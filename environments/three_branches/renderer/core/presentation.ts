@@ -279,13 +279,11 @@ export interface ColorGradeTreatment {
   tintMix: number
 }
 
-/** The grounding shadow drawn under every prop, sized from its unrotated collision footprint. */
-export interface PropContactShadowTreatment {
+/** A centered, texture-shaped edge treatment that blends props into the world. */
+export interface TextureOutlineTreatment {
   tint: HearthsidePaletteKey
   opacity: number
-  widthFactor: number
-  heightFactor: number
-  offsetYCells: number
+  scaleFactor: number
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
@@ -369,7 +367,7 @@ export interface HearthsideStyle {
   }
   postEffects: {
     nightGrade: ColorGradeTreatment
-    propContactShadow: PropContactShadowTreatment
+    textureOutline: TextureOutlineTreatment
   }
   characters: {
     cast: { visitor: CharacterCastSet; villagers: readonly CharacterCastSet[] }
@@ -394,9 +392,27 @@ export interface HearthsideStyle {
   }
   expressions: {
     frames: Readonly<Record<string, string>>
+    activityFrames: Readonly<Record<string, string>>
     tint: HearthsidePaletteKey
     accentFrames: readonly string[]
     frameRatio: number
+    worldLabel: {
+      fontSize: number
+      characterWidth: number
+      lineHeight: number
+      paddingX: number
+      paddingY: number
+      iconSlotWidth: number
+      iconFrameWidth: number
+    }
+    inputPalette: {
+      plateWidth: number
+      plateHeight: number
+      gap: number
+      contentMargin: number
+      labelFontSize: number
+      iconFrameWidth: number
+    }
   }
 }
 
@@ -589,7 +605,7 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
 
   const postEffectsSource = exactRecord(source.postEffects, 'presentation.postEffects', [
     'nightGrade',
-    'propContactShadow',
+    'textureOutline',
   ])
   const postEffects = {
     nightGrade: colorGradeTreatment(
@@ -597,9 +613,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       'presentation.postEffects.nightGrade',
       paletteNames,
     ),
-    propContactShadow: propContactShadowTreatment(
-      postEffectsSource.propContactShadow,
-      'presentation.postEffects.propContactShadow',
+    textureOutline: textureOutlineTreatment(
+      postEffectsSource.textureOutline,
+      'presentation.postEffects.textureOutline',
       paletteNames,
     ),
   }
@@ -767,15 +783,49 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
 
   const expressionsSource = exactRecord(source.expressions, 'presentation.expressions', [
     'frames',
+    'activityFrames',
     'tint',
     'accentFrames',
     'frameRatio',
+    'worldLabel',
+    'inputPalette',
   ])
   const expressionTokens = [...RULES.emotes, 'use']
+  const activityTokens = [...new Set(CATALOG.props.map((prop) => prop.activity))]
   const expressionFramesSource = exactRecord(
     expressionsSource.frames,
     'presentation.expressions.frames',
     expressionTokens,
+  )
+  const activityFramesSource = exactRecord(
+    expressionsSource.activityFrames,
+    'presentation.expressions.activityFrames',
+    activityTokens,
+  )
+  const worldLabelSource = exactRecord(
+    expressionsSource.worldLabel,
+    'presentation.expressions.worldLabel',
+    [
+      'fontSize',
+      'characterWidth',
+      'lineHeight',
+      'paddingX',
+      'paddingY',
+      'iconSlotWidth',
+      'iconFrameWidth',
+    ],
+  )
+  const inputPaletteSource = exactRecord(
+    expressionsSource.inputPalette,
+    'presentation.expressions.inputPalette',
+    [
+      'plateWidth',
+      'plateHeight',
+      'gap',
+      'contentMargin',
+      'labelFontSize',
+      'iconFrameWidth',
+    ],
   )
   const expressions = {
     frames: Object.fromEntries(
@@ -785,6 +835,16 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
           expressionFramesSource[token],
           effectsFrames,
           `presentation.expressions.frames.${token}`,
+        ),
+      ]),
+    ),
+    activityFrames: Object.fromEntries(
+      activityTokens.map((token) => [
+        token,
+        knownText(
+          activityFramesSource[token],
+          effectsFrames,
+          `presentation.expressions.activityFrames.${token}`,
         ),
       ]),
     ),
@@ -800,6 +860,62 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       0,
       1,
     ),
+    worldLabel: {
+      fontSize: positiveNumber(
+        worldLabelSource.fontSize,
+        'presentation.expressions.worldLabel.fontSize',
+      ),
+      characterWidth: positiveNumber(
+        worldLabelSource.characterWidth,
+        'presentation.expressions.worldLabel.characterWidth',
+      ),
+      lineHeight: positiveNumber(
+        worldLabelSource.lineHeight,
+        'presentation.expressions.worldLabel.lineHeight',
+      ),
+      paddingX: nonnegativeNumber(
+        worldLabelSource.paddingX,
+        'presentation.expressions.worldLabel.paddingX',
+      ),
+      paddingY: nonnegativeNumber(
+        worldLabelSource.paddingY,
+        'presentation.expressions.worldLabel.paddingY',
+      ),
+      iconSlotWidth: positiveNumber(
+        worldLabelSource.iconSlotWidth,
+        'presentation.expressions.worldLabel.iconSlotWidth',
+      ),
+      iconFrameWidth: positiveNumber(
+        worldLabelSource.iconFrameWidth,
+        'presentation.expressions.worldLabel.iconFrameWidth',
+      ),
+    },
+    inputPalette: {
+      plateWidth: positiveNumber(
+        inputPaletteSource.plateWidth,
+        'presentation.expressions.inputPalette.plateWidth',
+      ),
+      plateHeight: positiveNumber(
+        inputPaletteSource.plateHeight,
+        'presentation.expressions.inputPalette.plateHeight',
+      ),
+      gap: nonnegativeNumber(
+        inputPaletteSource.gap,
+        'presentation.expressions.inputPalette.gap',
+      ),
+      contentMargin: nonnegativeNumber(
+        inputPaletteSource.contentMargin,
+        'presentation.expressions.inputPalette.contentMargin',
+      ),
+      labelFontSize: positiveNumber(
+        inputPaletteSource.labelFontSize,
+        'presentation.expressions.inputPalette.labelFontSize',
+      ),
+      iconFrameWidth: positiveNumber(
+        inputPaletteSource.iconFrameWidth,
+        'presentation.expressions.inputPalette.iconFrameWidth',
+      ),
+    },
   }
 
   return {
@@ -841,25 +957,16 @@ function colorGradeTreatment(
   }
 }
 
-/** The southward offset stays a small fraction of a cell so a shadow never reads as a second prop. */
-function propContactShadowTreatment(
+function textureOutlineTreatment(
   value: unknown,
   name: string,
   palette: ReadonlySet<string>,
-): PropContactShadowTreatment {
-  const source = exactRecord(value, name, [
-    'tint',
-    'opacity',
-    'widthFactor',
-    'heightFactor',
-    'offsetYCells',
-  ])
+): TextureOutlineTreatment {
+  const source = exactRecord(value, name, ['tint', 'opacity', 'scaleFactor'])
   return {
     tint: paletteKey(source.tint, palette, `${name}.tint`),
     opacity: unitNumber(source.opacity, `${name}.opacity`),
-    widthFactor: boundedNumber(source.widthFactor, `${name}.widthFactor`, 0, 2),
-    heightFactor: boundedNumber(source.heightFactor, `${name}.heightFactor`, 0, 2),
-    offsetYCells: boundedNumber(source.offsetYCells, `${name}.offsetYCells`, 0, 0.25, true),
+    scaleFactor: boundedNumber(source.scaleFactor, `${name}.scaleFactor`, 1, 1.25, true),
   }
 }
 

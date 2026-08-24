@@ -2,7 +2,11 @@ import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import { propVisualScale, sceneryVisualScale } from '../core/presentation.js'
+import {
+  HEARTHSIDE_STYLE,
+  propVisualScale,
+  sceneryVisualScale,
+} from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { propEffectSpec } from '../effects/effects.js'
 import type { FrameGrid } from '../ui/tint.js'
@@ -32,7 +36,7 @@ function page(name: PageName, source: Texture['source']): Texture {
 function layerTargets(): PropLayerTargets {
   return {
     scenery: new Container(),
-    shadows: new Container(),
+    outlines: new Container(),
     props: new Container(),
     effects: new Container(),
     emissives: new Container(),
@@ -165,6 +169,36 @@ describe('Three Branches prop art views', () => {
     expect((crate as Sprite).tint).toBe(0xffffff)
   })
 
+  it('outlines only the market crate scenery with its exact frame and scale', () => {
+    const targets = layerTargets()
+    const layer = createPropLayer(targets, sceneryScene())
+
+    expect(targets.outlines.children.map((child) => child.label)).toEqual([
+      'market-crate-texture-outline:crate-1',
+    ])
+    expect(targets.outlines.getChildByLabel('market-crate-texture-outline:pine-1')).toBeNull()
+
+    layer.install(completeArt())
+    const outline = targets.outlines.getChildByLabel(
+      'market-crate-texture-outline:crate-1',
+    ) as Sprite
+    const crate = targets.scenery
+      .getChildByLabel('scenery:crate-1')
+      ?.getChildByLabel('scenery-art') as Sprite
+    expect(outline.visible).toBe(true)
+    expect(outline.texture).toBe(crate.texture)
+    expect(outline.position).toMatchObject({ x: 26, y: 36 })
+    expect(outline.rotation).toBe(0)
+    expect(outline.scale.x).toBeCloseTo(
+      crate.scale.x * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor,
+    )
+
+    const firstTexture = crate.texture
+    layer.install(completeArt())
+    expect(outline.texture).toBe(crate.texture)
+    expect(crate.texture).not.toBe(firstTexture)
+  })
+
   it('keeps pines above prop effects and cuts them out only for occupied buildings', () => {
     const targets = layerTargets()
     const scene = sceneryScene()
@@ -255,6 +289,49 @@ describe('Three Branches prop layers', () => {
     expect(targets.effects.getChildByLabel('prop-upper:bench_0')).toBeNull()
   })
 
+  it('keeps the bench outline on the exact state frame through facing and reinstall', () => {
+    const targets = layerTargets()
+    const scene = propScene(drawable('bench', 'bench_0'))
+    const layer = createPropLayer(targets, scene)
+    const art = completeArt()
+    layer.install(art)
+    const lowerRoot = targets.props.getChildByLabel('prop-lower:bench_0') as Container
+    const lower = sprite(lowerRoot, 'prop-lower-art')
+    const outline = targets.outlines.getChildByLabel('prop-texture-outline:bench_0') as Sprite
+
+    expect(outline.texture).toBe(lower.texture)
+    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAEmpty'))
+    expect(outline.position).toMatchObject({ x: lowerRoot.position.x, y: lowerRoot.position.y })
+    expect(outline.rotation).toBe(lowerRoot.rotation)
+    expect(outline.scale.x).toBeCloseTo(
+      lower.scale.x * HEARTHSIDE_STYLE.postEffects.textureOutline.scaleFactor,
+    )
+
+    layer.reconcile(frame(scene, [], { bench_0: 'occupied' }))
+    expect(outline.texture).toBe(lower.texture)
+    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAOccupied'))
+
+    const firstTexture = lower.texture
+    layer.install(completeArt())
+    expect(outline.texture).toBe(lower.texture)
+    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAOccupied'))
+    expect(lower.texture).not.toBe(firstTexture)
+  })
+
+  it('applies the stall half-turn to its exact texture outline', () => {
+    const targets = layerTargets()
+    const stall = { ...drawable('stall', 'stall_0'), facing: 'north' }
+    const scene = propScene(stall)
+    createPropLayer(targets, scene).install(completeArt())
+    const lowerRoot = targets.props.getChildByLabel('prop-lower:stall_0') as Container
+    const lower = sprite(lowerRoot, 'prop-lower-art')
+    const outline = targets.outlines.getChildByLabel('prop-texture-outline:stall_0') as Sprite
+
+    expect(lowerRoot.rotation).toBe(Math.PI)
+    expect(outline.rotation).toBe(lowerRoot.rotation)
+    expect(outline.texture).toBe(lower.texture)
+  })
+
   it('keeps each stall id on one construction across state, facing, reconcile, and reinstall', () => {
     const targets = layerTargets()
     const stalls = ['stall_0', 'stall_1', 'stall_2', 'stall_3', 'stall_4'].map((id) =>
@@ -321,13 +398,10 @@ describe('Three Branches prop layers', () => {
     const lower = targets.props.getChildByLabel('prop-lower:pump_0') as Container
     const lowerArt = sprite(lower, 'prop-lower-art')
     const effect = targets.effects.getChildByLabel('prop-effect:pump_0') as Sprite
-    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:pump_0') as Sprite
     expect(lowerArt.visible).toBe(true)
     expect(lowerArt.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'pump'))
     expect(lowerArt.anchor).toMatchObject({ x: 0.5, y: 0.5 })
     expect(lowerArt.scale.x).toBe(0.09)
-    expect(shadow.scale.x).toBeCloseTo(0.075)
-    expect(shadow.scale.y).toBeCloseTo(0.0703125)
     expect(lower.parent).toBe(targets.props)
     expect(targets.effects.getChildByLabel('prop-upper:pump_0')).toBeNull()
     layer.advance(1)
@@ -355,7 +429,6 @@ describe('Three Branches prop layers', () => {
       'prop-lower-art',
     )
     const effect = targets.effects.getChildByLabel('prop-effect:bell_0') as Sprite
-    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:bell_0') as Sprite
     const root = targets.props.getChildByLabel('prop-lower:bell_0') as Container
     const movingRoot = root.getChildByLabel('prop-moving:bell_0') as Container
     const striker = sprite(movingRoot, 'prop-moving-art')
@@ -364,8 +437,6 @@ describe('Three Branches prop layers', () => {
     expect(lower.scale.x).toBe(0.1)
     expect(striker.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'bellStriker'))
     expect(movingRoot.position).toMatchObject({ x: 0, y: -8.9 })
-    expect(shadow.scale.x).toBeCloseTo(0.06)
-    expect(shadow.scale.y).toBeCloseTo(0.05625)
     expect(targets.effects.getChildByLabel('prop-upper:bell_0')).toBeNull()
     layer.advance(0.25)
     expect(effect.visible).toBe(false)
@@ -462,16 +533,13 @@ describe('Three Branches prop layers', () => {
     expect(effect.visible).toBe(false)
   })
 
-  it('keeps a one-cell lantern shadow and highlight independent of shared artwork', () => {
+  it('keeps the fixed-facing lantern highlight independent of shared artwork', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('lantern', 'lantern_0'))
     const layer = createPropLayer(targets, scene)
     layer.install(completeArt())
     layer.highlight('lantern_0')
 
-    const shadow = targets.shadows.getChildByLabel('prop-contact-shadow:lantern_0') as Sprite
-    expect(shadow.scale.x).toBeCloseTo(0.1)
-    expect(shadow.scale.y).toBe(0.09375)
     expect(targets.highlight.getLocalBounds()).toMatchObject({
       minX: -3,
       minY: -3,

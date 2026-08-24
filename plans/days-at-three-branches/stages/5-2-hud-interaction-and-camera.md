@@ -53,36 +53,36 @@ Each character carries a nameplate pill with its raw player id above its sprite:
 
 ### Character expressions
 
-Every target scene expression other than `none` draws a compact parchment chip above its character. The chip combines a tintable Hearthside Ink pictogram with the same title-cased text used by the expression palette. It stays upright, counter-scales with the camera, and lives in the ungraded annotation layer. The vertical stack is character, nameplate, expression chip, then speech bubble; the bubble moves above an active chip instead of overlapping it.
+Every target scene expression other than `none` extends that character's existing nameplate into one compact merged pill. The name segment remains centered over the character. An active expression adds a small icon compartment on the left, separated by a quiet gilt divider, so the name never shifts when the pictogram appears or leaves. The pill stays upright, counter-scales with the camera, and lives in the ungraded annotation layer. The vertical stack is character, merged name pill, then speech bubble.
 
-| Expression   | Text       | Pictogram direction                           |
-| ------------ | ---------- | --------------------------------------------- |
-| `wave`       | Wave       | Raised hand with two greeting strokes         |
-| `nod`        | Nod        | Head mark with a short vertical motion stroke |
-| `shake_head` | Shake Head | Head mark with paired side strokes            |
-| `point`      | Point      | Hand and one clear outward direction stroke   |
-| `laugh`      | Laugh      | Open smile with two light radiating marks     |
-| `shrug`      | Shrug      | Paired raised hands and shoulder arc          |
-| `startle`    | Startle    | Compact burst around an upright figure mark   |
-| `sleep`      | Sleep      | Closed eye with one rising rest mark          |
-| `sweep`      | Sweep      | Small broom and curved floor stroke           |
-| `use`        | Use        | Hand meeting a simple object square           |
+| Expression   | Pictogram direction                           |
+| ------------ | --------------------------------------------- |
+| `wave`       | Raised hand with two greeting strokes         |
+| `nod`        | Head mark with a short vertical motion stroke |
+| `shake_head` | Head mark with paired side strokes            |
+| `point`      | Hand and one clear outward direction stroke   |
+| `laugh`      | Open smile with two light radiating marks     |
+| `shrug`      | Paired raised hands and shoulder arc          |
+| `startle`    | Compact burst around an upright figure mark   |
+| `sleep`      | Closed eye with one rising rest mark          |
+| `sweep`      | Small broom and curved floor stroke           |
+| `use`        | Fingertip meeting one small contact ring      |
 
-The chip reflects only the expression in the target recorded scene. `none` removes it immediately in the engine recording; the renderer then holds one retained chip per character for two more delivered states at full opacity and fades it out across the next, so the label lingers then disappears instead of snapping off. Only one chip exists per character: a newer expression replaces the older one outright, and repeating one token keeps the same chip without a restart, hold timer, or release fade. The tail is front-end timer state counted in delivered states, never presentation frames, so it survives movement interpolation and follows replay cadence; a replay seek clears the tail and shows exactly the landed tick's expression.
+The icon reflects only the expression in the target recorded scene. `none` removes it immediately in the engine recording; the renderer then holds one retained icon per character for two more delivered states at full opacity and fades it out across the next. The name stays visible throughout this icon tail, and the compartment retracts only when the tail ends. A newer expression replaces the older icon outright, and repeating one token keeps the same icon without a restart, hold timer, or release fade. The tail is front-end timer state counted in delivered states, never presentation frames, so it survives movement interpolation and follows replay cadence; a replay seek clears the tail and shows exactly the landed tick's expression.
 
-Its accent phase is a pure function of player id, expression type, and absolute fractional presentation tick, so a live transition, repeated state, replay, and direct seek draw the same result. The icon and text remain steady while only the restrained accent changes, avoiding a blinking label. Expression drawing never replaces walking, position interpolation, or recorded heading, because locomotion and expression may occur together.
+Expression drawing never replaces walking, position interpolation, or recorded heading, because locomotion and expression may occur together.
 
-The expression chip is visible only when the existing nameplate zoom function is fully opaque, the same exact threshold at which step 5.1 hides the far-view character mark. It stays hidden throughout the nameplate fade band and fitted far view, so an expression never appears beside the simplified character mark. Speech bubbles retain their independent delivery, hold, fade, and seek rules.
+The optional icon compartment is visible only when the existing nameplate zoom function is fully opaque, the same exact threshold at which step 5.1 hides the far-view character mark. It stays hidden throughout the nameplate fade band and fitted far view, so an expression never appears beside the simplified character mark. Speech bubbles retain their independent delivery, hold, fade, and seek rules, and always sit directly above the merged pill.
 
-The required art adds ten grayscale-alpha pictograms and two shared accent frames to the effects page. The page grows from a 7 by 4 grid at 1344 by 512 pixels to a 10 by 4 grid at 1920 by 512 pixels, retaining 192 by 128 pixel runtime frames. Each frame has an exact canonical source cell declared in `presentation.json`, which also owns the ten frame mappings, ink treatment, accent frames, and a positive fractional-tick frame ratio. Ruleset tokens and the existing title-casing helper remain authoritative for text.
+The required art adds ten generic-expression pictograms, ten activity pictograms, and two shared accent frames to the effects page. The page grows from a 10 by 4 grid at 1920 by 512 pixels to a 12 by 4 grid at 2304 by 512 pixels, retaining 192 by 128 pixel runtime frames. Each frame has an exact canonical source cell declared in `presentation.json`. Its `fitVisible` treatment preserves the compact symbol's proportions at HUD and world-label scale. The catalog activities own the exact activity-frame map.
 
-Extend the retained annotation node with the expression chip and install its sliced effects textures after artwork loads. Reconciliation creates the parchment plate and text before artwork is available; a failed or pending art load therefore leaves a readable text-only chip rather than dropping the expression. Installing art adds the retained pictogram and accent children without replacing the node. Selection and accent-phase math stay pure and separately testable.
+Extend the retained annotation node with the optional icon compartment and install its sliced effects textures after artwork loads. Reconciliation retains the stable name segment before artwork is available. Installing art adds the retained pictogram without replacing the node. Icon selection stays pure and separately testable.
 
-The `use` chip names the target prop's catalog activity rather than the token: Sitting, Working Pump, Ringing Bell, Tending Shrine, or Reading Board, falling back to `Use` only when the recorded target is absent from the scene. The ten pictograms and two accent frames ship as fully transparent placeholder PNGs. [Step 5.3 unit 6](5-3-visual-refinement.md#6-monument-and-effect-completion) owns their real-art repaint and both owner gates, with no renderer change when the current frame contract remains intact.
+The `use` compartment selects the target prop's catalog activity pictogram rather than the generic `use` mark: a canopy for tending a stall, lantern for lighting, bench for sitting, offering bowl for tending a shrine, eye for reading the board, sprout for tending a plot, hearth flame for tending the hearth, hammer for working a bench, pump and drop for working a pump, and bell for ringing. It falls back to the generic fingertip when the recorded target is absent from the scene. [Step 5.3 unit 6](5-3-visual-refinement.md#6-effect-and-expression-completion) owns their real-art repaint and both owner gates.
 
 #### Character asset handoff
 
-The pictogram-and-text treatment above remains the required expression delivery. [Step 5.3 unit 5](5-3-visual-refinement.md#5-four-layered-cast-sets) replaces the shared character masks with four family-specific layered sets. That page contract includes family-specific arms, so there is no separate embodied-arm study or expression-specific arm override. Expressions continue to use the chip and text without replacing walking, heading, clothing, or body frames.
+The merged name-pill treatment above remains the required expression delivery. [Step 5.3 unit 5](5-3-visual-refinement.md#5-four-registered-cast-sets) replaces the shared character masks with four family-specific layered sets. That page contract includes family-specific arms, so there is no separate embodied-arm study or expression-specific arm override. Expressions continue to use the small pictogram without replacing walking, heading, clothing, or body frames.
 
 ### Speech bubbles
 

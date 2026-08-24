@@ -12,7 +12,7 @@ export interface WorldArtStack {
   /** Generated art and architecture. */
   readonly authored: Container
   readonly scenery: Container
-  readonly shadows: Container
+  readonly outlines: Container
   readonly props: Container
   /** The initial character container. A successful art load swaps a replacement into its slot. */
   readonly characters: Container
@@ -41,7 +41,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const natural = new Container({ label: 'world-natural' })
   const authored = new Container({ label: 'world-authored' })
   const scenery = new Container({ label: 'scenery' })
-  const shadows = new Container({ label: 'prop-shadows' })
+  const outlines = new Container({ label: 'prop-outlines' })
   const props = new Container({ label: 'props' })
   const characters = new Container({ label: 'characters' })
   const upper = new Container({ label: 'upper' })
@@ -64,8 +64,8 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   natural.addChild(mapView.naturalView)
   authored.addChild(
     mapView.architectureView,
+    outlines,
     scenery,
-    shadows,
     props,
     characters,
     upper,
@@ -80,7 +80,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
     natural,
     authored,
     scenery,
-    shadows,
+    outlines,
     props,
     characters,
     upper,

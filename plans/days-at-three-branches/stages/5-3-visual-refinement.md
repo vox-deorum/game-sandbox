@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This stage uses the [5.0 atlas pipeline](5-0-a
 
 The world remains an exact 90 degree top-down projection. Do not redesign gameplay, collision, replay, input, the generator, layout, camera limits, or camera gestures. The collision overlay remains collision truth, never an art approximation. The presentation catalog owns each atlas group's mipmap flag. Do not add procedural LOD, a new rendering engine, or a second art pipeline.
 
-Keep the night grade, prop contact shadows, and emissives. Unit 1 removes only the daytime authored grade. HUD and annotation layers remain ungraded, including nameplates, speech, and expression marks.
+Keep the night grade, centered prop texture outlines, and emissives. Unit 1 removes only the daytime authored grade. HUD and annotation layers remain ungraded, including nameplates, speech, and expression marks.
 
 Work one owner-started unit at a time. Visual decisions belong to the owner. Tests and contract checks protect behaviour, but never substitute for visual judgment. Run selected, focused tests during each unit and the complete verification set only after the final Gate B.
 
@@ -51,13 +51,19 @@ Gate A is a concise asset-direction approval. Show the complete proposed asset t
 
 Gate B is a concise integrated-scene approval. Show the approved art in the fixture and generated villages at the relevant scales and phases. Confirm that the intended visual gap is closed and that the retained behavior boundary still holds. Record both approvals and a short acceptance note under the unit.
 
+### Current compositing comparison
+
+The exact top-down projection uses no directional prop contact shadows. Interactive props and the market crate instead receive a centered, texture-shaped outline below their artwork. The outline duplicates the current atlas frame, state, scale, and visual rotation, then uses a low-opacity backdrop tint and a small uniform expansion. It has no world offset, footprint ellipse, cast direction, or dependency on the character-shadow frame. Pines receive no outline, and no outline or cast shadow is baked into raster art.
+
+The provisional shared outline candidate uses backdrop tint, `0.20` opacity, and a `1.06` scale factor. These values are comparison candidates, not Gate B approval. Review the fixture and representative generated villages at fitted, middle, and close scales before accepting or revising them. Review night separately for emissive balance. Do not add a daytime grade, change raster colour, or move gameplay, collision, or art registration during this pass.
+
 ## Ordered visual units
 
 ### 1. Tintable terrain repaint and no daytime authored grade
 
 Desired result: terrain carries the Hearthside Ink material character and route hierarchy at fitted scale, with texture detail that rewards close inspection.
 
-Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, contact shadows, emissives, and ungraded HUD and annotations.
+Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, prop texture outlines, emissives, and ungraded HUD and annotations.
 
 The live renderer has no daytime authored grade. Terrain uses dedicated material colours, an even road base, and worn-stone path art. The current path treatment awaits owner visual approval, and terrain Gate B remains open.
 
@@ -83,9 +89,9 @@ Generate the market crate with the approved lantern and closed stall as direct c
 
 Desired result: ordinary props clearly express their states, and the lantern becomes a warm overhead beacon landmark that reads at night without crowding the day scene.
 
-Keep prop state meanings and interaction and collision footprints. Keep the lantern in the shared props atlas while treating it as an ordinary centered prop. Its art, contact shadow, selection, runtime flicker, and emissive light share the collision center. Treat the pump, which is the gameplay well, and the bell as ordinary centered props as well.
+Keep prop state meanings and interaction and collision footprints. Keep the lantern in the shared props atlas while treating it as an ordinary centered prop. Its art, texture outline, selection, runtime flicker, and emissive light share the collision center. Treat the pump, which is the gameplay well, and the bell as ordinary centered props as well.
 
-The lantern, pump, and bell use compact, prior-equivalent centered base sprites in the ordinary props atlas. The pump uses one regular well base for both idle and flowing states, with a separate water ripple effect shown only while flowing, using the same presentation pattern as the tended shrine cloud. The ripple fits inside the water opening, and its subpixel motion follows a slow circular ellipse with minimal scale travel. The bell base and striker share the ordinary prop atlas. The striker is registered to a presentation-owned hinge: it remains stationary while silent and makes a slow, restrained, seek-safe swing while ringing, alongside its separate sound-line effect. The notice board, lantern, shrine, pump, and bell remain fixed north. The shared props atlas uses the configured sampling treatment, and every prop retains its placement, collision, selection, shadow, and highlight contracts.
+The lantern, pump, and bell use compact, prior-equivalent centered base sprites in the ordinary props atlas. The pump uses one regular well base for both idle and flowing states, with a separate water ripple effect shown only while flowing, using the same presentation pattern as the tended shrine cloud. The ripple fits inside the water opening, and its subpixel motion follows a slow circular ellipse with minimal scale travel. The bell base and striker share the ordinary prop atlas. The striker is registered to a presentation-owned hinge: it remains stationary while silent and makes a slow, restrained, seek-safe swing while ringing, alongside its separate sound-line effect. The notice board, lantern, shrine, pump, and bell remain fixed north. The shared props atlas uses the configured sampling treatment, and every prop retains its placement, collision, selection, texture-outline, and highlight contracts.
 
 The current lantern is a compact octagonal beacon in exact overhead projection. Lit and unlit states share construction and centered registration; the lit state adds its approved core, baked light, runtime flicker, and glow. Its runtime glow is corrected for the authored mask's low visual centroid and uses two overlapping adjacent frames with a smooth opacity crossfade, so the effect stays centered and continuous instead of stepping between frames.
 
@@ -131,7 +137,7 @@ Desired result: the visitor and villagers are distinct, legible people at close 
 
 The owner selected the indigo conical traveler hat for the visitor. The villager appearance pool uses the soft round felt cap, quilted work cap, and pleated linen bonnet. Selection remains deterministic by player identity.
 
-Each cast set uses static body and clothing art plus one canonical left and right arm. Walking animates those arms through seek-safe scripted shoulder rotation driven by displayed walk distance. Do not create raster pose sets or embodied expression poses. Keep recorded heading, walk cadence, shadows, far marks, nameplates, and chip-and-text expressions.
+Each cast set uses static body and clothing art plus one canonical left and right arm. Walking animates those arms through seek-safe scripted shoulder rotation driven by displayed walk distance. Do not create raster pose sets or embodied expression poses. Keep recorded heading, walk cadence, shadows, far marks, nameplates, and merged expression pictograms.
 
 The owner approved the visitor Gate A parts proof in `../art/visitor-rig-comparison-1/`, followed by the felt-cap, quilted-cap, and linen-bonnet villager choices in `../art/villager-comparison-1/`. Production sources, registration data, normalization, prompts, and the assembled cast preview live in `../art/character-rig-production-1/`.
 
@@ -141,7 +147,13 @@ The live renderer uses one full-colour 576 by 768 character atlas. Its four rows
 
 Desired result: village landmarks feel memorable, while effects make activity, light, and expression readable without visual noise.
 
-Complete the remaining effect set and expression marks. Keep fixed prop orientation, collision, effect timing, and layer order. Contact shadows remain below props, and emissives retain their night behavior.
+Complete the remaining effect set and expression marks. The owner approved the compact Hearthside Ink symbol direction: a small white-mask pictogram with no text, background, border, or glow. The world annotation merges the player name and active expression in one dark pill. The centered name segment remains stationary over the character, while a left icon compartment appears only for an active expression. A restrained gilt divider separates the compartment. The compartment carries the selected emote or the target-specific use pictogram, including an eye for reading the board. Speech bubbles remain directly above the pill.
+
+The world-label font, spacing, icon lane, and icon scale come from `presentation.expressions.worldLabel`. The input palette's plate geometry, label font, and icon scale come from `presentation.expressions.inputPalette`, so small-screen readability can be tuned without changing renderer code.
+
+The effects page grows to a 12 by 4 grid at 2304 by 512 pixels. It retains 192 by 128 cells and declares ten emote or generic-use frames plus one exact activity-frame map for tending stall, lighting, sitting, tending shrine, reading board, tending plot, tending hearth, working bench, working pump, and ringing bell. Each expression source uses `fitVisible` into a centered 128 by 96 pixel maximum area, preserving simple silhouettes at small resolution. The generic `use` mark remains the fallback when no valid target exists.
+
+Keep fixed prop orientation, collision, effect timing, retained icon hold and fade semantics, nameplate zoom gating, and layer order. Texture outlines remain below props, and emissives retain their night behavior.
 
 ### 7. District representation at fitted view
 

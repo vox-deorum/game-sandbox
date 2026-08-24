@@ -7,6 +7,7 @@ import {
   advanceWalkDistance,
   buildStaticScene,
   computeScene,
+  expressionIconFor,
   expressionTitleFor,
   interpolateScene,
   type MovementActionInput,
@@ -400,5 +401,17 @@ describe('expressionTitleFor', () => {
 
   it('falls back to Use when the target is absent from the scene', () => {
     expect(expressionTitleFor(scene, { type: 'use', target: 'missing_0' })).toBe('Use')
+  })
+})
+
+describe('expressionIconFor', () => {
+  const { header } = fixtureRecording()
+  const scene = buildStaticScene(readStatic(header))
+
+  it('keeps an emote token and resolves a use action to its activity token', () => {
+    expect(expressionIconFor(scene, { type: 'wave', target: 'none' })).toBe('wave')
+    expect(expressionIconFor(scene, { type: 'use', target: 'board_0' })).toBe('reading_board')
+    expect(expressionIconFor(scene, { type: 'use', target: 'missing_0' })).toBe('use')
+    expect(expressionIconFor(scene, { type: 'none', target: 'none' })).toBeNull()
   })
 })

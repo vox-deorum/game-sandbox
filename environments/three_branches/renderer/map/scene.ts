@@ -127,6 +127,7 @@ export function computeScene(
     walkDistance: 0,
     walkBlend: character.moved < HEARTHSIDE_STYLE.characters.walk.deadZone ? 0 : 1,
     expressionTitle: expressionTitleFor(staticScene, character.expression),
+    expressionIcon: expressionIconFor(staticScene, character.expression),
   }))
   return { static: staticScene, dynamic, presentationTick: dynamic?.tick ?? 0, characters }
 }
@@ -147,6 +148,24 @@ export function expressionTitleFor(
   const kind =
     target === undefined ? undefined : CATALOG.props.find((item) => item.token === target.type)
   return titleFor(kind?.activity ?? 'use')
+}
+
+/**
+ * Resolve the pictogram token for one expression.
+ *
+ * A use action inherits its target prop's catalog activity, which keeps the retained world marker
+ * semantically specific after the live recording expression has cleared.
+ */
+export function expressionIconFor(
+  scene: StaticScene,
+  expression: CharacterExpression,
+): string | null {
+  if (expression.type === 'none') return null
+  if (expression.type !== 'use') return expression.type
+  const target = scene.props.find((prop) => prop.id === expression.target)
+  const kind =
+    target === undefined ? undefined : CATALOG.props.find((item) => item.token === target.type)
+  return kind?.activity ?? 'use'
 }
 
 /**

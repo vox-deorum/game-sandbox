@@ -4,23 +4,21 @@
  * fixed rectangles below, exactly as the chrome controls are.
  */
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
-import { type Container, Graphics, type Text } from 'pixi.js'
-import {
-  HEARTHSIDE_STYLE,
-  HUD_FONT_SIZE,
-  THREE_BRANCHES_PRESENTATION,
-} from '../core/presentation.js'
+import { type Container, Graphics, Sprite, type Text, Texture } from 'pixi.js'
+import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { titleFor } from '../map/scene.js'
 import { EMOTE_TOKENS } from './input.js'
+import type { ExpressionArt } from './annotations.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
+const LAYOUT = HEARTHSIDE_STYLE.expressions.inputPalette
 
 type Rect = { x: number; y: number; width: number; height: number }
 
-const PLATE_WIDTH = 136
-const PLATE_HEIGHT = 52
-const PLATE_GAP = 10
-const CONTENT_MARGIN = 18
+const PLATE_WIDTH = LAYOUT.plateWidth
+const PLATE_HEIGHT = LAYOUT.plateHeight
+const PLATE_GAP = LAYOUT.gap
+const CONTENT_MARGIN = LAYOUT.contentMargin
 
 const GRID_WIDTH = 3 * PLATE_WIDTH + 2 * PLATE_GAP
 const GRID_HEIGHT = 3 * PLATE_HEIGHT + 2 * PLATE_GAP
@@ -80,6 +78,10 @@ export interface ExpressionPalette {
     useDisabled: boolean,
     resolution: number,
   ): void
+  /** Install the monochrome expression textures after the effects atlas loads. */
+  install(art: ExpressionArt): void
+  /** Choose the icon shown on the Use plate, falling back to the generic use marker. */
+  setUseIcon(token: string | null): void
   /** Show or hide the whole palette, for the end of the session. */
   setVisible(visible: boolean): void
 }
@@ -93,6 +95,16 @@ export function createExpressionPalette(
     buildPlate(layer, createText, emote.rect, titleFor(emote.token), emote.hotkey),
   )
   const usePlate = buildPlate(layer, createText, USE_PLATE_RECT, 'Use', '0')
+  let art: ExpressionArt | null = null
+  let useIcon = 'use'
+
+  const applyIcons = (): void => {
+    for (const [index, plate] of plates.entries()) {
+      const token = EMOTE_PLATES[index]?.token
+      assignIcon(plate, art?.icon[token ?? ''] ?? Texture.EMPTY)
+    }
+    assignIcon(usePlate, art?.icon[useIcon] ?? art?.icon.use ?? Texture.EMPTY)
+  }
 
   const paint = (
     queued: string | null,
@@ -125,6 +137,14 @@ export function createExpressionPalette(
     update(queued, useLatched, useHovered, useDisabled, resolution) {
       paint(queued, useLatched, useHovered, useDisabled, resolution)
     },
+    install(nextArt) {
+      art = nextArt
+      applyIcons()
+    },
+    setUseIcon(token) {
+      useIcon = token ?? 'use'
+      applyIcons()
+    },
     setVisible(visible) {
       layer.visible = visible
     },
@@ -134,6 +154,7 @@ export function createExpressionPalette(
 /** One timber plate: a rounded panel, a centered label, and a small hotkey digit. */
 interface Plate {
   panel: Graphics
+  icon: Sprite
   label: Text
   hotkey: Text
 }
@@ -147,14 +168,26 @@ function buildPlate(
 ): Plate {
   const panel = new Graphics()
   layer.addChild(panel)
-  const label = createText(labelText, HUD_FONT_SIZE, PALETTE.bone, 'center')
-  label.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2)
+  const icon = new Sprite({ texture: Texture.EMPTY, label: 'expression-palette-icon' })
+  icon.anchor.set(0.5)
+  icon.tint = PALETTE.bone
+  icon.position.set(rect.x + LAYOUT.iconFrameWidth / 2, rect.y + rect.height / 2)
+  icon.visible = false
+  layer.addChild(icon)
+  const label = createText(labelText, LAYOUT.labelFontSize, PALETTE.bone, 'left')
+  label.position.set(rect.x + LAYOUT.iconFrameWidth, rect.y + rect.height / 2)
   layer.addChild(label)
   const hotkey = createText(hotkeyText, 11, PALETTE.bone, 'right')
   hotkey.position.set(rect.x + rect.width - 6, rect.y + 4)
   hotkey.alpha = 0.75
   layer.addChild(hotkey)
-  return { panel, label, hotkey }
+  return { panel, icon, label, hotkey }
+}
+
+function assignIcon(plate: Plate, texture: Texture): void {
+  plate.icon.texture = texture
+  plate.icon.visible = texture !== Texture.EMPTY
+  plate.icon.scale.set(texture.width > 0 ? LAYOUT.iconFrameWidth / texture.width : 1)
 }
 
 function paintPlate(
@@ -169,6 +202,7 @@ function paintPlate(
   // A disabled plate reads dim: a faded panel and text, with the hover stroke suppressed.
   plate.panel.alpha = disabled ? 0.45 : 1
   plate.label.alpha = disabled ? 0.55 : 1
+  plate.icon.alpha = disabled ? 0.55 : 1
   plate.hotkey.alpha = disabled ? 0.55 : 0.75
   plate.panel
     .clear()
@@ -178,6 +212,7 @@ function paintPlate(
       hovered && !disabled ? { color: PALETTE.gilt, width: 2 } : { color: PALETTE.ink, width: 1 },
     )
   plate.label.style.fill = active ? PALETTE.ink : PALETTE.bone
+  plate.icon.tint = active ? PALETTE.ink : PALETTE.bone
   plate.label.resolution = resolution
   plate.hotkey.style.fill = active ? PALETTE.ink : PALETTE.bone
   plate.hotkey.resolution = resolution

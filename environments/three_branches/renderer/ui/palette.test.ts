@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from 'pixi.js'
+import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { testText } from '../core/test-helpers.js'
@@ -10,6 +10,7 @@ import {
   plateProbe,
   USE_PLATE_RECT,
 } from './palette.js'
+import { createExpressionArt } from './annotations.js'
 
 function center(rect: { x: number; y: number; width: number; height: number }) {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
@@ -50,10 +51,10 @@ describe('Three Branches expression palette', () => {
       expect(rect.y).toBeGreaterThan(THREE_BRANCHES_PRESENTATION.chromeHeight)
       expect(rect.y + rect.height).toBeLessThanOrEqual(size.height)
       expect(rect.x + rect.width).toBeLessThanOrEqual(size.width)
-      // The palette stays in the right half, well clear of the fixed bottom-left joystick.
-      expect(rect.x).toBeGreaterThanOrEqual(size.width / 2)
-      expect(rect.width).toBe(136)
-      expect(rect.height).toBe(52)
+      // The palette stays well clear of the fixed bottom-left joystick.
+      expect(rect.x).toBeGreaterThanOrEqual(size.width * 0.4)
+      expect(rect.width).toBe(HEARTHSIDE_STYLE.expressions.inputPalette.plateWidth)
+      expect(rect.height).toBe(HEARTHSIDE_STYLE.expressions.inputPalette.plateHeight)
     }
   })
 
@@ -104,7 +105,10 @@ describe('Three Branches expression palette', () => {
     expect(
       labels
         .filter((label) => !/^\d$/.test(label.text))
-        .every((label) => label.style.fontSize === 20),
+        .every(
+          (label) =>
+            label.style.fontSize === HEARTHSIDE_STYLE.expressions.inputPalette.labelFontSize,
+        ),
     ).toBe(true)
 
     palette.update('wave', false, false, false, 2)
@@ -117,6 +121,17 @@ describe('Three Branches expression palette', () => {
     expect(layer.visible).toBe(false)
     palette.setVisible(true)
     expect(layer.visible).toBe(true)
+  })
+
+  it('installs an icon for every emote and keeps Use on the generic fallback', () => {
+    const layer = new Container()
+    const palette = createExpressionPalette(layer, testText)
+    palette.install(createExpressionArt(Texture.WHITE))
+    const icons = layer.children.filter((child): child is Sprite => child instanceof Sprite)
+    expect(icons).toHaveLength(10)
+    expect(icons.every((icon) => icon.visible)).toBe(true)
+    palette.setUseIcon('missing_activity')
+    expect(icons.at(-1)?.visible).toBe(true)
   })
 
   it('paints the Use plate gilt while latched and dims it while disabled', () => {

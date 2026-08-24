@@ -397,6 +397,51 @@ describe('Three Branches asset catalog', () => {
     )
   })
 
+  it('keeps compact expression and activity pictograms on the expanded effects page', () => {
+    const effects = presentationDocument.atlases.find((atlas) => atlas.name === 'effects')
+    if (effects === undefined || 'layers' in effects) throw new Error('Effects atlas is missing.')
+
+    expect(effects).toMatchObject({ width: 2304, height: 512 })
+    expect(effects.frames).toMatchObject({ width: 192, height: 128, columns: 12, rows: 4 })
+
+    const names = effects.frames.cells.map((cell) => cell.name)
+    const pictogramNames = [
+      'expressionWave',
+      'expressionNod',
+      'expressionShakeHead',
+      'expressionPoint',
+      'expressionLaugh',
+      'expressionShrug',
+      'expressionStartle',
+      'expressionSleep',
+      'expressionSweep',
+      'expressionUse',
+      'expressionTendingStall',
+      'expressionLighting',
+      'expressionSitting',
+      'expressionTendingShrine',
+      'expressionReadingBoard',
+      'expressionTendingPlot',
+      'expressionTendingHearth',
+      'expressionWorkingBench',
+      'expressionWorkingPump',
+      'expressionRingingBell',
+    ]
+    expect(names).toEqual(
+      expect.arrayContaining(pictogramNames),
+    )
+
+    for (const name of pictogramNames) {
+      const cell = effects.frames.cells.find((item) => item.name === name)
+      if (cell === undefined) throw new Error(`Missing effects cell ${name}.`)
+      expect(cell.render).toMatchObject({
+        kind: 'fitVisible',
+        maxSize: { width: 128, height: 96 },
+        anchor: { x: 96, y: 64 },
+      })
+    }
+  })
+
   it('keeps canonical stall sources as clean 1536x1024 RGBA images', () => {
     for (const sourcePath of [
       './assets/source-art/stall/a/open.png',

@@ -53,6 +53,20 @@ describe('Hearthside Ink presentation', () => {
     expect(propEffectAnchor('lantern')).toEqual({ x: 0, y: 0 })
   })
 
+  it('validates the centered texture outline treatment', () => {
+    const invalidOpacity = structuredClone(HEARTHSIDE_STYLE) as any
+    invalidOpacity.postEffects.textureOutline.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidOpacity)).toThrow('textureOutline.opacity')
+
+    const missingTreatment = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingTreatment.postEffects.textureOutline
+    expect(() => readHearthsideStyle(missingTreatment)).toThrow('postEffects keys do not match')
+
+    const excessiveScale = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveScale.postEffects.textureOutline.scaleFactor = 1.26
+    expect(() => readHearthsideStyle(excessiveScale)).toThrow('textureOutline.scaleFactor')
+  })
+
   it('keeps the bell striker hinge and restrained swing in presentation calibration', () => {
     expect(bellStrikerTreatment()).toEqual({
       pivot: { x: 192, y: 39 },
@@ -476,6 +490,12 @@ describe('Hearthside Ink presentation', () => {
       'presentation.expressions.frames.wave is unknown',
     )
 
+    const badActivityFrame = structuredClone(HEARTHSIDE_STYLE) as any
+    badActivityFrame.expressions.activityFrames.reading_board = 'missingFrame'
+    expect(() => readHearthsideStyle(badActivityFrame)).toThrow(
+      'presentation.expressions.activityFrames.reading_board is unknown',
+    )
+
     const badAccent = structuredClone(HEARTHSIDE_STYLE) as any
     badAccent.expressions.accentFrames = ['missingAccent', 'expressionAccentB']
     expect(() => readHearthsideStyle(badAccent)).toThrow(
@@ -493,7 +513,7 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(excessiveRatio)).toThrow('expressions.frameRatio')
   })
 
-  it('rejects an expression frame set that is not exactly the emotes plus use', () => {
+  it('rejects expression frame sets that do not exactly cover emotes, generic use, and activities', () => {
     const extraKey = structuredClone(HEARTHSIDE_STYLE) as any
     extraKey.expressions.frames.extra = 'expressionWave'
     expect(() => readHearthsideStyle(extraKey)).toThrow('frames keys do not match')
@@ -501,5 +521,39 @@ describe('Hearthside Ink presentation', () => {
     const missingToken = structuredClone(HEARTHSIDE_STYLE) as any
     delete missingToken.expressions.frames.sleep
     expect(() => readHearthsideStyle(missingToken)).toThrow('frames keys do not match')
+
+    const extraActivity = structuredClone(HEARTHSIDE_STYLE) as any
+    extraActivity.expressions.activityFrames.extra = 'expressionUse'
+    expect(() => readHearthsideStyle(extraActivity)).toThrow('activityFrames keys do not match')
+
+    const missingActivity = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingActivity.expressions.activityFrames.working_pump
+    expect(() => readHearthsideStyle(missingActivity)).toThrow('activityFrames keys do not match')
+  })
+
+  it('validates the expression world-label and input-palette layout', () => {
+    expect(HEARTHSIDE_STYLE.expressions.worldLabel.fontSize).toBe(20)
+    expect(HEARTHSIDE_STYLE.expressions.worldLabel.iconFrameWidth).toBe(40)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.plateWidth).toBe(152)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.labelFontSize).toBe(20)
+    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconFrameWidth).toBe(40)
+
+    const zeroFont = structuredClone(HEARTHSIDE_STYLE) as any
+    zeroFont.expressions.worldLabel.fontSize = 0
+    expect(() => readHearthsideStyle(zeroFont)).toThrow(
+      'presentation.expressions.worldLabel.fontSize must be positive',
+    )
+
+    const missingIconSize = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingIconSize.expressions.inputPalette.iconFrameWidth
+    expect(() => readHearthsideStyle(missingIconSize)).toThrow(
+      'presentation.expressions.inputPalette keys do not match its contract',
+    )
+
+    const negativeGap = structuredClone(HEARTHSIDE_STYLE) as any
+    negativeGap.expressions.inputPalette.gap = -1
+    expect(() => readHearthsideStyle(negativeGap)).toThrow(
+      'presentation.expressions.inputPalette.gap must be non-negative',
+    )
   })
 })
