@@ -27,6 +27,25 @@ export const DEPS_VERSION = 1
 export interface SessionBaseImageDefinition {
   /** Dockerfile path relative to the repository-root build context. */
   readonly dockerfile: string
+  /**
+   * Context-relative trees the Dockerfile COPYs besides its own directory. Optional so the entry
+   * line `scripts/bump_template_version.py` appends keeps compiling; when absent it defaults to
+   * `harness` and `environments` (see {@link sessionBaseImageInputs}). A version whose Dockerfile
+   * changes its COPY set must set this explicitly.
+   */
+  readonly inputs?: readonly string[]
+}
+
+const DEFAULT_IMAGE_INPUTS: readonly string[] = ['harness', 'environments']
+
+/**
+ * Every context-relative tree whose contents feed a definition's image build: the Dockerfile's own
+ * directory (the Dockerfile itself, the frozen requirements, the built-in agents) plus the trees
+ * the Dockerfile COPYs from the rest of the context. This is what the build-input digest hashes.
+ */
+export function sessionBaseImageInputs(definition: SessionBaseImageDefinition): readonly string[] {
+  const dockerfileDirectory = definition.dockerfile.split('/').slice(0, -1).join('/')
+  return [dockerfileDirectory, ...(definition.inputs ?? DEFAULT_IMAGE_INPUTS)]
 }
 
 /**

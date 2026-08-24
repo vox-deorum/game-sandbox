@@ -7,6 +7,7 @@ import {
   DEPS_VERSION,
   KNOWN_DEPS_VERSIONS,
   sessionBaseImageDefinition,
+  sessionBaseImageInputs,
 } from '../../src/build/deps-version.js'
 import { imageTag } from '../../src/driver/docker/image.js'
 
@@ -39,6 +40,16 @@ describe('dependency-set image registry', () => {
           expect(dockerfile).not.toContain(`deps-v${other}/`)
         }
       }
+    }
+  })
+
+  it('digests each version from its Dockerfile directory plus the copied source trees', () => {
+    for (const n of KNOWN_DEPS_VERSIONS) {
+      expect(sessionBaseImageInputs(sessionBaseImageDefinition(n))).toEqual([
+        `backend/images/session-base/deps-v${n}`,
+        'harness',
+        'environments',
+      ])
     }
   })
 

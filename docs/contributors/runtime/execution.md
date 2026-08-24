@@ -77,7 +77,7 @@ Each base contains:
 
 The image tag is `game-sandbox/session-base:deps-v<N>`. The driver either reuses or rebuilds it according to `DOCKER_IMAGE_POLICY`.
 
-After changing a current image input, rebuild it from `backend/`:
+To make the image fresh, run this from `backend/`; it rebuilds only when an image input changed and reuses the existing image otherwise:
 
 ```console
 npm run build:image

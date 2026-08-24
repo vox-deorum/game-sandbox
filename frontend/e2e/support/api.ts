@@ -514,10 +514,7 @@ export async function seedRatings(
  * directly so no browser has to be open. The run returns immediately as `pending` and the runner
  * picks it up from the queue.
  */
-export async function startSeasonRun(
-  admin: APIRequestContext,
-  seasonId: string,
-): Promise<string> {
+export async function startSeasonRun(admin: APIRequestContext, seasonId: string): Promise<string> {
   const res = await admin.post(`/api/admin/seasons/${seasonId}/runs`)
   expect(res.status(), await res.text()).toBe(201)
   return ((await res.json()) as { id: string }).id

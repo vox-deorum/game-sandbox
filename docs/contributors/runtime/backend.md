@@ -14,7 +14,7 @@ Run these commands from `backend/` unless noted:
 | --- | --- |
 | `npm run dev` | Start `tsx watch` |
 | `npm run start` | Start once without watch mode |
-| `npm run build:image` | Rebuild the current session base image |
+| `npm run build:image` | Build the current session base image if its inputs changed; `npm run build:image -- --force` rebuilds unconditionally (in PowerShell use `npm.cmd`, whose wrapper otherwise strips the `--`) |
 | `npm test` | Run Docker-free unit tests |
 | `npm run test:integration` | Run real-container integration tests |
 | `npm run demo` | From the repository root, launch the app with the populated e2e fixture and print sign-ins for the admin and an ordinary member (`ada-lovelace`) |

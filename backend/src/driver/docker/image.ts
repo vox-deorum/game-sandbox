@@ -1,22 +1,24 @@
 /**
  * Image resolution for the Docker driver: turn an {@link ImageSpec} into a launch-ready tag,
- * building the session base image when it is absent or when the policy demands a rebuild.
+ * building the session base image when it is absent or when the policy demands it.
  *
- * Whether an existing tag is reused or always rebuilt is driver configuration ({@link ImagePolicy}),
- * not caller policy: the orchestrator asks for an image and gets back a tag. The build context is
- * the repo root, because the base image is assembled from monorepo sources (see the Dockerfile);
- * the heavy, irrelevant directories are excluded from the tar so only the sources the Dockerfile
- * copies are sent to the daemon.
+ * Whether an existing tag is reused or rebuilt is driver configuration ({@link ImagePolicy}), not
+ * caller policy: the orchestrator asks for an image and gets back a tag. The `build:image` CLI adds
+ * a third, internal-only `refresh` policy: every build stamps the digest of its inputs onto the
+ * image as a label, and refresh reuses the tag when that label still matches the checkout, so the
+ * command is cheap when nothing changed. The build context is the repo root, because the base image
+ * is assembled from monorepo sources (see the Dockerfile); the heavy, irrelevant directories are
+ * excluded from the tar so only the sources the Dockerfile copies are sent to the daemon.
  */
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
-import { sessionBaseImageDefinition } from '../../build/deps-version.js'
+import { sessionBaseImageDefinition, sessionBaseImageInputs } from '../../build/deps-version.js'
 import type { ImagePolicy } from '../../config/config.js'
-import { isSubmissionIgnored, SUBMISSION_IGNORED_SEGMENTS } from '../../submission/tree-filter.js'
 import type { ImageRef, SessionBaseImageSpec } from '../index.js'
+import { buildContextIgnore, computeBuildInputsDigest } from './build-inputs.js'
 
 /** backend/src/driver/docker/image.ts → repo root is four directories up. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
@@ -37,6 +39,15 @@ const TRANSIENT_BUILD_ERROR = new RegExp(
   'i',
 )
 
+/**
+ * The label every base-image build stamps with the digest of its inputs, read back by the
+ * `refresh` policy to decide whether the tag is still fresh.
+ */
+const BUILD_INPUTS_DIGEST_LABEL = 'game-sandbox.build-inputs-digest'
+
+/** {@link ImagePolicy} plus `refresh`, which reuses an existing tag only while its inputs digest matches. */
+export type EnsureImagePolicy = ImagePolicy | 'refresh'
+
 /** The tag for a supported session base image under a deployment prefix. */
 export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
   // Refuse to name a tag the deployment cannot build; throws for an unregistered version.
@@ -44,42 +55,15 @@ export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
   return `${prefix}/session-base:deps-v${spec.depsVersion}`
 }
 
-/**
- * The submission filter's set, plus `data`: the repo's own data volume (`backend/data/`'s SQLite
- * database and recordings) has no reason to reach the daemon, but a participant's submission keeps
- * its data/ directory, so `data` stays out of {@link SUBMISSION_IGNORED_SEGMENTS} itself.
- */
-const BUILD_CONTEXT_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
-  ...SUBMISSION_IGNORED_SEGMENTS,
-  'data',
-])
-const ROOT_TEMP_PREFIXES = ['.codex-pytest-budget-', '.test-tmp-']
+const isIgnored = buildContextIgnore(REPO_ROOT)
 
-/** True when an outer-edge ignored directory or a compiled-Python artifact sits on this path. */
-function isIgnored(absolutePath: string): boolean {
-  const rel = relative(REPO_ROOT, absolutePath)
-  const rootLocalEnvironmentFile =
-    !rel.includes(sep) && (rel === '.env' || (rel.startsWith('.env.') && rel !== '.env.default'))
-  const rootLocalTemp =
-    !rel.includes(sep) && ROOT_TEMP_PREFIXES.some((prefix) => rel.startsWith(prefix))
-  const buildContextIgnoredSegment = rel
-    .split(sep)
-    .some((segment) => BUILD_CONTEXT_IGNORED_SEGMENTS.has(segment))
-  // isSubmissionIgnored also covers the shared set anchored at the repo root and compiled-Python artifacts.
-  return (
-    rootLocalEnvironmentFile ||
-    rootLocalTemp ||
-    buildContextIgnoredSegment ||
-    isSubmissionIgnored(REPO_ROOT, absolutePath)
-  )
-}
-
-async function imageExists(docker: Docker, tag: string): Promise<boolean> {
+/** The digest label of an existing tag: undefined when the tag or the label is absent. */
+async function imageInputsLabel(docker: Docker, tag: string): Promise<string | undefined> {
   try {
-    await docker.getImage(tag).inspect()
-    return true
+    const info = await docker.getImage(tag).inspect()
+    return info.Config?.Labels?.[BUILD_INPUTS_DIGEST_LABEL] ?? 'unlabeled'
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -105,9 +89,19 @@ async function wait(ms: number): Promise<void> {
 }
 
 /** Build the session base image from the repo-root context, rejecting on any build-step error. */
-async function build(docker: Docker, tag: string, dockerfile: string): Promise<void> {
+async function build(
+  docker: Docker,
+  tag: string,
+  dockerfile: string,
+  inputsDigest: string,
+): Promise<void> {
+  console.error(`building ${tag} from ${dockerfile}`)
   const context = tar.pack(REPO_ROOT, { ignore: isIgnored })
-  const buildStream = await docker.buildImage(context, { t: tag, dockerfile })
+  const buildStream = await docker.buildImage(context, {
+    t: tag,
+    dockerfile,
+    labels: { [BUILD_INPUTS_DIGEST_LABEL]: inputsDigest },
+  })
   await new Promise<void>((resolve, reject) => {
     docker.modem.followProgress(
       buildStream,
@@ -124,7 +118,13 @@ async function build(docker: Docker, tag: string, dockerfile: string): Promise<v
         }
         resolve()
       },
-      () => undefined,
+      // Forward the daemon's own build log live so a minutes-long build never looks stuck. The
+      // chunks already carry their newlines, so write them raw instead of re-framing per entry.
+      (entry: BuildProgress) => {
+        if (entry.stream !== undefined) {
+          process.stderr.write(entry.stream)
+        }
+      },
     )
   })
 }
@@ -133,10 +133,15 @@ async function build(docker: Docker, tag: string, dockerfile: string): Promise<v
  * Cold CI runners sometimes hit transient Docker Hub or package-index timeouts while resolving the
  * base layers. Retry only those network-shaped failures so real Dockerfile errors still fail fast.
  */
-async function buildWithRetry(docker: Docker, tag: string, dockerfile: string): Promise<void> {
+async function buildWithRetry(
+  docker: Docker,
+  tag: string,
+  dockerfile: string,
+  inputsDigest: string,
+): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await build(docker, tag, dockerfile)
+      await build(docker, tag, dockerfile, inputsDigest)
       return
     } catch (error) {
       const delayMs = BUILD_RETRY_DELAYS_MS[attempt]
@@ -155,19 +160,27 @@ async function buildWithRetry(docker: Docker, tag: string, dockerfile: string): 
 
 /**
  * Resolve `spec` to a launch-ready {@link ImageRef}, building when needed. Under `reuse` an
- * existing tag is returned untouched; under `rebuild` the image is always rebuilt.
+ * existing tag is returned untouched; under `rebuild` the image is always rebuilt; under `refresh`
+ * an existing tag is reused only while its stamped inputs digest matches the checkout, so a
+ * pre-label or stale image is rebuilt and a fresh one is returned in seconds.
  */
 export async function ensureImage(
   docker: Docker,
   prefix: string,
-  policy: ImagePolicy,
+  policy: EnsureImagePolicy,
   spec: SessionBaseImageSpec,
 ): Promise<ImageRef> {
   const definition = sessionBaseImageDefinition(spec.depsVersion)
   const tag = imageTag(prefix, spec)
-  if (policy === 'reuse' && (await imageExists(docker, tag))) {
+  const label = policy === 'rebuild' ? undefined : await imageInputsLabel(docker, tag)
+  if (policy === 'reuse' && label !== undefined) {
     return { ref: tag }
   }
-  await buildWithRetry(docker, tag, definition.dockerfile)
+  const inputsDigest = await computeBuildInputsDigest(REPO_ROOT, sessionBaseImageInputs(definition))
+  if (policy === 'refresh' && label === inputsDigest) {
+    console.error(`reusing ${tag} (build inputs unchanged)`)
+    return { ref: tag }
+  }
+  await buildWithRetry(docker, tag, definition.dockerfile, inputsDigest)
   return { ref: tag }
 }

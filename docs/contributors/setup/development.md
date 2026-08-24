@@ -65,7 +65,7 @@ The backend, sessions, and Docker-gated checks need a running Docker daemon; see
 
 `scripts/compose.py` composes a template or example into build output; see [Composition](../environments/templates.md#composition) for what it generates.
 
-`npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](../runtime/backend.md#run-and-test).
+`npm run build:image` runs from `backend/` and makes the current session base image fresh: it rebuilds when the image inputs changed (the versioned Dockerfile directory, `harness/`, or `environments/`) and reuses the existing image otherwise, so it is safe to run habitually. To rebuild unconditionally, for example after the upstream Python base image moves, run `npm run build:image -- --force` from `backend/` (in PowerShell use `npm.cmd`, whose wrapper otherwise strips the `--`). See [Backend](../runtime/backend.md#run-and-test).
 
 ## Keeping local outputs fresh
 

@@ -9,9 +9,11 @@ import {
   closeSubmissions,
   configureMatches,
   declareSeason,
+  type MatchConfig,
   openPlay,
   openSubmissions,
   release,
+  type SeededRating,
   seedRatings,
   setAuthorPrompt,
   setLlmOverride,
@@ -19,10 +21,8 @@ import {
   startSeasonRun,
   submitReadyAgent,
   waitForRunTerminal,
-  type MatchConfig,
-  type SeededRating,
 } from '../support/api.js'
-import { expect, type As, test } from '../support/fixtures.js'
+import { type As, expect, test } from '../support/fixtures.js'
 import {
   AUTHOR_RATING_PROMPT,
   CRANE_OWNERS,
@@ -116,14 +116,21 @@ async function seedReleasedSeason(
           feedback: 'Steady under pressure',
         })
       }
-      await seedRatings(await as(JUDGES[0]), submissions[index], opts.envId, raters, entry.seatCount)
+      await seedRatings(
+        await as(JUDGES[0]),
+        submissions[index],
+        opts.envId,
+        raters,
+        entry.seatCount,
+      )
     }
     await release(admin, season.id)
     // A cheap self-check that the seeded release really produced a board: every roster agent places
     // and the run exposed its supervised games. The arcs assert the rendered surfaces in detail.
     const res = await admin.get(`/api/admin/seasons/${season.id}`)
     expect(res.ok(), await res.text()).toBe(true)
-    const board = ((await res.json()) as { board: { automated: unknown[]; games: unknown[] } }).board
+    const board = ((await res.json()) as { board: { automated: unknown[]; games: unknown[] } })
+      .board
     expect(board.automated.length).toBeGreaterThanOrEqual(opts.roster.length)
     expect(board.games.length).toBeGreaterThan(0)
   } finally {
@@ -207,7 +214,10 @@ test('flappy Updraft Open stays play-open and ready for peer rating', async ({ a
   }
 })
 
-test('hearts Black Lady Open: both example agents, full ratings, released', async ({ admin, as }) => {
+test('hearts Black Lady Open: both example agents, full ratings, released', async ({
+  admin,
+  as,
+}) => {
   test.skip(!seedDemo, SEED_SKIP_REASON)
   test.setTimeout(900_000)
 
@@ -219,8 +229,20 @@ test('hearts Black Lady Open: both example agents, full ratings, released', asyn
     envId: HEARTS_ENV_ID,
     label: HEARTS_SEASON,
     roster: [
-      { owner: HEARTS_OWNERS.oracle, dir: staged.get('oracle') as string, scores: [5, 4, 4, 5], raters: 4, seatCount: 4 },
-      { owner: HEARTS_OWNERS.moonshot, dir: staged.get('moonshot') as string, scores: [3, 4, 3, 4], raters: 4, seatCount: 4 },
+      {
+        owner: HEARTS_OWNERS.oracle,
+        dir: staged.get('oracle') as string,
+        scores: [5, 4, 4, 5],
+        raters: 4,
+        seatCount: 4,
+      },
+      {
+        owner: HEARTS_OWNERS.moonshot,
+        dir: staged.get('moonshot') as string,
+        scores: [3, 4, 3, 4],
+        raters: 4,
+        seatCount: 4,
+      },
     ],
     matches: [
       {
@@ -255,8 +277,20 @@ test('spades Partnership Cup: both example agents, partial ratings, released', a
     envId: SPADES_ENV_ID,
     label: SPADES_SEASON,
     roster: [
-      { owner: SPADES_OWNERS.counter, dir: staged.get('counter') as string, scores: [4, 4, 3, 4], raters: 2, seatCount: 2 },
-      { owner: SPADES_OWNERS.signaler, dir: staged.get('signaler') as string, scores: [4, 3, 4, 3], raters: 2, seatCount: 2 },
+      {
+        owner: SPADES_OWNERS.counter,
+        dir: staged.get('counter') as string,
+        scores: [4, 4, 3, 4],
+        raters: 2,
+        seatCount: 2,
+      },
+      {
+        owner: SPADES_OWNERS.signaler,
+        dir: staged.get('signaler') as string,
+        scores: [4, 3, 4, 3],
+        raters: 2,
+        seatCount: 2,
+      },
     ],
     matches: [{ seats: ['submission', 'submission'], seeds: [0], games: 1 }],
   })
