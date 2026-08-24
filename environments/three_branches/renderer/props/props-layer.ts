@@ -393,8 +393,16 @@ function sprite(label: string, frame: Texture, scale: number): Sprite {
 function textureOutline(label: string, artScale: number): Container {
   const treatment = HEARTHSIDE_STYLE.postEffects.textureOutline
   const root = new Container({ label })
-  for (const [index, layer] of treatment.layers.entries()) {
-    const node = sprite(`texture-outline-layer:${index}`, Texture.EMPTY, artScale * layer.scaleFactor)
+  const layers = [
+    { scaleFactor: 1 + treatment.spread, opacity: treatment.opacity / 3 },
+    { scaleFactor: 1 + treatment.spread / 2, opacity: (treatment.opacity * 2) / 3 },
+  ]
+  for (const [index, layer] of layers.entries()) {
+    const node = sprite(
+      `texture-outline-layer:${index}`,
+      Texture.EMPTY,
+      artScale * layer.scaleFactor,
+    )
     node.tint = HEARTHSIDE_STYLE.palette[treatment.tint]
     node.alpha = layer.opacity
     root.addChild(node)
@@ -410,9 +418,10 @@ function syncArtScale(
   node: Pick<PropNode, 'item' | 'outline' | 'lower' | 'movingRoot' | 'moving'>,
 ): void {
   const scale = propArtScale(node.item)
-  for (const [index, layer] of HEARTHSIDE_STYLE.postEffects.textureOutline.layers.entries()) {
+  const spread = HEARTHSIDE_STYLE.postEffects.textureOutline.spread
+  for (const [index, scaleFactor] of [1 + spread, 1 + spread / 2].entries()) {
     const outlineLayer = node.outline.getChildByLabel(`texture-outline-layer:${index}`)
-    if (outlineLayer instanceof Sprite) outlineLayer.scale.set(scale * layer.scaleFactor)
+    if (outlineLayer instanceof Sprite) outlineLayer.scale.set(scale * scaleFactor)
   }
   node.lower.scale.set(scale)
   syncMovingArtRegistration(node.item, node.movingRoot, node.moving)

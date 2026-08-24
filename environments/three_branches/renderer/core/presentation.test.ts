@@ -55,18 +55,16 @@ describe('Hearthside Ink presentation', () => {
 
   it('validates the centered texture outline treatment', () => {
     const invalidOpacity = structuredClone(HEARTHSIDE_STYLE) as any
-    invalidOpacity.postEffects.textureOutline.layers[0].opacity = 1.01
-    expect(() => readHearthsideStyle(invalidOpacity)).toThrow('textureOutline.layers[0].opacity')
+    invalidOpacity.postEffects.textureOutline.opacity = 1.01
+    expect(() => readHearthsideStyle(invalidOpacity)).toThrow('textureOutline.opacity')
 
     const missingTreatment = structuredClone(HEARTHSIDE_STYLE) as any
     delete missingTreatment.postEffects.textureOutline
     expect(() => readHearthsideStyle(missingTreatment)).toThrow('postEffects keys do not match')
 
-    const reversedFalloff = structuredClone(HEARTHSIDE_STYLE) as any
-    reversedFalloff.postEffects.textureOutline.layers.reverse()
-    expect(() => readHearthsideStyle(reversedFalloff)).toThrow(
-      'textureOutline.layers must run from the faint outer edge to the strong inner edge',
-    )
+    const excessiveSpread = structuredClone(HEARTHSIDE_STYLE) as any
+    excessiveSpread.postEffects.textureOutline.spread = 0.26
+    expect(() => readHearthsideStyle(excessiveSpread)).toThrow('textureOutline.spread')
   })
 
   it('keeps the bell striker hinge and restrained swing in presentation calibration', () => {

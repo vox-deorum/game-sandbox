@@ -1,10 +1,11 @@
-import { type Sprite, Texture } from 'pixi.js'
+import { Graphics, type Sprite, Texture } from 'pixi.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import type { TerrainBridgeComponent } from '../core/types.js'
 import {
   BRIDGE_DECK_SOURCE_CELLS,
+  bridgeDeckMask,
   createBridgeDeckLayer,
   deckBounds,
   planBridgeBoards,
@@ -506,7 +507,7 @@ describe('component bridge deck rendering', () => {
     verticalLayer.destroy()
   })
 
-  it('builds one visual-bound 128-pixel-per-cell mipmapped sprite', () => {
+  it('builds two union-aware graphic falloffs before the visual-bound mipmapped deck sprite', () => {
     const textureFrom = vi.spyOn(Texture, 'from')
     const layer = createBridgeDeckLayer(
       { bridgeBoards: boardSources() },
@@ -515,6 +516,14 @@ describe('component bridge deck rendering', () => {
       treatment,
     )
     const component = required(layer.view.children[0], 'Bridge component container is missing.')
+    const outer = required(
+      component.children.find((child) => child.label === 'terrain-bridge-deck-outline:outer'),
+      'Outer bridge deck texture outline is missing.',
+    ) as Graphics
+    const inner = required(
+      component.children.find((child) => child.label === 'terrain-bridge-deck-outline:inner'),
+      'Inner bridge deck texture outline is missing.',
+    ) as Graphics
     const sprite = required(
       component.children.find((child) => child.label === 'terrain-bridge-deck-sprite'),
       'Bridge deck sprite is missing.',
@@ -530,19 +539,74 @@ describe('component bridge deck rendering', () => {
       | undefined
     const canvas = required(textureInput?.resource, 'Bridge texture canvas is missing.')
     const sourceOverlap = treatment.portalOverlapCells + treatment.portalMaskInsetCells
+    const outline = HEARTHSIDE_STYLE.postEffects.textureOutline
+    const scale = 16 / BRIDGE_DECK_SOURCE_CELLS
 
     expect(canvas.width).toBe(Math.round((2 + sourceOverlap * 2) * BRIDGE_DECK_SOURCE_CELLS))
     expect(canvas.height).toBe(Math.round(0.8 * BRIDGE_DECK_SOURCE_CELLS))
     expect(textureInput?.autoGenerateMipmaps).toBe(true)
+    expect(component.children).toEqual([outer, inner, sprite, mask])
+    expect(outer).toBeInstanceOf(Graphics)
+    expect(inner).toBeInstanceOf(Graphics)
+    expect([outer.alpha, inner.alpha]).toEqual([outline.opacity / 3, (outline.opacity * 2) / 3])
+    expect([outer.tint, inner.tint]).toEqual([
+      Number.parseInt(HEARTHSIDE_STYLE.palette[outline.tint].slice(1), 16),
+      Number.parseInt(HEARTHSIDE_STYLE.palette[outline.tint].slice(1), 16),
+    ])
     expect(sprite.position.x).toBeCloseTo((4 - sourceOverlap) * 16, 10)
     expect(sprite.position.y).toBeCloseTo(7.1 * 16, 10)
-    expect(sprite.scale.x).toBe(16 / BRIDGE_DECK_SOURCE_CELLS)
-    expect(sprite.scale.y).toBe(16 / BRIDGE_DECK_SOURCE_CELLS)
+    expect(sprite.scale.x).toBe(scale)
+    expect(sprite.scale.y).toBe(scale)
     const maskBounds = mask.getLocalBounds()
     expect(maskBounds.minX).toBeCloseTo((4 - treatment.portalOverlapCells) * 16, 10)
     expect(maskBounds.minY).toBeCloseTo(7.1 * 16, 10)
     expect(maskBounds.maxX).toBeCloseTo((6 + treatment.portalOverlapCells) * 16, 10)
     expect(maskBounds.maxY).toBeCloseTo(7.9 * 16, 10)
+    const centerX = (maskBounds.minX + maskBounds.maxX) / 2
+    const centerY = (maskBounds.minY + maskBounds.maxY) / 2
+    for (const [silhouette, scaleFactor] of [
+      [outer, 1 + outline.spread],
+      [inner, 1 + outline.spread / 2],
+    ] as const) {
+      expect(silhouette.pivot).toMatchObject({ x: centerX, y: centerY })
+      expect(silhouette.position).toMatchObject({ x: centerX, y: centerY })
+      expect(silhouette.scale).toMatchObject({ x: scaleFactor, y: scaleFactor })
+      const bounds = silhouette.getBounds()
+      expect(bounds.minX).toBeCloseTo(centerX + (maskBounds.minX - centerX) * scaleFactor, 10)
+      expect(bounds.minY).toBeCloseTo(centerY + (maskBounds.minY - centerY) * scaleFactor, 10)
+      expect(bounds.maxX).toBeCloseTo(centerX + (maskBounds.maxX - centerX) * scaleFactor, 10)
+      expect(bounds.maxY).toBeCloseTo(centerY + (maskBounds.maxY - centerY) * scaleFactor, 10)
+    }
+    layer.destroy()
+  })
+
+  it('keeps compact deck falloffs to their cell union', () => {
+    const elbow = bridge(
+      'compact',
+      [
+        { column: 2, row: 2 },
+        { column: 3, row: 2 },
+        { column: 2, row: 3 },
+      ],
+      { kind: 'compact', widthCells: 0.7, cap: 'round', center: { x: 3, y: 3 } },
+      'compact-elbow-falloff',
+    )
+    const layer = createBridgeDeckLayer({ bridgeBoards: boardSources() }, [elbow], 16, treatment)
+    const component = required(layer.view.children[0], 'Compact bridge component is missing.')
+    const outer = required(
+      component.children.find((child) => child.label === 'terrain-bridge-deck-outline:outer'),
+      'Outer compact bridge outline is missing.',
+    ) as Graphics
+    const outline = HEARTHSIDE_STYLE.postEffects.textureOutline
+    const paddedMask = bridgeDeckMask(elbow, 16, treatment, outline.spread)
+    const mask = bridgeDeckMask(elbow, 16, treatment)
+
+    for (const { column, row } of elbow.cells)
+      expect(outer.containsPoint({ x: (column + 0.5) * 16, y: (row + 0.5) * 16 })).toBe(true)
+    expect(outer.containsPoint({ x: 3.5 * 16, y: 3.5 * 16 })).toBe(false)
+    expect(paddedMask.getLocalBounds()).toMatchObject(mask.getLocalBounds())
+    paddedMask.destroy()
+    mask.destroy()
     layer.destroy()
   })
 
@@ -856,6 +920,9 @@ describe('component bridge deck rendering', () => {
       treatment,
     )
     const component = required(layer.view.children[0], 'Bridge component container is missing.')
+    const outlineGraphics = component.children.filter((child) =>
+      child.label?.startsWith('terrain-bridge-deck-outline:'),
+    ) as Graphics[]
     const sprite = required(
       component.children.find((child) => child.label === 'terrain-bridge-deck-sprite'),
       'Bridge deck sprite is missing.',
@@ -872,6 +939,7 @@ describe('component bridge deck rendering', () => {
     expect(texture.destroyed).toBe(true)
     expect(generatedSource.destroyed).toBe(true)
     expect(texture.source).toBeNull()
+    expect(outlineGraphics.every((outline) => outline.destroyed)).toBe(true)
     expect(sources[0].pixels).toBe(borrowed)
     expect(borrowed).toEqual(before)
   })

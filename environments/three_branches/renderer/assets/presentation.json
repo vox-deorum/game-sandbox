@@ -1447,12 +1447,8 @@
     },
     "textureOutline": {
       "tint": "backdrop",
-      "layers": [
-        { "scaleFactor": 1.11, "opacity": 0.012 },
-        { "scaleFactor": 1.075, "opacity": 0.028 },
-        { "scaleFactor": 1.045, "opacity": 0.055 },
-        { "scaleFactor": 1.02, "opacity": 0.10 }
-      ]
+      "opacity": 0.12,
+      "spread": 0.08
     }
   },
   "characters": {

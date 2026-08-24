@@ -312,7 +312,13 @@ export function createBridgeDeckLayer(
   treatment: PlankTreatment = HEARTHSIDE_STYLE.terrain.planks,
 ): BridgeDeckLayer {
   const view = new Container({ label: 'terrain-bridge-decks' })
-  const owned: { container: Container; sprite: Sprite; mask: Graphics; texture: Texture }[] = []
+  const owned: {
+    container: Container
+    outlines: Graphics[]
+    sprite: Sprite
+    mask: Graphics
+    texture: Texture
+  }[] = []
   try {
     for (const component of components) {
       const source = art.bridgeBoards
@@ -324,17 +330,45 @@ export function createBridgeDeckLayer(
       const mask = bridgeDeckMask(component, cellSize, treatment)
       let texture: Texture | undefined
       let sprite: Sprite | undefined
+      const outlines: Graphics[] = []
       try {
         texture = Texture.from({ resource: canvas, autoGenerateMipmaps: true })
+        const scale = cellSize / BRIDGE_DECK_SOURCE_CELLS
+        const outline = HEARTHSIDE_STYLE.postEffects.textureOutline
+        for (const layer of [
+          {
+            label: 'terrain-bridge-deck-outline:outer',
+            scale: 1 + outline.spread,
+            alpha: outline.opacity / 3,
+          },
+          {
+            label: 'terrain-bridge-deck-outline:inner',
+            scale: 1 + outline.spread / 2,
+            alpha: (outline.opacity * 2) / 3,
+          },
+        ]) {
+          const silhouette = bridgeDeckMask(component, cellSize, treatment)
+          const bounds = silhouette.getLocalBounds()
+          const centerX = (bounds.minX + bounds.maxX) / 2
+          const centerY = (bounds.minY + bounds.maxY) / 2
+          silhouette.label = layer.label
+          silhouette.pivot.set(centerX, centerY)
+          silhouette.position.set(centerX, centerY)
+          silhouette.scale.set(layer.scale)
+          silhouette.tint = HEARTHSIDE_STYLE.palette[outline.tint]
+          silhouette.alpha = layer.alpha
+          outlines.push(silhouette)
+        }
         sprite = new Sprite({ label: 'terrain-bridge-deck-sprite', texture })
         sprite.position.set(plan.bounds.minX * cellSize, plan.bounds.minY * cellSize)
-        sprite.scale.set(cellSize / BRIDGE_DECK_SOURCE_CELLS)
+        sprite.scale.set(scale)
         mask.label = `terrain-bridge-deck-mask:${component.id}`
         sprite.mask = mask
-        container.addChild(sprite, mask)
+        container.addChild(...outlines, sprite, mask)
         view.addChild(container)
-        owned.push({ container, sprite, mask, texture })
+        owned.push({ container, outlines, sprite, mask, texture })
       } catch (error) {
+        for (const silhouette of outlines) silhouette.destroy()
         sprite?.destroy({ texture: false })
         mask.destroy()
         container.destroy({ children: false })
@@ -602,10 +636,17 @@ export function appendBridgeDeckMask(
 
 function destroyDeckNodes(
   view: Container,
-  owned: readonly { container: Container; sprite: Sprite; mask: Graphics; texture: Texture }[],
+  owned: readonly {
+    container: Container
+    outlines: readonly Graphics[]
+    sprite: Sprite
+    mask: Graphics
+    texture: Texture
+  }[],
 ): void {
   for (const node of owned) {
-    node.container.removeChild(node.sprite, node.mask)
+    node.container.removeChild(...node.outlines, node.sprite, node.mask)
+    for (const silhouette of node.outlines) silhouette.destroy()
     node.sprite.destroy({ texture: false })
     node.mask.destroy()
     node.container.destroy({ children: false })

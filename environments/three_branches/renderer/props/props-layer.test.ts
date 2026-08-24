@@ -1,5 +1,5 @@
-import { BlurFilter, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { describe, expect, it, vi } from 'vitest'
+import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
+import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import {
@@ -169,7 +169,7 @@ describe('Three Branches prop art views', () => {
     expect((crate as Sprite).tint).toBe(0xffffff)
   })
 
-  it('outlines only the market crate scenery with its exact frame and scale', () => {
+  it('outlines only the market crate scenery with two exact-frame silhouettes', () => {
     const targets = layerTargets()
     const scene = sceneryScene()
     scene.props = [drawable('bench', 'bench_0')]
@@ -184,26 +184,30 @@ describe('Three Branches prop art views', () => {
     layer.install(completeArt())
     const outline = targets.outlines.getChildByLabel(
       'market-crate-texture-outline:crate-1',
-    ) as Sprite
+    ) as Container
     const crate = targets.scenery
       .getChildByLabel('scenery:crate-1')
       ?.getChildByLabel('scenery-art') as Sprite
     expect(outline.visible).toBe(true)
-    expect(outline.texture).toBe(crate.texture)
     expect(outline.position).toMatchObject({ x: 26, y: 36 })
     expect(outline.rotation).toBe(0)
-    expect(outline.scale).toMatchObject({ x: crate.scale.x, y: crate.scale.y })
-    const benchOutline = targets.outlines.getChildByLabel('prop-texture-outline:bench_0') as Sprite
-    expect(outline.filters?.[0]).toBe(benchOutline.filters?.[0])
+    const layers = outline.children as Sprite[]
+    const treatment = HEARTHSIDE_STYLE.postEffects.textureOutline
+    expect(layers).toHaveLength(2)
+    expect(layers.map((layer) => layer.texture)).toEqual([crate.texture, crate.texture])
+    expect(layers.map((layer) => layer.scale.x)).toEqual([
+      crate.scale.x * (1 + treatment.spread),
+      crate.scale.x * (1 + treatment.spread / 2),
+    ])
+    expect(layers.map((layer) => layer.alpha)).toEqual([
+      treatment.opacity / 3,
+      (treatment.opacity * 2) / 3,
+    ])
 
     const firstTexture = crate.texture
     layer.install(completeArt())
-    expect(outline.texture).toBe(crate.texture)
+    expect(layers.map((child) => child.texture)).toEqual([crate.texture, crate.texture])
     expect(crate.texture).not.toBe(firstTexture)
-
-    layer.destroy()
-    expect(outline.filters).toEqual([])
-    expect(benchOutline.filters).toEqual([])
   })
 
   it('keeps pines above prop effects and cuts them out only for occupied buildings', () => {
@@ -296,7 +300,7 @@ describe('Three Branches prop layers', () => {
     expect(targets.effects.getChildByLabel('prop-upper:bench_0')).toBeNull()
   })
 
-  it('keeps the bench outline on the exact state frame through facing and reinstall', () => {
+  it('keeps both bench outline silhouettes on the exact state frame through reinstall', () => {
     const targets = layerTargets()
     const scene = propScene(drawable('bench', 'bench_0'))
     const layer = createPropLayer(targets, scene)
@@ -304,45 +308,39 @@ describe('Three Branches prop layers', () => {
     layer.install(art)
     const lowerRoot = targets.props.getChildByLabel('prop-lower:bench_0') as Container
     const lower = sprite(lowerRoot, 'prop-lower-art')
-    const outline = targets.outlines.getChildByLabel('prop-texture-outline:bench_0') as Sprite
+    const outline = targets.outlines.getChildByLabel('prop-texture-outline:bench_0') as Container
+    const layers = outline.children as Sprite[]
+    const treatment = HEARTHSIDE_STYLE.postEffects.textureOutline
 
-    expect(outline.texture).toBe(lower.texture)
-    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAEmpty'))
+    expect(layers).toHaveLength(2)
+    expect(layers.map((layer) => layer.texture)).toEqual([lower.texture, lower.texture])
+    expect(layers.map((layer) => layer.texture.frame)).toEqual(
+      Array(2).fill(frameRectangle(frameGrid('props'), 'benchAEmpty')),
+    )
     expect(outline.position).toMatchObject({ x: lowerRoot.position.x, y: lowerRoot.position.y })
     expect(outline.rotation).toBe(lowerRoot.rotation)
-    expect(outline.scale).toMatchObject({ x: lower.scale.x, y: lower.scale.y })
-    const blur = outline.filters?.[0]
-    expect(blur).toBeInstanceOf(BlurFilter)
-    expect((blur as BlurFilter).strength).toBe(
-      HEARTHSIDE_STYLE.postEffects.textureOutline.blurStrength,
-    )
-    expect((blur as BlurFilter).padding).toBe(
-      Math.ceil(HEARTHSIDE_STYLE.postEffects.textureOutline.blurStrength * 4),
-    )
+    expect(layers.map((layer) => layer.scale.x)).toEqual([
+      lower.scale.x * (1 + treatment.spread),
+      lower.scale.x * (1 + treatment.spread / 2),
+    ])
+    expect(layers.map((layer) => layer.alpha)).toEqual([
+      treatment.opacity / 3,
+      (treatment.opacity * 2) / 3,
+    ])
 
     layer.reconcile(frame(scene, [], { bench_0: 'occupied' }))
-    expect(outline.texture).toBe(lower.texture)
-    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAOccupied'))
+    expect(layers.map((layer) => layer.texture)).toEqual([lower.texture, lower.texture])
+    expect(layers.map((layer) => layer.texture.frame)).toEqual(
+      Array(2).fill(frameRectangle(frameGrid('props'), 'benchAOccupied')),
+    )
 
     const firstTexture = lower.texture
     layer.install(completeArt())
-    expect(outline.texture).toBe(lower.texture)
-    expect(outline.texture.frame).toEqual(frameRectangle(frameGrid('props'), 'benchAOccupied'))
+    expect(layers.map((layer) => layer.texture)).toEqual([lower.texture, lower.texture])
+    expect(layers.map((layer) => layer.texture.frame)).toEqual(
+      Array(2).fill(frameRectangle(frameGrid('props'), 'benchAOccupied')),
+    )
     expect(lower.texture).not.toBe(firstTexture)
-
-    const blurFilter = blur as BlurFilter
-    const destroyBlurX = vi.spyOn(blurFilter.blurXFilter, 'destroy')
-    const destroyBlurY = vi.spyOn(blurFilter.blurYFilter, 'destroy')
-    const destroyBlur = vi.spyOn(blurFilter, 'destroy')
-    layer.destroy()
-    expect(outline.filters).toEqual([])
-    expect(destroyBlurX).toHaveBeenCalledOnce()
-    expect(destroyBlurY).toHaveBeenCalledOnce()
-    expect(destroyBlur).toHaveBeenCalledOnce()
-    layer.destroy()
-    expect(destroyBlurX).toHaveBeenCalledOnce()
-    expect(destroyBlurY).toHaveBeenCalledOnce()
-    expect(destroyBlur).toHaveBeenCalledOnce()
   })
 
   it('applies the stall half-turn to its exact texture outline', () => {
@@ -352,11 +350,14 @@ describe('Three Branches prop layers', () => {
     createPropLayer(targets, scene).install(completeArt())
     const lowerRoot = targets.props.getChildByLabel('prop-lower:stall_0') as Container
     const lower = sprite(lowerRoot, 'prop-lower-art')
-    const outline = targets.outlines.getChildByLabel('prop-texture-outline:stall_0') as Sprite
+    const outline = targets.outlines.getChildByLabel('prop-texture-outline:stall_0') as Container
 
     expect(lowerRoot.rotation).toBe(Math.PI)
     expect(outline.rotation).toBe(lowerRoot.rotation)
-    expect(outline.texture).toBe(lower.texture)
+    expect((outline.children as Sprite[]).map((layer) => layer.texture)).toEqual([
+      lower.texture,
+      lower.texture,
+    ])
   })
 
   it('keeps each stall id on one construction across state, facing, reconcile, and reinstall', () => {

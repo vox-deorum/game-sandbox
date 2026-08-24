@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This stage uses the [5.0 atlas pipeline](5-0-a
 
 The world remains an exact 90 degree top-down projection. Do not redesign gameplay, collision, replay, input, the generator, layout, camera limits, or camera gestures. The collision overlay remains collision truth, never an art approximation. The presentation catalog owns each atlas group's mipmap flag. Do not add procedural LOD, a new rendering engine, or a second art pipeline.
 
-Keep the night grade, centered prop texture outlines, and emissives. Unit 1 removes only the daytime authored grade. HUD and annotation layers remain ungraded, including nameplates, speech, and expression marks.
+Keep the night grade, centered texture outlines, and emissives. Unit 1 removes only the daytime authored grade. HUD and annotation layers remain ungraded, including nameplates, speech, and expression marks.
 
 Work one owner-started unit at a time. Visual decisions belong to the owner. Tests and contract checks protect behaviour, but never substitute for visual judgment. Run selected, focused tests during each unit and the complete verification set only after the final Gate B.
 
@@ -53,9 +53,9 @@ Gate B is a concise integrated-scene approval. Show the approved art in the fixt
 
 ### Current compositing comparison
 
-The exact top-down projection uses no directional prop contact shadows. Interactive props and the market crate instead receive a centered, texture-shaped falloff below their artwork. Several copies of the current atlas frame share its state and visual rotation, then use progressively smaller expansion and stronger backdrop opacity from the faint outer edge to the inner edge. This avoids zoom-dependent filtered render targets. The treatment has no world offset, footprint ellipse, cast direction, or dependency on the character-shadow frame. Pines receive no outline, and no outline or cast shadow is baked into raster art.
+The exact top-down projection uses no directional prop contact shadows. Interactive props, the market crate, and composed bridge decks instead receive a centered falloff below their artwork. Props and crates use two copies of the current texture, sharing its state and visual rotation. Bridges use the same two opacity weights with their existing component mask geometry, including compact unions. One faint outer layer uses the full configured spread, while one stronger inner layer uses half that spread. This avoids zoom-dependent filtered render targets without introducing a general layering system or changing bridge route contacts and collision. The treatment has no world offset, footprint ellipse, cast direction, or dependency on the character-shadow frame. Pines receive no outline, and no outline or cast shadow is baked into raster art.
 
-The provisional shared outline candidate uses four backdrop-tinted layers. From outer to inner, their scale and opacity pairs are `1.11` and `0.012`, `1.075` and `0.028`, `1.045` and `0.055`, then `1.02` and `0.10`. These values are comparison candidates, not Gate B approval. Review the fixture and representative generated villages at fitted, middle, and close scales before accepting or revising them, including continuous zoom through those ranges. Review night separately for emissive balance. Do not add a daytime grade, change raster colour, or move gameplay, collision, or art registration during this pass.
+The provisional shared outline candidate uses backdrop tint, `0.12` total opacity, and `0.08` spread. The outer copy receives one third of the opacity, and the inner copy receives two thirds. These values are comparison candidates, not Gate B approval. Review the fixture and representative generated villages at fitted, middle, and close scales before accepting or revising them, including continuous zoom through those ranges. Review night separately for emissive balance. Do not add a daytime grade, change raster colour, or move gameplay, collision, or art registration during this pass.
 
 ## Ordered visual units
 
@@ -63,7 +63,7 @@ The provisional shared outline candidate uses four backdrop-tinted layers. From 
 
 Desired result: terrain carries the Hearthside Ink material character and route hierarchy at fitted scale, with texture detail that rewards close inspection.
 
-Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, prop texture outlines, emissives, and ungraded HUD and annotations.
+Keep the tintable terrain composition, deterministic patterning, routes, bridge ownership, and layer ownership. Bridge cells remain water in the contour pass, and their banks remain ordinary free shoreline beneath the shared deck cover. Remove the daytime authored grade only. Keep the night grade, texture outlines, emissives, and ungraded HUD and annotations.
 
 The live renderer has no daytime authored grade. Terrain uses dedicated material colours, an even road base, and worn-stone path art. The current path treatment awaits owner visual approval, and terrain Gate B remains open.
 
