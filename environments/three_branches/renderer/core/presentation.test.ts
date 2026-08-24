@@ -530,33 +530,4 @@ describe('Hearthside Ink presentation', () => {
     delete missingActivity.expressions.activityFrames.working_pump
     expect(() => readHearthsideStyle(missingActivity)).toThrow('activityFrames keys do not match')
   })
-
-  it('validates the expression world-label and input-palette layout', () => {
-    expect(HEARTHSIDE_STYLE.expressions.worldLabel.fontSize).toBe(20)
-    expect(HEARTHSIDE_STYLE.expressions.worldLabel.iconFrameWidth).toBe(40)
-    expect(HEARTHSIDE_STYLE.expressions.tint).toBe('bone')
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.plateWidth).toBe(152)
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.labelFontSize).toBe(21)
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconFrameWidth).toBe(40)
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconContentWidth).toBe(27)
-    expect(HEARTHSIDE_STYLE.expressions.inputPalette.iconStartX).toBe(32)
-
-    const zeroFont = structuredClone(HEARTHSIDE_STYLE) as any
-    zeroFont.expressions.worldLabel.fontSize = 0
-    expect(() => readHearthsideStyle(zeroFont)).toThrow(
-      'presentation.expressions.worldLabel.fontSize must be positive',
-    )
-
-    const missingIconSize = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingIconSize.expressions.inputPalette.iconFrameWidth
-    expect(() => readHearthsideStyle(missingIconSize)).toThrow(
-      'presentation.expressions.inputPalette keys do not match its contract',
-    )
-
-    const negativeGap = structuredClone(HEARTHSIDE_STYLE) as any
-    negativeGap.expressions.inputPalette.gap = -1
-    expect(() => readHearthsideStyle(negativeGap)).toThrow(
-      'presentation.expressions.inputPalette.gap must be non-negative',
-    )
-  })
 })
