@@ -279,11 +279,15 @@ export interface ColorGradeTreatment {
   tintMix: number
 }
 
+export interface TextureOutlineLayerTreatment {
+  scaleFactor: number
+  opacity: number
+}
+
 /** A centered, texture-shaped edge treatment that blends props into the world. */
 export interface TextureOutlineTreatment {
   tint: HearthsidePaletteKey
-  opacity: number
-  blurStrength: number
+  layers: readonly TextureOutlineLayerTreatment[]
 }
 
 /** Validated art and motion calibration owned by presentation.json. */
@@ -977,11 +981,30 @@ function textureOutlineTreatment(
   name: string,
   palette: ReadonlySet<string>,
 ): TextureOutlineTreatment {
-  const source = exactRecord(value, name, ['tint', 'opacity', 'blurStrength'])
+  const source = exactRecord(value, name, ['tint', 'layers'])
+  const layerSources = array(source.layers, `${name}.layers`)
+  if (layerSources.length < 2 || layerSources.length > 6) {
+    throw new Error(`${name}.layers must contain between two and six layers.`)
+  }
+  const layers = layerSources.map((layer, index) => {
+    const layerName = `${name}.layers[${index}]`
+    const layerSource = exactRecord(layer, layerName, ['scaleFactor', 'opacity'])
+    return {
+      scaleFactor: boundedNumber(layerSource.scaleFactor, `${layerName}.scaleFactor`, 1, 1.25),
+      opacity: boundedNumber(layerSource.opacity, `${layerName}.opacity`, 0, 1),
+    }
+  })
+  for (let index = 1; index < layers.length; index += 1) {
+    const previous = layers[index - 1]
+    const current = layers[index]
+    if (previous === undefined || current === undefined) continue
+    if (current.scaleFactor >= previous.scaleFactor || current.opacity <= previous.opacity) {
+      throw new Error(`${name}.layers must run from the faint outer edge to the strong inner edge.`)
+    }
+  }
   return {
     tint: paletteKey(source.tint, palette, `${name}.tint`),
-    opacity: unitNumber(source.opacity, `${name}.opacity`),
-    blurStrength: boundedNumber(source.blurStrength, `${name}.blurStrength`, 0.25, 8, true),
+    layers,
   }
 }
 

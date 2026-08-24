@@ -1447,8 +1447,12 @@
     },
     "textureOutline": {
       "tint": "backdrop",
-      "opacity": 0.26,
-      "blurStrength": 2.5
+      "layers": [
+        { "scaleFactor": 1.11, "opacity": 0.012 },
+        { "scaleFactor": 1.075, "opacity": 0.028 },
+        { "scaleFactor": 1.045, "opacity": 0.055 },
+        { "scaleFactor": 1.02, "opacity": 0.10 }
+      ]
     }
   },
   "characters": {
@@ -1607,8 +1611,8 @@
       "labelFontSize": 21,
       "iconFrameWidth": 40,
       "iconContentWidth": 27,
-      "iconStartX": 32,
-      "iconLabelGap": 6
+      "iconStartX": 26,
+      "iconLabelGap": 8
     }
   },
   "thumbnail": {
