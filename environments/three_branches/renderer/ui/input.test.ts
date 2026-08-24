@@ -68,15 +68,6 @@ describe('Three Branches input composition', () => {
       // Speed rises 0.01 / (1 - dead zone) past the edge, far below the low-speed clamp.
       expect(joystickMotion(CENTER, { x: CENTER.x + crawl, y: CENTER.y })).toBeNull()
     })
-
-    it('honors a clamp above the default and keeps a clamp-equivalent drag', () => {
-      const crawl = JOYSTICK_RADIUS * (JOYSTICK_DEAD_ZONE + JOYSTICK_SPEED_DEAD_ZONE)
-      const point = { x: CENTER.x + crawl, y: CENTER.y }
-      // Speed 0.05 / 0.85 sits just above the default 0.05 clamp, so the default must keep it and
-      // a higher clamp must drop it.
-      expect(joystickMotion(CENTER, point)).not.toBeNull()
-      expect(joystickMotion(CENTER, point, JOYSTICK_RADIUS, 0.1)).toBeNull()
-    })
   })
 
   describe('keyboardMotion', () => {

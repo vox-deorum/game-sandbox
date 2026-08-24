@@ -112,10 +112,10 @@ export function mixedTint(first: string, second: string, amount: number): string
 }
 
 /** Contrast gain applied to the authored grayscale before the bounded terrain value shift. */
-export const TERRAIN_FILL_DETAIL_GAIN = 0.75
+const TERRAIN_FILL_DETAIL_GAIN = 0.75
 
 /** Maximum same-hue value shift retained from a terrain fill mask. */
-export const TERRAIN_FILL_MAX_VALUE_SHIFT = 0.07
+const TERRAIN_FILL_MAX_VALUE_SHIFT = 0.07
 
 const opaqueFills = new WeakMap<Texture, Map<string, Texture>>()
 

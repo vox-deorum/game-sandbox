@@ -24,7 +24,6 @@ export interface ThreeBranchesSingleAtlasDraft extends ThreeBranchesRasterDraft 
   name: string
   tintable: boolean
   format: AtlasFormat
-  consumer: string
   mipmaps: boolean
 }
 
@@ -36,7 +35,6 @@ export interface ThreeBranchesLayeredAtlasDraft {
   name: string
   tintable: boolean
   format: AtlasFormat
-  consumer: string
   mipmaps: boolean
   layers: readonly ThreeBranchesLayerDraft[]
 }
@@ -98,7 +96,6 @@ function singleAtlas(source: Record<string, unknown>, name: string): ThreeBranch
     'height',
     'tintable',
     'format',
-    'consumer',
     'mipmaps',
     'frames',
   ])
@@ -107,7 +104,6 @@ function singleAtlas(source: Record<string, unknown>, name: string): ThreeBranch
     ...raster(source, name),
     tintable: bool(source.tintable, `${name}.tintable`),
     format: format(source.format, `${name}.format`),
-    consumer: text(source.consumer, `${name}.consumer`),
     mipmaps: bool(source.mipmaps, `${name}.mipmaps`),
   }
   if (atlas.tintable !== (atlas.format === 'grayscale-alpha')) {
@@ -120,7 +116,7 @@ function layeredAtlas(
   source: Record<string, unknown>,
   name: string,
 ): ThreeBranchesLayeredAtlasDraft {
-  exact(source, name, ['name', 'tintable', 'format', 'consumer', 'mipmaps', 'layers'])
+  exact(source, name, ['name', 'tintable', 'format', 'mipmaps', 'layers'])
   const layers = list(source.layers, `${name}.layers`).map((value, index) => {
     const layerName = `${name}.layers[${index}]`
     const layer = record(value, layerName)
@@ -135,7 +131,6 @@ function layeredAtlas(
     name: pathSegment(source.name, `${name}.name`),
     tintable: bool(source.tintable, `${name}.tintable`),
     format: format(source.format, `${name}.format`),
-    consumer: text(source.consumer, `${name}.consumer`),
     mipmaps: bool(source.mipmaps, `${name}.mipmaps`),
     layers,
   }
@@ -346,19 +341,11 @@ export const THREE_BRANCHES_THUMBNAIL_ASSET = readThreeBranchesThumbnailAsset(
 )
 
 /** Resolve frame names from one JSON-owned atlas page. */
-export function atlasFrameNames(group: string, layer?: string): readonly string[] {
+export function atlasFrameNames(group: string): readonly string[] {
   const atlas = THREE_BRANCHES_ASSET_CATALOG.find((item) => item.name === group)
   if (atlas === undefined) throw new Error(`Three Branches manifest has no ${group} atlas.`)
-  if (!('layers' in atlas)) {
-    if (layer !== undefined)
-      throw new Error(`Three Branches manifest atlas ${group} has no layers.`)
-    return atlas.frames.names
-  }
-  if (layer === undefined)
-    throw new Error(`Three Branches manifest atlas ${group} requires a layer.`)
-  const page = atlas.layers.find((item) => item.name === layer)
-  if (page === undefined) throw new Error(`Three Branches manifest has no ${group}.${layer} layer.`)
-  return page.frames.names
+  if ('layers' in atlas) throw new Error(`Three Branches manifest atlas ${group} requires a layer.`)
+  return atlas.frames.names
 }
 
 function atlasBuildPages(
@@ -420,11 +407,8 @@ export async function loadThreeBranchesRuntimeAssets<T>(
   load: (source: string, options?: ThreeBranchesRuntimeAssetLoadOptions) => Promise<T> | T,
 ): Promise<ThreeBranchesRuntimeAssets<T>> {
   const urls = threeBranchesRuntimeAssetUrls()
-  const loadPath = (path: string, options?: ThreeBranchesRuntimeAssetLoadOptions): Promise<T> => {
-    const source = urls[path]
-    if (source === undefined) throw new Error(`Three Branches atlas is missing: ${path}`)
-    return Promise.resolve(load(source, options))
-  }
+  const loadPath = (path: string, options?: ThreeBranchesRuntimeAssetLoadOptions): Promise<T> =>
+    Promise.resolve(load(urls[path]!, options))
   const loaded = new Map<string, T>()
   await Promise.all(
     runtimeAtlasPages().map(async (page) => {

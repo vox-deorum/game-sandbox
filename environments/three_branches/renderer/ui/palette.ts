@@ -27,7 +27,7 @@ const GRID_X = THREE_BRANCHES_PRESENTATION.internalSize.width - CONTENT_MARGIN -
 const GRID_Y = THREE_BRANCHES_PRESENTATION.internalSize.height - CONTENT_MARGIN - GRID_HEIGHT
 
 /** One emote plate: its ruleset token, its hotkey digit, and its fixed logical rectangle. */
-export interface EmotePlate {
+interface EmotePlate {
   token: string
   hotkey: string
   rect: Rect
@@ -67,7 +67,7 @@ export function plateProbe(rect: Rect): string {
 }
 
 /** Retained palette drawing, repainted toward the queued expression and the Use latch. */
-export interface ExpressionPalette {
+interface ExpressionPalette {
   /**
    * Repaint the plates: the queued emote takes the gilt active treatment, the Use plate the gilt
    * treatment while latched, a gilt stroke while hovered, and a dim treatment while disabled.

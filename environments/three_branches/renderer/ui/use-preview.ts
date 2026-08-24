@@ -52,7 +52,7 @@ export function selectUseTarget(
 }
 
 /** The closest point on a collision shape, mirroring the engine's nearest-point geometry. */
-export function nearestPointOn(shape: CollisionShape, point: WorldPoint): WorldPoint {
+function nearestPointOn(shape: CollisionShape, point: WorldPoint): WorldPoint {
   if (shape.kind === 'rect') {
     return {
       x: Math.min(Math.max(point.x, shape.rect.x), shape.rect.x + shape.rect.width),

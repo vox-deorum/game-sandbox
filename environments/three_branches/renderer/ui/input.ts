@@ -69,15 +69,13 @@ export function wrapDegrees(value: number): number {
 export function joystickMotion(
   center: { x: number; y: number },
   point: { x: number; y: number },
-  radius = JOYSTICK_RADIUS,
-  speedDeadZone = JOYSTICK_SPEED_DEAD_ZONE,
 ): MotionInput | null {
   const dx = point.x - center.x
   const dy = point.y - center.y
-  const reach = Math.hypot(dx, dy) / radius
+  const reach = Math.hypot(dx, dy) / JOYSTICK_RADIUS
   if (reach <= JOYSTICK_DEAD_ZONE) return null
   const speed = Math.min((reach - JOYSTICK_DEAD_ZONE) / (1 - JOYSTICK_DEAD_ZONE), 1)
-  if (speed < speedDeadZone) return null
+  if (speed < JOYSTICK_SPEED_DEAD_ZONE) return null
   return {
     heading: wrapDegrees((Math.atan2(-dy, dx) * 180) / Math.PI),
     speed,

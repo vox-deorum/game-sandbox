@@ -213,9 +213,7 @@ function assertUnique(ids: readonly string[], name: string): void {
 }
 
 function playerNumber(player: string): number {
-  const match = PLAYER_ID.exec(player)
-  if (match === null) throw new Error(`Invalid Three Branches player id ${player}.`)
-  return Number(match[1])
+  return Number(PLAYER_ID.exec(player)![1])
 }
 
 function assertCanonicalPlayerId(player: string): void {

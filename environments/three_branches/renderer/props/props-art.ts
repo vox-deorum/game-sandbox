@@ -68,7 +68,7 @@ export function benchVariantIndex(id: string): number {
 }
 
 /** Prop art types enabled for the current owner artwork review. */
-export const SHIPPED_PROP_TYPES = [
+const SHIPPED_PROP_TYPES = [
   'stall',
   'lantern',
   'bench',

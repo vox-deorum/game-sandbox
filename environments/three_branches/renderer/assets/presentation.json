@@ -7,7 +7,6 @@
       "height": 1152,
       "tintable": true,
       "format": "grayscale-alpha",
-      "consumer": "terrain fills, transitions, and the upper-wall repaint",
       "mipmaps": false,
       "frames": {
         "width": 128,
@@ -415,7 +414,6 @@
       "height": 128,
       "tintable": false,
       "format": "full-color",
-      "consumer": "component-wide bridge decks",
       "mipmaps": false,
       "frames": {
         "width": 128,
@@ -436,7 +434,6 @@
       "name": "buildings",
       "tintable": false,
       "format": "full-color",
-      "consumer": "complete home, inn, and repair-shed roofs",
       "mipmaps": true,
       "layers": [
         {
@@ -508,7 +505,6 @@
       "height": 1536,
       "tintable": false,
       "format": "full-color",
-      "consumer": "complete ordinary interactive prop state stills, with separate effects and emissives",
       "mipmaps": true,
       "frames": {
         "width": 384,
@@ -759,7 +755,6 @@
       "height": 1024,
       "tintable": false,
       "format": "full-color",
-      "consumer": "six complete high-resolution pine variants and the market crate",
       "mipmaps": true,
       "frames": {
         "width": 512,
@@ -819,7 +814,6 @@
       "height": 768,
       "tintable": false,
       "format": "full-color",
-      "consumer": "four full-color static cast bases with independently rotated left and right arms",
       "mipmaps": true,
       "frames": {
         "width": 192,
@@ -849,7 +843,6 @@
       "height": 512,
       "tintable": true,
       "format": "grayscale-alpha",
-      "consumer": "character marks, merged name-pills, prop effects, and white-crane dressing",
       "mipmaps": false,
       "frames": {
         "width": 192,
