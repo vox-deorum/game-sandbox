@@ -4,7 +4,7 @@ import { connectedComponents } from './terrain-helpers.js'
 export const TERRAIN_EXTERIOR = '__exterior__'
 
 /** Materials whose boundaries may be shaped into contours. */
-export const CONTOURED_MATERIALS = new Set(['ground', 'field', 'reeds', 'water', 'road', 'path'])
+const CONTOURED_MATERIALS = new Set(['ground', 'field', 'reeds', 'water', 'road', 'path'])
 /** Materials whose boundaries remain fixed in the contour graph. */
 export const FIXED_MATERIALS = new Set(['interior', 'doorway', 'wall', TERRAIN_EXTERIOR])
 

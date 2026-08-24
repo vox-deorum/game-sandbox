@@ -52,8 +52,6 @@ export function planTerrainRoutes(
   }
 
   const visualSubstrate = propagateVisualSubstrate(cells, width, height)
-  // The substrate records keep the provenance of the cell they replaced, so a cell the following
-  // pass rewrites no longer matches its record. Only diagnostics read that provenance.
   const visualRows = normalizeDiagonalTouches(
     replaceRouteCells(rows, visualSubstrate),
     groundNameForCode,
@@ -88,7 +86,6 @@ export function planTerrainRoutes(
     width,
     height,
     visualRows,
-    visualSubstrate,
     roadGuide,
     roadMaskCells,
     pathGuides,

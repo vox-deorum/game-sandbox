@@ -190,7 +190,6 @@ function validateInputs(
   }
   bounded(profile.sampleSpacingCells, 0, 4, 'sample spacing')
   bounded(profile.cornerRadiusCells, 0, 4, 'corner radius', true)
-  smoothingPassesFor(profile, 'Terrain curve')
   if (!Array.isArray(profile.octaves) || profile.octaves.length > 8) {
     throw new Error('Terrain curve octaves must be a list of at most eight bands.')
   }

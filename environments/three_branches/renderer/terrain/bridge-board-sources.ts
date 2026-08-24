@@ -81,14 +81,7 @@ export function extractBridgeBoardSources(
     return { start, end }
   })
   const sources = expanded.map(({ start, end }) => cropBoard(pixels, width, height, start, end))
-  if (sources.length !== 3) throw malformed(sourceName, 'did not produce three board sources.')
-  const first = sources[0]
-  const second = sources[1]
-  const third = sources[2]
-  if (first === undefined || second === undefined || third === undefined) {
-    throw malformed(sourceName, 'did not produce three board sources.')
-  }
-  return [first, second, third]
+  return [sources[0]!, sources[1]!, sources[2]!]
 }
 
 function alphaCoverage(

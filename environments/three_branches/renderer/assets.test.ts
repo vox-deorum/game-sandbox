@@ -397,7 +397,7 @@ describe('Three Branches asset catalog', () => {
     )
   })
 
-  it('keeps compact expression and activity pictograms on the expanded effects page', () => {
+  it('keeps fitted expressions and runtime-ready activity pictograms on the effects page', () => {
     const effects = presentationDocument.atlases.find((atlas) => atlas.name === 'effects')
     if (effects === undefined || 'layers' in effects) throw new Error('Effects atlas is missing.')
 
@@ -405,7 +405,7 @@ describe('Three Branches asset catalog', () => {
     expect(effects.frames).toMatchObject({ width: 192, height: 128, columns: 12, rows: 4 })
 
     const names = effects.frames.cells.map((cell) => cell.name)
-    const pictogramNames = [
+    const expressionNames = [
       'expressionWave',
       'expressionNod',
       'expressionShakeHead',
@@ -416,6 +416,8 @@ describe('Three Branches asset catalog', () => {
       'expressionSleep',
       'expressionSweep',
       'expressionUse',
+    ]
+    const activityNames = [
       'expressionTendingStall',
       'expressionLighting',
       'expressionSitting',
@@ -427,11 +429,9 @@ describe('Three Branches asset catalog', () => {
       'expressionWorkingPump',
       'expressionRingingBell',
     ]
-    expect(names).toEqual(
-      expect.arrayContaining(pictogramNames),
-    )
+    expect(names).toEqual(expect.arrayContaining([...expressionNames, ...activityNames]))
 
-    for (const name of pictogramNames) {
+    for (const name of expressionNames) {
       const cell = effects.frames.cells.find((item) => item.name === name)
       if (cell === undefined) throw new Error(`Missing effects cell ${name}.`)
       expect(cell.render).toMatchObject({
@@ -439,6 +439,11 @@ describe('Three Branches asset catalog', () => {
         maxSize: { width: 128, height: 96 },
         anchor: { x: 96, y: 64 },
       })
+    }
+    for (const name of activityNames) {
+      const cell = effects.frames.cells.find((item) => item.name === name)
+      if (cell === undefined) throw new Error(`Missing effects cell ${name}.`)
+      expect(cell.render).toEqual({ kind: 'copy' })
     }
   })
 
@@ -470,7 +475,9 @@ describe('Three Branches asset catalog', () => {
       expect(coloredTransparentPixelCount(emptyPath)).toBe(0)
       expect(coloredTransparentPixelCount(occupiedPath)).toBe(0)
 
-      const emptyPixels = PNG.sync.read(readFileSync(fileURLToPath(new URL(emptyPath, import.meta.url)))).data
+      const emptyPixels = PNG.sync.read(
+        readFileSync(fileURLToPath(new URL(emptyPath, import.meta.url))),
+      ).data
       const occupiedPixels = PNG.sync.read(
         readFileSync(fileURLToPath(new URL(occupiedPath, import.meta.url))),
       ).data

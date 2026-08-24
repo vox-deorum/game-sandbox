@@ -12,7 +12,8 @@ import type {
 import { buildStaticScene } from '../map/scene.js'
 import { readStatic } from '../ui/overlay.js'
 import { findCurveCrossings, maxCurveTubeDeviation } from './terrain-contour-validation.js'
-import { planTerrainContours, TERRAIN_EXTERIOR } from './terrain-contours.js'
+import { planTerrainContours } from './terrain-contours.js'
+import { TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
 import { DEFAULT_TERRAIN_ROUTE_SETTINGS, planTerrainRoutes } from './terrain-routes.js'
 
 const names: Readonly<Record<string, string>> = {

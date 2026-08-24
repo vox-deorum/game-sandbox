@@ -9,7 +9,7 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { HEARTHSIDE_STYLE } from '../core/presentation.js'
 import type {
   ContourCoordinate,
@@ -310,7 +310,7 @@ export function contourSvg(scene: ContourDebugScene, options: SvgOptions): strin
 }
 
 /** The measurements as lines of text, shown in the corner of the drawing and on the terminal. */
-export function reportLines(
+function reportLines(
   measurements: ContourMeasurements,
   options: Pick<SvgOptions, 'seed'>,
 ): string[] {
@@ -421,7 +421,7 @@ function round(value: number): string {
 }
 
 /** Read the arguments the script passes, draw the village, and report what it measured. */
-export async function runContourDebugCli(
+async function runContourDebugCli(
   arguments_: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
   const values = new Map<string, string>()
@@ -463,5 +463,3 @@ const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
   await runContourDebugCli()
 }
-
-export const CONTOUR_DEBUG_ENTRY = fileURLToPath(import.meta.url)

@@ -7,8 +7,6 @@ import { assignComponentAndRingIds, buildRings } from './terrain-contour-rings.j
 import { buildContourReferences, shapeChains } from './terrain-contour-shaping.js'
 import { repairCurveGraph, validatePartition } from './terrain-contour-validation.js'
 
-export { TERRAIN_EXTERIOR } from './terrain-contour-grid.js'
-
 /**
  * Plan a closed, deterministic shared contour graph from top-first semantic rows.
  *
@@ -61,7 +59,6 @@ export function planTerrainContours(
       role: ring.role,
       uses: ring.uses,
       points: ring.points,
-      signedArea: ring.signedArea,
     })),
     components: componentRecords.map((component) => ({
       id: component.id,

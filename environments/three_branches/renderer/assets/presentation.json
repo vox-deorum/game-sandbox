@@ -1153,52 +1153,52 @@
           {
             "name": "expressionTendingStall",
             "source": { "path": "./assets/source-art/frames/effects/expressionTendingStall.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionLighting",
             "source": { "path": "./assets/source-art/frames/effects/expressionLighting.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionSitting",
             "source": { "path": "./assets/source-art/frames/effects/expressionSitting.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionTendingShrine",
             "source": { "path": "./assets/source-art/frames/effects/expressionTendingShrine.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionReadingBoard",
             "source": { "path": "./assets/source-art/frames/effects/expressionReadingBoard.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionTendingPlot",
             "source": { "path": "./assets/source-art/frames/effects/expressionTendingPlot.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionTendingHearth",
             "source": { "path": "./assets/source-art/frames/effects/expressionTendingHearth.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionWorkingBench",
             "source": { "path": "./assets/source-art/frames/effects/expressionWorkingBench.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionWorkingPump",
             "source": { "path": "./assets/source-art/frames/effects/expressionWorkingPump.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionRingingBell",
             "source": { "path": "./assets/source-art/frames/effects/expressionRingingBell.png" },
-            "render": { "kind": "fitVisible", "sourceAlpha": { "clearAtOrBelow": 0, "opaqueAtOrAbove": 255 }, "bounds": { "alphaAbove": 0 }, "maxSize": { "width": 128, "height": 96 }, "anchor": { "x": 96, "y": 64 }, "resampler": "bilinear-premultiplied-encoded-rgb", "outputAlpha": { "clearAtOrBelow": 0, "clearColorAtZero": true } }
+            "render": { "kind": "copy" }
           },
           {
             "name": "expressionAccentA",

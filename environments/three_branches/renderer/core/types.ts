@@ -447,8 +447,6 @@ export interface TerrainContourRing {
   readonly uses: readonly TerrainContourUse[]
   /** Shaped ring points in traversal order. */
   readonly points: readonly ContourCoordinate[]
-  /** Signed area, positive for outer rings and negative for holes. */
-  readonly signedArea: number
 }
 
 /** One connected material region and its directly owned holes. */
@@ -672,8 +670,6 @@ export interface TerrainRoutePlan {
   readonly height: number
   /** Ground rows after natural substrate replaces road and path cells. */
   readonly visualRows: readonly string[]
-  /** Provenance for every propagated substrate cell. */
-  readonly visualSubstrate: readonly TerrainRoadSubstrateCell[]
   /** Shaped west-to-east road centerline. */
   readonly roadGuide: readonly TerrainRoadGuidePoint[]
   /** Cells covered by the road and road-owned bridge mask. */

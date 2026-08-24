@@ -82,15 +82,11 @@ export function createTerrainArt(atlas: Texture, bridges: Texture, scene: Static
       treatment.offsetPassOpacity,
     )
   }
-  const groundTreatment = HEARTHSIDE_STYLE.terrain.fills.ground
-  if (groundTreatment === undefined) {
-    throw new Error('Three Branches presentation has no ground terrain fill.')
-  }
   patterns.ink = patternTexture(
     fillFramesFor(
       atlas,
       manifest.frames,
-      groundTreatment.frames,
+      HEARTHSIDE_STYLE.terrain.fills.ground!.frames,
       HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.terrain.seams.ink.tint],
     ),
     'ink-seam',
@@ -107,11 +103,13 @@ export function createTerrainArt(atlas: Texture, bridges: Texture, scene: Static
     tileSize: manifest.frames.width,
     textures: {
       [TRANSPARENT_CODE]: Texture.EMPTY,
-      [UPPER_WALL_CODE]: framesFor(
-        atlas,
-        manifest.frames,
-        HEARTHSIDE_STYLE.terrain.upperWall.frames,
-        HEARTHSIDE_STYLE.terrain.upperWall.tint,
+      [UPPER_WALL_CODE]: HEARTHSIDE_STYLE.terrain.upperWall.frames.map((frame) =>
+        tintedMaskFrame(
+          atlas,
+          manifest.frames,
+          frame,
+          HEARTHSIDE_STYLE.palette[HEARTHSIDE_STYLE.terrain.upperWall.tint],
+        ),
       ),
     },
   }
@@ -202,13 +200,4 @@ function fillFramesFor(
   detailShift?: number,
 ): readonly Texture[] {
   return frames.map((frame) => opaqueTintedFillFrame(atlas, grid, frame, tintHex, detailShift))
-}
-/** Bake one semantic mask family. */
-function framesFor(
-  atlas: Texture,
-  grid: Parameters<typeof tintedMaskFrame>[1],
-  frames: readonly string[],
-  tint: keyof typeof HEARTHSIDE_STYLE.palette,
-): readonly Texture[] {
-  return frames.map((frame) => tintedMaskFrame(atlas, grid, frame, HEARTHSIDE_STYLE.palette[tint]))
 }

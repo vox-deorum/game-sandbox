@@ -18,7 +18,6 @@ export interface WorkingRing {
   readonly rawPoints: readonly ContourCoordinate[]
   readonly uses: readonly TerrainContourUse[]
   readonly points: readonly ContourCoordinate[]
-  readonly signedArea: number
   role: 'outer' | 'hole'
 }
 export function buildRings(
@@ -77,7 +76,6 @@ export function buildRings(
         rawPoints,
         uses,
         points,
-        signedArea: signedArea(points),
         role: rawArea >= 0 ? 'outer' : 'hole',
       })
     }
