@@ -52,7 +52,7 @@ export interface MapLayerView {
 }
 
 /** Return the configured composite alpha for one drawn surface material. */
-export function materialLayerAlpha(material: SurfaceMaterial): number {
+function materialLayerAlpha(material: SurfaceMaterial): number {
   if (material === 'road') return HEARTHSIDE_STYLE.terrain.routes.road.opacity
   if (material === 'path') return HEARTHSIDE_STYLE.terrain.routes.path.opacity
   const treatment = HEARTHSIDE_STYLE.terrain.fills[material]
@@ -287,7 +287,7 @@ function ringContains(ring: readonly ContourCoordinate[], x: number, y: number):
 }
 
 /** Darken one #rrggbb color multiplicatively toward black. */
-export function darkenedColor(hex: string, amount: number): string {
+function darkenedColor(hex: string, amount: number): string {
   const value = hex.replace('#', '')
   if (value.length !== 6) throw new Error(`Terrain seam color ${hex} must be #rrggbb.`)
   const channel = (start: number): string =>
@@ -298,7 +298,7 @@ export function darkenedColor(hex: string, amount: number): string {
 }
 
 /** Pool a darkened wash inside each natural overlay component along its boundary. */
-export function poolingGraphics(plan: TerrainContourPlan, cellSize: number): Graphics {
+function poolingGraphics(plan: TerrainContourPlan, cellSize: number): Graphics {
   const pooling = new Graphics()
   const spec = HEARTHSIDE_STYLE.terrain.seams.pooling
   if (spec.widthCells <= 0 || spec.opacity <= 0) return pooling
@@ -323,7 +323,7 @@ export function poolingGraphics(plan: TerrainContourPlan, cellSize: number): Gra
 }
 
 /** Chains drawn with the broken ink line: both faces are natural surface materials. */
-export function inkedChain(chain: Pick<TerrainContourChain, 'materials'>): boolean {
+function inkedChain(chain: Pick<TerrainContourChain, 'materials'>): boolean {
   return chain.materials.every((material) => NATURAL_SEAM_MATERIALS.has(material))
 }
 
@@ -343,7 +343,7 @@ interface InkPiece {
  * Draw the hand-drawn ink line in deterministic broken runs along natural seams. Each run gets a
  * faint wide bleed underlay and a grain-textured body whose width and tone wobble piece by piece.
  */
-export function inkGraphics(
+function inkGraphics(
   plan: TerrainContourPlan,
   cellSize: number,
   fill: FillPattern,
@@ -724,7 +724,7 @@ export function roadGuideGraphics(
 }
 
 /** White coverage of the road, every path, and every bridge deck, cutting seams under routes. */
-export function routeCoverGraphics(routes: TerrainRoutePlan, cellSize: number): Graphics {
+function routeCoverGraphics(routes: TerrainRoutePlan, cellSize: number): Graphics {
   const cover = bridgeDeckMask(routes.bridgeComponents, cellSize)
   appendRoadGuide(cover, routes, cellSize, '#ffffff')
   appendPathGuides(cover, routes, cellSize, '#ffffff')
@@ -1022,7 +1022,7 @@ function appendRing(path: GraphicsPath, ring: TerrainContourRing, cellSize: numb
   path.closePath()
 }
 
-export function ownedMapLayerView(
+function ownedMapLayerView(
   naturalView: Container,
   architectureView: Container,
   grounds: readonly GroundView[],

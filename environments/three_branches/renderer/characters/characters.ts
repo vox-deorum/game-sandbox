@@ -228,7 +228,7 @@ function drawFallback(fallback: Graphics, character: CharacterDrawable, rotation
     .fill(character.fill)
     .stroke({ color: PALETTE.backdrop, width: 2 })
     .moveTo(0, 0)
-    .lineTo(0, -character.radius * 1.8)
+    .lineTo(0, character.radius * 1.8)
     .stroke({ color: PALETTE.backdrop, width: 2 })
   fallback.rotation = rotation
 }
@@ -245,7 +245,7 @@ function drawFarMark(
     .fill(HEARTHSIDE_STYLE.palette[tint])
     .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1.5 })
     .moveTo(0, 0)
-    .lineTo(0, -radius * 1.8)
+    .lineTo(0, radius * 1.8)
     .stroke({ color: HEARTHSIDE_STYLE.palette.bone, width: 1.5 })
   mark.rotation = rotation
 }

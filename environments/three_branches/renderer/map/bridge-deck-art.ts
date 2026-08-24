@@ -8,11 +8,11 @@ import type { BridgeBoardSource, BridgeBoardSources } from '../terrain/bridge-bo
 /** Source resolution used for a component-wide bridge deck canvas. */
 export const BRIDGE_DECK_SOURCE_CELLS = 128
 
-export interface BridgeDeckArt {
+interface BridgeDeckArt {
   readonly bridgeBoards: BridgeBoardSources
 }
 
-export interface BridgeDeckBounds {
+interface BridgeDeckBounds {
   readonly minX: number
   readonly maxX: number
   readonly minY: number
@@ -20,7 +20,7 @@ export interface BridgeDeckBounds {
   readonly runAxis: 'horizontal' | 'vertical'
 }
 
-export interface PlannedBridgeBoard {
+interface PlannedBridgeBoard {
   readonly index: number
   readonly x: number
   readonly y: number
@@ -35,7 +35,7 @@ export interface PlannedBridgeBoard {
   readonly crossAxisPhase: number
 }
 
-export interface BridgeBoardPlan {
+interface BridgeBoardPlan {
   /** Full source-canvas bounds, including transparent portal padding. */
   readonly bounds: BridgeDeckBounds
   /** Bounds occupied by board material before the component mask is applied. */

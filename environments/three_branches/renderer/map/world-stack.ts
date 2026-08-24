@@ -7,10 +7,6 @@ import type { MapLayerView } from './map-layer.js'
 export interface WorldArtStack {
   /** The camera-transformed root the renderer masks and adds to the Pixi stage. */
   readonly root: Container
-  /** Ungraded terrain, routes, and seams. */
-  readonly natural: Container
-  /** Generated art and architecture. */
-  readonly authored: Container
   readonly scenery: Container
   readonly outlines: Container
   readonly props: Container
@@ -77,8 +73,6 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
 
   return {
     root,
-    natural,
-    authored,
     scenery,
     outlines,
     props,

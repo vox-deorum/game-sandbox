@@ -16,8 +16,10 @@ function mapView(): MapLayerView {
 describe('Three Branches world art stack', () => {
   it('draws shared texture outlines below scenery and interactive props', () => {
     const stack = createWorldArtStack(mapView())
+    const worldArt = stack.root.getChildByLabel('world-art') as Container
+    const authored = worldArt.getChildByLabel('world-authored') as Container
 
-    expect(stack.authored.children.map((child) => child.label)).toEqual([
+    expect(authored.children.map((child) => child.label)).toEqual([
       'architecture',
       'prop-outlines',
       'scenery',
@@ -27,7 +29,6 @@ describe('Three Branches world art stack', () => {
       'roofs',
       'effects',
     ])
-
     stack.destroy()
   })
 
@@ -35,7 +36,10 @@ describe('Three Branches world art stack', () => {
     const stack = createWorldArtStack(mapView())
     const worldArt = stack.root.getChildByLabel('world-art') as Container
 
-    expect(worldArt.children).toEqual([stack.natural, stack.authored])
+    expect(worldArt.children.map((child) => child.label)).toEqual([
+      'world-natural',
+      'world-authored',
+    ])
     expect(stack.root.children).toEqual([
       worldArt,
       stack.emissives,

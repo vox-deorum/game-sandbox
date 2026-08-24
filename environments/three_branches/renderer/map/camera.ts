@@ -73,7 +73,6 @@ export function suspendVisitorFollow(state: VisitorCameraState): VisitorCameraSt
 
 /** Mark a suspended live-play camera to ease back to its latest visitor target. */
 export function beginVisitorReturn(state: VisitorCameraState): VisitorCameraState {
-  if (state.following || state.returning) return state
   return { ...state, returning: true }
 }
 
@@ -89,7 +88,7 @@ export function advanceVisitorReturn(
   const dx = destination.x - state.camera.x
   const dy = destination.y - state.camera.y
   const distancePx = Math.hypot(dx, dy) * state.camera.zoom
-  const elapsedMs = Number.isFinite(dtMs) ? Math.max(0, dtMs) : 0
+  const elapsedMs = dtMs
   const stepPx = elapsedMs * RETURN_SPEED_PX_PER_MS
   if (distancePx <= Math.max(RETURN_SNAP_DISTANCE_PX, stepPx)) {
     return {
