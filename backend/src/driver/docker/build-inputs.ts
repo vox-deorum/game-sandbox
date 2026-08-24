@@ -23,6 +23,7 @@ import { isSubmissionIgnored, SUBMISSION_IGNORED_SEGMENTS } from '../../submissi
 const BUILD_CONTEXT_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
   ...SUBMISSION_IGNORED_SEGMENTS,
   'data',
+  '.tls'
 ])
 const ROOT_TEMP_PREFIXES = ['.codex-pytest-budget-', '.test-tmp-']
 
