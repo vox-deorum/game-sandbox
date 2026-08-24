@@ -46,8 +46,12 @@ describe('SetUpLocallyButton', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
-    expect(dialog).toHaveTextContent('git clone -b week-4 https://example.test/template')
+    expect(dialog).toHaveTextContent(
+      'git clone -b week-4 --single-branch https://example.test/template flappy-bird-week-4 ' +
+        'cd flappy-bird-week-4 git branch -M main git remote remove origin',
+    )
     expect(dialog).toHaveTextContent('python -m sandbox play')
+    expect(screen.getByRole('button', { name: 'Copy setup commands' })).toBeInTheDocument()
     expect(screen.queryByText('manifest.json')).toBeNull()
   })
 

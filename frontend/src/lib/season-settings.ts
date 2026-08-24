@@ -118,8 +118,19 @@ export function seasonSettingsFile(
   return Object.keys(file).length === 2 ? null : file
 }
 
-/** A command that preserves the season-selected template branch. */
-export function cloneCommandFor(settings: SeasonSettings): string {
+/**
+ * The terminal commands that copy the season template: clone the season's branch into a folder
+ * named for the environment and season, enter it, rename the branch to `main`, and remove the
+ * template remote. With no remote left, the first push prompts the student's editor to publish
+ * the copy to their own GitHub account instead of failing against the template. The per-season
+ * folder name keeps copies from different seasons from colliding.
+ */
+export function setupCommandsFor(meta: EnvironmentMeta, settings: SeasonSettings): string {
   const { branch, url } = settings.template_repo
-  return branch === null ? `git clone ${url}` : `git clone -b ${branch} ${url}`
+  const folder = `${meta.env_id}-${settings.season_id}`.replaceAll('_', '-')
+  const clone =
+    branch === null
+      ? `git clone ${url} ${folder}`
+      : `git clone -b ${branch} --single-branch ${url} ${folder}`
+  return [clone, `cd ${folder}`, 'git branch -M main', 'git remote remove origin'].join('\n')
 }

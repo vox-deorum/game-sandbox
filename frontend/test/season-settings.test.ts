@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import type { SeasonSettings } from '../src/api/client.js'
 import {
-  cloneCommandFor,
   describeSeasonChanges,
   seasonSettingsFile,
+  setupCommandsFor,
 } from '../src/lib/season-settings.js'
 import { flappyMeta, spadesMeta } from './helpers/fixtures.js'
 
@@ -39,7 +39,10 @@ describe('season settings', () => {
       decision_limit_ms: 500,
       game_limit_ms: 60_000,
     })
-    expect(cloneCommandFor(settings)).toBe('git clone -b week-4 https://example.test/template')
+    expect(setupCommandsFor(flappyMeta(), settings)).toBe(
+      'git clone -b week-4 --single-branch https://example.test/template flappy-bird-week-4\n' +
+        'cd flappy-bird-week-4\ngit branch -M main\ngit remote remove origin',
+    )
   })
 
   it('uses the season ID when the label is blank', () => {
@@ -58,10 +61,16 @@ describe('season settings', () => {
     ).toBeNull()
   })
 
-  it('uses the default branch without a branch option', () => {
+  it('clones the default branch when the season names no branch', () => {
     expect(
-      cloneCommandFor({ ...settings, template_repo: { ...settings.template_repo, branch: null } }),
-    ).toBe('git clone https://example.test/template')
+      setupCommandsFor(flappyMeta(), {
+        ...settings,
+        template_repo: { ...settings.template_repo, branch: null },
+      }),
+    ).toBe(
+      'git clone https://example.test/template flappy-bird-week-4\ncd flappy-bird-week-4\n' +
+        'git branch -M main\ngit remote remove origin',
+    )
   })
 
   it('keeps a changed message length visible when the season disables messaging', () => {

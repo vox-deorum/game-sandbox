@@ -18,7 +18,7 @@ Normally, submit a public GitHub repository. You can use a private repository on
 
 1. Open your repository on GitHub and copy its URL from the browser address bar.
 2. Open your environment on the course website and go to **My Submissions**.
-3. Review the season changes shown on the page (a **season** is one competition round for this environment). Use **Set Up Locally** if you need the template link or a `season.json` file that applies its gameplay parameters and decision and game limits on your computer. Messaging and LLM availability remain website and server settings.
+3. Review the season changes shown on the page (a **season** is one competition round for this environment). Use **Set Up Locally** if you need the template setup commands or a `season.json` file that applies its gameplay parameters and decision and game limits on your computer. Messaging and LLM availability remain website and server settings.
 4. Paste the GitHub URL.
 5. Optionally write a **rating prompt**, a short note telling raters what to evaluate about your agent.
 6. Review the reachability check, which confirms that the server can reach your repository, then submit.

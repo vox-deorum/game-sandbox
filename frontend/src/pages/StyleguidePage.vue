@@ -12,6 +12,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCheckboxGroup from '../components/ui/UiCheckboxGroup.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import UiCodeBlock from '../components/ui/UiCodeBlock.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -58,6 +59,12 @@ const llmModelsMode = ref('all')
 const llmTokenBudget = ref<number | ''>('')
 const checkboxValues = ref(['moving'])
 const tooltipInspected = ref(0)
+const codeBlockExample = [
+  'git clone -b templates/flappy_bird --single-branch https://github.com/vox-deorum/game-agent-template flappy-bird-playground',
+  'cd flappy-bird-playground',
+  'git branch -M main',
+  'git remote remove origin',
+].join('\n')
 const tooltipSettings = [
   { label: 'Pipe gap', value: '90' },
   { label: 'Expansions', value: 'Moving pipes, Night mode' },
@@ -299,6 +306,11 @@ const tooltipSettings = [
           </template>
         </UiField>
       </div>
+    </section>
+
+    <section>
+      <h2>UiCodeBlock</h2>
+      <UiCodeBlock :code="codeBlockExample" copy-label="Copy example commands" />
     </section>
 
     <section>

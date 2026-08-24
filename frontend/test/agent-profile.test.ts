@@ -589,8 +589,9 @@ describe('AgentProfilePage', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Set Up Locally' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(
-      screen.getByText('git clone -b week-4 https://example.test/template'),
+      screen.getByText(/git clone -b week-4 --single-branch https:\/\/example\.test\/template/),
     ).toBeInTheDocument()
+    expect(screen.getByText(/git remote remove origin/)).toBeInTheDocument()
   })
 
   it('keeps the current season header useful when its metadata read fails', async () => {

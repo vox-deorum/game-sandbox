@@ -196,7 +196,9 @@ test('shows submission-season changes and downloads its local setup file', async
   })
 
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('git clone -b templates/flappy_bird')
+  await expect(dialog).toContainText('git clone -b templates/flappy_bird --single-branch')
+  await expect(dialog).toContainText('git remote remove origin')
+  await expect(dialog.getByRole('button', { name: 'Copy setup commands' })).toBeVisible()
   await expect(dialog).toContainText(
     'Move the downloaded season.json next to manifest.json in the cloned folder.',
   )

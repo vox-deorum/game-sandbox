@@ -16,18 +16,20 @@ Install:
 
 ## 1. Copy the template to your computer
 
-Find the agent template's GitHub repository link in your assignment or on the environment's **My Submissions** page. On My Submissions, choose **Set Up Locally**, which shows the clone command you can use. **Cloning** a repository means copying it to your computer.
-
-If you use Visual Studio Code, select **Clone Git Repository** on the Start page. After the cloned repository folder opens, select **Terminal > New Terminal**. Use that terminal for the rest of this guide. It should start in the folder containing `agent.py` and `manifest.json`.
-
-To clone with Git in a terminal instead, run:
+Open the environment's **My Submissions** page on the course website and choose **Set Up Locally**. It shows the exact commands for your season, ready to copy. They look like this:
 
 ```console
-git clone <your-repository-url>
-cd <your-repository-name>
+git clone -b <season-branch> --single-branch <template-repository-url> <environment>-<season>
+cd <environment>-<season>
+git branch -M main
+git remote remove origin
 ```
 
-See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
+Run them in a terminal. **Cloning** a repository means copying it to your computer. The first command copies the season's template into a new folder named after your environment and season, so copies for different seasons never collide. The second command enters that folder, the third renames your working branch to the usual `main`, and the last one disconnects your copy from the template. Because of that last command, nothing you do later can accidentally push to the template: instead, your editor offers to publish the project to your own GitHub account, as [step 6](#6-save-your-work-on-github) shows.
+
+If you use Visual Studio Code, select **File > Open Folder** on the new folder after running the commands, then select **Terminal > New Terminal**. Use that terminal for the rest of this guide. It should start in the folder containing `agent.py` and `manifest.json`.
+
+See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need more background.
 
 ## 2. Set up the project and play
 
@@ -86,16 +88,27 @@ python -m sandbox test
 
 ## 6. Save your work on GitHub
 
-Create a **commit**, a named snapshot of your repository, then **push** it to GitHub:
+Create a **commit**, a named snapshot of your repository:
 
 ```console
 git status
 git add agent.py
 git commit -m "Improve my agent"
-git push
 ```
 
-`git status` shows what changed, `git add` selects changes for the commit, `git commit` creates it, and `git push` sends it to GitHub. Check `git status` before adding files. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
+`git status` shows what changed, `git add` selects changes for the commit, and `git commit` creates it. Check `git status` before adding files. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
+
+Your copy starts with no GitHub repository of its own, so publish it once:
+
+- In Visual Studio Code, open the **Source Control** view and select **Publish Branch**, then choose the option that creates a **public** repository. VS Code creates the repository under your GitHub account and pushes your commits.
+- In a terminal, first create an empty public repository at [github.com/new](https://github.com/new) (pick a name and add no starter files), then connect your copy to it and push:
+
+```console
+git remote add origin https://github.com/<your-username>/<your-repository>.git
+git push -u origin main
+```
+
+After that first publish, plain `git push` sends each new commit to GitHub.
 
 ## 7. Submit
 

@@ -76,6 +76,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiTabs` | A single-select tab strip for filters and section switches that are not routes, following the WAI-ARIA roving-tabindex pattern. |
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiCheckboxGroup` | A labelled fieldset for selecting zero or more string options, with options emitted in their declared order. |
+| `UiCodeBlock` | A monospace command block with a copy button in its corner. The button copies the block's exact text, shows a checkmark or a cross while the result is fresh, and announces the result through a status region. First used for the Set Up Locally commands. |
 | `UiTooltip` | A quiet underlined trigger with a detail bubble on hover, focus, or click. The bubble teleports to the body, so it escapes a table cell or a scrolling log, and mounts nothing while closed. `inspectable` turns the trigger into an `inspect` emit for a caller that opens a fuller view instead. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 

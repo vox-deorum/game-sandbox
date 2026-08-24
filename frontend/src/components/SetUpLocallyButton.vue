@@ -4,8 +4,9 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import type { SeasonSettings } from '../api/client.js'
-import { cloneCommandFor, seasonSettingsFile } from '../lib/season-settings.js'
+import { seasonSettingsFile, setupCommandsFor } from '../lib/season-settings.js'
 import UiButton from './ui/UiButton.vue'
+import UiCodeBlock from './ui/UiCodeBlock.vue'
 import UiDialog from './ui/UiDialog.vue'
 
 const props = defineProps<{
@@ -15,7 +16,7 @@ const props = defineProps<{
 
 const open = ref(false)
 const file = computed(() => seasonSettingsFile(props.meta, props.settings))
-const cloneCommand = computed(() => cloneCommandFor(props.settings))
+const setupCommands = computed(() => setupCommandsFor(props.meta, props.settings))
 
 function downloadSettings(): void {
   if (file.value === null) return
@@ -39,11 +40,13 @@ function begin(): void {
   <UiButton variant="secondary" @click="begin"
     >Set Up Locally</UiButton
   >
-  <UiDialog v-model:open="open" title="Set up this season on your computer">
+  <UiDialog v-model:open="open" title="Set up on your computer">
     <ol class="setup-steps">
       <li>
-        Clone the season template:
-        <code>{{ cloneCommand }}</code>
+        Copy the season template and make the copy your own:
+        <UiCodeBlock class="setup-code" :code="setupCommands" copy-label="Copy setup commands" />
+        The last command disconnects your copy from the template, so the first time you push, your
+        editor offers to publish the project to your own GitHub account.
       </li>
       <li v-if="file !== null">
         Move the downloaded <code>season.json</code> next to
@@ -81,6 +84,10 @@ function begin(): void {
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+}
+
+.setup-code {
+  margin: var(--space-2) 0;
 }
 
 .setup-actions {
