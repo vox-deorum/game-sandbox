@@ -43,6 +43,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     port: 0,
     listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
+    siteIconUrl: '/game-sandbox-icon.png',
     siteShortName: 'Game Sandbox',
     templateRepoUrl: 'https://github.com/vox-deorum/game-agent-template',
     dataDir: recordingsDir,

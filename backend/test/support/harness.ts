@@ -75,6 +75,7 @@ export interface OpenTestAppOptions {
   validationWorker?: SubmissionEnqueuer
   allowLocalSubmissions?: boolean
   siteName?: string
+  siteIconUrl?: string
   siteShortName?: string
   templateRepoUrl?: string
   githubAuth?: boolean
@@ -143,6 +144,7 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     ...(options.llmDevelopment === undefined ? {} : { llmDevelopment: options.llmDevelopment }),
     ...submissionDeps,
     ...(options.siteName === undefined ? {} : { siteName: options.siteName }),
+    ...(options.siteIconUrl === undefined ? {} : { siteIconUrl: options.siteIconUrl }),
     ...(options.siteShortName === undefined ? {} : { siteShortName: options.siteShortName }),
     templateRepoUrl: options.templateRepoUrl ?? config.templateRepoUrl,
     ...(options.githubAuth === undefined ? {} : { githubAuth: options.githubAuth }),
@@ -196,6 +198,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     port: 0,
     listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
+    siteIconUrl: '/game-sandbox-icon.png',
     siteShortName: 'Game Sandbox',
     templateRepoUrl: 'https://github.com/vox-deorum/game-agent-template',
     dataDir: './data',

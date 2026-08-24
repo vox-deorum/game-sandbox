@@ -232,6 +232,7 @@ async function main(): Promise<void> {
   const app = await buildApp({
     orchestrator,
     siteName: config.siteName,
+    siteIconUrl: config.siteIconUrl,
     siteShortName: config.siteShortName,
     templateRepoUrl: config.templateRepoUrl,
     githubAuth: config.auth.github !== undefined,

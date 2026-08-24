@@ -24,6 +24,7 @@ describe('loadConfig', () => {
     const config = load({})
     expect(config.port).toBe(8080)
     expect(config.siteName).toBe('Game Sandbox')
+    expect(config.siteIconUrl).toBe('/game-sandbox-icon.png')
     // The short name defaults to the site name, so it is 'Game Sandbox' out of the box too.
     expect(config.siteShortName).toBe('Game Sandbox')
     expect(config.templateRepoUrl).toBe('https://github.com/vox-deorum/game-agent-template')
@@ -58,6 +59,16 @@ describe('loadConfig', () => {
   it('overrides the site name from SITE_NAME and rejects an empty value', () => {
     expect(load({ SITE_NAME: 'Acme Arena' }).siteName).toBe('Acme Arena')
     expect(() => load({ SITE_NAME: '' })).toThrow(/SITE_NAME/)
+  })
+
+  it('accepts a root-relative or absolute HTTP(S) site icon URL', () => {
+    expect(load({ SITE_ICON_URL: '/branding/icon.png' }).siteIconUrl).toBe('/branding/icon.png')
+    expect(load({ SITE_ICON_URL: 'https://cdn.example.edu/icon.svg' }).siteIconUrl).toBe(
+      'https://cdn.example.edu/icon.svg',
+    )
+    for (const unsafe of ['icon.png', '//cdn.example.edu/icon.png', 'data:image/png;base64,abc']) {
+      expect(() => load({ SITE_ICON_URL: unsafe })).toThrow(/SITE_ICON_URL/)
+    }
   })
 
   it('parses TEMPLATE_REPO_URL as an absolute HTTP(S) URL', () => {

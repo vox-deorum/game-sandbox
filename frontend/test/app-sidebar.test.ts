@@ -48,6 +48,7 @@ describe('AppSidebar', () => {
   it('renders the global sections with their destinations', async () => {
     await renderSidebar('/')
 
+    expect(document.querySelector('.brand-icon')).toHaveAttribute('src', '/game-sandbox-icon.png')
     expect(screen.getByRole('link', { name: 'Environments' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Seasons' })).toHaveAttribute('href', '/seasons')
     expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs')

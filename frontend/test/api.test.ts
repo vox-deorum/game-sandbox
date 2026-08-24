@@ -151,12 +151,18 @@ describe('api client', () => {
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers).toBeUndefined()
   })
 
-  it('reads the deployment site name, short name, and github_auth flag from /api/config', async () => {
+  it('reads the deployment brand and github_auth flag from /api/config', async () => {
     const fetchMock = stubFetch(async () =>
-      jsonResponse({ site_name: 'Acme Arena', site_short_name: 'Acme', github_auth: true }),
+      jsonResponse({
+        site_name: 'Acme Arena',
+        site_icon_url: 'https://cdn.example.edu/acme.svg',
+        site_short_name: 'Acme',
+        github_auth: true,
+      }),
     )
     expect(await getSiteConfig()).toEqual({
       site_name: 'Acme Arena',
+      site_icon_url: 'https://cdn.example.edu/acme.svg',
       site_short_name: 'Acme',
       github_auth: true,
     })

@@ -11,31 +11,46 @@ async function freshSiteConfig() {
 describe('useSiteConfig', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    document.querySelector('link[rel="icon"]')?.remove()
   })
 
-  it('starts at the default brand for both the full and short names', async () => {
-    const { useSiteConfig, DEFAULT_SITE_NAME } = await freshSiteConfig()
-    const { siteName, siteShortName } = useSiteConfig()
+  it('starts at the default name and icon', async () => {
+    const { useSiteConfig, DEFAULT_SITE_ICON_URL, DEFAULT_SITE_NAME } = await freshSiteConfig()
+    const { siteIconUrl, siteName, siteShortName } = useSiteConfig()
     expect(siteName.value).toBe(DEFAULT_SITE_NAME)
+    expect(siteIconUrl.value).toBe(DEFAULT_SITE_ICON_URL)
     expect(siteShortName.value).toBe(DEFAULT_SITE_NAME)
   })
 
-  it('applies the fetched names and sets the document title', async () => {
-    stubFetch(async () => jsonResponse({ site_name: 'Acme Arena', site_short_name: 'Acme' }))
+  it('applies the fetched brand to the chrome, document title, and favicon', async () => {
+    const favicon = document.createElement('link')
+    favicon.rel = 'icon'
+    favicon.href = '/game-sandbox-icon.png'
+    document.head.append(favicon)
+    stubFetch(async () =>
+      jsonResponse({
+        site_name: 'Acme Arena',
+        site_icon_url: 'https://cdn.example.edu/acme.svg',
+        site_short_name: 'Acme',
+      }),
+    )
     const { useSiteConfig, loadSiteConfig } = await freshSiteConfig()
     await loadSiteConfig()
-    const { siteName, siteShortName } = useSiteConfig()
+    const { siteIconUrl, siteName, siteShortName } = useSiteConfig()
     expect(siteName.value).toBe('Acme Arena')
+    expect(siteIconUrl.value).toBe('https://cdn.example.edu/acme.svg')
     expect(siteShortName.value).toBe('Acme')
     expect(document.title).toBe('Acme Arena')
+    expect(favicon.href).toBe('https://cdn.example.edu/acme.svg')
   })
 
   it('keeps the default brand when the config fetch fails', async () => {
     stubFetch(async () => new Response(null, { status: 500 }))
     const { useSiteConfig, loadSiteConfig, DEFAULT_SITE_NAME } = await freshSiteConfig()
     await loadSiteConfig()
-    const { siteName, siteShortName } = useSiteConfig()
+    const { siteIconUrl, siteName, siteShortName } = useSiteConfig()
     expect(siteName.value).toBe(DEFAULT_SITE_NAME)
+    expect(siteIconUrl.value).toBe('/game-sandbox-icon.png')
     expect(siteShortName.value).toBe(DEFAULT_SITE_NAME)
   })
 

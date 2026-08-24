@@ -19,6 +19,10 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 
 An [**operator**](overview.md) is an authenticated user with `admin` status who manages seasons and runs. The specification uses **admin** when referring to the account status or roster administration. See [Identity and Access](identity.md) for accounts, statuses, and sign-in.
 
+## Deployment branding
+
+The global sidebar and mobile bar show the deployment name with its brand icon. The same icon is the browser favicon. Game Sandbox ships with its charcoal, crimson, and gold sandbox emblem. A deployment may replace the name, compact name, and icon URL through the public deployment configuration without rebuilding the frontend. Until that configuration loads, or if it cannot be read, the bundled Game Sandbox brand remains visible.
+
 ## Pages
 
 | Page | Main content |

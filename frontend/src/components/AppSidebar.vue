@@ -35,7 +35,7 @@ const baseItems: NavItem[] = [
 const route = useRoute()
 const me = useMe()
 const { collapsed, toggleCollapsed, closeMobile } = useSidebar()
-const { siteName } = useSiteConfig()
+const { siteIconUrl, siteName } = useSiteConfig()
 
 // The roster page is an admin-only affordance, appended last so the student-facing order above is
 // unchanged for everyone else.
@@ -44,14 +44,6 @@ const items = computed<NavItem[]>(() =>
     ? [...baseItems, { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] }]
     : baseItems,
 )
-
-// The collapsed-rail monogram: the initials of the first two words of the site name (so a custom
-// SITE_NAME keeps a matching mark), falling back to its first two characters for a single-word name.
-const brandMark = computed(() => {
-  const words = siteName.value.trim().split(/\s+/).filter(Boolean)
-  const initials = words.slice(0, 2).map((word) => word[0]).join('')
-  return (initials !== '' ? initials : siteName.value.slice(0, 2)).toUpperCase()
-})
 
 function isActive(item: NavItem): boolean {
   return item.match.some((prefix) =>
@@ -63,8 +55,13 @@ function isActive(item: NavItem): boolean {
 <template>
   <aside class="app-sidebar" aria-label="Primary">
     <div class="sidebar-head">
-      <RouterLink class="brand" to="/" :title="collapsed ? siteName : undefined">
-        <span class="brand-mark" aria-hidden="true">{{ brandMark }}</span>
+      <RouterLink
+        class="brand"
+        to="/"
+        :aria-label="siteName"
+        :title="collapsed ? siteName : undefined"
+      >
+        <img class="brand-icon" :src="siteIconUrl" alt="" aria-hidden="true" />
         <span class="brand-name">{{ siteName }}</span>
       </RouterLink>
       <button
@@ -126,19 +123,12 @@ function isActive(item: NavItem): boolean {
   min-width: 0;
 }
 
-.brand-mark {
+.brand-icon {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: var(--text-sm);
+  object-fit: cover;
 }
 
 .brand-name {

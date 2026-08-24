@@ -13,8 +13,10 @@ import { getSiteConfig } from '../api/client.js'
 
 /** The frontend placeholder brand, matching the backend's `DEFAULT_SITE_NAME` so the two never diverge. */
 export const DEFAULT_SITE_NAME = 'Game Sandbox'
+export const DEFAULT_SITE_ICON_URL = '/game-sandbox-icon.png'
 
 const siteName = ref(DEFAULT_SITE_NAME)
+const siteIconUrl = ref(DEFAULT_SITE_ICON_URL)
 const siteShortName = ref(DEFAULT_SITE_NAME)
 // Whether the deployment enabled GitHub OAuth. Defaults to false so the login page hides the GitHub
 // button until the public config read confirms it; the login page reads this the same way the chrome
@@ -32,6 +34,13 @@ export async function loadSiteConfig(): Promise<void> {
       siteName.value = config.site_name
       document.title = config.site_name
     }
+    if (typeof config.site_icon_url === 'string' && config.site_icon_url !== '') {
+      siteIconUrl.value = config.site_icon_url
+      const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+      if (favicon !== null) {
+        favicon.href = config.site_icon_url
+      }
+    }
     // The short name mirrors the full name unless the deployment set a distinct one.
     if (typeof config.site_short_name === 'string' && config.site_short_name !== '') {
       siteShortName.value = config.site_short_name
@@ -45,11 +54,13 @@ export async function loadSiteConfig(): Promise<void> {
 /** The reactive, read-only deployment config for the chrome and login page to render. */
 export function useSiteConfig(): {
   siteName: Readonly<Ref<string>>
+  siteIconUrl: Readonly<Ref<string>>
   siteShortName: Readonly<Ref<string>>
   githubAuth: Readonly<Ref<boolean>>
 } {
   return {
     siteName: readonly(siteName),
+    siteIconUrl: readonly(siteIconUrl),
     siteShortName: readonly(siteShortName),
     githubAuth: readonly(githubAuth),
   }

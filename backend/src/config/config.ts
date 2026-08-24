@@ -148,6 +148,11 @@ export interface Config {
    */
   siteName: string
   /**
+   * The browser-visible brand icon used by the app chrome and favicon. A root-relative path resolves
+   * against this deployment; an absolute HTTP(S) URL lets an operator host custom artwork elsewhere.
+   */
+  siteIconUrl: string
+  /**
    * A compact brand for space-sensitive or space-hostile contexts: the mobile bar, and anywhere a
    * name with spaces is awkward. Defaults to {@link Config.siteName} (so it is `Game Sandbox` out of
    * the box, and mirrors a customized `SITE_NAME` unless overridden); set `SITE_SHORT_NAME` for a
@@ -252,6 +257,31 @@ function requiredStringVar(env: NodeJS.ProcessEnv, name: string): string {
 function optionalStringVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const raw = env[name]
   return raw !== undefined && raw !== '' ? raw : undefined
+}
+
+/** A browser asset URL: either rooted on this deployment or hosted at an absolute HTTP(S) URL. */
+function browserAssetUrlVar(env: NodeJS.ProcessEnv, name: string): string {
+  const raw = requiredStringVar(env, name)
+  if (raw !== raw.trim() || raw.includes('\\')) {
+    throw new ConfigError(`${name} must be a root-relative path or absolute http(s) URL`)
+  }
+  if (raw.startsWith('/') && !raw.startsWith('//')) {
+    return raw
+  }
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new ConfigError(`${name} must be a root-relative path or absolute http(s) URL`)
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username !== '' ||
+    url.password !== ''
+  ) {
+    throw new ConfigError(`${name} must be a root-relative path or absolute http(s) URL`)
+  }
+  return raw
 }
 
 function intVar(env: NodeJS.ProcessEnv, name: string): number {
@@ -627,6 +657,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
   // The short name falls back to the resolved site name (not the raw default), so a deployment that
   // sets only SITE_NAME gets a matching short form for free while either can be overridden alone.
   const siteName = requiredStringVar(env, 'SITE_NAME')
+  const siteIconUrl = browserAssetUrlVar(env, 'SITE_ICON_URL')
   const siteShortName = optionalStringVar(env, 'SITE_SHORT_NAME') ?? siteName
   const templateRepoUrl = httpUrlVar(env, 'TEMPLATE_REPO_URL')
   if (templateRepoUrl === undefined) {
@@ -678,6 +709,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     port,
     listenHost,
     siteName,
+    siteIconUrl,
     siteShortName,
     templateRepoUrl,
     dataDir,

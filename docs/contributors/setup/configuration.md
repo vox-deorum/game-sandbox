@@ -20,6 +20,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
 - Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.
+- `SITE_ICON_URL` must be a root-relative path on this deployment or an absolute `http` or `https` URL without embedded credentials.
 - `LLM_UPSTREAM_URL` must be an absolute `http` or `https` base URL with no surrounding whitespace, embedded credentials, query, or fragment. An invalid value is rejected without copying it into the error message.
 
 ## Server and session
@@ -28,6 +29,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP and WebSocket port |
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
+| `SITE_ICON_URL` | `/game-sandbox-icon.png` | Brand icon used in the sidebar, mobile bar, and browser favicon. Set a root-relative path or absolute HTTP(S) URL to use deployment-specific artwork. |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
 | `DATA_DIR` | `backend/data` | Repository-relative runtime-data root. Container deployments need identical absolute host and Compose `app` container paths; see [Run the app in Docker](docker.md) and [Data folders](../data/folders.md). |
 | `LOAD_LOCAL_ENV` | `true` | Whether the machine-local Git-ignored `.env` is loaded. `false` skips it entirely, so a launcher (such as the browser e2e suite) can boot immune to a deployment's `.env` left in the tree. |

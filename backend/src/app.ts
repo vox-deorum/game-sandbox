@@ -51,6 +51,8 @@ export interface AppDeps {
    * omit it use the same `Game Sandbox` default as `loadConfig`.
    */
   siteName?: string
+  /** The deployment's brand icon URL, served to the SPA by `GET /api/config`. */
+  siteIconUrl?: string
   /**
    * The compact brand for space-sensitive chrome, also served by `GET /api/config`. It falls back to
    * {@link AppDeps.siteName}, then the deployment display-name default.
@@ -134,6 +136,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   })
   registerConfigRoutes(app, {
     ...(deps.siteName === undefined ? {} : { siteName: deps.siteName }),
+    ...(deps.siteIconUrl === undefined ? {} : { siteIconUrl: deps.siteIconUrl }),
     ...(deps.siteShortName === undefined ? {} : { siteShortName: deps.siteShortName }),
     ...(deps.githubAuth === undefined ? {} : { githubAuth: deps.githubAuth }),
   })

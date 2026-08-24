@@ -22,6 +22,7 @@ vi.mock('../src/composables/useSiteConfig.js', async () => {
   return {
     useSiteConfig: () => ({
       siteName: ref('X'),
+      siteIconUrl: ref('/game-sandbox-icon.png'),
       siteShortName: ref('X'),
       githubAuth: ref(site.github),
     }),

@@ -3,10 +3,12 @@ import type { FastifyInstance } from 'fastify'
 // Isolated buildApp tests may omit deployment wiring. Runtime startup always passes the validated
 // values loaded through Config; this fallback mirrors `.env.default` for app-only callers.
 const DEFAULT_SITE_NAME = 'Game Sandbox'
+const DEFAULT_SITE_ICON_URL = '/game-sandbox-icon.png'
 
 /** The public deployment configuration the SPA reads at startup. */
 export interface ConfigRouteDeps {
   siteName?: string
+  siteIconUrl?: string
   siteShortName?: string
   githubAuth?: boolean
 }
@@ -20,6 +22,7 @@ export function registerConfigRoutes(app: FastifyInstance, deps: ConfigRouteDeps
     const siteName = deps.siteName ?? DEFAULT_SITE_NAME
     return {
       site_name: siteName,
+      site_icon_url: deps.siteIconUrl ?? DEFAULT_SITE_ICON_URL,
       site_short_name: deps.siteShortName ?? siteName,
       github_auth: deps.githubAuth ?? false,
     }

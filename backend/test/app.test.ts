@@ -253,6 +253,7 @@ describe('HTTP API', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       site_name: 'Game Sandbox',
+      site_icon_url: '/game-sandbox-icon.png',
       site_short_name: 'Game Sandbox',
       github_auth: false,
     })
@@ -261,12 +262,14 @@ describe('HTTP API', () => {
   it('reflects a configured site name and short name in GET /api/config', async () => {
     const custom = await openTestApp({
       siteName: 'Acme Arena',
+      siteIconUrl: 'https://cdn.example.edu/acme.svg',
       siteShortName: 'Acme',
     })
     try {
       const res = await custom.app.inject({ method: 'GET', url: '/api/config' })
       expect(res.json()).toEqual({
         site_name: 'Acme Arena',
+        site_icon_url: 'https://cdn.example.edu/acme.svg',
         site_short_name: 'Acme',
         github_auth: false,
       })
