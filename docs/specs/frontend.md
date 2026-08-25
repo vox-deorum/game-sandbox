@@ -83,7 +83,7 @@ Rating surfaces use blind labels while a season's play window is open. Non-opera
 
 This masking applies to play and feedback surfaces. Released leaderboards and agent profiles remain identified even when the same season is still open for play.
 
-Masked viewers — visitors who are not signed in and `guest` accounts — never see real user names on any surface, play window or not. Their attribution reads as stable hash labels (`Agent <hash>` / `Player <hash>`) everywhere: live sessions, replays, the released leaderboards, agent profiles, and the maskable rating and submission forms. The labels are stable per user, so a masked viewer can follow one agent around without learning who owns it.
+Masked viewers (visitors who are not signed in, and `guest` accounts) never see real user names on any surface, play window or not. Their attribution reads as the stable hash label `Agent <hash>` everywhere, for humans and agents alike: live sessions, replays, the released leaderboards, agent profiles, and the maskable rating and submission forms. The labels are stable per user, so a masked viewer can follow one agent around without learning who owns it.
 
 ## Submitting an agent
 

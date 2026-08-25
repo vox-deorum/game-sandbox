@@ -16,6 +16,7 @@ import {
   resolveLayout,
   validateCompleteParameters,
 } from '@game-sandbox/schema/environment'
+import type { AuthUser } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import { currentSessionBaseImageSpec } from '../build/deps-version.js'
 import type { Config } from '../config/config.js'
@@ -743,16 +744,17 @@ export class Orchestrator {
   }
 
   /**
-   * Attach a socket to a live session, or `undefined` if no such session is running. `userId` is the
-   * spectator's resolved id, or `null` for an anonymous socket; only a non-null id matching the
-   * session owner attaches with controls, so an anonymous socket always spectates.
+   * Attach a socket to a live session, or `undefined` if no such session is running. `caller` is the
+   * spectator's resolved user, or `null` for an anonymous socket; only a caller matching the session
+   * owner attaches with controls, so an anonymous socket always spectates. The session masks its
+   * header per socket from the same caller, so a masked spectator never receives real names.
    */
-  attach(sessionId: string, socket: ClientSocket, userId: string | null): Attachment | undefined {
+  attach(sessionId: string, socket: ClientSocket, caller: AuthUser | null): Attachment | undefined {
     const session = this.registry.get(sessionId)
     if (session === undefined) {
       return undefined
     }
-    return session.attach(socket, userId !== null && session.userId === userId)
+    return session.attach(socket, caller !== null && session.userId === caller.id, caller)
   }
 
   /** Owner-only graceful stop. 404 when unknown, 403 when not the owner; a no-op once ended. */

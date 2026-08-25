@@ -184,7 +184,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
           return socket.bufferedAmount
         },
       }
-      const attachment = deps.orchestrator.attach(request.params.id, client, user?.id ?? null)
+      const attachment = deps.orchestrator.attach(request.params.id, client, user)
       if (attachment === undefined) {
         socket.close(1008, 'no such session')
         return

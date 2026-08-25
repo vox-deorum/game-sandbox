@@ -1,5 +1,7 @@
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { AuthUser } from '../../src/auth/identity.js'
 import type { SessionProcess } from '../../src/driver/index.js'
 import { createOfficialTickMarker, KeyRegistry } from '../../src/llm/key-registry.js'
 import type { LlmGrant } from '../../src/llm/types.js'
@@ -224,6 +226,46 @@ describe('relay (LiveSession)', () => {
     expect(late.received[0]).toBe(HEADER)
     expect(late.received[1]).toBe(STATE_1) // the latest state, not the first
     expect(JSON.parse(late.received[2] ?? '{}')).toEqual({ kind: 'session', status: 'running' })
+  })
+
+  it('masks the header per socket: the owner keeps their seat, an anonymous spectator gets the hash label', async () => {
+    const namedHeader = JSON.stringify({
+      schema_version: 1,
+      environment: 'flappy_bird',
+      seed: 0,
+      players: {
+        player_0: { kind: 'agent', label: "alice's agent", submission_id: 'sub-a', user: 'alice' },
+      },
+    })
+    const alice: AuthUser = {
+      id: 'alice',
+      name: 'alice',
+      email: 'alice@test.local',
+      image: null,
+      githubUsername: null,
+      status: 'normal',
+    }
+    const { session, process } = makeSession()
+    const owner = new FakeSocket()
+    session.attach(owner, true, alice)
+    process.emit(namedHeader)
+    await flush()
+
+    // The broadcast path leaves the owner's own seat untouched, so they can still find themselves.
+    expect(owner.received).toContain(namedHeader)
+
+    // A late anonymous attacher (an omitted caller fails closed to masked) receives the buffered
+    // header rewritten to the stable hash label, with the reversible user id stripped.
+    const anon = new FakeSocket()
+    session.attach(anon, false)
+    const header = JSON.parse(anon.received[0] ?? '{}') as {
+      players?: Record<string, unknown>
+    }
+    expect(header.players?.player_0).toEqual({
+      kind: 'agent',
+      label: maskedAgentLabel('alice'),
+      submission_id: 'sub-a',
+    })
   })
 
   it('replays the accepted paused state after running status to a late attacher', async () => {

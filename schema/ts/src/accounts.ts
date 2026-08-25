@@ -53,12 +53,10 @@ export function maskedUserHash(userId: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 6)
 }
 
-/** A submitted agent's masked label: `Agent <hash>`, stable across every surface. */
+/**
+ * The one masked label every surface shows: `Agent <hash>`, stable across every surface. Masked
+ * humans read the same way, so a masked viewer cannot tell a human seat from an agent seat.
+ */
 export function maskedAgentLabel(userId: string): string {
   return `Agent ${maskedUserHash(userId)}`
-}
-
-/** A human player's masked label: `Player <hash>`, stable across every surface. */
-export function maskedPlayerLabel(userId: string): string {
-  return `Player ${maskedUserHash(userId)}`
 }

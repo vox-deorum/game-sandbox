@@ -143,9 +143,8 @@ async function submit(): Promise<void> {
     return
   }
   // A guest may explore the rating panel, but saving is blocked with a toast and never reaches the
-  // API (the backend's requireActive would refuse it anyway). The panel only mounts for signed-in
-  // users, so a masked viewer here is a guest.
-  if (hidesNames(me.me)) {
+  // API (the backend's requireActive would refuse it anyway).
+  if (me.me?.user?.status === 'guest') {
     toast.show("Guest accounts can't rate agents.")
     return
   }

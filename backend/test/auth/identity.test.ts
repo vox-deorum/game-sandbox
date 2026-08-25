@@ -1,7 +1,6 @@
+import { maskedAgentLabel, maskedUserHash } from '@game-sandbox/schema/accounts'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { describe, expect, it } from 'vitest'
-
-import { maskedAgentLabel, maskedPlayerLabel, maskedUserHash } from '@game-sandbox/schema/accounts'
 import type { Auth } from '../../src/auth/auth.js'
 import {
   createRequestIdentity,
@@ -88,9 +87,8 @@ describe('masked labels', () => {
     expect(maskedUserHash('user-2')).not.toBe(first)
   })
 
-  it('wraps the hash in the agent and player label forms', () => {
+  it('wraps the hash in the one Agent label form', () => {
     expect(maskedAgentLabel('user-9')).toBe(`Agent ${maskedUserHash('user-9')}`)
-    expect(maskedPlayerLabel('user-9')).toBe(`Player ${maskedUserHash('user-9')}`)
   })
 })
 
@@ -172,12 +170,26 @@ describe('createRequestIdentity guards', () => {
     const statuses: UserStatus[] = ['pending', 'normal', 'admin']
     for (const status of statuses) {
       expect(
-        namesVisible({ id: 'u', name: 'N', email: 'n@x', image: null, githubUsername: null, status }),
+        namesVisible({
+          id: 'u',
+          name: 'N',
+          email: 'n@x',
+          image: null,
+          githubUsername: null,
+          status,
+        }),
       ).toBe(true)
     }
     expect(namesVisible(null)).toBe(false)
     expect(
-      namesVisible({ id: 'u', name: 'G', email: 'g@x', image: null, githubUsername: null, status: 'guest' }),
+      namesVisible({
+        id: 'u',
+        name: 'G',
+        email: 'g@x',
+        image: null,
+        githubUsername: null,
+        status: 'guest',
+      }),
     ).toBe(false)
   })
 

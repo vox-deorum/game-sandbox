@@ -6,14 +6,14 @@
  * (the viewer's own agent reads "Your agent" so they can still find themselves).
  *
  * Masked viewers (guests and anonymous visitors) never see real names on any surface, play window or
- * not: their rows read as the stable `Agent <hash>` / `Player <hash>` labels from the shared hash
- * helper. When the server has already masked a recording's header (it strips the `user` id and writes
+ * not: their rows read as the stable `Agent <hash>` label from the shared hash helper, humans and
+ * agents alike. When the server has already masked a recording's header (it strips the `user` id and writes
  * the hash label itself), the label is used as-is; when the id is still present (a live session) the
  * hash is computed here from the same helper, so both paths compose to the same display.
  */
 
 import type { RecordingHeader } from '@game-sandbox/schema'
-import { maskedAgentLabel, maskedPlayerLabel } from '@game-sandbox/schema/accounts'
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 
 import { formatPlayer } from './format.js'
 
@@ -119,10 +119,10 @@ export function attributionLabel(
 }
 
 /**
- * The label for a masked row. A masked viewer's row reads as the stable hash when its `user` id is
- * still present (a live session), or as the server's own masked label when the id was stripped (a
- * recording the API already masked). A names-visible viewer in a playable season keeps the neutral
- * "Human" / "Agent N" blind labels.
+ * The label for a masked row. A masked viewer's row reads as the stable `Agent <hash>` (humans and
+ * agents alike) when its `user` id is still present (a live session), or as the server's own masked
+ * label when the id was stripped (a recording the API already masked). A names-visible viewer in a
+ * playable season keeps the neutral "Human" / "Agent N" blind labels.
  */
 function maskedViewerLabel(
   kind: 'human' | 'agent',
@@ -132,7 +132,7 @@ function maskedViewerLabel(
   if (ctx.masked === true) {
     const user = 'user' in player ? player.user : undefined
     if (user !== undefined) {
-      return kind === 'human' ? maskedPlayerLabel(user) : maskedAgentLabel(user)
+      return maskedAgentLabel(user)
     }
     return player.label
   }

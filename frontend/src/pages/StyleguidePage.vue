@@ -24,7 +24,6 @@ import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import UiTabs from '../components/ui/UiTabs.vue'
 import UiTextarea from '../components/ui/UiTextarea.vue'
-import UiToast from '../components/ui/UiToast.vue'
 import UiTooltip from '../components/ui/UiTooltip.vue'
 import { useToast } from '../toast.js'
 
@@ -396,7 +395,6 @@ const { show: showToast } = useToast()
         <UiButton variant="secondary" @click="showToast('Guest accounts can’t submit agents.')">
           Show a toast
         </UiButton>
-        <UiToast />
       </p>
     </section>
   </div>

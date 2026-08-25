@@ -16,19 +16,21 @@
  * season is open, and the same value the frontend already carries to number "Agent N"). For a season
  * open to plain blind rating it strips the reversible `user` id and replaces the display `label` with
  * the neutral "Agent"/"Human"; for a masked (anonymous or guest) viewer it instead writes the stable
- * hash label (`Agent <hash>` / `Player <hash>`) so the viewer can follow one agent without learning
- * who owns it. The viewer's own seat is never masked, so a participant can still find themselves.
+ * hash label `Agent <hash>` so the viewer can follow one agent without learning who owns it. The
+ * viewer's own seat is never masked, so a participant can still find themselves. The live session
+ * WebSocket rewrites its header line per socket with these same helpers, so a live spectator and a
+ * replay reader see identical masking.
  */
 
 import { Transform } from 'node:stream'
-import { maskedAgentLabel, maskedPlayerLabel } from '@game-sandbox/schema/accounts'
 import type { RecordingHeader } from '@game-sandbox/schema'
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 
-import { namesVisible, type AuthUser } from '../auth/identity.js'
+import { type AuthUser, namesVisible } from '../auth/identity.js'
 
 type Players = NonNullable<RecordingHeader['players']>
 
-/** Whether a header names at least one submitted agent — the only thing plain blind rating hides. */
+/** Whether a header names at least one submitted agent, the only thing plain blind rating hides. */
 export function headerHasSubmittedAgent(players: Players | undefined): boolean {
   if (players === undefined) {
     return false
@@ -38,13 +40,15 @@ export function headerHasSubmittedAgent(players: Players | undefined): boolean {
   )
 }
 
-/** Whether a header names a submitted agent or a human player — the identities a masked viewer must
+/** Whether a header names a submitted agent or a human player, the identities a masked viewer must
  *  not see a real name for (built-in agents carry no identity). */
 function headerHasMaskablePlayer(players: Players | undefined): boolean {
   if (players === undefined) {
     return false
   }
-  return Object.values(players).some((player) => player.kind === 'human' || 'submission_id' in player)
+  return Object.values(players).some(
+    (player) => player.kind === 'human' || 'submission_id' in player,
+  )
 }
 
 /**
@@ -73,11 +77,11 @@ export function isBlindRecording(
 
 /**
  * Mask a header's `players` for a blind viewer: a non-own human player becomes the neutral "Human" (or
- * a `Player <hash>` label for a masked viewer), a non-own submitted agent keeps its opaque
- * `submission_id` but loses the owner `user` id and its "<owner>'s agent" label (becoming neutral
- * "Agent", or `Agent <hash>` for a masked viewer), and a built-in agent (which has no owner) is left
- * as-is. The viewer's own player (matched by the stable `user` id) is returned untouched so they can
- * still recognize it.
+ * the `Agent <hash>` label for a masked viewer, so a human seat is indistinguishable from an agent
+ * seat), a non-own submitted agent keeps its opaque `submission_id` but loses the owner `user` id and
+ * its "<owner>'s agent" label (becoming neutral "Agent", or `Agent <hash>` for a masked viewer), and a
+ * built-in agent (which has no owner) is left as-is. The viewer's own player (matched by the stable
+ * `user` id) is returned untouched so they can still recognize it.
  */
 export function maskPlayers(
   players: Players,
@@ -95,7 +99,7 @@ export function maskPlayers(
       const user = 'user' in player ? player.user : undefined
       masked[playerId] = {
         kind: 'human',
-        label: maskedViewer && user !== undefined ? maskedPlayerLabel(user) : 'Human',
+        label: maskedViewer && user !== undefined ? maskedAgentLabel(user) : 'Human',
       }
     } else if ('submission_id' in player) {
       const user = 'user' in player ? player.user : undefined

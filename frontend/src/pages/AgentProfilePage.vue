@@ -628,7 +628,7 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
         <p v-else class="submit-none">No Season is accepting submissions right now.</p>
       </header>
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
-           sees why it is off rather than than an enabled control that 403s. A guest renders the form
+           sees why it is off rather than an enabled control that 403s. A guest renders the form
            so they can explore it, but its buttons are blocked with a toast (SubmitAgentForm's
            `blocked` prop) and fire no request. -->
       <template v-if="profile.submission_season_id !== null && canPlay(me.me)">

@@ -18,10 +18,13 @@ import {
   codePointLength,
   parseCommand,
   RESULT_KIND,
+  type RecordingHeader,
   serializeCommand,
   sessionEnvelope,
 } from '@game-sandbox/schema'
+import { type AuthUser, namesVisible } from '../auth/identity.js'
 import type { SessionProcess } from '../driver/index.js'
+import { isBlindRecording, maskPlayers } from '../recordings/view.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
 import { type ChargeableTimer, createChargeableTimer } from './chargeable-timer.js'
@@ -117,8 +120,11 @@ export class LiveSession {
   private readonly llmEnabled: boolean
   private readonly deps: LiveSessionDeps
 
-  /** Each attached socket with its ownership marker, used for controls and controller-only filtering. */
-  private readonly sockets = new Map<ClientSocket, { isOwner: boolean }>()
+  /**
+   * Each attached socket with its ownership marker (controls and controller-only filtering) and its
+   * resolved caller (per-socket header masking).
+   */
+  private readonly sockets = new Map<ClientSocket, { isOwner: boolean; caller: AuthUser | null }>()
   private readonly outputDone: Promise<void>
   private status: 'starting' | 'running' | 'ended' = 'starting'
   private headerLine: string | null = null
@@ -203,7 +209,9 @@ export class LiveSession {
       if (this.headerLine === null) {
         this.headerLine = raw
         this.markRunning()
-        this.broadcast(raw) // the header carries no messages; send it verbatim to everyone
+        // The header is the one line naming players, so it is rewritten per socket; state lines
+        // carry no names and stream verbatim.
+        this.broadcastHeader(raw)
       } else {
         this.latestState = raw
         this.broadcastState(raw, line.value)
@@ -243,6 +251,44 @@ export class LiveSession {
         this.removeSocket(socket, { close: true })
       }
     }
+  }
+
+  /** Broadcast the just-arrived header line, rewritten per socket for callers who must not see names. */
+  private broadcastHeader(raw: string): void {
+    for (const [socket, meta] of [...this.sockets]) {
+      if (this.dropIfSlow(socket)) {
+        continue
+      }
+      try {
+        socket.send(this.headerFor(raw, meta.caller))
+      } catch {
+        this.removeSocket(socket, { close: true })
+      }
+    }
+  }
+
+  /**
+   * The header line one attached caller may see. Every live session runs on a play-open season (the
+   * orchestrator refuses to start one otherwise), so the decision matches what the recordings API
+   * would serve for this header right now: `recordings/view.ts` stays the single masking authority,
+   * and a caller bypassing the UI reads the same masked payload live as at rest. The caller's own
+   * seat stays untouched, and a header naming no submitted agent or human is passed through verbatim.
+   */
+  private headerFor(raw: string, caller: AuthUser | null): string {
+    let header: RecordingHeader
+    try {
+      header = JSON.parse(raw) as RecordingHeader
+    } catch {
+      return raw
+    }
+    const players = header.players
+    if (players === undefined || !isBlindRecording(caller, 'open', players)) {
+      return raw
+    }
+    return JSON.stringify({
+      ...header,
+      players: maskPlayers(players, caller?.id, !namesVisible(caller)),
+    })
   }
 
   /**
@@ -368,14 +414,15 @@ export class LiveSession {
   // --- attach / inbound commands: browsers → container ---
 
   /**
-   * Attach a socket. It immediately receives the buffered header, latest state, current status, and
-   * terminal result when one already arrived. Only the owner's commands are honored, and `input` and
-   * `clock` only in human mode for a player the session exposes.
+   * Attach a socket. It immediately receives the buffered header (masked for a caller who must not
+   * see names, an omitted caller fails closed to masked), latest state, current status, and terminal
+   * result when one already arrived. Only the owner's commands are honored, and `input` and `clock`
+   * only in human mode for a player the session exposes.
    */
-  attach(socket: ClientSocket, isOwner: boolean): Attachment {
-    this.sockets.set(socket, { isOwner })
+  attach(socket: ClientSocket, isOwner: boolean, caller: AuthUser | null = null): Attachment {
+    this.sockets.set(socket, { isOwner, caller })
     if (this.headerLine !== null) {
-      this.trySend(socket, this.headerLine)
+      this.trySend(socket, this.headerFor(this.headerLine, caller))
     }
     if (this.latestState !== null) {
       // Apply the same audience chokepoint to the stashed line as live delivery.

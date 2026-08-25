@@ -15,7 +15,7 @@
   the watch and rate actions too (a guest can play and watch, and the rate form stays interactive
   with saving blocked by a toast); only a signed-in but still-pending account browses without actions
   and sees the awaiting-approval notice.
---> 
+-->
 <script setup lang="ts">
 import {
   type EnvironmentMeta,

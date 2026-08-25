@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AuthUser } from '../../src/auth/identity.js'
 import type { UserDirectory } from '../../src/auth/users.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
@@ -25,6 +26,18 @@ import type {
 } from '../../src/submission/source/index.js'
 import { FakeDriver, type FakeSessionProcess } from '../support/fake-driver.js'
 import { delay, FakeSocket, flush, makeConfig, makeEnvironments, meta } from '../support/harness.js'
+
+/** A resolved signed-in caller for attach, matched against the session owner by id. */
+function caller(id: string): AuthUser {
+  return {
+    id,
+    name: id,
+    email: `${id}@test.local`,
+    image: null,
+    githubUsername: null,
+    status: 'normal',
+  }
+}
 
 /**
  * A submission-source double for the submitted-agent runs. Records the inputs it resolves and
@@ -1481,8 +1494,8 @@ describe('orchestrator', () => {
       const input = JSON.stringify({ kind: 'input', player: 'player_0', action: 1 })
 
       // The same input from the owner, a signed-in stranger, and an anonymous (null) socket.
-      orch.attach(id, new FakeSocket(), 'alice')?.handleMessage(input)
-      orch.attach(id, new FakeSocket(), 'bob')?.handleMessage(input)
+      orch.attach(id, new FakeSocket(), caller('alice'))?.handleMessage(input)
+      orch.attach(id, new FakeSocket(), caller('bob'))?.handleMessage(input)
       orch.attach(id, new FakeSocket(), null)?.handleMessage(input)
 
       // Only the owner drives the session; the stranger's and the anonymous socket's commands drop,
@@ -1491,7 +1504,9 @@ describe('orchestrator', () => {
     })
 
     it('returns undefined attaching to an unknown session', () => {
-      expect(makeOrchestrator().attach('no-such-id', new FakeSocket(), 'alice')).toBeUndefined()
+      expect(
+        makeOrchestrator().attach('no-such-id', new FakeSocket(), caller('alice')),
+      ).toBeUndefined()
     })
   })
 

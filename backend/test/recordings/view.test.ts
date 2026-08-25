@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import { maskedAgentLabel, maskedPlayerLabel } from '@game-sandbox/schema/accounts'
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { describe, expect, it } from 'vitest'
 
 import type { AuthUser } from '../../src/auth/identity.js'
@@ -117,7 +117,8 @@ describe('maskPlayers', () => {
       submission_id: 'sub-a',
     })
     expect(masked.player_0).not.toHaveProperty('user')
-    expect(masked.player_1).toEqual({ kind: 'human', label: maskedPlayerLabel('bob') })
+    // A masked human reads with the same Agent prefix, so seat kinds stay indistinguishable.
+    expect(masked.player_1).toEqual({ kind: 'human', label: maskedAgentLabel('bob') })
     expect(masked.player_1).not.toHaveProperty('user')
   })
 
@@ -128,7 +129,7 @@ describe('maskPlayers', () => {
     }
     const masked = maskPlayers(players, 'g1', true)
     expect(masked.player_0).toEqual(players.player_0)
-    expect(masked.player_1).toEqual({ kind: 'human', label: maskedPlayerLabel('bob') })
+    expect(masked.player_1).toEqual({ kind: 'human', label: maskedAgentLabel('bob') })
   })
 
   it('leaves the ownerless Naive agent as-is', () => {

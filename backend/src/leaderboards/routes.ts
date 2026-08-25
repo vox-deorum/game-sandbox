@@ -7,7 +7,7 @@
  * playing without exposing its boards.
  */
 import type { FastifyInstance } from 'fastify'
-import { namesVisible, type RequestIdentity, type AuthUser } from '../auth/identity.js'
+import { type AuthUser, namesVisible, type RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
@@ -39,7 +39,7 @@ export interface LeaderboardDeps {
  * human-rating aggregate, and the per-game list of the latest completed run. The board shows one
  * representative (best-game) replay per agent; `games` is how a reader reaches every game of a
  * multi-seat matchup — each with its seats and its own replay link. Every submitted agent ref is
- * enriched with its owner's display name (one batched lookup per read) beside the stable id — except
+ * enriched with its owner's display name (one batched lookup per read) beside the stable id, except
  * for a masked (anonymous or guest) caller, who gets the opaque `user_id` only, so the frontend can
  * render its stable hash label in place of the name.
  */

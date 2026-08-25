@@ -346,6 +346,70 @@ describe('public leaderboard API', () => {
     expect(gameSeats.find((s) => s?.user_id === 'ghost-user')?.user_name).toBeUndefined()
   })
 
+  it('serves the boards to an anonymous caller with owner names withheld', async () => {
+    await users.headersFor('alice')
+    const aliceId = users.idOf('alice')
+    const season = await declare()
+    await storage.setReleaseStatus(season.id, 'released')
+
+    // One submitted agent and one naive baseline on the completed run, so the anonymous read
+    // covers both a maskable owner row and a built-in row.
+    const submission = await makeSubmission(storage, season.id, aliceId)
+    const naive = { kind: 'builtin', name: 'naive' } as const
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
+      parametersSnapshot: { players: 1 },
+      scheduledGames: [
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 1,
+          seats: [agentRef(submission)],
+          seat_plan: 'solo',
+        },
+        { match_index: 0, game_index: 1, seed: 2, seats: [naive], seat_plan: 'solo' },
+      ],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    const games = await storage.listRunGames(run.id)
+    for (const [index, agent] of [agentRef(submission), naive].entries()) {
+      const game = games[index]
+      if (game === undefined) {
+        throw new Error('expected a scheduled game per seat')
+      }
+      await storage.recordGameResult({
+        game_id: game.id,
+        seat_index: 0,
+        agent,
+        episode_score: 5 - index,
+        agent_compute_ms_total: 10,
+        acted_tick_count: 2,
+        failed: false,
+      })
+    }
+    await storage.setRunStatus(run.id, 'completed')
+
+    const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
+    expect(res.statusCode).toBe(200)
+    const board = (
+      res.json() as {
+        current: {
+          board: {
+            automated: Array<{ agent: Record<string, unknown> }>
+            games: Array<{ seats: Array<Record<string, unknown>> }>
+          }
+        }
+      }
+    ).current.board
+
+    // The owner row keeps its opaque id but carries no user_name for the masked caller.
+    const owned = board.automated.find((row) => row.agent.user_id === aliceId)
+    expect(owned).toBeDefined()
+    expect(owned?.agent.user_name).toBeUndefined()
+    expect(
+      board.games.flatMap((game) => game.seats).every((seat) => seat.user_name === undefined),
+    ).toBe(true)
+  })
+
   it("carries a built-in agent's declared label beside its stable name", async () => {
     const season = await declare()
     await storage.setReleaseStatus(season.id, 'released')
