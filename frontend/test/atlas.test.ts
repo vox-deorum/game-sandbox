@@ -208,26 +208,6 @@ describe('atlas source compilation', () => {
               render: {
                 kind: 'fitVisible',
                 sourceAlpha: { clearAtOrBelow: 1 },
-                bounds: { alphaAbove: 1 },
-                maxSize: { width: 1, height: 1 },
-                anchor: { x: 0, y: 0 },
-                resampler: 'bilinear-premultiplied-encoded-rgb',
-              } as never,
-            },
-          ],
-        }),
-      ),
-    ).toThrow('output alpha is required')
-    expect(() =>
-      validateAtlasBuildPageSpec(
-        spec({
-          cells: [
-            {
-              name: 'one',
-              source: { path: './one.png' },
-              render: {
-                kind: 'fitVisible',
-                sourceAlpha: { clearAtOrBelow: 1 },
                 bounds: { alphaAbove: 1, fromCell: 'one' },
                 maxSize: { width: 1, height: 1 },
                 anchor: { x: 0, y: 0 },

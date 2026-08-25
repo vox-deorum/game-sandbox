@@ -3,19 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SweepTimer } from '../../src/util/sweep-timer.js'
 
 describe('SweepTimer', () => {
-  let timer: SweepTimer | undefined
-
   afterEach(() => {
-    timer?.stop()
-    timer = undefined
-    vi.clearAllTimers()
     vi.useRealTimers()
   })
 
   it('sweeps immediately and on its interval until stopped', () => {
     vi.useFakeTimers()
     const sweep = vi.fn()
-    timer = new SweepTimer(sweep, 10)
+    const timer = new SweepTimer(sweep, 10)
 
     timer.start()
     expect(sweep).toHaveBeenCalledOnce()

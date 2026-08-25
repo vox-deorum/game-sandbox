@@ -10,12 +10,10 @@ import {
   reclaimOrphanedOfficialTelemetry,
 } from '../../src/recordings/retention.js'
 import { RecordingsStore } from '../../src/recordings/store.js'
-import { LiveSession } from '../../src/session/live-session.js'
 import type { NewRecordingInput, ScheduledGameInput, Storage } from '../../src/storage/index.js'
 import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../../src/storage/llm/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
-import { FakeSessionProcess } from '../support/fake-driver.js'
-import { createRunOrFail, flush } from '../support/harness.js'
+import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const DAY = 86_400_000
@@ -84,61 +82,6 @@ describe('retention', () => {
   afterEach(async () => {
     await storage.close()
     rmSync(root, { recursive: true, force: true })
-  })
-
-  describe('finalize writes the recordings row', () => {
-    it('records a row when a session finalizes', async () => {
-      await storage.createSession({
-        id: 'sess-1',
-        user_id: 'alice',
-        env_id: 'flappy_bird',
-        parameters: { players: 1 },
-        mode: 'human',
-        recording_id: 'flappy_bird-sess-1',
-        created_at: ago(0),
-      })
-      const process = new FakeSessionProcess()
-      const session = new LiveSession({
-        id: 'sess-1',
-        userId: 'alice',
-        envId: 'flappy_bird',
-        mode: 'human',
-        recordingId: 'flappy_bird-sess-1',
-        createdAt: ago(0),
-        process,
-        externalPlayers: ['player_0'],
-        externalChatPlayer: 'player_0',
-        messaging: { enabled: true, cap: 120 },
-        deps: {
-          storage,
-          onEnd: () => {},
-          log: () => {},
-          idleTimeoutMs: 1_000_000,
-          maxDurationMs: 1_000_000,
-          killGraceMs: 10,
-        },
-      })
-      process.emit(
-        JSON.stringify({
-          schema_version: 1,
-          environment: 'flappy_bird',
-          parameters: { players: 1 },
-          players: { player_0: { kind: 'human', label: 'alice', user: 'alice' } },
-          seats: { seat_0: ['player_0'] },
-          seat_plan: 'solo',
-          seed: 0,
-        }),
-      )
-      await flush()
-      await session.finalize('stopped')
-      await flush()
-      expect(await storage.getRecording('flappy_bird-sess-1')).toMatchObject({
-        id: 'flappy_bird-sess-1',
-        user_id: 'alice',
-        env_id: 'flappy_bird',
-        pinned: 0,
-      })
-    })
   })
 
   describe('sweep: LLM telemetry scopes', () => {

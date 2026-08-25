@@ -47,7 +47,6 @@ function driverEmitting(payload: Record<string, unknown>, code: number): FakeDri
 interface FakeSourceOptions {
   resolveError?: SourceError
   fetchError?: Error
-  resolved?: ResolvedSource
   treePath?: string
   onDispose?: () => void
 }
@@ -67,16 +66,14 @@ class FakeSource implements SubmissionSource {
     if (this.opts.resolveError !== undefined) {
       return Promise.reject(this.opts.resolveError)
     }
-    return Promise.resolve(
-      this.opts.resolved ?? {
-        kind: 'git',
-        repoUrl: 'https://example.test/repo',
-        commitSha: 'c0ffee1234',
-        ref: null,
-        resolvedRef: 'main',
-        localPath: null,
-      },
-    )
+    return Promise.resolve({
+      kind: 'git',
+      repoUrl: 'https://example.test/repo',
+      commitSha: 'c0ffee1234',
+      ref: null,
+      resolvedRef: 'main',
+      localPath: null,
+    })
   }
 
   fetchTree(_resolved: ResolvedSource): Promise<TreeHandle> {

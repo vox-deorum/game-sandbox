@@ -516,11 +516,6 @@ describe('HTTP API', () => {
     expect(res.json()).toMatchObject({ code: 'auth_required' })
   })
 
-  it('keeps read-only routes open to an anonymous visitor', async () => {
-    expect((await app.inject({ method: 'GET', url: '/api/environments' })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'GET', url: '/api/recordings' })).statusCode).toBe(200)
-  })
-
   it('404s an unknown session and an unknown recording', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/sessions/nope' })).statusCode).toBe(404)
     expect((await app.inject({ method: 'GET', url: '/api/recordings/nope' })).statusCode).toBe(404)

@@ -57,14 +57,14 @@ describe('WatchAgentPicker', () => {
 
   it('lists an anonymous unrated agent with a highlighted Rate action', async () => {
     await renderPicker(flappyMeta(), [summary()])
-    expect(await screen.findByText('Agent 1')).toBeInTheDocument()
+    await screen.findByText('Agent 1')
     expect(screen.getByText('Not rated')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rate' })).toHaveClass('primary')
   })
 
   it('shows an empty state when no agent is ready', async () => {
     await renderPicker(flappyMeta(), [])
-    expect(await screen.findByText(/No submitted agents are ready/)).toBeInTheDocument()
+    await screen.findByText(/No submitted agents are ready/)
   })
 
   it('starts a submitted-agent watch run and navigates to the session', async () => {
@@ -87,7 +87,7 @@ describe('WatchAgentPicker', () => {
       seed: undefined,
       humanTimeoutMs: undefined,
     })
-    expect(await screen.findByText('session sess-9')).toBeInTheDocument()
+    await screen.findByText('session sess-9')
   })
 
   it('pins the built-in Naive agent and watches it with no submission', async () => {
@@ -96,7 +96,7 @@ describe('WatchAgentPicker', () => {
       session: { id: 'sess-naive', wsPath: '/api/sessions/sess-naive/ws' },
     })
     await renderPicker(flappyMeta(), [])
-    expect(await screen.findByText('Naive agent')).toBeInTheDocument()
+    await screen.findByText('Naive agent')
     // The built-in row is the only one here, so its Watch button is the first (and only) one.
     const watchButton = await screen.findByRole('button', { name: 'Watch' })
     // Watching is the non-primary action: only Rate is highlighted, so this stays secondary.
@@ -111,7 +111,7 @@ describe('WatchAgentPicker', () => {
       seed: undefined,
       humanTimeoutMs: undefined,
     })
-    expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
+    await screen.findByText('session sess-naive')
   })
 
   it('lists every declared builtin and preselects the clicked builtin by name', async () => {
@@ -133,7 +133,7 @@ describe('WatchAgentPicker', () => {
   it('hides actions for a still-pending viewer but still lists anonymous agents', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'pending'))
     await renderPicker(flappyMeta(), [summary()])
-    expect(await screen.findByText('Agent 1')).toBeInTheDocument()
+    await screen.findByText('Agent 1')
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Rate' })).toBeNull()
     // A signed-in but unapproved account sees the awaiting-approval copy, not a sign-in prompt.
@@ -146,12 +146,12 @@ describe('WatchAgentPicker', () => {
     await renderPicker(flappyMeta(), [summary()])
     // The list renders with its actions and no separate sign-in prompt; the actions themselves are
     // the entry point into signing in.
-    expect(await screen.findByText('Agent 1')).toBeInTheDocument()
+    await screen.findByText('Agent 1')
     expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: 'Rate' }))
     // No run starts without an account: the click lands on the sign-in page instead.
     expect(vi.mocked(startSession)).not.toHaveBeenCalled()
-    expect(await screen.findByText('login page')).toBeInTheDocument()
+    await screen.findByText('login page')
   })
 
   it('shows rated and owned agents as secondary Watch again actions', async () => {
@@ -159,7 +159,7 @@ describe('WatchAgentPicker', () => {
       summary({ rating_status: 'rated' }),
       summary({ submission_id: 'sub2', anonymous_number: 2, rating_status: 'own' }),
     ])
-    expect(await screen.findByText('Rated')).toBeInTheDocument()
+    await screen.findByText('Rated')
     expect(screen.getByText('Your agent')).toBeInTheDocument()
     const actions = screen.getAllByRole('button', { name: 'Watch again' })
     expect(actions).toHaveLength(2)
@@ -208,7 +208,7 @@ describe('WatchAgentPicker', () => {
       },
       seed: undefined,
     })
-    expect(await screen.findByText('session sess-hearts')).toBeInTheDocument()
+    await screen.findByText('session sess-hearts')
   })
 
   it('shows operator-only owner and source details with a profile link, falling back to the id', async () => {

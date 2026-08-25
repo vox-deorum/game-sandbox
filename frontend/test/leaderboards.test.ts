@@ -169,7 +169,7 @@ describe('LeaderboardsPage', () => {
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
-    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
+    await screen.findByText('Scoreboard')
     expect(screen.getByText('Human Ratings')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Season: Week 1', level: 2 })).toBeInTheDocument()
     expect(screen.getByText('2 submissions')).toBeInTheDocument()
@@ -211,7 +211,7 @@ describe('LeaderboardsPage', () => {
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
-    expect(await screen.findByText('No automated results yet.')).toBeInTheDocument()
+    await screen.findByText('No automated results yet.')
     const scoreboard = screen.getByText('Scoreboard').closest('section') as HTMLElement
     const humanRatings = screen.getByText('Human Ratings').closest('section') as HTMLElement
     expect(
@@ -243,8 +243,7 @@ describe('LeaderboardsPage', () => {
 
   it('shows compact stored LLM usage with honest per-model details on the automated board only', async () => {
     const usageBoard = board()
-    const usageRow = usageBoard.automated[0]
-    if (usageRow === undefined) throw new Error('expected an automated fixture row')
+    const usageRow = usageBoard.automated[0] as Board['automated'][number]
     usageBoard.automated[0] = {
       ...usageRow,
       llm_weighted_cost: 41_600,
@@ -337,7 +336,7 @@ describe('LeaderboardsPage', () => {
   it('shows a not-released message for an unreleased or unknown season (404)', async () => {
     vi.mocked(getSeasonLeaderboards).mockResolvedValue(undefined)
     await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
-    expect(await screen.findByText(/No released results/)).toBeInTheDocument()
+    await screen.findByText(/No released results/)
     // A non-operator never reaches the operator-only admin read.
     expect(vi.mocked(getAdminSeason)).not.toHaveBeenCalled()
   })
@@ -360,7 +359,7 @@ describe('LeaderboardsPage', () => {
     await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
 
     await waitFor(() => expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-secret'))
-    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
+    await screen.findByText('Scoreboard')
     expect(screen.getByText(/Operator preview/)).toBeInTheDocument()
   })
 
@@ -396,7 +395,7 @@ describe('LeaderboardsPage', () => {
         includeUnreleased: true,
       }),
     )
-    expect(await screen.findByRole('link', { name: 'Week 2' })).toBeInTheDocument()
+    await screen.findByRole('link', { name: 'Week 2' })
   })
 
   it('prefers a submitted agent row user_name over its user_id, keeping the id for the link and tooltip', async () => {
@@ -507,7 +506,7 @@ describe('LeaderboardsPage', () => {
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
-    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
+    await screen.findByText('Scoreboard')
     expect(screen.queryByText('Peer Ratings')).toBeNull()
     expect(screen.queryByRole('link', { name: 'Manage season' })).toBeNull()
     expect(vi.mocked(listSeasonRatings)).not.toHaveBeenCalled()
@@ -561,7 +560,7 @@ describe('LeaderboardsPage', () => {
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
-    expect(await screen.findByRole('heading', { name: 'Peer Ratings' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Peer Ratings' })
     const byAgent = (await screen.findByRole('heading', { name: 'By agent' })).closest('section')
     const byRater = (await screen.findByRole('heading', { name: 'By rater' })).closest('section')
     expect(byAgent).not.toBeNull()

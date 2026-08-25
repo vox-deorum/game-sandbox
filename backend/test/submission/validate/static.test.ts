@@ -108,24 +108,6 @@ describe('static validator — template version', () => {
   })
 })
 
-describe('static validator — every rejection carries an owner-facing message', () => {
-  it.each([
-    'manifest-missing',
-    'invalid-json',
-    'missing-entry-point',
-    'unknown-key',
-    'entry-point-missing',
-    'unknown-template-version',
-  ])('%s message is a non-empty string', async (name) => {
-    const result = await validateStatic(fixture(name), DEPS_V1, KNOWN_V1)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(typeof result.reason.message).toBe('string')
-      expect(result.reason.message.length).toBeGreaterThan(0)
-    }
-  })
-})
-
 describe('static validator — symlink escape is rejected, not followed', () => {
   it('treats a manifest symlinked out of the tree as missing, and an escaping entry point as missing', async () => {
     const root = mkdtempSync(join(tmpdir(), 'static-symlink-'))

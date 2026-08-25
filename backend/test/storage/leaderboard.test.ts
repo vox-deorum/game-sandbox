@@ -98,7 +98,6 @@ describe('leaderboard storage on :memory:', () => {
   function createRun(
     seasonId: string,
     requestedBy: string,
-    _submissions: AgentRef[],
     games: ScheduledGameInput[],
   ): Promise<SeasonRun> {
     return createRunOrFail(storage, seasonId, requestedBy, () => ({
@@ -144,7 +143,7 @@ describe('leaderboard storage on :memory:', () => {
   it('refuses an unforced config edit once a run exists, and a forced edit deletes the runs', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     await storage.updateSeasonConfig(season.id, configWithMatch())
-    await createRun(season.id, 'dev-user', [], ONE_GAME)
+    await createRun(season.id, 'dev-user', ONE_GAME)
 
     const refused = await storage.updateSeasonConfig(season.id, configWithMatch())
     expect(refused).toEqual({ ok: false, conflict: 'season_has_runs' })
@@ -244,13 +243,13 @@ describe('leaderboard storage on :memory:', () => {
       { match_index: 0, game_index: 0, seed: 1, seats: [NAIVE], seat_plan: 'solo' },
       { match_index: 0, game_index: 1, seed: 2, seats: [NAIVE], seat_plan: 'solo' },
     ]
-    const run = await createRun(season.id, 'dev-user', [], twoGames)
+    const run = await createRun(season.id, 'dev-user', twoGames)
     await storage.setRunStatus(run.id, 'completed')
     expect(await gameCount()).toBe(2)
 
     // A later failed re-run does not move it: game_count tracks the latest *completed* run, matching
     // getLatestCompletedRun (so a failed re-run never blanks the season's activity).
-    const reRun = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const reRun = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.setRunStatus(reRun.id, 'failed', 'boom')
     expect(await gameCount()).toBe(2)
   })
@@ -360,7 +359,7 @@ describe('leaderboard storage on :memory:', () => {
 
   it('recordGameResult round-trips concrete agent columns and timing aggregates', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    const run = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run = await createRun(season.id, 'dev-user', ONE_GAME)
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.recordGameResult({
       game_id: game.id,
@@ -407,9 +406,9 @@ describe('leaderboard storage on :memory:', () => {
 
   it('getLatestCompletedRun returns the latest completed run and ignores a later running/failed one', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    const good = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const good = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.setRunStatus(good.id, 'completed')
-    const reRun = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const reRun = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.setRunStatus(reRun.id, 'failed', 'boom')
 
     const latest = await storage.getLatestCompletedRun(season.id)
@@ -419,7 +418,7 @@ describe('leaderboard storage on :memory:', () => {
 
   it('attachRunGameRecording links a game to a recording for the board replay link', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    const run = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run = await createRun(season.id, 'dev-user', ONE_GAME)
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.attachRunGameRecording(game.id, 'rec-1')
     expect((await storage.listRunGames(run.id))[0]?.recording_id).toBe('rec-1')
@@ -449,7 +448,7 @@ describe('leaderboard storage on :memory:', () => {
 
   it('replaceAutomatedPlacements rewrites rows for a re-run and supports submitted and Naive agents', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    const run1 = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run1 = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.replaceAutomatedPlacements(season.id, ENV, run1.id, [
       {
         rank: 1,
@@ -501,7 +500,7 @@ describe('leaderboard storage on :memory:', () => {
     expect(await storage.listPlacementsByUser('bob')).toEqual([])
 
     // A re-run rewrites the snapshot rather than appending.
-    const run2 = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run2 = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.replaceAutomatedPlacements(season.id, ENV, run2.id, [
       {
         rank: 1,
@@ -525,7 +524,7 @@ describe('leaderboard storage on :memory:', () => {
 
   it('keeps placements for two named builtins distinct within one season', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    const run = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run = await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.replaceAutomatedPlacements(season.id, ENV, run.id, [
       {
         rank: 1,
@@ -785,7 +784,7 @@ describe('leaderboard storage on :memory:', () => {
         seat_plan: 'solo',
       },
     ]
-    const run = await createRun(season.id, 'dev-user', [], games)
+    const run = await createRun(season.id, 'dev-user', games)
     const [g0, g1] = await storage.listRunGames(run.id)
     await storage.attachRunGameRecording(defined(g0).id, 'rec-lo')
     await storage.attachRunGameRecording(defined(g1).id, 'rec-hi')
@@ -864,7 +863,7 @@ describe('leaderboard storage on :memory:', () => {
 
   it('setSeasonRatingPrompt sets and clears, and stays editable after a run exists', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    await createRun(season.id, 'dev-user', [], ONE_GAME)
+    await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.setSeasonRatingPrompt(season.id, 'Rate creativity')
     expect((await storage.getSeason(season.id))?.rating_prompt).toBe('Rate creativity')
     await storage.setSeasonRatingPrompt(season.id, null)
@@ -890,12 +889,12 @@ describe('leaderboard storage on :memory:', () => {
   it('listProtectedLeaderboardRecordingIds exempts current-run recordings and excludes superseded ones', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
 
-    const run1 = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run1 = await createRun(season.id, 'dev-user', ONE_GAME)
     const game1 = firstOf(await storage.listRunGames(run1.id))
     await storage.attachRunGameRecording(game1.id, 'rec-old')
     await storage.setRunStatus(run1.id, 'completed')
 
-    const run2 = await createRun(season.id, 'dev-user', [], ONE_GAME)
+    const run2 = await createRun(season.id, 'dev-user', ONE_GAME)
     const game2 = firstOf(await storage.listRunGames(run2.id))
     await storage.attachRunGameRecording(game2.id, 'rec-new')
     await storage.setRunStatus(run2.id, 'completed')
@@ -925,7 +924,7 @@ describe('leaderboard storage on :memory:', () => {
         seat_plan: 'solo',
       },
     ]
-    const run = await createRun(season.id, 'dev-user', [], twoGames)
+    const run = await createRun(season.id, 'dev-user', twoGames)
     const games = await storage.listRunGames(run.id)
     const [g0, g1] = [firstOf(games), defined(games[1])]
     await storage.attachRunGameRecording(g0.id, 'rec0')
@@ -981,15 +980,10 @@ describe('leaderboard storage on :memory:', () => {
   it('getAutomatedBoard sums exact successful usage by model without changing rank inputs', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const agent: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
-    const run = await createRun(
-      season.id,
-      'dev-user',
-      [agent],
-      [
-        { match_index: 0, game_index: 0, seed: 1, seats: [agent], seat_plan: 'solo' },
-        { match_index: 0, game_index: 1, seed: 2, seats: [agent], seat_plan: 'solo' },
-      ],
-    )
+    const run = await createRun(season.id, 'dev-user', [
+      { match_index: 0, game_index: 0, seed: 1, seats: [agent], seat_plan: 'solo' },
+      { match_index: 0, game_index: 1, seed: 2, seats: [agent], seat_plan: 'solo' },
+    ])
     const games = await storage.listRunGames(run.id)
     const [first, second] = [firstOf(games), defined(games[1])]
 
@@ -1080,7 +1074,7 @@ describe('leaderboard storage on :memory:', () => {
         seat_plan: 'solo',
       },
     ]
-    const run = await createRun(season.id, 'dev-user', [], oneGame)
+    const run = await createRun(season.id, 'dev-user', oneGame)
     const game = firstOf(await storage.listRunGames(run.id))
     // Submission ids are chosen so the stable agent-key tiebreak would order them slow-before-fast;
     // proving the compute tiebreak (not the key) decides when scores are exactly equal.
@@ -1116,7 +1110,7 @@ describe('leaderboard storage on :memory:', () => {
       { match_index: 0, game_index: 0, seed: 1, seats: [s1], seat_plan: 'solo' },
     ]
 
-    const run1 = await createRun(season.id, 'dev-user', [s1], oneGame)
+    const run1 = await createRun(season.id, 'dev-user', oneGame)
     const game1 = firstOf(await storage.listRunGames(run1.id))
     await storage.recordGameResult({
       game_id: game1.id,
@@ -1173,7 +1167,7 @@ describe('leaderboard storage on :memory:', () => {
     })
 
     // A re-run with the baseline ahead rewrites the snapshot to the new run, leaving no stale rows.
-    const run2 = await createRun(season.id, 'dev-user', [s1], oneGame)
+    const run2 = await createRun(season.id, 'dev-user', oneGame)
     const game2 = firstOf(await storage.listRunGames(run2.id))
     await storage.recordGameResult({
       game_id: game2.id,
@@ -1210,12 +1204,9 @@ describe('leaderboard storage on :memory:', () => {
   it('reconcileCompletedRunPlacements backfills a completed run missing its snapshot', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
-    const run = await createRun(
-      season.id,
-      'dev-user',
-      [s1],
-      [{ match_index: 0, game_index: 0, seed: 1, seats: [s1], seat_plan: 'solo' }],
-    )
+    const run = await createRun(season.id, 'dev-user', [
+      { match_index: 0, game_index: 0, seed: 1, seats: [s1], seat_plan: 'solo' },
+    ])
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.recordGameResult({
       game_id: game.id,
@@ -1240,14 +1231,14 @@ describe('leaderboard storage on :memory:', () => {
 
   it('getAutomatedBoard is empty until a run completes', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
-    await createRun(season.id, 'dev-user', [], ONE_GAME)
+    await createRun(season.id, 'dev-user', ONE_GAME)
     expect(await storage.getAutomatedBoard(season.id)).toEqual([])
   })
 
   it('a malformed forced config edit throws and deletes nothing (validate before mutate)', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     await storage.updateSeasonConfig(season.id, configWithMatch())
-    await createRun(season.id, 'dev-user', [], ONE_GAME)
+    await createRun(season.id, 'dev-user', ONE_GAME)
     await storage.createSubmission(submissionInput({ season_id: season.id }))
 
     // A bad config (negative deps_version) fails the codec; even with force the runs/submissions the

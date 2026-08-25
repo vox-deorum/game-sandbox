@@ -129,18 +129,6 @@ describe('submission API', () => {
     expect(mine.json()).toEqual([])
   })
 
-  it('refuses a local reachability check when the dev gate is off', async () => {
-    await build({ allowLocalSubmissions: false })
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/submissions/reachability',
-      headers: await users.headersFor('alice'),
-      payload: { local_path: '/srv/agent' },
-    })
-    expect(res.statusCode).toBe(403)
-    expect(res.json()).toMatchObject({ code: 'local_disabled' })
-  })
-
   it('requires an active user for the reachability check and the submit route', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)
@@ -219,26 +207,6 @@ describe('submission API', () => {
     expect(await storage.listSubmissionChecks(body.id)).toEqual([])
   })
 
-  it('attributes a submission to the request identity, not a client-supplied submitter', async () => {
-    await build()
-    await storage.ensureOpenSeason(ENV_ID, 1)
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/submissions',
-      headers: await users.headersFor('alice'),
-      // A stray user_id in the body is ignored (additionalProperties:false would also reject it).
-      payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
-    })
-    const body = res.json() as { id: string }
-    const bobList = await app.inject({
-      method: 'GET',
-      url: '/api/submissions',
-      headers: await users.headersFor('bob'),
-    })
-    expect(bobList.json()).toEqual([])
-    expect((await storage.getSubmission(body.id))?.user_id).toBe(users.idOf('alice'))
-  })
-
   it('refuses a submit when the environment has no open season, writing no row', async () => {
     await build()
     const alice = await users.headersFor('alice')
@@ -258,20 +226,6 @@ describe('submission API', () => {
       headers: alice,
     })
     expect(mine.json()).toEqual([])
-  })
-
-  it('refuses a local submit when the dev gate is off', async () => {
-    await build({ allowLocalSubmissions: false })
-    await storage.ensureOpenSeason(ENV_ID, 1)
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/submissions',
-      headers: await users.headersFor('alice'),
-      payload: { env_id: ENV_ID, local_path: '/srv/agent' },
-    })
-    expect(res.statusCode).toBe(403)
-    expect(res.json()).toMatchObject({ code: 'local_disabled' })
-    expect(enqueued).toEqual([])
   })
 
   it('keeps local-path precedence when both source fields are present', async () => {

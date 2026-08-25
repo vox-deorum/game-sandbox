@@ -1,5 +1,5 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SessionSocket } from '../src/api/socket.js'
 
@@ -148,8 +148,4 @@ describe('SessionSocket', () => {
     expect(instances).toHaveLength(1)
     vi.useRealTimers()
   })
-})
-
-afterEach(() => {
-  instances = []
 })

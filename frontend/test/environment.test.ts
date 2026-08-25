@@ -114,7 +114,7 @@ describe('EnvironmentPage', () => {
   it('hides the play entry point for a still-pending user', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'pending'))
     await renderPage()
-    expect(await screen.findByText(/awaiting approval/)).toBeInTheDocument()
+    await screen.findByText(/awaiting approval/)
     expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
     // Watching moved to the picker, whose Watch buttons are likewise hidden when the account cannot participate.
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
@@ -129,13 +129,13 @@ describe('EnvironmentPage', () => {
     ])
     await renderPage()
     // Both entry points render signed-out; there is no separate sign-in prompt in the watch section.
-    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Play' })
     expect(screen.getByRole('button', { name: 'Rate' })).toBeInTheDocument()
     expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
     // Clicking one lands on the sign-in page instead of opening the start dialog.
     await fireEvent.click(screen.getByRole('button', { name: 'Play' }))
     expect(vi.mocked(startSession)).not.toHaveBeenCalled()
-    expect(await screen.findByText('login page')).toBeInTheDocument()
+    await screen.findByText('login page')
   })
 
   it('shows no season changes when play uses the environment defaults', async () => {
@@ -143,7 +143,7 @@ describe('EnvironmentPage', () => {
     // The prefill resolves to the environment default, so the summary names the one visible parameter
     // (`players` is fixed at one for Flappy Bird and stays out of a player-facing line).
     await renderPage()
-    expect(await screen.findByText('This season uses the default settings.')).toBeInTheDocument()
+    await screen.findByText('This season uses the default settings.')
     expect(
       screen.getByRole('group', { name: 'Settings for play season Playground' }),
     ).toBeInTheDocument()
@@ -449,7 +449,7 @@ describe('EnvironmentPage', () => {
       await screen.findByRole('heading', { name: 'Open for Play: Week 1', level: 2 }),
     ).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Play' }))
-    expect(await screen.findByRole('button', { name: 'Start playing' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Start playing' })
   })
 
   it('keeps the hub stable when the leaderboards read fails without closing confirmed play', async () => {
@@ -457,7 +457,7 @@ describe('EnvironmentPage', () => {
     // A transient boards failure affects only the released results embed.
     vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
     await renderPage()
-    expect(await screen.findByText(/No released results/)).toBeInTheDocument()
+    await screen.findByText(/No released results/)
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
   })
 
@@ -467,7 +467,7 @@ describe('EnvironmentPage', () => {
     await renderPage()
     // A failed read is not the same fact as a closed play window; reporting it as one would tell the
     // viewer something about the season that the page never actually learned.
-    expect(await screen.findByText(/play settings .* could not be loaded/i)).toBeInTheDocument()
+    await screen.findByText(/play settings .* could not be loaded/i)
     expect(screen.queryByText(/No season is currently open for play/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
   })
@@ -476,7 +476,7 @@ describe('EnvironmentPage', () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
     await renderPage()
-    expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
+    await screen.findByText(/No season is currently open for play/)
     expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
   })
 
@@ -491,7 +491,7 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     expect(screen.queryByRole('combobox', { name: 'Preset' })).toBeNull()
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
-    expect(await screen.findByText('s1')).toBeInTheDocument()
+    await screen.findByText('s1')
     // A single-seat environment fills only the lone human seat; the backend derives the human mode.
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
@@ -583,7 +583,7 @@ describe('EnvironmentPage', () => {
     await renderPage()
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
-    expect(await screen.findByText('active-9')).toBeInTheDocument()
+    await screen.findByText('active-9')
   })
 
   it('shows the stale-season message and keeps the form open when the play season changed', async () => {
@@ -636,6 +636,6 @@ describe('EnvironmentPage', () => {
       seed: undefined,
       humanTimeoutMs: 60_000,
     })
-    expect(await screen.findByText('h1')).toBeInTheDocument()
+    await screen.findByText('h1')
   })
 })

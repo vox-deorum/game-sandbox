@@ -16,6 +16,16 @@ import {
 } from '../../src/storage/llm/execution-telemetry.js'
 import { openTestApp, type TestApp } from '../support/harness.js'
 
+// The ordinary single-player header most recordings share; the ownership test builds a richer one.
+const HEADER: RecordingHeader = {
+  schema_version: 1,
+  environment: 'flappy_bird',
+  parameters: {},
+  players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
+  seats: { seat_0: ['player_0'] },
+  seat_plan: 'solo',
+}
+
 describe('recording LLM telemetry API', () => {
   let app: FastifyInstance
   let fixture: TestApp
@@ -103,22 +113,14 @@ describe('recording LLM telemetry API', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/recordings/missing/llm' })
     expect(missing.statusCode).toBe(404)
 
-    const header: RecordingHeader = {
-      schema_version: 1,
-      environment: 'flappy_bird',
-      parameters: {},
-      players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
-      seats: { seat_0: ['player_0'] },
-      seat_plan: 'solo',
-    }
     await fixture.users.headersFor('recorder')
-    await seedRecording('ordinary', header, null)
+    await seedRecording('ordinary', HEADER, null)
     const ordinary = await app.inject({ method: 'GET', url: '/api/recordings/ordinary/llm' })
     expect(ordinary.statusCode).toBe(200)
     expect(ordinary.json()).toEqual({ calls: [], total_budget_cost_units: 0 })
 
     telemetry.open('empty-scope')
-    await seedRecording('associated-empty', header, {
+    await seedRecording('associated-empty', HEADER, {
       scopeId: 'empty-scope',
       sessionId: 'empty-session',
     })
@@ -132,20 +134,12 @@ describe('recording LLM telemetry API', () => {
 
   it('returns telemetry_unavailable for missing, legacy, and incomplete associated telemetry', async () => {
     await fixture.users.headersFor('recorder')
-    const header: RecordingHeader = {
-      schema_version: 1,
-      environment: 'flappy_bird',
-      parameters: {},
-      players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
-      seats: { seat_0: ['player_0'] },
-      seat_plan: 'solo',
-    }
-    await seedRecording('missing-file', header, { scopeId: 'gone', sessionId: 'session' })
+    await seedRecording('missing-file', HEADER, { scopeId: 'gone', sessionId: 'session' })
 
     const legacy = new BetterSqlite3(telemetry.pathForScope('legacy'))
     legacy.pragma('user_version = 1')
     legacy.close()
-    await seedRecording('legacy-file', header, { scopeId: 'legacy', sessionId: 'session' })
+    await seedRecording('legacy-file', HEADER, { scopeId: 'legacy', sessionId: 'session' })
 
     const incomplete = new BetterSqlite3(telemetry.pathForScope('incomplete'))
     incomplete.exec(`
@@ -162,7 +156,7 @@ describe('recording LLM telemetry API', () => {
     `)
     incomplete.pragma(`user_version = ${EXECUTION_TELEMETRY_SCHEMA_VERSION}`)
     incomplete.close()
-    await seedRecording('incomplete-file', header, {
+    await seedRecording('incomplete-file', HEADER, {
       scopeId: 'incomplete',
       sessionId: 'session',
     })

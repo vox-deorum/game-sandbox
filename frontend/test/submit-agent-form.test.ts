@@ -124,7 +124,7 @@ describe('SubmitAgentForm', () => {
     await fireEvent.update(screen.getByLabelText('Public Repository URL'), 'https://x/y')
     await fireEvent.click(screen.getByRole('button', { name: 'Verify reachability' }))
 
-    expect(await screen.findByText('no such ref')).toBeInTheDocument()
+    await screen.findByText('no such ref')
     expect(screen.getByRole('button', { name: 'Submit agent' })).toBeDisabled()
   })
 
@@ -137,7 +137,7 @@ describe('SubmitAgentForm', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
-    expect(await screen.findByText('Validating your submission')).toBeInTheDocument()
+    await screen.findByText('Validating your submission')
     expect(vi.mocked(submitAgent)).toHaveBeenCalledWith('flappy_bird', {
       repoUrl: 'https://x/y',
       ref: null,
@@ -203,7 +203,7 @@ describe('SubmitAgentForm', () => {
     await verifyReachable()
     await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
-    expect(await screen.findByText('overlay build kaboom')).toBeInTheDocument()
+    await screen.findByText('overlay build kaboom')
     expect(within(screen.getByTestId('stage-build')).getByText('failed')).toBeInTheDocument()
     expect(view.emitted().accepted).toEqual([['sub1']])
     expect(view.emitted().settled).toEqual([
@@ -220,13 +220,13 @@ describe('SubmitAgentForm', () => {
     await verifyReachable()
     await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
-    expect(await screen.findByText(/Still processing/)).toBeInTheDocument()
+    await screen.findByText(/Still processing/)
   })
 
   it('shows the dev local-folder field only when the backend reports the gate is on', async () => {
     vi.mocked(getSubmissionCapabilities).mockResolvedValue({ local_submissions: true })
     renderForm()
-    expect(await screen.findByLabelText('Local folder path (dev only)')).toBeInTheDocument()
+    await screen.findByLabelText('Local folder path (dev only)')
   })
 
   it('hides the local-folder field when the gate is off', async () => {
@@ -256,7 +256,7 @@ describe('SubmitAgentForm', () => {
     await fireEvent.update(screen.getByLabelText('Rating prompt (optional)'), 'reward smooth play')
     await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
-    expect(await screen.findByText(/Rating prompt saved\./)).toBeInTheDocument()
+    await screen.findByText(/Rating prompt saved\./)
     expect(vi.mocked(setAuthorPrompt)).toHaveBeenCalledWith(
       'flappy_bird-iter-1',
       'reward smooth play',

@@ -131,16 +131,14 @@ describe('rating API', () => {
 
   /** Seed a session row with the given season and recording attribution; ended unless told otherwise. */
   async function seedSession(options: {
-    starter?: string
     seasonId: string | null
     recordingId: string | null
     ended?: boolean
-    submissionLinks?: Array<{ submissionId: string; seatId: string }>
   }): Promise<string> {
     const id = `sess-${Math.abs(hash(JSON.stringify(options)))}`
     await storage.createSession({
       id,
-      user_id: options.starter ?? 'bob',
+      user_id: 'bob',
       env_id: ENV_ID,
       parameters: { players: 1 },
       mode: 'scripted',
@@ -151,9 +149,6 @@ describe('rating API', () => {
     if (options.ended !== false) {
       // A rateable session is a finished one; the rating gate requires the session to have ended.
       await storage.markEnded(id, 'terminated', new Date().toISOString())
-    }
-    for (const link of options.submissionLinks ?? []) {
-      await storage.recordSessionSubmission(id, link.submissionId, link.seatId)
     }
     return id
   }

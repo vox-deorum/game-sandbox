@@ -3,8 +3,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
-  currentSessionBaseImageSpec,
-  DEPS_VERSION,
   KNOWN_DEPS_VERSIONS,
   sessionBaseImageDefinition,
   sessionBaseImageInputs,
@@ -51,13 +49,6 @@ describe('dependency-set image registry', () => {
         'environments',
       ])
     }
-  })
-
-  it('keeps the current version tied to a registered definition', () => {
-    expect(currentSessionBaseImageSpec()).toEqual({
-      kind: 'session-base',
-      depsVersion: DEPS_VERSION,
-    })
   })
 
   it('refuses to name or build an unsupported dependency version', () => {

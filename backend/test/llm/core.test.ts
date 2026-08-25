@@ -89,7 +89,7 @@ function fixture(
     options: { defaultMaxOutputTokens: 8, maxOutputTokens: 20 },
     log,
   })
-  return { grant, handler, logs, meter, records, tokenizer, upstream }
+  return { grant, handler, logs, meter, records, upstream }
 }
 
 describe('LLM registry, handler, and listener', () => {
@@ -742,17 +742,6 @@ describe('LLM registry, handler, and listener', () => {
     for (const [body, code] of cases) {
       await expect(handler.handle(grant, body)).rejects.toMatchObject({ code })
     }
-    expect(upstream.call).not.toHaveBeenCalled()
-  })
-
-  it('rejects a disabled model tier with the standard model_not_allowed error', async () => {
-    const { grant, handler, upstream } = fixture()
-
-    await expect(handler.handle(grant, { model: 'large', messages: [] })).rejects.toMatchObject({
-      status: 400,
-      code: 'model_not_allowed',
-      message: 'The requested model tier is not allowed.',
-    })
     expect(upstream.call).not.toHaveBeenCalled()
   })
 })

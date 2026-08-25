@@ -78,7 +78,7 @@ describe('SessionRatings', () => {
     })
     renderPanel()
 
-    expect(await screen.findByText('Rate the Agents')).toBeInTheDocument()
+    await screen.findByText('Rate the Agents')
     expect(screen.getByTestId('ratings-reveal')).toHaveClass('ratings-reveal')
     // The own agent is shown but has no rating control.
     expect(screen.getByText('Your agent')).toBeInTheDocument()
@@ -112,7 +112,7 @@ describe('SessionRatings', () => {
     })
     renderPanel()
 
-    expect(await screen.findByText('Rate the Agents')).toBeInTheDocument()
+    await screen.findByText('Rate the Agents')
     // Each non-own seat gets its own 1-5 control, attributed to the right agent.
     expect(screen.getByRole('radiogroup', { name: /Rate Agent 1/ })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: /Rate Agent 2/ })).toBeInTheDocument()
@@ -165,7 +165,6 @@ describe('SessionRatings', () => {
     renderPanel()
 
     const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
-    // The prior rating (3) pre-fills, marked pressed.
     expect(within(group).getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'true')
 
     // Change to 5, add the now-required comment, and save.
@@ -179,8 +178,7 @@ describe('SessionRatings', () => {
     expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
       { agent: NAIVE, score: 5, feedback: 'Still strong' },
     ])
-    expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
-    // The reflected saved state marks 5 as pressed.
+    await screen.findByText('Saved ✓')
     await waitFor(() =>
       expect(within(group).getByRole('button', { name: '5' })).toHaveAttribute(
         'aria-pressed',
@@ -199,7 +197,7 @@ describe('SessionRatings', () => {
     })
     renderPanel()
 
-    expect(await screen.findByText(/Rating for this round has closed/)).toBeInTheDocument()
+    await screen.findByText(/Rating for this round has closed/)
     // The prior rating and comment render as text, with no controls and no save button.
     expect(screen.getByText('★ 4')).toBeInTheDocument()
     expect(screen.getByText('Steady under pressure')).toBeInTheDocument()
@@ -282,7 +280,7 @@ describe('SessionRatings', () => {
     expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
       { agent: NAIVE, score: 5, feedback: 'Steady under pressure' },
     ])
-    expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
+    await screen.findByText('Saved ✓')
   })
 
   it('tracks the comment length live and flags an overlong comment', async () => {
@@ -295,7 +293,6 @@ describe('SessionRatings', () => {
     await screen.findByText('Rate the Agents')
     const textarea = screen.getByPlaceholderText('Tell the author what you thought')
     await fireEvent.update(textarea, 'twelve chars')
-    // Twelve written characters count up against the 1000 cap.
     const counter = screen.getByText('12 / 1000')
     expect(counter).toBeInTheDocument()
     expect(counter).not.toHaveClass('over')

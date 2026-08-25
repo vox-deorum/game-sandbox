@@ -82,7 +82,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       upstream,
       options: { defaultMaxOutputTokens: 8, maxOutputTokens: 20 },
     })
-    return { client, grant, handler, meter, store, tick }
+    return { grant, handler, meter, store, tick }
   }
 
   it('records one SDK-returned success and one telemetry row', async () => {

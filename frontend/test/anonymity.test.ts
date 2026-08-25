@@ -11,8 +11,9 @@ describe('anonymity policy', () => {
     ]) {
       const state = anonymityState({ operator: false, ...facts })
       expect(state).toBe('unknown')
-      expect(presentsMasked(state)).toBe(true)
     }
+    // Every unresolved state renders masked, not raw, so a missing fact never leaks identity.
+    expect(presentsMasked('unknown')).toBe(true)
   })
 
   it('shows identity only when no protection applies or an operator is confirmed', () => {

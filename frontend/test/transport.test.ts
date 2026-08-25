@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RenderOptions } from '../src/renderers/types.js'
 import { parseRecording, UnsupportedVersionError } from '../src/replay/parse.js'
-import { type ReplayState, ReplayTransport } from '../src/replay/transport.js'
+import { ReplayTransport } from '../src/replay/transport.js'
 
 function state(tick: number): StepState {
   return { schema_version: 1, tick, agents: {}, timing: { started_at: tick, duration_ms: 1 } }
@@ -20,7 +20,6 @@ function makeTransport(paceIntervalMs: number | null = 50, deferred = false) {
   const frames: number[] = []
   const optionsSeen: Array<RenderOptions | undefined> = []
   const finish: Array<() => void> = []
-  let last: ReplayState | null = null
   const transport = new ReplayTransport(STATES, {
     paceIntervalMs,
     // The fixture's tick equals its index, so recording the rendered state's tick gives the frame
@@ -31,15 +30,11 @@ function makeTransport(paceIntervalMs: number | null = 50, deferred = false) {
       if (!deferred) return
       return new Promise<void>((resolve) => finish.push(resolve))
     },
-    onChange: (s) => {
-      last = s
-    },
   })
   return {
     transport,
     frames,
     optionsSeen,
-    state: () => last,
     /** Complete every transition handed out so far. */
     finishTransitions: () => {
       for (const resolve of finish.splice(0)) resolve()

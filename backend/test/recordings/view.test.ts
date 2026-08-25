@@ -87,7 +87,6 @@ describe('maskPlayers', () => {
   it("leaves the viewer's own seat untouched so they can still find themselves", () => {
     const masked = maskPlayers(submittedPlayers, 'alice')
     expect(masked.player_0).toEqual(submittedPlayers.player_0)
-    // The other seat is still masked.
     expect(masked.player_1).toEqual({ kind: 'human', label: 'Human' })
   })
 

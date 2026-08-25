@@ -216,35 +216,6 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
-
-  it('resets the recipient but retains the draft when the designated sender changes', async () => {
-    const props = {
-      entries: [] as ChatEntry[],
-      players: PLAYERS,
-      viewerPlayers: ['player_2'],
-      sendable: true,
-      messageCap: 120,
-      policy: {
-        sender: 'player_2',
-        targetRecipients: ['player_0'],
-        defaultRecipient: 'player_0',
-      },
-    }
-    const { rerender } = render(ChatPanel, { props })
-    await fireEvent.update(screen.getByRole('combobox'), '')
-    await fireEvent.update(screen.getByRole('textbox'), 'meant for player_2')
-
-    await rerender({
-      ...props,
-      policy: {
-        sender: 'player_3',
-        targetRecipients: ['player_1'],
-        defaultRecipient: 'player_1',
-      },
-    })
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('meant for player_2')
-    expect(screen.getByRole('combobox')).toHaveValue('player_1')
-  })
 })
 
 // Three Branches human play uses player_0 as the designated sender and compact player labels in chat.

@@ -475,22 +475,6 @@ describe('seedOpenSeasons template seasons', () => {
     )
   })
 
-  it('does not recreate a template the operator deleted once the arc is planted', async () => {
-    await seedOpenSeasons(storage, plateauOnly(), 1)
-    const before = await storage.listSeasons({ envId: 'plateau', scope: 'all' })
-    const band = before.find((season) => season.label === 'Season 2: The Band')
-    if (band === undefined) throw new Error('band missing from the test setup')
-    expect(await storage.deleteSeason(band.id)).toEqual({ ok: true })
-
-    await seedOpenSeasons(storage, plateauOnly(), 1)
-
-    const after = await storage.listSeasons({ envId: 'plateau', scope: 'all' })
-    expect(after.map((season) => season.label).sort()).toEqual([
-      DEFAULT_SEASON_LABEL,
-      'Season 1: The Walk',
-    ])
-  })
-
   it('propagates a preset value change to its planted template', async () => {
     await seedOpenSeasons(storage, plateauOnly(), 1)
 

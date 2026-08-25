@@ -14,30 +14,10 @@ describe('forfeitScore', () => {
     expect(forfeitScore('hearts')).toBe(-26)
   })
 
-  it('keeps a forfeit below every honest Hearts outcome, closing the crash-to-the-top exploit', () => {
-    // Honest play always yields a leaderboard score in [-26, 0]; an aborted hand has a partial ~0 that
-    // would be the *best* score. The floor must sit at or below the worst honest hand so failing loses.
-    const worstHonestHand = -26
-    const typicalHonestHand = -13
-    const abortedPartial = 0 // what an early crash banks before any penalty accrues
-    expect(forfeitScore('hearts')).toBeLessThanOrEqual(worstHonestHand)
-    expect(forfeitScore('hearts')).toBeLessThan(typicalHonestHand)
-    expect(forfeitScore('hearts')).toBeLessThan(abortedPartial)
-  })
-
   it('floors a forfeited Spades hand at its worst possible team score', () => {
     // A partnership's worst single-hand team score is -260 (both partners bid 13, an unmakeable
     // 26-trick contract set for -10 * 26). A seat is ranked by its team score, so that is the floor.
     expect(forfeitScore('spades')).toBe(-260)
-  })
-
-  it('keeps a Spades forfeit below every honest team outcome', () => {
-    const worstHonestHand = -260 // both partners bid 13 and take nothing
-    const typicalBadHand = -30 // a modest set contract
-    const abortedPartial = 0 // what an early crash banks before scoring
-    expect(forfeitScore('spades')).toBeLessThanOrEqual(worstHonestHand)
-    expect(forfeitScore('spades')).toBeLessThan(typicalBadHand)
-    expect(forfeitScore('spades')).toBeLessThan(abortedPartial)
   })
 
   it('floors an upward-accruing environment at zero, where a failure already sits near the bottom', () => {

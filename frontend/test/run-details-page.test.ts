@@ -67,7 +67,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
 class FakeWS {
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
-  constructor(readonly url: string) {
+  constructor(_url: string) {
     sockets.push(this)
   }
   close(): void {

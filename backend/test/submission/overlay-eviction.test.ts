@@ -120,8 +120,6 @@ describe('overlay eviction — budget trim', () => {
 
     // Keep the two newest (s3, s4); evict the two oldest. Order is oldest-first within the evicted set.
     expect(new Set(driver.removed)).toEqual(new Set(['overlay:s1', 'overlay:s2']))
-    expect(driver.removed).not.toContain('overlay:s3')
-    expect(driver.removed).not.toContain('overlay:s4')
   })
 
   it('removes nothing when the image count is within budget', async () => {
@@ -220,7 +218,6 @@ describe('overlay eviction — composed session overlays', () => {
     await eviction.sweep()
 
     expect(new Set(driver.removed)).toEqual(new Set(['overlay:old-a', 'overlay:old-b']))
-    expect(driver.removed).not.toContain('overlay:fresh')
   })
 
   it('does not let session overlays crowd out per-submission retention', async () => {

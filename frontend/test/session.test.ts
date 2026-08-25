@@ -515,7 +515,7 @@ describe('SessionPage', () => {
       timing: { started_at: 0, duration_ms: 0 },
     })
     expect(drawn).toHaveLength(1)
-    expect(await screen.findByText('No decisions yet.')).toBeInTheDocument()
+    await screen.findByText('No decisions yet.')
 
     // The first real action frame draws and adds exactly one decision row.
     handlers.onState({
@@ -719,7 +719,7 @@ describe('SessionPage', () => {
     handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
     handlers.onSessionStatus?.('ended', 'terminated')
 
-    expect(await screen.findByText('Game over')).toBeInTheDocument()
+    await screen.findByText('Game over')
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open replay' })).toHaveAttribute(
       'href',
@@ -738,7 +738,7 @@ describe('SessionPage', () => {
     handlers.onSessionStatus?.('ended')
 
     const statusBar = view.container.querySelector('.session-status') as HTMLElement
-    expect(await within(statusBar).findByText('Game over')).toBeInTheDocument()
+    await within(statusBar).findByText('Game over')
     expect(within(statusBar).getByText('7')).toBeInTheDocument()
     expect(within(statusBar).getByText('42')).toBeInTheDocument()
     expect(within(statusBar).queryByText('Stopped')).toBeNull()
@@ -907,7 +907,6 @@ describe('SessionPage', () => {
       }),
     )
     const attribution = await screen.findByText('Agent 1')
-    expect(attribution).toBeInTheDocument()
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
     // The masked row's identity is hidden outright, so no id tooltip rides along either.
     expect(attribution).not.toHaveAttribute('title')
@@ -984,7 +983,7 @@ describe('SessionPage', () => {
         },
       }),
     )
-    expect(await screen.findByText("maya-fledgling's agent")).toBeInTheDocument()
+    await screen.findByText("maya-fledgling's agent")
   })
 
   it('returns to an ended session without opening a socket and shows recording metadata', async () => {
@@ -1006,7 +1005,7 @@ describe('SessionPage', () => {
     // A naturally-ended session shows the shared game-over leaderboard over the hydrated final frame;
     // the status badge separately names the end reason. Scope the run facts to the status row so the
     // score there isn't confused with the same score on the leaderboard card.
-    expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+    await screen.findByRole('dialog', { name: 'Game over' })
     expect(handlers).toBeUndefined()
     const statusBar = view.container.querySelector('.session-status') as HTMLElement
     expect(within(statusBar).getByText('Game over')).toBeInTheDocument()
@@ -1014,7 +1013,7 @@ describe('SessionPage', () => {
     expect(within(statusBar).getByText('Score')).toBeInTheDocument()
     expect(within(statusBar).getByText('22')).toBeInTheDocument()
     // Pin state is conveyed by the button alone now, not a duplicate metadata row.
-    expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Pinned ✓' })
     expect(mountCtx?.controlledPlayers).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
     expect(drawn.at(-1)).toMatchObject({ tick: 2 })
@@ -1084,7 +1083,7 @@ describe('SessionPage', () => {
 
     // The socket is connected but no header has arrived: the renderer has not mounted, so the stage
     // shows the loading indicator and never the "Decision log" disclosure it has no rows for.
-    expect(await screen.findByText('Loading session…')).toBeInTheDocument()
+    await screen.findByText('Loading session…')
     expect(screen.queryByText('Decision log')).toBeNull()
 
     // The header mounts the renderer; the loading indicator clears.
@@ -1130,7 +1129,6 @@ describe('SessionPage', () => {
       // The held end is revealed: both the status badge (reasonText) and the new game-over
       // leaderboard card show, so disambiguate to the card and check the held result fact.
       const gameOver = screen.getByRole('dialog', { name: 'Game over' })
-      expect(gameOver).toBeInTheDocument()
       expect(within(gameOver).getByText('7')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
@@ -1308,7 +1306,7 @@ describe('SessionPage', () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(undefined)
     await renderSession()
-    expect(await screen.findByText('No such session.')).toBeInTheDocument()
+    await screen.findByText('No such session.')
   })
 
   it('keeps chat available across actions and ordinary state changes', async () => {
@@ -1508,7 +1506,7 @@ describe('SessionPage', () => {
 
     // Accumulation resumes cleanly after the duplicate.
     handlers.onState(playerState(6, { messages: [{ from: 'player_1', to: null, text: 'my bid' }] }))
-    expect(await screen.findByText('my bid')).toBeInTheDocument()
+    await screen.findByText('my bid')
     expect(screen.getAllByText('hello table')).toHaveLength(1)
   })
 
@@ -1534,7 +1532,7 @@ describe('SessionPage', () => {
     await renderSession()
 
     // The full exchange renders from the parsed recording, with no live socket and no composer.
-    expect(await screen.findByText('good luck')).toBeInTheDocument()
+    await screen.findByText('good luck')
     expect(screen.getByText('cover me')).toBeInTheDocument()
     expect(handlers).toBeUndefined()
     expect(screen.queryByRole('textbox')).toBeNull()
@@ -1564,7 +1562,7 @@ describe('SessionPage', () => {
     // Seat identity is the viewer's role in the match, not a live-control affordance, so it survives the
     // session ending: their own line stays "from you" and the line to them stays "to you", even though
     // control (and the composer) are gone.
-    expect(await screen.findByText('from you')).toBeInTheDocument()
+    await screen.findByText('from you')
     expect(screen.getByText('to you')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
   })
@@ -1581,7 +1579,7 @@ describe('SessionPage', () => {
       playerState(1, { messages: [{ from: 'player_0', to: null, text: 'table talk' }] }),
     )
 
-    expect(await screen.findByText('table talk')).toBeInTheDocument()
+    await screen.findByText('table talk')
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 

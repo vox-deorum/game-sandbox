@@ -4,8 +4,6 @@ import { type RunEvent, RunLogSocket } from '../src/api/runLogSocket.js'
 
 /** A minimal WebSocket double: records the URL and lets a test drive incoming frames and the close. */
 class FakeWebSocket {
-  static readonly OPEN = 1
-  readyState = 0
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
@@ -15,7 +13,6 @@ class FakeWebSocket {
   }
 
   close(): void {
-    this.readyState = 3
     this.onclose?.()
   }
 

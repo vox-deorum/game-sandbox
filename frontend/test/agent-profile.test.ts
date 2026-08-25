@@ -192,7 +192,7 @@ describe('AgentProfilePage', () => {
     })
 
     // The current ready submission keeps the eligibility label...
-    expect(await screen.findByText('ready to compete')).toBeInTheDocument()
+    await screen.findByText('ready to compete')
     // ...while a once-ready submission that a newer one has replaced reads "superseded".
     expect(screen.getByText('superseded')).toBeInTheDocument()
   })
@@ -216,7 +216,7 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    expect(await screen.findByText('load check failed')).toBeInTheDocument()
+    await screen.findByText('load check failed')
     // The load stage row shows failed, and its detail renders inline (per-stage rejection view).
     const loadRow = screen.getByTestId('stage-load')
     expect(within(loadRow).getByText('failed')).toBeInTheDocument()
@@ -268,7 +268,7 @@ describe('AgentProfilePage', () => {
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
 
     // Both the human rating (1 decimal) and the automated mean score (2 decimals) are shown.
-    expect(await screen.findByText('4.3')).toBeInTheDocument()
+    await screen.findByText('4.3')
     expect(screen.getByText('12.50')).toBeInTheDocument()
     // The season link reads the season name, not the generic "View leaderboards".
     const link = screen.getByRole('link', { name: 'Spring Iteration' })
@@ -306,7 +306,7 @@ describe('AgentProfilePage', () => {
     })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
 
-    expect(await screen.findByText('9.00')).toBeInTheDocument()
+    await screen.findByText('9.00')
     // No ratings → muted dash; null label → "Season <first 8 chars of id>".
     const link = screen.getByRole('link', { name: 'Season unlabell' })
     expect(link).toHaveAttribute(
@@ -318,7 +318,7 @@ describe('AgentProfilePage', () => {
   it('hides owner-only development access from a non-owner viewer', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else', 'normal'))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
-    expect(await screen.findByText(/Leaderboard Placements/)).toBeInTheDocument()
+    await screen.findByText(/Leaderboard Placements/)
     expect(screen.queryByRole('heading', { name: 'Development access' })).toBeNull()
   })
 
@@ -359,14 +359,14 @@ describe('AgentProfilePage', () => {
       submissions: [submission({ season_id: 'iter-next' })],
     })
 
-    expect(await screen.findByRole('heading', { name: 'Development access' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Development access' })
     expect(screen.getByRole('heading', { name: 'Available model tiers' })).toBeInTheDocument()
     expect(screen.getByText('small × 0.5')).toBeInTheDocument()
     expect(screen.getByText('medium × 2')).toBeInTheDocument()
     expect(screen.getByText('250 units used, 750 units remaining')).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'View call history' }))
     expect(vi.mocked(listLlmDevelopmentCalls)).toHaveBeenCalledWith('iter-next', { limit: 25 })
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await screen.findByRole('dialog')
     await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
@@ -431,7 +431,7 @@ describe('AgentProfilePage', () => {
     await waitFor(() =>
       expect(vi.mocked(rotateLlmDevelopmentKey)).toHaveBeenCalledWith('iter-next'),
     )
-    expect(await screen.findByDisplayValue('sk-sandbox-dev-id.secret')).toBeInTheDocument()
+    await screen.findByDisplayValue('sk-sandbox-dev-id.secret')
   })
 
   it('prefills the submit form rating prompt for the open submission season', async () => {
@@ -553,7 +553,7 @@ describe('AgentProfilePage', () => {
     const localSetup = await screen.findByRole('button', { name: 'Set Up Locally' })
     const form = screen.getByLabelText('Public Repository URL').closest('form')
     expect(form).toContainElement(localSetup)
-    expect(await screen.findByText('Season: Week 4')).toBeInTheDocument()
+    await screen.findByText('Season: Week 4')
     // The summary sits in the form itself, above the fields, not loose in the page section.
     expect(form).toContainElement(
       screen.getByRole('group', { name: 'Settings for submission season Week 4' }),
@@ -585,9 +585,9 @@ describe('AgentProfilePage', () => {
       submissions: [],
     })
 
-    expect(await screen.findByText('This season uses the default settings.')).toBeInTheDocument()
+    await screen.findByText('This season uses the default settings.')
     await fireEvent.click(screen.getByRole('button', { name: 'Set Up Locally' }))
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await screen.findByRole('dialog')
     expect(
       screen.getByText(/git clone -b week-4 --single-branch https:\/\/example\.test\/template/),
     ).toBeInTheDocument()
@@ -604,7 +604,7 @@ describe('AgentProfilePage', () => {
       submissions: [],
     })
 
-    expect(await screen.findByText('Season: Season iteratio')).toBeInTheDocument()
+    await screen.findByText('Season: Season iteratio')
     // The unsubmitted state is a status badge, like every other current-season status.
     expect(screen.getByText('Not submitted').closest('.ui-status-badge')).not.toBeNull()
   })
@@ -796,7 +796,7 @@ describe('AgentProfilePage', () => {
       submissions: [submission({ id: 'next', season_id: 'iter-next' })],
     })
 
-    expect(await screen.findByText(/awaiting approval, so you can't submit/)).toBeInTheDocument()
+    await screen.findByText(/awaiting approval, so you can't submit/)
     // The submit form itself is not rendered, so its repository field and submit button are absent.
     expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
     expect(screen.queryByLabelText('Public Repository URL')).toBeNull()
@@ -808,7 +808,7 @@ describe('AgentProfilePage', () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal', { name: 'Eve Adler' }))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
 
-    expect(await screen.findByText(/has not submitted an agent/)).toBeInTheDocument()
+    await screen.findByText(/has not submitted an agent/)
     expect(screen.getByText('Eve Adler')).toHaveAttribute('title', 'eve')
     expect(screen.queryByText('eve', { exact: true })).toBeNull()
   })
@@ -866,7 +866,7 @@ describe('AgentProfilePage', () => {
     })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
 
-    expect(await screen.findByRole('heading', { name: 'Peer Feedback' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Peer Feedback' })
     const seasonHead = screen.getByRole('heading', { name: /Spring Iteration/ })
     expect(seasonHead).toHaveTextContent('Spring Iteration')
     expect(seasonHead).toHaveTextContent('Avg ★ 4.0 from 2 peers')
@@ -905,7 +905,7 @@ describe('AgentProfilePage', () => {
     })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
 
-    expect(await screen.findByRole('heading', { name: 'Peer Feedback' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Peer Feedback' })
     expect(screen.getByText('· no ratings yet')).toBeInTheDocument()
     expect(screen.queryByText('Avg ★ 0.0 from 0 peers')).toBeNull()
     expect(screen.queryByText('Anonymous peer')).toBeNull()

@@ -1105,8 +1105,8 @@ describe('AdminConsolePage', () => {
 
   it('ignores a delayed rating prompt save for a previously selected season', async () => {
     vi.mocked(listSeasons).mockResolvedValue([
-      pickerSeason({ rating_prompt: 'First prompt.' }),
-      pickerSeason({ id: 'iter-2', label: 'Week 2', rating_prompt: 'Second prompt.' }),
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
     ])
     vi.mocked(getAdminSeason).mockImplementation(async (id) =>
       adminView({
@@ -1215,8 +1215,8 @@ describe('AdminConsolePage', () => {
   it('shows typed description errors and reseeds when selection changes', async () => {
     vi.mocked(setSeasonDescription).mockResolvedValue({ ok: false, reason: 'multiple_paragraphs' })
     vi.mocked(listSeasons).mockResolvedValue([
-      pickerSeason({ description_markdown: 'First summary.' }),
-      pickerSeason({ id: 'iter-2', label: 'Week 2', description_markdown: 'Second summary.' }),
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
     ])
     vi.mocked(getAdminSeason).mockImplementation(async (id) =>
       adminView({
@@ -1238,7 +1238,7 @@ describe('AdminConsolePage', () => {
   it('ignores a delayed description save for a previously selected season', async () => {
     vi.mocked(listSeasons).mockResolvedValue([
       pickerSeason(),
-      pickerSeason({ id: 'iter-2', label: 'Week 2', description_markdown: 'Second summary.' }),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
     ])
     vi.mocked(getAdminSeason).mockImplementation(async (id) =>
       adminView({

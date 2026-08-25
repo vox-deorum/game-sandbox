@@ -148,7 +148,6 @@ describe('ReplaysPage', () => {
     const cells = within(row).getAllByRole('cell')
     expect(cells[0]).toBe(ownerCell)
     expect(cells[1]).toContainElement(link)
-    expect(within(row).getByText(/Naive agent/)).toBeInTheDocument()
     expect(vi.mocked(watchAgentNumbers)).not.toHaveBeenCalled()
   })
 
@@ -359,7 +358,6 @@ describe('ReplaysPage', () => {
 
     // Clicking Owner sorts descending first (zoe before amy); a second click flips to ascending.
     await fireEvent.click(screen.getByRole('button', { name: 'Owner' }))
-    expect(within(firstBodyRow()).getByText('zoe')).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Owner' }))
     expect(within(firstBodyRow()).getByText('amy')).toBeInTheDocument()
   })

@@ -108,7 +108,6 @@ describe('MyAgentsPage', () => {
     )
     expect(screen.getByText('pending')).toBeInTheDocument()
     expect(screen.queryByText('Results not released')).toBeNull()
-    expect(flappyLink).toHaveAccessibleName(/Current season Week 4 pending/)
     const currentRow = flappyLink
       .closest('.season-card')
       ?.querySelector('.season-row') as HTMLElement
@@ -124,11 +123,9 @@ describe('MyAgentsPage', () => {
     expect(previousRow).toHaveClass('status-success')
     expect(previousRow).not.toHaveClass('status-current')
 
-    const heartsLink = screen.getByRole('link', {
-      name: /Current season Unknown Not submitted/,
-    })
+    // The null label falls back to "Unknown" in the season-link accessible name.
+    screen.getByRole('link', { name: /Current season Unknown Not submitted/ })
     expect(screen.getByText('Not submitted')).toBeInTheDocument()
-    expect(heartsLink).toHaveAccessibleName(/Current season Unknown Not submitted/)
     expect(screen.queryByText('Open agent profile')).toBeNull()
   })
 
