@@ -7,8 +7,9 @@
  * a third, internal-only `refresh` policy: every build stamps the digest of its inputs onto the
  * image as a label, and refresh reuses the tag when that label still matches the checkout, so the
  * command is cheap when nothing changed. The build context is the repo root, because the base image
- * is assembled from monorepo sources (see the Dockerfile); the heavy, irrelevant directories are
- * excluded from the tar so only the sources the Dockerfile copies are sent to the daemon.
+ * is assembled from monorepo sources (see the Dockerfile); the tar packs only the definition's
+ * registered input trees (plus the ancestor directory entries needed to reach them), so only the
+ * sources the Dockerfile copies are sent to the daemon.
  */
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,8 +56,6 @@ export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
   return `${prefix}/session-base:deps-v${spec.depsVersion}`
 }
 
-const isIgnored = buildContextIgnore(REPO_ROOT)
-
 /** The digest label of an existing tag: undefined when the tag or the label is absent. */
 async function imageInputsLabel(docker: Docker, tag: string): Promise<string | undefined> {
   try {
@@ -94,9 +93,10 @@ async function build(
   tag: string,
   dockerfile: string,
   inputsDigest: string,
+  inputs: readonly string[],
 ): Promise<void> {
   console.error(`building ${tag} from ${dockerfile}`)
-  const context = tar.pack(REPO_ROOT, { ignore: isIgnored })
+  const context = tar.pack(REPO_ROOT, { ignore: buildContextIgnore(REPO_ROOT, inputs) })
   const buildStream = await docker.buildImage(context, {
     t: tag,
     dockerfile,
@@ -138,10 +138,11 @@ async function buildWithRetry(
   tag: string,
   dockerfile: string,
   inputsDigest: string,
+  inputs: readonly string[],
 ): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await build(docker, tag, dockerfile, inputsDigest)
+      await build(docker, tag, dockerfile, inputsDigest, inputs)
       return
     } catch (error) {
       const delayMs = BUILD_RETRY_DELAYS_MS[attempt]
@@ -176,11 +177,12 @@ export async function ensureImage(
   if (policy === 'reuse' && label !== undefined) {
     return { ref: tag }
   }
-  const inputsDigest = await computeBuildInputsDigest(REPO_ROOT, sessionBaseImageInputs(definition))
+  const inputs = sessionBaseImageInputs(definition)
+  const inputsDigest = await computeBuildInputsDigest(REPO_ROOT, inputs)
   if (policy === 'refresh' && label === inputsDigest) {
     console.error(`reusing ${tag} (build inputs unchanged)`)
     return { ref: tag }
   }
-  await buildWithRetry(docker, tag, definition.dockerfile, inputsDigest)
+  await buildWithRetry(docker, tag, definition.dockerfile, inputsDigest, inputs)
   return { ref: tag }
 }

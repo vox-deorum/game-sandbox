@@ -2,9 +2,9 @@
  * The single submission tree filter, shared by the size measurement (this file), the snapshot pack
  * (`snapshot-store.ts`), and the overlay build context (`driver/docker/overlay.ts`). One exclusion set
  * for all three is what keeps a rebuild-from-snapshot byte-identical to the original build: they pack
- * the same files in the same order. The set matches the session-base build's (`driver/docker/image.ts`),
- * but the predicate here takes the tree root as an argument so it works against any checkout. `.git` is
- * a member, so VCS history is excluded (a submission is code, not history).
+ * the same files in the same order. The session-base build's context filter
+ * (`driver/docker/build-inputs.ts`) applies this same predicate inside its allowed input trees.
+ * `.git` is a member, so VCS history is excluded (a submission is code, not history).
  */
 import { lstat, readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
@@ -33,7 +33,7 @@ function isOutsideRoot(rel: string): boolean {
 /**
  * True when `absolutePath` (under `root`) is an ignored directory, lives beneath one, or is a compiled
  * Python artifact. The root itself and anything outside it are never ignored. The session-base build's
- * `isIgnored` composes this same predicate, bound to the repo root.
+ * `buildContextIgnore` applies this predicate to paths inside its allowed input trees.
  */
 export function isSubmissionIgnored(root: string, absolutePath: string): boolean {
   const rel = relative(root, absolutePath)

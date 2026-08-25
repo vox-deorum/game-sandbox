@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs'
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,18 +67,15 @@ describe('settleSessionRecording (per-session recording isolation)', () => {
 
   it('keeps the source recording when the promote fails for a reason other than an existing destination', async () => {
     const scope = 'sess-4'
-    const recordingId = 'flappy_bird-sess-4'
+    // A nested recording id whose destination parent exists nowhere under the root makes the rename
+    // fail deterministically on every platform (a chmod-read-only root is a no-op on Windows) while
+    // the destination itself does not exist, so the source must be left in place for inspection or
+    // retry rather than deleted first.
+    const recordingId = 'flappy_bird-sess-4/sub'
     await writeSessionRecording(scope, recordingId, 'header\nstate\n')
-    // A read-only recordings root makes the rename fail (EACCES) while the destination does not
-    // exist, so the source must be left in place for inspection/retry rather than deleted first.
-    await chmod(root, 0o500)
-    try {
-      await expect(settleSessionRecording(root, scope, recordingId)).rejects.toThrow(
-        /failed to promote session recording/,
-      )
-    } finally {
-      await chmod(root, 0o700)
-    }
+    await expect(settleSessionRecording(root, scope, recordingId)).rejects.toThrow(
+      /failed to promote session recording/,
+    )
     expect(
       await readFile(
         join(sessionRecordingsScopeDir(root, scope), recordingId, 'recording.jsonl'),

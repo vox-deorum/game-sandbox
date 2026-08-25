@@ -1,6 +1,6 @@
 /**
- * The session base image's build-input fingerprint, and the build-context filter it shares with the
- * tar the daemon receives.
+ * The session base image's build-input fingerprint, and the build-context tar filter built from the
+ * same tree list.
  *
  * The digest lets `ensureImage` decide whether an existing tag is still fresh: every build stamps
  * the digest of its inputs onto the image as a label, and the `refresh` policy reuses the tag when
@@ -13,43 +13,41 @@ import { createHash } from 'node:crypto'
 import { lstat, opendir, readFile, readlink } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
-import { isSubmissionIgnored, SUBMISSION_IGNORED_SEGMENTS } from '../../submission/tree-filter.js'
+import { isSubmissionIgnored } from '../../submission/tree-filter.js'
 
 /**
- * The submission filter's set, plus `data`: the repo's own data volume (`backend/data/`'s SQLite
- * database and recordings) has no reason to reach the daemon, but a participant's submission keeps
- * its data/ directory, so `data` stays out of {@link SUBMISSION_IGNORED_SEGMENTS} itself.
+ * The build-context `ignore` callback bound to a context root: true for every path outside the
+ * named `inputs`, so only the input trees get packed. Ancestor directories of an input are kept as
+ * empty entries so tar-fs can descend (tar-fs never calls `ignore` on the root, and ignoring a
+ * directory prunes its subtree), while the shared submission filter (`isSubmissionIgnored`) still
+ * prunes caches inside the allowed trees. `inputs` are context-relative with `/` separators; `rel`
+ * splits on the platform {@link sep}. Segment-wise prefix matching, never string prefixes, so
+ * `harnessx` does not accidentally match the `harness` input. The tar pack and the input digest use
+ * the same filter, so what the digest sees is exactly what the daemon would receive.
  */
-const BUILD_CONTEXT_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
-  ...SUBMISSION_IGNORED_SEGMENTS,
-  'data',
-  '.tls'
-])
-const ROOT_TEMP_PREFIXES = ['.codex-pytest-budget-', '.test-tmp-']
-
-/**
- * The build-context `ignore` callback bound to a context root: true when an outer-edge ignored
- * directory, a root-local `.env` file or temp directory, or a compiled-Python artifact sits on the
- * path. The tar pack and the input digest use the same filter, so what the digest sees is exactly
- * what the daemon would receive.
- */
-export function buildContextIgnore(root: string): (absolutePath: string) => boolean {
+export function buildContextIgnore(
+  root: string,
+  inputs: readonly string[],
+): (absolutePath: string) => boolean {
+  const inputSegments = inputs.map((input) => input.split('/'))
   return (absolutePath: string) => {
     const rel = relative(root, absolutePath)
-    const rootLocalEnvironmentFile =
-      !rel.includes(sep) && (rel === '.env' || (rel.startsWith('.env.') && rel !== '.env.default'))
-    const rootLocalTemp =
-      !rel.includes(sep) && ROOT_TEMP_PREFIXES.some((prefix) => rel.startsWith(prefix))
-    const buildContextIgnoredSegment = rel
-      .split(sep)
-      .some((segment) => BUILD_CONTEXT_IGNORED_SEGMENTS.has(segment))
-    // isSubmissionIgnored also covers the shared set anchored at the repo root and compiled-Python artifacts.
-    return (
-      rootLocalEnvironmentFile ||
-      rootLocalTemp ||
-      buildContextIgnoredSegment ||
-      isSubmissionIgnored(root, absolutePath)
+    if (rel === '') {
+      return false
+    }
+    const segments = rel.split(sep)
+    const atOrUnderInput = inputSegments.some(
+      (input) =>
+        input.length <= segments.length && input.every((segment, i) => segments[i] === segment),
     )
+    if (atOrUnderInput) {
+      return isSubmissionIgnored(root, absolutePath)
+    }
+    const ancestorOfInput = inputSegments.some(
+      (input) =>
+        input.length > segments.length && segments.every((segment, i) => input[i] === segment),
+    )
+    return !ancestorOfInput
   }
 }
 
@@ -65,7 +63,7 @@ export async function computeBuildInputsDigest(
   root: string,
   inputs: readonly string[],
 ): Promise<string> {
-  const ignore = buildContextIgnore(root)
+  const ignore = buildContextIgnore(root, inputs)
   const lines: string[] = []
   for (const input of [...new Set(inputs)].sort()) {
     const absolute = join(root, input)
