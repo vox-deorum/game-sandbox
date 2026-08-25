@@ -2,7 +2,7 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 
-import type { RequestIdentity } from '../auth/identity.js'
+import { namesVisible, type RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import type { Storage } from '../storage/index.js'
 import { optionalField } from '../util/optional-field.js'
@@ -27,13 +27,17 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
   // Owner display names are attached here at the route boundary, one batched lookup over the whole
   // listing, so retention itself stays directory-free. Blind rating is enforced here too: a non-owner
   // (non-operator) viewing a still-playable recording gets its header attribution masked and its owner
-  // fields stripped, so the public API never leaks what the UI hides. See view.ts.
+  // fields stripped, so the public API never leaks what the UI hides. Anonymous and guest callers are
+  // masked on every recording, not just playable ones. See view.ts.
   app.get<{ Querystring: { env?: string } }>('/api/recordings', async (request) => {
     const listings = await deps.retention.list({ env: request.query.env })
     const caller = await identity.resolveUser(request)
-    const names = await deps.userDirectory.namesFor(
-      listings.flatMap((listing) => (listing.user_id === null ? [] : [listing.user_id])),
-    )
+    const visible = namesVisible(caller)
+    const names = visible
+      ? await deps.userDirectory.namesFor(
+          listings.flatMap((listing) => (listing.user_id === null ? [] : [listing.user_id])),
+        )
+      : new Map<string, string>()
     // The play status of every season the listing references, so each recording's blind state is a
     // map lookup rather than a per-row query.
     const seasonIds = [
@@ -52,16 +56,18 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
       const playStatus =
         listing.season_id === null ? undefined : playStatuses.get(listing.season_id)
       if (isBlindRecording(caller, playStatus, header.players)) {
-        // Mask the seat attribution, drop the owner name, and keep the owner id only for the owner
-        // (who needs it to recognize and pin their own recording).
+        // Mask the seat attribution and drop the owner name. A masked (anonymous or guest) caller
+        // keeps the opaque owner id so the frontend can hash it into a stable label; the plain
+        // blind-rating case keeps it only for the owner (who needs it to recognize and pin their own
+        // recording).
         const maskedHeader =
           header.players === undefined
             ? header
-            : { ...header, players: maskPlayers(header.players, caller?.id) }
+            : { ...header, players: maskPlayers(header.players, caller?.id, !visible) }
         return {
           ...listing,
           header: maskedHeader,
-          user_id: caller?.id === listing.user_id ? listing.user_id : null,
+          user_id: !visible || caller?.id === listing.user_id ? listing.user_id : null,
         }
       }
       const name = listing.user_id === null ? undefined : names.get(listing.user_id)
@@ -80,6 +86,7 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
     // session's season, and if this is a blind view rewrite only the header line before streaming the
     // (unchanged) state lines. A non-blind view streams the file untouched, the fast common path.
     const caller = await identity.resolveUser(request)
+    const visible = namesVisible(caller)
     const header = await deps.recordings.readHeader(request.params.id)
     const players = header?.players
     const session = (await deps.storage.listSessions()).find(
@@ -99,7 +106,7 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
     }
     const maskedHeaderLine = JSON.stringify({
       ...header,
-      players: maskPlayers(players, caller?.id),
+      players: maskPlayers(players, caller?.id, !visible),
     })
     return reply.send(
       replaceHeaderLine(deps.recordings.stream(request.params.id), maskedHeaderLine),

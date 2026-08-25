@@ -5,10 +5,11 @@
  * exposes the authorization guards every route states its requirement against. Nothing else in the
  * backend may invent its own notion of identity.
  *
- * Authorization is expressed as a single derived {@link UserStatus} (`pending` | `normal` | `admin`),
- * computed from the user's Better Auth `role` by {@link deriveStatus}. Ban is orthogonal: Better Auth
- * revokes a banned user's sessions and blocks their sign-in, so a banned user never carries a live
- * session; {@link RequestIdentity.resolveUser} treats one as anonymous purely as defense in depth.
+ * Authorization is expressed as a single derived {@link UserStatus} (`pending` | `normal` | `guest` |
+ * `admin`), computed from the user's Better Auth `role` by {@link deriveStatus}. Ban is orthogonal:
+ * Better Auth revokes a banned user's sessions and blocks their sign-in, so a banned user never
+ * carries a live session; {@link RequestIdentity.resolveUser} treats one as anonymous purely as
+ * defense in depth.
  */
 import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
 import type { FastifyReply, FastifyRequest } from 'fastify'
@@ -39,10 +40,20 @@ export interface RequestIdentity {
   resolveUser(request: FastifyRequest): Promise<AuthUser | null>
   /** Require any signed-in user; `401 auth_required` when anonymous. */
   requireUser(request: FastifyRequest, reply: FastifyReply): Promise<AuthUser | undefined>
-  /** Require an active (`normal` or `admin`) user; `403 not_active` for a pending user. */
+  /** Require a player (`guest`, `normal`, or `admin`); `403 not_active` for a pending user. */
+  requirePlayer(request: FastifyRequest, reply: FastifyReply): Promise<AuthUser | undefined>
+  /** Require an active (`normal` or `admin`) user; `403 not_active` for a pending or guest user. */
   requireActive(request: FastifyRequest, reply: FastifyReply): Promise<AuthUser | undefined>
   /** Require an `admin` user; `403 not_operator` otherwise. */
   requireAdmin(request: FastifyRequest, reply: FastifyReply): Promise<AuthUser | undefined>
+}
+
+/**
+ * Whether a caller may see real user names. Only signed-in non-guest statuses (`pending`, `normal`,
+ * `admin`) see them; anonymous and guest callers are masked everywhere, on the API and the UI.
+ */
+export function namesVisible(caller: AuthUser | null): boolean {
+  return caller !== null && caller.status !== 'guest'
 }
 
 /** Build a Fetch `Headers` carrying the request's cookie, the only header the session lookup needs. */
@@ -106,6 +117,21 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
     return user
   }
 
+  async function requirePlayer(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<AuthUser | undefined> {
+    const user = await requireUser(request, reply)
+    if (user === undefined) {
+      return undefined
+    }
+    if (user.status === 'pending') {
+      await reply.code(403).send({ error: 'your account is awaiting approval', code: 'not_active' })
+      return undefined
+    }
+    return user
+  }
+
   async function requireActive(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -136,5 +162,5 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
     return user
   }
 
-  return { resolveUser, requireUser, requireActive, requireAdmin }
+  return { resolveUser, requireUser, requirePlayer, requireActive, requireAdmin }
 }

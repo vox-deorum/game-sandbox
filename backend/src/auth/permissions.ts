@@ -10,18 +10,20 @@
  *   refused server-side even for an admin session, not merely hidden in the UI. It also omits
  *   `impersonate`, `set-email`, `update`, `get`, and every `session` statement, none of which this
  *   stage exposes.
- * - `user` and `pending` carry no admin-plugin permissions.
+ * - `user`, `guest`, and `pending` carry no admin-plugin permissions.
  *
  * `pending` is the `defaultRole`, the status a new GitHub sign-up lands on; it must be declared here
- * for the plugin to treat it as a real role rather than an unknown value.
+ * for the plugin to treat it as a real role rather than an unknown value. `guest` is declared (with no
+ * permissions) so the admin plugin accepts the token in `create-user` and `set-role`; guests can play
+ * and watch but never administer.
  */
 import { createAccessControl } from 'better-auth/plugins/access'
 import { defaultStatements } from 'better-auth/plugins/admin/access'
 
 export const ac = createAccessControl(defaultStatements)
 
-/** The three canonical roles this deployment supports; `pending` is the admin plugin's default. */
-export const VALID_ROLES = ['pending', 'user', 'admin'] as const
+/** The four canonical roles this deployment supports; `pending` is the admin plugin's default. */
+export const VALID_ROLES = ['pending', 'user', 'guest', 'admin'] as const
 
 /** A role name; the single source is {@link VALID_ROLES}, which {@link roles} is checked against. */
 export type Role = (typeof VALID_ROLES)[number]
@@ -32,5 +34,6 @@ export type Role = (typeof VALID_ROLES)[number]
 export const roles = {
   admin: ac.newRole({ user: ['list', 'create', 'set-role', 'ban', 'set-password'] }),
   user: ac.newRole({}),
+  guest: ac.newRole({}),
   pending: ac.newRole({}),
 } satisfies Record<Role, unknown>

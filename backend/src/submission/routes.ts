@@ -6,7 +6,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
-import type { RequestIdentity } from '../auth/identity.js'
+import { namesVisible, type RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import { type Storage, SubmissionConflictError } from '../storage/index.js'
 import { optionalField } from '../util/optional-field.js'
@@ -301,9 +301,12 @@ export function registerSubmissionRoutes(app: FastifyInstance, deps: SubmissionR
       )
       // The owner's display name beside the stable owner id, but only for an owner who actually has a
       // submission here: otherwise this open route would resolve a name for any id at all (pending,
-      // banned, or never-submitted accounts), an id-to-name oracle. Omitted when the directory has no row.
+      // banned, or never-submitted accounts), an id-to-name oracle. Omitted when the directory has no
+      // row, and never sent to a masked (anonymous or guest) caller, who is not entitled to see user
+      // names.
+      const caller = await deps.identity.resolveUser(request)
       const ownerProfile =
-        submissions.length > 0
+        namesVisible(caller) && submissions.length > 0
           ? (await deps.userDirectory.profilesFor([request.params.ownerId])).get(
               request.params.ownerId,
             )

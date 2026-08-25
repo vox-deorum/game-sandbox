@@ -753,6 +753,8 @@ describe('submission API', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/environments/${ENV_ID}/agents/${aliceId}`,
+        // A signed-in viewer sees the name; an anonymous (masked) caller would get the opaque id only.
+        headers: await users.headersFor('bob'),
       })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({

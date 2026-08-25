@@ -32,8 +32,13 @@ import {
 import UiButton from './ui/UiButton.vue'
 import UiCard from './ui/UiCard.vue'
 import UiTextarea from './ui/UiTextarea.vue'
+import { hidesNames, useMe } from '../me.js'
+import { useToast } from '../toast.js'
 
 const props = defineProps<{ sessionId: string }>()
+
+const me = useMe()
+const toast = useToast()
 
 const SCORES = [1, 2, 3, 4, 5] as const
 
@@ -135,6 +140,13 @@ function commentHint(agent: RateableView): string | null {
 
 async function submit(): Promise<void> {
   if (ratings.value === null) {
+    return
+  }
+  // A guest may explore the rating panel, but saving is blocked with a toast and never reaches the
+  // API (the backend's requireActive would refuse it anyway). The panel only mounts for signed-in
+  // users, so a masked viewer here is a guest.
+  if (hidesNames(me.me)) {
+    toast.show("Guest accounts can't rate agents.")
     return
   }
   const batch = rateable.value

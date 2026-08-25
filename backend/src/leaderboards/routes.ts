@@ -7,7 +7,7 @@
  * playing without exposing its boards.
  */
 import type { FastifyInstance } from 'fastify'
-import type { RequestIdentity } from '../auth/identity.js'
+import { namesVisible, type RequestIdentity, type AuthUser } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
@@ -39,9 +39,16 @@ export interface LeaderboardDeps {
  * human-rating aggregate, and the per-game list of the latest completed run. The board shows one
  * representative (best-game) replay per agent; `games` is how a reader reaches every game of a
  * multi-seat matchup — each with its seats and its own replay link. Every submitted agent ref is
- * enriched with its owner's display name (one batched lookup per read) beside the stable id.
+ * enriched with its owner's display name (one batched lookup per read) beside the stable id — except
+ * for a masked (anonymous or guest) caller, who gets the opaque `user_id` only, so the frontend can
+ * render its stable hash label in place of the name.
  */
-async function boardsFor(deps: LeaderboardDeps, envId: string, seasonId: string) {
+async function boardsFor(
+  deps: LeaderboardDeps,
+  envId: string,
+  seasonId: string,
+  caller: AuthUser | null,
+) {
   // Resolve the latest completed run once and feed it into the board read: the board aggregates that
   // run and its games carry the per-matchup replay links, so passing the run keeps both on the
   // identical run and avoids resolving it twice. The human board derives its replay links from the
@@ -50,10 +57,13 @@ async function boardsFor(deps: LeaderboardDeps, envId: string, seasonId: string)
   const automated = await deps.storage.getAutomatedBoard(seasonId, run)
   const human = await deps.storage.getHumanBoard(seasonId, automated)
   const rawGames = run === undefined ? [] : await deps.storage.listRunGames(run.id)
-  const names = await deps.userDirectory.namesFor([
-    ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
-    ...gameOwnerIds(rawGames),
-  ])
+  const visible = namesVisible(caller)
+  const names = visible
+    ? await deps.userDirectory.namesFor([
+        ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
+        ...gameOwnerIds(rawGames),
+      ])
+    : new Map<string, string>()
   const meta = deps.environments.get(envId)
   return {
     automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
@@ -118,6 +128,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
         deps.storage.getOpenSubmissionSeason(envId),
         deps.storage.getPublicPlaySeason(envId),
       ])
+      const caller = await deps.identity.resolveUser(request)
       return reply.code(200).send({
         current:
           released === undefined
@@ -125,7 +136,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
             : {
                 season: seasonView(released),
                 settings: resolveSeasonDisplaySettings(meta, released, deps.llm),
-                board: await boardsFor(deps, envId, released.id),
+                board: await boardsFor(deps, envId, released.id, caller),
               },
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
@@ -150,10 +161,11 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
       if (meta === undefined) {
         return reply.code(404).send({ error: 'no such released season' })
       }
+      const caller = await deps.identity.resolveUser(request)
       return reply.code(200).send({
         season: seasonView(season),
         settings: resolveSeasonDisplaySettings(meta, season, deps.llm),
-        board: await boardsFor(deps, season.env_id, season.id),
+        board: await boardsFor(deps, season.env_id, season.id, caller),
       })
     },
   )

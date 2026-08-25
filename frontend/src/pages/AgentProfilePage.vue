@@ -13,6 +13,7 @@
     key management, and successful-call history for current and past seasons.
 -->
 <script setup lang="ts">
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ChevronDown, ChevronRight, Clock, FolderOpen, GitCommit, Play, Trophy } from '@lucide/vue'
@@ -70,7 +71,7 @@ import {
   submissionStatusLabel,
   submissionStatusTone,
 } from '../lib/submission-status.js'
-import { canParticipate, useMe, userId } from '../me.js'
+import { canParticipate, canPlay, hidesNames, useMe, userId } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -235,10 +236,14 @@ const seasonCaption = (seasonId: string): string => {
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => userId(me.me) === ownerId
 
-/** Prefer public profile attribution, then the signed-in owner's own identity, before the stable id. */
-const ownerName = computed(
-  () => profile.value?.owner_name ?? (isOwner() ? me.me?.user?.name : null) ?? ownerId,
-)
+/** Prefer public profile attribution, then the signed-in owner's own identity, before the stable id.
+ *  A masked (guest or anonymous) viewer never sees real names, so it reads as the stable hash label. */
+const ownerName = computed(() => {
+  if (hidesNames(me.me)) {
+    return maskedAgentLabel(ownerId)
+  }
+  return profile.value?.owner_name ?? (isOwner() ? me.me?.user?.name : null) ?? ownerId
+})
 const ownerGithub = computed(() => profile.value?.owner_github ?? null)
 
 function githubProfileUrl(username: string): string {
@@ -602,7 +607,7 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
     <header>
       <h1 :title="ownerId">{{ heading }}</h1>
       <a
-        v-if="ownerGithub !== null"
+        v-if="ownerGithub !== null && !hidesNames(me.me)"
         class="owner-github"
         :href="githubProfileUrl(ownerGithub)"
         target="_blank"
@@ -623,11 +628,14 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
         <p v-else class="submit-none">No Season is accepting submissions right now.</p>
       </header>
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
-           sees why it is off rather than an enabled control that 403s. -->
-      <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">
+           sees why it is off rather than than an enabled control that 403s. A guest renders the form
+           so they can explore it, but its buttons are blocked with a toast (SubmitAgentForm's
+           `blocked` prop) and fire no request. -->
+      <template v-if="profile.submission_season_id !== null && canPlay(me.me)">
         <SubmitAgentForm
           :env-id="envId"
           :submission-season-id="profile.submission_season_id"
+          :blocked="me.me?.user?.status === 'guest'"
           @accepted="refreshProfile"
           @settled="refreshProfile"
         >

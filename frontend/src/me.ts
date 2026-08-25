@@ -18,6 +18,20 @@ export function canParticipate(me: Me | null): boolean {
   return status === 'normal' || status === 'admin'
 }
 
+/** True when the user may start and stop sessions (but not submit or rate): `guest`, `normal`, `admin`. */
+export function canPlay(me: Me | null): boolean {
+  const status = me?.user?.status
+  return status === 'guest' || status === 'normal' || status === 'admin'
+}
+
+/**
+ * True when the user must not see real user names anywhere: a guest, or an anonymous visitor. An
+ * unresolved identity (no `/api/me` answer yet) reads as anonymous, so name masking fails closed.
+ */
+export function hidesNames(me: Me | null): boolean {
+  return me?.user == null || me.user.status === 'guest'
+}
+
 /** True when the user may see and drive the operator admin console: status `admin`. */
 export function isAdmin(me: Me | null): boolean {
   return me?.user?.status === 'admin'

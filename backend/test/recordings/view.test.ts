@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import { maskedAgentLabel, maskedPlayerLabel } from '@game-sandbox/schema/accounts'
 import { describe, expect, it } from 'vitest'
 
 import type { AuthUser } from '../../src/auth/identity.js'
@@ -27,10 +28,22 @@ const normal: AuthUser = {
   githubUsername: null,
   status: 'normal',
 }
+const guest: AuthUser = {
+  id: 'g1',
+  name: 'Guest',
+  email: 'g1@x',
+  image: null,
+  githubUsername: null,
+  status: 'guest',
+}
 
 const submittedPlayers: Players = {
   player_0: { kind: 'agent', label: "alice's agent", user: 'alice', submission_id: 'sub-a' },
   player_1: { kind: 'human', label: 'Bob', user: 'bob' },
+}
+
+const humanOnlyPlayers: Players = {
+  player_0: { kind: 'human', label: 'Bob', user: 'bob' },
 }
 
 async function collect(stream: NodeJS.ReadableStream): Promise<string> {
@@ -69,6 +82,12 @@ describe('isBlindRecording', () => {
     expect(isBlindRecording(normal, undefined, submittedPlayers)).toBe(false)
     expect(isBlindRecording(null, 'open', undefined)).toBe(false)
   })
+  it('blinds a masked (anonymous or guest) caller unconditionally over the play window', () => {
+    expect(isBlindRecording(null, 'closed', submittedPlayers)).toBe(true)
+    expect(isBlindRecording(guest, 'closed', submittedPlayers)).toBe(true)
+    // An all-human recording has identities to hide too.
+    expect(isBlindRecording(null, 'closed', humanOnlyPlayers)).toBe(true)
+  })
 })
 
 describe('maskPlayers', () => {
@@ -88,6 +107,28 @@ describe('maskPlayers', () => {
     const masked = maskPlayers(submittedPlayers, 'alice')
     expect(masked.player_0).toEqual(submittedPlayers.player_0)
     expect(masked.player_1).toEqual({ kind: 'human', label: 'Human' })
+  })
+
+  it('writes stable hash labels for a masked viewer, hashing from the pre-strip user id', () => {
+    const masked = maskPlayers(submittedPlayers, 'someone-else', true)
+    expect(masked.player_0).toEqual({
+      kind: 'agent',
+      label: maskedAgentLabel('alice'),
+      submission_id: 'sub-a',
+    })
+    expect(masked.player_0).not.toHaveProperty('user')
+    expect(masked.player_1).toEqual({ kind: 'human', label: maskedPlayerLabel('bob') })
+    expect(masked.player_1).not.toHaveProperty('user')
+  })
+
+  it('leaves a masked guest own seat untouched', () => {
+    const players: Players = {
+      player_0: { kind: 'human', label: 'Guest', user: 'g1' },
+      player_1: { kind: 'human', label: 'Bob', user: 'bob' },
+    }
+    const masked = maskPlayers(players, 'g1', true)
+    expect(masked.player_0).toEqual(players.player_0)
+    expect(masked.player_1).toEqual({ kind: 'human', label: maskedPlayerLabel('bob') })
   })
 
   it('leaves the ownerless Naive agent as-is', () => {

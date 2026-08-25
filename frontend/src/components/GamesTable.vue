@@ -9,9 +9,11 @@
   every game of a multi-seat matchup, not just the board's one representative replay per agent.
 -->
 <script setup lang="ts">
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { RouterLink } from 'vue-router'
 
 import type { BoardAgentRef, GameStatus, RunGameView } from '../api/client.js'
+import { hidesNames, useMe } from '../me.js'
 import UiStatusBadge from './ui/UiStatusBadge.vue'
 
 const props = defineProps<{
@@ -19,6 +21,8 @@ const props = defineProps<{
   /** Live per-game status overlay keyed by game_index; falls back to the persisted status. */
   liveStatus: Record<number, GameStatus>
 }>()
+
+const me = useMe()
 
 const STATUS_TONE: Record<GameStatus, 'neutral' | 'success' | 'danger' | 'warning'> = {
   pending: 'neutral',
@@ -35,9 +39,16 @@ function gameStatus(gameIndex: number, persisted: GameStatus): GameStatus {
 }
 
 /** A seat's agent label: the owner's display name (or id) for a submission, the declared label (or
- *  stable name) for a built-in. */
+ *  stable name) for a built-in. A masked (guest or anonymous) viewer never sees real names, so a
+ *  submission seat reads as its stable hash label. */
 function seatLabel(seat: BoardAgentRef): string {
-  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : (seat.label ?? seat.name)
+  if (seat.kind === 'submission') {
+    if (hidesNames(me.me)) {
+      return maskedAgentLabel(seat.user_id)
+    }
+    return seat.user_name ?? seat.user_id
+  }
+  return seat.label ?? seat.name
 }
 
 /** A compact one-line summary of the agents in a game's seats, in seat order. */
@@ -45,10 +56,12 @@ function playersSummary(seats: BoardAgentRef[]): string {
   return seats.length === 0 ? '—' : seats.map(seatLabel).join(' · ')
 }
 
-/** The stable ids behind a game's submission seats, joined for a tooltip. Blind masking never
- *  applies to GamesTable's payloads (admin run games and released-season matchup tables), so plain
- *  ids are fine; undefined when no seat is a submission (an all-built-in game). */
+/** The stable ids behind a game's submission seats, joined for a tooltip. Never shown to a masked
+ *  viewer, whose whole row hides identity, not just the display name; otherwise plain ids are fine. */
 function playersTitle(seats: BoardAgentRef[]): string | undefined {
+  if (hidesNames(me.me)) {
+    return undefined
+  }
   const ids = seats.filter((seat) => seat.kind === 'submission').map((seat) => seat.user_id)
   return ids.length > 0 ? ids.join(' · ') : undefined
 }

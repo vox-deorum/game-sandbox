@@ -17,6 +17,8 @@ const props = withDefaults(
     seats?: RecordingHeader['seats']
     /** Hide submitted-agent ownership while a non-operator views a playable season. */
     blind?: boolean
+    /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
+    masked?: boolean
     /** Lets a blind viewer still recognize their own submitted agent. */
     viewerId?: string
     /** Submission id → season-wide anonymous number, matching the watch picker and rating panel. */
@@ -26,6 +28,7 @@ const props = withDefaults(
     players: undefined,
     seats: undefined,
     blind: false,
+    masked: false,
     viewerId: undefined,
     anonymousNumbers: undefined,
   },
@@ -35,6 +38,7 @@ const items = computed(() => {
   if (props.players === undefined || props.seats === undefined) return []
   const ctx = {
     blind: props.blind,
+    masked: props.masked,
     viewerId: props.viewerId,
     anonymousNumbers: props.anonymousNumbers,
   }

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -303,7 +304,12 @@ describe('HTTP API', () => {
     const body = res.json() as { id: string; ws_path: string }
     expect(body.ws_path).toBe(`/api/sessions/${body.id}/ws`)
 
-    const row = await app.inject({ method: 'GET', url: `/api/sessions/${body.id}` })
+    const row = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${body.id}`,
+      // A signed-in viewer sees the resolved name; an anonymous (masked) caller would not.
+      headers: alice,
+    })
     expect(row.statusCode).toBe(200)
     // The detail carries the stable owner id plus the resolved display name beside it.
     expect(row.json()).toMatchObject({
@@ -348,7 +354,12 @@ describe('HTTP API', () => {
       recording_id: null,
       created_at: new Date().toISOString(),
     })
-    const res = await app.inject({ method: 'GET', url: '/api/sessions/sess-ghost' })
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/sess-ghost',
+      // Signed in so the directory lookup is the thing under test, not anonymous masking.
+      headers: alice,
+    })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ user_id: 'ghost-user' })
     expect(res.json()).not.toHaveProperty('user_name')
@@ -604,7 +615,14 @@ describe('HTTP API', () => {
       // A recording whose owner id has no user row: the id stays, no user_name appears.
       await seedRecording('other-1', 'other_env', 'ghost-user')
 
-      const all = (await app.inject({ method: 'GET', url: '/api/recordings' })).json() as Array<{
+      const all = (
+        await app.inject({
+          method: 'GET',
+          url: '/api/recordings',
+          // A signed-in viewer sees the resolved names; an anonymous (masked) caller would not.
+          headers: await users.headersFor('bob'),
+        })
+      ).json() as Array<{
         id: string
         user_id: string
         user_name?: string
@@ -741,15 +759,17 @@ describe('HTTP API', () => {
       return (res.json() as BlindRow[]).find((row) => row.id === REC_ID)
     }
 
-    it('masks the header attribution and owner fields for an anonymous viewer', async () => {
+    it('masks the header attribution and keeps the opaque owner id for an anonymous viewer', async () => {
       await users.headersFor('bob')
-      await seedBlindRecording()
+      const { ownerId, seatOwnerId } = await seedBlindRecording()
       const row = await listAs()
-      expect(row?.user_id).toBeNull()
+      // The opaque owner id is kept so a masked viewer's client can hash it into a stable label; the
+      // owner's name and every seat identity are never sent.
+      expect(row?.user_id).toBe(ownerId)
       expect(row).not.toHaveProperty('user_name')
       expect(row?.header.players?.player_0).toEqual({
         kind: 'agent',
-        label: 'Agent',
+        label: maskedAgentLabel(seatOwnerId),
         submission_id: 'sub-a',
       })
       expect(row?.header).not.toHaveProperty('overlay_static')
@@ -781,7 +801,7 @@ describe('HTTP API', () => {
     it('rewrites only the stream header for an anonymous viewer, and not for an operator', async () => {
       await users.headersFor('bob')
       const op = await users.headersFor('op', { status: 'admin' })
-      await seedBlindRecording()
+      const { seatOwnerId } = await seedBlindRecording()
 
       const anon = await app.inject({ method: 'GET', url: `/api/recordings/${REC_ID}` })
       const anonLines = anon.body.split('\n')
@@ -791,7 +811,7 @@ describe('HTTP API', () => {
       }
       expect(anonHeader.players.player_0).toEqual({
         kind: 'agent',
-        label: 'Agent',
+        label: maskedAgentLabel(seatOwnerId),
         submission_id: 'sub-a',
       })
       expect(anonHeader.overlay_static).toEqual({ map: 'preserved in the stream' })

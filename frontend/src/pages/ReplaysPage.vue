@@ -19,6 +19,7 @@ import {
 } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import {
   type AttributionContext,
   hasSubmittedAgent,
@@ -27,12 +28,15 @@ import {
 } from '../lib/attribution.js'
 import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { formatDateOnly, formatSeasonName, formatSeat } from '../lib/format.js'
-import { isAdmin, useMe, userId } from '../me.js'
+import { hidesNames, isAdmin, useMe, userId } from '../me.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
 const route = useRoute()
 const me = useMe()
 const envId = computed(() => String(route.params.envId))
+// A masked viewer (guest or anonymous) never sees real names, so every row's owner and seats read as
+// stable hash labels rather than real names.
+const viewerMasked = computed(() => hidesNames(me.me))
 
 const replays = ref<RecordingSummary[] | null>(null)
 /** season id → public season facts, used for labels and playable-season anonymity. */
@@ -50,6 +54,7 @@ const sort = ref<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: '
 function attributionCtx(replay: RecordingSummary): AttributionContext {
   return {
     blind: isBlindReplay(replay),
+    masked: viewerMasked.value,
     viewerId: userId(me.me) ?? undefined,
     anonymousNumbers: anonymousNumbers.value,
   }
@@ -122,11 +127,20 @@ function replayAnonymityState(replay: RecordingSummary) {
     seasonPlayable:
       replay.season_id === null ? false : season === undefined ? null : season.play_status === 'open',
     hasSubmittedAgent: hasSubmittedAgent(replay.header.players),
+    viewerMasked: viewerMasked.value,
   })
 }
 
 function isBlindReplay(replay: RecordingSummary): boolean {
   return presentsMasked(replayAnonymityState(replay))
+}
+
+/** The owner cell: a masked viewer sees the stable hash label; a classic blind row shows the em dash. */
+function ownerText(replay: RecordingSummary): string {
+  if (viewerMasked.value) {
+    return replay.user_id === null ? '—' : maskedAgentLabel(replay.user_id)
+  }
+  return isBlindReplay(replay) ? '—' : (replay.user_name ?? replay.user_id ?? '—')
 }
 
 /** Show a pin badge only on the viewer's own pinned recordings. */
@@ -228,7 +242,7 @@ watch(envId, (id) => void load(id), { immediate: true })
       <tbody>
         <tr v-for="replay in sortedReplays" :key="replay.id">
           <td :title="isBlindReplay(replay) ? undefined : (replay.user_id ?? undefined)">
-            {{ isBlindReplay(replay) ? '—' : (replay.user_name ?? replay.user_id ?? '—') }}
+            {{ ownerText(replay) }}
           </td>
           <td>
             <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>

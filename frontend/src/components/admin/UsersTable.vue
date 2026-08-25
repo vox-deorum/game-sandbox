@@ -47,7 +47,9 @@ function statusTone(status: UserStatus): 'success' | 'neutral' | 'warning' {
   if (status === 'admin') {
     return 'success'
   }
-  return status === 'normal' ? 'neutral' : 'warning'
+  // `pending` stays the warning tone; a guest is a supported status, shown neutrally like `normal`
+  // (the badge text carries the distinction).
+  return status === 'pending' ? 'warning' : 'neutral'
 }
 
 function isSelf(row: RosterUser): boolean {
@@ -97,6 +99,15 @@ function createdText(row: RosterUser): string {
             variant="secondary"
             :disabled="isSelf(row)"
             @click="emit('changeRole', row, 'admin')"
+          >
+            Promote
+          </UiButton>
+          <UiButton
+            v-else-if="statusOf(row) === 'guest'"
+            size="tight"
+            variant="secondary"
+            :disabled="isSelf(row)"
+            @click="emit('changeRole', row, 'user')"
           >
             Promote
           </UiButton>

@@ -1,15 +1,20 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { h } from 'vue'
 
 import type { AgentRefWire, RateableAgent, SessionRatings as Ratings } from '../src/api/client.js'
+import { MeProvider } from '../src/me.js'
+import { signedInMe } from './helpers/me.js'
 
 vi.mock('../src/api/client.js', () => ({
+  getMe: vi.fn(),
   getSessionRatings: vi.fn(),
   submitRatings: vi.fn(),
 }))
 
-import { getSessionRatings, submitRatings } from '../src/api/client.js'
+import { getMe, getSessionRatings, submitRatings } from '../src/api/client.js'
 import SessionRatings from '../src/components/SessionRatings.vue'
+import { useToast } from '../src/toast.js'
 
 function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): RateableAgent {
   const fallback = overrides.agent.kind === 'builtin' ? 'Naive baseline' : 'Agent 1'
@@ -38,12 +43,15 @@ const SUBMISSION: AgentRefWire = { kind: 'submission', submission_id: 'sub-eve' 
 const NAIVE: AgentRefWire = { kind: 'builtin', name: 'naive' }
 
 function renderPanel() {
-  return render(SessionRatings, { props: { sessionId: 's1' } })
+  return render(MeProvider, {
+    slots: { default: () => h(SessionRatings, { sessionId: 's1' }) },
+  })
 }
 
 describe('SessionRatings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getMe).mockResolvedValue(signedInMe('rater', 'normal'))
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -313,5 +321,30 @@ describe('SessionRatings', () => {
     expect(screen.getByPlaceholderText('Tell the author what you thought')).toHaveValue(
       'prior comment',
     )
+  })
+
+  it('keeps the panel interactive for a guest but blocks Save with a toast, sending nothing', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('guest-one', 'guest'))
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE })]),
+    })
+    renderPanel()
+
+    // The controls stay interactive: a score and a comment can be chosen.
+    const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
+    await fireEvent.click(within(group).getByRole('button', { name: '5' }))
+    await fireEvent.update(
+      screen.getByPlaceholderText('Tell the author what you thought'),
+      'Looks steady',
+    )
+
+    // Saving shows the blocked toast and never reaches the API. The toast message is read from the
+    // shared queue (the UiToast host, which lives in AppShell, is not mounted here).
+    await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
+    expect(useToast().toasts.map((toast) => toast.message)).toContain(
+      "Guest accounts can't rate agents.",
+    )
+    expect(vi.mocked(submitRatings)).not.toHaveBeenCalled()
   })
 })

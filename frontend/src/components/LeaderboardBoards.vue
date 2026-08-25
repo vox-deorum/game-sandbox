@@ -11,26 +11,37 @@
   three ratings appears unranked (the backend leaves its `rank` null).
 -->
 <script setup lang="ts">
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { agentRefKey } from '@game-sandbox/schema/board'
 import { RouterLink } from 'vue-router'
 
 import type { Board, BoardAgentRef } from '../api/client.js'
 import { formatComputeSpread, formatRatingSpread, formatScoreSpread } from '../lib/format.js'
 import { formatLlmCost } from '../lib/llm.js'
+import { hidesNames, useMe } from '../me.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
 const props = defineProps<{ board: Board; envId: string; ratingPrompt?: string | null }>()
 
+const me = useMe()
+
 /** The owner id a submitted-agent row links to; null for an ownerless built-in row. */
 function ownerOf(agent: BoardAgentRef): string | null {
   return agent.kind === 'submission' ? agent.user_id : null
 }
 
-/** The owner's display name for a submitted-agent row, falling back to the stable id. */
+/** The owner's display name for a submitted-agent row, falling back to the stable id, or the stable
+ *  hash label for a masked (guest or anonymous) viewer, who never sees real names. */
 function ownerNameOf(agent: BoardAgentRef): string | null {
-  return agent.kind === 'submission' ? (agent.user_name ?? agent.user_id) : null
+  if (agent.kind !== 'submission') {
+    return null
+  }
+  if (hidesNames(me.me)) {
+    return maskedAgentLabel(agent.user_id)
+  }
+  return agent.user_name ?? agent.user_id
 }
 
 /** A built-in row's declared display label, falling back to its stable name when none resolved. */
@@ -79,7 +90,7 @@ function builtinLabelOf(agent: BoardAgentRef): string {
                   v-if="ownerOf(row.agent) !== null"
                   class="agent-link"
                   :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
-                  :title="ownerOf(row.agent) ?? undefined"
+                  :title="hidesNames(me.me) ? undefined : (ownerOf(row.agent) ?? undefined)"
                 >
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>
@@ -174,7 +185,7 @@ function builtinLabelOf(agent: BoardAgentRef): string {
                   v-if="ownerOf(row.agent) !== null"
                   class="agent-link"
                   :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
-                  :title="ownerOf(row.agent) ?? undefined"
+                  :title="hidesNames(me.me) ? undefined : (ownerOf(row.agent) ?? undefined)"
                 >
                   {{ ownerNameOf(row.agent) }}
                 </RouterLink>

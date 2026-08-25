@@ -78,6 +78,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiCheckboxGroup` | A labelled fieldset for selecting zero or more string options, with options emitted in their declared order. |
 | `UiCodeBlock` | A monospace command block with a copy button in its corner. The button copies the block's exact text, shows a checkmark or a cross while the result is fresh, and announces the result through a status region. First used for the Set Up Locally commands. |
 | `UiTooltip` | A quiet underlined trigger with a detail bubble on hover, focus, or click. The bubble teleports to the body, so it escapes a table cell or a scrolling log, and mounts nothing while closed. `inspectable` turns the trigger into an `inspect` emit for a caller that opens a fuller view instead. |
+| `UiToast` | A transient, non-blocking notice rendered bottom-center and teleported to the body (a blocked guest action, for example). Feature components push messages through the shared `useToast()` queue; each toast auto-dismisses after a few seconds, dismisses on click, and announces itself with `role="status"`. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
 Simple primitives are local Vue components; the dialog and slider instead wrap Reka UI (a headless Vue component library, used only where accessible focus and keyboard handling are hard to hand-roll).

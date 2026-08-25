@@ -17,6 +17,7 @@ import { useSiteConfig } from '../composables/useSiteConfig.js'
 import { useMe } from '../me.js'
 import AppSidebar from './AppSidebar.vue'
 import ExperimentTabs from './ExperimentTabs.vue'
+import UiToast from './ui/UiToast.vue'
 
 const route = useRoute()
 const me = useMe()
@@ -63,6 +64,8 @@ watch(() => route.fullPath, () => closeMobile())
         <RouterView />
       </main>
     </div>
+
+    <UiToast />
   </div>
 </template>
 

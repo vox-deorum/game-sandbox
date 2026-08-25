@@ -312,7 +312,12 @@ describe('public leaderboard API', () => {
       score: 4,
     })
 
-    const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
+    const res = await app.inject({
+      method: 'GET',
+      // A signed-in participant sees names; an anonymous (masked) caller now gets the opaque ids only.
+      url: `/api/environments/${ENV_ID}/leaderboards`,
+      headers: await users.headersFor('bob'),
+    })
     expect(res.statusCode).toBe(200)
     const board = (
       res.json() as {

@@ -24,7 +24,9 @@ import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import UiTabs from '../components/ui/UiTabs.vue'
 import UiTextarea from '../components/ui/UiTextarea.vue'
+import UiToast from '../components/ui/UiToast.vue'
 import UiTooltip from '../components/ui/UiTooltip.vue'
+import { useToast } from '../toast.js'
 
 // The semantic color tokens, named so the swatch grid stays in sync with tokens.css by review.
 const colorTokens = [
@@ -70,6 +72,7 @@ const tooltipSettings = [
   { label: 'Expansions', value: 'Moving pipes, Night mode' },
   { label: 'Seed', value: '4821' },
 ]
+const { show: showToast } = useToast()
 </script>
 
 <template>
@@ -384,6 +387,17 @@ const tooltipSettings = [
       <UiEmptyState>Loading recent replays…</UiEmptyState>
       <UiEmptyState>No replays yet.</UiEmptyState>
       <UiEmptyState tone="danger">Could not load the session.</UiEmptyState>
+    </section>
+
+    <section>
+      <h2>UiToast</h2>
+      <p class="row">
+        Shown bottom-center, teleported to the body, auto-dismissing and click to dismiss:
+        <UiButton variant="secondary" @click="showToast('Guest accounts can’t submit agents.')">
+          Show a toast
+        </UiButton>
+        <UiToast />
+      </p>
     </section>
   </div>
 </template>

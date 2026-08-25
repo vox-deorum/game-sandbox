@@ -5,7 +5,7 @@ import type { ParameterValue } from '@game-sandbox/schema/environment'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
-import type { RequestIdentity } from '../auth/identity.js'
+import { namesVisible, type RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import { optionalField } from '../util/optional-field.js'
 import { zodReason } from '../util/zod-error.js'
@@ -103,7 +103,10 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
   const { identity } = deps
 
   app.post<{ Body: unknown }>('/api/sessions', async (request, reply) => {
-    const user = await identity.requireActive(request, reply)
+    // Session start and stop are the one participant action a guest may take (they play and watch
+    // like a signed-in user); every gate that matters stays on requireActive so guests cannot rate,
+    // submit, or receive dev keys.
+    const user = await identity.requirePlayer(request, reply)
     if (user === undefined) {
       return
     }
@@ -144,13 +147,17 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (session === undefined) {
       return reply.code(404).send({ error: 'no such session' })
     }
-    // The owner's display name beside the stable id, resolved at read time (omitted when unknown).
-    const names = await deps.userDirectory.namesFor([session.user_id])
+    // The owner's display name beside the stable id, resolved at read time (omitted when unknown, and
+    // never sent to a masked caller, who is not entitled to see user names).
+    const caller = await identity.resolveUser(request)
+    const names = namesVisible(caller)
+      ? await deps.userDirectory.namesFor([session.user_id])
+      : new Map<string, string>()
     return { ...session, ...optionalField('user_name', names.get(session.user_id)) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
-    const user = await identity.requireActive(request, reply)
+    const user = await identity.requirePlayer(request, reply)
     if (user === undefined) {
       return
     }

@@ -19,7 +19,7 @@ const emit = defineEmits<{ done: [] }>()
 const name = ref('')
 const email = ref('')
 const password = ref('')
-const role = ref<'user' | 'admin'>('user')
+const role = ref<'user' | 'guest' | 'admin'>('user')
 const busy = ref(false)
 const error = ref<string | null>(null)
 
@@ -44,7 +44,9 @@ async function onConfirm(): Promise<void> {
       name: name.value,
       email: email.value,
       password: password.value,
-      role: role.value,
+      // The backend's VALID_ROLES includes `guest`; Better Auth's client type only lists the built-in
+      // roles, so the guest option is carried here as a widened role value.
+      role: role.value as 'user' | 'admin',
     })
     if (err) {
       error.value = err.message ?? 'Could not create this user.'
@@ -96,6 +98,7 @@ async function onConfirm(): Promise<void> {
         <template #default="{ id, describedby }">
           <UiSelect :id="id" v-model="role" :aria-describedby="describedby">
             <option value="user">User</option>
+            <option value="guest">Guest</option>
             <option value="admin">Admin</option>
           </UiSelect>
         </template>

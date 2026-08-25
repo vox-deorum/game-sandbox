@@ -35,6 +35,8 @@ const props = withDefaults(
     players?: RecordingHeader['players']
     /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
     blind?: boolean
+    /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
+    masked?: boolean
     viewerId?: string
     anonymousNumbers?: Record<string, number>
     /** Players the connected viewer controls; drives the "to you"/"from you" badges. Empty when spectating. */
@@ -49,6 +51,7 @@ const props = withDefaults(
   {
     players: undefined,
     blind: false,
+    masked: false,
     viewerId: undefined,
     anonymousNumbers: undefined,
     viewerPlayers: () => [],
@@ -64,6 +67,7 @@ const emit = defineEmits<{
 
 const attributionCtx = computed(() => ({
   blind: props.blind,
+  masked: props.masked,
   viewerId: props.viewerId,
   anonymousNumbers: props.anonymousNumbers,
 }))

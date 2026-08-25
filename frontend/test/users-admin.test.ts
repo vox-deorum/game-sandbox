@@ -605,6 +605,25 @@ describe('UsersAdminPage', () => {
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
   })
 
+  it('offers Guest as a create-user role and as a roster filter tab', async () => {
+    await renderUsersPage()
+    await screen.findByRole('tab', { name: 'All' })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Create user' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('option', { name: 'Guest' })).toBeInTheDocument()
+    await within(dialog).getByRole('button', { name: 'Cancel' }).click()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // The Guests tab filters the roster on the guest role.
+    await fireEvent.click(screen.getByRole('tab', { name: 'Guests' }))
+    await waitFor(() =>
+      expect(listUsers).toHaveBeenCalledWith(
+        expect.objectContaining({ query: expect.objectContaining({ filterValue: 'guest' }) }),
+      ),
+    )
+  })
+
   it("disables self-targeting actions on the acting admin's own row", async () => {
     mockRoster([user({ id: 'admin-1', name: 'Self', role: 'admin', banned: false })])
     await renderUsersPage()

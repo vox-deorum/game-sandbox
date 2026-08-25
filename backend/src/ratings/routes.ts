@@ -14,6 +14,7 @@
  * built-in ref, and `human` entries are skipped.
  * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { agentRefKey } from '@game-sandbox/schema/board'
 import { RATING_FEEDBACK_MAX, RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
 import { codePointLength } from '@game-sandbox/schema/text'
@@ -247,9 +248,11 @@ async function buildRatingView(
   caller: AuthUser,
 ): Promise<RatingView> {
   const { session, season, agents } = context
-  // An admin retains submitted-agent identities while a public play window is open; everyone else
+  // A guest never sees submission owners, on any surface, so a guest is always blind; otherwise an
+  // admin retains submitted-agent identities while a public play window is open, and everyone else
   // sees the blind anonymized numbering.
-  const blind = season.play_status === 'open' && caller.status !== 'admin'
+  const guest = caller.status === 'guest'
+  const blind = guest || (season.play_status === 'open' && caller.status !== 'admin')
   const [activeSubmissions, names, seasonRatings, seasonPrompts] = await Promise.all([
     blind ? deps.storage.listActiveSubmissionsBySeason(season.id, 'ready') : Promise.resolve([]),
     blind
@@ -277,6 +280,7 @@ async function buildRatingView(
         agent.ref,
         isOwn,
         blind,
+        guest,
         anonymousNumbers,
         names,
         agent.builtinLabel,
@@ -302,6 +306,7 @@ function displayName(
   ref: AgentRef,
   isOwn: boolean,
   blind: boolean,
+  guest: boolean,
   anonymousNumbers: ReadonlyMap<string, number>,
   names: ReadonlyMap<string, string>,
   builtinLabel: string | undefined,
@@ -315,6 +320,10 @@ function displayName(
   }
   if (isOwn) {
     return 'Your agent'
+  }
+  if (guest) {
+    // A guest never sees real names; the stable hash label lets them follow an agent across surfaces.
+    return maskedAgentLabel(ref.user_id)
   }
   const number = anonymousNumbers.get(ref.submission_id)
   return number === undefined ? 'Agent' : `Agent ${number}`

@@ -48,7 +48,7 @@ import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, seatLabel } from '../lib/format.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
-import { canParticipate, isAdmin, useMe } from '../me.js'
+import { canPlay, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const route = useRoute()
@@ -194,13 +194,14 @@ onMounted(() => {
 // human-play entry point only.
 const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
-  () => canParticipate(me.me) && Boolean(meta.value?.human_players.length && playOpen.value),
+  () => canPlay(me.me) && Boolean(meta.value?.human_players.length && playOpen.value),
 )
 // The season-banner button also renders for an anonymous visitor, as the entry point into signing in:
-// open() routes them to /login instead of opening the start dialog.
+// open() routes them to /login instead of opening the start dialog. A guest plays like a signed-in
+// user (session start and stop admit guests), so the button renders for one too.
 const showHumanPlay = computed(
   () =>
-    (canParticipate(me.me) || me.me?.user == null) &&
+    (canPlay(me.me) || me.me?.user == null) &&
     Boolean(meta.value?.human_players.length && playOpen.value),
 )
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat

@@ -42,6 +42,8 @@ const props = withDefaults(
     players?: RecordingHeader['players']
     /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
     blind?: boolean
+    /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
+    masked?: boolean
     viewerId?: string
     anonymousNumbers?: Record<string, number>
     /** Players the viewer controls; empty when spectating a replay (the usual case). */
@@ -55,6 +57,7 @@ const props = withDefaults(
     currentTick: null,
     players: undefined,
     blind: false,
+    masked: false,
     viewerId: undefined,
     anonymousNumbers: undefined,
     viewerPlayers: () => [],
@@ -67,6 +70,7 @@ const props = withDefaults(
 
 const attributionCtx = computed(() => ({
   blind: props.blind,
+  masked: props.masked,
   viewerId: props.viewerId,
   anonymousNumbers: props.anonymousNumbers,
 }))

@@ -34,10 +34,11 @@ type Access = 'loading' | 'denied' | 'ready'
 const access = ref<Access>('loading')
 const me = useMe()
 
-type StatusTabKey = 'all' | 'pending' | 'normal' | 'admins' | 'banned'
+type StatusTabKey = 'all' | 'pending' | 'guests' | 'normal' | 'admins' | 'banned'
 const TABS: { key: StatusTabKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
+  { key: 'guests', label: 'Guests' },
   { key: 'normal', label: 'Normal' },
   { key: 'admins', label: 'Admins' },
   { key: 'banned', label: 'Banned' },
@@ -70,6 +71,8 @@ function tabFilter(tab: StatusTabKey): { field: string; value: string | boolean 
       return null
     case 'pending':
       return { field: 'role', value: 'pending' }
+    case 'guests':
+      return { field: 'role', value: 'guest' }
     case 'normal':
       return { field: 'role', value: 'user' }
     case 'admins':

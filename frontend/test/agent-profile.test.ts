@@ -56,6 +56,7 @@ import {
   submitAgent,
 } from '../src/api/client.js'
 import AgentProfilePage from '../src/pages/AgentProfilePage.vue'
+import { useToast } from '../src/toast.js'
 
 const ReplayStub = { template: '<div>replay {{ $route.params.id }}</div>' }
 
@@ -802,6 +803,32 @@ describe('AgentProfilePage', () => {
     expect(screen.queryByLabelText('Public Repository URL')).toBeNull()
     // ...and the owner-only prompt prefill never fires (the form never mounted).
     expect(vi.mocked(getAuthorPrompt)).not.toHaveBeenCalled()
+  })
+
+  it('shows a guest owner the open-but-blocked submit form', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'guest'))
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [submission({ id: 'next', season_id: 'iter-next' })],
+    })
+
+    // The form renders (open and explorable) rather than the awaiting-approval notice.
+    const repository = await screen.findByLabelText('Public Repository URL')
+    await fireEvent.update(repository, 'https://github.com/eve/agent')
+
+    // Verify is blocked with a toast and fires no request. The toast message is read from the shared
+    // queue (the UiToast host, which lives in AppShell, is not mounted in this routed render).
+    await fireEvent.click(screen.getByRole('button', { name: 'Verify reachability' }))
+    expect(useToast().toasts.map((toast) => toast.message)).toContain(
+      "Guest accounts can't submit agents.",
+    )
+    expect(vi.mocked(checkReachability)).not.toHaveBeenCalled()
+
+    // Submit is blocked the same way, even with a source filled in.
+    await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
+    expect(vi.mocked(submitAgent)).not.toHaveBeenCalled()
   })
 
   it('shows an empty history for an owner with no submissions', async () => {

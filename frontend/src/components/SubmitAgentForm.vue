@@ -40,18 +40,21 @@ import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 import UiStatusBadge from './ui/UiStatusBadge.vue'
 import UiTextarea from './ui/UiTextarea.vue'
+import { useToast } from '../toast.js'
 
 const props = withDefaults(
   defineProps<{
     envId: string
     /** The open submission season the new agent lands in; also the season its rating prompt is saved to. */
     submissionSeasonId: string
+    /** A guest may explore the form, but its actions are blocked with a toast and fire no request. */
+    blocked?: boolean
     /** Poll cadence once a submission is pending; also lets tests drive the timeline deterministically. */
     pollIntervalMs?: number
     /** No-progress polls before the non-terminal "still processing" notice shows. */
     stallAfterPolls?: number
   }>(),
-  { pollIntervalMs: 1500, stallAfterPolls: 20 },
+  { blocked: false, pollIntervalMs: 1500, stallAfterPolls: 20 },
 )
 
 const emit = defineEmits<{
@@ -60,6 +63,8 @@ const emit = defineEmits<{
   /** Validation reached a terminal success or failure state. */
   settled: [submission: SubmissionDetail]
 }>()
+
+const toast = useToast()
 
 const repoUrl = ref('')
 const refInput = ref('')
@@ -136,6 +141,12 @@ const verified = computed(
 const canSubmit = computed(() => verified.value && !submitting.value)
 
 async function verify(): Promise<void> {
+  // A guest may explore the form, but its actions are blocked with a toast and never reach the API
+  // (the backend's requireActive would refuse them anyway).
+  if (props.blocked) {
+    toast.show("Guest accounts can't submit agents.")
+    return
+  }
   if (!hasSource.value) {
     return
   }
@@ -157,6 +168,12 @@ const REASON_MESSAGE: Record<string, string> = {
 }
 
 async function onSubmit(): Promise<void> {
+  // A guest may explore the form, but its submit action is blocked with a toast and never reaches
+  // the API (the backend's requireActive would refuse it anyway).
+  if (props.blocked) {
+    toast.show("Guest accounts can't submit agents.")
+    return
+  }
   if (!canSubmit.value) {
     return
   }

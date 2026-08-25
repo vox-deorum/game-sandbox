@@ -11,9 +11,11 @@
   intended agent. Watch actions keep the configuration editable. A single-seat environment with no
   visible settings starts a scripted watch run immediately, expressed as a one-seat `seats`
   assignment. The post-session panel takes the rating after the run. An anonymous visitor sees the
-  same actions, but clicking one routes to the sign-in page instead of starting a run; a signed-in but
-  still-pending account browses without actions and sees the awaiting-approval notice.
--->
+  same actions, but clicking one routes to the sign-in page instead of starting a run; a guest keeps
+  the watch and rate actions too (a guest can play and watch, and the rate form stays interactive
+  with saving blocked by a toast); only a signed-in but still-pending account browses without actions
+  and sees the awaiting-approval notice.
+--> 
 <script setup lang="ts">
 import {
   type EnvironmentMeta,
@@ -32,7 +34,7 @@ import {
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { visibleParameters } from '@game-sandbox/schema/environment'
-import { canParticipate, isAdmin, useMe } from '../me.js'
+import { canPlay, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
@@ -171,7 +173,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge>Built-in</UiBadge>
         </div>
         <UiButton
-          v-if="anonymous || canParticipate(me.me)"
+          v-if="anonymous || canPlay(me.me)"
           size="tight"
           variant="secondary"
           :loading="starting === `builtin:${builtin.name}`"
@@ -197,7 +199,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge v-else-if="agent.rating_status === 'rated'">Rated</UiBadge>
         </div>
         <UiButton
-          v-if="anonymous || canParticipate(me.me)"
+          v-if="anonymous || canPlay(me.me)"
           size="tight"
           :variant="agent.rating_status === 'unrated' ? 'primary' : 'secondary'"
           :loading="starting === agent.submission_id"
@@ -208,7 +210,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       </li>
     </ul>
     <p v-if="agents.length === 0" class="agent-subnote">No submitted agents are ready to watch yet.</p>
-    <UiEmptyState v-if="!anonymous && !canParticipate(me.me)">
+    <UiEmptyState v-if="!anonymous && !canPlay(me.me)">
       Your account is awaiting approval — watching unlocks once an admin approves you.
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>

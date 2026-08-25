@@ -17,12 +17,13 @@ import { TEST_AUTH_OPTIONS } from './auth-options.js'
 const TEST_PASSWORD = 'test-password-123'
 
 /** The status a test user is minted at; maps to the Better Auth role the user carries. */
-export type TestStatus = 'normal' | 'admin' | 'pending'
+export type TestStatus = 'normal' | 'admin' | 'pending' | 'guest'
 
-const ROLE_BY_STATUS: Record<TestStatus, 'user' | 'admin' | 'pending'> = {
+const ROLE_BY_STATUS: Record<TestStatus, 'user' | 'admin' | 'pending' | 'guest'> = {
   normal: 'user',
   admin: 'admin',
   pending: 'pending',
+  guest: 'guest',
 }
 
 /** A reserved internal admin used only to drive admin-session operations like `ban`. */

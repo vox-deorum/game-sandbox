@@ -51,7 +51,7 @@ import { hasSubmittedAgent } from '../lib/attribution.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 import { decisionEntries } from '../lib/state.js'
-import { isAdmin, useMe, userId } from '../me.js'
+import { hidesNames, isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { summarizeStates } from '../replay/summary.js'
 
@@ -61,6 +61,9 @@ const id = String(route.params.id)
 // The signed-in viewer's id for the attribution components' optional `viewer-id` prop (undefined when
 // anonymous). The prop takes `string | undefined`, so the `null` sentinel maps to `undefined`.
 const viewerId = computed(() => userId(me.me) ?? undefined)
+// A masked viewer (guest or anonymous) never sees real names, so the attribution components hash every
+// non-own player into its stable label.
+const viewerMasked = computed(() => hidesNames(me.me))
 
 const row = ref<SessionRow | null>(null)
 const meta = ref<EnvironmentMeta | null>(null)
@@ -116,6 +119,7 @@ const attributionState = computed(() =>
     operator: isAdmin(me.me),
     seasonPlayable: seasonPlayable.value,
     hasSubmittedAgent: header.value === null ? null : hasSubmittedAgent(header.value.players),
+    viewerMasked: viewerMasked.value,
   }),
 )
 const blindAttribution = computed(() => presentsMasked(attributionState.value))
@@ -378,6 +382,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     <PlayerAttribution
       :players="header?.players"
       :blind="blindAttribution"
+      :masked="viewerMasked"
       :viewer-id="viewerId"
       :anonymous-numbers="anonymousNumbers"
     />
@@ -424,6 +429,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :header="header"
             :player-scores="completePlayerScores"
             :blind="blindAttribution"
+            :masked="viewerMasked"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             @dismiss="gameOverDismissed = true"
@@ -441,6 +447,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :entries="chatLog"
               :players="header?.players"
               :blind="blindAttribution"
+              :masked="viewerMasked"
               :viewer-id="viewerId"
               :anonymous-numbers="anonymousNumbers"
               :viewer-players="viewerPlayers"
@@ -465,6 +472,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :entries="chatLog"
             :players="header?.players"
             :blind="blindAttribution"
+            :masked="viewerMasked"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             :viewer-players="viewerPlayers"

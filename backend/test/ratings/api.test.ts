@@ -10,6 +10,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -722,6 +723,40 @@ describe('rating API', () => {
     expect(regular.json()).toMatchObject({
       read_only: true,
       agents: [{ display_name: ownerLabel }],
+    })
+  })
+
+  it('shows a guest the stable hash label on every rating view, play window or not', async () => {
+    const season = await playOpenSeason()
+    const subId = await submissionFor(season.id, aliceId)
+    await storage.updateSubmissionStatus(subId, 'ready')
+    const recId = await writeRecording('flappy_bird-guest', {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    })
+    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const guestHeaders = await users.headersFor('guest-user', { status: 'guest' })
+
+    // The hash label, not "Agent N", for a guest while play is open...
+    const open = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: guestHeaders,
+    })
+    expect(open.json()).toMatchObject({
+      read_only: false,
+      agents: [{ display_name: maskedAgentLabel(aliceId) }],
+    })
+
+    // ...and identically once the window has closed (a guest is always masked).
+    await storage.setPlayStatus(season.id, 'closed')
+    const closed = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: guestHeaders,
+    })
+    expect(closed.json()).toMatchObject({
+      read_only: true,
+      agents: [{ display_name: maskedAgentLabel(aliceId) }],
     })
   })
 

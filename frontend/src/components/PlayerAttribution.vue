@@ -16,6 +16,8 @@ const props = withDefaults(
     players?: RecordingHeader['players']
     /** Hide submitted-agent ownership while a non-operator views a playable season. */
     blind?: boolean
+    /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
+    masked?: boolean
     /** Lets a blind viewer still recognize their own submitted agent. */
     viewerId?: string
     /**
@@ -26,7 +28,7 @@ const props = withDefaults(
      */
     anonymousNumbers?: Record<string, number>
   }>(),
-  { players: undefined, blind: false, viewerId: undefined, anonymousNumbers: undefined },
+  { players: undefined, blind: false, masked: false, viewerId: undefined, anonymousNumbers: undefined },
 )
 
 // The shared attribution helper (also used by the end-of-game leaderboard) owns the blind policy and
@@ -38,6 +40,7 @@ const items = computed(() => {
   }
   const ctx = {
     blind: props.blind,
+    masked: props.masked,
     viewerId: props.viewerId,
     anonymousNumbers: props.anonymousNumbers,
   }

@@ -58,8 +58,11 @@ async function json(res: Response, label: string): Promise<unknown> {
   return res.json()
 }
 
-/** A user's derived participation status: `pending` before approval, `normal`, or `admin`. */
-export type UserStatus = 'pending' | 'normal' | 'admin'
+/**
+ * A user's derived participation status: `pending` before approval, `normal`, `guest`,
+ * or `admin`.
+ */
+export type UserStatus = 'pending' | 'normal' | 'guest' | 'admin'
 
 /** The signed-in session user as `/api/me` returns it: identity, profile fields, and derived status. */
 export interface MeUser {

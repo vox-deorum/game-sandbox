@@ -48,7 +48,7 @@ import { formatDate } from '../lib/format.js'
 import { describeParameters } from '../lib/parameters.js'
 import { playbackIntervalMs } from '../lib/playback.js'
 import { decisionEntries, type DecisionEntry, type RunSummary } from '../lib/state.js'
-import { isAdmin, useMe, userId } from '../me.js'
+import { hidesNames, isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
@@ -59,6 +59,9 @@ const id = String(route.params.id)
 // The signed-in viewer's id for the attribution components' optional `viewer-id` prop (undefined when
 // anonymous). The prop takes `string | undefined`, so the `null` sentinel maps to `undefined`.
 const viewerId = computed(() => userId(me.me) ?? undefined)
+// A masked viewer (guest or anonymous) never sees real names, so the attribution components hash every
+// non-own player into its stable label.
+const viewerMasked = computed(() => hidesNames(me.me))
 
 const loading = ref(true)
 const loadError = ref(false)
@@ -125,6 +128,7 @@ const attributionState = computed(() =>
     operator: isAdmin(me.me),
     seasonPlayable: seasonPlayable.value,
     hasSubmittedAgent: header.value === null ? null : hasSubmittedAgent(header.value.players),
+    viewerMasked: hidesNames(me.me),
   }),
 )
 const blindAttribution = computed(() => presentsMasked(attributionState.value))
@@ -341,6 +345,7 @@ onMounted(async () => {
       :players="header?.players"
       :seats="header?.seats"
       :blind="blindAttribution"
+      :masked="viewerMasked"
       :viewer-id="viewerId"
       :anonymous-numbers="anonymousNumbers"
     />
@@ -388,6 +393,7 @@ onMounted(async () => {
           :header="header"
           :player-scores="finalSummary.scores"
           :blind="blindAttribution"
+          :masked="viewerMasked"
           :viewer-id="viewerId"
           :anonymous-numbers="anonymousNumbers"
           @dismiss="gameOverDismissed = true"
@@ -415,6 +421,7 @@ onMounted(async () => {
           :current-tick="replayState.tick"
           :players="header?.players"
           :blind="blindAttribution"
+          :masked="viewerMasked"
           :viewer-id="viewerId"
           :anonymous-numbers="anonymousNumbers"
           :llm-calls="tickLlmCalls"
@@ -444,6 +451,7 @@ onMounted(async () => {
             :current-tick="replayState.tick"
             :players="header?.players"
             :blind="blindAttribution"
+            :masked="viewerMasked"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             :llm-calls="tickLlmCalls"

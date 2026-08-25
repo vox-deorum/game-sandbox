@@ -9,7 +9,7 @@ describe('anonymity policy', () => {
       { identityResolved: true, seasonPlayable: null, hasSubmittedAgent: true },
       { identityResolved: true, seasonPlayable: true, hasSubmittedAgent: null },
     ]) {
-      const state = anonymityState({ operator: false, ...facts })
+      const state = anonymityState({ operator: false, viewerMasked: false, ...facts })
       expect(state).toBe('unknown')
     }
     // Every unresolved state renders masked, not raw, so a missing fact never leaks identity.
@@ -23,6 +23,7 @@ describe('anonymity policy', () => {
         operator: false,
         seasonPlayable: null,
         hasSubmittedAgent: false,
+        viewerMasked: false,
       }),
     ).toBe('visible')
     expect(
@@ -31,6 +32,7 @@ describe('anonymity policy', () => {
         operator: true,
         seasonPlayable: true,
         hasSubmittedAgent: true,
+        viewerMasked: false,
       }),
     ).toBe('visible')
   })
@@ -42,7 +44,29 @@ describe('anonymity policy', () => {
         operator: false,
         seasonPlayable: true,
         hasSubmittedAgent: true,
+        viewerMasked: false,
       }),
     ).toBe('masked')
+  })
+
+  it('masks a name-hiding viewer on every recording, play window or not', () => {
+    for (const facts of [
+      { identityResolved: true, seasonPlayable: false, hasSubmittedAgent: false },
+      { identityResolved: true, seasonPlayable: true, hasSubmittedAgent: false },
+      { identityResolved: true, seasonPlayable: true, hasSubmittedAgent: true },
+    ]) {
+      const state = anonymityState({ operator: false, viewerMasked: true, ...facts })
+      expect(state).toBe('masked')
+    }
+    // Unresolved identity still fails closed as unknown (which renders masked anyway).
+    expect(
+      anonymityState({
+        identityResolved: false,
+        operator: false,
+        seasonPlayable: null,
+        hasSubmittedAgent: null,
+        viewerMasked: true,
+      }),
+    ).toBe('unknown')
   })
 })
