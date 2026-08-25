@@ -73,6 +73,8 @@ def test_rerun_help_explains_stale_schema_recovery(capsys):
         demo.main(["--help"])
 
     out = capsys.readouterr().out
+    # argparse wraps help to the terminal width, so collapse the wrapping before matching.
+    out = " ".join(out.split())
     assert "stale-" in out
     assert "schema SQLite startup errors" in out
 
