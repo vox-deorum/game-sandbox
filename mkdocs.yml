@@ -49,6 +49,7 @@ nav:
       - Environments:
           - students/environments/index.md
       - students/agent-interface.md
+      - students/testing.md
       - students/llm.md
       - students/submitting.md
   - Contributors:

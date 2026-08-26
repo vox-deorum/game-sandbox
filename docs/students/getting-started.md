@@ -84,7 +84,7 @@ Use the same seeds before and after a change to compare your results. Local resu
 python -m sandbox test
 ```
 
-`manifest.json` is the small file that names your agent class. The tests confirm that it points to an agent Python can load and that the agent can run the environment. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
+`manifest.json` is the small file that names your agent class. The tests confirm that it points to an agent Python can load and that the agent can run the environment. Keep them passing as you edit `agent.py`, and use any failure message to find the problem. You can also add your own test files following [this guide](testing.md).
 
 ## 6. Save your work on GitHub
 

@@ -11,7 +11,8 @@ Get template → Set up Python → Improve agent → Test locally → Push to Gi
 1. [Getting started](getting-started.md) walks through the full workflow on your computer.
 2. [Your environment](environments/index.md) explains the working agent in your template, its helper functions, scoring, actions, and observations.
 3. [Agent interface](agent-interface.md) covers the methods that every agent can use.
-4. [Submitting](submitting.md) explains the validation stages, common rejection reasons, and what happens after a submission is accepted.
+4. [Testing your agent](testing.md) shows how to write unit tests for your agent's functions.
+5. [Submitting](submitting.md) explains the validation stages, common rejection reasons, and what happens after a submission is accepted.
 
 The guides assume no prior experience with Git or Python and link to official tutorials for more help.
 

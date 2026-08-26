@@ -45,7 +45,7 @@ Resolve commit → Static check → Build → Load check → Ready
 | Build | Combine your code with the season's fixed packages. It cannot install new packages. | Usually temporary and not caused by your files. Try again, then ask your instructor if it continues. |
 | Load check | Import your module and create the agent class in an isolated sandbox. | An import error, missing class or required method, or an error while creating the agent. |
 
-The process stops at the first failure and shows the reason. Validation does not play a game, so a logic error inside `act` can still pass. Use `python -m sandbox watch`, `eval`, and `test` to catch that.
+The process stops at the first failure and shows the reason. Validation does not play a game, so a logic error inside `act` can still pass. Use `python -m sandbox watch`, `eval`, and `test` to catch that, and consider [writing your own tests](testing.md).
 
 ## Repository rules
 
