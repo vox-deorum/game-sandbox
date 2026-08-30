@@ -55,6 +55,7 @@ import {
 } from '../llm/development-views.js'
 import { asLlmError } from '../llm/errors.js'
 import { modelCostWeights } from '../llm/types.js'
+import { appLogBuffer } from '../logging/log-buffer.js'
 import { buildSchedule } from '../scheduler/build-schedule.js'
 import {
   agentOwnerIds,
@@ -74,6 +75,7 @@ import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submissio
 import { optionalField } from '../util/optional-field.js'
 import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
+import { registerAdminLogRoutes } from './log-routes.js'
 
 /** Everything the admin routes need beyond the Fastify instance. */
 export interface AdminDeps {
@@ -461,6 +463,8 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           return reply
         }
       })
+
+      registerAdminLogRoutes(admin, appLogBuffer())
 
       // --- Declare ---------------------------------------------------------------------------
       // Create an unreleased, submission-closed, play-closed season for the environment with a

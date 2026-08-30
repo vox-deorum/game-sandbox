@@ -8,7 +8,7 @@ describe('chargeable timer', () => {
   it('expires at the wall-clock budget without an LLM counter', async () => {
     vi.useFakeTimers()
     const onExpire = vi.fn()
-    createChargeableTimer({ budgetMs: 10, log: vi.fn(), onExpire })
+    createChargeableTimer({ budgetMs: 10, source: 'session', context: 'session s1', onExpire })
 
     await vi.advanceTimersByTimeAsync(10)
 
@@ -19,7 +19,13 @@ describe('chargeable timer', () => {
     vi.useFakeTimers()
     let inFlightMs = 7
     const onExpire = vi.fn()
-    createChargeableTimer({ budgetMs: 10, inFlightMs: () => inFlightMs, log: vi.fn(), onExpire })
+    createChargeableTimer({
+      budgetMs: 10,
+      inFlightMs: () => inFlightMs,
+      source: 'session',
+      context: 'session s1',
+      onExpire,
+    })
 
     inFlightMs = 17
     await vi.advanceTimersByTimeAsync(10)
@@ -40,7 +46,8 @@ describe('chargeable timer', () => {
         if (reads === 2) throw new Error('proxy unavailable')
         return reads === 1 ? 100 : 200
       },
-      log: vi.fn(),
+      source: 'session',
+      context: 'session s1',
       onExpire,
     })
 
@@ -53,7 +60,13 @@ describe('chargeable timer', () => {
     vi.useFakeTimers()
     let inFlightMs = 0
     const onExpire = vi.fn()
-    createChargeableTimer({ budgetMs: 10, inFlightMs: () => inFlightMs, log: vi.fn(), onExpire })
+    createChargeableTimer({
+      budgetMs: 10,
+      inFlightMs: () => inFlightMs,
+      source: 'session',
+      context: 'session s1',
+      onExpire,
+    })
 
     inFlightMs = 100
     await vi.advanceTimersByTimeAsync(10)
@@ -66,7 +79,12 @@ describe('chargeable timer', () => {
   it('can be stopped before expiration', async () => {
     vi.useFakeTimers()
     const onExpire = vi.fn()
-    const timer = createChargeableTimer({ budgetMs: 10, log: vi.fn(), onExpire })
+    const timer = createChargeableTimer({
+      budgetMs: 10,
+      source: 'session',
+      context: 'session s1',
+      onExpire,
+    })
 
     timer.stop()
     await vi.advanceTimersByTimeAsync(20)

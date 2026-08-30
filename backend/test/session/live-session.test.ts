@@ -5,6 +5,12 @@ import type { AuthUser } from '../../src/auth/identity.js'
 import type { SessionProcess } from '../../src/driver/index.js'
 import { createOfficialTickMarker, KeyRegistry } from '../../src/llm/key-registry.js'
 import type { LlmGrant } from '../../src/llm/types.js'
+import {
+  appLogBuffer,
+  configureAppLogs,
+  createLogBuffer,
+  resetAppLogs,
+} from '../../src/logging/log-buffer.js'
 import { LiveSession } from '../../src/session/live-session.js'
 import type { Storage } from '../../src/storage/index.js'
 import type { SessionMode } from '../../src/storage/schema.js'
@@ -46,6 +52,7 @@ describe('relay (LiveSession)', () => {
       onEnd?: (id: string) => void
       onFinalized?: (id: string) => void
       releaseComposedImage?: () => Promise<void> | void
+      diagnostic?: (line: string) => void
     } = {},
   ): {
     session: LiveSession
@@ -72,7 +79,7 @@ describe('relay (LiveSession)', () => {
         storage,
         onEnd: options.onEnd ?? (() => {}),
         onFinalized: options.onFinalized,
-        log: () => {},
+        diagnostic: options.diagnostic,
         idleTimeoutMs: options.idleTimeoutMs ?? 1_000_000,
         maxDurationMs: options.maxDurationMs ?? 1_000_000,
         killGraceMs: 10,
@@ -87,6 +94,7 @@ describe('relay (LiveSession)', () => {
   }
 
   beforeEach(async () => {
+    configureAppLogs(createLogBuffer({ sink: () => {} }))
     storage = await openSqliteStorage(':memory:')
     await storage.createSession({
       id: 'sess-1',
@@ -103,6 +111,7 @@ describe('relay (LiveSession)', () => {
     vi.useRealTimers()
     await Promise.all(live.splice(0).map((s) => s.finalize('stopped')))
     await storage.close()
+    resetAppLogs()
   })
 
   it('uses the fixed live max-duration backstop without LLM timing', async () => {
@@ -113,6 +122,23 @@ describe('relay (LiveSession)', () => {
 
     expect(process.killGraceMs).toEqual([10])
     expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'time_limit' })
+  })
+
+  it('keeps participant diagnostics on their dedicated stderr callback', async () => {
+    const diagnostics = vi.fn()
+    const { process } = makeSession('scripted', { diagnostic: diagnostics })
+
+    process.emitDiagnostic('participant stderr')
+    process.emit('not valid protocol')
+    await settle()
+
+    expect(diagnostics).toHaveBeenCalledWith('session sess-1 [container]: participant stderr')
+    expect(appLogBuffer().query({ source: 'session' }).entries).toEqual([
+      expect.objectContaining({
+        message: 'session sess-1: dropping malformed container line: not valid protocol',
+        level: 'warn',
+      }),
+    ])
   })
 
   it('does not extend the live deadline for an open background request', async () => {
@@ -406,7 +432,6 @@ describe('relay (LiveSession)', () => {
       deps: {
         storage,
         onEnd: () => {},
-        log: () => {},
         idleTimeoutMs: 1_000_000,
         maxDurationMs: 1_000_000,
         killGraceMs: 10,

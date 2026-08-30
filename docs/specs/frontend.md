@@ -14,6 +14,7 @@ Navigation has two levels:
 | My Agents         | My Submissions        |
 | My Profile        | Manage, for operators |
 | Users, for admins |                       |
+| Logs, for admins  |                       |
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 
@@ -40,6 +41,7 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
 | Users | Admin-only roster management, approval, bans, roles, and password resets |
+| Logs | Admin-only view of recent structured messages retained by the current backend process |
 
 ### Documentation
 

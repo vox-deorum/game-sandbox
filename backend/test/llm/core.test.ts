@@ -17,6 +17,7 @@ import {
   weightedCommittedTokens,
 } from '../../src/llm/types.js'
 import { UpstreamError } from '../../src/llm/upstream.js'
+import { configureAppLogs, createLogBuffer, resetAppLogs } from '../../src/logging/log-buffer.js'
 
 const completion = (usage: unknown = null): OpenAI.Chat.Completions.ChatCompletion =>
   ({
@@ -78,21 +79,20 @@ function fixture(
     })),
   }
   const logs: string[] = []
-  const log = (message: string): void => {
-    logs.push(message)
-  }
-  const meter = new LlmMeter({ log })
+  configureAppLogs(createLogBuffer({ sink: (message) => logs.push(message) }))
+  const meter = new LlmMeter()
   const handler = new LlmHandler({
     meter,
     tokenizer,
     upstream,
     options: { defaultMaxOutputTokens: 8, maxOutputTokens: 20 },
-    log,
   })
   return { grant, handler, logs, meter, records, upstream }
 }
 
 describe('LLM registry, handler, and listener', () => {
+  afterEach(() => resetAppLogs())
+
   it.each([
     ['small', 'provider-small', 1],
     ['medium', 'provider-medium', 2],
@@ -674,10 +674,10 @@ describe('LLM registry, handler, and listener', () => {
   it('uses fixed parse logging and compatible envelopes for malformed JSON and unknown methods', async () => {
     const { handler } = fixture()
     const log = vi.fn()
+    configureAppLogs(createLogBuffer({ sink: log }))
     const app = await buildLlmListener({
       registry: new KeyRegistry(() => new Uint8Array(32).fill(1)),
       handler,
-      log,
     })
     const malformed = await app.inject({
       method: 'POST',
@@ -688,7 +688,6 @@ describe('LLM registry, handler, and listener', () => {
     expect(malformed.statusCode).toBe(400)
     expect(malformed.json()).toMatchObject({ error: { code: 'invalid_request' } })
     expect(log).toHaveBeenCalledWith('LLM listener rejected malformed request')
-
     const wrongMethod = await app.inject({ method: 'GET', url: '/v1/chat/completions' })
     expect(wrongMethod.statusCode).toBe(404)
     expect(wrongMethod.json()).toEqual({

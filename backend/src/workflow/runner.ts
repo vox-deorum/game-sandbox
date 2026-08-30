@@ -9,6 +9,8 @@
  * owns only the *seam*, its event shapes, and the reconcile. The Docker-backed implementation uses this
  * interface in production, while tests use a stub so routes, gating, and streaming are proven Docker-free.
  */
+
+import { appLog } from '../logging/log-buffer.js'
 import type { Storage } from '../storage/index.js'
 import type { GameStatus, RunStatus } from '../storage/schema.js'
 
@@ -90,10 +92,7 @@ export interface WorkflowRunner {
  * never silently resumed (the operator re-runs). This mirrors Stage 5's startup recovery but chooses
  * fail-closed for the heavier workflow. Returns how many runs were failed.
  */
-export async function reconcileInterruptedRuns(
-  storage: Storage,
-  log: (message: string) => void = () => {},
-): Promise<number> {
+export async function reconcileInterruptedRuns(storage: Storage): Promise<number> {
   const stranded = [
     ...(await storage.listRunsByStatus('running')),
     ...(await storage.listRunsByStatus('pending')),
@@ -106,7 +105,11 @@ export async function reconcileInterruptedRuns(
     )
   }
   if (stranded.length > 0) {
-    log(`reconciled ${stranded.length} interrupted workflow run(s) to failed`)
+    appLog(
+      'workflow',
+      `reconciled ${stranded.length} interrupted workflow run(s) to failed`,
+      'warn',
+    )
   }
   return stranded.length
 }

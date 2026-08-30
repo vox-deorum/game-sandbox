@@ -49,6 +49,7 @@ import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/regis
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/types.js'
+import { appLog } from '../logging/log-buffer.js'
 import { sessionRecordingsScopeDir, settleSessionRecording } from '../recordings/settle.js'
 import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
@@ -134,7 +135,6 @@ export interface WorkflowRunnerDeps {
    * Optional: without it (or for an id with no row) every label falls back to the stable id.
    */
   userDirectory?: UserDirectory
-  log?: (message: string) => void
   /**
    * Called once a run settles to a terminal status, so step 5 can recompute the board and retention
    * can sweep. The runner awaits the hook before emitting the terminal event, so dependent snapshots
@@ -169,7 +169,6 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps): WorkflowRunner {
 }
 
 class DockerWorkflowRunner implements WorkflowRunner {
-  private readonly log: (message: string) => void
   private readonly killGraceMs: number
   private readonly gameWatchdogGraceMs: number
 
@@ -190,7 +189,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
   private readonly listeners = new Map<string, Set<RunEventListener>>()
 
   constructor(private readonly deps: WorkflowRunnerDeps) {
-    this.log = deps.log ?? ((): void => {})
     this.killGraceMs = deps.killGraceMs ?? DEFAULT_KILL_GRACE_MS
     this.gameWatchdogGraceMs = deps.gameWatchdogGraceMs ?? DEFAULT_GAME_WATCHDOG_GRACE_MS
   }
@@ -224,7 +222,9 @@ class DockerWorkflowRunner implements WorkflowRunner {
       void (async (): Promise<void> => {
         await llmLease?.revoke()
         if (process !== undefined) await this.cleanupProcess(process)
-      })().catch((error) => this.log(`run ${runId}: cancel teardown failed: ${String(error)}`))
+      })().catch((error) =>
+        appLog('workflow', `run ${runId}: cancel teardown failed: ${String(error)}`, 'error'),
+      )
     }
   }
 
@@ -266,7 +266,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
         try {
           await this.executeRun(next)
         } catch (error) {
-          this.log(`run ${next}: execution failed outside run handling: ${String(error)}`)
+          appLog(
+            'workflow',
+            `run ${next}: execution failed outside run handling: ${String(error)}`,
+            'error',
+          )
         }
       }
     } finally {
@@ -292,7 +296,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   /** Settle a run to a terminal status: persist it, run the completion hook, and emit terminal. */
   private async finishRun(runId: string, status: TerminalRunStatus, error?: string): Promise<void> {
     await this.deps.storage.setRunStatus(runId, status, error).catch((cause) => {
-      this.log(`run ${runId}: setRunStatus(${status}) failed: ${String(cause)}`)
+      appLog('workflow', `run ${runId}: setRunStatus(${status}) failed: ${String(cause)}`, 'error')
     })
     this.cancelRequested.delete(runId)
     this.inFlight.delete(runId)
@@ -300,7 +304,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     try {
       await this.deps.onRunComplete?.(runId, status)
     } catch (cause) {
-      this.log(`run ${runId}: completion hook failed: ${String(cause)}`)
+      appLog('workflow', `run ${runId}: completion hook failed: ${String(cause)}`, 'error')
     }
     this.emit(runId, { type: 'terminal', status })
   }
@@ -315,7 +319,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
     } catch (error) {
       // Fail safe: an uncertain association leaves the scope for startup recovery.
-      this.log(`run ${runId}: deleting unused LLM scope failed: ${String(error)}`)
+      appLog(
+        'workflow',
+        `run ${runId}: deleting unused LLM scope failed: ${String(error)}`,
+        'error',
+      )
     }
   }
 
@@ -327,13 +335,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
   private async executeRun(runId: string): Promise<void> {
     const run = await this.deps.storage.getRun(runId)
     if (run === undefined) {
-      this.log(`run ${runId}: vanished before execution; nothing to do`)
+      appLog('workflow', `run ${runId}: vanished before execution; nothing to do`, 'warn')
       this.cancelRequested.delete(runId)
       return
     }
     if (run.status !== 'pending') {
       // Reconcile or a prior pass already settled it; do not re-run.
-      this.log(`run ${runId}: not pending (${run.status}); skipping`)
+      appLog('workflow', `run ${runId}: not pending (${run.status}); skipping`, 'info')
       this.cancelRequested.delete(runId)
       return
     }
@@ -423,7 +431,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
       await this.finishRun(runId, 'completed')
     } catch (error) {
-      this.log(`run ${runId}: unexpected failure: ${String(error)}`)
+      appLog('workflow', `run ${runId}: unexpected failure: ${String(error)}`, 'error')
       await this.finishRun(runId, 'failed', `run failed: ${errorText(error)}`)
     }
   }
@@ -478,8 +486,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await this.deps.driver
         .releaseSessionOverlay(image.ref)
         .catch((error) =>
-          this.log(
+          appLog(
+            'workflow',
             `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+            'error',
           ),
         )
       await this.markGameCancelled(runId, game)
@@ -612,7 +622,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
             }
           }
         } catch (error) {
-          this.log(`run ${runId} game ${game.game_index}: output stream error: ${String(error)}`)
+          appLog(
+            'workflow',
+            `run ${runId} game ${game.game_index}: output stream error: ${String(error)}`,
+            'error',
+          )
         }
       })()
 
@@ -703,7 +717,9 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llm_scope_id: llmPolicy.enabled ? runId : null,
           llm_session_id: llmPolicy.enabled ? game.id : null,
         })
-        .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
+        .catch((error) =>
+          appLog('workflow', `run ${runId}: createRecording failed: ${String(error)}`, 'error'),
+        )
 
       const pricedModels = policyModels(llmPolicy)
       const playerResults: PlayerResult[] = resolvedPlayerIds.map((playerId) => {
@@ -770,7 +786,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // Promote the game's recording out of its isolated session directory into the shared flat
       // store on every exit path (natural, cancelled, or error), then drop the empty session dir.
       await settleSessionRecording(this.deps.recordingsDir, game.id, recordingId).catch((error) =>
-        this.log(`run ${runId} game ${game.id}: settling recording failed: ${String(error)}`),
+        appLog(
+          'workflow',
+          `run ${runId} game ${game.id}: settling recording failed: ${String(error)}`,
+          'error',
+        ),
       )
       // The container is gone, so a composed session-overlay image has served its single purpose.
       // Release it best-effort (the driver no-ops on base and per-submission refs; the eviction
@@ -778,8 +798,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await this.deps.driver
         .releaseSessionOverlay(image.ref)
         .catch((error) =>
-          this.log(
+          appLog(
+            'workflow',
             `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+            'error',
           ),
         )
     }
@@ -796,7 +818,8 @@ class DockerWorkflowRunner implements WorkflowRunner {
     return createChargeableTimer({
       budgetMs: timeoutMs,
       inFlightMs: llmLease?.blockingInFlightMs,
-      log: (message) => this.log(`run ${runId} game ${game.game_index}: ${message}`),
+      source: 'workflow',
+      context: `run ${runId} game ${game.game_index}`,
       onExpire: () => {
         this.gameLog(
           runId,
@@ -808,8 +831,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
           await llmLease?.revoke()
           await this.cleanupProcess(process)
         })().catch((error) => {
-          this.log(
+          appLog(
+            'workflow',
             `run ${runId} game ${game.game_index}: watchdog teardown failed: ${String(error)}`,
+            'error',
           )
         })
       },
@@ -939,8 +964,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
         seats.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
       )
     } catch (error) {
-      this.log(
+      appLog(
+        'workflow',
         `workflow-runner: resolving display names failed, falling back to ids: ${String(error)}`,
+        'warn',
       )
       return new Map()
     }

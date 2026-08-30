@@ -21,10 +21,12 @@ import { ENV_ID } from '../support/names.js'
 test('an admin signs in, sees the admin nav, and signs out', async ({ page }) => {
   await signInThroughUi(page, ADMIN_EMAIL, ADMIN_PASSWORD)
 
-  // AppSidebar appends the roster link only when isAdmin(me) is true (see its `items` computed) — the
-  // one admin-only affordance the sidebar itself carries; the operator console tab lives per-game in
-  // ExperimentTabs instead.
+  // AppSidebar appends the operator links only when isAdmin(me) is true (see its `items` computed).
   await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Logs' })).toBeVisible()
+  await page.getByRole('link', { name: 'Logs' }).click()
+  await expect(page).toHaveURL(/\/admin\/logs$/)
+  await expect(page.getByRole('heading', { name: 'Backend Logs' })).toBeVisible()
 
   // AccountMenu's "Log out" ends the Better Auth session, then does a full navigation to /login so the
   // one /api/me fetch re-runs and the shell renders signed-out.
@@ -33,6 +35,7 @@ test('an admin signs in, sees the admin nav, and signs out', async ({ page }) =>
 
   await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Logs' })).toHaveCount(0)
 })
 
 test('an admin creates a user, who signs in and plays', async ({ page, browser, admin }) => {

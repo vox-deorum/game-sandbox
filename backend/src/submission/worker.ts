@@ -25,6 +25,7 @@
 import type { SandboxDefaults } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile } from '../driver/sandbox.js'
+import { appLog } from '../logging/log-buffer.js'
 import type {
   Storage,
   Submission,
@@ -69,7 +70,6 @@ export interface ValidationWorkerDeps {
   submissionMaxSizeBytes: number
   /** The template versions the deployment has a base image for; passed through to the static check. */
   knownTemplateVersions: ReadonlySet<number>
-  log?: (message: string) => void
   /** Called after each successful overlay build, the moment the image set grows (the eviction sweep). */
   onOverlayBuilt?: () => void
 }
@@ -122,11 +122,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
   private inFlight = 0
   private readonly concurrency = 1
   private idleWaiters: Array<() => void> = []
-  private readonly log: (message: string) => void
-
-  constructor(private readonly deps: ValidationWorkerDeps) {
-    this.log = deps.log ?? (() => {})
-  }
+  constructor(private readonly deps: ValidationWorkerDeps) {}
 
   /** Queue a submission id for validation and kick the pump. */
   enqueue(submissionId: string): void {
@@ -190,7 +186,11 @@ export class ValidationWorker implements SubmissionEnqueuer {
     }
     const season = await this.deps.storage.getSeason(submission.season_id)
     if (season === undefined) {
-      this.log(`validation worker: submission ${submissionId} has no season; skipping`)
+      appLog(
+        'submission',
+        `validation worker: submission ${submissionId} has no season; skipping`,
+        'warn',
+      )
       return
     }
     const seasonConfig = decodeSeasonConfig(season.config)
@@ -250,8 +250,10 @@ export class ValidationWorker implements SubmissionEnqueuer {
         await this.deps.snapshots
           .delete(submissionId)
           .catch((deleteError) =>
-            this.log(
+            appLog(
+              'submission',
               `validation worker: removing failed snapshot for ${submissionId} failed: ${errorText(deleteError)}`,
+              'error',
             ),
           )
         await this.fail(
@@ -307,13 +309,17 @@ export class ValidationWorker implements SubmissionEnqueuer {
       // An unexpected throw inside a stage: close the running check and write its rollup so the job
       // can never be left permanently `running`.
       const detail = errorText(error)
-      this.log(
+      appLog(
+        'submission',
         `validation worker: submission ${submissionId} threw in stage ${runningStage}: ${detail}`,
+        'error',
       )
       if (runningStage !== null) {
         await this.fail(submissionId, runningStage, detail).catch((nested) =>
-          this.log(
+          appLog(
+            'submission',
             `validation worker: recording the crash of ${submissionId} failed: ${String(nested)}`,
+            'error',
           ),
         )
       }
@@ -322,8 +328,10 @@ export class ValidationWorker implements SubmissionEnqueuer {
         await tree
           .dispose()
           .catch((error) =>
-            this.log(
+            appLog(
+              'submission',
               `validation worker: disposing the tree of ${submissionId} failed: ${String(error)}`,
+              'error',
             ),
           )
       }

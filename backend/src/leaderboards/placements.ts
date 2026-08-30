@@ -12,6 +12,8 @@
  * superseded run's placements do not linger. Pure orchestration over storage; no Docker, no board math
  * of its own.
  */
+
+import { appLog } from '../logging/log-buffer.js'
 import type { PlacementInput, Storage } from '../storage/index.js'
 
 /**
@@ -34,10 +36,7 @@ export async function persistPlacementsForCompletedRun(
  * write them. This runs at backend startup after interrupted runs are reconciled, so a process exit
  * between `completed` and placement persistence does not leave agent history permanently stale.
  */
-export async function reconcileCompletedRunPlacements(
-  storage: Storage,
-  log: (message: string) => void = () => {},
-): Promise<number> {
+export async function reconcileCompletedRunPlacements(storage: Storage): Promise<number> {
   const completedRuns = await storage.listRunsByStatus('completed')
   const seasonIds = new Set(completedRuns.map((run) => run.season_id))
   let rewritten = 0
@@ -50,12 +49,20 @@ export async function reconcileCompletedRunPlacements(
       await persistPlacementsForSeason(storage, seasonId)
       rewritten += 1
     } catch (error) {
-      log(`season ${seasonId}: reconciling placements failed: ${String(error)}`)
+      appLog(
+        'leaderboard',
+        `season ${seasonId}: reconciling placements failed: ${String(error)}`,
+        'error',
+      )
     }
   }
 
   if (rewritten > 0) {
-    log(`reconciled placement snapshots for ${rewritten} completed season(s)`)
+    appLog(
+      'leaderboard',
+      `reconciled placement snapshots for ${rewritten} completed season(s)`,
+      'info',
+    )
   }
   return rewritten
 }

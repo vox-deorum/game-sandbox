@@ -24,6 +24,7 @@ import {
 } from '@game-sandbox/schema'
 import { type AuthUser, namesVisible } from '../auth/identity.js'
 import type { SessionProcess } from '../driver/index.js'
+import { appLog } from '../logging/log-buffer.js'
 import { isBlindRecording, maskPlayers } from '../recordings/view.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
@@ -65,8 +66,8 @@ export interface LiveSessionDeps {
    * failure is best-effort and logged.
    */
   releaseComposedImage?: () => Promise<void> | void
-  /** Backend logger, tagged by the caller with the session id. */
-  log: (message: string) => void
+  /** Participant container diagnostics, kept outside the application log capture. */
+  diagnostic?: (line: string) => void
   idleTimeoutMs: number
   maxDurationMs: number
   killGraceMs: number
@@ -158,7 +159,8 @@ export class LiveSession {
     this.maxTimer = createChargeableTimer({
       budgetMs: this.deps.maxDurationMs,
       inFlightMs: this.deps.llmBlockingInFlightMs,
-      log: (message) => this.deps.log(`session ${this.id}: ${message}`),
+      source: 'session',
+      context: `session ${this.id}`,
       onExpire: () => void this.finalize('time_limit'),
     })
     this.armIdle()
@@ -171,7 +173,7 @@ export class LiveSession {
         return this.finalize(this.deriveReason(info.oomKilled, info.code))
       },
       (error) => {
-        this.deps.log(`session ${this.id}: exit wait failed: ${String(error)}`)
+        appLog('session', `session ${this.id}: exit wait failed: ${String(error)}`, 'error')
         void this.finalize('error')
       },
     )
@@ -185,14 +187,14 @@ export class LiveSession {
         this.onOutputLine(raw)
       }
     } catch (error) {
-      this.deps.log(`session ${this.id}: output stream error: ${String(error)}`)
+      appLog('session', `session ${this.id}: output stream error: ${String(error)}`, 'error')
     }
   }
 
   private async consumeDiagnostics(): Promise<void> {
     try {
       for await (const line of this.process.diagnostics) {
-        this.deps.log(`session ${this.id} [container]: ${line}`)
+        this.deps.diagnostic?.(`session ${this.id} [container]: ${line}`)
       }
     } catch {
       // Diagnostics ending early is harmless; the session's fate is decided by output and exit.
@@ -202,7 +204,7 @@ export class LiveSession {
   private onOutputLine(raw: string): void {
     const line = classifyOutbound(raw)
     if (line.type === 'malformed') {
-      this.deps.log(`session ${this.id}: dropping malformed container line: ${raw}`)
+      appLog('session', `session ${this.id}: dropping malformed container line: ${raw}`, 'warn')
       return
     }
     if (line.type === 'recording') {
@@ -236,7 +238,9 @@ export class LiveSession {
     this.status = 'running'
     this.deps.storage
       .markRunning(this.id)
-      .catch((error) => this.deps.log(`session ${this.id}: markRunning failed: ${String(error)}`))
+      .catch((error) =>
+        appLog('session', `session ${this.id}: markRunning failed: ${String(error)}`, 'error'),
+      )
     this.broadcast(sessionEnvelope('running'))
   }
 
@@ -457,7 +461,7 @@ export class LiveSession {
   private handleClientMessage(raw: string, isOwner: boolean): void {
     const parsed = parseCommand(raw)
     if (!parsed.ok) {
-      this.deps.log(`session ${this.id}: ignoring command (${parsed.reason})`)
+      appLog('session', `session ${this.id}: ignoring command (${parsed.reason})`, 'warn')
       return
     }
     // Only the owner drives a session; a spectator's commands are ignored.
@@ -483,7 +487,11 @@ export class LiveSession {
         return
       }
       if (this.messaging.cap !== null && codePointLength(command.text) > this.messaging.cap) {
-        this.deps.log(`session ${this.id}: dropping over-cap chat from ${command.player}`)
+        appLog(
+          'session',
+          `session ${this.id}: dropping over-cap chat from ${command.player}`,
+          'warn',
+        )
         return
       }
     }
@@ -583,7 +591,7 @@ export class LiveSession {
     try {
       await this.deps.revokeLlm?.()
     } catch (error) {
-      this.deps.log(`session ${this.id}: LLM revocation failed: ${String(error)}`)
+      appLog('session', `session ${this.id}: LLM revocation failed: ${String(error)}`, 'error')
     }
 
     // Ask politely (the container flushes its recording and exits), then force the teardown.
@@ -593,7 +601,7 @@ export class LiveSession {
       await this.process.kill(this.deps.killGraceMs)
     } catch (error) {
       killFailed = true
-      this.deps.log(`session ${this.id}: kill failed: ${String(error)}`)
+      appLog('session', `session ${this.id}: kill failed: ${String(error)}`, 'error')
     }
 
     // The process can flush its first recording lines while handling STOP or during the forced-kill
@@ -610,7 +618,7 @@ export class LiveSession {
     try {
       await this.deps.storage.markEnded(this.id, reason, new Date().toISOString())
     } catch (error) {
-      this.deps.log(`session ${this.id}: markEnded failed: ${String(error)}`)
+      appLog('session', `session ${this.id}: markEnded failed: ${String(error)}`, 'error')
     }
 
     // Register only a recording that produced a readable header. A container that failed before its
@@ -626,7 +634,7 @@ export class LiveSession {
           llm_session_id: this.llmEnabled ? this.id : null,
         })
       } catch (error) {
-        this.deps.log(`session ${this.id}: createRecording failed: ${String(error)}`)
+        appLog('session', `session ${this.id}: createRecording failed: ${String(error)}`, 'error')
       }
     }
 
@@ -638,7 +646,7 @@ export class LiveSession {
         }
       } catch (error) {
         // Fail safe: an uncertain association keeps the scope for startup recovery.
-        this.deps.log(`session ${this.id}: LLM scope cleanup failed: ${String(error)}`)
+        appLog('session', `session ${this.id}: LLM scope cleanup failed: ${String(error)}`, 'error')
       }
     }
 
@@ -647,7 +655,7 @@ export class LiveSession {
     try {
       await this.deps.settleRecording?.(this.recordingId)
     } catch (error) {
-      this.deps.log(`session ${this.id}: settling recording failed: ${String(error)}`)
+      appLog('session', `session ${this.id}: settling recording failed: ${String(error)}`, 'error')
     }
 
     // The container is gone, so a composed session-overlay image has served its single purpose;
@@ -656,7 +664,11 @@ export class LiveSession {
     try {
       await this.deps.releaseComposedImage?.()
     } catch (error) {
-      this.deps.log(`session ${this.id}: releasing composed image failed: ${String(error)}`)
+      appLog(
+        'session',
+        `session ${this.id}: releasing composed image failed: ${String(error)}`,
+        'error',
+      )
     }
 
     this.broadcast(sessionEnvelope('ended', reason))
@@ -708,7 +720,7 @@ export class LiveSession {
       this.safeClose(socket)
     }
     if (options.log !== undefined) {
-      this.deps.log(options.log)
+      appLog('session', options.log, 'warn')
     }
   }
 

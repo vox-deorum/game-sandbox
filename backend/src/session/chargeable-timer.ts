@@ -1,3 +1,5 @@
+import { appLog, type LogSource } from '../logging/log-buffer.js'
+
 export interface ChargeableTimer {
   timedOut(): boolean
   stop(): void
@@ -7,7 +9,9 @@ export interface ChargeableTimerOptions {
   budgetMs: number
   inFlightMs?: () => number
   onExpire: () => void
-  log: (message: string) => void
+  source: LogSource
+  /** Names the owning session or run in the timer's log entries, e.g. `session s1`. */
+  context: string
 }
 
 /** Start a wall-clock timer that excludes verified proxy time without bridging unavailable samples. */
@@ -75,9 +79,13 @@ function readInFlightMs(options: ChargeableTimerOptions): number | null {
     if (typeof reported === 'number' && Number.isFinite(reported)) {
       return Math.max(0, reported)
     }
-    options.log('LLM in-flight timing was not finite')
+    appLog(options.source, `${options.context}: LLM in-flight timing was not finite`, 'warn')
   } catch (error) {
-    options.log(`LLM in-flight timing failed: ${String(error)}`)
+    appLog(
+      options.source,
+      `${options.context}: LLM in-flight timing failed: ${String(error)}`,
+      'warn',
+    )
   }
   return null
 }

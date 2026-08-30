@@ -25,6 +25,7 @@ import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandb
 import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
+import { appLog } from '../logging/log-buffer.js'
 import { sessionRecordingsScopeDir, settleSessionRecording } from '../recordings/settle.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
@@ -156,7 +157,8 @@ export interface OrchestratorDeps {
   storage: Storage
   environments: EnvironmentRegistry
   config: Config
-  log?: (message: string) => void
+  /** Participant container diagnostics sent directly to production stderr. */
+  diagnostic?: (line: string) => void
   /**
    * Called after a session finalizes and its recording row is written, so retention can sweep the
    * just-grown data. Defaults to a no-op for tests that do not exercise retention; main wires it to the
@@ -193,7 +195,7 @@ export class Orchestrator {
   private readonly storage: Storage
   private readonly environments: EnvironmentRegistry
   private readonly config: Config
-  private readonly log: (message: string) => void
+  private readonly diagnostic: (line: string) => void
   private readonly onSessionFinalized: (id: string) => void
   private readonly submissionSource?: SubmissionSource
   private readonly submissionSnapshots?: SubmissionSnapshotStore
@@ -207,7 +209,7 @@ export class Orchestrator {
     this.storage = deps.storage
     this.environments = deps.environments
     this.config = deps.config
-    this.log = deps.log ?? (() => {})
+    this.diagnostic = deps.diagnostic ?? (() => {})
     this.onSessionFinalized = deps.onSessionFinalized ?? (() => {})
     this.submissionSource = deps.submissionSource
     this.submissionSnapshots = deps.submissionSnapshots
@@ -495,7 +497,7 @@ export class Orchestrator {
         // A composed session-overlay image is single-use; drop it once the session ends. The driver
         // no-ops when the image is the base or a shared per-submission overlay.
         releaseComposedImage: () => this.driver.releaseSessionOverlay(image.ref),
-        log: this.log,
+        diagnostic: this.diagnostic,
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs,
         killGraceMs: KILL_GRACE_MS,
@@ -513,7 +515,11 @@ export class Orchestrator {
     try {
       this.deleteLlmScope?.(scopeId)
     } catch (error) {
-      this.log(`session ${scopeId}: deleting unused LLM scope failed: ${String(error)}`)
+      appLog(
+        'session',
+        `session ${scopeId}: deleting unused LLM scope failed: ${String(error)}`,
+        'error',
+      )
     }
   }
 
@@ -916,8 +922,10 @@ export class Orchestrator {
     try {
       return await this.userDirectory.namesFor(ids)
     } catch (error) {
-      this.log(
+      appLog(
+        'session',
         `orchestrator: resolving display names failed, falling back to ids: ${String(error)}`,
+        'warn',
       )
       return new Map()
     }

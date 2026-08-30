@@ -16,6 +16,7 @@ import { type GithubProfile, github } from 'better-auth/social-providers'
 import type BetterSqlite3 from 'better-sqlite3'
 
 import type { AuthGithubOptions, AuthOptions } from '../config/config.js'
+import { appLog } from '../logging/log-buffer.js'
 import { ac, roles } from './permissions.js'
 
 /** The provider profile data that has to survive from OAuth callback parsing to a database hook. */
@@ -92,11 +93,7 @@ export function githubProvider(
  * Create Better Auth's database hooks for the GitHub identity. The provider's built-in fetch is
  * wrapped below, so these hooks receive its exact profile without a second GitHub API request.
  */
-function githubIdentityHooks(
-  sqlite: BetterSqlite3.Database,
-  profiles: GithubProfileCapture,
-  log: (message: string) => void,
-) {
+function githubIdentityHooks(sqlite: BetterSqlite3.Database, profiles: GithubProfileCapture) {
   let statements:
     | {
         updateGithubUsername: BetterSqlite3.Statement
@@ -164,7 +161,11 @@ function githubIdentityHooks(
     } catch (error) {
       // A handle is a convenience field. Do not turn a successful OAuth login or link into a lockout
       // when its profile sync fails. A later GitHub authentication captures and retries it.
-      log(`could not synchronize GitHub profile for user ${account.userId}: ${String(error)}`)
+      appLog(
+        'auth',
+        `could not synchronize GitHub profile for user ${account.userId}: ${String(error)}`,
+        'warn',
+      )
     }
   }
 }
@@ -172,7 +173,6 @@ function githubIdentityHooks(
 export function createAuth(
   sqlite: BetterSqlite3.Database,
   options: AuthOptions,
-  log: (message: string) => void = console.warn,
   githubProfiles = new GithubProfileCapture(),
 ) {
   const socialProviders =
@@ -224,7 +224,7 @@ export function createAuth(
         id: 'game-sandbox-github-identity',
         version: '1.0.0',
         init: () => ({
-          options: { databaseHooks: githubIdentityHooks(sqlite, githubProfiles, log) },
+          options: { databaseHooks: githubIdentityHooks(sqlite, githubProfiles) },
         }),
       },
     ],

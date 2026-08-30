@@ -7,9 +7,10 @@
  * `-stage` intermediates) — the properties the real Docker `listOverlayImages`/`removeImage` then
  * ride in the Docker-gated suite.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { OverlayImage, OverlayImageManager } from '../../src/driver/index.js'
+import { configureAppLogs, createLogBuffer, resetAppLogs } from '../../src/logging/log-buffer.js'
 import {
   OverlayEviction,
   type OverlayEvictionConfig,
@@ -133,6 +134,8 @@ describe('overlay eviction — budget trim', () => {
 })
 
 describe('overlay eviction — debris and failure tolerance', () => {
+  afterEach(() => resetAppLogs())
+
   it('reclaims an image whose submission id matches no active row as ordinary non-exempt debris', async () => {
     // An orphan from a crash between building the image and writing its row: no matching ready id,
     // so it is simply non-exempt and evictable — reclaimed, not crashed on.
@@ -149,12 +152,11 @@ describe('overlay eviction — debris and failure tolerance', () => {
       failRemove: (ref) => ref === 'overlay:s1',
     })
     const logged: string[] = []
-    const eviction = new OverlayEviction(
-      driver,
-      readyReader([]),
-      { ...BIG_BUDGET, overlayImageBudget: 0 },
-      (message) => logged.push(message),
-    )
+    configureAppLogs(createLogBuffer({ sink: (message) => logged.push(message) }))
+    const eviction = new OverlayEviction(driver, readyReader([]), {
+      ...BIG_BUDGET,
+      overlayImageBudget: 0,
+    })
 
     await expect(eviction.sweep()).resolves.toBeUndefined()
     // s1's removal failed (logged), but s2 was still reclaimed.
@@ -165,7 +167,8 @@ describe('overlay eviction — debris and failure tolerance', () => {
   it('is a no-op when enumerating images fails', async () => {
     const driver = new FakeOverlayDriver([image('s1', 1)], { failList: true })
     const logged: string[] = []
-    const eviction = new OverlayEviction(driver, readyReader([]), BIG_BUDGET, (m) => logged.push(m))
+    configureAppLogs(createLogBuffer({ sink: (message) => logged.push(message) }))
+    const eviction = new OverlayEviction(driver, readyReader([]), BIG_BUDGET)
 
     await expect(eviction.sweep()).resolves.toBeUndefined()
     expect(driver.removed).toEqual([])

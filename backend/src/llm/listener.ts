@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 
+import { appLog } from '../logging/log-buffer.js'
 import { asLlmError, invalidRequest, LlmError, readBearer } from './errors.js'
 import type { LlmHandler } from './handler.js'
 import type { KeyRegistry } from './key-registry.js'
@@ -7,7 +8,6 @@ import type { KeyRegistry } from './key-registry.js'
 export interface LlmListenerDeps {
   registry: KeyRegistry
   handler: LlmHandler
-  log?: (message: string) => void
 }
 
 /** Build the backend-internal OpenAI-compatible listener without binding a port. */
@@ -57,7 +57,7 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
 
   // Fastify owns JSON parsing. Normalize its malformed-JSON response to the same pinned envelope.
   app.setErrorHandler((error, _request, reply) => {
-    deps.log?.('LLM listener rejected malformed request')
+    appLog('llm', 'LLM listener rejected malformed request', 'warn')
     const normalized =
       error instanceof LlmError
         ? error

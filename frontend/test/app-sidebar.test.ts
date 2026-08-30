@@ -21,6 +21,7 @@ function makeRouter() {
       { path: '/my/agents', component: { template: '<div />' } },
       { path: '/my/profile', component: { template: '<div />' } },
       { path: '/admin/users', component: { template: '<div />' } },
+      { path: '/admin/logs', component: { template: '<div />' } },
       { path: '/environments/:envId', component: { template: '<div />' } },
       { path: '/login', component: { template: '<div />' } },
     ],
@@ -63,15 +64,17 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('link', { name: 'Environments' })).not.toHaveClass('active')
   })
 
-  it('shows the Users entry, last, only for an admin', async () => {
+  it('shows the Users then Logs entries, last, only for an admin', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('admin-1', 'admin'))
     await renderSidebar('/')
 
     const users = await screen.findByRole('link', { name: 'Users' })
+    const logs = screen.getByRole('link', { name: 'Logs' })
     expect(users).toHaveAttribute('href', '/admin/users')
+    expect(logs).toHaveAttribute('href', '/admin/logs')
 
     const links = screen.getAllByRole('link').filter((link) => link.hasAttribute('aria-label'))
-    expect(links[links.length - 1]).toBe(users)
+    expect(links.slice(-2)).toEqual([users, logs])
   })
 
   it('hides the Users entry for a normal user', async () => {
@@ -80,5 +83,6 @@ describe('AppSidebar', () => {
 
     await screen.findByRole('link', { name: 'Environments' })
     expect(screen.queryByRole('link', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Logs' })).toBeNull()
   })
 })

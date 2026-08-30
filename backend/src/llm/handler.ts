@@ -1,3 +1,4 @@
+import { appLog } from '../logging/log-buffer.js'
 import { describeError, invalidRequest, LlmError } from './errors.js'
 import type { LlmMeter } from './meter.js'
 import type { LlmTokenCounter } from './tokenizer.js'
@@ -17,8 +18,6 @@ export interface LlmHandlerDeps {
   tokenizer: LlmTokenCounter
   upstream: Pick<UpstreamCaller, 'call'>
   options: LlmHandlerOptions
-  /** Diagnostic sink for provider spend this process could not account for. */
-  log?: (message: string) => void
 }
 
 export interface LlmRequestLifecycle {
@@ -107,8 +106,10 @@ export class LlmHandler {
       // scope stays open. The provider was still paid, so the unaccounted spend is worth a record.
       if (reservation.active) {
         this.deps.meter.release(reservation)
-        this.deps.log?.(
+        appLog(
+          'llm',
           `LLM handler ${grant.accountingScope.key}: ${alias} spend was not accounted: ${describeError(error)}`,
+          'error',
         )
       }
       throw error

@@ -8,7 +8,7 @@
   RouterLink's prefix matching, because the "Games" root would otherwise read as active everywhere.
 -->
 <script setup lang="ts">
-import { Bot, BookOpen, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, Users, X } from '@lucide/vue'
+import { Bot, BookOpen, FileText, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, Users, X } from '@lucide/vue'
 import { computed, type FunctionalComponent } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -37,11 +37,14 @@ const me = useMe()
 const { collapsed, toggleCollapsed, closeMobile } = useSidebar()
 const { siteIconUrl, siteName } = useSiteConfig()
 
-// The roster page is an admin-only affordance, appended last so the student-facing order above is
-// unchanged for everyone else.
+// The operator-only pages follow the student-facing items, with the roster before the process logs.
 const items = computed<NavItem[]>(() =>
   isAdmin(me.me)
-    ? [...baseItems, { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] }]
+    ? [
+        ...baseItems,
+        { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] },
+        { label: 'Logs', to: '/admin/logs', icon: FileText, match: ['/admin/logs'] },
+      ]
     : baseItems,
 )
 

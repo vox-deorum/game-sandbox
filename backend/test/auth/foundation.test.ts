@@ -23,6 +23,7 @@ import {
   DEV_AUTH_SECRET,
   loadConfig as parseConfig,
 } from '../../src/config/config.js'
+import { configureAppLogs, createLogBuffer, resetAppLogs } from '../../src/logging/log-buffer.js'
 import { Retention } from '../../src/recordings/retention.js'
 import { RecordingsStore } from '../../src/recordings/store.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
@@ -145,7 +146,7 @@ describe('auth schema migration', () => {
       ALTER TABLE "user" DROP COLUMN githubUsername;
     `)
 
-    const auth = createAuth(handle.sqlite, makeConfig().auth, () => {})
+    const auth = createAuth(handle.sqlite, makeConfig().auth)
     await migrateAuthSchema(auth, handle.sqlite)
 
     expect(
@@ -290,6 +291,7 @@ describe('GitHub identity hooks', () => {
   })
 
   afterEach(async () => {
+    resetAppLogs()
     await handle.storage.close()
   })
 
@@ -361,7 +363,7 @@ describe('GitHub identity hooks', () => {
   })
 
   it('keeps both GitHub unique indexes as backstops', async () => {
-    const auth = createAuth(handle.sqlite, makeConfig().auth, () => {})
+    const auth = createAuth(handle.sqlite, makeConfig().auth)
     await migrateAuthSchema(auth, handle.sqlite)
     handle.sqlite.exec('DROP TRIGGER account_github_refuse_conflict')
     const insertUser = handle.sqlite.prepare(
@@ -387,13 +389,13 @@ describe('GitHub identity hooks', () => {
   it('uses GitHub numeric ids, syncs a linked handle and email, rejects a second link, and clears on unlink', async () => {
     const profiles = new GithubProfileCapture()
     const logs: string[] = []
+    configureAppLogs(createLogBuffer({ sink: (message) => logs.push(message) }))
     const auth = createAuth(
       handle.sqlite,
       {
         ...makeConfig().auth,
         github: { clientId: 'github-client', clientSecret: 'github-secret' },
       },
-      (message) => logs.push(message),
       profiles,
     )
     // This is deliberately the first operation after createAuth. The hook statements must stay lazy
@@ -498,7 +500,6 @@ describe('GitHub identity hooks', () => {
     expect(logs).toEqual([
       expect.stringContaining(`could not synchronize GitHub profile for user ${created.user.id}`),
     ])
-
     profiles.capture(
       { id: 456 as unknown as string, login: 'second-octo' } as GithubProfile,
       'second@test.local',
@@ -615,7 +616,7 @@ describe('email and password sign-in over app.inject', () => {
   beforeEach(async () => {
     fx = await setupAuthApp()
     ;({ handle, app } = fx)
-    await ensureAdminUser(fx.auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(fx.auth, SEED_ADMIN)
   })
 
   afterEach(async () => {
@@ -717,14 +718,14 @@ describe('ensureAdminUser', () => {
   })
 
   it('creates the reserved-id admin once and is a no-op on re-run', async () => {
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
     const first = await auth.api.signInEmail({
       body: { email: SEED_ADMIN.email, password: SEED_ADMIN.password },
     })
     expect(first.user.id).toBe(BOOTSTRAP_ADMIN_ID)
     expect(adminCount(handle.sqlite)).toBe(1)
 
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
     expect(adminCount(handle.sqlite)).toBe(1)
     const again = await auth.api.signInEmail({
       body: { email: SEED_ADMIN.email, password: SEED_ADMIN.password },
@@ -733,12 +734,12 @@ describe('ensureAdminUser', () => {
   })
 
   it('heals a demoted admin and moves to new credentials on re-run', async () => {
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
 
     // Demote and simulate drift, then re-sync from new configuration.
     handle.sqlite.prepare("UPDATE user SET role = 'user' WHERE id = ?").run(BOOTSTRAP_ADMIN_ID)
     const rotated = { email: 'root2@test.local', password: 'root2-password-456', name: 'Root Two' }
-    await ensureAdminUser(auth, rotated, () => {})
+    await ensureAdminUser(auth, rotated)
 
     const signIn = await auth.api.signInEmail({
       body: { email: rotated.email, password: rotated.password },
@@ -763,11 +764,11 @@ describe('ensureAdminUser', () => {
         role: 'user',
       },
     })
-    await expect(ensureAdminUser(auth, SEED_ADMIN, () => {})).rejects.toThrow(/refusing to start/)
+    await expect(ensureAdminUser(auth, SEED_ADMIN)).rejects.toThrow(/refusing to start/)
   })
 
   it('revokes existing admin sessions when the password rotates', async () => {
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
     const signIn = await auth.api.signInEmail({
       body: { email: SEED_ADMIN.email, password: SEED_ADMIN.password },
       returnHeaders: true,
@@ -780,13 +781,13 @@ describe('ensureAdminUser', () => {
     expect(before?.user.id).toBe(BOOTSTRAP_ADMIN_ID)
 
     // A changed password rotates the hash and revokes every existing session, so the old cookie dies.
-    await ensureAdminUser(auth, { ...SEED_ADMIN, password: 'a-rotated-password-123' }, () => {})
+    await ensureAdminUser(auth, { ...SEED_ADMIN, password: 'a-rotated-password-123' })
     const after = await auth.api.getSession({ headers: new Headers({ cookie }) })
     expect(after).toBeNull()
   })
 
   it('keeps existing admin sessions when the password is unchanged', async () => {
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
     const signIn = await auth.api.signInEmail({
       body: { email: SEED_ADMIN.email, password: SEED_ADMIN.password },
       returnHeaders: true,
@@ -797,7 +798,7 @@ describe('ensureAdminUser', () => {
       .join('; ')
 
     // An ordinary restart with unchanged configuration must not log the admin out.
-    await ensureAdminUser(auth, SEED_ADMIN, () => {})
+    await ensureAdminUser(auth, SEED_ADMIN)
     const after = await auth.api.getSession({ headers: new Headers({ cookie }) })
     expect(after?.user.id).toBe(BOOTSTRAP_ADMIN_ID)
   })

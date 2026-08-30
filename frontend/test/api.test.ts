@@ -7,6 +7,7 @@ import {
   configureSeason,
   declareSeason,
   deleteSeason,
+  getAdminLogs,
   getAgentFeedback,
   getAuthorPrompt,
   getEnvironmentLeaderboards,
@@ -118,6 +119,32 @@ describe('api client', () => {
   it('returns the signed-in session user and status from /api/me', async () => {
     stubFetch(async () => jsonResponse(signedInMe('dev-user', 'admin')))
     expect(await getMe()).toEqual(signedInMe('dev-user', 'admin'))
+  })
+
+  it('serializes process-log filters and forwards an abort signal', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({
+        boot_id: 'boot-1',
+        entries: [],
+        oldest_seq: 1,
+        latest_seq: 4,
+        history_truncated: false,
+        retained_count: 4,
+        retained_bytes: 512,
+        sources: ['http'],
+      }),
+    )
+    const controller = new AbortController()
+
+    await getAdminLogs(
+      { afterSeq: 4, level: 'warn', source: 'http', q: '  request failed  ' },
+      { signal: controller.signal },
+    )
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/admin/logs?after_seq=4&level=warn&source=http&q=request+failed',
+    )
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBe(controller.signal)
   })
 
   it('returns { user: null } from /api/me for an anonymous visitor', async () => {

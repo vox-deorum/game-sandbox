@@ -22,6 +22,7 @@
  * or pre-backfill data) is listed header-only and never evicted.
  */
 
+import { appLog } from '../logging/log-buffer.js'
 import type { Recording, RecordingCleanupClaimResult, Storage } from '../storage/index.js'
 import { SweepTimer } from '../util/sweep-timer.js'
 import type { RecordingsStore } from './store.js'
@@ -81,7 +82,6 @@ export interface StartupLlmTelemetryReclaimer extends LlmTelemetryReclaimer {
 export async function reclaimOrphanedOfficialTelemetry(
   storage: Pick<Storage, 'listRecordings'>,
   telemetry: StartupLlmTelemetryReclaimer,
-  log: (message: string) => void = () => {},
 ): Promise<void> {
   try {
     const recordings = await storage.listRecordings()
@@ -92,7 +92,11 @@ export async function reclaimOrphanedOfficialTelemetry(
     )
     telemetry.deleteOrphanedScopes(referenced)
   } catch (error) {
-    log(`retention: startup LLM telemetry cleanup failed: ${String(error)}`)
+    appLog(
+      'retention',
+      `retention: startup LLM telemetry cleanup failed: ${String(error)}`,
+      'error',
+    )
   }
 }
 
@@ -105,7 +109,6 @@ export class Retention {
     private readonly storage: Storage,
     private readonly recordings: RecordingsStore,
     private readonly config: RetentionConfig,
-    private readonly log: (message: string) => void = () => {},
     /** Injectable wall clock so the window sweep is testable without real time. */
     private readonly now: () => number = Date.now,
     /** Optional: LLM telemetry scopes are reclaimed with the last recording that references them. */
@@ -143,7 +146,7 @@ export class Retention {
     try {
       allRows = await this.storage.listRecordings()
     } catch (error) {
-      this.log(`retention: listing rows failed: ${String(error)}`)
+      appLog('retention', `retention: listing rows failed: ${String(error)}`, 'error')
       return
     }
 
@@ -154,7 +157,11 @@ export class Retention {
     try {
       protectedIds = new Set(await this.storage.listProtectedLeaderboardRecordingIds())
     } catch (error) {
-      this.log(`retention: listing protected leaderboard recordings failed: ${String(error)}`)
+      appLog(
+        'retention',
+        `retention: listing protected leaderboard recordings failed: ${String(error)}`,
+        'error',
+      )
       return
     }
     // Filter protected ids out before either pass, so they are neither evicted nor counted toward a
@@ -207,7 +214,7 @@ export class Retention {
     try {
       return await this.storage.claimRecordingCleanup(row.id)
     } catch (error) {
-      this.log(`retention: evicting ${row.id} failed: ${String(error)}`)
+      appLog('retention', `retention: evicting ${row.id} failed: ${String(error)}`, 'error')
       return 'error'
     }
   }
@@ -228,7 +235,7 @@ export class Retention {
     try {
       queue = await this.storage.listRecordingCleanupQueue()
     } catch (error) {
-      this.log(`retention: listing cleanup queue failed: ${String(error)}`)
+      appLog('retention', `retention: listing cleanup queue failed: ${String(error)}`, 'error')
       return
     }
     for (const item of queue) {
@@ -236,7 +243,11 @@ export class Retention {
       // whole item — directory included — rather than deleting the directory now and stranding a row
       // that could never be completed; a reclaimer-equipped sweep will finish it.
       if (item.llm_scope_id !== null && this.llmTelemetry === undefined) {
-        this.log(`retention: no telemetry reclaimer for ${item.recording_id}; deferring cleanup`)
+        appLog(
+          'retention',
+          `retention: no telemetry reclaimer for ${item.recording_id}; deferring cleanup`,
+          'warn',
+        )
         continue
       }
       try {
@@ -246,7 +257,11 @@ export class Retention {
         }
         await this.storage.completeRecordingCleanup(item.recording_id)
       } catch (error) {
-        this.log(`retention: cleaning ${item.recording_id} failed: ${String(error)}`)
+        appLog(
+          'retention',
+          `retention: cleaning ${item.recording_id} failed: ${String(error)}`,
+          'error',
+        )
       }
     }
   }

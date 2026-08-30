@@ -30,6 +30,7 @@
  * seam and reads one storage method, learning no Docker specifics.
  */
 import type { OverlayImage, OverlayImageManager } from '../driver/index.js'
+import { appLog } from '../logging/log-buffer.js'
 import type { Storage } from '../storage/index.js'
 import { SweepTimer } from '../util/sweep-timer.js'
 
@@ -53,7 +54,6 @@ export class OverlayEviction {
     private readonly driver: OverlayImageManager,
     private readonly storage: ActiveReadyReader,
     private readonly config: OverlayEvictionConfig,
-    private readonly log: (message: string) => void = () => {},
   ) {
     this.timer = new SweepTimer(() => void this.sweep(), this.config.overlayImageSweepIntervalMs)
   }
@@ -82,7 +82,11 @@ export class OverlayEviction {
     try {
       images = await this.driver.listOverlayImages()
     } catch (error) {
-      this.log(`overlay-eviction: listing images failed: ${String(error)}`)
+      appLog(
+        'overlay-eviction',
+        `overlay-eviction: listing images failed: ${String(error)}`,
+        'error',
+      )
       return
     }
 
@@ -90,7 +94,11 @@ export class OverlayEviction {
     try {
       exemptIds = await this.storage.listActiveReadySubmissionIds()
     } catch (error) {
-      this.log(`overlay-eviction: reading active submissions failed: ${String(error)}`)
+      appLog(
+        'overlay-eviction',
+        `overlay-eviction: reading active submissions failed: ${String(error)}`,
+        'error',
+      )
       return
     }
     const exempt = new Set(exemptIds)
@@ -108,7 +116,11 @@ export class OverlayEviction {
       try {
         await this.driver.removeImage(ref)
       } catch (error) {
-        this.log(`overlay-eviction: removing ${ref} failed: ${String(error)}`)
+        appLog(
+          'overlay-eviction',
+          `overlay-eviction: removing ${ref} failed: ${String(error)}`,
+          'error',
+        )
       }
     }
   }

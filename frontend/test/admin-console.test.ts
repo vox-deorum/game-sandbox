@@ -697,7 +697,7 @@ describe('AdminConsolePage', () => {
   it('declares a new season through the admin API', async () => {
     vi.mocked(declareSeason).mockResolvedValue(season({ id: 'iter-2', label: 'Week 2' }))
     const { router } = await renderConsole()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Declare' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Declare season' }))
     expect(vi.mocked(declareSeason)).toHaveBeenCalledWith('flappy_bird', {})
     // The declared season becomes the selection, which the URL reflects.
     await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
@@ -1443,9 +1443,9 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByRole('button', { name: 'Check leaderboard' })).toBeDisabled()
   })
 
-  it('shows a View leaderboard link from the season header', async () => {
+  it('shows a Leaderboard link from the season header', async () => {
     await renderConsole()
-    const link = await screen.findByRole('link', { name: 'View leaderboard' })
+    const link = await screen.findByRole('link', { name: 'Leaderboard' })
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-1')
   })
 

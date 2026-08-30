@@ -37,6 +37,8 @@ A ban is separate from status. Banning a user revokes their login sessions and p
 
 The Users page lets an admin list and search the roster, create an email and password account, approve a pending user, promote or demote an admin, ban or unban a user, and reset a password. Creating a user offers the `guest` role choice, and a `Guests` filter tab lists those accounts; a guest can be promoted to a normal member from the roster.
 
+The Logs page lets an admin view recent structured application messages retained by the current backend process. It is an administrative diagnostic surface, not a participant activity feed, and it is available only to an authenticated account with `admin` status. The page does not expose participant container diagnostics or direct console output paths. See [Deployment](deployment.md#process-logs) for retention and restart behavior.
+
 A fresh deployment has no users, so one admin identity is seeded from configuration. This bootstrap admin has a stable system identity, and its email, display name, password, admin status, and ban state are restored from deployment configuration at startup.
 
 ## Session-derived identity

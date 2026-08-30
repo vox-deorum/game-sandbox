@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks'
 
+import { appLog } from '../logging/log-buffer.js'
 import { describeError, LlmError } from './errors.js'
 import {
   type LlmAccountingScope,
@@ -32,20 +33,17 @@ export interface LlmReservation {
 
 export interface LlmMeterOptions {
   now?: () => number
-  log?: (message: string) => void
 }
 
 /** Process-lifetime reservations, rate windows, and unavailable accounting scopes. */
 export class LlmMeter {
   private readonly states = new Map<string, MeterState>()
   private readonly now: () => number
-  private readonly log: (message: string) => void
 
   constructor(options: LlmMeterOptions = {}) {
     // The window only ever compares its own readings, so a monotonic clock keeps a wall-clock step
     // (e.g. an NTP correction) from stranding an event in the window or expiring it early.
     this.now = options.now ?? (() => performance.now())
-    this.log = options.log ?? (() => {})
   }
 
   /** Atomically read committed usage, check the scope, and reserve it as one sync section. */
@@ -162,7 +160,11 @@ export class LlmMeter {
     try {
       scope.verifyWritable()
     } catch (error) {
-      this.log(`LLM meter ${scope.key}: storage preflight failed: ${describeError(error)}`)
+      appLog(
+        'llm',
+        `LLM meter ${scope.key}: storage preflight failed: ${describeError(error)}`,
+        'warn',
+      )
       throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
     }
   }
@@ -172,7 +174,7 @@ export class LlmMeter {
     const state = this.state(scope.key)
     if (state.unavailable) return
     state.unavailable = true
-    this.log(`LLM meter ${scope.key}: usage accounting is unavailable until restart`)
+    appLog('llm', `LLM meter ${scope.key}: usage accounting is unavailable until restart`, 'error')
   }
 
   inspect(key: string): Readonly<MeterState> {

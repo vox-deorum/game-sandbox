@@ -18,6 +18,7 @@ import type {
   LlmModelUsage as SchemaLlmModelUsage,
   LlmUsageByModel as SchemaLlmUsageByModel,
 } from '@game-sandbox/schema/llm'
+import type { LogLevel, LogSource } from '@game-sandbox/schema/logs'
 import type { SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
 
 const API_BASE = '/api'
@@ -1842,4 +1843,58 @@ export async function listAdminLlmDevelopmentCalls(
     ),
     'GET /admin/seasons/:seasonId/llm-development/users/:userId/calls',
   )) as LlmDevelopmentCallPage
+}
+
+// --- Process log viewer --------------------------------------------------------------------
+
+/** The severities the backend process-log buffer retains, from the shared schema vocabulary. */
+export type BackendLogLevel = LogLevel
+
+/** The subsystem names emitted by the backend process-log buffer, from the shared schema vocabulary. */
+export type BackendLogSource = LogSource
+
+/** One retained log line, with a monotonically increasing sequence number within its boot. */
+export interface BackendLogEntry {
+  seq: number
+  time: string
+  level: BackendLogLevel
+  source: BackendLogSource
+  message: string
+}
+
+/** The process-log snapshot or tail response served to operators. */
+export interface AdminLogsResponse {
+  boot_id: string
+  entries: BackendLogEntry[]
+  oldest_seq: number | null
+  latest_seq: number
+  history_truncated: boolean
+  retained_count: number
+  retained_bytes: number
+  sources: BackendLogSource[]
+}
+
+export interface AdminLogsParams {
+  afterSeq?: number
+  level?: BackendLogLevel
+  source?: BackendLogSource
+  q?: string
+}
+
+/** Read a current-process log snapshot or, with `afterSeq`, only its newer retained entries. */
+export async function getAdminLogs(
+  params: AdminLogsParams = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<AdminLogsResponse> {
+  const query = new URLSearchParams()
+  if (params.afterSeq !== undefined) query.set('after_seq', String(params.afterSeq))
+  if (params.level !== undefined) query.set('level', params.level)
+  if (params.source !== undefined) query.set('source', params.source)
+  const trimmedQuery = params.q?.trim()
+  if (trimmedQuery) query.set('q', trimmedQuery)
+  const suffix = query.size === 0 ? '' : `?${query.toString()}`
+  return (await json(
+    await request(`/admin/logs${suffix}`, { signal: options.signal }),
+    'GET /admin/logs',
+  )) as AdminLogsResponse
 }

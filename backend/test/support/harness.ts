@@ -16,6 +16,7 @@ import { createUserDirectory, type UserDirectory } from '../../src/auth/users.js
 import type { Config } from '../../src/config/config.js'
 import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
+import { configureAppLogs, type LogBuffer, resetAppLogs } from '../../src/logging/log-buffer.js'
 import { Retention } from '../../src/recordings/retention.js'
 import { RecordingsStore } from '../../src/recordings/store.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
@@ -85,6 +86,8 @@ export interface OpenTestAppOptions {
   docsIndexFile?: string
   llmDevelopment?: AppDeps['llmDevelopment']
   officialTelemetry?: AppDeps['officialTelemetry']
+  logs?: LogBuffer
+  beforeReady?: (app: FastifyInstance) => void
 }
 
 /** A complete Docker-free app fixture and the handles API tests commonly need. */
@@ -107,6 +110,7 @@ export interface TestApp {
  * Every non-core app dependency is a named override, so a suite keeps its special seams visible.
  */
 export async function openTestApp(options: OpenTestAppOptions = {}): Promise<TestApp> {
+  if (options.logs !== undefined) configureAppLogs(options.logs)
   const rootDir = mkdtempSync(join(tmpdir(), 'gs-app-test-'))
   const stack = await openTestStack()
   const config =
@@ -161,6 +165,7 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     validationWorker: options.validationWorker ?? submissionDeps.validationWorker,
     allowLocalSubmissions: options.allowLocalSubmissions ?? submissionDeps.allowLocalSubmissions,
   })
+  options.beforeReady?.(app)
   await app.ready()
 
   let closePromise: Promise<void> | undefined
@@ -183,6 +188,7 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
             await app.close()
           } finally {
             await stack.storage.close()
+            resetAppLogs()
             rmSync(rootDir, { recursive: true, force: true })
           }
         }

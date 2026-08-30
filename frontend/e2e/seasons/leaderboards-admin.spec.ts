@@ -321,7 +321,7 @@ test('a full season: submissions, an automated run, then left open for peer rati
     await page.goto(`/environments/${ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SEASONS.competition) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SEASONS.competition}` })).toBeVisible()
-    await page.getByRole('link', { name: 'View leaderboard' }).click()
+    await page.getByRole('link', { name: 'Leaderboard' }).click()
     await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}`))
     await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
     const ratingsTables = page.locator('.ratings-tables')

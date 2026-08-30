@@ -28,6 +28,7 @@ import type { DevelopmentKeyService } from './llm/development-keys.js'
 import { registerDevelopmentLlmRoutes } from './llm/development-routes.js'
 import type { LlmHandler } from './llm/handler.js'
 import { registerRecordingLlmRoutes } from './llm/recording-routes.js'
+import { appLog } from './logging/log-buffer.js'
 import { registerMyAgentRoutes } from './my-agents/routes.js'
 import { registerRatingRoutes } from './ratings/routes.js'
 import type { Retention } from './recordings/retention.js'
@@ -113,6 +114,18 @@ export interface AppDeps {
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
+  app.addHook('onError', (request, _reply, error, done) => {
+    const route = request.routeOptions.url ?? request.url.split('?')[0]
+    // A client-classified failure (4xx, e.g. malformed JSON on a pre-auth body parse) must not fill
+    // the operator's error view or evict retained server-fault history at error severity.
+    const clientFault = typeof error.statusCode === 'number' && error.statusCode < 500
+    appLog(
+      'http',
+      `${request.method} ${route}: ${error instanceof Error ? error.message : String(error)}`,
+      clientFault ? 'warn' : 'error',
+    )
+    done()
+  })
   await app.register(websocket)
 
   // Resolve every request through one shared identity so its per-request cache covers all domains.

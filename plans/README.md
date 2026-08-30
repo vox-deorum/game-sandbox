@@ -7,6 +7,7 @@ The [specification](../docs/specs/index.md) defines the system. This folder trac
 - [fullscreen.md](fullscreen.md) is the completed, current feature: full-screen presentation for every renderer on the shared stage.
 - [branding.md](branding.md) is the completed, current deployment-branding feature: the bundled Game Sandbox icon and third-party overrides.
 - [guest-accounts.md](guest-accounts.md) is the completed, current feature: guest accounts and anonymous name masking.
+- [admin-log-viewer.md](admin-log-viewer.md) is the completed, current feature: the admin current-process structured log viewer.
 - [archived/](archived/README.md) holds the completed platform stages (1 through 19) and the conventions they followed.
 
 Except for archived/, the plan is a living description of the current intended build path. Read the relevant specification and stage file before implementation, update the stage status when work starts and finishes, and revise the stage file in the same change when an implementation choice, interface, scope, or stage boundary changes. A pull request that changes planned behavior without touching the corresponding stage file is incomplete.

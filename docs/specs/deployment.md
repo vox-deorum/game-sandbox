@@ -11,6 +11,14 @@ The process runs in one of two modes:
 
 Both modes run the same application code. Containerized mode packages the process behind a managed TLS boundary so a deployment becomes one `docker compose up`.
 
+## Process logs
+
+The backend keeps a best-effort structured application log in memory for the current Node process. The serialized entries share a 4 MiB retained-memory budget, with no separate count limit, and older entries leave the buffer when the budget is full. Restarting the process clears the buffer, so the Logs page is not a durable history.
+
+Each entry has an ISO timestamp, sequence number, message, and one of the explicit levels `info`, `warn`, or `error`. Its source is one of `main`, `http`, `llm`, `auth`, `retention`, `overlay-eviction`, `session`, `workflow`, `leaderboard`, or `submission`. The retained application log covers the current backend process only. Participant container diagnostics are excluded, as are direct console paths that do not use the application logger.
+
+Application messages still go to standard error so an external host or container collector can collect them. Standard error is not durable storage, and the application makes no durability claim for that stream or for the in-memory Logs page.
+
 ## Containerized mode
 
 The app container mounts the daemon socket and launches session containers as siblings on the same daemon. Nothing is nested: there is one daemon, and the app is one more container on it. nginx is the only service that publishes site ports.

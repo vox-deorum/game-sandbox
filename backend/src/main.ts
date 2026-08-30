@@ -36,6 +36,7 @@ import {
   UpstreamCaller,
   upstreamRequestAllowanceMs,
 } from './llm/index.js'
+import { appLog, configureAppLogs, createLogBuffer } from './logging/log-buffer.js'
 import { Retention, reclaimOrphanedOfficialTelemetry } from './recordings/retention.js'
 import { RecordingsStore } from './recordings/store.js'
 import { seedOpenSeasons } from './seasons/seed.js'
@@ -52,10 +53,9 @@ import { reconcileInterruptedRuns } from './workflow/runner.js'
 import { createWorkflowRunner } from './workflow/workflow-runner.js'
 
 async function main(): Promise<void> {
+  const logs = createLogBuffer()
+  configureAppLogs(logs)
   const config = loadConfig()
-  const log = (message: string): void => {
-    console.error(message)
-  }
 
   // Stage 9.1 owns an internal listener separate from the public application. It remains absent in
   // deployments that configure no upstream or no public model alias, preserving the pre-LLM path.
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
     config.llm.upstreamUrl !== undefined && Object.keys(config.llm.models).length > 0
   // The meter and durable stores also serve development history and official recording reads. Keep
   // them available when active upstream calling is not configured.
-  const llmMeter = new LlmMeter({ log })
+  const llmMeter = new LlmMeter()
   const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
   // Cap one active call's watchdog discount by configured SDK attempt timeouts and retry waits.
   const upstreamMaxRequestMs = upstreamRequestAllowanceMs(
@@ -88,7 +88,6 @@ async function main(): Promise<void> {
             defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
             maxOutputTokens: config.llm.maxOutputTokens,
           },
-          log,
         })
       : undefined
   const llmListener =
@@ -96,7 +95,6 @@ async function main(): Promise<void> {
       ? await buildLlmListener({
           registry: llmRegistry,
           handler: llmHandler,
-          log,
         })
       : undefined
 
@@ -104,22 +102,18 @@ async function main(): Promise<void> {
   // same SQLite handle. Migrate the auth schema, then re-sync the bootstrap admin from configuration;
   // a seed refusal (an email collision) throws out of `main` and exits non-zero.
   const { storage, sqlite } = await openSqlite(config.dbPath)
-  const auth = createAuth(sqlite, config.auth, log)
+  const auth = createAuth(sqlite, config.auth)
   await migrateAuthSchema(auth, sqlite)
   verifyCredentialUsers(sqlite)
   // The display-name directory reads the library-owned `user` table on the same shared connection;
   // routes and the two launch paths batch user ids through it wherever an id crosses to the UI.
   const userDirectory = createUserDirectory(sqlite)
   const readUserStatus = createUserStatusReader(sqlite)
-  await ensureAdminUser(
-    auth,
-    {
-      email: config.auth.adminEmail,
-      password: config.auth.adminPassword,
-      name: config.auth.adminName,
-    },
-    log,
-  )
+  await ensureAdminUser(auth, {
+    email: config.auth.adminEmail,
+    password: config.auth.adminPassword,
+    name: config.auth.adminName,
+  })
   const environments = EnvironmentRegistry.load()
   const officialTelemetry = new ExecutionTelemetryStore(resolve(config.dataDir, 'llm'))
   const developmentLedger = new DevelopmentLedgerStore(
@@ -149,8 +143,8 @@ async function main(): Promise<void> {
   // checks, then read to rebuild an evicted overlay and to serve operator downloads.
   const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
   // Retention also reclaims each execution telemetry scope with the last recording referencing it.
-  const retention = new Retention(storage, recordings, config, log, undefined, officialTelemetry)
-  const overlayEviction = new OverlayEviction(driver, storage, config, log)
+  const retention = new Retention(storage, recordings, config, undefined, officialTelemetry)
+  const overlayEviction = new OverlayEviction(driver, storage, config)
   // The submission source seam resolves and fetches participant code. The orchestrator needs it too,
   // to rebuild a submission's overlay (from the snapshot, falling back to git) when its image was evicted.
   const submissionSource = createSubmissionSource(config.submission)
@@ -161,7 +155,7 @@ async function main(): Promise<void> {
     storage,
     environments,
     config,
-    log,
+    diagnostic: (line) => console.error(line),
     onSessionFinalized: () => {
       void retention.sweep()
     },
@@ -175,9 +169,9 @@ async function main(): Promise<void> {
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
   // schedule one container at a time. Reconcile first: any run a prior process death left non-terminal
   // is failed, then any completed run missing its placement snapshot is backfilled.
-  await reconcileInterruptedRuns(storage, log)
-  await reconcileCompletedRunPlacements(storage, log)
-  await reclaimOrphanedOfficialTelemetry(storage, officialTelemetry, log)
+  await reconcileInterruptedRuns(storage)
+  await reconcileCompletedRunPlacements(storage)
+  await reclaimOrphanedOfficialTelemetry(storage, officialTelemetry)
   // No live session/run can reference a keys file at startup: clear any staged from a previous
   // process, so an abrupt stop never leaves per-player LLM keys on disk.
   await removeAllLlmKeysFiles(resolve(config.dataDir, 'llm-keys'))
@@ -195,7 +189,6 @@ async function main(): Promise<void> {
     llmInternalPort: llmConfigured ? config.llm.internalPort : undefined,
     officialGrantIssuer,
     officialTelemetry,
-    log,
     // A completed run is the board's new source: snapshot its ranked placements, then sweep retention
     // (the run grew the recordings and may have superseded a prior run's, freeing them). Placements
     // only change on a `completed` run; other terminal statuses just sweep.
@@ -204,7 +197,11 @@ async function main(): Promise<void> {
         try {
           await persistPlacementsForCompletedRun(storage, runId)
         } catch (error) {
-          log(`run ${runId}: persisting placements failed: ${String(error)}`)
+          appLog(
+            'leaderboard',
+            `run ${runId}: persisting placements failed: ${String(error)}`,
+            'error',
+          )
         }
       }
       await retention.sweep()
@@ -223,7 +220,6 @@ async function main(): Promise<void> {
     sandbox: config.sandbox,
     loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
     knownTemplateVersions: KNOWN_DEPS_VERSIONS,
-    log,
     onOverlayBuilt: () => {
       void overlayEviction.sweep()
     },
@@ -269,15 +265,31 @@ async function main(): Promise<void> {
   // published credentials; warn loudly for each published value actually in effect, so it can never
   // be mistaken for a real deployment.
   if (config.auth.insecureDevelopment) {
-    log(`AUTH_ALLOW_INSECURE_DEFAULTS is on: listening on loopback ${config.listenHost} only`)
+    appLog(
+      'main',
+      `AUTH_ALLOW_INSECURE_DEFAULTS is on: listening on loopback ${config.listenHost} only`,
+      'warn',
+    )
     if (config.auth.secret === DEV_AUTH_SECRET) {
-      log('WARNING: using the published development AUTH_SECRET; never deploy with it')
+      appLog(
+        'main',
+        'WARNING: using the published development AUTH_SECRET; never deploy with it',
+        'warn',
+      )
     }
     if (config.auth.adminEmail === DEV_ADMIN_EMAIL) {
-      log(`WARNING: using the published development ADMIN_EMAIL ${DEV_ADMIN_EMAIL}`)
+      appLog(
+        'main',
+        `WARNING: using the published development ADMIN_EMAIL ${DEV_ADMIN_EMAIL}`,
+        'warn',
+      )
     }
     if (config.auth.adminPassword === DEV_ADMIN_PASSWORD) {
-      log('WARNING: using the published development ADMIN_PASSWORD; never deploy with it')
+      appLog(
+        'main',
+        'WARNING: using the published development ADMIN_PASSWORD; never deploy with it',
+        'warn',
+      )
     }
   }
 
@@ -287,16 +299,22 @@ async function main(): Promise<void> {
     // degrades to all interfaces with a loud warning rather than silently breaking LLM features.
     const llmListenHost = await driver.llmListenHost()
     if (config.docker.llmRelay.mode === 'compose-network' && llmListenHost === undefined) {
-      log(
+      appLog(
+        'main',
         'WARNING: could not resolve the internal LLM listener interface; binding 0.0.0.0 (all interfaces). ' +
           'Correct the compose relay network so the proxy is confined to the internal network.',
+        'warn',
       )
     }
     await llmListener.listen({ port: config.llm.internalPort, host: llmListenHost ?? '0.0.0.0' })
-    log(`internal LLM proxy listening on ${llmListenHost ?? '0.0.0.0'}:${config.llm.internalPort}`)
+    appLog(
+      'main',
+      `internal LLM proxy listening on ${llmListenHost ?? '0.0.0.0'}:${config.llm.internalPort}`,
+      'info',
+    )
   }
   await app.listen({ port: config.port, host: config.listenHost })
-  log(`backend listening on ${config.listenHost}:${config.port}`)
+  appLog('main', `backend listening on ${config.listenHost}:${config.port}`, 'info')
 
   let stopping = false
   const shutdown = (signal: string): void => {
@@ -304,7 +322,7 @@ async function main(): Promise<void> {
       return
     }
     stopping = true
-    log(`received ${signal}, shutting down`)
+    appLog('main', `received ${signal}, shutting down`, 'info')
     void (async () => {
       retention.stop()
       overlayEviction.stop()

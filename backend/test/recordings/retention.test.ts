@@ -40,7 +40,6 @@ describe('retention', () => {
       storage,
       recordings,
       { ...DEFAULTS, ...overrides },
-      () => {},
       () => NOW,
       llmTelemetry,
     )

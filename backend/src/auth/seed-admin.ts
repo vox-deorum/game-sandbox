@@ -11,6 +11,8 @@
  * user row itself is force-healed unconditionally (see below), so `updatedAt` is not a reliable
  * "something changed this boot" signal for this account.
  */
+
+import { appLog } from '../logging/log-buffer.js'
 import type { Auth } from './auth.js'
 
 /** The reserved, stable user id the bootstrap admin always occupies. */
@@ -23,11 +25,7 @@ export interface AdminSeed {
   name: string
 }
 
-export async function ensureAdminUser(
-  auth: Auth,
-  seed: AdminSeed,
-  log: (message: string) => void,
-): Promise<void> {
+export async function ensureAdminUser(auth: Auth, seed: AdminSeed): Promise<void> {
   const ctx = await auth.$context
   const email = seed.email
 
@@ -51,7 +49,7 @@ export async function ensureAdminUser(
       banned: false,
     })
     await linkCredential(ctx, user.id, await ctx.password.hash(seed.password))
-    log(`seeded bootstrap admin ${email}`)
+    appLog('auth', `seeded bootstrap admin ${email}`, 'info')
     return
   }
 
@@ -71,10 +69,12 @@ export async function ensureAdminUser(
     banExpires: null,
   })
   const rotated = await resyncCredential(ctx, seed.password)
-  log(
+  appLog(
+    'auth',
     rotated
       ? `rotated bootstrap admin ${email} password and revoked its sessions`
       : `re-synced bootstrap admin ${email}`,
+    'info',
   )
 }
 
