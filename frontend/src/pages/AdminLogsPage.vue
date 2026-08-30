@@ -279,7 +279,7 @@ onUnmounted(() => {
         <div>
           <h1>Backend Logs</h1>
           <p v-if="hasSuccessfulResponse" class="logs-summary">
-            <span>{{ shownCount }} shown from {{ retainedCount }} retained ({{ formatBytes(retainedBytes) }})</span>
+            <span>{{ shownCount }} shown from {{ retainedCount }} retained</span> |
             <span v-if="bootId !== null" class="logs-boot">Boot {{ bootId }}</span>
           </p>
         </div>
