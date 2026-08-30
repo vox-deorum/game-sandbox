@@ -697,7 +697,7 @@ describe('AdminConsolePage', () => {
   it('declares a new season through the admin API', async () => {
     vi.mocked(declareSeason).mockResolvedValue(season({ id: 'iter-2', label: 'Week 2' }))
     const { router } = await renderConsole()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Declare season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Declare' }))
     expect(vi.mocked(declareSeason)).toHaveBeenCalledWith('flappy_bird', {})
     // The declared season becomes the selection, which the URL reflects.
     await waitFor(() => expect(router.currentRoute.value.query.season).toBe('iter-2'))
@@ -706,7 +706,7 @@ describe('AdminConsolePage', () => {
   it('opens deletion confirmation without sending a request and cancels cleanly', async () => {
     await renderConsole()
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText(/Permanently delete Week 1/)).toBeInTheDocument()
     expect(screen.getByText(/Only closed, unreleased seasons without activity/)).toBeInTheDocument()
@@ -728,8 +728,8 @@ describe('AdminConsolePage', () => {
     vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
     const { router } = await renderConsole()
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(vi.mocked(deleteSeason)).toHaveBeenCalledWith('iter-1'))
     expect(await screen.findByRole('heading', { name: 'Season Week 2' })).toBeInTheDocument()
@@ -746,8 +746,8 @@ describe('AdminConsolePage', () => {
     vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
     const { router } = await renderConsole()
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(
       await screen.findByText('Select or declare a season to configure it.'),
@@ -762,8 +762,8 @@ describe('AdminConsolePage', () => {
     vi.mocked(deleteSeason).mockResolvedValue({ ok: false, reason: 'season_not_empty' })
     await renderConsole()
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This season has activity, so it cannot be deleted.',
@@ -775,8 +775,8 @@ describe('AdminConsolePage', () => {
     vi.mocked(deleteSeason).mockResolvedValue({ ok: false, reason: 'failed' })
     await renderConsole()
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not delete the season. Try again.',

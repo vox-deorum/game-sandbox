@@ -508,13 +508,13 @@ onUnmounted(() => {
                       size="tight"
                       :to="`/environments/${envId}/leaderboards/${view.season.id}`"
                     >
-                      View leaderboard
+                      Leaderboard
                     </UiButton>
                     <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
                       Rename
                     </UiButton>
                     <UiButton variant="danger" size="tight" @click="openDelete">
-                      Delete season
+                      Delete
                     </UiButton>
                   </div>
                 </template>
@@ -672,7 +672,7 @@ onUnmounted(() => {
         <p v-if="deleteError" class="delete-error" role="alert">{{ deleteError }}</p>
         <UiDialogActions>
           <UiButton variant="danger" :loading="deleting" @click="confirmDelete">
-            Delete season
+            Delete
           </UiButton>
           <UiButton variant="ghost" :disabled="deleting" @click="closeDelete">Cancel</UiButton>
         </UiDialogActions>
