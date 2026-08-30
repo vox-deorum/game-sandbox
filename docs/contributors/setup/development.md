@@ -69,7 +69,7 @@ The backend, sessions, and Docker-gated checks need a running Docker daemon; see
 
 ## Keeping local outputs fresh
 
-Rerun the demo after e2e or fixture changes, or when its fixture is incomplete. After a flat schema or harness-launch change, recreate the database, recompose templates and examples, and rebuild the session image because these outputs are tied to the current checkout. See [Data folders](../data/folders.md) and [Template product and releases](../environments/templates.md).
+Rerun the demo after e2e or fixture changes, or when its fixture is incomplete. Its e2e database is disposable, so after a schema or harness-launch change, recreate that fixture database, recompose templates and examples, and rebuild the session image because these outputs are tied to the current checkout. Do not recreate a deployed `sandbox.db`; follow [Storage](../runtime/backend.md#storage) for deployed schema updates. See [Data folders](../data/folders.md) and [Template product and releases](../environments/templates.md).
 
 The local browser export is release-only output. A release or publish dry run builds `frontend/dist-local/` and adds it to staged templates and examples, so publication requires Node while ordinary generation and source composition do not.
 

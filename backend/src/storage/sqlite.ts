@@ -24,7 +24,7 @@ import { Kysely, SqliteDialect } from 'kysely'
 
 import type { Storage } from './index.js'
 import { KyselyStorage } from './kysely/index.js'
-import { migrateToLatest } from './migrations.js'
+import { CURRENT_SCHEMA_VERSION, migrateToLatest } from './migrations/index.js'
 import type { Database } from './schema.js'
 
 /** The app {@link Storage} paired with the raw better-sqlite3 connection it was built on. */
@@ -37,8 +37,8 @@ export interface SqliteHandle {
  * Open (creating if needed) the SQLite database at `dbPath`, migrate it to the latest app schema,
  * and return both the ready {@link Storage} and the raw better-sqlite3 connection behind it (for
  * Better Auth's embedded tables). Pass `:memory:` for an ephemeral database (the test default). The
- * migration is idempotent, so reopening an existing file is safe. The raw connection is never used
- * for app queries outside `storage/` and `auth/`.
+ * migration is idempotent, and the schema marker rejects unsupported older or newer versions before
+ * serving requests. The raw connection is never used for app queries outside `storage/` and `auth/`.
  */
 export async function openSqlite(dbPath: string): Promise<SqliteHandle> {
   if (dbPath !== ':memory:') {
@@ -53,6 +53,14 @@ export async function openSqlite(dbPath: string): Promise<SqliteHandle> {
 
   try {
     await migrateToLatest(db)
+    const schemaVersion = sqlite.pragma('user_version', { simple: true }) as number
+    if (schemaVersion !== CURRENT_SCHEMA_VERSION) {
+      const state = schemaVersion < CURRENT_SCHEMA_VERSION ? 'stale' : 'newer than this build'
+      throw new Error(
+        `SQLite database schema is ${state} (version ${schemaVersion}, expected ${CURRENT_SCHEMA_VERSION}). ` +
+          `Upgrade "${dbPath}" with a compatible build before starting this one.`,
+      )
+    }
   } catch (error) {
     await db.destroy()
     throw error instanceof Error ? error : new Error(`schema migration failed: ${String(error)}`)

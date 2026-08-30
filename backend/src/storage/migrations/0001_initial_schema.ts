@@ -1,17 +1,9 @@
 /**
- * The schema as a single Kysely migration.
+ * The current schema for a fresh database: version {@link CURRENT_SCHEMA_VERSION}.
  *
- * This is a dev codebase with no deployed data to preserve, so the migration history is kept
- * deliberately flat: there is exactly **one** migration that builds every table and index in its
- * final shape, and we keep editing that one migration in place rather than appending `0002…`,
- * `0003…` steps as the schema evolves. Until development is complete there is no layered history to
- * replay — `migrateToLatest` either runs this migration once on a fresh database or, finding it
- * already recorded in `kysely_migration`, does nothing.
- *
- * The one consequence of the flat model: editing this migration does **not** re-run against a
- * database that already recorded it. To pick up a schema change locally, recreate the database
- * (delete `DATA_DIR/sandbox.db`); the `:memory:` test databases get the latest shape every run.
- * Deployment is still just "start the process".
+ * This migration builds every table and index directly when the database has no app migration
+ * ledger. Deployed databases have already recorded it, so every schema change made here must also
+ * append equivalent retry-safe forward steps to the latest migration named in `index.ts`.
  *
  * Partial unique indexes are not in Kysely's schema builder, so those are raw `CREATE UNIQUE INDEX`
  * statements. Kysely types migration functions `Kysely<any>` (the schema can differ from the current
@@ -25,12 +17,45 @@
  * names collides with this schema's plural `sessions`/`recordings`.
  */
 import { type Kysely, sql } from 'kysely'
-import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration'
+import type { Migration } from 'kysely/migration'
 
-import type { Database } from './schema.js'
+import type { Database } from '../schema.js'
 
-/** The single, in-place migration. Edit `up` (and keep `down` in step) as the schema evolves. */
-const initialSchema: Migration = {
+/**
+ * The schema version this fresh migration builds. Change it only when the project owner directs a
+ * version bump. Schema updates within the current version extend the latest migration instead.
+ */
+export const CURRENT_SCHEMA_VERSION = 2
+
+/** Build the current ratings indexes for a fresh database. */
+async function createRatingsIndexes(db: Kysely<Database>): Promise<void> {
+  await db.schema
+    .createIndex('ratings_season_agent')
+    .on('ratings')
+    .columns(['season_id', 'agent_kind', 'agent_builtin_name', 'agent_submission_id'])
+    .execute()
+  // The owner-feedback read on the agent profile lists one owner's ratings across seasons, so keep
+  // that request on an owner-bounded index rather than scanning every season's ratings.
+  await db.schema
+    .createIndex('ratings_env_agent_user')
+    .on('ratings')
+    .columns(['env_id', 'agent_user_id'])
+    .execute()
+  // Rating uniqueness: one effective rating per user per agent per season.
+  await sql`
+    CREATE UNIQUE INDEX ratings_one_per_user_submission
+    ON ratings (season_id, rater_user_id, agent_kind, agent_submission_id)
+    WHERE agent_kind = 'submission'
+  `.execute(db)
+  await sql`
+    CREATE UNIQUE INDEX ratings_one_per_user_builtin
+    ON ratings (season_id, rater_user_id, agent_kind, agent_builtin_name)
+    WHERE agent_kind = 'builtin'
+  `.execute(db)
+}
+
+/** Build the current schema for a fresh database. Keep `up` and `down` synchronized. */
+export const initialSchema: Migration = {
   async up(db: Kysely<Database>): Promise<void> {
     // --- sessions: one row per launched session. ---
     await db.schema
@@ -354,29 +379,7 @@ const initialSchema: Migration = {
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('updated_at', 'text', (col) => col.notNull())
       .execute()
-    await db.schema
-      .createIndex('ratings_season_agent')
-      .on('ratings')
-      .columns(['season_id', 'agent_kind', 'agent_builtin_name', 'agent_submission_id'])
-      .execute()
-    // The owner-feedback read on the agent profile lists one owner's ratings across seasons, so keep
-    // that request on an owner-bounded index rather than scanning every season's ratings.
-    await db.schema
-      .createIndex('ratings_env_agent_user')
-      .on('ratings')
-      .columns(['env_id', 'agent_user_id'])
-      .execute()
-    // Rating uniqueness: one effective rating per user per agent per season.
-    await sql`
-      CREATE UNIQUE INDEX ratings_one_per_user_submission
-      ON ratings (season_id, rater_user_id, agent_kind, agent_submission_id)
-      WHERE agent_kind = 'submission'
-    `.execute(db)
-    await sql`
-      CREATE UNIQUE INDEX ratings_one_per_user_builtin
-      ON ratings (season_id, rater_user_id, agent_kind, agent_builtin_name)
-      WHERE agent_kind = 'builtin'
-    `.execute(db)
+    await createRatingsIndexes(db)
 
     // --- agent_rating_prompts: the author's per-season prompt (keyed by author, survives resubmit). ---
     await db.schema
@@ -405,6 +408,7 @@ const initialSchema: Migration = {
       .on('llm_development_keys')
       .column('key_id')
       .execute()
+    await sql.raw(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`).execute(db)
   },
 
   async down(db: Kysely<Database>): Promise<void> {
@@ -421,6 +425,7 @@ const initialSchema: Migration = {
       'submission_checks',
       'session_submissions',
       'submissions',
+      'season_seed_flags',
       'seasons',
       'recording_cleanup_queue',
       'recordings',
@@ -428,36 +433,6 @@ const initialSchema: Migration = {
     ]) {
       await db.schema.dropTable(table).execute()
     }
+    await sql.raw('PRAGMA user_version = 0').execute(db)
   },
-}
-
-/**
- * The whole migration set, keyed by ordered name. Flat by design: this object stays a single entry
- * until development is complete (see the module comment).
- */
-export const migrations: Record<string, Migration> = {
-  '0001_initial_schema': initialSchema,
-}
-
-/** Serves {@link migrations} from memory, so there is no migration folder to read at runtime. */
-class StaticMigrationProvider implements MigrationProvider {
-  async getMigrations(): Promise<Record<string, Migration>> {
-    return migrations
-  }
-}
-
-/**
- * Bring the database to the latest (and only) schema version. Idempotent: a database that already
- * recorded the migration is left untouched, so reopening an existing file is safe. Throws on the
- * first failed migration with its underlying error.
- */
-export async function migrateToLatest(db: Kysely<Database>): Promise<void> {
-  const migrator = new Migrator({ db, provider: new StaticMigrationProvider() })
-  const { error, results } = await migrator.migrateToLatest()
-
-  const failed = results?.find((it) => it.status === 'Error')
-  if (error || failed) {
-    const cause = error ?? new Error(`migration "${failed?.migrationName}" failed`)
-    throw cause instanceof Error ? cause : new Error(`schema migration failed: ${String(cause)}`)
-  }
 }

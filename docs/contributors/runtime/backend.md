@@ -102,15 +102,19 @@ The `Storage` interface organizes relational data by product domain. Kysely and 
 
 Callers use methods such as `createSession`, `markEnded`, `createSubmission`, and `getHumanBoard`. They do not issue SQL.
 
-| File or directory          | Role                              |
-| -------------------------- | --------------------------------- |
-| `storage/schema.ts`        | Database and row type declaration |
-| `storage/migrations.ts`    | Current initial migration         |
-| `storage/season-config.ts` | Strict season configuration codec |
-| `storage/kysely/index.ts`  | `KyselyStorage` facade            |
-| `storage/kysely/*.ts`      | Domain query modules              |
+| File or directory | Role |
+| --- | --- |
+| `src/storage/schema.ts` | Database and row type declaration |
+| `src/storage/migrations/0001_initial_schema.ts` | Mutable flat schema for a new database |
+| `src/storage/migrations/0002_legacy_ratings_schema.ts` | Pending retry-safe migration for deployed databases |
+| `src/storage/migrations/index.ts` | Ordered migration provider |
+| `src/storage/season-config.ts` | Strict season configuration codec |
+| `src/storage/kysely/index.ts` | `KyselyStorage` facade |
+| `src/storage/kysely/*.ts` | Domain query modules |
 
-Migration history remains flat while there is no deployed data to preserve. For a schema change, update `storage/schema.ts`, `0001_initial_schema` in `storage/migrations.ts`, and affected `storage/kysely/` modules, then recreate local `sandbox.db` and run related tests. In-memory tests use the latest shape.
+Deployed application data must be preserved. For every schema update, update `src/storage/schema.ts`, keep `initialSchema.up` and `initialSchema.down` synchronized in `src/storage/migrations/0001_initial_schema.ts`, update the affected `src/storage/kysely/` modules, and append equivalent retry-safe forward steps to `0002_legacy_ratings_schema.ts`. Keep appending to `0002` and keep `CURRENT_SCHEMA_VERSION` at 2 until the project owner explicitly starts the next batch. Do not require recreation of a deployed `<DATA_DIR>/sandbox.db`. In-memory tests always receive the latest shape.
+
+Only the project owner may start the next migration batch. They freeze `0002` as immutable and version-local, then create `0003`; agents must not choose that version bump. A frozen migration must not import mutable helpers from `0001_initial_schema.ts`. `openSqlite` checks SQLite's `user_version` and may reject unsupported databases and databases from newer schema versions.
 
 ### Main table groups
 

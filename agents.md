@@ -14,11 +14,13 @@ The full specification lives under [docs/specs/](docs/specs/index.md). Read it b
 
 Public documentation under `docs/` and the canonical student guides at `environments/<env>/environment.md` also follow [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
 
+Deployed application data must be preserved. For every backend schema update, update the fresh-database shape in `backend/src/storage/migrations/0001_initial_schema.ts` and append equivalent retry-safe forward steps to `backend/src/storage/migrations/0002_legacy_ratings_schema.ts`. Continue appending to that migration and keep `CURRENT_SCHEMA_VERSION` at 2 until the project owner explicitly starts the next batch. Only the project owner may start that batch by freezing `0002` as immutable and version-local, then creating `0003`. Agents must never choose a version bump or require recreation of a deployed `sandbox.db`; unsupported databases may still be rejected.
+
 ## Writing Style
 
 Write everything in natural language: docs, code comments, commit messages, release notes, console output, and the AGENTS.md files themselves. Keep the prose plain and easy to follow. Bullets, subbullets, and tables are encouraged wherever they make the content easier to scan. Do not use em-dashes anywhere. Reach for a colon, a comma, parentheses, or two separate sentences instead. Every agent working in this repo must follow this rule.
 
-Do not produce layered writings (e.g., instead of X we chose to do Y) that document revision histories, unless explicitly instructed to do so. A reader needs the rule, not the case for it. State what is true and stop there, maximize the language efficiency. **Readability is the top priority.**
+When editing documentation, plans, prioritize coherent rewriting over surgical edits. Readability is a paramount concern. Do not produce layered writings (e.g., instead of X we chose to do Y) that document revision histories, unless explicitly instructed to do so.
 
 ## Working on this repo
 
