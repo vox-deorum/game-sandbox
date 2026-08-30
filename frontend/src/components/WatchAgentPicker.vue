@@ -32,7 +32,10 @@ import {
   type WatchAgentSummary,
 } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
-import { handleSessionStartResult } from '../lib/session-start.js'
+import {
+  handleSessionStartResult,
+  SESSION_START_FAILED_MESSAGE,
+} from '../lib/session-start.js'
 import { visibleParameters } from '@game-sandbox/schema/environment'
 import { canPlay, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
@@ -56,8 +59,9 @@ const me = useMe()
 
 const startError = ref<string | null>(null)
 // The submission a watch run is being started for, so only its button shows the loading state. Only
-// the single-seat immediate-start path uses it; the multi-seat path starts from the dialog instead.
+// the single-seat immediate-start path uses its row key; configured starts use the dialog key.
 const starting = ref<string | null>(null)
+const DIALOG_START = 'dialog'
 
 // The watch configuration dialog's state (multi-seat environments only). It opens with the clicked
 // agent preselected into every seat, which the viewer can change before starting.
@@ -142,16 +146,16 @@ function chooseAgent(
  * reusing the rejoin / not-active / error handling.
  */
 async function startRun(payload: StartPayload, loadingKey?: string): Promise<void> {
-  startError.value = null
-  if (loadingKey !== undefined) {
-    starting.value = loadingKey
+  if (starting.value !== null) {
+    return
   }
+  startError.value = null
+  starting.value = loadingKey ?? DIALOG_START
   try {
     const result = await startSession({ envId: props.envId, ...payload })
     startError.value = await handleSessionStartResult(result, router)
-    if (startError.value !== null) {
-      dialogOpen.value = false
-    }
+  } catch {
+    startError.value = SESSION_START_FAILED_MESSAGE
   } finally {
     starting.value = null
   }
@@ -213,7 +217,9 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
     <UiEmptyState v-if="!anonymous && !canPlay(me.me)">
       Your account is awaiting approval — watching unlocks once an admin approves you.
     </UiEmptyState>
-    <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
+    <UiEmptyState v-if="startError !== null && !dialogOpen" tone="danger" role="alert">
+      {{ startError }}
+    </UiEmptyState>
 
     <!-- Rate locks the selected agent and all settings. Watch keeps the same configuration editable. -->
     <UiDialog
@@ -229,9 +235,13 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
         :is-operator="isAdmin(me.me)"
         :season-id="seasonId"
         :parameters="parameters"
+        :loading="starting === DIALOG_START"
         @start="startRun"
         @cancel="dialogOpen = false"
       />
+      <UiEmptyState v-if="startError !== null" tone="danger" role="alert">
+        {{ startError }}
+      </UiEmptyState>
     </UiDialog>
   </template>
 </template>
@@ -283,9 +293,4 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
   color: var(--color-text-muted);
 }
 
-.agent-error {
-  margin: var(--space-2) 0 0;
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 </style>

@@ -58,6 +58,8 @@ const props = defineProps<{
   isOperator?: boolean
   seasonId: string
   parameters: Record<string, ParameterValue>
+  /** The parent is creating the session. The submit button owns the visible pending state. */
+  loading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -133,8 +135,9 @@ function initialAgent(seatId: string): string {
 const agentChoice = reactive<Record<string, string>>(
   Object.fromEntries(seatIds.value.map((seatId) => [seatId, initialAgent(seatId)])),
 )
-// A companion must be an explicit choice. Keep it separately from the ordinary assignment beneath
-// the human seat, because the two values have different wire meanings and different default rules.
+// Keep an explicitly selected companion separately from the ordinary assignment beneath the human
+// seat, because the two values have different wire meanings. A fully human-capable wide seat falls
+// back to whole-seat human control when it has no explicit companion.
 const companionChoice = reactive<Record<string, string>>({})
 
 /**
@@ -215,7 +218,7 @@ function setRateRestrictedSeat(seatId: string, value: string): void {
 }
 
 function companionValue(seatId: string): string {
-  return companionChoice[seatId] ?? ''
+  return companionChoice[seatId] ?? (canPlaySeatYourself(seatId) ? SELF_COMPANION : '')
 }
 
 function setCompanion(seatId: string, value: string): void {
@@ -306,8 +309,9 @@ function sanitizeChoices(
       agentChoice[seatId] = ''
     }
   }
-  // A seat keeps its companion only while it still asks for one and the choice is still on offer, so a
-  // grown, shrunk, or vacated seat never carries a stale value into the payload.
+  // A seat keeps an explicit companion only while it still asks for one and the choice is still on
+  // offer, so a grown, shrunk, or vacated seat never carries a stale value into the payload. Returning
+  // to a fully human-capable wide seat then uses its whole-seat human-control default.
   for (const seatId of Object.keys(companionChoice)) {
     if (!needsCompanionChoice(seatId) || !legalCompanions.has(companionValue(seatId))) {
       delete companionChoice[seatId]
@@ -545,7 +549,7 @@ function onSubmit(): void {
     </fieldset>
 
     <div class="seat-form-actions">
-      <UiButton type="submit" :disabled="!canStart">{{ startLabel }}</UiButton>
+      <UiButton type="submit" :disabled="!canStart" :loading="loading">{{ startLabel }}</UiButton>
       <UiButton type="button" variant="ghost" @click="emit('cancel')">Cancel</UiButton>
     </div>
   </form>

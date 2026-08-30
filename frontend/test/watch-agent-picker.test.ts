@@ -2,7 +2,7 @@ import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/envir
 import { fireEvent, screen, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { WatchAgentSummary } from '../src/api/client.js'
+import type { StartSessionResult, WatchAgentSummary } from '../src/api/client.js'
 import { flappyMeta, heartsMeta, spadesMeta } from './helpers/fixtures.js'
 import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
@@ -178,10 +178,12 @@ describe('WatchAgentPicker', () => {
   })
 
   it('opens the watch dialog with the clicked agent preselected for a multi-seat environment', async () => {
-    vi.mocked(startSession).mockResolvedValue({
-      ok: true,
-      session: { id: 'sess-hearts', wsPath: '/api/sessions/sess-hearts/ws' },
-    })
+    let resolveStart!: (result: StartSessionResult) => void
+    vi.mocked(startSession).mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve
+      }),
+    )
     await renderPicker(heartsMeta(), [summary()])
     // Clicking a row in a multi-seat environment opens the seat dialog instead of starting at once.
     await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
@@ -195,7 +197,10 @@ describe('WatchAgentPicker', () => {
       expect(seat).toBeDisabled()
     }
     // Starting from the dialog sends the full four-seat assignment and navigates to the session.
-    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    const start = screen.getByRole('button', { name: 'Start watching' })
+    await fireEvent.click(start)
+    expect(start).toBeDisabled()
+    expect(start).toHaveAttribute('aria-busy', 'true')
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
       seasonId: 'season-1',
@@ -208,7 +213,30 @@ describe('WatchAgentPicker', () => {
       },
       seed: undefined,
     })
+    resolveStart({
+      ok: true,
+      session: { id: 'sess-hearts', wsPath: '/api/sessions/sess-hearts/ws' },
+    })
     await screen.findByText('session sess-hearts')
+  })
+
+  it('keeps a failed configured start open and shows its error', async () => {
+    vi.mocked(startSession).mockResolvedValue({
+      ok: false,
+      reason: 'failed',
+      status: 500,
+      message: 'Session launch failed.',
+    })
+    await renderPicker(heartsMeta(), [summary()])
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
+    const start = screen.getByRole('button', { name: 'Start watching' })
+
+    await fireEvent.click(start)
+
+    const error = await screen.findByText('Session launch failed.')
+    expect(error).toHaveAttribute('role', 'alert')
+    expect(start).toBeEnabled()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('shows operator-only owner and source details with a profile link, falling back to the id', async () => {

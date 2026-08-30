@@ -494,7 +494,7 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
-  it('offers self control and emits it as the wide human seat companion', async () => {
+  it('defaults a fully human-capable wide seat to self control', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
         seasonId: 'season-1',
@@ -507,13 +507,11 @@ describe('SeatAssignmentDialog', () => {
 
     expect(screen.getAllByText('2 players')).toHaveLength(2)
     const start = screen.getByRole('button', { name: 'Start playing' })
-    expect(start).toBeDisabled()
     const companion = screen.getByRole('combobox', { name: "Seat 1's companions" })
-    expect(companion).toHaveValue('')
+    expect(companion).toHaveValue('self')
     expect(within(companion).getByRole('option', { name: 'Play them yourself' })).toHaveValue(
       'self',
     )
-    await fireEvent.update(companion, 'self')
     expect(start).toBeEnabled()
     await fireEvent.click(start)
 
@@ -667,7 +665,7 @@ describe('SeatAssignmentDialog', () => {
     expect(seat('Seat 1')).toHaveAccessibleName('Seat 1')
   })
 
-  it('removes a wide-seat companion when the human moves away and does not restore it later', async () => {
+  it('removes an explicit companion when the human moves and restores the self-control default', async () => {
     render(SeatAssignmentDialog, {
       props: {
         seasonId: 'season-1',
@@ -678,14 +676,17 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    await fireEvent.update(screen.getByRole('combobox', { name: "Seat 1's companions" }), 'self')
+    await fireEvent.update(
+      screen.getByRole('combobox', { name: "Seat 1's companions" }),
+      'submission:sub1',
+    )
     const rows = screen.getAllByRole('listitem')
     await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: "Seat 2's companions" })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: "Seat 2's companions" })).toHaveValue('self')
 
     await fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Sit here' }))
-    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('')
-    expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('self')
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeEnabled()
   })
 
   it('rebuilds exact seats on plan changes and clears self control that is illegal in solo', async () => {
@@ -714,8 +715,8 @@ describe('SeatAssignmentDialog', () => {
     })
 
     await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'partnership')
-    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('')
-    expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('self')
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeEnabled()
   })
 
   // Every environment today is fixed-player, so `players` is hidden and the grid never resizes. These

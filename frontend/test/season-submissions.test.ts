@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminSubmissionRow } from '../src/api/client.js'
+import { formatDate } from '../src/lib/format.js'
 
 vi.mock('../src/api/client.js', () => ({
   listSeasonSubmissions: vi.fn(),
@@ -32,8 +33,9 @@ function row(overrides: Partial<AdminSubmissionRow> = {}): AdminSubmissionRow {
 describe('SeasonSubmissions', () => {
   afterEach(() => vi.clearAllMocks())
 
-  it('renders a download link for a submission with a snapshot and a season download link', async () => {
-    vi.mocked(listSeasonSubmissions).mockResolvedValue([row()])
+  it('links the submission date to its source and renders the available downloads', async () => {
+    const submission = row()
+    vi.mocked(listSeasonSubmissions).mockResolvedValue([submission])
     render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
 
     const link = await screen.findByRole('link', { name: 'Download' })
@@ -46,6 +48,18 @@ describe('SeasonSubmissions', () => {
     expect(all).toHaveAttribute('download', 'season-iter-1.tar.gz')
     expect(all).toHaveClass('ui-button', 'secondary', 'tight')
     expect(screen.getByRole('heading', { name: 'Submissions', level: 2 })).toBeInTheDocument()
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Participant',
+      'Status',
+      'Submitted',
+      'Download',
+    ])
+    const sourceLink = screen
+      .getAllByRole('link')
+      .find((candidate) => candidate.getAttribute('href') === 'https://example.test/repo')
+    expect(sourceLink).toHaveAttribute('title', 'https://example.test/repo @ c0ffee12')
+    expect(sourceLink).toHaveTextContent(formatDate(submission.created_at) ?? submission.created_at)
   })
 
   it('disables the download for a submission without a snapshot', async () => {
@@ -58,6 +72,16 @@ describe('SeasonSubmissions', () => {
     // No per-row Download link exists; only the season-wide "Download all" link is present.
     expect(screen.queryByRole('link', { name: 'Download' })).toBeNull()
     expect(screen.getByRole('link', { name: /Download all/ })).toBeTruthy()
+  })
+
+  it('keeps a local submission date as text when there is no source URL', async () => {
+    const submission = row({ source_kind: 'local', repo_url: null, commit_sha: null })
+    vi.mocked(listSeasonSubmissions).mockResolvedValue([submission])
+    render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
+
+    const submittedAt = formatDate(submission.created_at) ?? submission.created_at
+    await screen.findByText(submittedAt)
+    expect(screen.queryByRole('link', { name: submittedAt })).toBeNull()
   })
 
   it('prefers user_name over user_id in the Participant column, keeping the id as a tooltip and download key', async () => {

@@ -47,7 +47,10 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, seatLabel } from '../lib/format.js'
-import { handleSessionStartResult } from '../lib/session-start.js'
+import {
+  handleSessionStartResult,
+  SESSION_START_FAILED_MESSAGE,
+} from '../lib/session-start.js'
 import { canPlay, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
@@ -58,6 +61,7 @@ const envId = String(route.params.envId)
 
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
+const starting = ref(false)
 
 // The current released boards for the embed below. An unreleased season's boards never appear because
 // this public read returns released results only. The play gate comes from playParameters separately.
@@ -275,12 +279,19 @@ function startSingleSeat(input: Omit<StartPayload, 'seats'>): void {
 
 /** Start the human-play session the form (single seat) or seat grid (multi-seat) composed. */
 async function submitStart(payload: StartPayload): Promise<void> {
-  if (meta.value === null || !playFormOpen.value) {
+  if (meta.value === null || !playFormOpen.value || starting.value) {
     return
   }
   startError.value = null
-  const result = await startSession({ envId: meta.value.env_id, ...payload })
-  startError.value = await handleSessionStartResult(result, router)
+  starting.value = true
+  try {
+    const result = await startSession({ envId: meta.value.env_id, ...payload })
+    startError.value = await handleSessionStartResult(result, router)
+  } catch {
+    startError.value = SESSION_START_FAILED_MESSAGE
+  } finally {
+    starting.value = false
+  }
 }
 </script>
 
@@ -389,6 +400,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
         :is-operator="isAdmin(me.me)"
         :season-id="activePlayParameters.seasonId"
         :parameters="activePlayParameters.parameters"
+        :loading="starting"
         @start="submitStart"
         @cancel="playFormOpen = false"
       />
@@ -397,10 +409,13 @@ async function submitStart(payload: StartPayload): Promise<void> {
         :meta="meta"
         :season-id="activePlayParameters.seasonId"
         :parameters="activePlayParameters.parameters"
+        :loading="starting"
         @submit="startSingleSeat"
         @cancel="playFormOpen = false"
       />
-      <UiEmptyState v-if="startError !== null" tone="danger">{{ startError }}</UiEmptyState>
+      <UiEmptyState v-if="startError !== null" tone="danger" role="alert">
+        {{ startError }}
+      </UiEmptyState>
     </UiDialog>
   </section>
 </template>

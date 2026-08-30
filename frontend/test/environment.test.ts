@@ -503,6 +503,29 @@ describe('EnvironmentPage', () => {
     })
   })
 
+  it('shows a busy start action and reports a request failure in the dialog', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    let rejectStart!: (reason: unknown) => void
+    vi.mocked(startSession).mockReturnValue(
+      new Promise<never>((_resolve, reject) => {
+        rejectStart = reject
+      }),
+    )
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    const start = await screen.findByRole('button', { name: 'Start playing' })
+
+    await fireEvent.click(start)
+    expect(start).toBeDisabled()
+    expect(start).toHaveAttribute('aria-busy', 'true')
+
+    rejectStart(new Error('network unavailable'))
+    const error = await screen.findByText('Could not start the session. Please try again.')
+    expect(error).toHaveAttribute('role', 'alert')
+    expect(start).toBeEnabled()
+    expect(start).not.toHaveAttribute('aria-busy')
+  })
+
   it('applies a preset in the single-seat start form and keeps further edits', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironments).mockResolvedValue([

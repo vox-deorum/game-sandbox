@@ -75,7 +75,6 @@ watch(
         <tr>
           <th scope="col">Participant</th>
           <th scope="col">Status</th>
-          <th scope="col">Source</th>
           <th scope="col">Submitted</th>
           <th scope="col">Download</th>
         </tr>
@@ -89,12 +88,21 @@ watch(
               :label="submissionStatusLabel(row.status)"
             />
           </td>
-          <td class="source" :title="sourceLabel(row)">{{ sourceLabel(row) }}</td>
-          <td>{{ formatDate(row.created_at) ?? row.created_at }}</td>
+          <td>
+            <a
+              v-if="row.repo_url !== null"
+              class="table-link"
+              :href="row.repo_url"
+              :title="sourceLabel(row)"
+            >
+              {{ formatDate(row.created_at) ?? row.created_at }}
+            </a>
+            <template v-else>{{ formatDate(row.created_at) ?? row.created_at }}</template>
+          </td>
           <td>
             <a
               v-if="row.has_snapshot"
-              class="download-link"
+              class="table-link"
               :href="adminSubmissionDownloadUrl(row.id)"
               :download="`${row.user_id}-${row.id.slice(0, 8)}.tar.gz`"
             >
@@ -142,19 +150,12 @@ watch(
   font-weight: 600;
 }
 
-.source {
-  max-width: 20rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.download-link {
+.table-link {
   color: var(--color-accent);
   text-decoration: none;
 }
 
-.download-link:hover {
+.table-link:hover {
   text-decoration: underline;
 }
 

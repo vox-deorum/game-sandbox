@@ -114,7 +114,7 @@ See [Submissions](submission.md).
 
 Any named builtin or submitted agent opens the same seat-assignment flow. The chosen agent is preselected in each unrestricted seat, every editable seat can be reassigned, and all required seats must be filled before a multi-agent session starts. Agent controls use stable builtin names as values and show their declared labels.
 
-Selecting **Human** is allowed when the seat contains at least one human-capable player; see [Interaction](interaction.md#human-play) for how the human players and companion instances are chosen. A wide unrestricted human seat reveals a required **Seat N's other players** control. It offers the named builtins and ready submissions used by ordinary agent seats, plus **Play them yourself** when every member is human-capable. The user must choose explicitly before starting.
+Selecting **Human** is allowed when the seat contains at least one human-capable player; see [Interaction](interaction.md#human-play) for how the human players and companion instances are chosen. A wide unrestricted human seat reveals a required **Seat N's other players** control. It offers the named builtins and ready submissions used by ordinary agent seats, plus **Play them yourself** when every member is human-capable. The control defaults to **Play them yourself** when that choice is legal. A mixed-capability seat has no default because it requires an agent companion.
 
 Play and Rate default a human-capable restricted seat to Human. Watch always assigns its builtin. If the user chooses another seat during Play, the restricted seat returns to its builtin. A restricted seat with no human-capable player stays locked to the builtin. A wide restricted human seat explains that its designated builtin controls the other players and shows no companion picker. See [Environments](environment.md#builtin-agents-and-restricted-seats) for the restricted-seat rule.
 
@@ -123,6 +123,8 @@ For **Rate**, a human-capable restricted seat set to Human turns the rating run 
 Each seat row's assignment control uses the seat name alone as its accessible name.
 
 Start forms render visible effective environment parameters, including the synthesized `players` or `seat_plan` parameter, with labelled controls appropriate to their types. A numeric parameter is hidden when its minimum equals its maximum, and a `choice` is hidden when it has one option. A non-empty `multi_choice` remains visible because choosing none differs from choosing its one declared option. Invalid values show a field error and prevent starting. Hidden parameters stay in the complete submitted map. A single-seat watch starts immediately when it has no visible configuration.
+
+While a live session start is pending, its initiating action shows a loading state and cannot be submitted again. A failed start keeps the available configuration in place and shows the error so the user can retry.
 
 ### Manage
 

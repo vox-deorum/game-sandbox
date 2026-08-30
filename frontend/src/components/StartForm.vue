@@ -32,6 +32,8 @@ const props = defineProps<{
   meta: EnvironmentMeta
   seasonId: string
   parameters: Record<string, ParameterValue>
+  /** The parent is creating the session. The submit button owns the visible pending state. */
+  loading?: boolean
 }>()
 const emit = defineEmits<{
   /** Everything the start payload carries except the seats, which this form fills with the lone human. */
@@ -113,7 +115,9 @@ function onSubmit(): void {
     </UiField>
 
     <div class="start-form-actions">
-      <UiButton type="submit" :disabled="!parametersValid">Start playing</UiButton>
+      <UiButton type="submit" :disabled="!parametersValid" :loading="loading">
+        Start playing
+      </UiButton>
       <UiButton type="button" variant="ghost" @click="emit('cancel')">Cancel</UiButton>
     </div>
   </form>
