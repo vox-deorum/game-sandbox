@@ -278,10 +278,6 @@ onUnmounted(() => {
       <header class="logs-header">
         <div>
           <h1>Backend Logs</h1>
-          <p class="logs-context">
-            Current backend process. History resets when the process restarts. Participant and
-            workflow container diagnostics are not included.
-          </p>
           <p v-if="hasSuccessfulResponse" class="logs-summary">
             <span>{{ shownCount }} shown from {{ retainedCount }} retained ({{ formatBytes(retainedBytes) }})</span>
             <span v-if="bootId !== null" class="logs-boot">Boot {{ bootId }}</span>
@@ -333,12 +329,10 @@ onUnmounted(() => {
 }
 
 .logs-header h1,
-.logs-context,
 .logs-summary {
   margin: 0;
 }
 
-.logs-context,
 .logs-summary {
   margin-top: var(--space-1);
   color: var(--color-text-muted);
