@@ -54,8 +54,7 @@ import { initializeParameters, validateParameters } from '../../lib/parameters.j
 import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
-import UiDialog from '../ui/UiDialog.vue'
-import UiDialogActions from '../ui/UiDialogActions.vue'
+import UiConfirmDialog from '../ui/UiConfirmDialog.vue'
 import UiEmptyState from '../ui/UiEmptyState.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
@@ -947,7 +946,15 @@ watch(confirmOpen, (open) => {
       <span v-if="error" class="config-error" role="alert">{{ error }}</span>
     </div>
 
-    <UiDialog v-model:open="confirmOpen" title="Confirm a destructive edit">
+    <UiConfirmDialog
+      v-model:open="confirmOpen"
+      title="Confirm a destructive edit"
+      confirm-label="Delete and save"
+      confirm-variant="danger"
+      :confirm-loading="saving"
+      cancel-label="Cancel"
+      @confirm="confirmForce"
+    >
       <p class="confirm-text">
         <template v-if="confirm?.deletesSubmissions">
           Changing the dependency-set version deletes this season's submissions (they were built
@@ -958,13 +965,7 @@ watch(confirmOpen, (open) => {
           boards so they can be recomputed from the new design.
         </template>
       </p>
-      <UiDialogActions>
-        <UiButton variant="danger" :loading="saving" @click="confirmForce">
-          Delete and save
-        </UiButton>
-        <UiButton variant="ghost" @click="confirmOpen = false">Cancel</UiButton>
-      </UiDialogActions>
-    </UiDialog>
+    </UiConfirmDialog>
   </div>
 </template>
 

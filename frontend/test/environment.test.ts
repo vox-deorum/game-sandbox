@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,6 +12,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(),
   listRecordings: vi.fn(),
   startSession: vi.fn(),
+  stopSession: vi.fn(),
   getMe: vi.fn(),
   // The page fetches the environment leaderboards on mount for the boards embed and the watch/play
   // boards embed; play gating is covered by the separate play-parameters mock.
@@ -38,6 +39,7 @@ import {
   listSeasons,
   listWatchAgents,
   startSession,
+  stopSession,
 } from '../src/api/client.js'
 import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
 
@@ -596,7 +598,7 @@ describe('EnvironmentPage', () => {
     })
   })
 
-  it('navigates to the active session on an already-active start (rejoin)', async () => {
+  it('asks before replacing an active session and returns to it without stopping it', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({
       ok: false,
@@ -606,7 +608,131 @@ describe('EnvironmentPage', () => {
     await renderPage()
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    expect(await screen.findByText('A session is already running')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start new' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Return' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    expect(vi.mocked(stopSession)).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Return' }))
     await screen.findByText('active-9')
+    expect(vi.mocked(stopSession)).not.toHaveBeenCalled()
+  })
+
+  it('abandons a conflicting requested start when its header X closes the dialog', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(startSession).mockResolvedValue({
+      ok: false,
+      reason: 'already_active',
+      activeSessionId: 'active-9',
+    })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    const dialog = await screen.findByRole('dialog', { name: 'A session is already running' })
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'A session is already running' })).toBeNull(),
+    )
+    expect(screen.queryByRole('button', { name: 'Start playing' })).toBeNull()
+    expect(vi.mocked(stopSession)).not.toHaveBeenCalled()
+  })
+
+  it('stops the active session before retrying the exact requested start', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    let resolveStop!: () => void
+    vi.mocked(stopSession).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveStop = resolve
+      }),
+    )
+    vi.mocked(startSession)
+      .mockResolvedValueOnce({ ok: false, reason: 'already_active', activeSessionId: 'active-9' })
+      .mockResolvedValueOnce({
+        ok: true,
+        session: { id: 'new-1', wsPath: '/api/sessions/new-1/ws' },
+      })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.update(screen.getByPlaceholderText('50'), '250')
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start new' }))
+    expect(vi.mocked(stopSession)).toHaveBeenCalledWith('active-9')
+    expect(vi.mocked(startSession)).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Return' })).toBeDisabled()
+
+    resolveStop()
+    await screen.findByText('new-1')
+    expect(vi.mocked(startSession)).toHaveBeenNthCalledWith(2, {
+      envId: 'flappy_bird',
+      seasonId: 'iter-1',
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'human' } },
+      seed: undefined,
+      humanTimeoutMs: 250,
+    })
+  })
+
+  it('keeps the conflict open after stop or retry failures, and requires a fresh choice for a new conflict', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(startSession)
+      .mockResolvedValueOnce({ ok: false, reason: 'already_active', activeSessionId: 'active-9' })
+      .mockResolvedValueOnce({ ok: false, reason: 'already_active', activeSessionId: 'active-10' })
+      .mockResolvedValueOnce({
+        ok: true,
+        session: { id: 'new-2', wsPath: '/api/sessions/new-2/ws' },
+      })
+    vi.mocked(stopSession)
+      .mockRejectedValueOnce(new Error('stop failed'))
+      .mockResolvedValue(undefined)
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start new' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not end the active session.')
+    expect(vi.mocked(startSession)).toHaveBeenCalledTimes(1)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start new' }))
+    await flushPromises()
+    expect(vi.mocked(stopSession)).toHaveBeenLastCalledWith('active-9')
+    expect(vi.mocked(startSession)).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start new' }))
+    await screen.findByText('new-2')
+    expect(vi.mocked(stopSession)).toHaveBeenLastCalledWith('active-10')
+    expect(vi.mocked(stopSession)).toHaveBeenCalledTimes(3)
+  })
+
+  it('drops Return and keeps Start new retryable when the retry fails after the session ended', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(stopSession).mockResolvedValue(undefined)
+    vi.mocked(startSession)
+      .mockResolvedValueOnce({ ok: false, reason: 'already_active', activeSessionId: 'active-9' })
+      .mockResolvedValueOnce({ ok: false, reason: 'play_season_changed' })
+      .mockResolvedValueOnce({
+        ok: true,
+        session: { id: 'new-3', wsPath: '/api/sessions/new-3/ws' },
+      })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start new' }))
+    await flushPromises()
+
+    // The stop succeeded but the retry failed, so there is no active session to return to anymore.
+    // The dialog must say so instead of offering a Return that would land on an ended session.
+    expect(screen.getByText('The active session has ended')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Return' })).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('The play season changed.')
+
+    // Start new retries the pending request without trying to stop anything else.
+    await fireEvent.click(screen.getByRole('button', { name: 'Start new' }))
+    await screen.findByText('new-3')
+    expect(vi.mocked(stopSession)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(startSession)).toHaveBeenCalledTimes(3)
   })
 
   it('shows the stale-season message and keeps the form open when the play season changed', async () => {

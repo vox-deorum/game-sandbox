@@ -16,7 +16,7 @@ jsdom implements no WebGL or canvas rasterization, and pulling in a native GPU/c
 - **Input mapping**: keydown (and not key repeat), pointerdown, and touchstart each send exactly one `input` envelope with slot and flap action through a stubbed `sendAction`; no listeners attach when `controlledSlots` is empty or `sendAction` is absent.
 - **Socket client**: frame classification against the shared rule, command serialization, the attach replay (header, latest state, status) driving callbacks in order, reconnect after a drop.
 - **Replay transport**: play advances on the pace interval (fake timers), pause stops, step moves one state, scrub renders the state under the index, `?t=` seeks on load, an unknown `schema_version` shows the needs-newer-viewer message.
-- **Pages and identity**: home cards render the metadata fields; environment-page entry points are hidden when `/api/me` (mocked fetch) says not allowlisted; the start form sends `human_slot_timeout_ms` when overridden (the override exit criterion's frontend half); and the 409 rejoin path navigates to the active session.
+- **Pages and identity**: home cards render the metadata fields; environment-page entry points are hidden when `/api/me` (mocked fetch) says not allowlisted; the start form sends `human_slot_timeout_ms` when overridden (the override exit criterion's frontend half); and an `already_active` start closes the configuration modal and opens the standalone confirmation, whose Return action navigates to the active session while Start new replaces it and retries the exact pending request.
 
 ## Backend unit tests (Vitest, FakeDriver, `:memory:`)
 

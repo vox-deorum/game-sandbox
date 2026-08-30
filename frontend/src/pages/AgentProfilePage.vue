@@ -49,8 +49,7 @@ import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
-import UiDialog from '../components/ui/UiDialog.vue'
-import UiDialogActions from '../components/ui/UiDialogActions.vue'
+import UiConfirmDialog from '../components/ui/UiConfirmDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -929,22 +928,17 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
       </template>
     </section>
 
-    <UiDialog
+    <UiConfirmDialog
       v-model:open="rotateConfirmOpen"
       title="Rotate development key?"
       description="The current key will stop working immediately. Accumulated usage remains."
+      confirm-label="Rotate development key"
+      confirm-variant="danger"
+      :confirm-loading="keyBusy"
+      cancel-label="Cancel"
+      @confirm="developmentAccess !== null && issueDevelopmentKey(developmentAccess.season_id)"
     >
-      <UiDialogActions>
-        <UiButton
-          variant="danger"
-          :loading="keyBusy"
-          @click="developmentAccess !== null && issueDevelopmentKey(developmentAccess.season_id)"
-        >
-          Rotate development key
-        </UiButton>
-        <UiButton variant="ghost" @click="rotateConfirmOpen = false">Cancel</UiButton>
-      </UiDialogActions>
-    </UiDialog>
+    </UiConfirmDialog>
 
     <DevelopmentCredentialDialog
       v-model:open="credentialOpen"

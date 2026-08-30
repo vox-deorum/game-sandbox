@@ -20,8 +20,7 @@ import { RouterLink, useRouter } from 'vue-router'
 
 import { cancelRun, type RunView, type SeasonView, triggerRun } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
-import UiDialog from '../ui/UiDialog.vue'
-import UiDialogActions from '../ui/UiDialogActions.vue'
+import UiConfirmDialog from '../ui/UiConfirmDialog.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
 const props = defineProps<{
@@ -141,19 +140,21 @@ async function cancel(): Promise<void> {
   <p v-if="error" class="run-error" role="alert">{{ error }}</p>
   <p v-if="latestRun?.error" class="run-error">{{ latestRun.error }}</p>
 
-  <UiDialog v-model:open="unsavedOpen" title="Run with unsaved configuration?">
+  <UiConfirmDialog
+    v-model:open="unsavedOpen"
+    title="Run with unsaved configuration?"
+    confirm-label="Run anyway"
+    :confirm-loading="triggering"
+    cancel-label="Cancel"
+    :cancel-disabled="triggering"
+    @confirm="triggerUnsaved"
+  >
     <p class="run-confirm-text">
       The configuration above has edits that are not saved. A run always uses the last saved
       configuration, so those edits will not apply to it. Cancel and save them first if the run
       should use them.
     </p>
-    <UiDialogActions>
-      <UiButton :loading="triggering" @click="triggerUnsaved">Run anyway</UiButton>
-      <UiButton variant="ghost" :disabled="triggering" @click="unsavedOpen = false">
-        Cancel
-      </UiButton>
-    </UiDialogActions>
-  </UiDialog>
+  </UiConfirmDialog>
 </template>
 
 <style scoped>

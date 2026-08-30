@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises'
 
-import { activeWindows, getRecordingHeader, getSession } from '../support/api.js'
+import {
+  activeWindows,
+  getRecordingHeader,
+  getSession,
+  stopSessionAndAwaitFree,
+} from '../support/api.js'
 import { authenticateBrowser, userIdOf } from '../support/auth.js'
 import { expect, test } from '../support/fixtures.js'
 
@@ -152,6 +157,59 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.evaluate(() => document.exitFullscreen())
   await expect(page.locator('.stage-canvas.is-fullscreen')).toHaveCount(0)
   await expect(page.locator('.replay-controls')).toBeVisible()
+})
+
+test('asks before replacing an active session, then starts the requested session', async ({
+  page,
+  admin,
+}) => {
+  await authenticateBrowser(page.context(), admin)
+  let activeSessionId: string | null = null
+
+  try {
+    await page.goto('/environments/flappy_bird')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await page.getByRole('button', { name: 'Start playing' }).click()
+    await expect(page).toHaveURL(/\/sessions\//)
+    const originalSessionId = page.url().split('/').at(-1)
+    if (originalSessionId === undefined) throw new Error('first session URL has no id')
+    activeSessionId = originalSessionId
+    await page.getByRole('button', { name: 'Pause' }).click()
+    await expect(page.locator('.overlay-banner')).toHaveText('Paused')
+
+    // Leaving the session page does not end the owner's live session. A second request must ask
+    // whether to replace it rather than silently sending the viewer back to it.
+    await page.goto('/environments/flappy_bird')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await page.getByRole('button', { name: 'Start playing' }).click()
+    const conflict = page.getByRole('dialog', { name: 'A session is already running' })
+    await expect(conflict).toBeVisible()
+    await expect(conflict.getByRole('button', { name: 'Start new', exact: true })).toBeVisible()
+    await expect(conflict.getByRole('button', { name: 'Return', exact: true })).toBeVisible()
+    await conflict.getByRole('button', { name: 'Return', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/sessions/${originalSessionId}$`))
+
+    await page.goto('/environments/flappy_bird')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await page.getByRole('button', { name: 'Start playing' }).click()
+    await page
+      .getByRole('dialog', { name: 'A session is already running' })
+      .getByRole('button', { name: 'Start new', exact: true })
+      .click()
+    await expect(page).toHaveURL(/\/sessions\//)
+    const replacementSessionId = page.url().split('/').at(-1)
+    if (replacementSessionId === undefined) throw new Error('replacement session URL has no id')
+    expect(replacementSessionId).not.toBe(originalSessionId)
+    activeSessionId = replacementSessionId
+
+    await expect
+      .poll(async () => (await getSession(admin, originalSessionId))?.status)
+      .toBe('ended')
+  } finally {
+    if (activeSessionId !== null) {
+      await stopSessionAndAwaitFree(admin, activeSessionId).catch(() => {})
+    }
+  }
 })
 
 test('shows submission-season changes and downloads its local setup file', async ({

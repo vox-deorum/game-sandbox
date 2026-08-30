@@ -17,21 +17,36 @@ import {
 
 const open = defineModel<boolean>('open', { required: true })
 
-defineProps<{
-  title: string
-  /** Optional one-line description announced with the title. */
-  description?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    title: string
+    /** Optional one-line description announced with the title. */
+    description?: string
+    /** Whether Escape, outside interaction, and the header X may dismiss the dialog. */
+    dismissible?: boolean
+  }>(),
+  { dismissible: true },
+)
+
+function preventDismiss(event: Event): void {
+  if (!props.dismissible) event.preventDefault()
+}
 </script>
 
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal>
       <DialogOverlay class="ui-dialog-overlay" />
-      <DialogContent class="ui-dialog-content" :aria-describedby="description ? undefined : ''">
+      <DialogContent
+        class="ui-dialog-content"
+        :aria-describedby="description ? undefined : ''"
+        @escape-key-down="preventDismiss"
+        @pointer-down-outside="preventDismiss"
+        @interact-outside="preventDismiss"
+      >
         <div class="ui-dialog-header">
           <DialogTitle class="ui-dialog-title">{{ title }}</DialogTitle>
-          <button type="button" class="ui-dialog-close" aria-label="Close" @click="open = false">
+          <button v-if="dismissible" type="button" class="ui-dialog-close" aria-label="Close" @click="open = false">
             <X :size="16" aria-hidden="true" />
           </button>
         </div>

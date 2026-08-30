@@ -11,8 +11,8 @@
   the enforcement.
   Each entry point opens the start form in a modal dialog (a short interruption — seed, timeout,
   confirm — not a destination), keeping the hub stable underneath. Starting resolves to a session id
-  this page navigates to; the already-active case offers rejoin by navigating to the user's existing
-  session instead of dead-ending.
+  this page navigates to. When the person already has a live session, a separate confirmation asks
+  whether to end it for the requested new session or return to it.
 -->
 <script setup lang="ts">
 import { resolveLayout } from '@game-sandbox/schema/environment'
@@ -32,6 +32,7 @@ import {
   type PublicSeasonView,
   type SeasonView,
   type StartPayload,
+  type StartSessionInput,
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
@@ -39,6 +40,7 @@ import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import InlineMarkdown from '../components/InlineMarkdown.vue'
 import SeasonChanges from '../components/SeasonChanges.vue'
 import SeatAssignmentDialog from '../components/SeatAssignmentDialog.vue'
+import SessionConflictDialog from '../components/SessionConflictDialog.vue'
 import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -46,6 +48,7 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
+import { useSessionStartConflict } from '../composables/useSessionStartConflict.js'
 import { formatDate, formatSeasonName, seatLabel } from '../lib/format.js'
 import {
   handleSessionStartResult,
@@ -62,6 +65,15 @@ const envId = String(route.params.envId)
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
 const starting = ref(false)
+const {
+  conflictOpen,
+  conflictActiveSessionId,
+  replacing,
+  conflictError,
+  surfaceConflict,
+  returnToActiveSession,
+  replaceActiveSession,
+} = useSessionStartConflict(router)
 
 // The current released boards for the embed below. An unreleased season's boards never appear because
 // this public read returns released results only. The play gate comes from playParameters separately.
@@ -284,9 +296,17 @@ async function submitStart(payload: StartPayload): Promise<void> {
   }
   startError.value = null
   starting.value = true
+  const input: StartSessionInput = { envId: meta.value.env_id, ...payload }
   try {
-    const result = await startSession({ envId: meta.value.env_id, ...payload })
-    startError.value = await handleSessionStartResult(result, router)
+    const resolution = await handleSessionStartResult(await startSession(input), router)
+    if (resolution.kind === 'already_active') {
+      playFormOpen.value = false
+      surfaceConflict(input, resolution.activeSessionId)
+      return
+    }
+    if (resolution.kind === 'error') {
+      startError.value = resolution.message
+    }
   } catch {
     startError.value = SESSION_START_FAILED_MESSAGE
   } finally {
@@ -417,6 +437,14 @@ async function submitStart(payload: StartPayload): Promise<void> {
         {{ startError }}
       </UiEmptyState>
     </UiDialog>
+    <SessionConflictDialog
+      v-model:open="conflictOpen"
+      :active-session-id="conflictActiveSessionId"
+      :replacing="replacing"
+      :error="conflictError"
+      @confirm="replaceActiveSession"
+      @secondary="returnToActiveSession"
+    />
   </section>
 </template>
 

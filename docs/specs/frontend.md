@@ -128,6 +128,17 @@ Start forms render visible effective environment parameters, including the synth
 
 While a live session start is pending, its initiating action shows a loading state and cannot be submitted again. A failed start keeps the available configuration in place and shows the error so the user can retry.
 
+If a Play, Watch, or Rate start returns `already_active`, the configuration modal closes and a standalone confirmation appears over the originating page. Its compact layout is:
+
+```text
+[X] A session is already running
+    End the active session to start this new one, or return to the active session.
+
+    [ Start new ]  [ Return ]
+```
+
+The header's `[X]` abandons the pending start and returns to the underlying page. **Return** navigates to the active session. **Start new** terminates the active session, waits for termination, retries the exact pending request, and navigates to the new session on success. While replacement is in progress, the confirmation cannot be dismissed or trigger another action. A failure remains visible and retryable. If the retry returns `already_active` again, the user must explicitly choose an action again. If the retry fails after the active session was already ended, the confirmation drops **Return**, says the active session has ended, and keeps **Start new** as a plain retry of the pending request (there is no further session to stop).
+
 ### Manage
 
 The season config editor lists every effective parameter, including the synthesized layout parameter and values hidden from players. Each value either inherits the environment default or supplies an override, so an empty string remains valid. The editor validates and canonicalizes values before saving, and it serializes only current effective parameter names.

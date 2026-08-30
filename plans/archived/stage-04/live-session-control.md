@@ -11,7 +11,7 @@ The environment page's two entry points map to the Stage 3 modes:
 - **Play** starts a `human` session. The connected user takes the environment's human slot, Flappy Bird's `player_0`; the slot-based session model already generalizes per [frontend.md](../../docs/specs/frontend.md).
 - **Watch** starts a `scripted` session, where the built-in agent plays and the user only observes.
 
-Both go through a small start form with an optional seed for reproducible runs; the human-slot timeout control appears for human play only. The form calls `POST /api/sessions` and navigates to `/sessions/:id`. A 403 means not allowlisted (the entry points are already hidden, but the backend is the enforcement). A 409 carries the active session's id, and the UI offers to rejoin it, so the one-user, one-concurrent-session rule is navigable instead of a dead end.
+Both go through a small start form with an optional seed for reproducible runs; the human-slot timeout control appears for human play only. The form calls `POST /api/sessions` and navigates to `/sessions/:id`. A 403 means not allowlisted (the entry points are already hidden, but the backend is the enforcement). A 409 carries the active session's id. The form closes and the UI shows a standalone confirmation with `[X]`, `[ Start new ]`, and `[ Return ]`: `X` abandons the pending start, Return navigates to the active session, and Start new terminates the active session, waits for termination, retries the exact pending request, and navigates on success. While replacing, the confirmation cannot dismiss or fire another action. Failures remain visible and retryable, and another conflict requires another explicit click.
 
 ## The session page
 

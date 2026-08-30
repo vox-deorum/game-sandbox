@@ -14,6 +14,7 @@ import UiCheckboxGroup from '../components/ui/UiCheckboxGroup.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiCodeBlock from '../components/ui/UiCodeBlock.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
+import UiConfirmDialog from '../components/ui/UiConfirmDialog.vue'
 import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiField from '../components/ui/UiField.vue'
@@ -49,6 +50,8 @@ const spaceTokens = [1, 2, 3, 4, 5, 6, 7, 8]
 const textTokens = ['xs', 'sm', 'md', 'lg', 'xl', '2xl']
 
 const dialogOpen = ref(false)
+const confirmDialogOpen = ref(false)
+const confirmDangerOpen = ref(false)
 const inputValue = ref('')
 const invalidValue = ref('not a number')
 const textareaValue = ref('')
@@ -338,6 +341,34 @@ const { show: showToast } = useToast()
           <UiButton variant="ghost" @click="dialogOpen = false">Cancel</UiButton>
         </UiDialogActions>
       </UiDialog>
+    </section>
+
+    <section>
+      <h2>UiConfirmDialog</h2>
+      <UiButton variant="secondary" @click="confirmDialogOpen = true">Open confirmation</UiButton>
+      <UiConfirmDialog
+        v-model:open="confirmDialogOpen"
+        title="Leave this example?"
+        description="The confirmation action is owned by the feature. Cancel closes by itself."
+        confirm-label="Confirm"
+        cancel-label="Cancel"
+        @confirm="confirmDialogOpen = false"
+      />
+      <UiButton variant="secondary" @click="confirmDangerOpen = true">
+        Open replacement confirmation
+      </UiButton>
+      <UiConfirmDialog
+        v-model:open="confirmDangerOpen"
+        title="Replace the running example?"
+        description="A danger confirmation with a secondary action, the shared error line, and no dismissal while pending."
+        confirm-label="Replace"
+        confirm-variant="danger"
+        secondary-label="Go back"
+        error="A demo of the shared error line."
+        :dismissible="false"
+        @confirm="confirmDangerOpen = false"
+        @secondary="confirmDangerOpen = false"
+      />
     </section>
 
     <section>

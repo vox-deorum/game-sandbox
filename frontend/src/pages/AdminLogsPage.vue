@@ -279,8 +279,14 @@ onUnmounted(() => {
         <div>
           <h1>Backend Logs</h1>
           <p v-if="hasSuccessfulResponse" class="logs-summary">
-            <span>{{ shownCount }} shown from {{ retainedCount }} retained</span> |
+            <span>
+              {{ shownCount }} shown from {{ retainedCount }} retained ({{ formatBytes(retainedBytes) }})
+            </span>
+            |
             <span v-if="bootId !== null" class="logs-boot">Boot {{ bootId }}</span>
+          </p>
+          <p v-if="hasSuccessfulResponse" class="logs-summary">
+            Current backend process. History resets when the process restarts.
           </p>
         </div>
         <div class="logs-actions">

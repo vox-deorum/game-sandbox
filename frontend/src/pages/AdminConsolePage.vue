@@ -45,8 +45,7 @@ import RunsList from '../components/admin/RunsList.vue'
 import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
-import UiDialog from '../components/ui/UiDialog.vue'
-import UiDialogActions from '../components/ui/UiDialogActions.vue'
+import UiConfirmDialog from '../components/ui/UiConfirmDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
@@ -660,23 +659,24 @@ onUnmounted(() => {
         @closed="closeDevelopmentHistory"
       />
 
-      <UiDialog
+      <UiConfirmDialog
         v-if="view !== null"
         v-model:open="deleteOpen"
         title="Delete season?"
         :description="`Permanently delete ${seasonLabel(view.season)}?`"
+        confirm-label="Delete"
+        confirm-variant="danger"
+        :confirm-loading="deleting"
+        cancel-label="Cancel"
+        :cancel-disabled="deleting"
+        :error="deleteError"
+        @confirm="confirmDelete"
+        @cancel="closeDelete"
       >
         <p class="delete-confirmation">
           Only closed, unreleased seasons without activity can be permanently deleted.
         </p>
-        <p v-if="deleteError" class="delete-error" role="alert">{{ deleteError }}</p>
-        <UiDialogActions>
-          <UiButton variant="danger" :loading="deleting" @click="confirmDelete">
-            Delete
-          </UiButton>
-          <UiButton variant="ghost" :disabled="deleting" @click="closeDelete">Cancel</UiButton>
-        </UiDialogActions>
-      </UiDialog>
+      </UiConfirmDialog>
     </template>
   </section>
 </template>
@@ -844,12 +844,6 @@ onUnmounted(() => {
 .delete-confirmation {
   margin: 0;
   color: var(--color-text-muted);
-}
-
-.delete-error {
-  margin: 0 0 var(--space-3);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
 }
 
 @media (max-width: 768px) {

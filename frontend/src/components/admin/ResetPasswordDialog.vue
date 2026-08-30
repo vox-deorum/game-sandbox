@@ -9,9 +9,7 @@ import { ref, watch } from 'vue'
 import { authClient } from '../../auth.js'
 import { useTargetedAction } from '../../composables/useTargetedAction.js'
 import type { RosterUser } from '../../lib/roster.js'
-import UiButton from '../ui/UiButton.vue'
-import UiDialog from '../ui/UiDialog.vue'
-import UiDialogActions from '../ui/UiDialogActions.vue'
+import UiConfirmDialog from '../ui/UiConfirmDialog.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 
@@ -49,10 +47,15 @@ async function onConfirm(): Promise<void> {
 </script>
 
 <template>
-  <UiDialog
+  <UiConfirmDialog
     v-model:open="open"
     title="Reset password"
     :description="target !== null ? `Set a new password for ${target.name}.` : undefined"
+    confirm-label="Save"
+    :confirm-loading="busy"
+    cancel-label="Cancel"
+    :error="error"
+    @confirm="onConfirm"
   >
     <UiField label="New password">
       <template #default="{ id, describedby }">
@@ -65,19 +68,5 @@ async function onConfirm(): Promise<void> {
         />
       </template>
     </UiField>
-    <p v-if="error !== null" class="dialog-error" role="alert">{{ error }}</p>
-    <UiDialogActions>
-      <UiButton :loading="busy" @click="onConfirm">Save</UiButton>
-      <UiButton variant="ghost" @click="open = false">Cancel</UiButton>
-    </UiDialogActions>
-  </UiDialog>
+  </UiConfirmDialog>
 </template>
-
-<style scoped>
-.dialog-error {
-  margin: var(--space-2) 0 0;
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
-</style>

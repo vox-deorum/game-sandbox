@@ -21,8 +21,7 @@ import {
 import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
-import UiDialog from '../components/ui/UiDialog.vue'
-import UiDialogActions from '../components/ui/UiDialogActions.vue'
+import UiConfirmDialog from '../components/ui/UiConfirmDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -299,22 +298,18 @@ function cancelRotation(): void {
     </UiEmptyState>
     <UiEmptyState v-if="keyError !== null" tone="danger">{{ keyError }}</UiEmptyState>
 
-    <UiDialog
+    <UiConfirmDialog
       v-model:open="confirmOpen"
       title="Rotate development key?"
       description="The current key will stop working immediately. Accumulated usage remains."
+      confirm-label="Rotate development key"
+      confirm-variant="danger"
+      :confirm-loading="confirmSeason !== null && keyBusySeasonId === confirmSeason.season_id"
+      cancel-label="Cancel"
+      @confirm="confirmSeason !== null && issueKey(confirmSeason)"
+      @cancel="cancelRotation"
     >
-      <UiDialogActions>
-        <UiButton
-          variant="danger"
-          :loading="confirmSeason !== null && keyBusySeasonId === confirmSeason.season_id"
-          @click="confirmSeason !== null && issueKey(confirmSeason)"
-        >
-          Rotate development key
-        </UiButton>
-        <UiButton variant="ghost" @click="cancelRotation">Cancel</UiButton>
-      </UiDialogActions>
-    </UiDialog>
+    </UiConfirmDialog>
 
     <DevelopmentCredentialDialog
       v-model:open="credentialOpen"

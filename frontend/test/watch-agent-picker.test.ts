@@ -10,9 +10,10 @@ import { memoryRouter, renderWithMe } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   startSession: vi.fn(),
+  stopSession: vi.fn(),
 }))
 
-import { getMe, startSession } from '../src/api/client.js'
+import { getMe, startSession, stopSession } from '../src/api/client.js'
 import WatchAgentPicker from '../src/components/WatchAgentPicker.vue'
 
 const SessionStub = { template: '<div>session {{ $route.params.id }}</div>' }
@@ -112,6 +113,32 @@ describe('WatchAgentPicker', () => {
       humanTimeoutMs: undefined,
     })
     await screen.findByText('session sess-naive')
+  })
+
+  it('replaces an active session before retrying a direct fixed single-seat watch', async () => {
+    const fixedMeta = flappyMeta({
+      parameters: flappyMeta().parameters.filter((parameter) => parameter.name === 'players'),
+    })
+    vi.mocked(startSession)
+      .mockResolvedValueOnce({ ok: false, reason: 'already_active', activeSessionId: 'active-9' })
+      .mockResolvedValueOnce({
+        ok: true,
+        session: { id: 'new-direct', wsPath: '/api/sessions/new-direct/ws' },
+      })
+    await renderPicker(fixedMeta, [], { players: 1 })
+    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent('A session is already running')
+    expect(vi.mocked(stopSession)).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start new' }))
+    await screen.findByText('session new-direct')
+    expect(vi.mocked(stopSession)).toHaveBeenCalledWith('active-9')
+    expect(vi.mocked(startSession)).toHaveBeenNthCalledWith(2, {
+      envId: 'flappy_bird',
+      seasonId: 'season-1',
+      parameters: { players: 1 },
+      seats: { seat_0: { kind: 'builtin-agent', name: 'naive' } },
+    })
   })
 
   it('lists every declared builtin and preselects the clicked builtin by name', async () => {
@@ -218,6 +245,20 @@ describe('WatchAgentPicker', () => {
       session: { id: 'sess-hearts', wsPath: '/api/sessions/sess-hearts/ws' },
     })
     await screen.findByText('session sess-hearts')
+  })
+
+  it('returns to the active session from a configured rating start without stopping it', async () => {
+    vi.mocked(startSession).mockResolvedValue({
+      ok: false,
+      reason: 'already_active',
+      activeSessionId: 'active-rate',
+    })
+    await renderPicker(heartsMeta(), [summary()])
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Return' }))
+    await screen.findByText('session active-rate')
+    expect(vi.mocked(stopSession)).not.toHaveBeenCalled()
   })
 
   it('keeps a failed configured start open and shows its error', async () => {

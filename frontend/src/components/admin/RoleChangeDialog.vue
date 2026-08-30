@@ -11,9 +11,7 @@ import { computed, watch } from 'vue'
 import { authClient } from '../../auth.js'
 import { useTargetedAction } from '../../composables/useTargetedAction.js'
 import type { RosterUser } from '../../lib/roster.js'
-import UiButton from '../ui/UiButton.vue'
-import UiDialog from '../ui/UiDialog.vue'
-import UiDialogActions from '../ui/UiDialogActions.vue'
+import UiConfirmDialog from '../ui/UiConfirmDialog.vue'
 
 const props = defineProps<{
   target: RosterUser | null
@@ -64,20 +62,14 @@ async function onConfirm(): Promise<void> {
 </script>
 
 <template>
-  <UiDialog v-model:open="open" :title="`${verb} user`" :description="description">
-    <p v-if="error !== null" class="dialog-error" role="alert">{{ error }}</p>
-    <UiDialogActions>
-      <UiButton :loading="busy" @click="onConfirm">{{ verb }}</UiButton>
-      <UiButton variant="ghost" @click="open = false">Cancel</UiButton>
-    </UiDialogActions>
-  </UiDialog>
+  <UiConfirmDialog
+    v-model:open="open"
+    :title="`${verb} user`"
+    :description="description"
+    :confirm-label="verb"
+    :confirm-loading="busy"
+    cancel-label="Cancel"
+    :error="error"
+    @confirm="onConfirm"
+  />
 </template>
-
-<style scoped>
-.dialog-error {
-  margin: var(--space-2) 0 0;
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
-</style>

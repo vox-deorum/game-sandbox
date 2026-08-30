@@ -28,6 +28,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import {
   type AgentAssignmentInput,
   type StartPayload,
+  type StartSessionInput,
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
@@ -38,7 +39,9 @@ import {
 } from '../lib/session-start.js'
 import { visibleParameters } from '@game-sandbox/schema/environment'
 import { canPlay, isAdmin, useMe } from '../me.js'
+import { useSessionStartConflict } from '../composables/useSessionStartConflict.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
+import SessionConflictDialog from './SessionConflictDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
 import UiDialog from './ui/UiDialog.vue'
@@ -62,6 +65,15 @@ const startError = ref<string | null>(null)
 // the single-seat immediate-start path uses its row key; configured starts use the dialog key.
 const starting = ref<string | null>(null)
 const DIALOG_START = 'dialog'
+const {
+  conflictOpen,
+  conflictActiveSessionId,
+  replacing,
+  conflictError,
+  surfaceConflict,
+  returnToActiveSession,
+  replaceActiveSession,
+} = useSessionStartConflict(router)
 
 // The watch configuration dialog's state (multi-seat environments only). It opens with the clicked
 // agent preselected into every seat, which the viewer can change before starting.
@@ -142,8 +154,8 @@ function chooseAgent(
 
 /**
  * Start a watch run from a composed payload: the seat dialog's full `seats` (with its seed) for a
- * multi-seat environment, or a one-seat assignment for a single-seat one, then navigate to it,
- * reusing the rejoin / not-active / error handling.
+ * multi-seat environment, or a one-seat assignment for a single-seat one. A conflicting active
+ * session is resolved only after the viewer explicitly chooses what to do with it.
  */
 async function startRun(payload: StartPayload, loadingKey?: string): Promise<void> {
   if (starting.value !== null) {
@@ -151,9 +163,17 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
   }
   startError.value = null
   starting.value = loadingKey ?? DIALOG_START
+  const input: StartSessionInput = { envId: props.envId, ...payload }
   try {
-    const result = await startSession({ envId: props.envId, ...payload })
-    startError.value = await handleSessionStartResult(result, router)
+    const resolution = await handleSessionStartResult(await startSession(input), router)
+    if (resolution.kind === 'already_active') {
+      dialogOpen.value = false
+      surfaceConflict(input, resolution.activeSessionId)
+      return
+    }
+    if (resolution.kind === 'error') {
+      startError.value = resolution.message
+    }
   } catch {
     startError.value = SESSION_START_FAILED_MESSAGE
   } finally {
@@ -243,6 +263,14 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
         {{ startError }}
       </UiEmptyState>
     </UiDialog>
+    <SessionConflictDialog
+      v-model:open="conflictOpen"
+      :active-session-id="conflictActiveSessionId"
+      :replacing="replacing"
+      :error="conflictError"
+      @confirm="replaceActiveSession"
+      @secondary="returnToActiveSession"
+    />
   </template>
 </template>
 

@@ -112,6 +112,8 @@ Parameter validation happens before seat-assignment validation. Only a valid `pl
 
 The backend resolves the selected layout from installed environment metadata before accepting assignments. It rejects an undeclared builtin anywhere, including a wide-seat companion. It also rejects a submission, another builtin, or a client-supplied companion on a restricted seat before creating the session or starting container work. A self companion is rejected on a singleton or restricted seat, and on a wide seat with any member that is not human-capable.
 
+When a Play, Watch, or Rate start returns `already_active`, the browser resolves the conflict through the standalone confirmation specified in [frontend.md](frontend.md): the viewer explicitly returns to the active session, abandons the pending request, or ends the active session and retries the exact pending request. The backend API and its `already_active` response stay unchanged; replacement is an ordinary stop followed by an ordinary start, so a second `already_active` response simply surfaces the confirmation again.
+
 ## Human input
 
 An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines the primary human player. A self-played wide seat exposes every member to the renderer as controlled. The renderer can accept:

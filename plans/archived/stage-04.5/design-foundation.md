@@ -58,6 +58,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 - `UiCard`: replaces `.card`, `.end-card`, and the `.start-form` surface; a surface with border, radius, and padding slots rather than a layout component.
 - `UiField` with `UiInput` or `UiTextarea`: replaces `.field`, `.hint`, and feature-owned text-control styling. It wires the label, the control id, and `aria-describedby` for hint and error text, so association is automatic.
 - `UiDialog`: wraps Reka UI Dialog. The start form renders inside it as a feature component.
+- `UiConfirmDialog`: builds confirmation flows on `UiDialog`, including explicit consequence actions and shared pending and error states. `UiDialog` exposes a dismissible control, which confirmation flows turn off while a consequential operation is pending.
 - `UiSlider`: wraps Reka UI Slider for the replay scrubber, keeping the `slider` role the end-to-end suite locates.
 - `UiStatusBadge`: replaces `.status-dot` plus its adjacent text. The dot keeps its color, and the label carries the meaning.
 - `UiEmptyState`: replaces the ad hoc `.status` loading and empty paragraphs with one consistent presentation.
