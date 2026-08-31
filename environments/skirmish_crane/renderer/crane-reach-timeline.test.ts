@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Container } from 'pixi.js'
 
+import { FOG_CROSSFADE_MS } from './composition.js'
 import { CraneReachRenderer } from './index.js'
 import type { CraneReachScene, SceneUnit } from './scene.js'
 import {
@@ -35,8 +37,10 @@ describe('Crane Reach event windows', () => {
       eventElapsedMs: number
       settleDurationMs: number
       settleRemainingMs: number
+      eventContacted: boolean
       currentScene: CraneReachScene
       advanceEvent(dtMs: number): boolean
+      installEventContact: ReturnType<typeof vi.fn>
       updateEventPhaseProbe: ReturnType<typeof vi.fn>
       reconcilePresentedScene: ReturnType<typeof vi.fn>
       reconcileEvent: ReturnType<typeof vi.fn>
@@ -49,7 +53,9 @@ describe('Crane Reach event windows', () => {
       eventElapsedMs: schedule.durationMs - 1,
       settleDurationMs: T.watchSettleMs,
       settleRemainingMs: 0,
+      eventContacted: true,
       currentScene: resolved,
+      installEventContact: vi.fn(),
       updateEventPhaseProbe: vi.fn(),
       reconcilePresentedScene: vi.fn(),
       reconcileEvent: vi.fn(),
@@ -62,6 +68,345 @@ describe('Crane Reach event windows', () => {
     expect(renderer.reconcilePresentedScene).toHaveBeenCalledWith(resolved, true, true)
     expect(renderer.reconcileEvent).toHaveBeenCalledOnce()
     expect(renderer.completeEvent).not.toHaveBeenCalled()
+    expect(renderer.installEventContact).not.toHaveBeenCalled()
+  })
+
+  it('changes perspective at contact once, before drawing the first attack frame', () => {
+    const schedule = eventWindows(shape({ movementTiles: 2, hasTarget: true }))
+    const calls: string[] = []
+    type ContactHarness = {
+      eventSchedule: typeof schedule
+      eventAnimating: boolean
+      eventElapsedMs: number
+      eventContacted: boolean
+      settleDurationMs: number
+      settleRemainingMs: number
+      presentedScene: null
+      advanceEvent(dtMs: number): boolean
+      installEventContact(): void
+      updateEventPhaseProbe(): void
+      reconcileEvent(): void
+      completeEvent(): void
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as ContactHarness
+    Object.assign(renderer, {
+      eventSchedule: schedule,
+      eventAnimating: true,
+      eventElapsedMs: (schedule.attack?.startMs ?? 0) - 1,
+      eventContacted: false,
+      settleDurationMs: 0,
+      settleRemainingMs: 0,
+      presentedScene: null,
+      installEventContact: () => {
+        renderer.eventContacted = true
+        calls.push('contact')
+      },
+      updateEventPhaseProbe: () => calls.push('phase'),
+      reconcileEvent: () => calls.push('event'),
+      completeEvent: () => calls.push('complete'),
+    })
+
+    expect(renderer.advanceEvent(1)).toBe(true)
+    expect(calls).toEqual(['contact', 'phase', 'event'])
+    expect(renderer.advanceEvent(1)).toBe(true)
+    expect(calls.filter((call) => call === 'contact')).toHaveLength(1)
+  })
+
+  it('processes contact at the end of stationary, move-only, and capture-only events', () => {
+    const cases = [
+      shape({ hasTarget: true }),
+      shape({ movementTiles: 2 }),
+      shape({ movementTiles: 2, hasReaction: true }),
+      shape(),
+    ]
+    for (const eventShape of cases) {
+      const schedule = eventWindows(eventShape)
+      type BoundaryHarness = {
+        eventSchedule: typeof schedule
+        eventAnimating: boolean
+        eventElapsedMs: number
+        eventContacted: boolean
+        settleDurationMs: number
+        settleRemainingMs: number
+        presentedScene: null
+        advanceEvent(dtMs: number): boolean
+        installEventContact: ReturnType<typeof vi.fn>
+        completeEvent: ReturnType<typeof vi.fn>
+        updateEventPhaseProbe: ReturnType<typeof vi.fn>
+        reconcileEvent: ReturnType<typeof vi.fn>
+      }
+      const renderer = Object.create(CraneReachRenderer.prototype) as BoundaryHarness
+      const installEventContact = vi.fn(() => {
+        renderer.eventContacted = true
+      })
+      Object.assign(renderer, {
+        eventSchedule: schedule,
+        eventAnimating: true,
+        eventElapsedMs:
+          (schedule.movement?.endMs ?? schedule.activation.endMs) - 1,
+        eventContacted: false,
+        settleDurationMs: 0,
+        settleRemainingMs: 0,
+        presentedScene: null,
+        installEventContact,
+        completeEvent: vi.fn(),
+        updateEventPhaseProbe: vi.fn(),
+        reconcileEvent: vi.fn(),
+      })
+
+      renderer.advanceEvent(1)
+
+      expect(installEventContact).toHaveBeenCalledOnce()
+      if ((schedule.movement?.endMs ?? schedule.activation.endMs) === schedule.durationMs) {
+        expect(renderer.completeEvent).toHaveBeenCalledOnce()
+      }
+    }
+  })
+
+  it('clears the outgoing veil immediately when the resolving view reaches contact', () => {
+    const fogLayer = new Container()
+    const fadingFogLayer = new Container()
+    fogLayer.addChild(new Container())
+    fadingFogLayer.addChild(new Container())
+    const scene = { tiles: [], hud: { terminal: null } } as unknown as CraneReachScene
+    type FogHarness = {
+      perspective: null
+      fogLayer: Container
+      fadingFogLayer: Container
+      fogElapsedMs: number
+      sprite: () => null
+      ctx: { container: HTMLElement }
+      applyFogCrossfade(): void
+      installFog(scene: CraneReachScene, perspective: null, crossfade: boolean): void
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as FogHarness
+    Object.assign(renderer, {
+      perspective: null,
+      fogLayer,
+      fadingFogLayer,
+      fogElapsedMs: 0,
+      sprite: () => null,
+      ctx: { container: document.createElement('div') },
+    })
+
+    renderer.installFog(scene, null, false)
+
+    expect(renderer.fadingFogLayer.children).toHaveLength(0)
+    expect(renderer.fogElapsedMs).toBe(FOG_CROSSFADE_MS)
+    expect(renderer.fogLayer.alpha).toBe(1)
+    expect(renderer.fadingFogLayer.alpha).toBe(0)
+  })
+
+  it('refreshes retained event units after installing the final-tile fog', () => {
+    const arriving = {
+      hud: { terminal: null },
+      units: [],
+      tiles: [],
+      visibility: new Map(),
+    } as unknown as CraneReachScene
+    const retained = { battlefieldKey: 'before-contact' } as CraneReachScene
+    const calls: string[] = []
+    type ContactInstallHarness = {
+      currentScene: CraneReachScene
+      previousScene: CraneReachScene
+      event: { targetId: string; deathId: string }
+      perspective: { observers: string[]; units: Set<string>; tiles: Set<string> }
+      eventContacted: boolean
+      installEventContact(): void
+      installFog: ReturnType<typeof vi.fn>
+      reconcileUnits: ReturnType<typeof vi.fn>
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as ContactInstallHarness
+    Object.assign(renderer, {
+      currentScene: arriving,
+      previousScene: retained,
+      event: { targetId: 'defeated', deathId: 'defeated' },
+      perspective: { observers: [], units: new Set(), tiles: new Set() },
+      eventContacted: false,
+      installFog: vi.fn(() => calls.push('fog')),
+      reconcileUnits: vi.fn(() => calls.push('units')),
+    })
+
+    renderer.installEventContact()
+
+    expect(renderer.eventContacted).toBe(true)
+    expect(renderer.installFog).toHaveBeenCalledWith(
+      arriving,
+      expect.objectContaining({ units: new Set(['defeated']) }),
+      false,
+    )
+    expect(renderer.reconcileUnits).toHaveBeenCalledWith(retained)
+    expect(calls).toEqual(['fog', 'units'])
+  })
+
+  it('keeps the final-tile fog on refresh through reaction and its settled hold', () => {
+    const schedule = eventWindows(shape({ hasReaction: true }))
+    const prior = { battlefieldKey: 'before-contact' } as CraneReachScene
+    const arriving = {
+      hud: { terminal: null },
+      units: [],
+      tiles: [],
+      visibility: new Map(),
+    } as unknown as CraneReachScene
+    const startPerspective = { observers: [], units: new Set<string>(), tiles: new Set<string>() }
+    const fogCalls: Array<{ scene: CraneReachScene; crossfade: boolean }> = []
+    type LifecycleHarness = {
+      eventSchedule: typeof schedule
+      eventAnimating: boolean
+      eventElapsedMs: number
+      eventContacted: boolean
+      settleDurationMs: number
+      settleRemainingMs: number
+      event: { targetId: null; deathId: null }
+      currentScene: CraneReachScene
+      previousScene: CraneReachScene
+      presentedScene: CraneReachScene
+      perspective: typeof startPerspective
+      advanceEvent(dtMs: number): boolean
+      refreshVisual(): void
+      completeEvent(): void
+      installFog: ReturnType<typeof vi.fn>
+      ensureBattlefield: ReturnType<typeof vi.fn>
+      reconcileUnits: ReturnType<typeof vi.fn>
+      reconcilePresentedScene: ReturnType<typeof vi.fn>
+      reconcileEvent: ReturnType<typeof vi.fn>
+      updateEventPhaseProbe: ReturnType<typeof vi.fn>
+      reconcileEventActivation: ReturnType<typeof vi.fn>
+      inspectedUnit: ReturnType<typeof vi.fn>
+      eventRangeVisible: ReturnType<typeof vi.fn>
+      clearRange: ReturnType<typeof vi.fn>
+      followActivation: ReturnType<typeof vi.fn>
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as LifecycleHarness
+    const installFog = vi.fn((scene: CraneReachScene, perspective: typeof startPerspective) => {
+      fogCalls.push({ scene, crossfade: false })
+      renderer.perspective = perspective
+    })
+    const reconcilePresentedScene = vi.fn((scene: CraneReachScene) => {
+      renderer.presentedScene = scene
+    })
+    Object.assign(renderer, {
+      eventSchedule: schedule,
+      eventAnimating: true,
+      eventElapsedMs: schedule.activation.endMs - 1,
+      eventContacted: false,
+      settleDurationMs: T.watchSettleMs,
+      settleRemainingMs: 0,
+      event: { targetId: null, deathId: null },
+      currentScene: arriving,
+      previousScene: prior,
+      presentedScene: prior,
+      perspective: startPerspective,
+      installFog,
+      ensureBattlefield: vi.fn(),
+      reconcileUnits: vi.fn(),
+      reconcilePresentedScene,
+      reconcileEvent: vi.fn(),
+      updateEventPhaseProbe: vi.fn(),
+      reconcileEventActivation: vi.fn(),
+      inspectedUnit: vi.fn(() => null),
+      eventRangeVisible: vi.fn(() => false),
+      clearRange: vi.fn(),
+      followActivation: vi.fn(),
+    })
+
+    // A stationary capture reaches contact when its activation cue ends, before its reaction.
+    expect(renderer.advanceEvent(1)).toBe(true)
+    expect(renderer.eventContacted).toBe(true)
+    expect(fogCalls).toEqual([{ scene: arriving, crossfade: false }])
+    expect(renderer.reconcileUnits).toHaveBeenCalledWith(prior)
+
+    renderer.refreshVisual()
+    expect(fogCalls).toEqual([
+      { scene: arriving, crossfade: false },
+      { scene: arriving, crossfade: false },
+    ])
+    expect(renderer.reconcilePresentedScene).toHaveBeenLastCalledWith(prior, true, true)
+
+    renderer.advanceEvent(schedule.durationMs - renderer.eventElapsedMs)
+    expect(renderer.settleRemainingMs).toBe(T.watchSettleMs)
+    expect(renderer.reconcilePresentedScene).toHaveBeenLastCalledWith(arriving, true, true)
+
+    renderer.refreshVisual()
+    expect(fogCalls).toHaveLength(3)
+    expect(fogCalls[2]).toEqual({ scene: arriving, crossfade: false })
+    expect(renderer.reconcilePresentedScene).toHaveBeenLastCalledWith(arriving, true, true)
+
+    renderer.advanceEvent(T.watchSettleMs)
+    expect(renderer.eventAnimating).toBe(false)
+    expect(renderer.reconcilePresentedScene).toHaveBeenLastCalledWith(arriving, false)
+    expect(renderer.followActivation).toHaveBeenCalledOnce()
+  })
+
+  it('uses ordinary fog reconciliation before contact and after event completion', () => {
+    const prior = { battlefieldKey: 'before-contact' } as CraneReachScene
+    const arriving = { battlefieldKey: 'after-contact' } as CraneReachScene
+    type RefreshHarness = {
+      eventAnimating: boolean
+      eventContacted: boolean
+      presentedScene: CraneReachScene
+      currentScene: CraneReachScene
+      refreshVisual(): void
+      ensureBattlefield: ReturnType<typeof vi.fn>
+      installFog: ReturnType<typeof vi.fn>
+      reconcilePresentedScene: ReturnType<typeof vi.fn>
+      reconcileEvent: ReturnType<typeof vi.fn>
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as RefreshHarness
+    Object.assign(renderer, {
+      eventAnimating: true,
+      eventContacted: false,
+      presentedScene: prior,
+      currentScene: arriving,
+      ensureBattlefield: vi.fn(),
+      installFog: vi.fn(),
+      reconcilePresentedScene: vi.fn(),
+      reconcileEvent: vi.fn(),
+    })
+
+    renderer.refreshVisual()
+    expect(renderer.installFog).not.toHaveBeenCalled()
+    expect(renderer.reconcilePresentedScene).toHaveBeenCalledWith(prior, true, false)
+
+    renderer.eventAnimating = false
+    renderer.eventContacted = true
+    renderer.refreshVisual()
+    expect(renderer.installFog).not.toHaveBeenCalled()
+    expect(renderer.reconcilePresentedScene).toHaveBeenLastCalledWith(prior, false, false)
+  })
+
+  it('redraws a terminal final scene without restoring the starting fog', () => {
+    const prior = { battlefieldKey: 'before-terminal' } as CraneReachScene
+    const terminal = { hud: { terminal: 'red' } } as unknown as CraneReachScene
+    type TerminalRefreshHarness = {
+      eventAnimating: boolean
+      eventContacted: boolean
+      perspective: null
+      presentedScene: CraneReachScene
+      currentScene: CraneReachScene
+      refreshVisual(): void
+      ensureBattlefield: ReturnType<typeof vi.fn>
+      installFog: ReturnType<typeof vi.fn>
+      reconcilePresentedScene: ReturnType<typeof vi.fn>
+      reconcileEvent: ReturnType<typeof vi.fn>
+    }
+    const renderer = Object.create(CraneReachRenderer.prototype) as TerminalRefreshHarness
+    Object.assign(renderer, {
+      eventAnimating: true,
+      eventContacted: true,
+      perspective: null,
+      presentedScene: prior,
+      currentScene: terminal,
+      ensureBattlefield: vi.fn(),
+      installFog: vi.fn(),
+      reconcilePresentedScene: vi.fn(),
+      reconcileEvent: vi.fn(),
+    })
+
+    renderer.refreshVisual()
+
+    expect(renderer.installFog).toHaveBeenCalledWith(terminal, null, false)
+    expect(renderer.reconcilePresentedScene).toHaveBeenCalledWith(prior, true, true)
   })
 
   it('keeps the completed actor range during a move-only settled frame', () => {

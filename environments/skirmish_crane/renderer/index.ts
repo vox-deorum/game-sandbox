@@ -56,7 +56,13 @@ import {
   wireOrderHits,
 } from './composition.js'
 import { MONO } from './draw.js'
-import { eventVisible, type Perspective, perspectiveFor, visibleUnits } from './fog.js'
+import {
+  eventVisible,
+  type Perspective,
+  perspectiveFor,
+  perspectiveForObservers,
+  visibleUnits,
+} from './fog.js'
 import { drawHud, drawInspectionCard, type HudPaint } from './hud.js'
 import {
   EMPTY_INSPECTION,
@@ -191,6 +197,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private settleDurationMs = 0
   /** What remains of that hold once the event's own schedule has finished. */
   private settleRemainingMs = 0
+  /** True after the resolving perspective has reached the event's final tile. */
+  private eventContacted = false
   private inspection: InspectionState = EMPTY_INSPECTION
   /** The perspective the presented frame is drawn through; null when nothing is hidden. */
   private perspective: Perspective | null = null
@@ -329,7 +337,13 @@ export class CraneReachRenderer extends PixiRenderer {
     const scene = this.presentedScene ?? this.currentScene
     if (scene === null) return
     this.ensureBattlefield(scene)
-    this.reconcilePresentedScene(scene, this.eventAnimating, this.settleRemainingMs > 0)
+    const retainPerspective = this.eventAnimating && this.eventContacted
+    if (retainPerspective && this.currentScene !== null) {
+      // Texture arrival redraws every layer. Repaint the settled final-tile veil from the arriving
+      // scene instead of restoring the starting view that the event still borrows for its units.
+      this.installFog(this.currentScene, this.perspective, false)
+    }
+    this.reconcilePresentedScene(scene, this.eventAnimating, retainPerspective)
     this.reconcileEvent()
   }
 
@@ -363,6 +377,9 @@ export class CraneReachRenderer extends PixiRenderer {
       return false
     }
     this.eventElapsedMs = Math.min(schedule.durationMs, this.eventElapsedMs + dtMs)
+    if (!this.eventContacted && this.eventElapsedMs >= this.eventContactMs(schedule)) {
+      this.installEventContact()
+    }
     if (this.eventElapsedMs < schedule.durationMs) {
       this.updateEventPhaseProbe()
       if (this.presentedScene !== null) {
@@ -471,6 +488,7 @@ export class CraneReachRenderer extends PixiRenderer {
       scene.event === null ? null : eventWindows(eventShapeFor(scene.event), eventScale(options))
     this.eventElapsedMs = animate ? 0 : (this.eventSchedule?.durationMs ?? 0)
     this.eventAnimating = animate
+    this.eventContacted = !animate
     this.settleDurationMs = animate ? eventSettleDuration(this.actorIsControlled(scene)) : 0
     this.settleRemainingMs = 0
     this.deathSnapshot = animate ? deathSnapshotFor(this.previousScene, scene) : null
@@ -563,6 +581,33 @@ export class CraneReachRenderer extends PixiRenderer {
     return perspectiveFor(scene, this.ctx.controlledPlayers, this.ctx.header.seats)
   }
 
+  /** Movement ends at contact, or the activation cue does when the actor stays put. */
+  private eventContactMs(schedule: EventWindows): number {
+    return schedule.movement?.endMs ?? schedule.activation.endMs
+  }
+
+  /**
+   * Let the resolving side see from its final position before its strike or reaction appears. The
+   * event still draws the retained prior scene, which keeps a killed target available for its death
+   * dissolve while all unrelated hidden units stay absent.
+   */
+  private installEventContact(): void {
+    const scene = this.currentScene
+    if (scene === null) return
+    const event = this.event
+    const retainedTarget =
+      event !== null && event.targetId !== null && event.targetId === event.deathId
+        ? event.targetId
+        : null
+    const perspective =
+      this.perspective === null
+        ? null
+        : perspectiveForObservers(scene, this.perspective.observers, retainedTarget)
+    this.eventContacted = true
+    this.installFog(scene, perspective, false)
+    this.reconcileUnits(this.previousScene ?? scene)
+  }
+
   /**
    * Whether the resolved activation happened where this viewer could see it.
    *
@@ -582,13 +627,24 @@ export class CraneReachRenderer extends PixiRenderer {
    * observers are the identity of a perspective: the same eyes always see the same ground.
    */
   private reconcileFog(scene: CraneReachScene): void {
-    const perspective = this.perspectiveOf(scene)
+    this.installFog(scene, this.perspectiveOf(scene), true)
+  }
+
+  /** Install a perspective, either cross-dissolving normally or clearing the old veil at contact. */
+  private installFog(
+    scene: CraneReachScene,
+    perspective: Perspective | null,
+    crossfade: boolean,
+  ): void {
     const before = this.perspective?.observers.join(' ') ?? 'none'
     const after = perspective?.observers.join(' ') ?? 'none'
-    if (before !== after) {
+    if (crossfade && before !== after) {
       clear(this.fadingFogLayer)
       for (const child of [...this.fogLayer.children]) this.fadingFogLayer.addChild(child)
       this.fogElapsedMs = 0
+    } else if (!crossfade) {
+      clear(this.fadingFogLayer)
+      this.fogElapsedMs = FOG_CROSSFADE_MS
     }
     this.perspective = perspective
     clear(this.fogLayer)

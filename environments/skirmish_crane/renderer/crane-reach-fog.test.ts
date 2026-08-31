@@ -4,7 +4,13 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 
-import { eventVisible, perspectiveFor, visibleUnits, visionRadius } from './fog.js'
+import {
+  eventVisible,
+  perspectiveFor,
+  perspectiveForObservers,
+  visibleUnits,
+  visionRadius,
+} from './fog.js'
 import { hexDistance, type SceneUnit, tileCoordinate } from './scene.js'
 import {
   armyScene,
@@ -184,5 +190,39 @@ describe('Crane Reach fog of war', () => {
     // The veil marks where perception ends; every tile is still in the scene and still drawn.
     expect(perspective?.tiles.size).toBeLessThan(scene.tiles.length)
     expect(scene.tiles.length).toBeGreaterThan(0)
+  })
+
+  it('rebuilds the resolving view from its final tile while retaining only a killed target', () => {
+    const source = skirmishScene(skirmishStates[0] as StepState)
+    const observer = source.units[0] as SceneUnit
+    const target = source.units.find((unit) => unit.unitId !== observer.unitId) as SceneUnit
+    const unrelated = source.units.find(
+      (unit) => unit.unitId !== observer.unitId && unit.unitId !== target.unitId,
+    ) as SceneUnit
+    const destination = source.tiles.find((tile) => tile.key !== observer.tileKey)
+    expect(destination).toBeDefined()
+
+    const arrived = {
+      ...source,
+      units: source.units
+        .filter((unit) => unit.unitId !== target.unitId)
+        .map((unit) =>
+          unit.unitId === observer.unitId
+            ? { ...unit, tileKey: destination?.key ?? unit.tileKey, position: destination?.center ?? unit.position }
+            : unit,
+        ),
+      visibility: new Map([[observer.playerId, new Set<string>()]]),
+    }
+    const perspective = perspectiveForObservers(arrived, [observer.playerId], target.unitId)
+
+    expect(perspective?.observers).toEqual([observer.playerId])
+    expect(perspective?.tiles).toContain(destination?.key)
+    expect(perspective?.units).toEqual(new Set([observer.unitId, target.unitId]))
+    expect(perspective?.units.has(unrelated.unitId)).toBe(false)
+  })
+
+  it('keeps the terminal full-board policy for an explicit resolving view', () => {
+    const final = skirmishScene(skirmishStates[skirmishStates.length - 1] as StepState)
+    expect(perspectiveForObservers(final, ['player_0'], 'removed_target')).toBeNull()
   })
 })

@@ -62,9 +62,26 @@ export function perspectiveFor(
       ? [acting.playerId]
       : side.filter((player) => living.has(player))
 
+  return perspectiveForObservers(scene, observers)
+}
+
+/**
+ * Rebuild a view from known observers against a particular scene. Event presentation uses this when
+ * a moving unit reaches its final tile: the same observers see from their new positions before a
+ * strike or capture reaction begins.
+ */
+export function perspectiveForObservers(
+  scene: CraneReachScene,
+  observers: readonly string[],
+  retainedUnitId: string | null = null,
+): Perspective | null {
+  if (scene.hud.terminal !== null) return null
+  const living = new Map(scene.units.map((unit) => [unit.playerId, unit]))
+  const livingObservers = observers.filter((player) => living.has(player))
+
   const units = new Set<string>()
   const tiles = new Set<string>()
-  for (const player of observers) {
+  for (const player of livingObservers) {
     const observer = living.get(player)
     if (observer === undefined) continue
     units.add(observer.unitId)
@@ -75,7 +92,12 @@ export function perspectiveFor(
       if (hexDistance(from, tile) <= radius) tiles.add(tile.key)
     }
   }
-  return { observers: observers.filter((player) => living.has(player)), units, tiles }
+  // A killed target has no final visibility record, but its retained prior node still needs to be
+  // present for this event's death dissolve. Never retain a living target that the final masks hide.
+  if (retainedUnitId !== null && !scene.units.some((unit) => unit.unitId === retainedUnitId)) {
+    units.add(retainedUnitId)
+  }
+  return { observers: livingObservers, units, tiles }
 }
 
 /**
