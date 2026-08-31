@@ -632,7 +632,7 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     },
     // No parameter override: the play-open season's complete map already resolves to the default
     // skirmish plan, and a partial map is rejected outright.
-    { seed: 4, humanTimeoutMs: 120_000 },
+    { seed: 5, humanTimeoutMs: 120_000 },
   )
 
   try {
@@ -658,6 +658,8 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await expect(rendererHost).toHaveAttribute('data-crane-order', '')
     await expect(rendererHost).toHaveAttribute('data-crane-reset', 'inactive')
     await expect(rendererHost).toHaveAttribute('data-crane-step-text-resolution', 'none')
+    const firstOrderUnit = await rendererHost.getAttribute('data-crane-order-unit')
+    expect(firstOrderUnit).toMatch(/^red_/)
 
     // One step onto an offered hex. Its probe is already projected into the drawing space.
     const offeredX = await rendererHost.getAttribute('data-crane-offered-x')
@@ -713,9 +715,14 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await expect(rendererHost).toHaveAttribute('data-crane-event-actor', /^red_/, {
       timeout: 60_000,
     })
+    await expect(rendererHost).toHaveAttribute('data-crane-event-actor', firstOrderUnit as string)
 
     // Our next turn sends the empty path, which is the always-legal stand still and strike.
     await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', { timeout: 90_000 })
+    const nextOrderUnit = await rendererHost.getAttribute('data-crane-order-unit')
+    expect(nextOrderUnit).toMatch(/^red_/)
+    expect(nextOrderUnit).not.toBe(firstOrderUnit)
+    await expect(rendererHost).toHaveAttribute('data-crane-event-actor', firstOrderUnit as string)
     await expect(rendererHost).toHaveAttribute('data-crane-order', '')
     await expect(rendererHost).toHaveAttribute('data-crane-order-path', '0')
     await canvas.click({ position: at(636, 802) })

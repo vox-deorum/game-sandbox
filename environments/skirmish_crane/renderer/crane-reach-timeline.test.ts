@@ -214,7 +214,10 @@ describe('Crane Reach event windows', () => {
       eventContacted: boolean
       installEventContact(): void
       installFog: ReturnType<typeof vi.fn>
+      updateInspectionProbe: ReturnType<typeof vi.fn>
       reconcileUnits: ReturnType<typeof vi.fn>
+      reconcileEventRange: ReturnType<typeof vi.fn>
+      reconcileInspection: ReturnType<typeof vi.fn>
     }
     const renderer = Object.create(CraneReachRenderer.prototype) as ContactInstallHarness
     Object.assign(renderer, {
@@ -224,7 +227,10 @@ describe('Crane Reach event windows', () => {
       perspective: { observers: [], units: new Set(), tiles: new Set() },
       eventContacted: false,
       installFog: vi.fn(() => calls.push('fog')),
+      updateInspectionProbe: vi.fn(() => calls.push('probe')),
       reconcileUnits: vi.fn(() => calls.push('units')),
+      reconcileEventRange: vi.fn(() => calls.push('range')),
+      reconcileInspection: vi.fn(() => calls.push('inspection')),
     })
 
     renderer.installEventContact()
@@ -235,8 +241,11 @@ describe('Crane Reach event windows', () => {
       expect.objectContaining({ units: new Set(['defeated']) }),
       false,
     )
+    expect(renderer.updateInspectionProbe).toHaveBeenCalledWith(retained)
     expect(renderer.reconcileUnits).toHaveBeenCalledWith(retained)
-    expect(calls).toEqual(['fog', 'units'])
+    expect(renderer.reconcileEventRange).toHaveBeenCalledWith(retained)
+    expect(renderer.reconcileInspection).toHaveBeenCalledWith(retained)
+    expect(calls).toEqual(['fog', 'units', 'probe', 'range', 'inspection'])
   })
 
   it('keeps the final-tile fog on refresh through reaction and its settled hold', () => {
@@ -267,7 +276,10 @@ describe('Crane Reach event windows', () => {
       completeEvent(): void
       installFog: ReturnType<typeof vi.fn>
       ensureBattlefield: ReturnType<typeof vi.fn>
+      updateInspectionProbe: ReturnType<typeof vi.fn>
       reconcileUnits: ReturnType<typeof vi.fn>
+      reconcileEventRange: ReturnType<typeof vi.fn>
+      reconcileInspection: ReturnType<typeof vi.fn>
       reconcilePresentedScene: ReturnType<typeof vi.fn>
       reconcileEvent: ReturnType<typeof vi.fn>
       updateEventPhaseProbe: ReturnType<typeof vi.fn>
@@ -299,7 +311,10 @@ describe('Crane Reach event windows', () => {
       perspective: startPerspective,
       installFog,
       ensureBattlefield: vi.fn(),
+      updateInspectionProbe: vi.fn(),
       reconcileUnits: vi.fn(),
+      reconcileEventRange: vi.fn(),
+      reconcileInspection: vi.fn(),
       reconcilePresentedScene,
       reconcileEvent: vi.fn(),
       updateEventPhaseProbe: vi.fn(),

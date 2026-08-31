@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EMPTY_INSPECTION,
   inspectionPresentation,
+  normalizeInspection,
   type ProjectedUnit,
   pinsInspectionForPointer,
   probeExclusions,
@@ -96,6 +97,33 @@ describe('Crane Reach HUD inspection and range', () => {
       footman,
     )
     expect(reduceInspection(pinnedUnit, { type: 'dismiss' })).toEqual(EMPTY_INSPECTION)
+  })
+
+  it('clears unavailable board inspection while preserving roster and visible unit state', () => {
+    const roster = { kind: 'roster', side: 'red', type: 'footman' } as const
+    const visible = new Set(['red_footman_0'])
+    const stale = {
+      target: { kind: 'unit', unitId: 'blue_archer_0' } as const,
+      hoveredUnitId: 'blue_archer_0',
+      hoveredRoster: roster,
+    }
+    expect(normalizeInspection(stale, visible)).toEqual({
+      target: null,
+      hoveredUnitId: null,
+      hoveredRoster: roster,
+    })
+
+    const current = {
+      target: { kind: 'unit', unitId: 'red_footman_0' } as const,
+      hoveredUnitId: 'red_footman_0',
+      hoveredRoster: roster,
+    }
+    expect(normalizeInspection(current, visible)).toBe(current)
+    expect(normalizeInspection({ ...stale, target: roster, hoveredUnitId: null }, visible)).toEqual({
+      target: roster,
+      hoveredUnitId: null,
+      hoveredRoster: roster,
+    })
   })
 
   it('mirrors terrain cost, occupancy, the first expensive step, and the four-step limit', () => {

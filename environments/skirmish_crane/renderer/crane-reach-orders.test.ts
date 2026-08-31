@@ -29,6 +29,7 @@ import {
   undoStep,
 } from './orders.js'
 import { encodePath } from './paths.js'
+import { CraneReachRenderer } from './index.js'
 import type { CraneReachScene, HexTile, SceneUnit } from './scene.js'
 
 function tile(
@@ -257,6 +258,66 @@ describe('Crane Reach order controls', () => {
         controlledPlayers: ['player_0', 'player_1', 'player_2'],
       }),
     ).toBe(true)
+  })
+
+  it('closes only the submitted activation, even when the first two activations share tick zero', () => {
+    const renderer = Object.create(CraneReachRenderer.prototype) as {
+      eventTick: number
+      eventAnimating: boolean
+      submittedActivation: { tick: number | null; unitId: string } | null
+      ctx: { controlledPlayers: string[]; sendAction: () => void }
+      controlledActor(scene: CraneReachScene): SceneUnit | null
+    }
+    const sceneFor = (unitId: string): CraneReachScene =>
+      ({
+        activation: { playerId: 'player_0', unitId },
+        hud: { terminal: null },
+        units: [unitAt(unitId, '0,0')],
+      }) as unknown as CraneReachScene
+    Object.assign(renderer, {
+      eventTick: 0,
+      eventAnimating: false,
+      submittedActivation: { tick: 0, unitId: 'A' },
+      ctx: { controlledPlayers: ['player_0'], sendAction: vi.fn() },
+    })
+
+    expect(renderer.controlledActor(sceneFor('A'))).toBeNull()
+    expect(renderer.controlledActor(sceneFor('B'))?.unitId).toBe('B')
+    renderer.eventTick = 1
+    expect(renderer.controlledActor(sceneFor('A'))?.unitId).toBe('A')
+  })
+
+  it('marks the activation sent before the action callback can synchronously redraw', () => {
+    const scene = { activation: { unitId: 'A' } } as unknown as CraneReachScene
+    const renderer = Object.create(CraneReachRenderer.prototype) as {
+      eventTick: number
+      orderSession: { tick: number; playerId: string; order: ReturnType<typeof beginOrder> }
+      presentedScene: CraneReachScene
+      submittedActivation: { tick: number | null; unitId: string } | null
+      ctx: { sendAction: ReturnType<typeof vi.fn> }
+      reconcileOrder: ReturnType<typeof vi.fn>
+      redrawCurrentFrame: ReturnType<typeof vi.fn>
+      sendOrder(): void
+    }
+    const unit = unitAt('A', '0,0')
+    const field = walkFieldFor(unit, openField(), [unit])
+    const sendAction = vi.fn(() => {
+      expect(renderer.submittedActivation).toEqual({ tick: 0, unitId: 'A' })
+    })
+    Object.assign(renderer, {
+      eventTick: 0,
+      orderSession: { tick: 0, playerId: 'player_0', order: beginOrder(unit, field) },
+      presentedScene: scene,
+      submittedActivation: null,
+      ctx: { sendAction },
+      reconcileOrder: vi.fn(),
+      redrawCurrentFrame: vi.fn(),
+    })
+
+    renderer.sendOrder()
+
+    expect(sendAction).toHaveBeenCalledWith('player_0', { path: 0, target: 0 })
+    expect(renderer.reconcileOrder).toHaveBeenCalledWith(scene)
   })
 
   it('keeps inactive Reset named while making its retained hit target inert', () => {

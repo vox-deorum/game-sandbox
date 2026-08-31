@@ -70,6 +70,7 @@ import {
   type InspectionState,
   inspectionPresentation,
   inspectionTargetLabel,
+  normalizeInspection,
   pinsInspectionForPointer,
   probeExclusions,
   rangePresentation,
@@ -206,8 +207,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private fogElapsedMs = FOG_CROSSFADE_MS
   /** The order being composed on a controlled activation, or null while the board takes no orders. */
   private orderSession: OrderSession | null = null
-  /** True once this activation's order has been sent, so the controls go inert until the next state. */
-  private orderSent = false
+  /** The activation whose order has been sent, so redraws cannot submit it twice. */
+  private submittedActivation: { tick: number | null; unitId: string } | null = null
   /** The activation the camera last centred, so a redraw never re-centres a view someone panned. */
   private followedActivation: string | null = null
   /** Drives the automatic-strike preview's swell. */
@@ -477,9 +478,6 @@ export class CraneReachRenderer extends PixiRenderer {
     const animate =
       shouldAnimateEvent(scene.event, freshForwardEvent, previousScene !== null, options) &&
       this.eventVisibleDuring(previousScene, scene)
-    // Only a genuinely new state reopens the controls. Redrawing the same one (a resize, a camera
-    // move settling, artwork arriving) must not let an order already sent be sent a second time.
-    if (state.tick !== this.eventTick) this.orderSent = false
     this.previousScene = previousScene
     this.currentScene = scene
     this.eventTick = state.tick
@@ -605,7 +603,11 @@ export class CraneReachRenderer extends PixiRenderer {
         : perspectiveForObservers(scene, this.perspective.observers, retainedTarget)
     this.eventContacted = true
     this.installFog(scene, perspective, false)
-    this.reconcileUnits(this.previousScene ?? scene)
+    const retained = this.previousScene ?? scene
+    this.reconcileUnits(retained)
+    this.updateInspectionProbe(retained)
+    this.reconcileEventRange(retained)
+    this.reconcileInspection(retained)
   }
 
   /**
@@ -749,6 +751,7 @@ export class CraneReachRenderer extends PixiRenderer {
     // Units outside the perspective are absent, not ghosted: the past lives in a unit's own code.
     const drawn = visibleUnits(scene, this.perspective)
     const liveIds = new Set(drawn.map((unit) => unit.unitId))
+    this.inspection = normalizeInspection(this.inspection, liveIds)
     for (const [unitId, node] of this.unitNodes) {
       if (!liveIds.has(unitId)) {
         this.unitNodes.delete(unitId)
@@ -1077,6 +1080,7 @@ export class CraneReachRenderer extends PixiRenderer {
       this.ctx.setControlHeld?.(null)
       const data = this.ctx.container.dataset
       data.craneOrder = 'none'
+      data.craneOrderUnit = 'none'
       data.craneOrderPath = 'none'
       data.craneConfirm = 'none'
       data.craneReset = 'none'
@@ -1177,7 +1181,10 @@ export class CraneReachRenderer extends PixiRenderer {
       canSend: this.ctx.sendAction !== undefined,
       terminal: scene.hud.terminal !== null,
       animating: this.eventAnimating,
-      sent: this.orderSent,
+      sent:
+        activation !== null &&
+        this.submittedActivation?.tick === this.eventTick &&
+        this.submittedActivation.unitId === activation.unitId,
     })
     if (!open || activation === null) return null
     return scene.units.find((unit) => unit.unitId === activation.unitId) ?? null
@@ -1233,8 +1240,8 @@ export class CraneReachRenderer extends PixiRenderer {
     const session = this.orderSession
     const scene = this.presentedScene
     if (session === null || scene === null) return
+    this.submittedActivation = { tick: session.tick, unitId: session.order.unitId }
     this.ctx.sendAction?.(session.playerId, orderAction(session.order))
-    this.orderSent = true
     this.reconcileOrder(scene)
     this.redrawCurrentFrame()
   }
@@ -1250,6 +1257,7 @@ export class CraneReachRenderer extends PixiRenderer {
   ): void {
     const data = this.ctx.container.dataset
     data.craneOrder = plan.order.path.directions.join('')
+    data.craneOrderUnit = plan.order.unitId
     data.craneOrderPath = String(encodePath(plan.order.path.directions))
     data.craneConfirm = 'ready'
     data.craneReset = plan.order.path.directions.length === 0 ? 'inactive' : 'ready'

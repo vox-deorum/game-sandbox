@@ -20,6 +20,21 @@ export const EMPTY_INSPECTION: InspectionState = {
   hoveredRoster: null,
 }
 
+/** Remove board inspection that no longer has a visible, hit-testable unit behind it. */
+export function normalizeInspection(
+  state: InspectionState,
+  visibleUnitIds: ReadonlySet<string>,
+): InspectionState {
+  const hoveredUnitId =
+    state.hoveredUnitId !== null && !visibleUnitIds.has(state.hoveredUnitId)
+      ? null
+      : state.hoveredUnitId
+  const target =
+    state.target?.kind === 'unit' && !visibleUnitIds.has(state.target.unitId) ? null : state.target
+  if (hoveredUnitId === state.hoveredUnitId && target === state.target) return state
+  return { ...state, hoveredUnitId, target }
+}
+
 export type InspectionEvent =
   | { type: 'hover-unit'; unitId: string | null }
   | { type: 'hover-roster'; target: RosterInspectionTarget | null }
