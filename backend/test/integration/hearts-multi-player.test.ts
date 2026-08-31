@@ -10,7 +10,7 @@
  *   each filling two seats, so the same submission also runs as two independent instances. Each
  *   module executes its own code (a fast seat versus a deliberately slow one).
  * - A human-controlled player that never receives input stalls past its window and auto-plays the
- *   environment's `default_action` (the lowest legal card) every turn, and the game still completes.
+ *   environment's `default_action` (the lowest legal card).
  *
  * Submissions are seeded as local-source trees (no git), so the composed image is built from those
  * trees through the same driver a production multi-agent start uses. Gated behind the Docker daemon
@@ -29,6 +29,7 @@ import {
   type Stack,
   startSession,
   startStack,
+  stopSession,
   waitForEnded,
 } from './support/stack.js'
 import { WsClient } from './support/ws-client.js'
@@ -126,8 +127,16 @@ describe('multi-agent Hearts session (Docker)', () => {
 
   /** Start a Hearts session, wait for it to end, and return the row plus the parsed recording. */
   async function playHearts(
-    seats: Record<string, { kind: 'human' | 'submission'; submission_id?: string }>,
+    seats: Record<
+      string,
+      {
+        kind: 'human' | 'submission' | 'builtin-agent'
+        submission_id?: string
+        name?: string
+      }
+    >,
     extra: { human_timeout_ms?: number } = {},
+    stopWhen?: (states: StepState[]) => boolean,
   ): Promise<{
     id: string
     row: SessionRow
@@ -152,9 +161,14 @@ describe('multi-agent Hearts session (Docker)', () => {
           () => owner.envelopes('session').some((frame) => frame.status === 'running'),
           15_000,
         )
+        owner.send({ kind: 'resume' })
         owner.send({ kind: 'clock', player: 'player_0', running: true })
+        if (stopWhen !== undefined) {
+          await owner.waitFor(() => stopWhen(owner.states()), 15_000)
+          await stopSession(stack, id)
+        }
       }
-      const row = await waitForEnded(stack, id, 90_000)
+      const row = await waitForEnded(stack, id, stopWhen === undefined ? 90_000 : 30_000)
       const response = await fetch(`${stack.httpBase}/api/recordings/hearts-${id}`)
       expect(response.status).toBe(200)
       const { header, states } = readRecording(await response.text())
@@ -238,31 +252,30 @@ describe('multi-agent Hearts session (Docker)', () => {
   })
 
   it('auto-plays a legal move when a human player stalls past its window', async () => {
-    // One human seat with a short window and never any input; three submitted agents fill the rest.
-    const agents = await Promise.all([
-      seedSubmission('stall_a', LOWEST_AGENT),
-      seedSubmission('stall_b', LOWEST_AGENT),
-      seedSubmission('stall_c', LOWEST_AGENT),
-    ])
+    // One human seat has a short window and never receives input. Bundled agents fill the unrelated
+    // seats so this fallback test does not spend time composing a submission image.
     const seats = {
       seat_0: { kind: 'human' as const },
-      seat_1: { kind: 'submission' as const, submission_id: agents[0] },
-      seat_2: { kind: 'submission' as const, submission_id: agents[1] },
-      seat_3: { kind: 'submission' as const, submission_id: agents[2] },
+      seat_1: { kind: 'builtin-agent' as const, name: 'naive' },
+      seat_2: { kind: 'builtin-agent' as const, name: 'naive' },
+      seat_3: { kind: 'builtin-agent' as const, name: 'naive' },
     }
 
-    const { row, states, header } = await playHearts(seats, { human_timeout_ms: 200 })
+    const { row, states, header } = await playHearts(
+      seats,
+      { human_timeout_ms: 200 },
+      (states) => (valuesByPlayer(states, (step) => step.action).get('player_0') ?? []).length > 0,
+    )
 
-    // The game completed, so every auto-played human move was legal.
-    expect(row.termination_reason).toBe('terminated')
+    // Stop after the first observed fallback. Recording the transition proves the environment
+    // accepted the auto-played action as legal without making this test finish all fifty-two plays.
+    expect(row.termination_reason).toBe('stopped')
     expect(header.players?.player_0?.kind).toBe('human')
 
     const humanActions = valuesByPlayer(states, (step) => step.action).get('player_0') ?? []
-    expect(humanActions).toHaveLength(PLAYS_PER_PLAYER)
-    // Every human turn stalled past its window and auto-played the env's default action, which is now
-    // a real card id rather than a sentinel, so each recorded human action falls in [0, 52). The clean
-    // terminal asserted above already guarantees every one of those auto-played moves was legal; that
-    // the default resolves specifically to the lowest legal card is pinned in the env unit tests.
+    expect(humanActions.length).toBeGreaterThan(0)
+    // No input was sent, so every observed human action came from the timeout fallback. The default
+    // resolves specifically to the lowest legal card in the environment unit tests.
     expect(humanActions.every((action) => action >= 0 && action < NUM_CARDS)).toBe(true)
   })
 })

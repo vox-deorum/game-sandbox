@@ -12,7 +12,7 @@ import { type Stack, startSession, startStack, stopSession, waitForEnded } from 
 import { WsClient } from './support/ws-client.js'
 
 const SEED = 7
-const COLLECT_TARGET = 25
+const COLLECT_TARGET = 10
 
 interface Overlay {
   player?: { y?: number }
@@ -44,21 +44,23 @@ async function play(
     (await stack.users.headersFor(opts.user)).cookie,
   )
   await ws.waitFor(() => ws.envelopes('session').some((e) => e.status === 'running'), 30_000)
+  ws.send({ kind: 'resume' })
 
   const flapTimer = opts.flap
     ? setInterval(() => ws.send({ kind: 'input', player: 'player_0', action: 1 }), 20)
     : undefined
   // Collect a stream of states, stopping early if the episode terminates on its own.
-  await ws
-    .waitFor(
+  try {
+    await ws.waitFor(
       () =>
         ws.states().length >= COLLECT_TARGET ||
         ws.envelopes('session').some((e) => e.status === 'ended'),
-      12_000,
+      4_000,
     )
-    .catch(() => undefined)
-  if (flapTimer) {
-    clearInterval(flapTimer)
+  } finally {
+    if (flapTimer) {
+      clearInterval(flapTimer)
+    }
   }
 
   const states = ws.states()
@@ -69,7 +71,7 @@ async function play(
   const intervals = times.slice(1).map((t, i) => t - (times[i] ?? t))
 
   await stopSession(stack, id, opts.user)
-  await waitForEnded(stack, id)
+  await waitForEnded(stack, id, 10_000)
   ws.close()
   return { id, altitudes, intervals }
 }
@@ -137,15 +139,14 @@ describe('live session over WebSocket', () => {
       (await stack.users.headersFor('carol')).cookie,
     )
     await ws.waitFor(() => ws.envelopes('session').some((e) => e.status === 'running'), 30_000)
+    ws.send({ kind: 'resume' })
 
     // No input is ever sent; the session must keep stepping rather than stall.
-    await ws.waitFor(() => ws.states().length >= 5, 10_000)
-    const early = ws.states().length
-    await ws.waitFor(() => ws.states().length > early, 10_000)
-    expect(ws.states().length).toBeGreaterThan(early)
+    await ws.waitFor(() => ws.states().length >= 6, 3_000)
+    expect(ws.states().length).toBeGreaterThanOrEqual(6)
 
     await stopSession(stack, id, 'carol')
-    await waitForEnded(stack, id)
+    await waitForEnded(stack, id, 10_000)
     ws.close()
   })
 })

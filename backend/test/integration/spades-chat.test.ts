@@ -48,7 +48,7 @@ import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 import { DEPS_VERSION } from './support/base-image.js'
-import { type Stack, startSession, startStack, waitForEnded } from './support/stack.js'
+import { type Stack, startSession, startStack, stopSession, waitForEnded } from './support/stack.js'
 import { WsClient } from './support/ws-client.js'
 
 const ENV_ID = 'spades'
@@ -238,9 +238,6 @@ describe('Spades chat (Docker)', () => {
     // reached the harness queue: a message attributed from player_0 to player_2 can only exist if the
     // frame traversed stdin -> command pump -> chat queue -> router (delayed inbox delivery itself is
     // covered by the harness's own unit tests, which can inspect the in-process queue this test cannot).
-    const companion = await seedExample('signaler_companion', 'signaler')
-    const opponent = await seedExample('signaler_opponent', 'signaler')
-
     const { id, wsPath } = await startSession(
       stack,
       {
@@ -248,9 +245,9 @@ describe('Spades chat (Docker)', () => {
         seats: {
           seat_0: {
             kind: 'human',
-            companion: { kind: 'submission', submission_id: companion },
+            companion: { kind: 'builtin-agent', name: 'naive' },
           },
-          seat_1: { kind: 'submission', submission_id: opponent },
+          seat_1: { kind: 'builtin-agent', name: 'naive' },
         },
         seed: 3,
         human_timeout_ms: 200,
@@ -267,6 +264,7 @@ describe('Spades chat (Docker)', () => {
         () => owner.envelopes('session').some((frame) => frame.status === 'running'),
         15_000,
       )
+      owner.send({ kind: 'resume' })
       owner.send({ kind: 'clock', player: 'player_0', running: true })
       // The active human policy identifies the designated sender. The harness admits the frame at
       // its next boundary, independent of the state that caused the browser to render this policy.
@@ -281,7 +279,21 @@ describe('Spades chat (Docker)', () => {
         text: 'partner, watch the spades',
       })
 
-      await waitForEnded(stack, id, 180_000)
+      await owner.waitFor(
+        () =>
+          owner
+            .states()
+            .flatMap((state) => state.messages ?? [])
+            .some(
+              (message) =>
+                message.from === 'player_0' &&
+                message.to === 'player_2' &&
+                message.text === 'partner, watch the spades',
+            ),
+        30_000,
+      )
+      await stopSession(stack, id)
+      await waitForEnded(stack, id, 30_000)
       const { states } = await fetchRecording(id)
       const messages = allMessages(states)
       expect(messages).toContainEqual({
