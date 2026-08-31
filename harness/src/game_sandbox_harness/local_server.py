@@ -110,6 +110,7 @@ class LocalServer:
         self._latest_state: str | None = None
         self._status = "starting"
         self._paused = start_paused
+        self._awaiting_start = start_paused
         self._ended = False
         self._end_reason: str | None = None
         self._ended_event = asyncio.Event()
@@ -300,7 +301,7 @@ class LocalServer:
         if self._latest_state is not None:
             await socket.send(self._latest_state)
         if self._status == "running":
-            await socket.send(self._json(session_envelope("running")))
+            await socket.send(self._json(session_envelope("running", awaiting_start=self._awaiting_start)))
             if self._paused:
                 await socket.send('{"kind":"pause"}')
         elif self._status == "ended":
@@ -311,11 +312,16 @@ class LocalServer:
         if child is None or child.stdin is None or self._ended:
             return
         for command in parse_commands(raw):
+            # Mirrors blockedBeforeStart in schema/ts/src/protocol.ts; keep the two lists identical.
+            if self._awaiting_start and command["kind"] in ("input", "chat", "clock"):
+                continue
             line = self._json(command)
             child.stdin.write((line + "\n").encode())
             await child.stdin.drain()
             if command["kind"] in ("pause", "resume"):
                 self._paused = command["kind"] == "pause"
+                if command["kind"] == "resume":
+                    self._awaiting_start = False
                 await self._broadcast(line)
 
     async def _pump_output(self) -> None:
@@ -339,7 +345,9 @@ class LocalServer:
             self._header = line
             self._status = "running"
             await self._broadcast(line)
-            await self._broadcast(self._json(session_envelope("running")))
+            await self._broadcast(
+                self._json(session_envelope("running", awaiting_start=self._awaiting_start))
+            )
             if self._paused:
                 await self._broadcast('{"kind":"pause"}')
             return

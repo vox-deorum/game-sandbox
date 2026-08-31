@@ -72,6 +72,7 @@ test('an admin creates a user, who signs in and plays', async ({ page, browser, 
     // The session page mounts the renderer — the same live-session proof journey.spec asserts on.
     await expect(newcomerPage).toHaveURL(/\/sessions\//)
     await expect(newcomerPage.locator('canvas.renderer-canvas')).toBeVisible()
+    await newcomerPage.getByRole('button', { name: 'Start', exact: true }).click()
   } finally {
     // Clean up the live session before tearing down its context; the paced game may also have already
     // ended it on its own, so stop only a still-running session.

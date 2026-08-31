@@ -84,9 +84,9 @@ Add `game_sandbox_harness/local_server.py` using `websockets>=16,<17`; the lock 
 The bridge owns relay behavior while leaving recording and result payloads authoritative:
 
 - Recording header, state, and result bytes from the runner pass through unchanged.
-- The first header moves the relay to running and emits `{"kind":"session","status":"running"}`. When the local launch starts paused, it immediately follows that status with the current `pause` echo for clients that attached before the header arrived.
+- The first header moves the relay to running and emits a session envelope whose `awaiting_start` field says whether the first resume is still required. When the launch starts paused, the relay immediately follows that status with the current `pause` echo for clients that attached before the header arrived.
 - Accepted `pause` and `resume` commands are forwarded and echoed to every connected client.
-- The relay retains the accepted pause state. The local relay starts paused from the launch configuration; the Node relay starts running as it does today. An attachment receives a `pause` echo after session status when the current state is paused, so refresh cannot reset the UI locally.
+- Both relays retain the accepted pause and awaiting-Start state. Local modes start paused from their launch configuration, while the Node relay starts human sessions paused and scripted watch sessions running. The first accepted resume clears awaiting-Start. An attachment receives that state in its running envelope and a `pause` echo when currently paused, so refresh cannot turn a later pause back into a Start gate.
 - A terminal result or child exit emits exactly one `session: ended` envelope with the resolved reason, then closes attached sockets.
 - Attach order is header, latest state, current session status, then the current pause echo when paused. Reconnect and a second tab receive a header first, as `SessionSocket` requires. Apply the same pause-state tracking and attach replay to `backend/src/session/live-session.ts` so both relays honor the existing `useSessionSocket` contract.
 
@@ -125,7 +125,7 @@ Add `frontend/local.html`, `frontend/src/local/main.ts`, and `frontend/src/local
 - connects `useSessionSocket("local", ...)`, using `live_interval_ms` for turn-based human play;
 - mounts through `useRendererMount` and derives controlled slots from human entries in `header.players`;
 - reuses `StageFrame`, `GameOverCard`, `DecisionLog`, display-only `ChatPanel`, and UI primitives;
-- presents a start gate that sends `resume`, a pause control driven by relay echoes, and a stop control driven by terminal session status.
+- reuses the shared game-view start overlay and socket start state, sends `resume` from that overlay, drives later pause controls from relay echoes, and drives stop from terminal session status.
 
 The pause control is driven by pause and resume echoes. Stop sends the existing `stop` command and enters its terminal UI state only when the result and `session: ended` frames arrive; there is no stop echo in the protocol.
 
@@ -147,12 +147,12 @@ Version 1 has not been published. Update the dependency-version comments and con
 
 - Harness relocation: both package names load schema resources and validate fixtures.
 - Live configuration: timeout tri-state, `start_paused`, and exact `slots` to `players` attribution.
-- Local server: loopback default, route and method rejection, traversal and symlink escape rejection, content type and HEAD behavior, header-first ordering, verbatim runner lines, running/ended exactly once, pause/resume echoes, paused reconnect state, command forwarding, second attachment, and child failure.
+- Local server: loopback default, route and method rejection, traversal and symlink escape rejection, content type and HEAD behavior, header-first ordering, verbatim runner lines, running/ended exactly once, awaiting-Start and pause/resume echoes, paused reconnect state, command forwarding, second attachment, and child failure.
 - Integrated harness: a real Hearts episode runs through injected `live.run` without discovery.
 - Template smoke: composed examples import the relocated harness and run `sandbox.live_local` without a browser.
 - Publish staging: a dry run builds the local frontend once and gives every staged template and example a complete `sandbox/web/` directory containing `local.html` and its referenced assets.
 - Flappy Bird: upstream golden traces, API conformance, seeded determinism, observation and overlay shape, AABB boundary behavior, and absence of copied upstream binary assets.
-- Frontend unit test: metadata validation, header mounting, controlled human seat, state rendering, start resume, pause echo, paused reconnect, stop awaiting terminal status, and terminal game-over state.
+- Frontend unit test: metadata validation, header mounting, controlled human seat, state rendering, the shared game-view Start overlay, start resume, pause echo, paused reconnect, stop awaiting terminal status, and terminal game-over state.
 - Playwright local-play journey: rebuild both frontend entries, start a scripted Python bridge on loopback with the fresh local bundle, then exercise start, input forwarding, pause, resume, refresh while paused, stop, terminal game over, and browser reconnect against the live DOM. Run it through the existing `frontend-e2e` job.
 - Existing session and replay tests remain unchanged unless a shared component contract moves.
 

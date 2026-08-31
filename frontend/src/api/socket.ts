@@ -21,7 +21,7 @@ export type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed'
 export interface SessionSocketHandlers {
   onHeader(header: RecordingHeader): void
   onState(state: StepState): void
-  onSessionStatus?(status: 'running' | 'ended', reason?: string): void
+  onSessionStatus?(status: 'running' | 'ended', reason?: string, awaitingStart?: boolean): void
   onPause?(): void
   onResume?(): void
   onResult?(value: Record<string, unknown>): void
@@ -98,7 +98,10 @@ export class SessionSocket {
         const status = line.value.status
         if (status === 'running' || status === 'ended') {
           const reason = typeof line.value.reason === 'string' ? line.value.reason : undefined
-          this.handlers.onSessionStatus?.(status, reason)
+          // `awaiting_start` only applies to a running session. Older local relays omit it, which
+          // deliberately remains equivalent to false while they are upgraded.
+          const awaitingStart = line.value.awaiting_start === true
+          this.handlers.onSessionStatus?.(status, reason, awaitingStart)
           if (status === 'ended') {
             // The server closes terminal sessions after this frame; mark it intentional first.
             this.close()

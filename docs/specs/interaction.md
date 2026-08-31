@@ -81,7 +81,7 @@ Real-time input takes effect after a network round trip, so supported games use 
 
 A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay work (serialization and input/output) is outside that duration. Environment transition time is platform work and is not charged to a participant.
 
-Live sessions may pause in one of two ways. The environment's `human_pause` metadata chooses which one a human session uses. A watch session always pauses playback, because its container usually finishes long before the buffered frames have played out.
+Live sessions may pause in one of two ways. After a human session starts, the environment's `human_pause` metadata chooses which pause its control uses. A watch session always pauses playback, because its container usually finishes long before the buffered frames have played out.
 
 | Control | Rule |
 | --- | --- |
@@ -101,6 +101,8 @@ A human play session designates one human-controlled seat. The selected seat mus
 A restricted human seat takes no companion choice from the browser. On a wider restricted seat, a separate instance of the designated builtin controls every other player. The move clock applies on each human-controlled player's turn, and step and episode compute limits remain per agent-controlled player. Chat continues to use the primary human player as its designated sender. See [restricted seats](environment.md#builtin-agents-and-restricted-seats).
 
 ## Starting watch and play sessions
+
+A platform human-play session starts with the harness session-paused before its first transition. The game view presents Start to the owner, and selecting it sends the first `resume` command. This initial gate always pauses the session itself, even when `human_pause` selects playback pause for later use. Human input, chat, and control-clock events do not reach the harness before Start. A platform watch session starts automatically. Local browser play uses the same gate for every mode its launcher starts paused.
 
 The start form is seeded with the [play-open season](seasons.md#public-gates) identifier and the complete resolved gameplay parameter map for that environment. When no season is open for play, the seeding endpoint returns pure environment defaults with a null season identifier, and public session start remains unavailable.
 

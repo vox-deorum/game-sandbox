@@ -22,9 +22,29 @@ from game_sandbox_harness.live_io import (
     TransportSource,
     build_tee_store,
     result_envelope,
+    session_envelope,
 )
 from game_sandbox_harness.session import EpisodeResult
 from game_sandbox_harness.state import build_header, build_step_state
+
+
+def test_session_envelope_includes_awaiting_start_only_for_running_sessions() -> None:
+    assert session_envelope("running", awaiting_start=True) == {
+        "kind": "session",
+        "status": "running",
+        "awaiting_start": True,
+    }
+    assert session_envelope("running") == {
+        "kind": "session",
+        "status": "running",
+        "awaiting_start": False,
+    }
+    assert session_envelope("ended", "completed") == {
+        "kind": "session",
+        "status": "ended",
+        "reason": "completed",
+    }
+
 
 # --- PausableClock -----------------------------------------------------------------------
 

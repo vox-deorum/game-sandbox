@@ -240,7 +240,22 @@ describe('relay (LiveSession)', () => {
     expect(socket.received).toContain(STATE_0)
   })
 
-  it('replays the header, latest state, and running status to a late attacher', async () => {
+  it('sends a human owner the header, start-gated running status, then pause', async () => {
+    const { session, process } = makeSession('human')
+    const owner = new FakeSocket()
+    session.attach(owner, true)
+
+    process.emit(HEADER)
+    await flush()
+
+    expect(owner.received).toEqual([
+      HEADER,
+      '{"kind":"session","status":"running","awaiting_start":true}',
+      '{"kind":"pause"}',
+    ])
+  })
+
+  it('replays the header, latest state, running status, and start pause to a late attacher', async () => {
     const { session, process } = makeSession()
     process.emit(HEADER)
     process.emit(STATE_0)
@@ -251,7 +266,12 @@ describe('relay (LiveSession)', () => {
     session.attach(late, false)
     expect(late.received[0]).toBe(HEADER)
     expect(late.received[1]).toBe(STATE_1) // the latest state, not the first
-    expect(JSON.parse(late.received[2] ?? '{}')).toEqual({ kind: 'session', status: 'running' })
+    expect(JSON.parse(late.received[2] ?? '{}')).toEqual({
+      kind: 'session',
+      status: 'running',
+      awaiting_start: true,
+    })
+    expect(late.received[3]).toBe('{"kind":"pause"}')
   })
 
   it('masks the header per socket: the owner keeps their seat, an anonymous spectator gets the hash label', async () => {
@@ -294,12 +314,13 @@ describe('relay (LiveSession)', () => {
     })
   })
 
-  it('replays the accepted paused state after running status to a late attacher', async () => {
+  it('clears the start gate on first resume and retains an ordinary later pause for a late attacher', async () => {
     const { session, process } = makeSession()
     const owner = session.attach(new FakeSocket(), true)
     process.emit(HEADER)
     process.emit(STATE_0)
     await flush()
+    owner.handleMessage('{"kind":"resume"}')
     owner.handleMessage('{"kind":"pause"}')
 
     const late = new FakeSocket()
@@ -307,7 +328,7 @@ describe('relay (LiveSession)', () => {
     expect(late.received).toEqual([
       HEADER,
       STATE_0,
-      JSON.stringify({ kind: 'session', status: 'running' }),
+      JSON.stringify({ kind: 'session', status: 'running', awaiting_start: false }),
       '{"kind":"pause"}',
     ])
   })
@@ -341,8 +362,33 @@ describe('relay (LiveSession)', () => {
     expect(late.received).toEqual([
       HEADER,
       STATE_1,
-      JSON.stringify({ kind: 'session', status: 'running' }),
+      JSON.stringify({ kind: 'session', status: 'running', awaiting_start: true }),
+      '{"kind":"pause"}',
       result,
+    ])
+  })
+
+  it('keeps a scripted session automatic for attached and late viewers', async () => {
+    const { session, process } = makeSession('scripted')
+    const attached = new FakeSocket()
+    session.attach(attached, false)
+
+    process.emit(HEADER)
+    process.emit(STATE_0)
+    await flush()
+
+    expect(attached.received).toEqual([
+      HEADER,
+      '{"kind":"session","status":"running","awaiting_start":false}',
+      STATE_0,
+    ])
+
+    const late = new FakeSocket()
+    session.attach(late, false)
+    expect(late.received).toEqual([
+      HEADER,
+      STATE_0,
+      '{"kind":"session","status":"running","awaiting_start":false}',
     ])
   })
 
@@ -449,12 +495,26 @@ describe('relay (LiveSession)', () => {
   })
 
   describe('inbound command authority', () => {
-    it("forwards the owner's input in human mode and echoes nothing for it", async () => {
+    it('drops gated commands before Start and forwards them after resume', async () => {
       const { session, process } = makeSession('human')
       const socket = new FakeSocket()
       const attachment = session.attach(socket, true)
+
       attachment.handleMessage('{"kind":"input","player":"player_0","action":1}')
-      expect(process.sent).toEqual(['{"kind":"input","player":"player_0","action":1}'])
+      attachment.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      attachment.handleMessage('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+      expect(process.sent).toEqual([])
+
+      attachment.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
+      attachment.handleMessage('{"kind":"input","player":"player_0","action":1}')
+      attachment.handleMessage('{"kind":"clock","player":"player_0","running":true}')
+      attachment.handleMessage('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+      expect(process.sent).toEqual([
+        '{"kind":"input","player":"player_0","action":1}',
+        '{"kind":"clock","player":"player_0","running":true}',
+        '{"kind":"chat","player":"player_0","to":null,"text":"hi"}',
+      ])
     })
 
     it("ignores a spectator's commands", async () => {
@@ -502,6 +562,8 @@ describe('relay (LiveSession)', () => {
       const { session, process } = makeSession('human')
       const owner = new FakeSocket()
       const attachment = session.attach(owner, true)
+      attachment.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
       attachment.handleMessage('{"kind":"clock","player":"player_0","running":true}')
       expect(process.sent).toEqual(['{"kind":"clock","player":"player_0","running":true}'])
       expect(owner.received).not.toContain('{"kind":"clock","player":"player_0","running":true}')
@@ -535,12 +597,24 @@ describe('relay (LiveSession)', () => {
       const attachment = session.attach(new FakeSocket(), true)
       process.emit(HEADER) // the session is running before the owner walks away
       await flush()
+      attachment.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
 
       attachment.detach()
       expect(process.sent).toEqual([
         '{"kind":"clock","player":"player_0","running":false}',
         '{"kind":"clock","player":"player_3","running":false}',
       ])
+    })
+
+    it('does not release controls that have not started', async () => {
+      const { session, process } = makeSession('human')
+      const attachment = session.attach(new FakeSocket(), true)
+      process.emit(HEADER)
+      await flush()
+
+      attachment.detach()
+      expect(process.sent).toEqual([])
     })
 
     it('keeps the clock running while another owner socket remains', async () => {
@@ -880,6 +954,8 @@ describe('relay (LiveSession)', () => {
     it('forwards an authorized chat frame to the container', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
+      owner.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
       owner.handleMessage(CHAT)
       expect(process.sent).toEqual([CHAT])
     })
@@ -906,6 +982,8 @@ describe('relay (LiveSession)', () => {
         externalChatPlayer: 'player_0',
       })
       const owner = session.attach(new FakeSocket(), true)
+      owner.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
       owner.handleMessage('{"kind":"input","player":"player_1","action":1}')
       owner.handleMessage('{"kind":"chat","player":"player_1","to":null,"text":"hi"}')
       expect(process.sent).toEqual(['{"kind":"input","player":"player_1","action":1}'])
@@ -944,6 +1022,8 @@ describe('relay (LiveSession)', () => {
         messaging: { enabled: true, cap: 3 },
       })
       const owner = session.attach(new FakeSocket(), true)
+      owner.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
       // An emoji is one code point; three fit, four do not.
       const atCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀"}'
       const overCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀😀"}'

@@ -665,6 +665,86 @@ describe('useSessionSocket', () => {
     wrapper.unmount()
   })
 
+  it('waits for the retained initial pause before starting and drops pre-start input', () => {
+    const { session, wrapper } = mountSessionSocket()
+    session.connect({ sessionPause: true })
+    socketDouble.handlers[0]?.onConnectionChange?.('open')
+    socketDouble.sent.length = 0
+    const handlers = socketDouble.handlers[0]
+
+    handlers?.onSessionStatus?.('running', undefined, true)
+    expect(session.awaitingStart.value).toBe(true)
+    expect(session.canStart.value).toBe(false)
+    session.send({ kind: 'input', player: 'player_0', action: 1 })
+    session.send({ kind: 'chat', player: 'player_0', to: null, text: 'ready' })
+    expect(socketDouble.sent).toEqual([])
+
+    handlers?.onPause?.()
+    expect(session.paused.value).toBe(true)
+    expect(session.canStart.value).toBe(true)
+    session.togglePause()
+    expect(socketDouble.sent).toEqual([])
+    session.start()
+    expect(session.startPending.value).toBe(true)
+    expect(socketDouble.sent).toEqual([{ kind: 'resume' }])
+
+    handlers?.onResume?.()
+    expect(session.awaitingStart.value).toBe(false)
+    expect(session.startPending.value).toBe(false)
+    expect(session.paused.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('recovers a lost initial resume from a false running replay without lifting a later playback pause', () => {
+    const { session, wrapper } = mountSessionSocket()
+    session.connect()
+    socketDouble.handlers[0]?.onConnectionChange?.('open')
+    socketDouble.sent.length = 0
+    const handlers = socketDouble.handlers[0]
+
+    handlers?.onSessionStatus?.('running', undefined, true)
+    handlers?.onPause?.()
+    session.start()
+    expect(session.startPending.value).toBe(true)
+
+    handlers?.onConnectionChange?.('reconnecting')
+    handlers?.onConnectionChange?.('open')
+    handlers?.onSessionStatus?.('running', undefined, false)
+    expect(session.awaitingStart.value).toBe(false)
+    expect(session.startPending.value).toBe(false)
+    expect(session.paused.value).toBe(false)
+
+    session.togglePause()
+    expect(session.paused.value).toBe(true)
+    handlers?.onSessionStatus?.('running', undefined, false)
+    expect(session.paused.value).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the retained gate pause through a still-gated running replay after reconnect', () => {
+    const { session, wrapper } = mountSessionSocket()
+    session.connect({ sessionPause: true })
+    socketDouble.handlers[0]?.onConnectionChange?.('open')
+    const handlers = socketDouble.handlers[0]
+
+    handlers?.onSessionStatus?.('running', undefined, true)
+    handlers?.onPause?.()
+    expect(session.canStart.value).toBe(true)
+
+    // The transport reconnects on its own; the relay replays the still-open gate. The retained
+    // pause must survive the running frame, and readiness returns only with the new pause echo.
+    handlers?.onConnectionChange?.('reconnecting')
+    expect(session.canStart.value).toBe(false)
+    handlers?.onConnectionChange?.('open')
+    handlers?.onSessionStatus?.('running', undefined, true)
+    expect(session.paused.value).toBe(true)
+    expect(session.awaitingStart.value).toBe(true)
+    expect(session.canStart.value).toBe(false)
+    handlers?.onPause?.()
+    expect(session.canStart.value).toBe(true)
+    wrapper.unmount()
+  })
+
   it('ignores togglePause before connect(), leaving paused false and sending nothing', () => {
     // SessionPage's owner controls can render before connect() runs (the row resolves after one await,
     // connect after two more). A click in that window must not flip `paused` locally only to have the

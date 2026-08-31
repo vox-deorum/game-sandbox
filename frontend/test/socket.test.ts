@@ -58,13 +58,14 @@ describe('SessionSocket', () => {
   it('routes the header then states, dispatches envelopes, and serializes sends', () => {
     const headers: RecordingHeader[] = []
     const states: StepState[] = []
-    const statuses: Array<[string, string | undefined]> = []
+    const statuses: Array<[string, string | undefined, boolean | undefined]> = []
     const socket = new SessionSocket(
       '/api/sessions/s1/ws',
       {
         onHeader: (h) => headers.push(h),
         onState: (s) => states.push(s),
-        onSessionStatus: (status, reason) => statuses.push([status, reason]),
+        onSessionStatus: (status, reason, awaitingStart) =>
+          statuses.push([status, reason, awaitingStart]),
       },
       deps,
     )
@@ -79,12 +80,12 @@ describe('SessionSocket', () => {
     ws.open()
     ws.message(HEADER)
     ws.message(STATE)
-    ws.message('{"kind":"session","status":"running"}')
+    ws.message('{"kind":"session","status":"running","awaiting_start":true}')
 
     expect(headers).toHaveLength(1)
     expect(states).toHaveLength(1)
     expect(states[0]?.tick).toBe(0)
-    expect(statuses).toEqual([['running', undefined]])
+    expect(statuses).toEqual([['running', undefined, true]])
 
     socket.send({ kind: 'pause' })
     expect(ws.sent).toEqual(['{"kind":"pause"}'])

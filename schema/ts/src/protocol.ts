@@ -77,9 +77,27 @@ export function serializeCommand(command: Command): string {
   return JSON.stringify(command)
 }
 
-/** Build the backend-originated `session` status frame. */
-export function sessionEnvelope(status: 'running' | 'ended', reason?: string): string {
+/**
+ * Whether a command is gameplay traffic that every relay drops while a session still awaits its
+ * first `resume` (the Start gate). The Python local relay mirrors this list in `local_server.py`.
+ */
+export function blockedBeforeStart(command: Command): boolean {
+  return command.kind === 'input' || command.kind === 'chat' || command.kind === 'clock'
+}
+
+/**
+ * Build the backend-originated `session` status frame. A running frame carries the start-gate
+ * state; an ended frame carries the termination reason.
+ */
+export function sessionEnvelope(status: 'running', awaitingStart?: boolean): string
+export function sessionEnvelope(status: 'ended', reason?: string): string
+export function sessionEnvelope(status: 'running' | 'ended', detail?: string | boolean): string {
+  if (status === 'running') {
+    return JSON.stringify({ kind: SESSION_KIND, status, awaiting_start: detail === true })
+  }
   return JSON.stringify(
-    reason ? { kind: SESSION_KIND, status, reason } : { kind: SESSION_KIND, status },
+    typeof detail === 'string'
+      ? { kind: SESSION_KIND, status, reason: detail }
+      : { kind: SESSION_KIND, status },
   )
 }

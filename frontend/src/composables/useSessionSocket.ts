@@ -45,7 +45,7 @@
  * pause, a reconnect, or a teardown can never leave an obsolete one drawing over the live one.
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
-import type { Command } from '@game-sandbox/schema/protocol'
+import { blockedBeforeStart, type Command } from '@game-sandbox/schema/protocol'
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
@@ -112,6 +112,11 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const connection = ref<ConnectionState>('connecting')
   const status = ref<'starting' | 'running' | 'ended'>('starting')
   const paused = ref(false)
+  // The relay retains the start gate independently from an ordinary pause. It is only actionable
+  // after this connection has received both running(awaiting_start:true) and the following pause.
+  const awaitingStart = ref(false)
+  const canStart = ref(false)
+  const startPending = ref(false)
   const endReason = ref<string | null>(null)
   const finalResult = ref<RunSummary | null>(null)
   // The latest recorded score for every player seen on the transport. This remains complete when an
@@ -153,6 +158,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   let liveMs = 0
   // Whether this environment's human sessions pause the container rather than only this playout.
   let sessionPause = false
+  let runningAwaitingStartSeen = false
 
   // --- the move clock ---
   // Which player the renderer currently has the controls open for, and which player the container was
@@ -289,6 +295,16 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     }
   }
 
+  /**
+   * Forget this connection's Start readiness. The retained `awaitingStart` flag itself is cleared
+   * separately, because a reconnect keeps the gate visible while readiness is per physical connection.
+   */
+  function resetStartReadiness(): void {
+    canStart.value = false
+    startPending.value = false
+    runningAwaitingStartSeen = false
+  }
+
   /** Retire the current transport before starting another explicit connection. */
   function retireConnection(): void {
     connectionId += 1
@@ -305,6 +321,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     liveMs = 0
     sessionPause = false
     paused.value = false
+    awaitingStart.value = false
+    resetStartReadiness()
     buffering.value = false
     heldPlayer = null
     believedRunning = null
@@ -375,16 +393,31 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           frames.onState(state)
         }
       },
-      onSessionStatus: (next, reason) => {
+      onSessionStatus: (next, reason, nextAwaitingStart = false) => {
         if (connectionId !== activeConnectionId) {
           return
         }
         if (next === 'running') {
           status.value = 'running'
+          const wasAwaitingStart = awaitingStart.value
+          awaitingStart.value = nextAwaitingStart
+          if (nextAwaitingStart) {
+            runningAwaitingStartSeen = true
+          } else {
+            // A reconnect may miss the resume echo. A false replay is enough to clear the initial
+            // gate in every pause mode, unlike an ordinary running replay which must preserve a
+            // browser-local playback pause.
+            resetStartReadiness()
+            if (wasAwaitingStart && paused.value) {
+              resumePlayout()
+            }
+          }
           // Attach replays `running` first and a `pause` echo after it only while the container is
           // still paused. A session pause whose resume echo was lost with a dropped socket therefore
-          // clears itself here, instead of freezing the picture over a game that kept playing.
-          if (paused.value && pausesContainer()) {
+          // clears itself here, instead of freezing the picture over a game that kept playing. A
+          // still-gated replay is exempt: its pause echo is guaranteed to follow, so the retained
+          // pause must survive the running frame.
+          if (!nextAwaitingStart && paused.value && pausesContainer()) {
             resumePlayout()
           }
           return
@@ -417,11 +450,18 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       onPause: () => {
         if (connectionId === activeConnectionId) {
           paused.value = true
+          if (awaitingStart.value && runningAwaitingStartSeen) {
+            // Receiving a relay frame proves this socket is live. The explicit connection-state
+            // check would make lightweight hosts that feed frames synchronously miss the gate.
+            canStart.value = true
+          }
           syncClock()
         }
       },
       onResume: () => {
         if (connectionId === activeConnectionId) {
+          awaitingStart.value = false
+          resetStartReadiness()
           resumePlayout()
         }
       },
@@ -448,7 +488,12 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           // A reconnect meets a container that was told the controls were released when the last
           // socket went away, so re-assert whatever the renderer still has open.
           if (state === 'open') syncClock()
-          else believedRunning = null
+          else {
+            believedRunning = null
+            // Readiness is scoped to one physical connection. Keep the retained start state visible,
+            // but wait for that connection's running-plus-pause replay before another Start attempt.
+            resetStartReadiness()
+          }
         }
       },
     })
@@ -458,6 +503,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
 
   /** Send a command (used by the renderer's live `sendAction` to forward human input). */
   function send(command: Command): void {
+    if (awaitingStart.value && blockedBeforeStart(command)) {
+      return
+    }
     socket.value?.send(command)
   }
 
@@ -468,7 +516,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
    * controls when the last owner socket goes away.
    */
   function syncClock(): void {
-    const next = paused.value ? null : heldPlayer
+    const next = paused.value || awaitingStart.value ? null : heldPlayer
     if (next === believedRunning || connection.value !== 'open') {
       return
     }
@@ -498,6 +546,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     if (socket.value === null) {
       return // No transport yet, so there is nothing to pause and nothing to show as paused.
     }
+    if (awaitingStart.value) {
+      return // The initial gate only leaves through start(); the pause control is hidden behind it.
+    }
     if (pausesContainer()) {
       // The echo is the authority here: `paused` flips when the relay confirms, not on the click.
       socket.value?.send({ kind: paused.value ? 'resume' : 'pause' })
@@ -511,6 +562,15 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       // that its human let go of the controls; that is what makes pausing on your own turn safe.
       syncClock()
     }
+  }
+
+  /** Start always uses the real container resume command. Its echo, or a later replay, confirms it. */
+  function start(): void {
+    if (!canStart.value || startPending.value) {
+      return
+    }
+    startPending.value = true
+    socket.value?.send({ kind: 'resume' })
   }
 
   function stop(): void {
@@ -546,6 +606,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     connection,
     status,
     paused,
+    awaitingStart,
+    canStart,
+    startPending,
     buffering,
     endReason,
     finalResult,
@@ -555,6 +618,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     send,
     setControlHeld,
     togglePause,
+    start,
     stop,
     close,
   }

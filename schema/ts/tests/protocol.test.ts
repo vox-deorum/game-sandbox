@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  blockedBeforeStart,
   classifyOutbound,
   codePointLength,
   serializeCommand,
@@ -62,11 +63,31 @@ describe('serialization', () => {
   })
 
   it('builds the session status frame with and without a reason', () => {
-    expect(JSON.parse(sessionEnvelope('running'))).toEqual({ kind: 'session', status: 'running' })
+    expect(JSON.parse(sessionEnvelope('running'))).toEqual({
+      kind: 'session',
+      status: 'running',
+      awaiting_start: false,
+    })
+    expect(JSON.parse(sessionEnvelope('running', true))).toEqual({
+      kind: 'session',
+      status: 'running',
+      awaiting_start: true,
+    })
     expect(JSON.parse(sessionEnvelope('ended', 'idle_timeout'))).toEqual({
       kind: 'session',
       status: 'ended',
       reason: 'idle_timeout',
     })
+  })
+
+  it('gates exactly the gameplay commands before Start', () => {
+    expect(blockedBeforeStart({ kind: 'input', player: 'player_0', action: 1 })).toBe(true)
+    expect(blockedBeforeStart({ kind: 'chat', player: 'player_0', to: null, text: 'hi' })).toBe(
+      true,
+    )
+    expect(blockedBeforeStart({ kind: 'clock', player: 'player_0', running: true })).toBe(true)
+    expect(blockedBeforeStart({ kind: 'pause' })).toBe(false)
+    expect(blockedBeforeStart({ kind: 'resume' })).toBe(false)
+    expect(blockedBeforeStart({ kind: 'stop' })).toBe(false)
   })
 })

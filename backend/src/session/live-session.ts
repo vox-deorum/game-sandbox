@@ -14,6 +14,7 @@
  */
 import { chmod, mkdir } from 'node:fs/promises'
 import {
+  blockedBeforeStart,
   classifyOutbound,
   codePointLength,
   parseCommand,
@@ -134,6 +135,8 @@ export class LiveSession {
   private resultLine: string | null = null
   /** The accepted pause state is replayed to late attachers after their running envelope. */
   private paused = false
+  /** Human sessions stay paused until their owner explicitly resumes them for the first time. */
+  private awaitingStart = false
   /** The container's reported episode outcome, stashed from the `result` envelope. */
   private resultReason: TerminationReason | null = null
   private finalReason: TerminationReason | null = null
@@ -155,6 +158,10 @@ export class LiveSession {
     this.messaging = init.messaging
     this.llmEnabled = init.llmEnabled ?? false
     this.deps = init.deps
+    // The orchestrator's launch config sets the container's start_paused from this same mode check,
+    // so the relay's gate and the harness's frozen stepping cannot disagree.
+    this.awaitingStart = this.mode === 'human'
+    this.paused = this.awaitingStart
 
     this.maxTimer = createChargeableTimer({
       budgetMs: this.deps.maxDurationMs,
@@ -210,10 +217,10 @@ export class LiveSession {
     if (line.type === 'recording') {
       if (this.headerLine === null) {
         this.headerLine = raw
-        this.markRunning()
         // The header is the one line naming players, so it is rewritten per socket; state lines
         // carry no names and stream verbatim.
         this.broadcastHeader(raw)
+        this.markRunning()
       } else {
         this.latestState = raw
         this.broadcastState(raw, line.value)
@@ -241,7 +248,10 @@ export class LiveSession {
       .catch((error) =>
         appLog('session', `session ${this.id}: markRunning failed: ${String(error)}`, 'error'),
       )
-    this.broadcast(sessionEnvelope('running'))
+    this.broadcast(sessionEnvelope('running', this.awaitingStart))
+    if (this.paused) {
+      this.broadcast(serializeCommand({ kind: 'pause' }))
+    }
   }
 
   private broadcast(data: string): void {
@@ -433,7 +443,7 @@ export class LiveSession {
       this.trySend(socket, this.stateForAttach(this.latestState, isOwner))
     }
     if (this.status === 'running') {
-      this.trySend(socket, sessionEnvelope('running'))
+      this.trySend(socket, sessionEnvelope('running', this.awaitingStart))
       if (this.paused) {
         this.trySend(socket, serializeCommand({ kind: 'pause' }))
       }
@@ -469,6 +479,9 @@ export class LiveSession {
       return
     }
     const command = parsed.command
+    if (this.awaitingStart && blockedBeforeStart(command)) {
+      return
+    }
     if (command.kind === 'input' || command.kind === 'clock') {
       if (this.mode !== 'human' || !this.externalPlayers.has(command.player)) {
         return
@@ -498,6 +511,9 @@ export class LiveSession {
     this.process.send(serializeCommand(command))
     if (command.kind === 'pause' || command.kind === 'resume') {
       this.paused = command.kind === 'pause'
+      if (command.kind === 'resume') {
+        this.awaitingStart = false
+      }
       this.broadcast(serializeCommand(command))
     }
   }
@@ -509,7 +525,7 @@ export class LiveSession {
    * controls open again, and the container keeps whatever it had already spent.
    */
   private releaseControlsOnLastOwnerDetach(): void {
-    if (this.mode !== 'human' || this.status !== 'running') {
+    if (this.mode !== 'human' || this.status !== 'running' || this.awaitingStart) {
       return
     }
     if (this.hasOwnerSocket()) {

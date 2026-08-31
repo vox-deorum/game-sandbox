@@ -555,6 +555,7 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   // interactive: the renderer wires a click-to-play per legal card on the controlled player's turn.
   const canvas = page.locator('canvas.renderer-canvas')
   await expect(canvas).toBeVisible({ timeout: 60_000 })
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
 
   // Greying lives in canvas pixels, which the suite never reads, so the assertions are DOM-observable
   // consequences instead. The decision log records one row per acted tick (a play); the opening deal

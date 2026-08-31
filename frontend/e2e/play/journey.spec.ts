@@ -50,6 +50,8 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   const sessionId = page.url().split('/').at(-1)
   if (sessionId === undefined) throw new Error('session URL has no id')
 
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+
   // A paced live game steps in real time from launch, and a flap is latched per step. Keep the bird
   // aloft for the whole live section with a gentle flap cadence: a page-side interval dispatching the
   // same window keydown the renderer wires for a human player (see the renderer's input test), started
@@ -174,6 +176,7 @@ test('asks before replacing an active session, then starts the requested session
     const originalSessionId = page.url().split('/').at(-1)
     if (originalSessionId === undefined) throw new Error('first session URL has no id')
     activeSessionId = originalSessionId
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
     await page.getByRole('button', { name: 'Pause' }).click()
     await expect(page.locator('.overlay-banner')).toHaveText('Paused')
 

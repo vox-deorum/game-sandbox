@@ -29,6 +29,8 @@ When LLM access is enabled, the session gets a private network path that can rea
 
 Every container launch includes a complete resolved `parameters` object. The harness validates it against the selected environment before constructing the environment, and the factory receives the normalized map. Live watch and play launches use the values submitted by the season-aware start form. Automated games use the parameter snapshot frozen when the run was created.
 
+A human-play launch also sets `start_paused`, while a watch launch starts running. The production relay and local relay publish `awaiting_start` on each running session-status envelope, retain that value with the accepted pause state, and clear it on the first accepted `resume`. An attachment receives the header, latest live state when one exists, running status, and the current pause echo when paused. This lets the shared browser transport distinguish the initial Start gate from an ordinary later pause across refreshes and reconnects. The gate does not stop the session's maximum-duration backstop: a session left waiting at Start still ends at its time limit, and an owner who disconnects without starting still hands it to the idle timeout.
+
 ## Execution drivers
 
 The backend uses an execution-driver interface to:
@@ -82,7 +84,7 @@ Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
                                              └→ scratch recording
 ```
 
-The local relay passes live protocol messages through unchanged. The live runner writes only the recording header and completed-step state objects to the scratch recording. The [opening presentation state](interaction.md#per-step-state-object) and final result envelope are not recording lines. The relay validates and forwards commands and remembers the accepted pause state. Whenever a browser connects, the relay provides the header, latest live state object, session status, and current pause state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
+The local relay passes live protocol messages through unchanged. The live runner writes only the recording header and completed-step state objects to the scratch recording. The [opening presentation state](interaction.md#per-step-state-object) and final result envelope are not recording lines. The relay validates and forwards commands and remembers the accepted pause and awaiting-Start state. Whenever a browser connects, the relay provides the header, latest live state object, session status, and current pause state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
 
 Participants use this local browser loop through the template. They do not need the backend, containers, or a network connection.
 

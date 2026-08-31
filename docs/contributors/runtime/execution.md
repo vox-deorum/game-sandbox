@@ -150,7 +150,7 @@ Inbound commands are:
 {"kind":"stop"}
 ```
 
-Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored. A client sends `pause` and `resume` only for a human session of a `human_pause: "session"` environment. A watch session, and a human session of a `human_pause: "playback"` environment, pause locally in the browser and send neither.
+Messaging adds a `chat` event. Unknown or malformed commands are logged and ignored. The initial Start gate of a paused launch always sends `resume`. After Start, a client sends `pause` and `resume` only for a human session of a `human_pause: "session"` environment. A watch session, and a started human session of a `human_pause: "playback"` environment, pause locally in the browser and send neither.
 
 A `clock` event reports whether a human holds a player's controls, so the container spends that player's move budget only while they can act. The browser sends `running:true` when the renderer opens the move clock and `running:false` when it closes or playback pauses. Like `input`, the event is accepted only from the owner, in human mode, for a human-capable player. When the last owner socket detaches, the backend sends `running:false` for every external player so a disconnected browser cannot keep a budget running.
 
@@ -163,9 +163,9 @@ The browser receives:
 - Header and state lines.
 - Final result.
 - Pause and resume echoes.
-- Backend session-status events.
+- Backend session-status events, whose running form includes `awaiting_start`.
 
-When a browser attaches, the backend immediately sends the buffered header, latest state, and current status. For a paused session, it then sends the current pause echo. The local bridge follows the same attachment contract.
+When a browser attaches, the backend immediately sends the buffered header, latest state, and current status. The running status says whether the first resume is still required. For a paused session, the backend then sends the current pause echo. The local bridge follows the same attachment contract.
 
 The browser sends the same command envelopes used on the container side. The backend validates shape and authority, then forwards without interpreting environment actions.
 

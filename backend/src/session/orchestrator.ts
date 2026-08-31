@@ -421,6 +421,7 @@ export class Orchestrator {
         resolvedParameters.values,
         messaging,
         externalChatPlayer,
+        mode === 'human',
         llmBlock,
       )
       await ensureRecordingsDir(this.sessionRecordingsDir(id))
@@ -827,6 +828,7 @@ export class Orchestrator {
     parameters: Record<string, ParameterValue>,
     messaging: { enabled: boolean; cap: number | null },
     externalChatPlayer: string | null,
+    startPaused: boolean,
     llmBlock: LlmKeysFileConfig | Record<string, never>,
   ): Promise<Record<string, unknown>> {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
@@ -891,6 +893,9 @@ export class Orchestrator {
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
       external_chat_player: externalChatPlayer,
+      // Human-controlled platform sessions wait for their owner to select Start. Watch sessions
+      // remain automatic, and the harness freezes game stepping while this is true.
+      start_paused: startPaused,
       ...llmBlock,
       step_timeout_ms: seasonRules.step_timeout_ms,
       episode_timeout_ms: seasonRules.episode_timeout_ms,

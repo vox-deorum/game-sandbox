@@ -35,6 +35,7 @@ import GameOverCard from '../components/GameOverCard.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
+import SessionStartOverlay from '../components/SessionStartOverlay.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -141,6 +142,9 @@ const {
   connection,
   status,
   paused,
+  awaitingStart,
+  canStart,
+  startPending,
   buffering,
   endReason,
   finalResult,
@@ -149,6 +153,7 @@ const {
   connect,
   setControlHeld,
   togglePause,
+  start,
   stop,
   send,
 } = useSessionSocket(id, {
@@ -197,7 +202,9 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 // orchestrator from the metadata and the season override, persisted on the row so live and reopened
 // ended payloads agree. A season-silenced session shows no dead panel.
 const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
-const liveChatEnabled = computed(() => row.value?.mode === 'human' && status.value === 'running')
+const liveChatEnabled = computed(
+  () => row.value?.mode === 'human' && status.value === 'running' && !awaitingStart.value,
+)
 const { chatProps, sendInput, sendChat } = useLiveChat({
   state: latestState,
   controlledPlayers,
@@ -369,7 +376,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
           </UiButton>
         </template>
         <template v-else>
-          <UiButton variant="secondary" size="tight" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
+          <UiButton v-if="!awaitingStart" variant="secondary" size="tight" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
           <UiButton variant="danger" size="tight" @click="stop">Stop</UiButton>
         </template>
       </div>
@@ -406,7 +413,17 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       @renderer-host="hostEl = $event"
     >
       <template #overlay>
-          <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
+          <SessionStartOverlay
+            v-if="isOwner && awaitingStart && status !== 'ended'"
+            :ready="canStart"
+            :pending="startPending"
+            @start="start"
+          />
+          <!-- A spectator cannot press Start, so tell them what the freeze is instead of "Paused". -->
+          <div v-else-if="awaitingStart && status !== 'ended'" class="overlay-banner">
+            Waiting for the owner to start
+          </div>
+          <div v-else-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
           <div
             v-else-if="buffering && status !== 'ended'"
             class="overlay-banner overlay-banner--waiting"

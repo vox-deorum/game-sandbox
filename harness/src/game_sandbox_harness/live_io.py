@@ -442,9 +442,19 @@ def result_envelope(result: EpisodeResult) -> dict[str, Any]:
     }
 
 
-def session_envelope(status: str, reason: str | None = None) -> dict[str, Any]:
-    """Build the shared local-relay lifecycle envelope without touching recording bytes."""
+def session_envelope(
+    status: str,
+    reason: str | None = None,
+    awaiting_start: bool = False,
+) -> dict[str, Any]:
+    """Build a shared local-relay lifecycle envelope without touching recording bytes.
+
+    A running session always carries the start-gate state. Other lifecycle states keep their
+    existing shape because ``awaiting_start`` only describes a running session.
+    """
     envelope: dict[str, Any] = {"kind": "session", "status": status}
+    if status == "running":
+        envelope["awaiting_start"] = awaiting_start
     if reason is not None:
         envelope["reason"] = reason
     return envelope

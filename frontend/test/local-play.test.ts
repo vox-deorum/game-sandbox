@@ -74,7 +74,7 @@ function startPaused(): void {
     agents: {},
     timing: { started_at: 0, duration_ms: 0 },
   })
-  handlers.onSessionStatus?.('running')
+  handlers.onSessionStatus?.('running', undefined, true)
   handlers.onPause?.()
 }
 
@@ -99,6 +99,7 @@ describe('LocalPlayPage', () => {
     expect(drawn).toHaveLength(1)
 
     handlers.onConnectionChange?.('open')
+    handlers.onResume?.()
     mountContext?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
@@ -135,6 +136,7 @@ describe('LocalPlayPage', () => {
     startPaused()
 
     const start = await screen.findByRole('button', { name: 'Start' })
+    expect(start.closest('.session-start-overlay')).not.toBeNull()
     await fireEvent.click(start)
     expect(sent).toContainEqual({ kind: 'resume' })
     expect(screen.getByText('Paused')).toBeInTheDocument()

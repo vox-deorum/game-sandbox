@@ -209,6 +209,48 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
 
+  it('uses the shared stage overlay for an owned human session start gate', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      flappyHeader({ players: { player_0: { kind: 'human', label: 'dev', user: 'dev' } } }),
+    )
+    handlers.onConnectionChange?.('open')
+    handlers.onSessionStatus?.('running', undefined, true)
+    handlers.onPause?.()
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull())
+    const start = await screen.findByRole('button', { name: 'Start' })
+    expect(start.closest('.session-start-overlay')).not.toBeNull()
+    mountCtx?.sendAction?.('player_0', 1)
+    expect(sent).toEqual([])
+
+    await fireEvent.click(start)
+    expect(sent).toEqual([{ kind: 'resume' }])
+    handlers.onResume?.()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeVisible())
+  })
+
+  it('shows a spectator the waiting banner instead of the start overlay', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      flappyHeader({ players: { player_0: { kind: 'human', label: 'dev', user: 'dev' } } }),
+    )
+    handlers.onConnectionChange?.('open')
+    handlers.onSessionStatus?.('running', undefined, true)
+    handlers.onPause?.()
+
+    expect(await screen.findByText('Waiting for the owner to start')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+  })
+
   it('offers the fullscreen toggle on a live session and toggles the stage', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())

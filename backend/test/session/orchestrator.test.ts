@@ -529,6 +529,7 @@ describe('orchestrator', () => {
         env_id: 'flappy_bird',
         seed: 42,
         player_bindings: { player_0: { kind: 'external' } },
+        start_paused: true,
         recording_dir: '/recordings',
         recording_id: `flappy_bird-${id}`,
       })
@@ -543,6 +544,7 @@ describe('orchestrator', () => {
         seats: seats({ kind: 'builtin-agent', name: 'naive' }),
       })
       expect(config.player_bindings).toEqual({ player_0: { kind: 'builtin-agent', name: 'naive' } })
+      expect(config.start_paused).toBe(false)
       // A plain watch run attributes the player to the built-in Naive agent.
       expect(config.players).toEqual({
         player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
@@ -1492,9 +1494,14 @@ describe('orchestrator', () => {
       // 'alice' (the startRequest default).
       const { id, process } = await start(orch, { seats: seats({ kind: 'human' }) })
       const input = JSON.stringify({ kind: 'input', player: 'player_0', action: 1 })
+      const owner = orch.attach(id, new FakeSocket(), caller('alice'))
+      process.emit(HEADER)
+      await flush()
+      owner?.handleMessage('{"kind":"resume"}')
+      process.sent.length = 0
 
       // The same input from the owner, a signed-in stranger, and an anonymous (null) socket.
-      orch.attach(id, new FakeSocket(), caller('alice'))?.handleMessage(input)
+      owner?.handleMessage(input)
       orch.attach(id, new FakeSocket(), caller('bob'))?.handleMessage(input)
       orch.attach(id, new FakeSocket(), null)?.handleMessage(input)
 

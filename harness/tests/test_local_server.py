@@ -89,7 +89,7 @@ def test_local_server_replays_paused_attach_state_and_rejects_traversal() -> Non
                 ) as socket:
                     frames = [await socket.recv() for _ in range(4)]
                 assert frames[0].startswith('{"schema_version":1')
-                assert frames[2] == '{"kind":"session","status":"running"}'
+                assert frames[2] == '{"awaiting_start":true,"kind":"session","status":"running"}'
                 assert frames[3] == '{"kind":"pause"}'
                 assert server._asset("/%2e%2e/secret") is None  # noqa: SLF001 - safety boundary
 
@@ -134,8 +134,80 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
                 frames = [await asyncio.wait_for(socket.recv(), timeout=5) for _ in range(3)]
 
         assert json.loads(frames[0])["environment"] == "flappy_bird"
-        assert frames[1] == '{"kind":"session","status":"running"}'
+        assert frames[1] == '{"awaiting_start":true,"kind":"session","status":"running"}'
         assert frames[2] == '{"kind":"pause"}'
+
+    asyncio.run(exercise())
+
+
+def test_local_server_consumes_start_gate_and_replays_later_pause_on_attach() -> None:
+    async def exercise() -> None:
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "local.html").write_text("local", encoding="utf-8")
+            child = (
+                "import json\n"
+                "import sys\n"
+                'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
+                'print(\'{"schema_version":1,"tick":0,"agents":{},"timing":{}}\', flush=True)\n'
+                "for raw in sys.stdin:\n"
+                "    command = json.loads(raw)\n"
+                '    if command.get("kind") == "stop":\n'
+                '        print(\'{"kind":"result","reason":"stopped"}\', flush=True)\n'
+                "        break\n"
+                '    if command.get("kind") in ("input", "chat", "clock"):\n'
+                '        print(json.dumps({"schema_version": 1, "tick": 1, "agents": {}, '
+                '"received": command}), flush=True)\n'
+            )
+            async with LocalServer(
+                _entry(),
+                command=[sys.executable, "-c", child],
+                static_root=root,
+                start_paused=True,
+            ) as server:
+                for _ in range(500):
+                    if server._header is not None and server._latest_state is not None:  # noqa: SLF001
+                        break
+                    await asyncio.sleep(0.01)
+                uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+                async with websockets.connect(uri) as first:
+                    initial = [await asyncio.wait_for(first.recv(), timeout=5) for _ in range(4)]
+                    assert json.loads(initial[2]) == {
+                        "kind": "session",
+                        "status": "running",
+                        "awaiting_start": True,
+                    }
+                    assert initial[3] == '{"kind":"pause"}'
+
+                    await first.send('{"kind":"input","player":"player_0","action":1}')
+                    await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+                    await first.send('{"kind":"clock","player":"player_0","running":true}')
+                    with pytest.raises(TimeoutError):
+                        await asyncio.wait_for(first.recv(), timeout=0.1)
+
+                    await first.send('{"kind":"resume"}')
+                    assert await asyncio.wait_for(first.recv(), timeout=5) == '{"kind":"resume"}'
+                    await first.send('{"kind":"input","player":"player_0","action":1}')
+                    forwarded = json.loads(await asyncio.wait_for(first.recv(), timeout=5))
+                    assert forwarded["received"] == {
+                        "kind": "input",
+                        "player": "player_0",
+                        "action": 1,
+                    }
+                    await first.send('{"kind":"pause"}')
+                    assert await asyncio.wait_for(first.recv(), timeout=5) == '{"kind":"pause"}'
+
+                async with websockets.connect(uri) as second:
+                    replay = [await asyncio.wait_for(second.recv(), timeout=5) for _ in range(4)]
+                    assert json.loads(replay[2]) == {
+                        "kind": "session",
+                        "status": "running",
+                        "awaiting_start": False,
+                    }
+                    assert replay[3] == '{"kind":"pause"}'
+                    await second.send('{"kind":"stop"}')
+                    assert json.loads(await asyncio.wait_for(second.recv(), timeout=5))["kind"] == "result"
+                    assert json.loads(await asyncio.wait_for(second.recv(), timeout=5))["status"] == "ended"
 
     asyncio.run(exercise())
 
@@ -198,7 +270,7 @@ def test_local_server_runs_the_injected_parallel_fixture_through_the_live_runner
             async with websockets.connect(uri) as socket:
                 initial = [await asyncio.wait_for(socket.recv(), timeout=5) for _ in range(4)]
                 assert json.loads(initial[0])["environment"] == "three_player_parallel_test"
-                assert initial[1] == '{"kind":"session","status":"running"}'
+                assert initial[1] == '{"awaiting_start":true,"kind":"session","status":"running"}'
                 assert initial[2] == '{"kind":"pause"}'
                 assert json.loads(initial[3])["agents"] == {}
 
@@ -476,7 +548,7 @@ def test_local_server_forwards_commands_and_orders_terminal_frames() -> None:
                     second_frames = [await second.recv() for _ in range(2)]
                     assert first_frames == second_frames
                     assert first_frames[0].startswith('{"schema_version":1')
-                    assert first_frames[1] == '{"kind":"session","status":"running"}'
+                    assert first_frames[1] == '{"awaiting_start":false,"kind":"session","status":"running"}'
                     await first.send('{"kind":"pause"}')
                     assert await first.recv() == '{"kind":"pause"}'
                     assert await second.recv() == '{"kind":"pause"}'

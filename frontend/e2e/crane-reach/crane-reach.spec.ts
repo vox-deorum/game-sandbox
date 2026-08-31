@@ -641,6 +641,7 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
 
     const canvas = page.locator('canvas.renderer-canvas')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
     const rendererHost = page.locator('.renderer-host')
     await expect(rendererHost).toHaveAttribute('data-crane-hud', 'ready')
 

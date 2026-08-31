@@ -300,8 +300,7 @@ test('Spades watchers see complete chat live and in replay', async ({
         name: 'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
       }),
     ).toBeVisible()
-    const controllerChat = page.getByRole('group', { name: 'Chat', exact: true })
-    await expect(controllerChat).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Chat log' })).toBeVisible()
 
     // Two different browser identities attach before the first step. Both get the read-only panel, and
     // the relay will later deliver the broadcast and targeted message to each. The second watcher page
@@ -325,6 +324,12 @@ test('Spades watchers see complete chat live and in replay', async ({
     const spectatorTwoChat = spectatorTwo.getByRole('group', { name: 'Chat log' })
     await expect(spectatorTwoChat).toBeVisible()
     await expect(spectatorTwoChat.getByRole('textbox')).toHaveCount(0)
+
+    // The manual gate keeps the first tick frozen while both spectators attach. Start now, then queue
+    // both messages before the human bid advances the harness from that opening state.
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    const controllerChat = page.getByRole('group', { name: 'Chat', exact: true })
+    await expect(controllerChat).toBeVisible()
 
     // The state policy defaults the recipient to the current sender's partner.
     const recipient = controllerChat.getByLabel('Recipient')
@@ -452,6 +457,7 @@ test('human Spades self-controls both face-up partnership hands to game over', {
     await page.goto(`/sessions/${sessionId}`)
     const canvas = page.locator('canvas.renderer-canvas')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.locator('.renderer-host')).toHaveAttribute(
       'aria-label',
       'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',

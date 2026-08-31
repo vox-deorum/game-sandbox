@@ -44,6 +44,7 @@ export {
 } from './environment.js'
 export type { LlmModelUsage, LlmUsageByModel, ModelAlias } from './llm.js'
 export {
+  blockedBeforeStart,
   classifyOutbound,
   type OutboundLine,
   RESULT_KIND,

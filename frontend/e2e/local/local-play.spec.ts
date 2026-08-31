@@ -94,7 +94,7 @@ test('local play starts, reconnects while paused, and reaches a stopped terminal
     await page.setViewportSize({ width: 320, height: 900 })
   }
 
-  await page.getByRole('button', { name: 'Start' }).click()
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible()
   await expect(page.locator('.overlay-banner')).toHaveCount(0)
 

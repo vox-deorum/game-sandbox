@@ -2,11 +2,12 @@
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef } from 'vue'
 
 import ChatPanel from '../components/ChatPanel.vue'
 import DecisionLog from '../components/DecisionLog.vue'
 import GameOverCard from '../components/GameOverCard.vue'
+import SessionStartOverlay from '../components/SessionStartOverlay.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -25,10 +26,6 @@ const hostEl = ref<HTMLElement | null>(null)
 const header = ref<RecordingHeader | null>(null)
 const lastState = shallowRef<StepState | null>(null)
 const gameOverDismissed = ref(false)
-// The first resume is the start gate; the relay replays its pause echo until then. Afterwards the
-// Pause control is an ordinary session or playback pause, depending on the environment.
-const started = ref(false)
-const startRequested = ref(false)
 
 const controlledPlayers = computed(() =>
   Object.entries(header.value?.players ?? {})
@@ -42,6 +39,9 @@ const {
   connection,
   status,
   paused,
+  awaitingStart,
+  canStart,
+  startPending,
   buffering,
   endReason,
   finalResult,
@@ -51,6 +51,7 @@ const {
   send,
   setControlHeld,
   togglePause,
+  start,
   stop,
 } = useSessionSocket('local', {
   onHeader: (incoming) => {
@@ -62,12 +63,7 @@ const {
     const drawn = renderState(state, options)
     lastState.value = state
     appendMessages(state)
-    const entries = appendDecisions(state)
-    if (entries.length > 0) {
-      // The relay replays its latest acted state before the retained pause echo. A refreshed tab is
-      // therefore resuming an existing session, not opening the initial start gate again.
-      started.value = true
-    }
+    appendDecisions(state)
     return drawn
   },
 })
@@ -97,19 +93,10 @@ const completePlayerScores = computed(
   () => finalResult.value?.scores ?? accumulatedScores.value,
 )
 
-// Leaving the paused state is what retires the start gate, whichever pause cleared it. This only
-// switches the first-control label; the socket owns the pause state itself.
-watch(paused, (value) => {
-  if (!value && status.value === 'running') {
-    started.value = true
-    startRequested.value = false
-  }
-})
-
 const { logBeside } = useStageLayout(aspectRatio)
 const stageLoading = computed(() => meta.value === null || (aspectRatio.value === null && !noRenderer.value))
 const messagingEnabled = computed(() => meta.value?.messaging === true)
-const liveChatEnabled = computed(() => status.value === 'running')
+const liveChatEnabled = computed(() => status.value === 'running' && !awaitingStart.value)
 const { chatProps, sendInput, sendChat } = useLiveChat({
   state: latestState,
   controlledPlayers,
@@ -117,13 +104,7 @@ const { chatProps, sendInput, sendChat } = useLiveChat({
   connection,
   send,
 })
-const showStartGate = computed(() => paused.value && !started.value)
 const controlsReady = computed(() => header.value !== null && status.value === 'running')
-
-function start(): void {
-  startRequested.value = true
-  send({ kind: 'resume' })
-}
 
 onMounted(async () => {
   try {
@@ -165,8 +146,7 @@ onMounted(async () => {
         />
       </div>
       <div v-if="controlsReady && status !== 'ended'" class="local-play-controls">
-        <UiButton v-if="showStartGate" :loading="startRequested" @click="start">Start</UiButton>
-        <UiButton v-else variant="secondary" @click="togglePause">
+        <UiButton v-if="!awaitingStart" variant="secondary" @click="togglePause">
           {{ paused ? 'Resume' : 'Pause' }}
         </UiButton>
         <UiButton variant="danger" @click="stop">Stop</UiButton>
@@ -188,7 +168,12 @@ onMounted(async () => {
       @renderer-host="hostEl = $event"
     >
       <template #overlay>
-        <div v-if="showStartGate" class="overlay-banner">Select Start when you are ready.</div>
+        <SessionStartOverlay
+          v-if="awaitingStart && status !== 'ended'"
+          :ready="canStart"
+          :pending="startPending"
+          @start="start"
+        />
         <div v-else-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
         <div v-else-if="buffering && status !== 'ended'" class="overlay-banner" role="status">
           Waiting…
