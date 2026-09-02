@@ -8,7 +8,7 @@
  * argv. From there each session drives itself as a {@link LiveSession}; the orchestrator only
  * resolves attach and stop against the registry.
  */
-import { randomInt, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 
 import {
@@ -37,6 +37,7 @@ import {
   submissionSeatPath,
 } from '../submission/submission-image.js'
 import { optionalField } from '../util/optional-field.js'
+import { drawSeed } from '../util/random-seed.js'
 import { assembleLaunch, type LlmKeysFileConfig, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
@@ -293,7 +294,7 @@ export class Orchestrator {
           ? request.humanTimeoutMs
           : meta.human_timeout_ms
         : null
-    const seed = request.seed ?? randomInt(0, 2 ** 31)
+    const seed = request.seed ?? drawSeed()
 
     const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
     // Resolve the play-open season's rules once. The same block drives the container config, relay,

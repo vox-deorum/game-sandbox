@@ -20,7 +20,9 @@ export type SeatSpec = SharedSeatSpec
 /**
  * One match configuration: an ordered list of seat specs, the seeds every game in the configuration
  * runs (passed to both env and agents), and the per-configuration game count the scheduler expands.
- * At least one seat and at least one seed are required; `games` is a positive integer.
+ * At least one seat is required, and `games` is a positive integer. A nonempty `seeds` list cycles
+ * across a match's runs so re-runs reproduce the same games; an empty list makes the trigger draw
+ * `games` fresh seeds for the match instead (see `BuildScheduleInput.randomSeed`).
  */
 export const MatchConfigSchema = z.strictObject({
   seats: z
@@ -30,7 +32,7 @@ export const MatchConfigSchema = z.strictObject({
       }),
     )
     .min(1),
-  seeds: z.array(z.int()).min(1),
+  seeds: z.array(z.int()),
   games: z.int().positive(),
 })
 export type MatchConfig = z.infer<typeof MatchConfigSchema>

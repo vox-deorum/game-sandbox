@@ -634,6 +634,29 @@ describe('AdminConsolePage', () => {
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
 
+  // A blank seeds field saves as an empty list (the backend draws fresh seeds per run); any token
+  // that is not an integer is an error rather than silently dropped.
+  it('saves a blank seeds field as an empty seeds list', async () => {
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    await fireEvent.update(await screen.findByRole('textbox', { name: 'Seeds' }), '')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].matches[0]?.seeds).toEqual([])
+  })
+
+  it('rejects a seeds field with a non-integer token before saving', async () => {
+    await renderConsole()
+
+    await fireEvent.update(await screen.findByRole('textbox', { name: 'Seeds' }), '1, 2, abc')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Match 1 has a seed that is not an integer: "abc".',
+    )
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+  })
+
   it('preserves empty strings, normalizes multi-choice order, and excludes unknown stored keys', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
     const configured = season({

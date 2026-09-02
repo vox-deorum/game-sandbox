@@ -60,10 +60,22 @@ describe('SeasonConfig codec', () => {
     ).toThrow(SeasonConfigError)
   })
 
-  it('rejects an empty seed list', () => {
-    expect(() =>
-      parseSeasonConfig(validConfig({ matches: [{ seats: ['submission'], seeds: [], games: 1 }] })),
-    ).toThrow(SeasonConfigError)
+  it('accepts an empty seed list (one random seed per scheduled game)', () => {
+    const config = validConfig({
+      matches: [{ seats: ['submission'], seeds: [], games: 1 }],
+    })
+    expect(parseSeasonConfig(config)).toEqual(config)
+    expect(decodeSeasonConfig(encodeSeasonConfig(config))).toEqual(config)
+  })
+
+  it('rejects a non-integer seed', () => {
+    for (const seeds of [[1.5], ['1']]) {
+      expect(() =>
+        parseSeasonConfig(
+          validConfig({ matches: [{ seats: ['submission'], seeds: seeds as never, games: 1 }] }),
+        ),
+      ).toThrow(SeasonConfigError)
+    }
   })
 
   it('rejects an unknown seat spec', () => {

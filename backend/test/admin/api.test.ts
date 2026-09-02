@@ -687,14 +687,26 @@ describe('admin API', () => {
       expect((res.json() as { config: SeasonConfig }).config).toEqual(flappyConfig())
     })
 
+    it('round-trips a season config with an empty seed list', async () => {
+      const id = await declare()
+      const config = {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [], games: 1 }],
+      }
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/config`,
+        headers: OPERATOR,
+        payload: config,
+      })
+      expect(res.statusCode).toBe(200)
+      expect((res.json() as { config: SeasonConfig }).config).toEqual(config)
+    })
+
     it('400s an invalid config with a specific reason', async () => {
       const id = await declare()
       const cases: Array<[string, Record<string, unknown>]> = [
         ['zero seats', { deps_version: 1, matches: [{ seats: [], seeds: [1], games: 1 }] }],
-        [
-          'empty seeds',
-          { deps_version: 1, matches: [{ seats: ['submission'], seeds: [], games: 1 }] },
-        ],
         [
           'non-positive games',
           { deps_version: 1, matches: [{ seats: ['submission'], seeds: [1], games: 0 }] },
@@ -1315,6 +1327,31 @@ describe('admin API', () => {
       // The concrete schedule was persisted before enqueue: two submitted games + two Naive games.
       const games = await storage.listRunGames(runId)
       expect(games).toHaveLength(4)
+    })
+
+    it('draws fresh seeds for a match with an empty seed list, shared across its seatings', async () => {
+      const id = await declare()
+      await storage.updateSeasonConfig(id, {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [], games: 2 }],
+      })
+      await makeReadySubmission(storage, id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/admin/seasons/${id}/runs`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(201)
+      const runId = (res.json() as { id: string }).id
+      const seeds = (await storage.listRunGames(runId)).map((game) => game.seed)
+      // One ready submission x 2 games, then the Naive baseline on the same two drawn seeds.
+      expect(seeds).toHaveLength(4)
+      for (const seed of seeds) {
+        expect(Number.isInteger(seed)).toBe(true)
+        expect(seed).toBeGreaterThanOrEqual(0)
+      }
+      expect(seeds.slice(2)).toEqual(seeds.slice(0, 2))
     })
 
     it('expands a seat-order-sensitive (Hearts) season as ordered permutations at trigger', async () => {

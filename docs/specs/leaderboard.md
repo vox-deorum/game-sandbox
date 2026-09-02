@@ -35,7 +35,7 @@ The operator-triggered workflow:
 
 - Expands the match design over eligible submissions into a balanced schedule.
 - Includes named builtins as ordinary agents and the required `naive` baseline on every board.
-- Uses controlled seeded repetitions.
+- Uses controlled seeded repetitions, with every agent in a run playing the same seeds. Whether a re-run reproduces those seeds depends on the season's seed list, described in [seasons.md](seasons.md).
 - Runs matches sequentially on the same host for comparable timing.
 - Records every match.
 - Enforces step and episode limits.

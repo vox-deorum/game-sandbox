@@ -33,7 +33,7 @@ Seeding runs at every startup but is idempotent, and it stays out of an environm
 
 Each season defines:
 
-- Match design: one controller entry per resolved seat, each set to `submission` or `builtin:<name>`, plus seeds and matches per configuration. Each builtin name must be declared by the environment, and a restricted seat must name its designated builtin.
+- Match design: one controller entry per resolved seat, each set to `submission` or `builtin:<name>`, plus seeds and matches per configuration. Seeds are either an explicit integer list, cycled across the match's games so re-runs reproduce the same seeded games, or an empty list, which makes each run draw that many fresh seeds for the match when it is created. Every seating and the Naive baseline in one run play the same drawn seeds, so the board stays comparable, while a re-run draws afresh. Each builtin name must be declared by the environment, and a restricted seat must name its designated builtin.
 - Template dependency version.
 - Optional gameplay parameter overrides, including `players` for player-bounds environments or `seat_plan` for environments with declared plans. Every match's seat count must equal the number of seats in the resolved layout.
 - Optional step and episode limit overrides.

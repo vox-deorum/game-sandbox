@@ -8,15 +8,17 @@
  * tested exhaustively without containers. The runner never re-reads live submissions. It executes
  * exactly this list in order.
  *
- * Determinism is the whole point: submissions are sorted by stable id before any expansion, seatings
- * are enumerated in fixed lexicographic order, seeds round-robin by run index, and the Naive baseline
- * is always appended after the submitted rows of each match. The same inputs always yield the same
- * ordered schedule, so a re-run reproduces a deterministic agent's games exactly.
+ * The enumeration is deterministic: submissions are sorted by stable id before any expansion,
+ * seatings are enumerated in fixed lexicographic order, and the Naive baseline is always appended
+ * after the submitted rows of each match, so the same inputs always yield the same ordered seatings
+ * and counts. Seed values are reproducible only for a match with an explicit seed list; see
+ * {@link BuildScheduleInput.randomSeed} for the empty-list rule.
  */
 
 import type { ScheduledGameInput } from '../storage/index.js'
 import type { AgentRef, SubmissionRef } from '../storage/schema.js'
 import type { MatchConfig, SeatSpec } from '../storage/season-config.js'
+import { drawSeed } from '../util/random-seed.js'
 
 export type { SubmissionRef } from '../storage/schema.js'
 
@@ -37,6 +39,13 @@ export interface BuildScheduleInput {
   seatOrderMatters: boolean
   /** The resolved layout key persisted beside every scheduled assignment. */
   seatPlan: string
+  /**
+   * The seed source for a match whose `seeds` list is empty. Such a match draws `games` fresh seeds
+   * once, and every seating plus the Naive baseline then cycles that same drawn list exactly as an
+   * explicit list would, so the agents in one run still play identical games while each new run
+   * draws afresh. Defaults to the platform's `drawSeed`; tests inject a deterministic generator.
+   */
+  randomSeed?: () => number
 }
 
 /**
@@ -44,15 +53,16 @@ export interface BuildScheduleInput {
  *
  * For each match, fixed named builtin seats keep their refs and the `submission` seats
  * are filled from the sorted snapshot: `P(N, K)` ordered seatings when `seatOrderMatters`, else
- * `C(N, K)` unordered rosters. Each seating emits `games` runs with seeds cycling by run index. The
- * Naive baseline (every submission seat filled with `builtin:naive`) is always appended once, so the
- * board has a comparable baseline row even with zero ready submissions. A match with no submission
- * seat is just that baseline. `game_index` is a single deterministic counter across the whole run.
+ * `C(N, K)` unordered rosters. Each seating emits `games` runs with the match's seeds cycling by run
+ * index. The Naive baseline (every submission seat filled with `builtin:naive`) is always appended
+ * once, on the same seeds, so the board has a comparable baseline row even with zero ready
+ * submissions. A match with no submission seat is just that baseline. `game_index` is a single
+ * deterministic counter across the whole run.
  * Keep enumeration changes aligned with `projectSchedule`; the shared-projection test in
  * `backend/test/scheduler/build-schedule.test.ts` cross-checks their per-match and total counts.
  */
 export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
-  const { matches, submissions, seatOrderMatters, seatPlan } = input
+  const { matches, submissions, seatOrderMatters, seatPlan, randomSeed = drawSeed } = input
 
   // Sort by stable submission id once; every seat expansion below enumerates over this order, so the
   // concrete schedule is identical across re-runs regardless of snapshot season order.
@@ -63,13 +73,16 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
 
   matches.forEach((match, matchIndex) => {
     const k = match.seats.filter((spec) => spec === 'submission').length
+    // An empty seed list means one fresh draw per game slot, shared by every seating below.
+    const seeds =
+      match.seeds.length > 0 ? match.seeds : Array.from({ length: match.games }, randomSeed)
 
     const emit = (seats: AgentRef[]): void => {
       for (let run = 0; run < match.games; run++) {
         schedule.push({
           match_index: matchIndex,
           game_index: gameIndex++,
-          seed: match.seeds[run % match.seeds.length] as number,
+          seed: seeds[run % seeds.length] as number,
           seats: [...seats],
           seat_plan: seatPlan,
         })

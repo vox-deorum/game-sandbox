@@ -394,14 +394,19 @@ function removeMatch(index: number): void {
   matches.value.splice(index, 1)
 }
 
-/** Parse a free-text seed list ("0, 1 2") into a de-duplicated list of integers. */
-function parseSeeds(text: string): number[] {
-  return text
-    .split(/[\s,]+/)
-    .map((token) => token.trim())
-    .filter((token) => token !== '')
-    .map((token) => Number(token))
-    .filter((value) => Number.isInteger(value))
+/**
+ * Parse a free-text seed list ("0, 1 2") into integers. A blank field is the empty list, which the
+ * backend treats as "draw fresh seeds per run"; any token that is not an integer is reported back
+ * rather than dropped, so an operator never saves fewer seeds than they typed.
+ */
+function parseSeeds(text: string): { seeds: number[] } | { invalid: string } {
+  const seeds: number[] = []
+  for (const token of text.split(/[\s,]+/).filter((token) => token !== '')) {
+    const value = Number(token)
+    if (!Number.isInteger(value)) return { invalid: token }
+    seeds.push(value)
+  }
+  return { seeds }
 }
 
 function buildLimitOverride(
@@ -429,14 +434,16 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
   for (let i = 0; i < matches.value.length; i++) {
     const match = matches.value[i]!
-    const seeds = parseSeeds(match.seedsText)
-    if (seeds.length === 0) {
-      return { error: `Match ${i + 1} needs at least one integer seed.` }
+    const parsed = parseSeeds(match.seedsText)
+    if ('invalid' in parsed) {
+      return {
+        error: `Match ${i + 1} has a seed that is not an integer: "${parsed.invalid}". Leave the field blank for fresh random seeds.`,
+      }
     }
     if (!Number.isInteger(match.games) || match.games < 1) {
       return { error: `Match ${i + 1} needs a game count of at least 1.` }
     }
-    built.push({ seats: [...match.seats], seeds, games: match.games })
+    built.push({ seats: [...match.seats], seeds: parsed.seeds, games: match.games })
   }
   if (!Number.isInteger(depsVersion.value) || depsVersion.value < 1) {
     return { error: 'The dependency-set version must be a positive integer.' }
@@ -571,7 +578,8 @@ function canonicalLimits(limits: LlmLimitOverride | undefined): Record<string, u
 
 /**
  * Whether the form differs from the saved season config. An incomplete/invalid draft (e.g. a match
- * mid-edit with no seeds yet) counts as dirty: it still needs a save, and a run must warn about it.
+ * mid-edit with a game count below 1) counts as dirty: it still needs a save, and a run must warn
+ * about it.
  */
 const dirty = computed(() => {
   const result = buildConfig()
@@ -685,7 +693,10 @@ watch(confirmOpen, (open) => {
         </div>
 
         <div class="match-fields">
-          <UiField label="Seeds" hint="Comma-separated integers.">
+          <UiField
+            label="Seeds"
+            hint="Comma-separated integers. Leave blank to draw fresh seeds on every run."
+          >
             <template #default="{ id }">
               <UiInput :id="id" v-model="match.seedsText" type="text" placeholder="0, 1" />
             </template>

@@ -10,14 +10,14 @@ Stage 6 shipped `backend/src/scheduler/build-schedule.ts` with the general multi
 
 ## What changes
 
-The runner, storage, and seed round-robin from Stage 6 are unchanged. The scheduler still fills fixed built-in seats with `{ kind: 'builtin-naive' }`, expands seeds by run index (`seeds[i % seeds.length]`), and emits `games` runs per resolved assignment. Only the submission-seat expansion differs from the single-seat case, and that difference is the environment capability `seat_order_matters`, not a per-match toggle.
+The runner, storage, and seed semantics from Stage 6 are unchanged: an explicit seed list still cycles by run index (`seeds[i % seeds.length]`), while an empty list still has the scheduler draw `games` fresh random seeds once for the match at trigger time and cycle through that drawn list the same way an explicit list would. The scheduler still fills fixed built-in seats with `{ kind: 'builtin-naive' }` and emits `games` runs per resolved assignment. Only the submission-seat expansion differs from the single-seat case, and that difference is the environment capability `seat_order_matters`, not a per-match toggle.
 
 Given a match configuration with `K` submission seats and `N` trigger-time `ready` submissions:
 
 - `seat_order_matters = true` (Hearts): enumerate the **ordered** `K`-permutations of the submissions, `P(N, K) = N! / (N - K)!` distinct seatings. Each distinct ordering is its own match, because seat position changes play.
 - `seat_order_matters = false`: enumerate the **unordered** `K`-combinations, `C(N, K) = N! / (K! * (N - K)!)` distinct rosters. Each roster is seated in sorted-submission-id order so the concrete `slots` assignment is still fully determined.
 
-Determinism carries over from Stage 6 unchanged: submissions are sorted by stable submission id before enumeration, and permutations or combinations are generated in fixed lexicographic order over that sorted list, so a re-run schedules the identical games. The Naive baseline still always runs: the scheduler also emits the match with every submission seat filled by `builtin-naive`, giving the board its comparable baseline row.
+Determinism carries over from Stage 6 unchanged: submissions are sorted by stable submission id before enumeration, and permutations or combinations are generated in fixed lexicographic order over that sorted list, so enumeration order and counts are identical across re-runs regardless of the seed list. Seed values are reproducible only for an explicit list; an empty list still draws `games` fresh random seeds once for the match at trigger time. The Naive baseline still always runs: the scheduler also emits the match with every submission seat filled by `builtin-naive`, giving the board its comparable baseline row.
 
 ## Edge cases the tests pin
 
@@ -44,8 +44,8 @@ Vitest, pure unit tests, no Docker, no DB:
 - `K = 1` reduces to the exact Stage 6 schedule under either flag.
 - `N < K` yields baseline-only. The Naive baseline is always present.
 - The same agent may fill multiple seats: the four-seat Hearts baseline seats `builtin-naive` in all four slots, and a self-play assignment that seats one submission in two seats is emitted without dedup or error.
-- Calling `buildSchedule` twice with the same inputs yields an identical ordered schedule.
+- Calling `buildSchedule` twice with the same inputs yields an identical ordered schedule; with an explicit seed list the seed values match too, while an empty seed list draws a fresh set of seeds on each call.
 
 ## Done when
 
-`buildSchedule` expands a Hearts match design with multiple submission seats into `P(N, K)` ordered seatings for `seat_order_matters = true` and `C(N, K)` rosters for `false`, deterministically and identically across re-runs, with the Naive baseline always present and `N < K` yielding baseline-only. The `K = 1` case reproduces the Stage 6 schedule exactly under both flags. Resolved assignments may repeat an agent ref across seats, which the baseline already requires and self-play uses, and the scheduler never dedupes or rejects them. All cases are proven by pure Vitest unit tests with no Docker or DB.
+`buildSchedule` expands a Hearts match design with multiple submission seats into `P(N, K)` ordered seatings for `seat_order_matters = true` and `C(N, K)` rosters for `false`, deterministically and, for explicit seed lists, identically across re-runs, with the Naive baseline always present and `N < K` yielding baseline-only. The `K = 1` case reproduces the Stage 6 schedule exactly under both flags. Resolved assignments may repeat an agent ref across seats, which the baseline already requires and self-play uses, and the scheduler never dedupes or rejects them. All cases are proven by pure Vitest unit tests with no Docker or DB.

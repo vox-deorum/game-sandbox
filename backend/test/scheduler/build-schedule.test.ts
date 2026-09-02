@@ -143,6 +143,51 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
   })
 })
 
+describe('buildSchedule - empty seed list', () => {
+  it('draws `games` seeds once per match and cycles them for every seating and the baseline', () => {
+    const match: MatchConfig = { seats: ['submission'], seeds: [], games: 2 }
+    let next = 100
+    const schedule = buildSchedule({
+      matches: [match, match],
+      submissions: subs(2),
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+      randomSeed: () => next++,
+    })
+
+    // Per match: 2 submissions x 2 games + 1 baseline x 2 games = 6 games on the same two draws.
+    expect(schedule).toHaveLength(12)
+    expect(schedule.slice(0, 6).map((game) => ids(game.seats))).toEqual([
+      ['s1'],
+      ['s1'],
+      ['s2'],
+      ['s2'],
+      ['naive'],
+      ['naive'],
+    ])
+    expect(schedule.map((game) => game.seed)).toEqual([
+      100, 101, 100, 101, 100, 101, 102, 103, 102, 103, 102, 103,
+    ])
+  })
+
+  it('does not draw from the generator when the seed list is explicit', () => {
+    const match: MatchConfig = { seats: ['submission'], seeds: [7, 8], games: 2 }
+    let calls = 0
+    const schedule = buildSchedule({
+      matches: [match],
+      submissions: subs(1),
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+      randomSeed: () => {
+        calls++
+        return 999
+      },
+    })
+    expect(schedule.map((game) => game.seed)).toEqual([7, 8, 7, 8])
+    expect(calls).toBe(0)
+  })
+})
+
 describe('buildSchedule - multi-seat expansion', () => {
   // The agreed Hearts shape: two submission seats and two fixed Naive seats.
   const hearts: MatchConfig = {
