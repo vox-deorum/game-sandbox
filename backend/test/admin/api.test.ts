@@ -3,12 +3,16 @@
  * storage. These prove the gating choke point, the declare/configure/lifecycle/trigger/cancel/status
  * contract, and the live log-stream relay without touching Docker — the runner is a recording stub.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { createGunzip } from 'node:zlib'
 
 import { TEMPLATE_REPO_URL_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance } from 'fastify'
+import tar from 'tar-fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../../src/app.js'
@@ -214,9 +218,11 @@ describe('admin API', () => {
 
     it('rejects an anonymous request with 401 auth_required', async () => {
       const id = await declare()
-      const res = await app.inject({ method: 'GET', url: `/api/admin/seasons/${id}` })
-      expect(res.statusCode).toBe(401)
-      expect(res.json()).toMatchObject({ code: 'auth_required' })
+      for (const url of [`/api/admin/seasons/${id}`, '/api/admin/submissions/whatever/download']) {
+        const res = await app.inject({ method: 'GET', url })
+        expect(res.statusCode, url).toBe(401)
+        expect(res.json()).toMatchObject({ code: 'auth_required' })
+      }
     })
 
     it('rejects the log-stream WebSocket upgrade for a non-operator and an anonymous client', async () => {
@@ -342,7 +348,8 @@ describe('admin API', () => {
 
     it("streams one submission's snapshot as a gzip attachment", async () => {
       const seasonId = await declare()
-      const submission = await seedSubmission(seasonId, 'alice', { withSnapshot: true })
+      const carolId = users.idOf('carol')
+      const submission = await seedSubmission(seasonId, carolId, { withSnapshot: true })
 
       const res = await app.inject({
         method: 'GET',
@@ -352,9 +359,29 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('application/gzip')
       expect(res.headers['content-disposition']).toContain('attachment')
+      expect(res.headers['content-disposition']).toContain(
+        `carol-${submission.id.slice(0, 8)}.tar.gz`,
+      )
       expect(res.headers['content-disposition']).toContain('.tar.gz')
       // gzip magic bytes confirm a real archive came back.
       expect(res.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
+    })
+
+    it('falls back to the raw user id for a submission whose owner has no user row', async () => {
+      const seasonId = await declare()
+      // A string that can never be a minted user's display name, so the assertion proves the raw-id
+      // fallback rather than a name resolution that happens to agree with the id.
+      const submission = await seedSubmission(seasonId, 'rowless-owner', { withSnapshot: true })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/submissions/${submission.id}/download`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-disposition']).toContain(
+        `rowless-owner-${submission.id.slice(0, 8)}.tar.gz`,
+      )
     })
 
     it('404s no_snapshot for a submission that has none, and 404s an unknown id', async () => {
@@ -379,8 +406,10 @@ describe('admin API', () => {
 
     it('archives the whole season, skipping submissions without a snapshot rather than 500ing', async () => {
       const seasonId = await declare()
-      await seedSubmission(seasonId, 'alice', { withSnapshot: true })
-      await seedSubmission(seasonId, 'bob', { withSnapshot: false })
+      const carolSubmission = await seedSubmission(seasonId, users.idOf('carol'), {
+        withSnapshot: true,
+      })
+      const bob = await seedSubmission(seasonId, 'bob', { withSnapshot: false })
 
       const res = await app.inject({
         method: 'GET',
@@ -391,6 +420,28 @@ describe('admin API', () => {
       expect(res.headers['content-type']).toContain('application/gzip')
       expect(res.headers['content-disposition']).toContain(`season-${seasonId.slice(0, 8)}.tar.gz`)
       expect(res.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
+
+      const extractDir = mkdtempSync(join(tmpdir(), 'gs-admin-extract-'))
+      try {
+        await pipeline(Readable.from(res.rawPayload), createGunzip(), tar.extract(extractDir))
+        const carolFolder = `carol-${carolSubmission.id.slice(0, 8)}`
+        expect(existsSync(join(extractDir, carolFolder, 'agent.py'))).toBe(true)
+        expect(existsSync(join(extractDir, carolFolder, 'submission.json'))).toBe(true)
+        const metadata = JSON.parse(
+          readFileSync(join(extractDir, carolFolder, 'submission.json'), 'utf8'),
+        ) as { user_name?: string }
+        expect(metadata.user_name).toBe('carol')
+
+        const index = JSON.parse(readFileSync(join(extractDir, 'season.json'), 'utf8')) as {
+          submissions: Array<{ folder: string; user_name?: string }>
+          skipped: string[]
+        }
+        const carolRow = index.submissions.find((row) => row.folder === carolFolder)
+        expect(carolRow?.user_name).toBe('carol')
+        expect(index.skipped).toContain(bob.id)
+      } finally {
+        rmSync(extractDir, { recursive: true, force: true })
+      }
     })
 
     it('hides stale snapshots after static failure but preserves later-stage failure snapshots', async () => {

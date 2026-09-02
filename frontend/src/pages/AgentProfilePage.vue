@@ -38,6 +38,7 @@ import {
   type PublicSeasonView,
   type SeasonSettings,
   rotateLlmDevelopmentKey,
+  adminSubmissionDownloadUrl,
   type SubmissionStatus,
 } from '../api/client.js'
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
@@ -70,7 +71,7 @@ import {
   submissionStatusLabel,
   submissionStatusTone,
 } from '../lib/submission-status.js'
-import { canParticipate, canPlay, hidesNames, useMe, userId } from '../me.js'
+import { canParticipate, canPlay, hidesNames, isAdmin, useMe, userId } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -868,7 +869,16 @@ const seasonLabel = (label: string | null, id: string): string => formatSeasonNa
             </td>
             <td>
               <a
-                v-if="placement.agent_submission_id !== null"
+                v-if="placement.agent_submission_id !== null && isAdmin(me.me)"
+                class="submission-anchor"
+                :href="adminSubmissionDownloadUrl(placement.agent_submission_id)"
+                download
+                :title="`Download submission ${shortId(placement.agent_submission_id)} source`"
+              >
+                #{{ shortId(placement.agent_submission_id) }}
+              </a>
+              <a
+                v-else-if="placement.agent_submission_id !== null"
                 class="submission-anchor"
                 :href="`#submission-${placement.agent_submission_id}`"
                 :title="`Jump to submission ${shortId(placement.agent_submission_id)}`"

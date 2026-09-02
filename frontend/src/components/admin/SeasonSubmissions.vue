@@ -1,10 +1,11 @@
 <!--
   The season's active submissions on the operator console: one current attempt per participant, with a
   per-row source download and a "download all" archive of the whole season. Downloads are native
-  `<a download>` links (the browser streams the file and names it) pointing at the operator-gated admin
-  routes; the browser sends the Better Auth session cookie on the same-origin navigation, so the admin
-  guard authenticates the download with no query-param identity channel. A submission that failed
-  before its snapshot was written has none, so its download is shown disabled rather than as a dead link.
+  `<a download>` links (the server names the file through `content-disposition`) pointing at the
+  operator-gated admin routes; the browser sends the Better Auth session cookie on the same-origin
+  navigation, so the admin guard authenticates the download with no query-param identity channel. A
+  submission that failed before its snapshot was written has none, so its download is shown disabled
+  rather than as a dead link.
 -->
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
@@ -100,12 +101,7 @@ watch(
             <template v-else>{{ formatDate(row.created_at) ?? row.created_at }}</template>
           </td>
           <td>
-            <a
-              v-if="row.has_snapshot"
-              class="table-link"
-              :href="adminSubmissionDownloadUrl(row.id)"
-              :download="`${row.user_id}-${row.id.slice(0, 8)}.tar.gz`"
-            >
+            <a v-if="row.has_snapshot" class="table-link" :href="adminSubmissionDownloadUrl(row.id)" download>
               Download
             </a>
             <span v-else class="download-none" title="No source snapshot for this submission">

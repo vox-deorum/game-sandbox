@@ -142,14 +142,18 @@ function sanitizeForPath(value: string): string {
   return safe === '' ? 'submission' : safe
 }
 
-/** The per-submission folder inside a season archive: `<user>-<id8>` (collision-free via the id suffix). */
-function submissionFolderName(submission: Submission): string {
-  return `${sanitizeForPath(submission.user_id)}-${submission.id.slice(0, 8)}`
+/**
+ * The per-submission folder inside a season archive: `<name>-<id8>` (collision-free via the id
+ * suffix), where `name` is the owner's display name from the admin Participant column, falling back
+ * to the raw user id when the user has no name, both sanitized by `sanitizeForPath`.
+ */
+function submissionFolderName(submission: Submission, names: ReadonlyMap<string, string>): string {
+  return `${sanitizeForPath(names.get(submission.user_id) ?? submission.user_id)}-${submission.id.slice(0, 8)}`
 }
 
-/** The download filename for a single submission's snapshot. */
-function submissionArchiveName(submission: Submission): string {
-  return `${submissionFolderName(submission)}.tar.gz`
+/** The download filename for a single submission's snapshot: `<name>-<id8>.tar.gz`. */
+function submissionArchiveName(submission: Submission, names: ReadonlyMap<string, string>): string {
+  return `${submissionFolderName(submission, names)}.tar.gz`
 }
 
 /** A static failure invalidates any archive left on disk by an earlier validation attempt. */
@@ -182,7 +186,7 @@ function submissionMetadata(submission: Submission): {
 
 /**
  * Assemble a whole season's active submissions into one staging directory: each submission that has a
- * valid snapshot under its own `<user>-<id8>/` folder with a `submission.json`, plus a top-level
+ * valid snapshot under its own `<name>-<id8>/` folder with a `submission.json`, plus a top-level
  * `season.json` index. A submission whose snapshot is missing or invalidated by a static failure is
  * listed in `skipped` rather than failing the archive. Returns the staging path for the caller to pack
  * and then remove. On any other error the staging dir is cleaned up before rethrowing.
@@ -192,16 +196,24 @@ async function buildSeasonSubmissionArchive(
   season: { id: string; env_id: string },
 ): Promise<string> {
   const active = await deps.storage.listActiveSubmissionsBySeason(season.id)
+  // One batched name lookup for the whole archive; a missing user simply omits the field.
+  const names = await deps.userDirectory.namesFor(active.map((submission) => submission.user_id))
   const staging = await mkdtemp(join(tmpdir(), 'gs-season-'))
   try {
-    const included: Array<{ folder: string; id: string; user_id: string; status: string }> = []
+    const included: Array<{
+      folder: string
+      id: string
+      user_id: string
+      status: string
+      user_name?: string
+    }> = []
     const skipped: string[] = []
     for (const submission of active) {
       if (!snapshotCanBeExposed(submission)) {
         skipped.push(submission.id)
         continue
       }
-      const folder = submissionFolderName(submission)
+      const folder = submissionFolderName(submission, names)
       const dest = join(staging, folder)
       try {
         await deps.snapshots.materializeInto(submission.id, dest)
@@ -215,13 +227,21 @@ async function buildSeasonSubmissionArchive(
       }
       await writeFile(
         join(dest, 'submission.json'),
-        JSON.stringify(submissionMetadata(submission), null, 2),
+        JSON.stringify(
+          {
+            ...submissionMetadata(submission),
+            ...optionalField('user_name', names.get(submission.user_id)),
+          },
+          null,
+          2,
+        ),
       )
       included.push({
         folder,
         id: submission.id,
         user_id: submission.user_id,
         status: submission.status,
+        ...optionalField('user_name', names.get(submission.user_id)),
       })
     }
     await writeFile(
@@ -356,11 +376,12 @@ function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDep
           .code(404)
           .send({ error: 'no snapshot for this submission', code: 'no_snapshot' })
       }
+      const names = await deps.userDirectory.namesFor([submission.user_id])
       return reply
         .type('application/gzip')
         .header(
           'content-disposition',
-          `attachment; filename="${submissionArchiveName(submission)}"`,
+          `attachment; filename="${submissionArchiveName(submission, names)}"`,
         )
         .send(deps.snapshots.stream(submission.id))
     },

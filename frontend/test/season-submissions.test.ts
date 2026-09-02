@@ -40,10 +40,12 @@ describe('SeasonSubmissions', () => {
 
     const link = await screen.findByRole('link', { name: 'Download' })
     // No user_name on this row, so the Participant cell falls back to the stable user_id, kept as its
-    // own tooltip — and the download filename stays keyed on the id either way.
+    // own tooltip. The server names the file via content-disposition, so the client link carries no
+    // filename.
     const participant = screen.getByText('alice')
     expect(participant).toHaveAttribute('title', 'alice')
-    expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
+    expect(link.getAttribute('download')).toBe('')
+    expect(link).toHaveAttribute('href', '/api/admin/submissions/sub-abcdef12/download')
     const all = screen.getByRole('link', { name: /Download all/ })
     expect(all).toHaveAttribute('download', 'season-iter-1.tar.gz')
     expect(all).toHaveClass('ui-button', 'secondary', 'tight')
@@ -84,7 +86,7 @@ describe('SeasonSubmissions', () => {
     expect(screen.queryByRole('link', { name: submittedAt })).toBeNull()
   })
 
-  it('prefers user_name over user_id in the Participant column, keeping the id as a tooltip and download key', async () => {
+  it('prefers user_name over user_id in the Participant column, keeping the id as a tooltip', async () => {
     vi.mocked(listSeasonSubmissions).mockResolvedValue([
       row({ user_id: 'alice', user_name: 'Alice Nguyen' }),
     ])
@@ -93,9 +95,10 @@ describe('SeasonSubmissions', () => {
     const participant = await screen.findByText('Alice Nguyen')
     expect(participant).toHaveAttribute('title', 'alice')
     expect(screen.queryByText('alice', { exact: true })).toBeNull()
-    // The download filename must keep the stable id, never the display name, so attribution surviving
-    // a later name change stays legible from the archive alone.
+    // The server names the file from the display name, so the client link carries no filename; the
+    // display-name logic lives server-side.
     const link = screen.getByRole('link', { name: 'Download' })
-    expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
+    expect(link.getAttribute('download')).toBe('')
+    expect(link.getAttribute('href')).toBe('/api/admin/submissions/sub-abcdef12/download')
   })
 })

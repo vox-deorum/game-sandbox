@@ -35,6 +35,7 @@ vi.mock('../src/api/client.js', () => ({
   getLlmDevelopmentSummary: vi.fn(),
   listLlmDevelopmentCalls: vi.fn(async () => ({ calls: [], next_cursor: null })),
   rotateLlmDevelopmentKey: vi.fn(),
+  adminSubmissionDownloadUrl: (id: string) => `/api/admin/submissions/${id}/download`,
 }))
 
 import type { AgentPlacementView } from '../src/api/client.js'
@@ -276,6 +277,45 @@ describe('AgentProfilePage', () => {
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-released')
     // The placement's recording is reachable through a Replay link, as on the environment boards.
     expect(screen.getByRole('link', { name: 'Replay' })).toHaveAttribute('href', '/replays/rec-1')
+    // A non-admin viewer gets the in-page jump link, not the admin source download.
+    const submissionLink = screen.getByRole('link', { name: '#sub1' })
+    expect(submissionLink).toHaveAttribute('href', '#submission-sub1')
+  })
+
+  it('links a placement submission to the admin source download for an operator', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('operator', 'admin'))
+    const placement: AgentPlacementView = {
+      id: 'p1',
+      season_id: 'iter-released',
+      env_id: 'flappy_bird',
+      run_id: 'run-1',
+      rank: 2,
+      agent_kind: 'submission',
+      agent_builtin_name: null,
+      agent_submission_id: 'sub1',
+      agent_user_id: 'eve',
+      mean_score: 12.5,
+      mean_agent_compute_ms: 3.2,
+      llm_usage_by_model: null,
+      llm_weighted_cost: null,
+      failure_count: 0,
+      recording_id: 'rec-1',
+      created_at: '2026-06-14T00:00:00Z',
+      season_label: 'Spring Iteration',
+      human_mean: 4.25,
+      human_count: 8,
+    }
+    vi.mocked(getAgentPlacements).mockResolvedValue({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      placements: [placement],
+    })
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
+
+    const submissionLink = await screen.findByRole('link', { name: '#sub1' })
+    expect(submissionLink).toHaveAttribute('href', '/api/admin/submissions/sub1/download')
+    expect(submissionLink).toHaveAttribute('download', '')
+    expect(submissionLink).toHaveAttribute('title', 'Download submission sub1 source')
   })
 
   it('shows a dash for a placement with no human ratings and falls back to a season id label', async () => {
