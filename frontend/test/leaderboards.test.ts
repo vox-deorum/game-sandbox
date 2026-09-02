@@ -572,7 +572,6 @@ describe('LeaderboardsPage', () => {
     expect(within(byRater as HTMLElement).getByText('1')).toBeInTheDocument()
     expect(within(byRater as HTMLElement).getByText('Ana Roy')).toBeInTheDocument()
     expect(within(byRater as HTMLElement).getByText('0')).toBeInTheDocument()
-    expect(screen.getByText('Ana Roy has not rated anyone.')).toBeInTheDocument()
   })
 
   it('opens the by-agent drill-in dialog for an operator with the named raters', async () => {

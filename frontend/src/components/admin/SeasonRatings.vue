@@ -63,18 +63,6 @@ function agentName(agent: BoardAgentRef): string {
   return agent.kind === 'submission' ? (agent.user_name ?? agent.user_id) : (agent.label ?? agent.name)
 }
 
-/** The footnote under the by-rater table naming everyone who graded nobody, or an empty string. */
-const zeroRaters = computed(() => {
-  const names = (data.value?.by_rater ?? [])
-    .filter((row) => row.count === 0)
-    .map((row) => raterName(row))
-  if (names.length === 0) {
-    return ''
-  }
-  const joined = names.join(' and ')
-  return `${joined} ${names.length === 1 ? 'has' : 'have'} not rated anyone.`
-})
-
 async function load(): Promise<void> {
   loading.value = true
   try {
@@ -174,9 +162,6 @@ watch(
                 </tr>
               </tbody>
             </table>
-            <p v-if="zeroRaters !== ''" class="ratings-note">
-              {{ zeroRaters }}
-            </p>
           </template>
         </section>
       </div>
