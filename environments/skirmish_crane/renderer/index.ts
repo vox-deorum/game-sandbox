@@ -78,7 +78,7 @@ import {
   reduceInspection,
   selectInspectionProbe,
 } from './inspection.js'
-import { reachableTileKeys, type WalkField, walkFieldFor } from './legality.js'
+import { enemyRoster, reachableTileKeys, type WalkField, walkFieldFor } from './legality.js'
 import {
   beginOrder,
   clickTile,
@@ -89,6 +89,7 @@ import {
   orderTurnOpen,
   resetOrder as resetComposedOrder,
   type StrikePreview,
+  selectTarget,
   strikePreview,
 } from './orders.js'
 import { encodePath } from './paths.js'
@@ -768,6 +769,7 @@ export class CraneReachRenderer extends PixiRenderer {
           unit.unitId,
           (event) => this.setInspection(event),
           pinsInspectionForPointer,
+          () => this.pickTarget(unit.unitId),
         )
         this.unitNodes.set(unit.unitId, node)
         this.unitLayer.addChild(node.root)
@@ -1082,6 +1084,9 @@ export class CraneReachRenderer extends PixiRenderer {
       data.craneOrder = 'none'
       data.craneOrderUnit = 'none'
       data.craneOrderPath = 'none'
+      data.craneOrderTarget = 'none'
+      data.craneTargetStatus = 'none'
+      data.craneTargets = '[]'
       data.craneConfirm = 'none'
       data.craneReset = 'none'
       data.craneClock = 'none'
@@ -1103,7 +1108,10 @@ export class CraneReachRenderer extends PixiRenderer {
 
     const offered = new Set(offeredTiles(session.field, order).keys())
     const endpoint = endpointOf(order)
-    const preview = strikePreview(unit, endpoint, visibleUnits(scene, this.perspective))
+    const visible = visibleUnits(scene, this.perspective)
+    const selectedUnitId = enemyRoster(scene.roster, unit.side)[order.target - 1]?.unitId
+    const selectedTarget = visible.find((enemy) => enemy.unitId === selectedUnitId)
+    const preview = strikePreview(unit, endpoint, visible, selectedUnitId)
     const previewPositions = (preview?.targets ?? [])
       .map((unitId) => scene.units.find((candidate) => candidate.unitId === unitId)?.position)
       .filter((position): position is { x: number; y: number } => position !== undefined)
@@ -1112,6 +1120,9 @@ export class CraneReachRenderer extends PixiRenderer {
       offered,
       preview,
       previewPositions,
+      targetPosition: selectedTarget?.position ?? null,
+      targetInRange:
+        selectedTarget !== undefined && (preview?.targets.includes(selectedTarget.unitId) ?? false),
       revert:
         this.revertedTile === null
           ? null
@@ -1223,6 +1234,27 @@ export class CraneReachRenderer extends PixiRenderer {
     this.redrawCurrentFrame()
   }
 
+  /** Enemy clicks choose an order target; other unit clicks keep their inspection behavior. */
+  private pickTarget(unitId: string): boolean {
+    const session = this.orderSession
+    const scene = this.presentedScene
+    if (session === null || scene === null || this.cameraGestures?.dragging() === true) return false
+    const actor = this.controlledActor(scene)
+    if (actor === null) return false
+    const next = selectTarget(
+      session.order,
+      actor,
+      unitId,
+      visibleUnits(scene, this.perspective),
+      scene.roster,
+    )
+    if (next === session.order) return false
+    session.order = next
+    this.reconcileOrder(scene)
+    this.redrawCurrentFrame()
+    return true
+  }
+
   /** Clear a composed path without sending an action or changing the active unit's move clock. */
   private resetOrder(): void {
     const session = this.orderSession
@@ -1259,6 +1291,21 @@ export class CraneReachRenderer extends PixiRenderer {
     data.craneOrder = plan.order.path.directions.join('')
     data.craneOrderUnit = plan.order.unitId
     data.craneOrderPath = String(encodePath(plan.order.path.directions))
+    data.craneOrderTarget = String(plan.order.target)
+    data.craneTargetStatus =
+      plan.targetPosition === null ? 'none' : plan.targetInRange ? 'in-range' : 'out-of-range'
+    const actor = scene.units.find((unit) => unit.unitId === plan.order.unitId)
+    const visible = visibleUnits(scene, this.perspective)
+    data.craneTargets = JSON.stringify(
+      actor === undefined
+        ? []
+        : enemyRoster(scene.roster, actor.side).flatMap((entry, slot) => {
+            const enemy = visible.find((unit) => unit.unitId === entry.unitId)
+            return enemy === undefined
+              ? []
+              : [{ unitId: enemy.unitId, value: slot + 1, ...this.viewPoint(enemy.position) }]
+          }),
+    )
     data.craneConfirm = 'ready'
     data.craneReset = plan.order.path.directions.length === 0 ? 'inactive' : 'ready'
     data.craneResetX = String(RESET_BUTTON.x)

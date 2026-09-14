@@ -303,9 +303,9 @@ describe('SessionPage', () => {
       timing: { started_at: 0, duration_ms: 0 },
     })
 
-    const attribution = await screen.findByText('Human: Dev User')
+    const attribution = await screen.findByText('Dev User')
     expect(attribution).toHaveAttribute('title', 'dev-user')
-    expect(screen.queryByText('Human: dev-user')).toBeNull()
+    expect(screen.queryByText('dev-user')).toBeNull()
   })
 
   it("keeps a blind viewer's own human seat identified, not neutralized", async () => {
@@ -343,7 +343,7 @@ describe('SessionPage', () => {
       timing: { started_at: 0, duration_ms: 0 },
     })
 
-    const attribution = await screen.findByText('Human: Dev User')
+    const attribution = await screen.findByText('Dev User')
     expect(attribution).toHaveAttribute('title', 'dev-user')
   })
 
@@ -432,7 +432,7 @@ describe('SessionPage', () => {
       timing: { started_at: 0, duration_ms: 0 },
     })
 
-    const attribution = await screen.findByText('Human: Alice Chen')
+    const attribution = await screen.findByText('Alice Chen')
     expect(attribution).toHaveAttribute('title', 'alice-chen')
   })
 
@@ -495,6 +495,17 @@ describe('SessionPage', () => {
         },
       }),
     )
+
+    // Live play summarizes controller assignments by scored seat, just as replay does. Repeated
+    // human and companion labels collapse while the seat tooltip retains the member ids.
+    const seats = await screen.findByRole('list')
+    expect(seats).toHaveClass('seats')
+    expect(seats).toHaveTextContent('S0dev')
+    expect(seats).toHaveTextContent('S1Naive agent')
+    expect(seats).not.toHaveTextContent(/P\d/)
+    const firstSeat = screen.getByRole('button', { name: 'Show players assigned to S0' })
+    await fireEvent.focus(firstSeat)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Players: P0, P2')
 
     expect(mountCtx?.controlledPlayers).toEqual(['player_0', 'player_2'])
     handlers.onConnectionChange?.('open')

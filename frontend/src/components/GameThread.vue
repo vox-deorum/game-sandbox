@@ -40,7 +40,7 @@ const props = withDefaults(
     currentTick?: number | null
     /** The recording header's players map: sender labels for message rows. */
     players?: RecordingHeader['players']
-    /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
+    /** Attribution context, passed to the shared sender-label helper. */
     blind?: boolean
     /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
     masked?: boolean

@@ -618,6 +618,13 @@ test('run and release a full-variant Crane Reach army season', { tag: '@slow' },
  */
 test('compose and send a Crane Reach order by clicking the board', async ({ page, admin }) => {
   test.setTimeout(180_000)
+  const sentActions: Array<{ path: number; target: number }> = []
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      const command = JSON.parse(String(payload))
+      if (command.kind === 'input') sentActions.push(command.action)
+    }),
+  )
 
   // Skirmish gives each side one wide seat of three units, and every Crane Reach player is
   // human-capable, so `self` puts the whole red side under one person. The move clock starts with the
@@ -730,6 +737,60 @@ test('compose and send a Crane Reach order by clicking the board', async ({ page
     await expect(rendererHost).toHaveAttribute('data-crane-event-actor', /^red_/, {
       timeout: 60_000,
     })
+    // Advance to a visible enemy, then prove a click on its painted unit selects the wire target.
+    let selected = false
+    for (let turn = 0; turn < 12; turn += 1) {
+      await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', { timeout: 60_000 })
+      await expect(rendererHost).toHaveAttribute('data-crane-order-target', '0')
+      const targets = JSON.parse(
+        (await rendererHost.getAttribute('data-crane-targets')) ?? '[]',
+      ) as Array<{ unitId: string; value: number; x: number; y: number }>
+      const target = targets[0]
+      if (target !== undefined) {
+        await canvas.click({ position: at(target.x, target.y) })
+        await expect(rendererHost).toHaveAttribute('data-crane-order-target', String(target.value))
+        const checkTargetStatus = async () => {
+          const preview = await rendererHost.getAttribute('data-crane-strike-preview')
+          await expect(rendererHost).toHaveAttribute(
+            'data-crane-target-status',
+            preview === `unique:${target.unitId}` ? 'in-range' : 'out-of-range',
+          )
+        }
+        await checkTargetStatus()
+        const initialTargetStatus = await rendererHost.getAttribute('data-crane-target-status')
+        // A real movement click must refresh the warning while preserving the selected enemy.
+        const stepX = await rendererHost.getAttribute('data-crane-offered-x')
+        const stepY = await rendererHost.getAttribute('data-crane-offered-y')
+        if (stepX === null || stepY === null) throw new Error('no Crane Reach continuation offered')
+        await canvas.click({ position: at(Number(stepX), Number(stepY)) })
+        await expect(rendererHost).toHaveAttribute('data-crane-order', /^[1-6]$/)
+        await expect(rendererHost).toHaveAttribute('data-crane-order-target', String(target.value))
+        await checkTargetStatus()
+        await canvas.click({ position: at(564, 802) })
+        await expect(rendererHost).toHaveAttribute('data-crane-order', '')
+        await expect(rendererHost).toHaveAttribute(
+          'data-crane-target-status',
+          initialTargetStatus as string,
+        )
+        await canvas.click({ position: at(target.x, target.y) })
+        await expect(rendererHost).toHaveAttribute('data-crane-order-target', '0')
+        await expect(rendererHost).toHaveAttribute('data-crane-target-status', 'none')
+        await canvas.click({ position: at(target.x, target.y) })
+        await canvas.click({ position: at(636, 802) })
+        await expect.poll(() => sentActions.at(-1)).toEqual({ path: 0, target: target.value })
+        await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
+        await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'ready', {
+          timeout: 60_000,
+        })
+        await expect(rendererHost).toHaveAttribute('data-crane-order-target', '0')
+        await expect(rendererHost).toHaveAttribute('data-crane-target-status', 'none')
+        selected = true
+        break
+      }
+      await canvas.click({ position: at(636, 802) })
+      await expect(rendererHost).toHaveAttribute('data-crane-confirm', 'none')
+    }
+    expect(selected, 'a visible enemy should become selectable as the sides approach').toBe(true)
   } finally {
     await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
   }

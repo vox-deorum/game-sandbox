@@ -2,7 +2,7 @@
  * Composing an order on the board: what is offered, what a click does, what gets sent, and what the
  * automatic-strike preview says about it.
  */
-import { Container, type FederatedPointerEvent } from 'pixi.js'
+import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -16,6 +16,7 @@ import {
   wireOrderButtons,
 } from './composition.js'
 import { MONO, type TextFactory } from './draw.js'
+import { CraneReachRenderer } from './index.js'
 import { walkFieldFor } from './legality.js'
 import {
   beginOrder,
@@ -25,12 +26,13 @@ import {
   orderAction,
   orderTurnOpen,
   resetOrder,
+  selectTarget,
   strikePreview,
   undoStep,
 } from './orders.js'
 import { encodePath } from './paths.js'
-import { CraneReachRenderer } from './index.js'
 import type { CraneReachScene, HexTile, SceneUnit } from './scene.js'
+import { createUnitNode } from './units.js'
 
 function tile(
   q: number,
@@ -69,6 +71,29 @@ function unitAt(
 }
 
 describe('Crane Reach order composition', () => {
+  it('selects stable enemy slots, switches or clears them, and preserves them across path edits', () => {
+    const actor = unitAt('red_archer_0', '0,0', 'archer')
+    const dead = unitAt('blue_footman_0', '5,0', 'footman', 'blue')
+    const first = unitAt('blue_archer_0', '2,0', 'archer', 'blue')
+    const second = unitAt('blue_cavalry_0', '0,2', 'cavalry', 'blue')
+    const roster = [actor, dead, first, second]
+    const visible = [actor, first, second]
+    const field = walkFieldFor(actor, openField(), visible)
+    let order = beginOrder(actor, field)
+    expect(selectTarget(order, actor, dead.unitId, visible, roster)).toBe(order)
+    expect(selectTarget(order, actor, actor.unitId, visible, roster)).toBe(order)
+    order = selectTarget(order, actor, second.unitId, visible, roster)
+    expect(orderAction(order)).toEqual({ path: 0, target: 3 })
+    order = clickTile(field, order, '1,0')
+    expect(orderAction(order)).toEqual({ path: encodePath([2]), target: 3 })
+    expect(undoStep(field, order).target).toBe(3)
+    order = resetOrder(field, order)
+    expect(orderAction(order)).toEqual({ path: 0, target: 3 })
+    order = selectTarget(order, actor, first.unitId, visible, roster)
+    expect(order.target).toBe(2)
+    expect(selectTarget(order, actor, first.unitId, visible, roster).target).toBe(0)
+    expect(beginOrder(actor, field).target).toBe(0)
+  })
   it('builds a path one step at a time and sends its stable path id', () => {
     const unit = unitAt('red_cavalry_0', '0,0', 'cavalry')
     const tiles = openField()
@@ -197,6 +222,23 @@ describe('Crane Reach automatic-strike preview', () => {
     expect([...(preview?.targets ?? [])].sort()).toEqual(['blue_archer_0', 'blue_footman_0'])
   })
 
+  it('previews the chosen in-range enemy even when another is nearer, and falls back out of range', () => {
+    const near = unitAt('blue_footman_0', '1,0', 'footman', 'blue')
+    const far = unitAt('blue_archer_0', '3,0', 'archer', 'blue')
+    expect(strikePreview(archer, '0,0', [near, far], far.unitId)).toEqual({
+      targets: [far.unitId],
+      uncertain: false,
+    })
+    expect(strikePreview(footman, '0,0', [near, far], far.unitId)).toEqual({
+      targets: [near.unitId],
+      uncertain: false,
+    })
+    expect(strikePreview(archer, '0,0', [near], far.unitId)).toEqual({
+      targets: [near.unitId],
+      uncertain: false,
+    })
+  })
+
   it('shows nothing when no enemy is in range, and ignores allies', () => {
     expect(
       strikePreview(footman, '0,0', [unitAt('blue_footman_0', '3,0', 'footman', 'blue')]),
@@ -227,9 +269,131 @@ describe('Crane Reach automatic-strike preview', () => {
     order = clickTile(field, order, '2,0')
     expect(strikePreview(unit, endpointOf(order), [enemy])).toBeNull()
   })
+
+  it('keeps a target selected while movement removes and restores its strike', () => {
+    const target = unitAt('blue_archer_0', '6,0', 'archer', 'blue')
+    const field = walkFieldFor(archer, openField(), [archer, target])
+    let order = selectTarget(
+      beginOrder(archer, field),
+      archer,
+      target.unitId,
+      [target],
+      [archer, target],
+    )
+    const inRange = () =>
+      strikePreview(archer, endpointOf(order), [target], target.unitId)?.targets.includes(
+        target.unitId,
+      ) ?? false
+    expect(inRange()).toBe(true)
+    order = clickTile(field, order, '-1,0')
+    expect(inRange()).toBe(false)
+    expect(order.target).toBe(1)
+    order = undoStep(field, order)
+    expect(inRange()).toBe(true)
+    expect(order.target).toBe(1)
+  })
 })
 
 describe('Crane Reach order controls', () => {
+  it('updates the painted warning through target selection, movement, undo, and deselection', () => {
+    const actor = unitAt('red_footman_0', '0,0')
+    const chosen = unitAt('blue_footman_0', '1,0', 'footman', 'blue')
+    const fallback = unitAt('blue_archer_0', '-1,1', 'archer', 'blue')
+    const scene = {
+      tiles: openField(),
+      hexRadius: 30,
+      units: [actor, chosen, fallback],
+      roster: [actor, chosen, fallback],
+    } as unknown as CraneReachScene
+    const numerals = new Container()
+    const buttonLayer = new Container()
+    const text = vi.fn((value: string) => {
+      const node = new Container() as ReturnType<TextFactory>
+      node.label = value
+      return node
+    })
+    const renderer = Object.create(CraneReachRenderer.prototype) as {
+      orderSession: {
+        order: ReturnType<typeof beginOrder>
+        plan: { targetInRange: boolean; preview: ReturnType<typeof strikePreview> }
+      }
+      reconcileOrder(scene: CraneReachScene): void
+      pickTarget(unitId: string): boolean
+      pickTile(tileKey: string): void
+    }
+    Object.assign(renderer, {
+      orderSession: null,
+      perspective: null,
+      presentedScene: scene,
+      eventTick: 0,
+      revertedTile: null,
+      orderMarkLayer: new Container(),
+      orderPulseLayer: new Container(),
+      orderNumeralLayer: numerals,
+      orderControlLayer: new Container(),
+      orderHitLayer: new Container(),
+      orderButtonLayer: buttonLayer,
+      resetButtonHit: wireOrderButtons(buttonLayer, vi.fn(), vi.fn()),
+      ctx: { meta: { human_timeout_ms: 30_000 } },
+      moveClock: { open: vi.fn(), read: () => null },
+      controlledActor: () => actor,
+      text,
+      textResolution: () => 2,
+      drawEndpointGhost: vi.fn(),
+      publishOrderProbes: vi.fn(),
+      refreshOrderFrame: vi.fn(),
+      redrawCurrentFrame: vi.fn(),
+    })
+    const warningDrawn = () => numerals.children.some((node) => node instanceof Graphics)
+    renderer.reconcileOrder(scene)
+    renderer.pickTarget(chosen.unitId)
+    expect(renderer.orderSession.plan.targetInRange).toBe(true)
+    expect(warningDrawn()).toBe(false)
+
+    renderer.pickTile('-1,0')
+    expect(renderer.orderSession.plan.targetInRange).toBe(false)
+    expect(warningDrawn()).toBe(true)
+    expect(renderer.orderSession.plan.preview?.targets).toEqual([fallback.unitId])
+    expect(renderer.orderSession.order.target).toBe(1)
+
+    renderer.pickTile('-1,0')
+    expect(renderer.orderSession.plan.targetInRange).toBe(true)
+    expect(warningDrawn()).toBe(false)
+    expect(renderer.orderSession.order.target).toBe(1)
+
+    renderer.pickTile('-1,0')
+    expect(warningDrawn()).toBe(true)
+    renderer.pickTarget(chosen.unitId)
+    expect(renderer.orderSession.order.target).toBe(0)
+    expect(warningDrawn()).toBe(false)
+  })
+
+  it('routes mouse and touch enemy clicks to target selection while retaining hover inspection', () => {
+    const inspect = vi.fn()
+    const pick = vi.fn(() => true)
+    const node = createUnitNode('blue_archer_0', inspect, () => true, pick)
+    node.root.emit('pointerenter', {} as FederatedPointerEvent)
+    expect(inspect).toHaveBeenCalledWith({ type: 'hover-unit', unitId: 'blue_archer_0' })
+    inspect.mockClear()
+    for (const pointerType of ['mouse', 'touch']) {
+      node.root.emit('pointertap', {
+        pointerType,
+        stopPropagation: vi.fn(),
+      } as unknown as FederatedPointerEvent)
+    }
+    expect(pick).toHaveBeenCalledTimes(2)
+    expect(inspect).not.toHaveBeenCalled()
+    pick.mockReturnValue(false)
+    node.root.emit('pointertap', {
+      pointerType: 'touch',
+      stopPropagation: vi.fn(),
+    } as unknown as FederatedPointerEvent)
+    expect(inspect).toHaveBeenCalledWith({
+      type: 'inspect',
+      target: { kind: 'unit', unitId: 'blue_archer_0' },
+    })
+    node.root.destroy({ children: true })
+  })
   const live = {
     actingPlayerId: 'player_0',
     controlledPlayers: ['player_0'],
@@ -306,7 +470,11 @@ describe('Crane Reach order controls', () => {
     })
     Object.assign(renderer, {
       eventTick: 0,
-      orderSession: { tick: 0, playerId: 'player_0', order: beginOrder(unit, field) },
+      orderSession: {
+        tick: 0,
+        playerId: 'player_0',
+        order: { ...beginOrder(unit, field), target: 2 },
+      },
       presentedScene: scene,
       submittedActivation: null,
       ctx: { sendAction },
@@ -316,7 +484,7 @@ describe('Crane Reach order controls', () => {
 
     renderer.sendOrder()
 
-    expect(sendAction).toHaveBeenCalledWith('player_0', { path: 0, target: 0 })
+    expect(sendAction).toHaveBeenCalledWith('player_0', { path: 0, target: 2 })
     expect(renderer.reconcileOrder).toHaveBeenCalledWith(scene)
   })
 
@@ -399,11 +567,14 @@ describe('Crane Reach order controls', () => {
       {
         order: {
           unitId: 'red_footman_0',
+          target: 0,
           path: { directions: [2], tiles: ['0,0', '1,0'], remaining: 1 },
         },
         offered: new Set(),
         preview: null,
         previewPositions: [],
+        targetPosition: null,
+        targetInRange: false,
         revert: null,
         clock: null,
       },
@@ -421,5 +592,38 @@ describe('Crane Reach order controls', () => {
     // The numeral lands in its own container, which the renderer keeps above every piece.
     expect(numerals.children).toContain(numeral)
     expect(layer.children).not.toContain(numeral)
+  })
+
+  it.each([
+    true,
+    false,
+  ])('draws the out-of-range slash without a label (in range: %s)', (targetInRange) => {
+    const layer = new Container()
+    const numerals = new Container()
+    const text = vi.fn(() => new Container() as ReturnType<TextFactory>) as TextFactory
+    const actor = unitAt('red_archer_0', '0,0', 'archer')
+    const tiles = openField()
+    drawOrderMarks(
+      layer,
+      numerals,
+      text,
+      { hexRadius: 30, tiles } as CraneReachScene,
+      {
+        order: { ...beginOrder(actor, walkFieldFor(actor, tiles, [actor])), target: 1 },
+        offered: new Set(),
+        preview: null,
+        previewPositions: [],
+        targetPosition: { x: 80, y: 80 },
+        targetInRange,
+        revert: null,
+        clock: null,
+      },
+      2,
+    )
+    expect(text).not.toHaveBeenCalled()
+    expect(numerals.children).toHaveLength(targetInRange ? 0 : 1)
+    if (!targetInRange) expect(numerals.children[0]).toBeInstanceOf(Graphics)
+    layer.destroy({ children: true })
+    numerals.destroy({ children: true })
   })
 })

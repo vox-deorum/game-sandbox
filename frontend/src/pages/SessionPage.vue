@@ -32,7 +32,7 @@ import ChatPanel from '../components/ChatPanel.vue'
 import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
-import PlayerAttribution from '../components/PlayerAttribution.vue'
+import SeatAttribution from '../components/SeatAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
 import SessionStartOverlay from '../components/SessionStartOverlay.vue'
@@ -386,8 +386,9 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       {{ pinError }}
     </UiEmptyState>
 
-    <PlayerAttribution
+    <SeatAttribution
       :players="header?.players"
+      :seats="header?.seats"
       :blind="blindAttribution"
       :masked="viewerMasked"
       :viewer-id="viewerId"

@@ -6,11 +6,24 @@
  * There is deliberately no click-to-destination pathfinding: finding a route is the student's work in
  * this course, so a person walks it the same way their program has to.
  *
- * Human input always sends `target: 0` and previews the automatic strike instead of naming a victim.
+ * A person can name a visible enemy or leave the strike automatic.
  */
-import { continuations, emptyWalk, extend, type WalkField, type WalkPath } from './legality.js'
+import {
+  continuations,
+  emptyWalk,
+  enemyRoster,
+  extend,
+  type WalkField,
+  type WalkPath,
+} from './legality.js'
 import { encodePath } from './paths.js'
-import { hexDistance, type SceneUnit, tileCoordinate, UNIT_STATS } from './scene.js'
+import {
+  hexDistance,
+  type SceneRosterEntry,
+  type SceneUnit,
+  tileCoordinate,
+  UNIT_STATS,
+} from './scene.js'
 
 /** Everything that decides whether a person is being asked for an order right now. */
 export interface OrderTurn {
@@ -39,13 +52,15 @@ export interface OrderComposition {
   /** The activated unit this composition belongs to; a new activation starts a new composition. */
   unitId: string
   path: WalkPath
+  /** Stable enemy roster slot plus one, or zero for an automatic strike. */
+  target: number
 }
 
 export function beginOrder(
   unit: Pick<SceneUnit, 'unitId' | 'tileKey'>,
   field: WalkField,
 ): OrderComposition {
-  return { unitId: unit.unitId, path: emptyWalk(unit, field) }
+  return { unitId: unit.unitId, path: emptyWalk(unit, field), target: 0 }
 }
 
 /** Restore an order to its origin without changing which unit is activated. */
@@ -53,7 +68,7 @@ export function resetOrder(field: WalkField, order: OrderComposition): OrderComp
   if (order.path.directions.length === 0) return order
   const origin = order.path.tiles[0] as string
   return {
-    unitId: order.unitId,
+    ...order,
     path: { directions: [], tiles: [origin], remaining: field.movement },
   }
 }
@@ -91,9 +106,7 @@ export function clickTile(
   if (order.path.directions.length > 0 && tileKey === endpointOf(order))
     return undoStep(field, order)
   const direction = offeredTiles(field, order).get(tileKey)
-  return direction === undefined
-    ? order
-    : { unitId: order.unitId, path: extend(field, order.path, direction) }
+  return direction === undefined ? order : { ...order, path: extend(field, order.path, direction) }
 }
 
 /** Take the last step back, replaying the shorter path so its movement balance stays exact. */
@@ -102,24 +115,39 @@ export function undoStep(field: WalkField, order: OrderComposition): OrderCompos
   const origin = order.path.tiles[0] as string
   let path: WalkPath = { directions: [], tiles: [origin], remaining: field.movement }
   for (const direction of kept) path = extend(field, path, direction)
-  return { unitId: order.unitId, path }
+  return { ...order, path }
 }
 
-/** The action this order sends. Human input never names a target, so the strike resolves automatically. */
+/** Toggle a visible enemy's stable roster slot without changing the composed path. */
+export function selectTarget(
+  order: OrderComposition,
+  unit: Pick<SceneUnit, 'side'>,
+  unitId: string,
+  visible: readonly Pick<SceneUnit, 'unitId' | 'side'>[],
+  roster: readonly SceneRosterEntry[],
+): OrderComposition {
+  if (!visible.some((enemy) => enemy.unitId === unitId && enemy.side !== unit.side)) return order
+  const slot = enemyRoster(roster, unit.side).findIndex((enemy) => enemy.unitId === unitId)
+  if (slot < 0) return order
+  const target = slot + 1
+  return { ...order, target: order.target === target ? 0 : target }
+}
+
+/** The action this order sends. */
 export function orderAction(order: OrderComposition): { path: number; target: number } {
-  return { path: encodePath(order.path.directions), target: 0 }
+  return { path: encodePath(order.path.directions), target: order.target }
 }
 
 export interface StrikePreview {
-  /** The nearest in-range enemies, which is what the automatic strike would draw from. */
+  /** The selected in-range enemy, or the candidates for an automatic strike. */
   targets: string[]
   /** True when several tie for nearest, so which one is struck is a draw rather than a certainty. */
   uncertain: boolean
 }
 
 /**
- * The informational automatic-strike preview from a projected final tile: the unique nearest enemy in
- * range, every enemy tied for nearest, or nothing when none is in range. It reads only the enemies the
+ * Preview the selected enemy when in range, otherwise the nearest automatic-strike candidates from
+ * the projected final tile, or nothing when none is in range. It reads only the enemies the
  * person can see, so it never reveals a unit the fog is hiding and may therefore be wrong about an
  * unseen one. It sends nothing and never advances the match.
  */
@@ -127,6 +155,7 @@ export function strikePreview(
   unit: Pick<SceneUnit, 'type' | 'side'>,
   endpoint: string,
   visibleEnemies: readonly Pick<SceneUnit, 'unitId' | 'side' | 'tileKey'>[],
+  selectedUnitId?: string,
 ): StrikePreview | null {
   const from = tileCoordinate(endpoint)
   const range = UNIT_STATS[unit.type].range
@@ -136,6 +165,7 @@ export function strikePreview(
     if (enemy.side === unit.side) continue
     const distance = hexDistance(from, tileCoordinate(enemy.tileKey))
     if (distance > range) continue
+    if (enemy.unitId === selectedUnitId) return { targets: [enemy.unitId], uncertain: false }
     if (distance < nearest) {
       nearest = distance
       targets = [enemy.unitId]

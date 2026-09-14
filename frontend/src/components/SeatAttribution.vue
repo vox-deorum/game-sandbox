@@ -1,7 +1,7 @@
 <!--
-  The replay's per-seat attribution line. The seat is the scored assignment, while the player members
-  stay available from the seat label's tooltip. Older recordings that lack either header map show no
-  attribution line.
+  The live-play and replay per-seat attribution line. The seat is the scored assignment, while the
+  player members stay available from the seat label's tooltip. Older recordings that lack either header
+  map show no attribution line.
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'

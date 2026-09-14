@@ -80,6 +80,12 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
       pipe_gap: 110,
     })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
+  // The host names the scored seat once, with player membership available on demand. The same compact
+  // summary carries through to the recording viewer below.
+  const liveSeat = page.getByRole('button', { name: 'Show players assigned to S0' })
+  await expect(liveSeat).toBeVisible()
+  await liveSeat.hover()
+  await expect(page.getByRole('tooltip')).toContainText('Players: P0')
 
   // Pause freezes the run; the overlay reflects the echo. Resume clears it.
   await page.getByRole('button', { name: 'Pause' }).click()
@@ -119,6 +125,10 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('link', { name: 'Open replay' }).click()
   await expect(page).toHaveURL(/\/replays\//)
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+  const replaySeat = page.getByRole('button', { name: 'Show players assigned to S0' })
+  await expect(replaySeat).toBeVisible()
+  await replaySeat.hover()
+  await expect(page.getByRole('tooltip')).toContainText('Players: P0')
   // The run's settings summarize in the status strip and open on hover: the pipe gap chosen above, and
   // the seed the run was played with.
   const settings = page.getByRole('button', { name: 'Show settings details' })

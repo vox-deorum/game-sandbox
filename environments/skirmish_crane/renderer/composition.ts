@@ -19,13 +19,7 @@ import type { CraneAssetName } from './assets.js'
 import { MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { Perspective } from './fog.js'
 import type { OrderComposition, StrikePreview } from './orders.js'
-import {
-  CRANE_STYLE,
-  type CraneReachScene,
-  type HexTile,
-  type Point,
-  SCENE_WIDTH,
-} from './scene.js'
+import { CRANE_STYLE, type CraneReachScene, type HexTile, type Point } from './scene.js'
 
 /** How much night ink the unseen ground takes. Terrain stays legible under it, by design. */
 const FOG_VEIL_ALPHA = 0.45
@@ -51,6 +45,8 @@ export interface OrderPlan {
   preview: StrikePreview | null
   /** Where each previewed target stands, so the thread has somewhere to point. */
   previewPositions: Point[]
+  targetPosition: Point | null
+  targetInRange: boolean
   /** The tile a step was just taken back from, and how much of its single pulse is left. */
   revert: { tileKey: string; strength: number } | null
   clock: MoveClockReading | null
@@ -139,6 +135,21 @@ export function drawOrderMarks(
   const radius = scene.hexRadius
   const byKey = new Map(scene.tiles.map((tile) => [tile.key, tile]))
   const marks = new Graphics()
+  if (plan.targetPosition !== null) {
+    const { x, y } = plan.targetPosition
+    const color = plan.targetInRange ? CRANE_STYLE.activation : CRANE_STYLE.danger
+    marks.circle(x, y, radius * 0.65).stroke({ color, width: 3 })
+    if (!plan.targetInRange) {
+      // Keep the slash above the unit art so color is not the only warning signal.
+      const slash = new Graphics()
+      const offset = radius * 0.46
+      slash
+        .moveTo(x - offset, y + offset)
+        .lineTo(x + offset, y - offset)
+        .stroke({ color, width: 3 })
+      numerals.addChild(slash)
+    }
+  }
 
   for (const tileKey of plan.offered) {
     const tile = byKey.get(tileKey)
@@ -354,13 +365,11 @@ function drawOrderButton(
   const { x, y, radius } = control
   const button = new Graphics()
   button.circle(x, y, radius).fill({ color: CRANE_STYLE.backdrop, alpha: 0.86 })
-  button
-    .circle(x, y, radius)
-    .stroke({
-      color: active ? CRANE_STYLE.grid : CRANE_STYLE.mutedText,
-      width: 2,
-      alpha: active ? 1 : 0.45,
-    })
+  button.circle(x, y, radius).stroke({
+    color: active ? CRANE_STYLE.grid : CRANE_STYLE.mutedText,
+    width: 2,
+    alpha: active ? 1 : 0.45,
+  })
   layer.addChild(button)
 
   if (clock !== null && clock.fraction > 0) {
@@ -382,4 +391,3 @@ function drawOrderButton(
     layer.addChild(glyph)
   }
 }
-

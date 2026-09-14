@@ -75,7 +75,7 @@ A player uses the short label `PN`, and a seat uses `SN`. See [Environments](env
 
 Replays are public and read-only. Each replay belongs to an environment and names its season when it has one. Owners may pin their own recordings. A naturally completed multiplayer replay says `SN won` when a single seat is top-ranked and **Tied** when several seats share the top rank. A replay without eligible ranking data keeps its termination label.
 
-Replay attribution has one assignment for each recorded seat. Each assignment visibly leads with its compact `SN` label and controller attribution. An accessible tooltip on the seat label lists the seat's player members as compact `PN` labels in recorded order. A repeated controller is named once. A mixed human seat lists both the human and companion controllers.
+Live session and replay attribution has one assignment for each seat. Each assignment visibly leads with its compact `SN` label and controller attribution. An accessible tooltip on the seat label lists the seat's player members as compact `PN` labels in recorded order. A repeated controller is named once. A mixed human seat lists both the human and companion controllers.
 
 Result labels, replay summaries, and final standings rank seats rather than players. Each row leads with the seat's controller attribution and keeps player membership as secondary detail.
 

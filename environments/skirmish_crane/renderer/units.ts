@@ -43,6 +43,7 @@ export function createUnitNode(
   unitId: string,
   onInspect: ((event: InspectionEvent) => void) | null,
   pins: (pointerType: string) => boolean,
+  onPick?: () => boolean,
 ): UnitNode {
   const root = new Container()
   if (onInspect !== null) {
@@ -54,6 +55,7 @@ export function createUnitNode(
     root.on('pointerleave', () => onInspect({ type: 'hover-unit', unitId: null }))
     root.on('pointertap', (event) => {
       event.stopPropagation()
+      if (onPick?.()) return
       if (!pins(event.pointerType)) return
       onInspect({ type: 'inspect', target: { kind: 'unit', unitId } })
     })

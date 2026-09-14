@@ -33,7 +33,7 @@ const props = withDefaults(
     entries: ChatEntry[]
     /** The recording header's players map: sender labels for the log. */
     players?: RecordingHeader['players']
-    /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
+    /** Attribution context, passed to the shared sender-label helper. */
     blind?: boolean
     /** The viewer never sees real names: hash-label every non-own human and submitted agent. */
     masked?: boolean
@@ -79,7 +79,7 @@ function labelFor(playerId: string): string {
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
 // the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
 // a message identically. The player (the compact player id)
-// rides alongside the attribution label the same way PlayerAttribution pairs them, so a roster of
+// rides alongside the attribution label, so a roster of
 // same-labelled agents (three "Naive agent" players in a default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
@@ -249,8 +249,7 @@ watch(
   flex-wrap: wrap;
 }
 
-/* The player rides ahead of the sender label the same way PlayerAttribution pairs them, so same-labelled
-   agents stay tellable apart. */
+/* The player rides ahead of the sender label so same-labelled agents stay tellable apart. */
 .chat-player {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
