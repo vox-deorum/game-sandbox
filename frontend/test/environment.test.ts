@@ -132,7 +132,7 @@ describe('EnvironmentPage', () => {
     await renderPage()
     // Both entry points render signed-out; there is no separate sign-in prompt in the watch section.
     await screen.findByRole('button', { name: 'Play' })
-    expect(screen.getByRole('button', { name: 'Rate' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Sign in to watch' })).toHaveLength(2)
     expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
     // Clicking one lands on the sign-in page instead of opening the start dialog.
     await fireEvent.click(screen.getByRole('button', { name: 'Play' }))

@@ -8,9 +8,10 @@
   baseline in Play, while restricted seats retain their designated built-in, so a full assignment
   always exists.
 
-  - Rate mode: every unrestricted seat is preselected to the intended agent. A human-capable restricted
-    seat defaults to Human, and only Human and its designated built-in agent remain enabled. A restricted
-    seat with no human-capable player is locked. Session setting controls stay disabled.
+  - Rate mode: a two-seat unrestricted comparison locks the intended agent in Seat 2 and lets the viewer
+    choose a ready submission for Seat 1. Other unrestricted seats keep the intended agent. A human-capable
+    restricted seat defaults to Human, and only Human and its designated built-in agent remain enabled. A
+    restricted seat with no human-capable player is locked. Session setting controls stay disabled.
     A rating run that seats the person is a session they play, so the intro and the start button say so.
   - Watch mode: every unrestricted seat is an agent dropdown preselected from the clicked agent row.
     Restricted seats stay locked to their designated built-in.
@@ -194,8 +195,22 @@ function isRestrictedHumanChoice(seatId: string): boolean {
   return props.mode === 'rate' && isRestricted(seatId) && humanCapableSeats.value.has(seatId)
 }
 
+// A two-seat unrestricted Rate comparison exposes Seat 1. The clicked target remains in Seat 2, while
+// Seat 1 keeps its existing preselection until the viewer chooses an agent. Larger layouts and any
+// restricted layout retain their locked rate assignments.
+function isRateComparisonSeat(seatId: string): boolean {
+  return (
+    props.mode === 'rate' &&
+    seatIds.value.length === 2 &&
+    seatIds.value.every((id) => !isRestricted(id)) &&
+    seatId === seatIds.value[0]
+  )
+}
+
 function isSeatLocked(seatId: string): boolean {
-  return props.mode === 'rate' ? !isRestrictedHumanChoice(seatId) : isRestricted(seatId)
+  return props.mode === 'rate'
+    ? !isRestrictedHumanChoice(seatId) && !isRateComparisonSeat(seatId)
+    : isRestricted(seatId)
 }
 
 // The strict index check types `agentChoice[seatId]` as `string | undefined`, but a seat always has a

@@ -595,6 +595,62 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
     // peer ratings (two of the four judges), so the released Human Ratings board carries the suite's
     // "some ratings" data without clearing the three-distinct-raters rank threshold.
     await openPlay(admin, season.id)
+
+    // A two-seat rating keeps the selected submission in Seat 2 and lets the rater choose a distinct
+    // opponent for Seat 1. Capture the real start request so this covers the session contract, rather
+    // than only the dialog's local form state.
+    const comparisonJudge = await as(JUDGES[2])
+    let comparisonSessionId: string | null = null
+    try {
+      await authenticateBrowser(page.context(), comparisonJudge)
+      await page.goto(`/environments/${SPADES_ENV_ID}`)
+      const rateRow = page
+        .locator('.agent-row')
+        .filter({
+          has: page.getByText('Not rated', { exact: true }),
+        })
+        .first()
+      await expect(rateRow).toBeVisible()
+      await rateRow.getByRole('button', { name: 'Rate' }).click()
+
+      const rateDialog = page.getByRole('dialog', { name: /Rate Spades/ })
+      const seatOne = rateDialog.getByRole('combobox', { name: 'Seat 1' })
+      const seatTwo = rateDialog.getByRole('combobox', { name: 'Seat 2' })
+      const selected = await seatTwo.inputValue()
+      const other = Object.values(submissionByAgent).find((id) => `submission:${id}` !== selected)
+      if (other === undefined) {
+        throw new Error('the comparison needs a submission other than the selected one')
+      }
+      await seatOne.selectOption(`submission:${other}`)
+
+      const response = await Promise.all([
+        page.waitForResponse(
+          (candidate) =>
+            candidate.url().endsWith('/api/sessions') &&
+            candidate.request().method() === 'POST' &&
+            candidate.status() === 201,
+        ),
+        rateDialog.getByRole('button', { name: 'Start watching' }).click(),
+      ]).then(([candidate]) => candidate)
+      const body = (await response.json()) as { id: string }
+      comparisonSessionId = body.id
+      const payload = response.request().postDataJSON() as {
+        seats: Record<string, { kind: string; submission_id?: string }>
+      }
+      expect(payload.seats.seat_0).toEqual({ kind: 'submission', submission_id: other })
+      expect(payload.seats.seat_1).toEqual({
+        kind: 'submission',
+        submission_id: selected.slice('submission:'.length),
+      })
+      await expect(page).toHaveURL(/\/sessions\//)
+      await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+    } finally {
+      if (comparisonSessionId !== null) {
+        await stopSessionAndAwaitFree(comparisonJudge, comparisonSessionId).catch(() => {})
+      }
+    }
+
+    await authenticateBrowser(page.context(), admin)
     for (const entry of ROSTER) {
       const raters: SeededRating[] = []
       for (const [index, judge] of JUDGES.slice(0, 2).entries()) {

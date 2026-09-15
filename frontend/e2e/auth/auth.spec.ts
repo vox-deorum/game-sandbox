@@ -36,6 +36,13 @@ test('an admin signs in, sees the admin nav, and signs out', async ({ page }) =>
   await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Logs' })).toHaveCount(0)
+
+  // A signed-out visitor can still discover a built-in agent, and its watch action leads through the
+  // real sign-in route instead of trying to start a session without a cookie.
+  await page.goto(`/environments/${ENV_ID}`)
+  const naive = page.locator('.agent-row--builtin', { hasText: 'Naive' })
+  await naive.getByRole('button', { name: 'Sign in to watch' }).click()
+  await page.waitForURL((url) => url.pathname === '/login')
 })
 
 test('an admin creates a user, who signs in and plays', async ({ page, browser, admin }) => {

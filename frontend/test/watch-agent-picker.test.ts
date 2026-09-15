@@ -168,15 +168,16 @@ describe('WatchAgentPicker', () => {
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull()
   })
 
-  it('keeps the watch actions for an anonymous viewer and routes a click to the sign-in page', async () => {
+  it.each([
+    ['builtin', 'Naive agent'],
+    ['submission', 'Agent 1'],
+  ])('labels anonymous %s actions for sign-in and routes them to login', async (_source, rowLabel) => {
     vi.mocked(getMe).mockResolvedValue(anonymousMe)
     await renderPicker(flappyMeta(), [summary()])
-    // The list renders with its actions and no separate sign-in prompt; the actions themselves are
-    // the entry point into signing in.
-    await screen.findByText('Agent 1')
-    expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
-    await fireEvent.click(screen.getByRole('button', { name: 'Rate' }))
-    // No run starts without an account: the click lands on the sign-in page instead.
+
+    const row = (await screen.findByText(rowLabel)).closest('.agent-row') as HTMLElement
+    expect(screen.getAllByRole('button', { name: 'Sign in to watch' })).toHaveLength(2)
+    await fireEvent.click(within(row).getByRole('button', { name: 'Sign in to watch' }))
     expect(vi.mocked(startSession)).not.toHaveBeenCalled()
     await screen.findByText('login page')
   })

@@ -7,14 +7,14 @@
 
   Clicking any row, built-in Naive or a submitted agent, opens the same watch configuration dialog for
   a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog). A Rate
-  action locks the selected agent and every session setting so the resulting feedback applies to the
-  intended agent. Watch actions keep the configuration editable. A single-seat environment with no
-  visible settings starts a scripted watch run immediately, expressed as a one-seat `seats`
-  assignment. The post-session panel takes the rating after the run. An anonymous visitor sees the
-  same actions, but clicking one routes to the sign-in page instead of starting a run; a guest keeps
-  the watch and rate actions too (a guest can play and watch, and the rate form stays interactive
-  with saving blocked by a toast); only a signed-in but still-pending account browses without actions
-  and sees the awaiting-approval notice.
+  action locks the selected agent and every session setting, except that an unrestricted two-seat
+  comparison lets the viewer choose the Seat 1 opponent while the selected target stays in Seat 2.
+  Watch actions keep the configuration editable. A single-seat environment with no visible settings
+  starts a scripted watch run immediately, expressed as a one-seat `seats` assignment. The post-session
+  panel takes the rating after the run. An anonymous visitor sees sign-in actions that route to the
+  sign-in page instead of starting a run; a guest keeps the watch and rate actions too (a guest can
+  play and watch, and the rate form stays interactive with saving blocked by a toast); only a signed-in
+  but still-pending account browses without actions and sees the awaiting-approval notice.
 -->
 <script setup lang="ts">
 import {
@@ -104,6 +104,7 @@ function agentLabel(agent: WatchAgentSummary): string {
 }
 
 function actionLabel(agent: WatchAgentSummary): string {
+  if (anonymous.value) return 'Sign in to watch'
   return agent.rating_status === 'unrated' ? 'Rate' : 'Watch again'
 }
 
@@ -203,7 +204,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           :loading="starting === `builtin:${builtin.name}`"
           @click="watchBuiltin(builtin.name)"
         >
-          Watch
+          {{ anonymous ? 'Sign in to watch' : 'Watch' }}
         </UiButton>
       </li>
       <li v-for="agent in agents" :key="agent.submission_id" class="agent-row">
@@ -241,7 +242,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       {{ startError }}
     </UiEmptyState>
 
-    <!-- Rate locks the selected agent and all settings. Watch keeps the same configuration editable. -->
+    <!-- Rate locks settings and the target. A two-seat unrestricted comparison can choose Seat 1. -->
     <UiDialog
       v-model:open="dialogOpen"
       :title="`${dialogMode === 'rate' ? 'Rate' : 'Watch'} ${meta.display_name}${seasonLabel ? `: ${seasonLabel}` : ''}`"

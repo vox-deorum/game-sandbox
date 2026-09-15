@@ -59,7 +59,7 @@ While play is open, the overview names that season, shows its description, and i
 
 The released leaderboard section uses the same info box for its selected season. When the play-open and released season are the same, the overview shows that box once. When they differ, each box has an accessible label that identifies its season context.
 
-Every builtin declared by the environment is available to watch under its display label. Ready submissions for the play-open season are the other choices.
+Every builtin declared by the environment is available to watch under its display label. Ready submissions for the play-open season are the other choices. Visitors who are not signed in see **Sign in to watch** on both builtin and submission rows; clicking it opens the sign-in page.
 
 ### Season description
 
@@ -109,12 +109,22 @@ See [Submissions](submission.md).
 
 | Flow | Configuration |
 | --- | --- |
-| Rate | Intended agent in every unrestricted seat; a human-capable restricted seat remains editable; all other settings are locked |
+| Rate, two unrestricted seats | Intended agent locked in Seat 2; Seat 1 offers comparison agents; season settings are locked |
+| Rate, other layouts | Intended agent locked in every unrestricted seat; a human-capable restricted seat remains editable; all other settings are locked |
 | Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
 | Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
 | Play | Human-capable seat assignment, companion choice for a wide human seat, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
 
 Any named builtin or submitted agent opens the same seat-assignment flow. The chosen agent is preselected in each unrestricted seat, every editable seat can be reassigned, and all required seats must be filled before a multi-agent session starts. Agent controls use stable builtin names as values and show their declared labels.
+
+In a **Rate** session with exactly two unrestricted seats, Seat 2 holds the intended agent, matching the default opponent seat in Play. Seat 1 starts with the same agent and lets the viewer choose another ready submission from the play-open season or a declared builtin for comparison. Parameters and seed remain locked to the season settings.
+
+```text
+Seat 1: [Agent 3 v]          comparison choice
+Seat 2: [Agent 1] (locked)   selected for rating
+```
+
+The viewer can change the comparison without replacing the agent they chose to rate.
 
 Selecting **Human** is allowed when the seat contains at least one human-capable player; see [Interaction](interaction.md#human-play) for how the human players and companion instances are chosen. A wide unrestricted human seat reveals a required **Seat N's other players** control. It offers the named builtins and ready submissions used by ordinary agent seats, plus **Play them yourself** when every member is human-capable. The control defaults to **Play them yourself** when that choice is legal. A mixed-capability seat has no default because it requires an agent companion.
 

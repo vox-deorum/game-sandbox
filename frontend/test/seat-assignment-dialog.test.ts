@@ -231,6 +231,34 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
+  it('rate: lets an unrestricted two-seat comparison choose the Seat 1 agent', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'partnership' },
+        meta: spadesMeta(),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
+      },
+    })
+
+    expect(seat('Seat 1')).toHaveValue('submission:sub1')
+    expect(seat('Seat 1')).not.toBeDisabled()
+    expect(within(seat('Seat 1')).getByRole('option', { name: 'Naive agent' })).toBeInTheDocument()
+    expect(seat('Seat 2')).toHaveValue('submission:sub1')
+    expect(seat('Seat 2')).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Seat plan' })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
+
+    await fireEvent.update(seat('Seat 1'), 'submission:sub2')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'submission', submissionId: 'sub2' },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+    })
+  })
+
   it('uses compact masked labels for regular viewers', () => {
     render(SeatAssignmentDialog, {
       props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
