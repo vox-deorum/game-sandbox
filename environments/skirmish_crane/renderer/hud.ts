@@ -38,6 +38,7 @@ export interface HudPaint {
 
 /** Pointer wiring for the roster hit areas, which are inspectable the way board units are. */
 export interface HudInspectionHooks {
+  roundHighlighted?: boolean
   onInspect: (event: InspectionEvent) => void
   pins: (pointerType: string) => boolean
   /**
@@ -73,19 +74,19 @@ export function drawHud(
   const roundLabel = paint.text(
     'ROUND',
     HUD_TEXT_SIZES.roundLabel,
-    CRANE_STYLE.mutedText,
+    hooks.roundHighlighted ? CRANE_STYLE.activation : CRANE_STYLE.mutedText,
     'left',
     LATO,
   )
   const round = paint.text(
     String(scene.hud.round),
     HUD_TEXT_SIZES.roundValue,
-    CRANE_STYLE.text,
+    hooks.roundHighlighted ? CRANE_STYLE.activation : CRANE_STYLE.text,
     'left',
     MONO,
   )
   roundLabel.position.set(28, 28)
-  round.position.set(28, 45)
+  round.position.set(28, 49)
   roundGroup.addChild(roundLabel, round)
   layer.addChild(roundGroup)
   if (scene.hud.capture !== null) drawCaptureStrip(layer, paint, scene.hud.capture)

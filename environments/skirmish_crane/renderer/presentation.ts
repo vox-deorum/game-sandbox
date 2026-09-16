@@ -14,8 +14,8 @@ import {
 
 /** One type scale keeps the HUD and inspection cards legible at the renderer's common display sizes. */
 export const HUD_TEXT_SIZES = {
-  roundLabel: 16,
-  roundValue: 30,
+  roundLabel: 18,
+  roundValue: 36,
   score: 26,
   scoreTarget: 20,
   cardHeading: 17,
@@ -25,7 +25,7 @@ export const HUD_TEXT_SIZES = {
 
 /** Screen-fixed night-ink panels keep the corner HUD readable over a panned or zoomed board. */
 export const HUD_CORNER_PANELS = {
-  round: { x: 16, y: 16, width: 82, height: 68 },
+  round: { x: 16, y: 16, width: 96, height: 78 },
   capture: { x: 924, y: 16, width: 260, height: 54 },
   redRoster: { x: 16, y: 772, width: 230, height: 64 },
   blueRoster: { x: 954, y: 772, width: 230, height: 64 },

@@ -127,6 +127,7 @@ import {
   eventShapeFor,
   eventTargetPositionFor,
   isFreshForwardEvent,
+  roundHighlightKey,
   shouldAnimateEvent,
   shouldRebuildBattlefield,
   transitionSceneFor,
@@ -193,6 +194,8 @@ export class CraneReachRenderer extends PixiRenderer {
   private previousScene: CraneReachScene | null = null
   private currentScene: CraneReachScene | null = null
   private presentedScene: CraneReachScene | null = null
+  private hudScene: CraneReachScene | null = null
+  private highlightedRoundActivation: string | null = null
   private deathSnapshot: SceneUnit | null = null
   private eventAnimating = false
   /** The post-event hold chosen when the visible event begins. */
@@ -331,6 +334,10 @@ export class CraneReachRenderer extends PixiRenderer {
     // on first, so the interrupted action is fully reconciled rather than left half-drawn beneath the
     // next one. Only an explicit seek, mount, or repeat snap stills an event outright.
     if (this.eventAnimating) this.completeEvent()
+    if (options?.seek) {
+      this.hudScene = scene
+      this.highlightedRoundActivation = null
+    }
     this.installSceneUpdate(state, scene, options, freshForwardEvent)
   }
 
@@ -1048,12 +1055,23 @@ export class CraneReachRenderer extends PixiRenderer {
 
   private reconcileHud(scene: CraneReachScene): void {
     clear(this.hudLayer)
+    this.highlightedRoundActivation = roundHighlightKey(
+      this.hudScene,
+      scene,
+      this.highlightedRoundActivation,
+    )
+    this.hudScene = scene
+    this.ctx.container.dataset.craneRound = String(scene.hud.round)
+    this.ctx.container.dataset.craneRoundHighlighted = String(
+      this.highlightedRoundActivation !== null,
+    )
     this.ctx.container.dataset.craneHud = 'ready'
     // A living-unit count is knowledge no unit has: an agent is told both starting rosters and sees
     // only what is within vision, so it never learns that an ally or an enemy out of sight has died.
     // Under fog the rosters go, and the strip they occupied carries the order controls instead.
     const rosters = this.perspective === null
     drawHud(this.hudLayer, this.paint(), scene, {
+      roundHighlighted: this.highlightedRoundActivation !== null,
       onInspect: (event) => this.setInspection(event),
       pins: pinsInspectionForPointer,
       rosters,

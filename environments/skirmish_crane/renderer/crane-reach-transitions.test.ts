@@ -11,6 +11,7 @@ import {
   eventShapeFor,
   eventTargetPositionFor,
   isFreshForwardEvent,
+  roundHighlightKey,
   shouldAnimateEvent,
   shouldRebuildBattlefield,
   transitionSceneFor,
@@ -35,6 +36,40 @@ const QUIET: SceneEvent = {
 }
 
 describe('Crane Reach event transitions', () => {
+  it('highlights the first activation of a new round through redraws only', () => {
+    const before = armyScene(armyStates[38] as StepState)
+    const first = armyScene(armyStates[39] as StepState)
+    const next = armyScene(armyStates[40] as StepState)
+    const key = `${first.hud.round}:${first.activation?.unitId}`
+
+    expect(first.hud.round).toBe(before.hud.round + 1)
+    expect(first.activation).not.toBeNull()
+    expect(roundHighlightKey(before, first, null)).toBe(key)
+    expect(roundHighlightKey(first, first, key)).toBe(key)
+    expect(roundHighlightKey(first, next, key)).toBeNull()
+  })
+
+  it('does not highlight a mounted event, a backwards seek, or a terminal scene', () => {
+    const opening = armyScene(armyStates[0] as StepState)
+    const eventMount = armyScene(armyStates[1] as StepState)
+    const later = armyScene(armyStates[39] as StepState)
+    const terminal = armyScene(armyStates.at(-1) as StepState)
+    const key = `${later.hud.round}:${later.activation?.unitId}`
+
+    expect(opening.event).not.toBeNull()
+    expect(roundHighlightKey(null, eventMount, null)).toBeNull()
+    expect(roundHighlightKey(later, opening, key)).toBeNull()
+    expect(roundHighlightKey(later, terminal, key)).toBeNull()
+  })
+
+  it('highlights an opening scene with no event', () => {
+    const source = armyScene(armyStates[0] as StepState)
+    const opening = { ...source, event: null }
+    const key = `${opening.hud.round}:${opening.activation?.unitId}`
+
+    expect(roundHighlightKey(null, opening, null)).toBe(key)
+  })
+
   it('only animates a fresh forward event and retains the preceding victim for a death dissolve', () => {
     const before = armyScene(armyStates[0] as StepState)
     const victim = before.units[0]

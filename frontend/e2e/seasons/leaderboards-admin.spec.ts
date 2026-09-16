@@ -288,7 +288,10 @@ test('a full season: submissions, an automated run, then left open for peer rati
     const ratingsPanel = page.locator('.ratings')
     await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
     await expect(ratingsPanel.getByText(AUTHOR_RATING_PROMPT)).toBeVisible()
-    await ratingsPanel.getByRole('button', { name: '5', exact: true }).first().click()
+    await ratingsPanel
+      .getByRole('radiogroup', { name: /^Rate S0: / })
+      .getByRole('button', { name: '5', exact: true })
+      .click()
     // Every rating needs a written comment, so the save stays disabled until the comment box (ui-textarea)
     // is filled for the watched glider.
     await ratingsPanel.locator('textarea').first().fill('Best run all round')

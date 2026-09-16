@@ -430,6 +430,20 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.getByRole('button', { name: 'Step forward' }).click()
   await expect(position).toContainText('2/')
 
+  // The skirmish starts with six units: frame 6 opens round 2.
+  for (let frame = 2; frame < 6; frame += 1) {
+    await page.getByRole('button', { name: 'Step forward' }).click()
+  }
+  await expect(rendererHost).toHaveAttribute('data-crane-round', '2')
+  await expect(rendererHost).toHaveAttribute('data-crane-round-highlighted', 'false')
+  await page.getByRole('button', { name: 'Step back' }).click()
+  await expect(rendererHost).toHaveAttribute('data-crane-round', '1')
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(rendererHost).toHaveAttribute('data-crane-round', '2')
+  await expect(rendererHost).toHaveAttribute('data-crane-round-highlighted', 'true')
+  await expect(rendererHost).toHaveAttribute('data-crane-round-highlighted', 'false')
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+
   const slider = page.getByRole('slider')
   await expect(slider).toBeVisible()
   const lastFrame = await slider.getAttribute('aria-valuemax')

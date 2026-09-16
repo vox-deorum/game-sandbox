@@ -1,3 +1,4 @@
+import type { RecordingHeader } from '@game-sandbox/schema'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
@@ -42,9 +43,9 @@ function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Rating
 const SUBMISSION: AgentRefWire = { kind: 'submission', submission_id: 'sub-eve' }
 const NAIVE: AgentRefWire = { kind: 'builtin', name: 'naive' }
 
-function renderPanel() {
+function renderPanel(attribution: Partial<Pick<RecordingHeader, 'players' | 'seats'>> = {}) {
   return render(MeProvider, {
-    slots: { default: () => h(SessionRatings, { sessionId: 's1' }) },
+    slots: { default: () => h(SessionRatings, { sessionId: 's1', ...attribution }) },
   })
 }
 
@@ -63,6 +64,55 @@ describe('SessionRatings', () => {
     // No card heading appears for an unrateable session.
     await waitFor(() => expect(vi.mocked(getSessionRatings)).toHaveBeenCalled())
     expect(screen.queryByText('Rate the Agents')).toBeNull()
+  })
+
+  it('prefixes agent names with their recorded seats, once per wide seat and in numeric order', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([
+        agent({ agent: SUBMISSION, display_name: "Eve's agent" }),
+        agent({ agent: NAIVE, display_name: 'Naive' }),
+        agent({ agent: { kind: 'builtin', name: 'hero' }, display_name: 'Hero' }),
+      ]),
+    })
+    renderPanel({
+      players: {
+        player_0: { kind: 'human', label: 'Eve' },
+        player_1: { kind: 'agent', submission_id: 'sub-eve', label: "Eve's agent" },
+        player_2: { kind: 'agent', submission_id: 'sub-eve', label: "Eve's agent" },
+        player_3: { kind: 'agent', submission_id: 'sub-eve', label: "Eve's agent" },
+        player_4: { kind: 'agent', builtin_name: 'naive', label: 'Naive' },
+        player_5: { kind: 'agent', builtin_name: 'hero', label: 'Hero' },
+      },
+      seats: {
+        seat_10: ['player_3'],
+        seat_2: ['player_5'],
+        seat_1: ['player_4'],
+        seat_0: ['player_0', 'player_1', 'player_2'],
+      },
+    })
+    expect(await screen.findByText("S0, S10: Eve's agent")).toBeInTheDocument()
+    expect(screen.getByText('S1: Naive')).toBeInTheDocument()
+    expect(screen.getByText('S2: Hero')).toBeInTheDocument()
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(3)
+    expect(
+      screen.getByRole('radiogroup', { name: "Rate S0, S10: Eve's agent from 1 to 5" }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps blind rating names when the header contains an identified agent', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([agent({ agent: SUBMISSION, display_name: 'Agent 7' })]),
+    })
+    renderPanel({
+      players: {
+        player_0: { kind: 'agent', submission_id: 'sub-eve', label: "Eve's agent" },
+      },
+      seats: { seat_0: ['player_0'] },
+    })
+    expect(await screen.findByText('S0: Agent 7')).toBeInTheDocument()
+    expect(screen.queryByText(/Eve/)).toBeNull()
   })
 
   it('renders nothing when the backend returns no participant agents', async () => {

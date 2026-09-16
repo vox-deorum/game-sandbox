@@ -892,11 +892,22 @@ describe('SessionPage', () => {
     await waitForHandlers()
     expect(screen.queryByText('Rate the Agents')).toBeNull()
 
-    handlers.onHeader(HEADER)
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'agent', submission_id: 'sub-1', label: "Eve's agent" },
+        },
+        seats: { seat_0: ['player_0'] },
+      }),
+    )
     handlers.onResult?.({ ticks: 1, reason: 'stopped', scores: { player_0: 1 } })
     handlers.onSessionStatus?.('ended', 'stopped')
 
     const panel = await screen.findByTestId('ratings-reveal')
+    expect(within(panel).getByText('S0: Agent 1')).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('radiogroup', { name: 'Rate S0: Agent 1 from 1 to 5' }),
+    ).toBeInTheDocument()
     const canvasStage = document.querySelector('.stage')
     expect(canvasStage).not.toBeNull()
     expect(

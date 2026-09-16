@@ -81,6 +81,8 @@ Result labels, replay summaries, and final standings rank seats rather than play
 
 ### Rating visibility
 
+Each agent heading in the post-session rating panel starts with its recorded seat label, for example `S0: Eve's agent`. An agent occupying several seats has one rating row listing those seats in numeric order, such as `S0, S1: Eve's agent`. Wide seats appear once. The prefix uses the same compact seat labels as live and replay attribution; the agent name follows the visibility rules below.
+
 Rating surfaces use blind labels while a season's play window is open. Non-operators see numbered submitted agents without owner or source details in the watch list, live sessions, rating panels, replay lists, and replay viewers. A viewer may rate an eligible unrated agent, while an agent they already rated or own is offered as a watch choice. Operators see identities.
 
 This masking applies to play and feedback surfaces. Released leaderboards and agent profiles remain identified even when the same season is still open for play.

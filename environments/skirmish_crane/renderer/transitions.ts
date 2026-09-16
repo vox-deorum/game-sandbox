@@ -12,6 +12,19 @@ import type { Perspective } from './fog.js'
 import type { CraneReachScene, SceneEvent, SceneUnit } from './scene.js'
 import { type EventShape, eventScale } from './timeline.js'
 
+/** Keep a new round gilt through its first activation, including redraws of that activation. */
+export function roundHighlightKey(
+  previous: CraneReachScene | null,
+  scene: CraneReachScene,
+  highlighted: string | null,
+): string | null {
+  if (scene.activation === null) return null
+  const key = `${scene.hud.round}:${scene.activation.unitId}`
+  const startsRound =
+    previous === null ? scene.event === null : scene.hud.round > previous.hud.round
+  return startsRound || key === highlighted ? key : null
+}
+
 /** Something visibly reacts when a blow lands, a unit falls, or ground changes hands. */
 export function eventHasReaction(event: SceneEvent): boolean {
   return (

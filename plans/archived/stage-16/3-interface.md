@@ -57,6 +57,8 @@ Projection copy keeps its existing seating and baseline concepts, because the sc
 
 ## Attribution
 
+Post-session rating headings and rating controls' accessible names include the agent's recorded seat labels before its viewer-appropriate name, for example `S0: Eve's agent`. The session page passes the recording's player and seat maps to the panel, which matches submission IDs or builtin names. An agent in several seats keeps one rating row with every occupied seat listed in numeric order; several players in one seat contribute that seat only once.
+
 Live standings, replay lists, rating forms, automated boards, human-feedback boards, and run details display the label belonging to the named builtin. Live pages may resolve the label from current metadata. Replays use only the snapshotted recording label. The blind-label rule continues to apply to submissions, not to builtins.
 
 ## Specification

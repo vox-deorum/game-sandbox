@@ -1,18 +1,62 @@
+import type { StepState } from '@game-sandbox/schema'
+import { Container, Text } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import tileTypes from '../tile_types.json'
 import { CRANE_ASSET_MANIFEST, loadCraneAssets } from './assets.js'
+import { drawHud } from './hud.js'
 import {
   FEATURE_MARKS,
   gaugeFor,
   HUD_PANEL_ALPHA,
+  HUD_TEXT_SIZES,
   labelRowLayout,
   presentationFor,
   TERRAIN_MARKS,
 } from './presentation.js'
 import { CRANE_STYLE } from './scene.js'
+import { armyScene, armyStates } from './test-helpers.js'
 
 describe('Crane Reach Estuary Ink presentation', () => {
+  it('uses the larger round type scale and highlights both round labels together', () => {
+    expect(HUD_TEXT_SIZES.roundLabel).toBe(18)
+    expect(HUD_TEXT_SIZES.roundValue).toBe(34)
+
+    const scene = armyScene(armyStates[39] as StepState)
+    scene.hud.capture = null
+    const paint = {
+      sprite: () => null,
+      text: (
+        value: string,
+        size: number,
+        fill: string,
+        align: 'left' | 'center' | 'right',
+        fontFamily?: string,
+      ) => new Text({ text: value, style: { fontSize: size, fill, align, fontFamily } }),
+    }
+    const draw = (roundHighlighted: boolean) => {
+      const layer = new Container()
+      drawHud(layer, paint, scene, {
+        roundHighlighted,
+        onInspect: () => undefined,
+        pins: () => true,
+        rosters: false,
+      })
+      const roundGroup = layer.children[0] as Container
+      return [roundGroup.children[1], roundGroup.children[2]] as [Text, Text]
+    }
+
+    const normal = draw(false)
+    expect(normal.map((text) => text.style.fontSize)).toEqual([18, 34])
+    expect(normal.map((text) => text.style.fill)).toEqual([CRANE_STYLE.mutedText, CRANE_STYLE.text])
+
+    const highlighted = draw(true)
+    expect(highlighted.map((text) => text.style.fill)).toEqual([
+      CRANE_STYLE.activation,
+      CRANE_STYLE.activation,
+    ])
+  })
+
   it('marks every tile type the shared source declares', () => {
     // Grass and the empty feature draw their wash alone. Everything else earns a mark.
     for (const terrain of Object.keys(tileTypes.terrains)) {

@@ -398,7 +398,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     <!-- End-of-session feedback appears only after termination, immediately above the game stage.
          The ratings read is protected, so an anonymous spectator sees a sign-in prompt instead of a
          redirect: they may watch a public session through its end without signing in. -->
-    <SessionRatings v-if="status === 'ended' && me.me?.user != null" :session-id="id" />
+    <SessionRatings
+      v-if="status === 'ended' && me.me?.user != null"
+      :session-id="id"
+      :players="header?.players"
+      :seats="header?.seats"
+    />
     <UiEmptyState v-else-if="status === 'ended' && !me.loading">
       <RouterLink class="sign-in-link" to="/login">Sign in</RouterLink> to rate the agents in this
       session.

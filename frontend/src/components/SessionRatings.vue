@@ -18,6 +18,7 @@
   expanding downward reveal, making the new post-session action visible above the canvas.
 -->
 <script setup lang="ts">
+import type { RecordingHeader } from '@game-sandbox/schema'
 import { agentRefKey } from '@game-sandbox/schema/board'
 import { RATING_FEEDBACK_MAX } from '@game-sandbox/schema/seasons'
 import { codePointLength } from '@game-sandbox/schema/text'
@@ -29,13 +30,18 @@ import {
   type SessionRatings,
   submitRatings,
 } from '../api/client.js'
+import { formatSeat } from '../lib/format.js'
 import UiButton from './ui/UiButton.vue'
 import UiCard from './ui/UiCard.vue'
 import UiTextarea from './ui/UiTextarea.vue'
 import { hidesNames, useMe } from '../me.js'
 import { useToast } from '../toast.js'
 
-const props = defineProps<{ sessionId: string }>()
+const props = defineProps<{
+  sessionId: string
+  players?: RecordingHeader['players']
+  seats?: RecordingHeader['seats']
+}>()
 
 const me = useMe()
 const toast = useToast()
@@ -54,6 +60,23 @@ type RateableView = SessionRatings['agents'][number]
 
 /** Every involved agent, shown in the panel; the caller's own agent appears without a control. */
 const agents = computed<RateableView[]>(() => ratings.value?.agents ?? [])
+
+/** Match recorded controllers by identity, keeping the rating service's viewer-appropriate name. */
+function agentLabel(agent: RateableView): string {
+  const seats = Object.entries(props.seats ?? {})
+    .filter(([, members]) =>
+      members.some((member) => {
+        const player = props.players?.[member]
+        if (player?.kind !== 'agent') return false
+        return agent.agent.kind === 'submission'
+          ? 'submission_id' in player && player.submission_id === agent.agent.submission_id
+          : 'builtin_name' in player && player.builtin_name === agent.agent.name
+      }),
+    )
+    .sort(([a], [b]) => Number(a.slice('seat_'.length)) - Number(b.slice('seat_'.length)))
+    .map(([seat]) => formatSeat(seat))
+  return seats.length > 0 ? `${seats.join(', ')}: ${agent.display_name}` : agent.display_name
+}
 
 /** The agents the caller can actually rate: not their own, regardless of read-only state. */
 const rateable = computed<RateableView[]>(() => agents.value.filter((agent) => !agent.is_own))
@@ -221,7 +244,7 @@ function errorMessage(
           <ul class="agent-list">
             <li v-for="agent in agents" :key="agentRefKey(agent.agent)" class="agent">
               <div class="agent-head">
-                <span class="agent-name">{{ agent.display_name }}</span>
+                <span class="agent-name">{{ agentLabel(agent) }}</span>
                 <!-- The caller's own agent is shown for context but carries no controls. -->
                 <span v-if="agent.is_own" class="agent-own">You can't rate your own agent.</span>
                 <template v-else-if="ratings?.read_only">
@@ -234,7 +257,7 @@ function errorMessage(
                   v-else
                   class="score-group"
                   role="radiogroup"
-                  :aria-label="`Rate ${agent.display_name} from 1 to 5`"
+                  :aria-label="`Rate ${agentLabel(agent)} from 1 to 5`"
                 >
                   <UiButton
                     v-for="score in SCORES"
