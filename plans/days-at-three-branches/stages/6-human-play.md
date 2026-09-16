@@ -8,7 +8,7 @@ Part of [the plan](../README.md). This build-order step puts the visitor seat in
 
 ### Locomotion and expression
 
-Compose pointer and keyboard input into heading and relative speed on every landed frame, the environment's 250 millisecond tick cadence. Motion also sends eagerly on input change and on a 110 millisecond heartbeat while held, since the harness latch is latest-wins and re-sends are safe, and releasing movement sends an explicit stop. A silent idle frame still falls back to the harness default action. Use is a latch held across frames while standing still, released by another Use press, an emote, movement, or a landing pose without the prop, with `toggle` and `none` targets releasing themselves after one send.
+Compose pointer and keyboard input into heading and relative speed on every landed frame, the environment's 250 millisecond tick cadence. Motion also sends eagerly on input change and on a 110 millisecond heartbeat while held, since the harness latch is latest-wins and re-sends are safe. Releasing movement stops further sends while preserving any pending movement for one tick, so brief taps survive until the harness consumes them. Subsequent silent idle frames fall back to the stationary default action. Use is a latch held across frames while standing still, released by another Use press, an emote, movement, or a landing pose without the prop, with `toggle` and `none` targets releasing themselves after one send.
 
 Use `ctx.controlledPlayers` as the ownership signal established in step 3. While `player_0` is controlled, visitor movement feeds the existing camera-follow policy. Manual camera gestures suspend follow, and camera reset resumes it. Spectators, replay viewers, and ended sessions never acquire follow through recording attribution alone.
 
@@ -26,7 +26,7 @@ Make the visitor playable through `scripts/play.py` and the template launcher, b
 
 ## Tests
 
-- jsdom tests cover input composition, palette state, fixture-based preview correctness, recipient selection, broadcast and direct sends, range and wall policy changes, and visitor, watcher, and replay visibility.
+- jsdom tests cover input composition, brief pointer and keyboard taps between ticks, stopping repeated input on release, palette state, fixture-based preview correctness, recipient selection, broadcast and direct sends, range and wall policy changes, and visitor, watcher, and replay visibility.
 - A Playwright journey joins as visitor, walks, emotes, checks the preview, sends a broadcast and a direct line, and sees only broadcasts delivered to it and direct lines sent to or from it. Watcher and replay coverage checks complete delivered transcripts.
 - Local-launcher coverage exercises the visitor seat.
 - Integration coverage keeps a quiet connected visitor live, arms the idle timeout after the final owner disconnects, and confirms a lone spectator does not extend it.

@@ -11,6 +11,7 @@
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import { type Container, Graphics } from 'pixi.js'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
+import type { ExpressionArt } from './annotations.js'
 import {
   composeWindow,
   expressionActionId,
@@ -32,7 +33,6 @@ import {
   plateProbe,
   USE_PLATE_RECT,
 } from './palette.js'
-import type { ExpressionArt } from './annotations.js'
 
 const PALETTE = HEARTHSIDE_STYLE.palette
 
@@ -123,8 +123,8 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   } | null = null
   // An expression action was sent on the latest landed frame and is not yet cleared.
   let expressionInFlight = false
-  // motionKey of the last motion-bearing send; null when no motion is in flight, right after a
-  // stop, or after a landed frame that sent nothing (the visitor at rest).
+  // motionKey of the last motion-bearing send; cleared when input returns to rest so a fresh
+  // press sends eagerly even when it repeats the same heading.
   let lastSentMotion: string | null = null
   // performance.now() of the last eager motion send; 0 means none yet.
   let lastEagerAtMs = 0
@@ -178,22 +178,16 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
   }
 
   /**
-   * Push a motion change right away instead of waiting for the next landed frame. A null window
-   * reads as an explicit stop, and a repeat key is skipped, so only real changes cross the
-   * throttle window. A null-to-motion start is never throttled, and after a stop no step re-sends.
+   * Push a motion change right away instead of waiting for the next landed frame. Releasing
+   * input leaves the pending action for the harness to consume once, then its default stops
+   * movement. Overwriting that action with a stop would erase taps shorter than one tick.
+   * A null-to-motion start is never throttled, and unchanged held motion is skipped.
    */
   const sendMotionEagerly = (): void => {
     if (ended || expressionInFlight) return
     const motion = windowMotion()
     if (motion === null) {
-      // explicit stop: only when a motion is in flight
-      if (lastSentMotion === null) return
-      const heading = options.currentHeading()
-      const action = { heading, speed: 0, action: 0 }
-      sendAction(VISITOR_PLAYER, action)
-      data.threeBranchesLastAction = `${round(heading, 10)},0,0`
       lastSentMotion = null
-      lastEagerAtMs = performance.now()
       return
     }
     const key = motionKey(motion)
@@ -424,8 +418,7 @@ export function createVisitorInput(options: VisitorInputOptions): VisitorInputCo
           expressionInFlight = action.action !== 0
           lastSentMotion = motionKey({ heading: action.heading, speed: action.speed })
         } else {
-          // The visitor is at rest, so drop any recorded motion: a fresh start re-sends eagerly,
-          // and a later stop never re-sends (a suppressed release leaves no stale key to dedupe).
+          // Clear motion even when an expression suppressed the release, so the next press sends.
           lastSentMotion = null
         }
       }
