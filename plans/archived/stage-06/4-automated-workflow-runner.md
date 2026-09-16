@@ -10,16 +10,16 @@ The admin route freezes the season configuration, resolved parameters, official 
 
 Season runs execute one at a time. Within a run, a worker pool claims matches in schedule order and allows them to finish in any order. Each slot covers image preparation, container execution, result persistence, and final cleanup.
 
-At run start, `ExecutionDriver.getHostResources()` reads Docker's CPU count and total RAM, including Docker Desktop's VM capacity. `LEADERBOARD_CONCURRENCY` is an optional positive integer; unset or empty means half of Docker's CPUs rounded down, with a minimum of one. The memory ceiling always overrides that count:
+At run start, `ExecutionDriver.getHostResources()` reads Docker's CPU count and total RAM, including Docker Desktop's VM capacity. `LEADERBOARD_CONCURRENCY` is an optional positive integer. Unset or empty derives the requested count from half of Docker's CPU capacity and the per-container CPU quota, with a minimum of one. The memory ceiling always overrides that count:
 
 ```text
 match_memory = base_memory + memory_per_extra_player * (player_count - 1)
 memory_limit = floor((Docker_total_RAM / 2) / match_memory)
-requested = configured_count or max(1, floor(Docker_CPUs / 2))
+requested = configured_count or max(1, floor((Docker_CPUs / 2) / SANDBOX_CPUS))
 concurrency = min(requested, memory_limit, scheduled_match_count)
 ```
 
-The quota comes from the shared sandbox resource calculation and the frozen layout's player count, converted to bytes. Invalid or unavailable host capacity, a nonpositive quota, or insufficient memory for one match fails the run before launching containers. The error identifies the required quota and budget when those are known. Combined match sandbox quotas reserve at most half of Docker's RAM; the remaining half covers backend, build, relay, and other activity. This is a fixed budget, not a free-memory monitor. Parallel matches can contend for CPU; a count of one restores sequential execution subject to the memory ceiling.
+The quota comes from the shared sandbox resource calculation and the frozen layout's player count, converted to bytes. Each launch uses that same run-level resource value. `SANDBOX_CPUS` may be fractional. The automatic minimum permits one match even when its CPU quota exceeds half or all of Docker's CPUs, so valid CPU capacity never prevents a run from starting. An explicit `LEADERBOARD_CONCURRENCY` value overrides the CPU-derived request. Invalid or unavailable host capacity, a nonpositive quota, or insufficient memory within the half-RAM budget for one match fails the run before launching containers. The error identifies the required quota and budget when those are known. Combined match sandbox quotas reserve at most half of Docker's RAM; the remaining half covers backend, build, relay, and other activity. This is a fixed budget, not a free-memory monitor. Parallel matches can contend for CPU; a count of one restores sequential execution subject to the memory ceiling.
 
 ## Match execution and results
 
@@ -33,7 +33,7 @@ Identical submitted seatings share composed images. The Docker driver shares bui
 
 The runner tracks processes and official LLM leases by game. Cancellation and shutdown stop admission, revoke every active lease, stop every active container, and wait for all workers. Matches check the stop signal after delayed image preparation, grant issuance, and launch. Already finished matches retain their outcomes; unfinished matches become cancelled.
 
-An unexpected worker exception marks its game failed, stops admission, cancels the remaining unfinished games, and fails the run after all workers settle. Cleanup attempts every required operation even when another fails. No terminal event, placement update, or retention completion hook runs while workers still own resources. Queued runs stay serial, and a cancelled or failed run never replaces the latest completed board.
+An unexpected game-body exception marks its game failed once with the original cause, stops admission, cancels the remaining unfinished games, and fails the run after all workers settle. A final cleanup error fails the run without rewriting a persisted match outcome or its scores. Each game owns its fatal status and cleanup; fatal-stop fanout handles sibling resources. The schedule claim index identifies games that never started. Cleanup attempts every required operation even when another fails. No terminal event, placement update, or retention completion hook runs while workers still own resources. Queued runs stay serial, and a cancelled or failed run never replaces the latest completed board.
 
 ## Verification
 

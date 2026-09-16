@@ -220,7 +220,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     this.cancelRequested.add(runId)
     // Best-effort teardown starts as soon as any resource exists. Workers still own and await the
     // memoized cleanup before the run reaches a terminal state.
-    void this.stopActiveWork(runId, 'cancel')
+    void this.stopActiveWork(runId)
   }
 
   shutdown(): Promise<void> {
@@ -233,7 +233,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     // Queued rows remain pending for startup reconciliation; only already-started work needs teardown.
     this.queue.length = 0
     if (this.activeRunId !== null) this.cancelRequested.add(this.activeRunId)
-    if (this.activeRunId !== null) await this.stopActiveWork(this.activeRunId, 'shutdown')
+    if (this.activeRunId !== null) await this.stopActiveWork(this.activeRunId)
     await this.pumpPromise
   }
 
@@ -245,7 +245,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   /** Record the first fatal worker error and promptly begin teardown in every active worker. */
   private requestFatalStop(runId: string, error: unknown): void {
     if (!this.fatalErrors.has(runId)) this.fatalErrors.set(runId, error)
-    void this.stopActiveWork(runId, 'fatal error')
+    void this.stopActiveWork(runId)
   }
 
   /** Register a game-scoped resource in a run-scoped map. */
@@ -274,25 +274,12 @@ class DockerWorkflowRunner implements WorkflowRunner {
     if (active?.size === 0) target.delete(runId)
   }
 
-  /** Revoke every active grant, then stop every active process, attempting all cleanup operations. */
-  private async stopActiveWork(runId: string, reason: string): Promise<void> {
+  /** Start every cleanup; each worker awaits and reports its own failures before settling. */
+  private async stopActiveWork(runId: string): Promise<void> {
     const leases = [...(this.inFlightLlm.get(runId)?.values() ?? [])]
     const processes = [...(this.inFlight.get(runId)?.values() ?? [])]
-    const revocations = await Promise.allSettled(
-      leases.map((lease) => Promise.resolve().then(() => lease.revoke())),
-    )
-    const cleanups = await Promise.allSettled(
-      processes.map((process) => this.cleanupProcess(process)),
-    )
-    for (const outcome of [...revocations, ...cleanups]) {
-      if (outcome.status === 'rejected') {
-        appLog(
-          'workflow',
-          `run ${runId}: ${reason} cleanup failed: ${String(outcome.reason)}`,
-          'error',
-        )
-      }
-    }
+    await Promise.allSettled(leases.map((lease) => Promise.resolve().then(() => lease.revoke())))
+    await Promise.allSettled(processes.map((process) => this.cleanupProcess(process)))
   }
 
   subscribe(runId: string, listener: RunEventListener): () => void {
@@ -469,12 +456,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await ensureRecordingsDir(this.deps.recordingsDir)
 
       let nextGame = 0
-      const settledGames = new Set<string>()
       const worker = async (): Promise<void> => {
         while (!this.runIsStopping(runId)) {
           const prepared = preparedGames[nextGame]
-          nextGame += 1
           if (prepared === undefined) return
+          nextGame += 1
           try {
             await this.runGame(
               run,
@@ -483,29 +469,27 @@ class DockerWorkflowRunner implements WorkflowRunner {
               seasonRules,
               resolvedParameters.values,
               layout,
+              sandboxResources,
               llmPolicy,
               watchdogMs,
               prepared.game,
               prepared.seats,
             )
-            settledGames.add(prepared.game.id)
           } catch (error) {
             this.requestFatalStop(runId, error)
-            await this.markFatalGame(runId, prepared.game, error)
-            settledGames.add(prepared.game.id)
             return
           }
         }
       }
       await Promise.all(Array.from({ length: concurrency }, () => worker()))
-      await this.stopActiveWork(runId, 'worker drain')
+      await this.stopActiveWork(runId)
 
       // Every game not claimed before a stop remains part of the persisted run and must become
       // terminal before the run does. Active workers mark themselves cancelled at their next
       // boundary; this loop covers the games they never claimed.
       if (this.runIsStopping(runId)) {
-        for (const { game } of preparedGames) {
-          if (!settledGames.has(game.id)) await this.markGameCancelled(runId, game)
+        for (const { game } of preparedGames.slice(nextGame)) {
+          await this.markGameCancelled(runId, game)
         }
       }
 
@@ -559,6 +543,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     layout: ReturnType<typeof resolveLayout>,
+    sandboxResources: SandboxDefaults,
     llmPolicy: ResolvedOfficialLlmPolicy,
     watchdogMs: number,
     game: SeasonRunGame,
@@ -566,54 +551,40 @@ class DockerWorkflowRunner implements WorkflowRunner {
   ): Promise<void> {
     const runId = run.id
     const envId = meta.env_id
-    if (this.runIsStopping(runId)) {
-      await this.markGameCancelled(runId, game)
-      return
-    }
-    await this.deps.storage.setRunGameStatus(game.id, 'running')
-    this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'running' })
-    this.gameLog(
-      runId,
-      game,
-      `game ${game.game_index} started: seed ${game.seed}, ${describeSeats(seats)}`,
-    )
-
-    // Resolve the launch image: the one submission seat's overlay, or the base image for an all-built-in
-    // game. An image-resolution failure is an infrastructure fault, not an agent fault.
-    let image: ImageRef
+    const recordingId = `${envId}-${game.id}`
+    let image: ImageRef | undefined
+    let process: SessionProcess | undefined
+    const llmHandle = new LlmLeaseHandle()
     try {
-      image = await this.resolveImage(seats, layout, depsVersion)
-    } catch (error) {
       if (this.runIsStopping(runId)) {
         await this.markGameCancelled(runId, game)
         return
       }
-      await this.infraFault(runId, game, `image resolution failed: ${errorText(error)}`)
-      return
-    }
-    if (this.runIsStopping(runId)) {
-      // A cancel landing after image acquisition but before launch must release this game's claim.
-      // Release it here because the try/finally below (the normal release point) never runs on this
-      // path. The driver no-ops on base and per-submission refs.
-      await this.deps.driver
-        .releaseSessionOverlay(image.ref)
-        .catch((error) =>
-          appLog(
-            'workflow',
-            `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
-            'error',
-          ),
-        )
-      await this.markGameCancelled(runId, game)
-      return
-    }
+      await this.deps.storage.setRunGameStatus(game.id, 'running')
+      this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'running' })
+      this.gameLog(
+        runId,
+        game,
+        `game ${game.game_index} started: seed ${game.seed}, ${describeSeats(seats)}`,
+      )
 
-    const recordingId = `${envId}-${game.id}`
-    let process: SessionProcess | undefined
-    // The lease and its staged keys file are one unit, torn down in a single teardown call: the
-    // finally below (and every cancel/error path) can never strand a grant or a key file separately.
-    const llmHandle = new LlmLeaseHandle()
-    try {
+      // Resolve the launch image: the one submission seat's overlay, or the base image for an all-built-in
+      // game. An image-resolution failure is an infrastructure fault, not an agent fault.
+      try {
+        image = await this.resolveImage(seats, layout, depsVersion)
+      } catch (error) {
+        if (this.runIsStopping(runId)) {
+          await this.markGameCancelled(runId, game)
+          return
+        }
+        await this.infraFault(runId, game, `image resolution failed: ${errorText(error)}`)
+        return
+      }
+      if (this.runIsStopping(runId)) {
+        await this.markGameCancelled(runId, game)
+        return
+      }
+
       if (llmPolicy.enabled) {
         // A missing issuer or port is a deployment-wide misconfiguration: fail the run, not one
         // game after another. A grant-issuance throw, by contrast, is a per-scope storage fault
@@ -683,7 +654,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           image,
           argv: [JSON.stringify(sessionConfig)],
           sandbox: buildSandboxProfile(
-            sandboxResourcesForPlayers(this.deps.sandbox, layout.playerCount),
+            sandboxResources,
             llmHandle.withKeysMount([
               {
                 hostPath: this.sessionRecordingsDir(game.id),
@@ -897,16 +868,18 @@ class DockerWorkflowRunner implements WorkflowRunner {
         level,
       )
     } catch (error) {
+      // This worker owns its cleanup; fatal-stop fanout only needs to stop siblings.
+      this.deleteActive(this.inFlight, runId, game.id)
+      this.deleteActive(this.inFlightLlm, runId, game.id)
       this.requestFatalStop(runId, error)
+      await this.markFatalGame(runId, game, error)
       throw error
     } finally {
-      let cleanupFailed = false
-      let cleanupError: unknown
+      this.deleteActive(this.inFlight, runId, game.id)
+      this.deleteActive(this.inFlightLlm, runId, game.id)
       try {
         await llmHandle.teardown()
       } catch (error) {
-        cleanupFailed = true
-        cleanupError = error
         this.requestFatalStop(runId, error)
         appLog(
           'workflow',
@@ -918,8 +891,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
         try {
           await this.cleanupProcess(process)
         } catch (error) {
-          if (!cleanupFailed) cleanupError = error
-          cleanupFailed = true
           this.requestFatalStop(runId, error)
           appLog(
             'workflow',
@@ -928,30 +899,27 @@ class DockerWorkflowRunner implements WorkflowRunner {
           )
         }
       }
-      this.deleteActive(this.inFlight, runId, game.id)
-      this.deleteActive(this.inFlightLlm, runId, game.id)
-      // Promote the game's recording out of its isolated session directory into the shared flat
-      // store on every exit path (natural, cancelled, or error), then drop the empty session dir.
-      await settleSessionRecording(this.deps.recordingsDir, game.id, recordingId).catch((error) =>
-        appLog(
-          'workflow',
-          `run ${runId} game ${game.id}: settling recording failed: ${String(error)}`,
-          'error',
-        ),
-      )
-      // The container is gone, so release this game's acquisition of its composed image. A sibling
-      // game may still hold the same image. The driver no-ops on base and per-submission refs.
-      await this.deps.driver
-        .releaseSessionOverlay(image.ref)
-        .catch((error) =>
+      if (image !== undefined) {
+        // Promote the game's recording out of its isolated session directory into the shared flat
+        // store on every exit path (natural, cancelled, or error), then drop the empty session dir.
+        await settleSessionRecording(this.deps.recordingsDir, game.id, recordingId).catch((error) =>
           appLog(
             'workflow',
-            `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+            `run ${runId} game ${game.id}: settling recording failed: ${String(error)}`,
             'error',
           ),
         )
-      if (cleanupFailed) {
-        await this.markFatalGame(runId, game, cleanupError)
+        // The container is gone, so release this game's acquisition of its composed image. A sibling
+        // game may still hold the same image. The driver no-ops on base and per-submission refs.
+        await this.deps.driver
+          .releaseSessionOverlay(image.ref)
+          .catch((error) =>
+            appLog(
+              'workflow',
+              `run ${runId} game ${game.id}: releasing composed image failed: ${String(error)}`,
+              'error',
+            ),
+          )
       }
     }
   }
@@ -1243,7 +1211,7 @@ function describeSeats(seats: readonly AgentRef[]): string {
 }
 
 /**
- * Bound one run's worker pool by its configured override or half the host CPUs, half the host
+ * Bound one run's worker pool by its configured override or half the host CPUs divided by the match CPU quota, half the host
  * memory, and the schedule size. Memory uses the full player-scaled sandbox quota for one game.
  */
 function leaderboardConcurrency(
@@ -1252,33 +1220,17 @@ function leaderboardConcurrency(
   override: number | null | undefined,
   gameCount: number,
 ): number {
-  if (!Number.isFinite(host.cpuCount) || !Number.isInteger(host.cpuCount) || host.cpuCount <= 0) {
-    throw new Error('Docker host resources reported cpuCount that is not a positive integer')
+  for (const [name, value] of Object.entries({
+    cpuCount: host.cpuCount,
+    memoryBytes: host.memoryBytes,
+  })) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`Docker host resources reported ${name} that is not a positive integer`)
+    }
   }
-  if (
-    !Number.isFinite(host.memoryBytes) ||
-    !Number.isInteger(host.memoryBytes) ||
-    host.memoryBytes <= 0
-  ) {
-    throw new Error('Docker host resources reported memoryBytes that is not a positive integer')
-  }
-  if (!Number.isFinite(sandbox.cpus) || sandbox.cpus <= 0) {
-    throw new Error('leaderboard sandbox CPU quota must be positive and finite')
-  }
-  if (!Number.isFinite(sandbox.memoryMb) || sandbox.memoryMb <= 0) {
-    throw new Error('leaderboard sandbox memory quota must be positive and finite')
-  }
-  if (
-    override !== undefined &&
-    override !== null &&
-    (!Number.isFinite(override) || !Number.isInteger(override) || override <= 0)
-  ) {
-    throw new Error('leaderboard concurrency override must be a positive integer')
-  }
-
   const bytesPerGame = sandbox.memoryMb * 1024 ** 2
   if (!Number.isFinite(bytesPerGame) || bytesPerGame <= 0) {
-    throw new Error('leaderboard sandbox memory quota exceeds the supported range')
+    throw new Error('leaderboard sandbox memory quota must be positive and finite')
   }
   const memorySlots = Math.floor(host.memoryBytes / 2 / bytesPerGame)
   if (memorySlots < 1) {
@@ -1286,7 +1238,7 @@ function leaderboardConcurrency(
       `leaderboard memory budget cannot fit one ${sandbox.memoryMb} MiB game in half of the ${host.memoryBytes}-byte Docker host`,
     )
   }
-  const requested = override ?? Math.max(1, Math.floor(host.cpuCount / 2))
+  const requested = override ?? Math.max(1, Math.floor(host.cpuCount / 2 / sandbox.cpus))
   return Math.min(requested, memorySlots, gameCount)
 }
 

@@ -123,9 +123,8 @@ export async function ensureSessionImage(
   depsVersion: number,
 ): Promise<ImageRef> {
   const trees: { seatId: string; submissionId: string; tree: TreeHandle }[] = []
-  let image: ImageRef | undefined
-  let operationError: unknown
-  let operationFailed = false
+  const errors: unknown[] = []
+  let image!: ImageRef
   try {
     for (const { seatId, submission } of seats) {
       const tree = await materializeTree(deps, submission)
@@ -141,8 +140,7 @@ export async function ensureSessionImage(
       })),
     })
   } catch (error) {
-    operationError = error
-    operationFailed = true
+    errors.push(error)
   }
 
   const disposalResults = await Promise.allSettled(trees.map(({ tree }) => tree.dispose()))
@@ -150,7 +148,7 @@ export async function ensureSessionImage(
     .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     .map((result) => result.reason)
 
-  const errors = operationFailed ? [operationError, ...disposalErrors] : [...disposalErrors]
+  errors.push(...disposalErrors)
   if (image !== undefined && disposalErrors.length > 0) {
     try {
       await deps.driver.releaseSessionOverlay(image.ref)
@@ -163,10 +161,7 @@ export async function ensureSessionImage(
     throw errors[0]
   }
   if (errors.length > 1) {
-    throw new AggregateError(errors, 'session image preparation failed during cleanup')
-  }
-  if (image === undefined) {
-    throw new Error('session image preparation completed without an image')
+    throw new AggregateError(errors, 'session image preparation or cleanup failed')
   }
   return image
 }

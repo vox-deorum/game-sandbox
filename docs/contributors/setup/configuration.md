@@ -35,16 +35,18 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `LOAD_LOCAL_ENV` | `true` | Whether the machine-local Git-ignored `.env` is loaded. `false` skips it entirely, so a launcher (such as the browser e2e suite) can boot immune to a deployment's `.env` left in the tree. |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no viewer in scripted mode, or no owner socket in human mode |
 | `SESSION_MAX_DURATION_MS` | unset | Optional positive chargeable-duration override. When unset, each session derives its limit from its pace and episode rules. |
-| `LEADERBOARD_CONCURRENCY` | half of Docker's CPUs, rounded down, minimum `1` | Maximum simultaneous matches within one leaderboard run. Unset or empty selects the automatic count. A positive integer overrides it, but the memory ceiling always applies. |
+| `LEADERBOARD_CONCURRENCY` | `max(1, floor((Docker_CPUs / 2) / SANDBOX_CPUS))` | Maximum simultaneous matches within one leaderboard run. Unset or empty selects the automatic count. A positive integer overrides it, but the memory ceiling always applies. |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
-| `SANDBOX_MEMORY_MB` | `512` | Base session memory quota |
+| `SANDBOX_MEMORY_MB` | `512` | Positive base session memory quota |
 | `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |
 | `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
 | `SANDBOX_PIDS_LIMIT` | `512` | Per-container pid ceiling, so a fork bomb cannot exhaust the shared host pid table |
 
 `LOCAL_HTTPS_PORT` is a Docker setup and Compose value, not a backend listener. It defaults to `8443`, cannot use the public HTTPS port `443`, and publishes the proxy's local HTTPS listener on `127.0.0.1` only. [Run the app in Docker](docker.md) describes the two proxy listeners.
 
-Leaderboard runs read Docker's CPU count and total RAM when execution starts, including Docker Desktop's VM capacity. Each match reserves its full sandbox quota: `SANDBOX_MEMORY_MB + SANDBOX_MEMORY_PER_PLAYER_MB × (player_count - 1)`. Concurrent match quotas may consume at most half of Docker's total RAM, even when `LEADERBOARD_CONCURRENCY` requests more. The remaining half is for the backend, image builds, LLM relays, and other activity. This fixed ceiling does not monitor currently free memory. If capacity is unavailable or invalid, the match quota is not positive, or one match cannot fit, the run fails before launching containers. Season runs remain queued one at a time. Use `LEADERBOARD_CONCURRENCY=1` to reduce timing contention with sequential matches, still subject to the memory ceiling.
+When unset, `LEADERBOARD_CONCURRENCY` derives its requested count as `max(1, floor((Docker_CPUs / 2) / SANDBOX_CPUS))`. `SANDBOX_CPUS` accepts fractional quotas. The minimum permits one match even when its quota exceeds half or all of Docker's CPUs, so valid CPU capacity never prevents a run from starting. A positive `LEADERBOARD_CONCURRENCY` value overrides this CPU-derived request.
+
+Leaderboard runs read Docker's CPU count and total RAM when execution starts, including Docker Desktop's VM capacity. Each match reserves its full sandbox quota: `SANDBOX_MEMORY_MB + SANDBOX_MEMORY_PER_PLAYER_MB × (player_count - 1)`. Concurrent match quotas may consume at most half of Docker's total RAM, even when `LEADERBOARD_CONCURRENCY` requests more. The remaining half is for the backend, image builds, LLM relays, and other activity. This fixed ceiling does not monitor currently free memory. If host capacity is unavailable or invalid, the match quota is not positive, or one match cannot fit within the half-RAM budget, the run fails before launching containers. Season runs remain queued one at a time. Use `LEADERBOARD_CONCURRENCY=1` to reduce timing contention with sequential matches, still subject to the memory ceiling.
 
 ## Authentication
 

@@ -20,6 +20,14 @@ describe('loadConfig', () => {
     expect(() => load({ PORT: undefined })).toThrow(/PORT/)
   })
 
+  it.each([
+    '0',
+    '-1',
+    '1.5',
+  ])('rejects a nonpositive or fractional base memory quota: %s', (value) => {
+    expect(() => load({ SANDBOX_MEMORY_MB: value })).toThrow(/SANDBOX_MEMORY_MB/)
+  })
+
   it('applies class-scale defaults when only the required auth variables are set', () => {
     const config = load({})
     expect(config.port).toBe(8080)

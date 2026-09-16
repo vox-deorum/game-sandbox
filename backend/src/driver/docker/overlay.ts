@@ -37,8 +37,7 @@ const OVERLAY_REPO_SUFFIX = 'submission-overlay'
  * tags its chained build uses. Deliberately distinct from {@link OVERLAY_REPO_SUFFIX}, but
  * {@link listOverlayImages} enumerates **both** repositories: the per-submission overlays feed the
  * sweep's active-`ready` exemption, while the session overlays are reclaimed age-first in the same
- * sweep (they are single-use builds released when their session ends, so any tag left behind is
- * debris), exactly as the driver interface promises.
+ * sweep after their shared acquisition lifecycle ends, exactly as the driver interface promises.
  */
 const SESSION_OVERLAY_REPO_SUFFIX = 'session-overlay'
 

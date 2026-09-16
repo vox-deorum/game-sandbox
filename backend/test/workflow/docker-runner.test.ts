@@ -19,6 +19,8 @@ import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { forfeitScore } from '../../src/leaderboards/score.js'
 import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
+import { appLogBuffer } from '../../src/logging/log-buffer.js'
+import { LlmLeaseHandle } from '../../src/session/llm-lease.js'
 import type {
   IssueOfficialGrantsInput,
   OfficialGrantIssuer,
@@ -534,6 +536,7 @@ describe('Docker-backed workflow runner', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     vi.useRealTimers()
     await storage.close()
   })
@@ -1292,10 +1295,18 @@ describe('Docker-backed workflow runner', () => {
   })
 
   it.each([
-    { label: 'an explicit override', cpuCount: 1, concurrency: 3, omit: false, expected: 3 },
+    {
+      label: 'an explicit override',
+      cpuCount: 1,
+      cpus: 4,
+      concurrency: 3,
+      omit: false,
+      expected: 3,
+    },
     {
       label: 'the omitted default on an odd CPU count',
       cpuCount: 5,
+      cpus: 1,
       concurrency: null,
       omit: true,
       expected: 2,
@@ -1303,15 +1314,49 @@ describe('Docker-backed workflow runner', () => {
     {
       label: 'a null default on one CPU',
       cpuCount: 1,
+      cpus: 1,
       concurrency: null,
       omit: false,
       expected: 1,
     },
-  ])('bounds active games with $label', async ({ cpuCount, concurrency, omit, expected }) => {
+    {
+      label: 'a four-CPU match quota',
+      cpuCount: 8,
+      cpus: 4,
+      concurrency: null,
+      omit: false,
+      expected: 1,
+    },
+    {
+      label: 'a fractional CPU quota',
+      cpuCount: 2,
+      cpus: 0.5,
+      concurrency: null,
+      omit: false,
+      expected: 2,
+    },
+    {
+      label: 'rounding down after dividing by the quota',
+      cpuCount: 5,
+      cpus: 0.75,
+      concurrency: null,
+      omit: false,
+      expected: 3,
+    },
+    {
+      label: 'a quota larger than the Docker CPU count',
+      cpuCount: 1,
+      cpus: 4,
+      concurrency: null,
+      omit: false,
+      expected: 1,
+    },
+  ])('bounds active games with $label', async ({ cpuCount, cpus, concurrency, omit, expected }) => {
     const driver = new FakeDriver({ cpuCount, memoryBytes: 8 * 1024 ** 3 })
     const handle = makeRunner(storage, driver, {
       leaderboardConcurrency: concurrency,
       omitLeaderboardConcurrency: omit,
+      sandbox: { cpus, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
     })
     const run = await makeRun(storage, [
       naiveGame(0, 10),
@@ -1324,6 +1369,7 @@ describe('Docker-backed workflow runner', () => {
     await vi.waitFor(() => expect(driver.launches).toHaveLength(expected))
     await Promise.resolve()
     expect(driver.launches).toHaveLength(expected)
+    expect(driver.launches.every((launch) => launch.spec.sandbox.cpus === cpus)).toBe(true)
 
     handle.runner.cancel(run.id)
     await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
@@ -1559,8 +1605,79 @@ describe('Docker-backed workflow runner', () => {
     finishRelease()
     await expect(terminal).resolves.toMatchObject({ status: 'failed' })
     expect(cleanupAttempts).toBe(1)
+    const cleanupLogs = appLogBuffer()
+      .query({ q: run.id })
+      .entries.filter((entry) => entry.message.includes('cleanup failed'))
+    expect(cleanupLogs).toHaveLength(1)
+    expect(cleanupLogs[0]?.message).toContain('process cleanup failed')
     expect(driver.releasedSessionOverlays).toEqual(['fake-session-overlay:cleanup-test'])
     expect((await storage.listRunGames(run.id))[0]?.status).toBe('failed')
+  })
+
+  it('preserves completed scores when final teardown fails and cancels unfinished games', async () => {
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+    let completed = false
+    const setStatus = storage.setRunGameStatus.bind(storage)
+    storage.setRunGameStatus = async (...args) => {
+      await setStatus(...args)
+      if (args[1] === 'completed') completed = true
+    }
+    let firstHandle: LlmLeaseHandle | undefined
+    vi.spyOn(LlmLeaseHandle.prototype, 'teardown').mockImplementation(async function (
+      this: LlmLeaseHandle,
+    ) {
+      firstHandle ??= this
+      if (this === firstHandle && completed) throw new Error('final teardown failure')
+    })
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    const first = launchForSeed(driver, 10)
+    if (first === undefined) throw new Error('first launch was not recorded')
+    emitRecording(first.process, { seed: 10 }, { finalScore: 42 })
+
+    const { events, status } = await terminal
+    expect(status).toBe('failed')
+    const games = await storage.listRunGames(run.id)
+    expect(games.map((game) => game.status)).toEqual(['completed', 'cancelled', 'cancelled'])
+    expect(await storage.listGameResultsByRun(run.id)).toMatchObject([
+      { game_id: games[0]?.id, episode_score: 42, failed: 0 },
+    ])
+    expect(
+      events.filter((event) => event.type === 'game_status' && event.game_index === 0),
+    ).toEqual([
+      { type: 'game_status', game_index: 0, status: 'running' },
+      { type: 'game_status', game_index: 0, status: 'completed' },
+    ])
+    expect(driver.launches).toHaveLength(2)
+  })
+
+  it('marks a fatal game once with its body error when final cleanup also rejects', async () => {
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver)
+    const run = await makeRun(storage, [naiveGame(0)])
+    let bodyFailed = false
+    storage.recordGameResult = async () => {
+      bodyFailed = true
+      throw new Error('result persistence failure')
+    }
+    vi.spyOn(LlmLeaseHandle.prototype, 'teardown').mockImplementation(async () => {
+      if (bodyFailed) throw new Error('secondary teardown failure')
+    })
+    driver.onLaunch = (launch) => emitRecording(launch.process, { seed: 7 })
+
+    const { events, status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('failed')
+    expect((await storage.listRunGames(run.id))[0]).toMatchObject({
+      status: 'failed',
+      error: 'unexpected game failure: result persistence failure',
+    })
+    expect(
+      events.filter((event) => event.type === 'game_status' && event.status === 'failed'),
+    ).toHaveLength(1)
+    expect((await storage.getRun(run.id))?.error).toContain('result persistence failure')
   })
 
   it('stops every sibling when one process kill throws synchronously', async () => {
@@ -1588,7 +1705,49 @@ describe('Docker-backed workflow runner', () => {
     handle.runner.cancel(run.id)
     await expect(terminal).resolves.toMatchObject({ status: 'failed' })
     expect(throwingKillAttempts).toBe(1)
+    expect(
+      appLogBuffer()
+        .query({ q: run.id })
+        .entries.filter((entry) => entry.message.includes('cleanup failed')),
+    ).toHaveLength(1)
     expect(sibling.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
+    expect(driver.launches).toHaveLength(2)
+  })
+
+  it('reports a sibling process cleanup rejection once during fatal-stop fanout', async () => {
+    const driver = new FakeDriver()
+    driver.onLaunch = (launch) => {
+      if (launchSeed(launch) === 11) {
+        launch.process.kill = async () => {
+          launch.process.finish({ code: 137, oomKilled: false })
+          throw new Error('sibling process removal failed')
+        }
+      }
+    }
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+    storage.recordGameResult = async () => {
+      throw new Error('result persistence failure')
+    }
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    const first = launchForSeed(driver, 10)
+    if (first === undefined) throw new Error('first launch was not recorded')
+    emitRecording(first.process, { seed: 10 })
+
+    await expect(terminal).resolves.toMatchObject({ status: 'failed' })
+    const cleanupLogs = appLogBuffer()
+      .query({ q: run.id })
+      .entries.filter((entry) => entry.message.includes('cleanup failed'))
+    expect(cleanupLogs).toHaveLength(1)
+    expect(cleanupLogs[0]?.message).toContain(
+      'process cleanup failed: Error: sibling process removal failed',
+    )
+    expect((await storage.listRunGames(run.id)).map((game) => game.status)).toEqual([
+      'failed',
+      'failed',
+      'cancelled',
+    ])
     expect(driver.launches).toHaveLength(2)
   })
 
@@ -1598,12 +1757,6 @@ describe('Docker-backed workflow runner', () => {
       driver: new FakeDriver({ cpuCount: 0, memoryBytes: 8 * 1024 ** 3 }),
       options: { leaderboardConcurrency: null },
       error: /cpuCount.*positive integer/,
-    },
-    {
-      label: 'an invalid concurrency override',
-      driver: new FakeDriver(),
-      options: { leaderboardConcurrency: 0 },
-      error: /concurrency override.*positive integer/,
     },
     {
       label: 'an invalid memory total',

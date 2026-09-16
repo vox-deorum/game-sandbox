@@ -174,7 +174,7 @@ export interface Config {
   sessionIdleTimeoutMs: number
   /** Optional deployment-wide wall-clock backstop, otherwise derived from the environment. */
   sessionMaxDurationMs: number | null
-  /** Maximum simultaneous leaderboard matches; null derives half of Docker's CPU count. */
+  /** Maximum simultaneous leaderboard matches; null derives a count from half of Docker's CPUs and the match CPU quota. */
   leaderboardConcurrency: number | null
   /** Retention window in days: an unpinned recording older than this is swept. */
   recordingRetentionDays: number
@@ -731,7 +731,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     docsIndexFile: optionalRepoPathVar(env, 'DOCS_INDEX_FILE'),
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS'),
-      memoryMb: intVar(env, 'SANDBOX_MEMORY_MB'),
+      memoryMb: positiveIntVar(env, 'SANDBOX_MEMORY_MB'),
       memoryPerPlayerMb: intVar(env, 'SANDBOX_MEMORY_PER_PLAYER_MB'),
       scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB'),
       pids: positiveIntVar(env, 'SANDBOX_PIDS_LIMIT'),

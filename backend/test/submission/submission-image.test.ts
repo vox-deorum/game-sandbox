@@ -226,10 +226,41 @@ describe('ensureSessionImage cleanup ownership', () => {
         seats(),
         1,
       ),
-    ).rejects.toThrow('session image preparation failed during cleanup')
+    ).rejects.toThrow('session image preparation or cleanup failed')
 
     expect(disposed).toEqual(['first', 'second'])
     expect(driver.releasedSessionOverlays).toEqual([])
+  })
+
+  it('preserves an undefined image preparation failure', async () => {
+    const disposed: string[] = []
+    const driver = new FakeDriver()
+    driver.ensureImage = () => Promise.reject(undefined)
+    const source = sourceWithTrees([
+      () => {
+        disposed.push('first')
+        return Promise.resolve()
+      },
+      () => {
+        disposed.push('second')
+        return Promise.resolve()
+      },
+    ])
+
+    await expect(
+      ensureSessionImage(
+        {
+          driver,
+          snapshots: new SubmissionSnapshotStore(tmp('gs-session-snap-')),
+          source,
+          imagePolicy: 'reuse',
+        },
+        seats(),
+        1,
+      ),
+    ).rejects.toBeUndefined()
+
+    expect(disposed).toEqual(['first', 'second'])
   })
 })
 
