@@ -81,7 +81,7 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
 
 ```
    +-----------------------------+
-   | red_archer_2               |
+   | S0_archer_2                |
    | {hp} HP 4/6     {move} MOV 2   |
    | {attack} ATK 2  {range} RNG 6  |
    | {vision} VIS 6                 |
@@ -89,7 +89,7 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
    +-----------------------------+
 ```
 
-The chip is view-only and never blocks the board.
+The chip identifies the owning seat with the same compact label as the session and replay attribution: `S0` for Red and `S1` for Blue in both seat plans. Its heading replaces the unit ID's color prefix, so `red_cavalry_0` appears as `S0_cavalry_0`. Recorded unit IDs remain unchanged. The chip is view-only and never blocks the board.
 
 ### Match end
 

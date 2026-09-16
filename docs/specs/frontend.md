@@ -107,30 +107,26 @@ See [Submissions](submission.md).
 
 ## Watch and play flows
 
-| Flow | Configuration |
+| Flow | Initial assignments and configuration |
 | --- | --- |
-| Rate, two unrestricted seats | Intended agent locked in Seat 2; Seat 1 offers comparison agents; season settings are locked |
-| Rate, other layouts | Intended agent locked in every unrestricted seat; a human-capable restricted seat remains editable; all other settings are locked |
-| Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
-| Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
-| Play | Human-capable seat assignment, companion choice for a wide human seat, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
+| Rate | Selected agent in every unrestricted seat, locked in the last one; season settings locked |
+| Watch | Selected agent in every unrestricted seat; gameplay parameters, seed, and supported overrides editable |
+| Play | You in a human-capable restricted seat, or the first human-capable seat otherwise; Naive in other unrestricted seats; settings editable |
 
-Any named builtin or submitted agent opens the same seat-assignment flow. The chosen agent is preselected in each unrestricted seat, every editable seat can be reassigned, and all required seats must be filled before a multi-agent session starts. Agent controls use stable builtin names as values and show their declared labels.
+Play, Watch, and Rate share one seat-assignment grid. Each editable seat offers the declared builtins and ready submissions valid for that seat, plus **You** when it contains a human-capable player. Selecting **You** moves the sole human controller and restores the old seat to its designated builtin when restricted, or to Naive otherwise. Selecting an agent in the human's seat switches to watching. The start button reads **Start playing** when You occupies a seat and **Start watching** otherwise. Every required seat must have a valid assignment before starting. Builtin options use stable names as values and declared labels as text.
 
-In a **Rate** session with exactly two unrestricted seats, Seat 2 holds the intended agent, matching the default opponent seat in Play. Seat 1 starts with the same agent and lets the viewer choose another ready submission from the play-open season or a declared builtin for comparison. Parameters and seed remain locked to the season settings.
+In a **Rate** session, the last unrestricted seat keeps the intended agent while other seats remain editable for comparison or human play. In a two-seat game, Seat 2 is the locked target. Parameters and seed stay locked, and the human timeout cannot be overridden. The viewer can play against the agent and rate it afterward.
 
 ```text
-Seat 1: [Agent 3 v]          comparison choice
+Seat 1: [Agent 1 v]         comparison or play
 Seat 2: [Agent 1] (locked)   selected for rating
 ```
 
-The viewer can change the comparison without replacing the agent they chose to rate.
+The editable seat starts with the intended agent; choosing You lets the viewer play while preserving the rating target.
 
-Selecting **Human** is allowed when the seat contains at least one human-capable player; see [Interaction](interaction.md#human-play) for how the human players and companion instances are chosen. A wide unrestricted human seat reveals a required **Seat N's other players** control. It offers the named builtins and ready submissions used by ordinary agent seats, plus **Play them yourself** when every member is human-capable. The control defaults to **Play them yourself** when that choice is legal. A mixed-capability seat has no default because it requires an agent companion.
+An unrestricted human seat covering several players reveals a required **Seat N's companions** control. It offers named builtins and ready submissions, plus **Play them yourself** when every member is human-capable. The control defaults to **Play them yourself** when legal; a mixed-capability seat requires an agent companion. See [Interaction](interaction.md#human-play) for how human players and companion instances are chosen.
 
-Play and Rate default a human-capable restricted seat to Human. Watch always assigns its builtin. If the user chooses another seat during Play, the restricted seat returns to its builtin. A restricted seat with no human-capable player stays locked to the builtin. A wide restricted human seat explains that its designated builtin controls the other players and shows no companion picker. See [Environments](environment.md#builtin-agents-and-restricted-seats) for the restricted-seat rule.
-
-For **Rate**, a human-capable restricted seat set to Human turns the rating run into a session the viewer plays, and afterward the viewer rates the intended agent. **Watch again** and ordinary watch actions keep each unrestricted assignment and ordinary setting editable.
+A restricted seat offers only **You**, when human-capable, and its designated builtin. Play and Rate initially select You there; Watch selects the builtin. A restricted seat without human-capable players stays locked to the builtin. A wide restricted human seat explains that its designated builtin controls the other players and shows no companion picker. See [Environments](environment.md#builtin-agents-and-restricted-seats).
 
 Each seat row's assignment control uses the seat name alone as its accessible name.
 

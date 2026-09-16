@@ -154,7 +154,7 @@ The replay viewer's status strip, with the episode's settings summarized and the
 The single-slot play dialog (Flappy Bird), parameters above the seed field:
 
 ```text
-┌ Play Flappy Bird — Spring 2026 ─────────────────── ✕ ┐
+┌ Play Flappy Bird | Spring 2026 ─────────────────── ✕ ┐
 │ Pipe gap                [ 90            ]             │
 │ Vertical opening between pipes. 60–200.               │
 │ Seed (optional)          [ random        ]            │
@@ -163,19 +163,19 @@ The single-slot play dialog (Flappy Bird), parameters above the seed field:
 └───────────────────────────────────────────────────────┘
 ```
 
-The multi-seat dialog for a future variable-seat environment, with the parameter form between the intro and the seat grid so the `seats` control sits above the grid it resizes (every current environment hides `seats`, so today this section shows only any other visible parameters):
+The multi-seat dialog for a future variable-seat environment, with the parameter form between the intro and the seat grid so the `seats` control sits above the grid it resizes (every current environment hides `seats`, so today this section shows only any other visible parameters). Every human-capable seat uses the same selector, which offers You, declared builtins, and ready submissions; selecting You moves the human controller to that seat:
 
 ```text
-┌ Play Hearts — Autumn 2026 ──────────────────────── ✕ ┐
+┌ Play Hearts | Autumn 2026 ─────────────────────── ✕ ┐
 │ Pick your seat; assign agents to the rest.            │
 │ Seats                    [ 4 ]                        │
 │ 3–6.                                                  │
 │ Scoring variant          [ Standard ▾ ]               │
 │ ──────────────────────────────────────                │
-│ Seat 1   You  seated                                  │
-│ Seat 2   [ Naive agent ▾ ]  [Sit here]                │
-│ Seat 3   [ Naive agent ▾ ]  [Sit here]                │
-│ Seat 4   [ Naive agent ▾ ]  [Sit here]                │
+│ Seat 1   [ You ▾ ]                                    │
+│ Seat 2   [ Naive agent ▾ ]                            │
+│ Seat 3   [ Naive agent ▾ ]                            │
+│ Seat 4   [ Naive agent ▾ ]                            │
 │ ──────────────────────────────────────                │
 │ Seed (optional)          [ random ]                   │
 │ Step time limit (ms)     [ 30000  ]                   │

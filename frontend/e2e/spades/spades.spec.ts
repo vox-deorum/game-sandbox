@@ -596,9 +596,7 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
     // "some ratings" data without clearing the three-distinct-raters rank threshold.
     await openPlay(admin, season.id)
 
-    // A two-seat rating keeps the selected submission in Seat 2 and lets the rater choose a distinct
-    // opponent for Seat 1. Capture the real start request so this covers the session contract, rather
-    // than only the dialog's local form state.
+    // Start a rating run as the human opponent and exercise the real socket and canvas controls.
     const comparisonJudge = await as(JUDGES[2])
     let comparisonSessionId: string | null = null
     try {
@@ -617,11 +615,10 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
       const seatOne = rateDialog.getByRole('combobox', { name: 'Seat 1' })
       const seatTwo = rateDialog.getByRole('combobox', { name: 'Seat 2' })
       const selected = await seatTwo.inputValue()
-      const other = Object.values(submissionByAgent).find((id) => `submission:${id}` !== selected)
-      if (other === undefined) {
-        throw new Error('the comparison needs a submission other than the selected one')
-      }
-      await seatOne.selectOption(`submission:${other}`)
+      await seatOne.selectOption({ label: 'You' })
+      await rateDialog
+        .getByRole('combobox', { name: "Seat 1's companions" })
+        .selectOption('builtin:naive')
 
       const response = await Promise.all([
         page.waitForResponse(
@@ -630,20 +627,26 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
             candidate.request().method() === 'POST' &&
             candidate.status() === 201,
         ),
-        rateDialog.getByRole('button', { name: 'Start watching' }).click(),
+        rateDialog.getByRole('button', { name: 'Start playing' }).click(),
       ]).then(([candidate]) => candidate)
       const body = (await response.json()) as { id: string }
       comparisonSessionId = body.id
       const payload = response.request().postDataJSON() as {
         seats: Record<string, { kind: string; submission_id?: string }>
       }
-      expect(payload.seats.seat_0).toEqual({ kind: 'submission', submission_id: other })
+      expect(payload.seats.seat_0).toEqual({
+        kind: 'human',
+        companion: { kind: 'builtin-agent', name: 'naive' },
+      })
       expect(payload.seats.seat_1).toEqual({
         kind: 'submission',
         submission_id: selected.slice('submission:'.length),
       })
       await expect(page).toHaveURL(/\/sessions\//)
-      await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+      const canvas = page.locator('canvas.renderer-canvas')
+      await expect(canvas).toBeVisible({ timeout: 60_000 })
+      await page.getByRole('button', { name: 'Start', exact: true }).click()
+      await bidOne(page, canvas)
     } finally {
       if (comparisonSessionId !== null) {
         await stopSessionAndAwaitFree(comparisonJudge, comparisonSessionId).catch(() => {})

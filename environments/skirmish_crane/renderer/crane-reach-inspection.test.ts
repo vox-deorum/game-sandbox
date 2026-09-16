@@ -1,7 +1,7 @@
 import type { StepState } from '@game-sandbox/schema'
-import type { FederatedPointerEvent } from 'pixi.js'
+import { Container, type FederatedPointerEvent, Text } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
-
+import { drawInspectionCard, type HudPaint } from './hud.js'
 import {
   EMPTY_INSPECTION,
   inspectionPresentation,
@@ -33,6 +33,33 @@ import {
 import { createUnitNode } from './units.js'
 
 describe('Crane Reach HUD inspection and range', () => {
+  it.each([
+    ['skirmish', skirmishFixture, skirmishScene],
+    ['army', armyFixture, armyScene],
+  ] as const)('labels %s units with the owning seat in inspection cards', (_, fixture, sceneFor) => {
+    const scene = sceneFor(statesFrom(fixture)[0] as StepState)
+    const labels: string[] = []
+    const paint: HudPaint = {
+      sprite: () => null,
+      text: (value) => {
+        labels.push(value)
+        const text = new Text({ text: value })
+        Object.defineProperty(text, 'width', { value: 20 })
+        return text
+      },
+    }
+    for (const unit of scene.units) {
+      labels.length = 0
+      const layer = new Container()
+      const card = drawInspectionCard(layer, paint, scene, { kind: 'unit', unitId: unit.unitId })
+      const expected = `${unit.side === 'red' ? 'S0' : 'S1'}_${unit.unitId.split('_').slice(1).join('_')}`
+      expect(labels[0]).toBe(expected)
+      expect(card?.title).toBe(expected)
+      expect(labels).not.toContain(unit.unitId)
+      layer.destroy({ children: true })
+    }
+  })
+
   it('ignores bubbling pointerout and clears hover only when the pointer leaves the unit', () => {
     const events: string[] = []
     const node = createUnitNode(
@@ -119,11 +146,13 @@ describe('Crane Reach HUD inspection and range', () => {
       hoveredRoster: roster,
     }
     expect(normalizeInspection(current, visible)).toBe(current)
-    expect(normalizeInspection({ ...stale, target: roster, hoveredUnitId: null }, visible)).toEqual({
-      target: roster,
-      hoveredUnitId: null,
-      hoveredRoster: roster,
-    })
+    expect(normalizeInspection({ ...stale, target: roster, hoveredUnitId: null }, visible)).toEqual(
+      {
+        target: roster,
+        hoveredUnitId: null,
+        hoveredRoster: roster,
+      },
+    )
   })
 
   it('mirrors terrain cost, occupancy, the first expensive step, and the four-step limit', () => {

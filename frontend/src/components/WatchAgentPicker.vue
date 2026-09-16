@@ -7,8 +7,8 @@
 
   Clicking any row, built-in Naive or a submitted agent, opens the same watch configuration dialog for
   a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog). A Rate
-  action locks the selected agent and every session setting, except that an unrestricted two-seat
-  comparison lets the viewer choose the Seat 1 opponent while the selected target stays in Seat 2.
+  action locks the selected agent in the last unrestricted seat and every session setting. Other seats
+  can take another agent or You, so the viewer can play against the agent they are rating.
   Watch actions keep the configuration editable. A single-seat environment with no visible settings
   starts a scripted watch run immediately, expressed as a one-seat `seats` assignment. The post-session
   panel takes the rating after the run. An anonymous visitor sees sign-in actions that route to the
@@ -242,7 +242,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       {{ startError }}
     </UiEmptyState>
 
-    <!-- Rate locks settings and the target. A two-seat unrestricted comparison can choose Seat 1. -->
+    <!-- Rate locks settings and the target; other seats can take agents or the viewer. -->
     <UiDialog
       v-model:open="dialogOpen"
       :title="`${dialogMode === 'rate' ? 'Rate' : 'Watch'} ${meta.display_name}${seasonLabel ? `: ${seasonLabel}` : ''}`"

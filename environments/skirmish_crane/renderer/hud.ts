@@ -8,6 +8,7 @@
  */
 import { Container, Graphics } from 'pixi.js'
 
+import { formatSeat } from '../../../frontend/src/lib/format.js'
 import type { CraneAssetName } from './assets.js'
 import { LATO, MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { InspectionEvent, InspectionTarget, RosterInspectionTarget } from './inspection.js'
@@ -53,6 +54,7 @@ export interface InspectionProjection {
 }
 
 export interface InspectionCardProbe {
+  title: string
   fields: string
   details: string | null
 }
@@ -237,7 +239,10 @@ export function drawInspectionCard(
     return drawCard(layer, paint, {
       x,
       y,
-      title: unit.unitId,
+      title: unit.unitId.replace(
+        /^(red|blue)/,
+        formatSeat(unit.side === 'red' ? 'seat_0' : 'seat_1'),
+      ),
       titleFont: MONO,
       type: unit.type,
       currentHitPoints: unit.hitPoints,
@@ -340,6 +345,7 @@ function drawCard(layer: Container, paint: HudPaint, options: CardOptions): Insp
     ...(specification.ability === null ? [] : [`iconSkill:${specification.ability}`]),
   ]
   return {
+    title: options.title,
     fields: specification.fields.map((field) => `${field.icon}:${field.label}`).join(','),
     details: details.length === 0 ? null : details.join(','),
   }

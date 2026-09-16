@@ -770,7 +770,7 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     // The seat grid opens with the human seated and the other seats defaulting to the Naive baseline.
     const start = await screen.findByRole('button', { name: 'Start playing' })
-    expect(screen.getByText('You')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Seat 1' })).toHaveValue('human')
     await fireEvent.click(start)
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',

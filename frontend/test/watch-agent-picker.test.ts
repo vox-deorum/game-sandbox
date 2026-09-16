@@ -222,8 +222,9 @@ describe('WatchAgentPicker', () => {
     )
     for (const seat of seats) {
       expect(seat.value).toBe('submission:sub1')
-      expect(seat).toBeDisabled()
     }
+    expect(seats[0]).toBeEnabled()
+    expect(seats[3]).toBeDisabled()
     // Starting from the dialog sends the full four-seat assignment and navigates to the session.
     const start = screen.getByRole('button', { name: 'Start watching' })
     await fireEvent.click(start)
@@ -246,6 +247,29 @@ describe('WatchAgentPicker', () => {
       session: { id: 'sess-hearts', wsPath: '/api/sessions/sess-hearts/ws' },
     })
     await screen.findByText('session sess-hearts')
+  })
+
+  it('starts a rating session with the viewer playing against the selected agent', async () => {
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 'sess-rate-play', wsPath: '/api/sessions/sess-rate-play/ws' },
+    })
+    await renderPicker(spadesMeta(), [summary()])
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Seat 1' }), 'human')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+
+    expect(startSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envId: 'spades',
+        seats: {
+          seat_0: { kind: 'human', companion: { kind: 'self' } },
+          seat_1: { kind: 'submission', submissionId: 'sub1' },
+        },
+        humanTimeoutMs: undefined,
+      }),
+    )
+    await screen.findByText('session sess-rate-play')
   })
 
   it('returns to the active session from a configured rating start without stopping it', async () => {

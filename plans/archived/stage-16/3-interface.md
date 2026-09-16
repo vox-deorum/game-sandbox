@@ -12,16 +12,14 @@ The website displays every named builtin, makes the restricted-seat rule obvious
 
 The environment page, `WatchAgentPicker.vue`, and `SeatAssignmentDialog.vue` receive resolved seats and declared builtins from environment metadata. The top-level picker renders one keyed row per declared builtin in place of its single hardcoded Naive row. Every agent option uses the builtin's stable name as its value and its display label as its text.
 
-- **Play:** a human-capable restricted seat starts as Human, and its only alternative is the designated builtin. If the user sits in another capable seat, the restricted seat returns to its builtin. A restricted seat with no human-capable player is a locked builtin assignment. A wide restricted Human seat shows the derived builtin as explanatory text and offers no companion picker.
-- **Watch:** the restricted seat is locked to its designated builtin. Every unrestricted seat keeps the ordinary builtin and submission choices.
-- **Rate, two unrestricted seats:** the intended agent is preselected in both seats and locked in Seat 2, the default opponent seat in Play. Seat 1 remains editable, offering the declared builtins and ready submissions from the play-open season for comparison. Parameters, seed, and timeout stay locked.
-- **Rate, other layouts:** the intended agent fills and locks every unrestricted seat. A human-capable restricted seat starts as Human and offers Human or its designated builtin. A non-human-capable restricted seat is locked to its builtin. Parameters, seed, and timeout stay locked. A rating run that leaves the restricted seat on Human is a session the viewer plays, so the intro names that seat.
+- **Play:** a human-capable restricted seat starts as You; otherwise the first human-capable seat starts as You. Other unrestricted seats start with Naive. **Watch:** the clicked agent initializes every unrestricted seat. Both flows then offer You, declared builtins, and ready submissions in each editable human-capable seat. Selecting You moves the sole human to that seat and restores the previous seat to Naive or its designated restricted builtin. Selecting an agent in the human seat allows a watch session with no human controller. Restricted seats offer only You when capable and their designated builtin; a non-capable restricted seat stays locked to its builtin. A wide restricted human seat explains that the designated builtin controls the other players and offers no companion picker.
+- **Rate:** the intended agent starts in every unrestricted seat, and the last unrestricted seat is locked to it. Other seats remain editable for comparison or human play. In a two-seat unrestricted layout, Seat 2 is the locked target seat and Seat 1 stays editable. A human-capable restricted seat starts as You and offers You or its designated builtin. A non-human-capable restricted seat stays locked to its builtin. Parameters and seed stay locked; the human timeout override is unavailable, so the environment default applies.
 
 In every mode the start button follows the composition rather than the flow: it reads `Start playing` when a human seat is occupied and `Start watching` when none is.
 
 Rate places the intended agent in unrestricted seats only, so `WatchAgentPicker.vue`, the dialog prefill, payload assembly, and the frontend API types all read the resolved restriction. Metadata guarantees at least one unrestricted seat, so a restricted layout always opens the multi-seat dialog and always has somewhere legal to put the intended agent. The single-seat direct Watch and Rate path stays valid for player-bounds layouts and one-seat plans, which the same guarantee keeps unrestricted.
 
-Rate disables each locked parameter and assignment control individually, keeping the comparison selector or the restricted seat's Human-or-builtin choice interactive.
+Rate disables each locked parameter and assignment control individually, keeping editable seat selectors and the restricted seat's You-or-builtin choice interactive.
 
 The server remains authoritative. Frontend filtering is presentation, not the only enforcement.
 
@@ -63,15 +61,15 @@ Live standings, replay lists, rating forms, automated boards, human-feedback boa
 
 ## Specification
 
-- [Frontend](../../docs/specs/frontend.md) defines Play, Watch, Rate, the editor, the labels, and the two-line seat heading.
-- [Interaction](../../docs/specs/interaction.md) defines the default Human placement and the restricted wide-seat presentation.
+- [Frontend](../../../docs/specs/frontend.md) defines Play, Watch, Rate, the editor, the labels, and the two-line seat heading.
+- [Interaction](../../../docs/specs/interaction.md) defines human placement and the restricted wide-seat presentation.
 
 ## Tests
 
 - jsdom tests cover one top-level picker row and a stable key per declared builtin, plus named builtin option values and labels in unrestricted dialog seats. Each builtin's Watch action is clicked and must prefill and emit that builtin's own name, including an unrestricted seat beside a restricted seat designated for a different builtin.
-- Play tests cover the Human default, switching the restricted seat to its builtin, moving the human elsewhere, a non-human-capable restriction, and a wide restricted seat with no companion picker.
-- Watch tests prove the restricted assignment is locked and unrestricted seats stay editable.
-- Rate tests prove that a two-seat unrestricted layout locks the intended agent in Seat 2 and emits the comparison chosen in Seat 1, with season settings locked. Single-seat and larger layouts keep their intended-agent locks. Restricted-layout tests prove the intended agent fills only unrestricted seats and that only the Human or designated-builtin control remains enabled.
+- Play and Watch tests cover their initial assignments, shared You and agent choices, moving the human between seats, restoring Naive or the restricted builtin, watching with no human seat, and wide restricted seats with no companion picker.
+- Restricted seats offer only You when human-capable and the designated builtin; otherwise they remain locked to the builtin in every mode.
+- Rate tests prove that the last unrestricted seat locks the intended agent, other seats remain editable, season settings stay locked, and a restricted human-capable seat keeps its initial assignment with only You or its designated builtin available.
 - Seat layout tests assert that `Seat X` and its player-count hint share one heading wrapper and that the hint is absent from the control wrapper, for singular and plural counts. One test asserts the select's accessible name is still `Seat X` alone.
 - Admin tests cover every named builtin choice, a locked restricted seat, full-width match rows, plan changes, saved compact strings, validation messages, and unchanged projected totals.
 - Backend and jsdom fixtures supply the restricted-seat metadata, since no shipped environment restricts a seat yet. Spades' second builtin covers the multi-builtin pickers and labels against a real environment.

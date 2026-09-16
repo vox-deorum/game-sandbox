@@ -174,6 +174,32 @@ describe('SeatAssignmentDialog', () => {
     expect(lastStart(emitted).seed).toBe(4242)
   })
 
+  it('watch: allows You in one seat, then returns to watching when that seat gets an agent', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
+    })
+
+    await fireEvent.update(seat('Seat 2'), 'human')
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeEnabled()
+    const timeout = screen.getByRole('spinbutton', { name: 'Move time limit (ms)' })
+    expect(timeout).toHaveValue(60_000)
+    await fireEvent.update(timeout, '1234')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    const starts = emitted().start as StartPayload[][]
+    expect(starts[0]?.[0]?.humanTimeoutMs).toBe(1234)
+    await fireEvent.update(seat('Seat 2'), 'submission:sub1')
+    expect(screen.getByRole('button', { name: 'Start watching' })).toBeEnabled()
+    expect(screen.queryByRole('spinbutton', { name: 'Move time limit (ms)' })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'builtin-agent', name: 'naive' },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
+    })
+    expect(lastStart(emitted).humanTimeoutMs).toBeUndefined()
+  })
+
   it('watch: applies a preset and keeps further edits', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
@@ -256,6 +282,54 @@ describe('SeatAssignmentDialog', () => {
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'submission', submissionId: 'sub2' },
       seat_1: { kind: 'submission', submissionId: 'sub1' },
+    })
+  })
+
+  it('rate: lets the rater take the comparison seat and control a wide seat themself', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'partnership' },
+        meta: spadesMeta(),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
+      },
+    })
+
+    expect(seat('Seat 2')).toBeDisabled()
+    await fireEvent.update(seat('Seat 1'), 'human')
+    expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('self')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'human', companion: { kind: 'self' } },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+    })
+  })
+
+  it('rate: moving You between editable seats resets the old seat and preserves the target', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        ...START_CONTEXT,
+        meta: heartsMeta(),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
+      },
+    })
+
+    expect(seat('Seat 4')).toBeDisabled()
+    await fireEvent.update(seat('Seat 2'), 'human')
+    await fireEvent.update(seat('Seat 3'), 'human')
+    expect(seat('Seat 2')).toHaveValue('builtin:naive')
+    expect(seat('Seat 3')).toHaveValue('human')
+    expect(seat('Seat 4')).toHaveValue('submission:sub1')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'submission', submissionId: 'sub1' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+      seat_2: { kind: 'human' },
+      seat_3: { kind: 'submission', submissionId: 'sub1' },
     })
   })
 
@@ -385,9 +459,9 @@ describe('SeatAssignmentDialog', () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
     })
-    // Seat 1 is the connected human (no dropdown); the other seats default to the Naive baseline.
-    expect(screen.getByText('You')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Seat 1' })).toBeNull()
+    // Seat 1 is the connected human; every seat uses the same assignment dropdown.
+    expect(seat('Seat 1')).toHaveValue('human')
+    expect(within(seat('Seat 1')).getByRole('option', { name: 'You' })).toHaveValue('human')
     expect(seat('Seat 2').value).toBe('builtin:naive')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
@@ -403,16 +477,32 @@ describe('SeatAssignmentDialog', () => {
     expect(payload.humanTimeoutMs).toBe(60_000)
   })
 
-  it('play: "Sit here" moves the human and resets the vacated seat to the Naive baseline', async () => {
+  it('play: replacing You in the initial seat starts an all-agent watch session', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
     })
-    const rows = screen.getAllByRole('listitem')
-    // Claim seat 3 for the human (rows are zero-indexed: rows[2] is "Seat 3").
-    await fireEvent.click(within(rows[2] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+
+    await fireEvent.update(seat('Seat 1'), 'submission:sub1')
+    expect(screen.getByRole('button', { name: 'Start watching' })).toBeEnabled()
+    expect(screen.queryByRole('spinbutton', { name: 'Move time limit (ms)' })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'submission', submissionId: 'sub1' },
+      seat_1: { kind: 'builtin-agent', name: 'naive' },
+      seat_2: { kind: 'builtin-agent', name: 'naive' },
+      seat_3: { kind: 'builtin-agent', name: 'naive' },
+    })
+    expect(lastStart(emitted).humanTimeoutMs).toBeUndefined()
+  })
+
+  it('moves You to another seat and resets the vacated seat to the Naive baseline', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+    })
+    await fireEvent.update(seat('Seat 3'), 'human')
 
     // Seat 3 is now the human; the vacated seat 1 falls back to a Naive dropdown (never blank).
-    expect(screen.queryByRole('combobox', { name: 'Seat 3' })).toBeNull()
+    expect(seat('Seat 3')).toHaveValue('human')
     expect(seat('Seat 1').value).toBe('builtin:naive')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
@@ -426,10 +516,9 @@ describe('SeatAssignmentDialog', () => {
     expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
   })
 
-  it('play: offers "Sit here" only on human-capable seats and seats the human at the first one', async () => {
+  it('offers You only on human-capable seats and seats the human at the first one', async () => {
     // A restricted environment marks only some seats human-capable. The human must default to the first
-    // such seat, and "Sit here" must appear only on the other human-capable seats — never on a seat the
-    // metadata forbids a human from taking.
+    // such seat, and the You option must appear only on human-capable seats.
     render(SeatAssignmentDialog, {
       props: {
         ...START_CONTEXT,
@@ -440,15 +529,11 @@ describe('SeatAssignmentDialog', () => {
     })
     const rows = screen.getAllByRole('listitem')
     // The human defaults to player_1 ("Seat 2"), the first human-capable seat, not seat 1.
-    expect(within(rows[1] as HTMLElement).getByText('You')).toBeInTheDocument()
-    // Exactly one "Sit here", on the other human-capable seat (player_2 = "Seat 3"); none on the
-    // non-human-capable seats 1 and 4.
-    expect(screen.getAllByRole('button', { name: 'Sit here' })).toHaveLength(1)
-    expect(
-      within(rows[2] as HTMLElement).getByRole('button', { name: 'Sit here' }),
-    ).toBeInTheDocument()
-    expect(within(rows[0] as HTMLElement).queryByRole('button', { name: 'Sit here' })).toBeNull()
-    expect(within(rows[3] as HTMLElement).queryByRole('button', { name: 'Sit here' })).toBeNull()
+    expect(seat('Seat 2')).toHaveValue('human')
+    expect(within(rows[1] as HTMLElement).getByRole('option', { name: 'You' })).toBeInTheDocument()
+    expect(within(rows[2] as HTMLElement).getByRole('option', { name: 'You' })).toBeInTheDocument()
+    expect(within(rows[0] as HTMLElement).queryByRole('option', { name: 'You' })).toBeNull()
+    expect(within(rows[3] as HTMLElement).queryByRole('option', { name: 'You' })).toBeNull()
   })
 
   it('play: a submission can be assigned to a non-human seat', async () => {
@@ -501,9 +586,9 @@ describe('SeatAssignmentDialog', () => {
       },
     })
 
-    expect(screen.getByText('You').closest('li')).toHaveTextContent('Seat 2')
+    expect(seat('Seat 2')).toHaveValue('human')
     expect(screen.getByText('3 players')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sit here' })).toBeNull()
+    expect(within(seat('Seat 2')).getByRole('option', { name: 'You' })).toHaveValue('human')
     const start = screen.getByRole('button', { name: 'Start playing' })
     expect(start).toBeDisabled()
     expect(
@@ -559,8 +644,7 @@ describe('SeatAssignmentDialog', () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'play' },
     })
-    const rows = screen.getAllByRole('listitem')
-    expect(within(rows[0] as HTMLElement).getByText('You')).toBeInTheDocument()
+    expect(seat('Seat 1')).toHaveValue('human')
     expect(screen.getByText('Cautious bidder controls the other players.')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: "Seat 1's companions" })).toBeNull()
 
@@ -570,18 +654,25 @@ describe('SeatAssignmentDialog', () => {
       seat_1: { kind: 'builtin-agent', name: 'naive' },
     })
 
-    await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    await fireEvent.update(seat('Seat 2'), 'human')
     const restricted = seat('Seat 1')
     expect(restricted).toHaveValue('builtin:cautious')
-    expect(restricted).toBeDisabled()
+    expect(restricted).toBeEnabled()
+    expect(within(restricted).getAllByRole('option')).toHaveLength(2)
+    expect(within(restricted).getByRole('option', { name: 'You' })).toHaveValue('human')
+    expect(within(restricted).getByRole('option', { name: 'Cautious bidder' })).toHaveValue(
+      'builtin:cautious',
+    )
   })
 
-  it('locks restricted watch seats and leaves unrestricted seats editable', () => {
+  it('offers You and the designated builtin on human-capable restricted watch seats', () => {
     render(SeatAssignmentDialog, {
       props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'watch' },
     })
     expect(seat('Seat 1')).toHaveValue('builtin:cautious')
-    expect(seat('Seat 1')).toBeDisabled()
+    expect(seat('Seat 1')).toBeEnabled()
+    expect(within(seat('Seat 1')).getAllByRole('option')).toHaveLength(2)
+    expect(within(seat('Seat 1')).getByRole('option', { name: 'You' })).toHaveValue('human')
     expect(seat('Seat 2')).not.toBeDisabled()
   })
 
@@ -593,10 +684,10 @@ describe('SeatAssignmentDialog', () => {
     })
     expect(seat('Seat 1')).toHaveValue('builtin:cautious')
     expect(seat('Seat 1')).toBeDisabled()
-    expect(within(seat('Seat 1')).queryByRole('option', { name: 'Human' })).toBeNull()
+    expect(within(seat('Seat 1')).queryByRole('option', { name: 'You' })).toBeNull()
   })
 
-  // A rating run that leaves the restricted seat at its Human default is a session the rater plays, so
+  // A rating run that leaves the restricted seat at its You default is a session the rater plays, so
   // the copy has to say so rather than describing a watch.
   it('rate: says the rater plays when the restricted seat keeps its human default', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
@@ -708,11 +799,10 @@ describe('SeatAssignmentDialog', () => {
       screen.getByRole('combobox', { name: "Seat 1's companions" }),
       'submission:sub1',
     )
-    const rows = screen.getAllByRole('listitem')
-    await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    await fireEvent.update(seat('Seat 2'), 'human')
     expect(screen.getByRole('combobox', { name: "Seat 2's companions" })).toHaveValue('self')
 
-    await fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    await fireEvent.update(seat('Seat 1'), 'human')
     expect(screen.getByRole('combobox', { name: "Seat 1's companions" })).toHaveValue('self')
     expect(screen.getByRole('button', { name: 'Start playing' })).toBeEnabled()
   })
@@ -789,6 +879,24 @@ describe('SeatAssignmentDialog', () => {
       for (const name of ['Seat 1', 'Seat 5', 'Seat 6']) {
         expect(seat(name).value).toBe('submission:sub2')
       }
+    })
+
+    it('clears You when the selected seat disappears after a layout change', async () => {
+      const { emitted } = render(SeatAssignmentDialog, {
+        props: { ...CONTEXT, meta: variableSeatMeta(), agents: AGENTS, mode: 'watch' },
+      })
+      await fireEvent.update(seat('Seat 4'), 'human')
+      expect(screen.getByRole('button', { name: 'Start playing' })).toBeEnabled()
+
+      await fireEvent.update(screen.getByLabelText(/Players/), '3')
+      expect(screen.queryByRole('combobox', { name: 'Seat 4' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Start watching' })).toBeEnabled()
+      await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+      expect(lastStart(emitted).seats).toEqual({
+        seat_0: { kind: 'builtin-agent', name: 'naive' },
+        seat_1: { kind: 'builtin-agent', name: 'naive' },
+        seat_2: { kind: 'builtin-agent', name: 'naive' },
+      })
     })
 
     it('does not resize the grid while the players field holds a value it rejects', async () => {

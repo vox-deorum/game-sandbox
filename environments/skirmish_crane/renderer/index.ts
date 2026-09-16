@@ -1332,6 +1332,7 @@ export class CraneReachRenderer extends PixiRenderer {
     clear(this.inspectionLayer)
     this.inspectionLayer.eventMode = 'none'
     delete this.ctx.container.dataset.craneInspectionFields
+    delete this.ctx.container.dataset.craneInspectionTitle
     delete this.ctx.container.dataset.craneInspectionDetails
     if (scene.hud.terminal !== null) {
       this.ctx.container.dataset.craneInspection = 'none'
@@ -1344,6 +1345,7 @@ export class CraneReachRenderer extends PixiRenderer {
       zoom: this.camera?.zoom ?? 1,
     })
     if (card !== null) {
+      this.ctx.container.dataset.craneInspectionTitle = card.title
       this.ctx.container.dataset.craneInspectionFields = card.fields
       if (card.details !== null) this.ctx.container.dataset.craneInspectionDetails = card.details
     }

@@ -146,6 +146,10 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await page.mouse.move(unitPoint.x, unitPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
   await expect(rendererHost).toHaveAttribute(
+    'data-crane-inspection-title',
+    (unitId ?? '').replace(/^red_/, 'S0_').replace(/^blue_/, 'S1_'),
+  )
+  await expect(rendererHost).toHaveAttribute(
     'data-crane-inspection-fields',
     'iconHp:HP,iconMove:MOV,iconAttack:ATK,iconRange:RNG,iconVision:VIS',
   )
