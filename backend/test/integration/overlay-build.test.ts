@@ -232,6 +232,7 @@ describe('composed session overlays (Docker)', () => {
       rmSync(tree, { recursive: true, force: true })
     }
     for (const { d, ref } of builtRefs.splice(0)) {
+      await d.releaseSessionOverlay(ref).catch(() => undefined)
       await d.removeImage(ref).catch(() => undefined)
     }
   })
@@ -267,7 +268,7 @@ describe('composed session overlays (Docker)', () => {
     builtRefs.push({ d, ref: composed.ref })
     const sub = await d.ensureImage(overlaySpec('it-release-noop', tree))
 
-    await d.releaseSessionOverlay(composed.ref) // a composed image is single-use: removed
+    await d.releaseSessionOverlay(composed.ref) // the last acquisition releases the composed image
     await d.releaseSessionOverlay(sub.ref) // a shared per-submission cache entry: no-op
     builtRefs.push({ d, ref: sub.ref })
 
@@ -276,7 +277,7 @@ describe('composed session overlays (Docker)', () => {
     expect(remaining).toContain(sub.ref)
   })
 
-  it('the eviction sweep reclaims stale composed session overlays past the reclaim window', async () => {
+  it('protects acquired compositions and reclaims orphaned images after a driver restart', async () => {
     const d = await driver()
     const tree = writeTree({})
     trees.push(tree)
@@ -284,17 +285,25 @@ describe('composed session overlays (Docker)', () => {
     const b = await d.ensureImage(composedSpec(['sub-sw-b']))
     builtRefs.push({ d, ref: a.ref }, { d, ref: b.ref })
 
-    // A zero reclaim window makes both instantly evictable; age alone forces their reclamation.
-    const eviction = new OverlayEviction(
-      d,
-      { listActiveReadySubmissionIds: () => Promise.resolve([]) },
-      {
-        overlayImageBudget: 50,
-        sessionOverlayReclaimAgeMs: 0,
-        overlayImageSweepIntervalMs: 3_600_000,
-      },
-    )
-    await eviction.sweep()
+    const sweep = (owner: DockerDriver) =>
+      new OverlayEviction(
+        owner,
+        { listActiveReadySubmissionIds: () => Promise.resolve([]) },
+        {
+          overlayImageBudget: 50,
+          sessionOverlayReclaimAgeMs: 0,
+          overlayImageSweepIntervalMs: 3_600_000,
+        },
+      )
+    // Even a zero reclaim window cannot evict images owned by active acquisitions.
+    await sweep(d).sweep()
+    const activeRefs = (await d.listOverlayImages()).map((image) => image.ref)
+    expect(activeRefs).toContain(a.ref)
+    expect(activeRefs).toContain(b.ref)
+
+    // A fresh driver models a restart after the old process lost its acquisitions without cleanup.
+    const restarted = await driver()
+    await sweep(restarted).sweep()
 
     const refs = new Set((await d.listOverlayImages()).map((i) => i.ref))
     expect(refs.has(a.ref)).toBe(false)

@@ -36,7 +36,7 @@ The operator-triggered workflow:
 - Expands the match design over eligible submissions into a balanced schedule.
 - Includes named builtins as ordinary agents and the required `naive` baseline on every board.
 - Uses controlled seeded repetitions, with every agent in a run playing the same seeds. Whether a re-run reproduces those seeds depends on the season's seed list, described in [seasons.md](seasons.md).
-- Runs matches sequentially on the same host for comparable timing.
+- Runs matches on the same Docker host with bounded parallelism. Season runs remain queued one at a time.
 - Records every match.
 - Enforces step and episode limits.
 - Aggregates successful LLM usage by model, including authoritative weighted cost and estimated-call counts.
@@ -46,6 +46,10 @@ When a match design fills more than one seat with submissions, the schedule resp
 The schedule expands over resolved seats, not players.
 
 Each match runs in its own sandboxed session container. See [Execution](execution.md).
+
+The deployment's `LEADERBOARD_CONCURRENCY` optionally sets a positive maximum match count. Otherwise the runner uses half of Docker's CPU count, rounded down with a minimum of one. At the start of each run, it also caps concurrency so the combined match sandbox memory quotas use at most half of Docker's total RAM. The quota includes every player in the frozen layout. The remaining RAM is reserved for the backend, builds, LLM relays, and other activity; this is a fixed budget, not a measurement of currently free memory. Missing or invalid host capacity, a nonpositive match quota, or a budget too small for one match fails the run before any container launches.
+
+Matches keep their frozen seeds and assignments but may finish out of schedule order. Parallel execution permits timing contention. Set `LEADERBOARD_CONCURRENCY=1` for sequential matches; the memory ceiling still applies. Cancelling a run stops new matches and tears down all active matches. The run reaches its terminal status only after every worker finishes cleanup.
 
 ## Human-feedback board
 

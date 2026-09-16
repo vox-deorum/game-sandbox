@@ -39,6 +39,7 @@ const SUCCESSFUL_TOKENS_PER_CALL = 3
 const SMALL_MODEL_COST_WEIGHT = 4
 const MAX_COMPLETION_TOKENS = 1
 
+// Each parallel game needs distinct stub retry ids so its requests cannot consume another's attempts.
 const HUNGRY_AGENT = [
   'import sys',
   'from openai import OpenAI, OpenAIError',
@@ -46,13 +47,14 @@ const HUNGRY_AGENT = [
   'class Agent:',
   '    def reset(self, seed, observation):',
   '        self.call_id = 0',
+  '        self.seed = seed',
   '',
   '    def act(self, observation):',
   '        try:',
   '            self.call_id += 1',
   '            OpenAI(max_retries=0).chat.completions.create(',
   '                model="small",',
-  '                messages=[{"role": "user", "content": f"[stub:retry-success:call-{self.call_id}] Choose a Hearts card."}],',
+  '                messages=[{"role": "user", "content": f"[stub:retry-success:seed-{self.seed}-call-{self.call_id}] Choose a Hearts card."}],',
   `                max_completion_tokens=${MAX_COMPLETION_TOKENS},`,
   '                stream=False,',
   '            )',
@@ -137,6 +139,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       },
     }
     const runner = createWorkflowRunner({
+      leaderboardConcurrency: 2,
       driver,
       storage,
       environments: EnvironmentRegistry.load(),
@@ -227,7 +230,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     const budgetGameIndices = terminal.events.flatMap((event) =>
       event.type === 'log' && event.line.includes('budget_exceeded') ? [event.game_index] : [],
     )
-    expect(budgetGameIndices).toEqual([0, 1])
+    expect(budgetGameIndices.sort(), diagnosticText(terminal.events)).toEqual([0, 1])
     expect(existsSync(telemetry.pathForScope(run.id))).toBe(true)
 
     const games = await storage.listRunGames(run.id)
@@ -340,7 +343,7 @@ function budgetForSuccessfulCalls(tokenizer: TiktokenCounter): number {
     messages: [
       {
         role: 'user',
-        content: '[stub:retry-success:call-1] Choose a Hearts card.',
+        content: '[stub:retry-success:seed-17-call-1] Choose a Hearts card.',
       },
     ],
     max_completion_tokens: MAX_COMPLETION_TOKENS,

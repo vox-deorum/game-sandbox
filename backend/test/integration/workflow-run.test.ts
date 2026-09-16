@@ -25,7 +25,10 @@ import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
-import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import {
+  createWorkflowRunner,
+  type WorkflowRunnerDeps,
+} from '../../src/workflow/workflow-runner.js'
 import { createRunOrFail } from '../support/harness.js'
 import { DEPS_VERSION } from './support/base-image.js'
 
@@ -65,6 +68,7 @@ describe('workflow run end to end (Docker)', () => {
   let recordingsDir: string
   let recordings: RecordingsStore
   let runner: WorkflowRunner
+  let runnerDeps: WorkflowRunnerDeps
   let runnerLogs: string[]
   const trees: string[] = []
 
@@ -79,7 +83,7 @@ describe('workflow run end to end (Docker)', () => {
       overlayBuildTimeoutMs: 120_000,
       llmRelay: { mode: 'host-gateway' },
     })
-    runner = createWorkflowRunner({
+    runnerDeps = {
       driver,
       storage,
       environments: EnvironmentRegistry.load(),
@@ -93,10 +97,13 @@ describe('workflow run end to end (Docker)', () => {
       sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
       recordingsDir: resolve(recordingsDir),
       imagePolicy: 'reuse',
-    })
+      leaderboardConcurrency: 1,
+    }
+    runner = createWorkflowRunner(runnerDeps)
   })
 
   afterEach(async () => {
+    await runner.shutdown()
     await storage.close()
     rmSync(recordingsDir, { recursive: true, force: true })
     for (const tree of trees.splice(0)) {
@@ -149,6 +156,7 @@ describe('workflow run end to end (Docker)', () => {
     }))
     const status = await new Promise<TerminalRunStatus>((res) => {
       const unsubscribe = runner.subscribe(run.id, (event) => {
+        if (event.type === 'log') runnerLogs.push(event.line)
         if (event.type === 'terminal') {
           unsubscribe()
           res(event.status)
@@ -209,7 +217,9 @@ describe('workflow run end to end (Docker)', () => {
     // The submission's per-seed scores from the first run, keyed by seed.
     const firstScores = await submissionScoresBySeed(storage, first.run.id, submission.id)
 
-    // Re-run the same configuration: a fresh run, same deterministic schedule and seeds.
+    // Compare the same frozen schedule under sequential and parallel execution.
+    await runner.shutdown()
+    runner = createWorkflowRunner({ ...runnerDeps, leaderboardConcurrency: 2 })
     const second = await runOnce(season.id, [submissionRef], seeds)
     expect(second.status).toBe('completed')
     expect(second.run.id).not.toBe(first.run.id)
@@ -217,6 +227,105 @@ describe('workflow run end to end (Docker)', () => {
 
     const secondScores = await submissionScoresBySeed(storage, second.run.id, submission.id)
     expect(secondScores).toEqual(firstScores)
+  }, 180_000)
+
+  it('runs repeated composed Hearts seatings concurrently with separate recordings', async () => {
+    await runner.shutdown()
+    runner = createWorkflowRunner({ ...runnerDeps, leaderboardConcurrency: 2 })
+    const tree = writeExample()
+    trees.push(tree)
+    writeFileSync(
+      join(tree, 'agent.py'),
+      [
+        'class Agent:',
+        '    def reset(self, seed, observation):',
+        '        pass',
+        '    def act(self, observation):',
+        '        mask = observation["action_mask"]',
+        '        return next(card for card in range(52) if mask[card])',
+        '',
+      ].join('\n'),
+    )
+    const season = await storage.createSeason({
+      env_id: 'hearts',
+      deps_version: DEPS_VERSION,
+      label: null,
+    })
+    await storage.updateSeasonConfig(season.id, {
+      deps_version: DEPS_VERSION,
+      matches: [
+        {
+          seats: ['submission', 'submission', 'builtin:naive', 'builtin:naive'],
+          seeds: [11, 22, 33],
+          games: 3,
+        },
+      ],
+    })
+    const submission = await storage.createSubmission({
+      season_id: season.id,
+      env_id: 'hearts',
+      user_id: 'alice',
+      source_kind: 'local',
+      repo_url: null,
+      commit_sha: null,
+      local_path: tree,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+    await storage.updateSubmissionStatus(submission.id, 'ready')
+    const submitted: AgentRef = {
+      kind: 'submission',
+      submission_id: submission.id,
+      user_id: 'alice',
+    }
+    const seats: AgentRef[] = [
+      submitted,
+      submitted,
+      { kind: 'builtin', name: 'naive' },
+      { kind: 'builtin', name: 'naive' },
+    ]
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
+      parametersSnapshot: { players: 4 },
+      scheduledGames: [11, 22, 33].map((seed, game_index) => ({
+        match_index: 0,
+        game_index,
+        seed,
+        seats,
+        seat_plan: 'solo',
+      })),
+      llmPolicy: disabledLlmPolicy(),
+    }))
+    const running = new Set<number>()
+    let peakRunning = 0
+    const status = await new Promise<TerminalRunStatus>((res) => {
+      const unsubscribe = runner.subscribe(run.id, (event) => {
+        if (event.type === 'log') runnerLogs.push(event.line)
+        if (event.type === 'game_status') {
+          if (event.status === 'running') running.add(event.game_index)
+          else running.delete(event.game_index)
+          peakRunning = Math.max(peakRunning, running.size)
+        }
+        if (event.type === 'terminal') {
+          unsubscribe()
+          res(event.status)
+        }
+      })
+      runner.enqueue(run.id)
+    })
+    expect(status, runnerLogs.join('\n')).toBe('completed')
+    expect(peakRunning).toBe(2)
+    const games = await storage.listRunGames(run.id)
+    expect(games).toHaveLength(3)
+    expect(new Set(games.map((game) => game.recording_id)).size).toBe(3)
+    for (const game of games) {
+      expect(game.status, game.error ?? runnerLogs.join('\n')).toBe('completed')
+      const parsed = readRecording(
+        await streamToString(recordings.stream(game.recording_id as string)),
+      )
+      expect(parsed.header.environment).toBe('hearts')
+      expect(parsed.states.length).toBe(52)
+    }
+    expect(await storage.listGameResultsByRun(run.id)).toHaveLength(12)
   }, 180_000)
 })
 

@@ -58,6 +58,8 @@ Builtin agents are staged by environment and stable name at `/opt/agents/builtin
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
+Sessions with the same submitted seating can share a composed image. The driver shares concurrent builds and retains the image until every session using it has released it, including sessions still preparing to launch. Image eviction protects active compositions and their build intermediates. Cancelling or failing a launch releases its image acquisition after cleanup.
+
 ## Sandboxing
 
 Session containers have:

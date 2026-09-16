@@ -128,7 +128,7 @@ The overlay image sweep runs at startup, on its timer, and after a successful bu
 
 Removal is best-effort because every overlay image is reproducible.
 
-Composed `session-overlay` images are single-use: the orchestrator and workflow runner release one on every path — when its session or game ends, and when a cancelled run or failed launch backs out before a session ever starts. Anything still present is a release that failed, crashed, or never ran, or a leaked `-stage` build intermediate. So the sweep reclaims session overlays by age alone: images younger than `SESSION_OVERLAY_RECLAIM_AGE_MS` are never evicted (a compose can be mid-build at the sweep), and anything older — or a `-stage` intermediate — is reclaimed outright, so even a single low-count leak is eventually swept rather than stranded by a small retained set.
+Composed `session-overlay` images can be shared by sessions with the same seating. The driver deduplicates concurrent builds and counts acquisitions until each caller releases its image after session teardown or an abandoned launch. Only the final release removes the image. Acquisition, release, and eviction synchronize by composition so a sweep cannot remove an active image or its build intermediates. Unused final images younger than `SESSION_OVERLAY_RECLAIM_AGE_MS` remain protected; older unused images and orphaned build intermediates are reclaimed. A failed source-tree cleanup releases any image acquisition that could not be returned to its caller.
 
 ## Container transport
 

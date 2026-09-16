@@ -13,16 +13,13 @@
  * a pinned recording. Everything else is a superseded or failed submission's image the picker can
  * never launch, so reclaiming it is pure win — oldest-first, down to the budget.
  *
- * Composed session overlays are single-use: the orchestrator and workflow runner release one on
- * **every** path — when its session ends naturally, when a cancelled run or failed launch backs out,
- * and even on the pre-launch failure branches — so any tag still present is a never-ended session, a
- * release that failed, crashed, or never ran, or a `-stage` build intermediate the concurrent-build
- * race leaked. Each is rebuildable from stored snapshots, so eviction is always safe. The only ring
- * to avoid breaking is the instant between composing and launching an image, so session overlays
- * newer than {@link OverlayEvictionConfig.sessionOverlayReclaimAgeMs} are kept; **anything older is
- * reclaimed outright** — age alone forces eviction, so even a single under-budget leaked image is
- * eventually swept, never stranded by a small retained set. `-stage` intermediates are always
- * reclaimable debris.
+ * Composed session overlays are acquired by every session that uses them. Identical concurrent
+ * compositions share one image, and each caller releases its acquisition on every exit path. The
+ * driver removes the image after the final release. A tag left behind can come from a failed release,
+ * a crash, or an interrupted build, so the sweep selects old final tags and scratch intermediates for
+ * deletion. The driver rechecks ownership at deletion time, skips active final compositions, and
+ * skips scratch tags whose parent build is unfinished. This closes the race between listing an
+ * image and a session acquiring it.
  *
  * It enumerates the daemon's **actual** overlay images (through the driver), not storage rows, so a
  * crash between building an image and writing its row leaves only an orphan the sweep reclaims as
@@ -71,11 +68,11 @@ export class OverlayEviction {
   /**
    * The eviction sweep: keep every active-`ready` image plus the newest non-exempt images that fit
    * the remaining budget, and remove the rest oldest-first. Session overlays are kept only while
-   * younger than the reclaim-age window (a compose may still be mid-build); everything older — and
-   * every `-stage` intermediate — is reclaimed, so a leaked image is never stranded just because the
-   * deployment stays under some retained set. Safe to call concurrently with itself —
-   * {@link OverlayImageManager.removeImage} tolerates an already-absent image. Also the hook the
-   * worker calls after each successful overlay build, the other moment the image set grows.
+   * younger than the reclaim-age window. Everything older and every `-stage` intermediate is passed
+   * to the driver for deletion. The driver skips any composition that became active after this sweep
+   * listed it. Safe to call concurrently with itself because {@link OverlayImageManager.removeImage}
+   * tolerates an already-absent image. Also the hook the worker calls after each successful overlay
+   * build, the other moment the image set grows.
    */
   async sweep(): Promise<void> {
     let images: Awaited<ReturnType<OverlayImageManager['listOverlayImages']>>
@@ -141,11 +138,10 @@ export class OverlayEviction {
 
   private trackSessionImages(images: OverlayImage[]): string[] {
     const now = Date.now()
-    // A `-stage<i>` build intermediate is pure overhead after its round ends; always reclaim it.
-    // Final compositions younger than the reclaim age are kept: they may be between compose and
-    // launch. Anything at or past the reclaim age is, by construction, debris — its session ended a
-    // long while ago (releasing the image) or it never launched — so age alone forces its eviction;
-    // there is no retained set that could strand a low-count leak.
+    // A `-stage<i>` build intermediate is selected for reclamation immediately. Final compositions
+    // younger than the reclaim age are kept. Older ones are candidates for deletion. In both cases,
+    // the driver performs the ownership check at deletion time. It keeps a final tag while any
+    // session acquisition is active and keeps a scratch tag only while its parent build is unfinished.
     const staged = images.filter((image) => image.staged === true)
     const aged = images.filter(
       (image) =>

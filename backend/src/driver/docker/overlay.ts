@@ -306,10 +306,9 @@ export function sessionOverlayImageTag(
  * exactly as the old re-tag-in-place chain's dangling intermediates were), so a mid-chain failure
  * leaks no tagged partial image either.
  *
- * Known limitation: two identical seating builds started concurrently will compute the same scratch
- * tags and race on tag cleanup. One build may delete a scratch tag mid-use by another, causing that
- * build to fail with a spurious error. This is rare (requires identical seating started concurrently)
- * and self-healing (a retry succeeds). A future fix could add a per-build unique suffix to scratch tags.
+ * {@link DockerDriver} serializes one build for each final tag, protects its scratch tags until that
+ * build settles, and protects the final tag while an acquisition is active. This helper therefore
+ * keeps deterministic scratch names without exposing them to concurrent cleanup races.
  */
 export async function ensureSessionOverlayImage(
   docker: Docker,
@@ -397,11 +396,11 @@ export async function listOverlayImages(docker: Docker, prefix: string): Promise
 }
 
 /**
- * Release a composed session-overlay image now that its session has ended. A ref that is not a
- * session-overlay tag — a base image, a per-submission overlay (a shared cache entry the eviction
- * sweep manages), or an unrelated image — is a no-op. Best-effort removal: an already-absent tag is
- * tolerated, and a real failure is the caller's to log; the eviction sweep remains the backstop for
- * anything this misses.
+ * Remove a composed session-overlay image after its final acquisition has ended. A ref that is not a
+ * session-overlay tag (a base image, a per-submission overlay that the eviction sweep manages, or an
+ * unrelated image) is a no-op. The Docker driver owns acquisition counting
+ * and calls this helper only for the final release. Best-effort removal: an already-absent tag is
+ * tolerated, and a real failure is the caller's to log; the eviction sweep remains the backstop.
  */
 export async function releaseSessionOverlayImage(
   docker: Docker,

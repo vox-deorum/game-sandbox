@@ -19,6 +19,7 @@ import type {
 } from '../../src/submission/source/index.js'
 import {
   CANONICAL_SUBMISSION_SEAT,
+  ensureSessionImage,
   ensureSubmissionImage,
   resolveSubmissionLaunchImage,
 } from '../../src/submission/submission-image.js'
@@ -119,6 +120,116 @@ describe('ensureSubmissionImage rebuild path', () => {
 
     expect(image.ref).toContain('sub-2')
     expect(calls.fetched).toBe(1)
+  })
+})
+
+describe('ensureSessionImage cleanup ownership', () => {
+  const dirs: string[] = []
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  function tmp(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix))
+    dirs.push(dir)
+    return dir
+  }
+
+  function sourceWithTrees(dispose: Array<() => Promise<void>>): SubmissionSource {
+    let nextTree = 0
+    return {
+      verifyReachable: () => Promise.resolve({ reachable: true }),
+      resolve: (_input: SourceInput): Promise<ResolvedSource> =>
+        Promise.resolve({
+          kind: 'git',
+          repoUrl: 'https://example.test/repo',
+          commitSha: 'c0ffee1234',
+          ref: null,
+          resolvedRef: 'main',
+          localPath: null,
+        }),
+      fetchTree: (): Promise<TreeHandle> => {
+        const index = nextTree++
+        const cleanup = dispose[index]
+        if (cleanup === undefined) {
+          return Promise.reject(new Error('missing test tree'))
+        }
+        return Promise.resolve({ path: tmp(`gs-session-tree-${index}-`), dispose: cleanup })
+      },
+    }
+  }
+
+  function seats() {
+    return [
+      { seatId: 'seat_0', submission: gitSubmission('sub-1') },
+      { seatId: 'seat_1', submission: gitSubmission('sub-2') },
+    ]
+  }
+
+  it('disposes every tree and releases an acquired image when cleanup fails', async () => {
+    const disposed: string[] = []
+    const driver = new FakeDriver()
+    const source = sourceWithTrees([
+      () => {
+        disposed.push('first')
+        return Promise.reject(new Error('first dispose failed'))
+      },
+      () => {
+        disposed.push('second')
+        return Promise.resolve()
+      },
+    ])
+
+    await expect(
+      ensureSessionImage(
+        {
+          driver,
+          snapshots: new SubmissionSnapshotStore(tmp('gs-session-snap-')),
+          source,
+          imagePolicy: 'reuse',
+        },
+        seats(),
+        1,
+      ),
+    ).rejects.toThrow('first dispose failed')
+
+    expect(disposed).toEqual(['first', 'second'])
+    expect(driver.releasedSessionOverlays).toEqual(['fake-image:session-overlay:deps-v1'])
+  })
+
+  it('disposes every tree when the shared image build fails', async () => {
+    const disposed: string[] = []
+    const driver = new FakeDriver()
+    driver.ensureImage = () => Promise.reject(new Error('shared build failed'))
+    const source = sourceWithTrees([
+      () => {
+        disposed.push('first')
+        return Promise.reject(new Error('first dispose failed'))
+      },
+      () => {
+        disposed.push('second')
+        return Promise.resolve()
+      },
+    ])
+
+    await expect(
+      ensureSessionImage(
+        {
+          driver,
+          snapshots: new SubmissionSnapshotStore(tmp('gs-session-snap-')),
+          source,
+          imagePolicy: 'reuse',
+        },
+        seats(),
+        1,
+      ),
+    ).rejects.toThrow('session image preparation failed during cleanup')
+
+    expect(disposed).toEqual(['first', 'second'])
+    expect(driver.releasedSessionOverlays).toEqual([])
   })
 })
 

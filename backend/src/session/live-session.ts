@@ -62,8 +62,8 @@ export interface LiveSessionDeps {
    */
   settleRecording?: (recordingId: string) => Promise<void> | void
   /**
-   * Release this session's composed session-overlay image after teardown, so a single-use composed
-   * image does not accumulate on the daemon. The driver no-ops for base or per-submission refs;
+   * Release this session's composed-image acquisition after teardown. The last user removes the
+   * image from the daemon. The driver no-ops for base or per-submission refs;
    * failure is best-effort and logged.
    */
   releaseComposedImage?: () => Promise<void> | void
@@ -674,9 +674,8 @@ export class LiveSession {
       appLog('session', `session ${this.id}: settling recording failed: ${String(error)}`, 'error')
     }
 
-    // The container is gone, so a composed session-overlay image has served its single purpose;
-    // release it now rather than leaving it for the eviction sweep. Best-effort: the sweep remains
-    // the backstop for a failed release, and the driver no-ops on non-session refs.
+    // Release this session's acquisition after the container stops. Other sessions may still use
+    // the image. The sweep remains the backstop for a failed final release.
     try {
       await this.deps.releaseComposedImage?.()
     } catch (error) {

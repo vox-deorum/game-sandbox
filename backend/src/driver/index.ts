@@ -55,12 +55,12 @@ export interface SubmissionOverlayImageSpec {
  * A multi-agent session's composed image: the base image for {@link depsVersion} with every
  * participating submission's code copied into its own per-seat directory under
  * `/opt/agents/submissions`, so one container hosts several submitted agents in isolation. Unlike
- * {@link SubmissionOverlayImageSpec} it is session-scoped, not a per-submission cache entry: the
- * session or game that launches it releases it when it ends, and the eviction sweep reclaims any
- * tag left behind (a failed release, a cancelled build, or a `-stage` intermediate) by age. The
- * same submission may fill more than one seat, each staged independently. The Docker driver composes
- * it by chaining one single-seat overlay per seat onto the base; a Kubernetes driver would map the
- * same spec to its own build.
+ * {@link SubmissionOverlayImageSpec} it is acquired for a session rather than kept as a
+ * per-submission cache entry. Concurrent sessions with the same composition share the image, and
+ * each releases its acquisition when it ends. The eviction sweep reclaims any inactive tag left
+ * behind by a failed release or cancelled build. The same submission may fill more than one seat,
+ * each staged independently. The Docker driver composes it by chaining one single-seat overlay per
+ * seat onto the base; a Kubernetes driver would map the same spec to its own build.
  */
 export interface SessionOverlayImageSpec {
   kind: 'session-overlay'
@@ -125,6 +125,14 @@ export interface OverlayImageManager {
  */
 export interface ImageRef {
   ref: string
+}
+
+/** Host capacity reported by the execution platform for workflow admission decisions. */
+export interface HostResources {
+  /** Logical CPUs available to the driver host. */
+  cpuCount: number
+  /** Total memory available to the driver host, in bytes. */
+  memoryBytes: number
 }
 
 /** A writable scratch area inside the otherwise read-only container. */
@@ -219,6 +227,8 @@ export interface SessionProcess {
  * its exit, its teardown) hangs off the {@link SessionProcess} that `launch` returns.
  */
 export interface ExecutionDriver extends OverlayImageManager {
+  /** Report the execution host's CPU and memory capacity. */
+  getHostResources(): Promise<HostResources>
   /**
    * Resolve an image for `spec`, building or fetching as needed. Whether an existing image is
    * reused or rebuilt is driver configuration (the Docker driver's `imagePolicy`), not caller
@@ -228,10 +238,10 @@ export interface ExecutionDriver extends OverlayImageManager {
   /** Launch one session container and return its {@link SessionProcess}. */
   launch(spec: LaunchSpec): Promise<SessionProcess>
   /**
-   * Release a session-scoped composed image once the session that launched it has ended. A
-   * per-submission overlay or base image ref is a no-op — a composed session image is single-use
-   * (it was built for exactly this seating), while a submission overlay is a shared cache entry
-   * managed by the eviction sweep. Best-effort: a failure to remove must not break session teardown.
+   * Release one acquisition of a composed image once its session has ended. The last release
+   * removes the image. A per-submission overlay or base image ref is a no-op because submission
+   * overlays remain shared cache entries managed by the eviction sweep. Best-effort: a failure to
+   * remove must not break session teardown.
    */
   releaseSessionOverlay(ref: string): Promise<void>
 }

@@ -214,6 +214,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: null,
+    leaderboardConcurrency: null,
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,

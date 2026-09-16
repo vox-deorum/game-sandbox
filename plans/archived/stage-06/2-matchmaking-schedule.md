@@ -6,7 +6,7 @@ Part of [Stage 6](../stage-06-leaderboards.md). This is build-order step 2 and t
 
 ## Why this is its own seam
 
-The runner (step 4) should not hold the rules for _which_ games to run. It should be handed a list and execute it. Splitting the schedule (pure logic) from the execution (Docker, timing) lets us test the balancing rules exhaustively without containers, and keeps the runner a straightforward sequential executor. It also keeps the model forward-compatible. Stage 7's multi-agent opponents change only the slot-composition expansion here, not the runner.
+The runner (step 4) should not hold the rules for _which_ games to run. It should be handed a list and execute it. Splitting the schedule (pure logic) from the execution (Docker, timing) lets us test the balancing rules exhaustively without containers, and keeps the runner an executor of the frozen schedule. It also keeps the model forward-compatible. Stage 7's multi-agent opponents change only the slot-composition expansion here, not the runner.
 
 ## Input
 
@@ -19,7 +19,7 @@ A `buildSchedule` function taking:
 
 ## Output
 
-An ordered list of **scheduled games**. Each one carries the originating `match_index`, a deterministic `game_index`, a concrete `seed`, and a resolved `slots` assignment. That assignment names exactly what fills every seat as an `AgentRef` (a specific submission/user pair, or `builtin-naive`). This is exactly the shape step 1's `season_run_games.slots` stores and step 4 executes. The list order is the execution order (sequential, single host). It is deterministic for a given input: the same match design and roster always produce the same ordered list of games with the same count, whether `seeds` is explicit or empty. Only the seed values differ by mode: an explicit list reproduces the same seeds on a re-run, while an empty list has the scheduler draw a fresh set of seeds for that match at trigger time.
+An ordered list of **scheduled games**. Each one carries the originating `match_index`, a deterministic `game_index`, a concrete `seed`, and a resolved `slots` assignment. That assignment names exactly what fills every seat as an `AgentRef` (a specific submission/user pair, or `builtin-naive`). This is exactly the shape step 1's `season_run_games.slots` stores and step 4 executes. The list order is the order workers claim matches; bounded parallel execution may finish matches in a different order. It is deterministic for a given input: the same match design and roster always produce the same ordered list of games with the same count, whether `seeds` is explicit or empty. Only the seed values differ by mode: an explicit list reproduces the same seeds on a re-run, while an empty list has the scheduler draw a fresh set of seeds for that match at trigger time.
 
 ## Balancing rules
 

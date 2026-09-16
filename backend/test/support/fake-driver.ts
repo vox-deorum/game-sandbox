@@ -13,6 +13,7 @@
 import type {
   ExecutionDriver,
   ExitInfo,
+  HostResources,
   ImageRef,
   ImageSpec,
   LaunchSpec,
@@ -173,6 +174,17 @@ export class FakeDriver implements ExecutionDriver {
   readonly removedImages: string[] = []
   /** Every {@link releaseSessionOverlay} session-overlay ref, in order (non-session refs no-op). */
   readonly releasedSessionOverlays: string[] = []
+
+  constructor(
+    private readonly hostResources: HostResources = {
+      cpuCount: 2,
+      memoryBytes: 8 * 1024 ** 3,
+    },
+  ) {}
+
+  getHostResources(): Promise<HostResources> {
+    return Promise.resolve({ ...this.hostResources })
+  }
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
     this.imageRequests.push(spec)

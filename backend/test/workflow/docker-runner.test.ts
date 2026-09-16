@@ -228,18 +228,31 @@ function makeRunner(
     stepping?: 'sequential' | 'simultaneous'
     environments?: EnvironmentRegistry
     source?: SubmissionSource
+    sandbox?: WorkflowRunnerDeps['sandbox']
+    leaderboardConcurrency?: number | null
+    omitLeaderboardConcurrency?: boolean
   } = {},
 ): RunnerHandle {
-  const { playerCount, stepping, environments, source, ...runnerOptions } = options
+  const {
+    playerCount,
+    stepping,
+    environments,
+    source,
+    sandbox = { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
+    leaderboardConcurrency = 1,
+    omitLeaderboardConcurrency = false,
+    ...runnerOptions
+  } = options
   const runner = createWorkflowRunner({
     driver,
     storage,
     environments: environments ?? makeEnvironments(playerCount, stepping),
     source: source ?? unusedSource,
     snapshots: unusedSnapshots,
-    sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256, pids: 512 },
+    sandbox,
     recordingsDir: './data/recordings',
     imagePolicy: 'reuse',
+    ...(omitLeaderboardConcurrency ? {} : { leaderboardConcurrency }),
     ...runnerOptions,
   })
   return { driver, storage, runner }
@@ -503,6 +516,16 @@ function runToTerminal(
   })
 }
 
+/** Read the frozen seed back from one fake launch. */
+function launchSeed(launch: FakeLaunch): number {
+  return (JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }).seed
+}
+
+/** Find the launch for one scheduled seed. */
+function launchForSeed(driver: FakeDriver, seed: number): FakeLaunch | undefined {
+  return driver.launches.find((launch) => launchSeed(launch) === seed)
+}
+
 describe('Docker-backed workflow runner', () => {
   let storage: Storage
 
@@ -644,7 +667,7 @@ describe('Docker-backed workflow runner', () => {
     expect(telemetryPlayers).toEqual(['player_0', 'player_2', 'player_1', 'player_3'])
     const composed = driver.imageRequests.filter((request) => request.kind === 'session-overlay')
     expect(composed).toHaveLength(1)
-    // A composed session image is single-use: it is released once its game ends.
+    // The game releases its acquisition of the composed session image once it ends.
     expect(driver.releasedSessionOverlays).toEqual(['fake-image:session-overlay:deps-v1'])
     const [composedImage] = composed
     expect(composedImage?.kind === 'session-overlay' ? composedImage.seats : []).toEqual([
@@ -1266,6 +1289,343 @@ describe('Docker-backed workflow runner', () => {
     expect(recordings.every((r) => r.termination_reason === 'terminated')).toBe(true)
 
     expect((await storage.getLatestCompletedRun(run.season_id))?.id).toBe(run.id)
+  })
+
+  it.each([
+    { label: 'an explicit override', cpuCount: 1, concurrency: 3, omit: false, expected: 3 },
+    {
+      label: 'the omitted default on an odd CPU count',
+      cpuCount: 5,
+      concurrency: null,
+      omit: true,
+      expected: 2,
+    },
+    {
+      label: 'a null default on one CPU',
+      cpuCount: 1,
+      concurrency: null,
+      omit: false,
+      expected: 1,
+    },
+  ])('bounds active games with $label', async ({ cpuCount, concurrency, omit, expected }) => {
+    const driver = new FakeDriver({ cpuCount, memoryBytes: 8 * 1024 ** 3 })
+    const handle = makeRunner(storage, driver, {
+      leaderboardConcurrency: concurrency,
+      omitLeaderboardConcurrency: omit,
+    })
+    const run = await makeRun(storage, [
+      naiveGame(0, 10),
+      naiveGame(1, 11),
+      naiveGame(2, 12),
+      naiveGame(3, 13),
+    ])
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(expected))
+    await Promise.resolve()
+    expect(driver.launches).toHaveLength(expected)
+
+    handle.runner.cancel(run.id)
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+    expect(driver.launches).toHaveLength(expected)
+    expect(driver.launches.every((launch) => launch.process.killGraceMs.length === 1)).toBe(true)
+  })
+
+  it('caps concurrency with the full wide-layout memory quota', async () => {
+    const driver = new FakeDriver({ cpuCount: 16, memoryBytes: 2 * 1024 ** 3 })
+    const handle = makeRunner(storage, driver, {
+      environments: makeWideEnvironments(),
+      source: wideSource,
+      leaderboardConcurrency: 8,
+    })
+    const seats: AgentRef[] = [
+      { kind: 'builtin', name: 'naive' },
+      { kind: 'builtin', name: 'naive' },
+    ]
+    const run = await makeRun(
+      storage,
+      [0, 1, 2].map((gameIndex) => ({
+        match_index: 0,
+        game_index: gameIndex,
+        seed: gameIndex + 1,
+        seats,
+        seat_plan: 'partnership',
+      })),
+      {
+        envId: WIDE_ENV_ID,
+        parameters: { seat_plan: 'partnership' },
+        llmPolicy: disabledLlmPolicy(),
+      },
+    )
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(1))
+    await Promise.resolve()
+    expect(driver.launches).toHaveLength(1)
+
+    handle.runner.cancel(run.id)
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+  })
+
+  it('caps ordinary games with half of host memory', async () => {
+    const driver = new FakeDriver({ cpuCount: 16, memoryBytes: 2 * 1024 ** 3 })
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 8 })
+    const run = await makeRun(storage, [naiveGame(0), naiveGame(1), naiveGame(2), naiveGame(3)])
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    await Promise.resolve()
+    expect(driver.launches).toHaveLength(2)
+
+    handle.runner.cancel(run.id)
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+  })
+
+  it('claims games in order while allowing them to finish out of order', async () => {
+    const driver = new FakeDriver({ cpuCount: 8, memoryBytes: 8 * 1024 ** 3 })
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    expect(driver.launches.map(launchSeed).sort((left, right) => left - right)).toEqual([10, 11])
+
+    const second = launchForSeed(driver, 11)
+    if (second === undefined) throw new Error('second concurrent launch was not recorded')
+    emitRecording(second.process, { seed: 11 })
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(3))
+    const third = launchForSeed(driver, 12)
+    const first = launchForSeed(driver, 10)
+    if (third === undefined || first === undefined) throw new Error('expected three launches')
+    emitRecording(third.process, { seed: 12 })
+    emitRecording(first.process, { seed: 10 })
+
+    const { events, status } = await terminal
+    expect(status).toBe('completed')
+    expect(
+      events.flatMap((event) =>
+        event.type === 'game_status' && event.status === 'completed' ? [event.game_index] : [],
+      ),
+    ).toEqual([1, 2, 0])
+  })
+
+  it('keeps queued runs serial while games within one run overlap', async () => {
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const firstRun = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11)])
+    const secondRun = await makeRun(storage, [naiveGame(0, 99)])
+
+    const firstTerminal = runToTerminal(handle, firstRun.id)
+    const secondTerminal = runToTerminal(handle, secondRun.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    expect(driver.launches.map(launchSeed).sort((left, right) => left - right)).toEqual([10, 11])
+
+    for (const launch of driver.launches) {
+      emitRecording(launch.process, JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number })
+    }
+    await expect(firstTerminal).resolves.toMatchObject({ status: 'completed' })
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(3))
+    const queuedLaunch = driver.launches[2]
+    if (queuedLaunch === undefined) throw new Error('queued run did not launch')
+    expect(launchSeed(queuedLaunch)).toBe(99)
+    emitRecording(queuedLaunch.process, { seed: 99 })
+    await expect(secondTerminal).resolves.toMatchObject({ status: 'completed' })
+  })
+
+  it('keeps sibling workers running after an ordinary game failure', async () => {
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    const first = launchForSeed(driver, 10)
+    if (first === undefined) throw new Error('first launch was not recorded')
+    emitRecording(first.process, { seed: 10 }, { omitHeader: true })
+
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(3))
+    const second = launchForSeed(driver, 11)
+    const third = launchForSeed(driver, 12)
+    if (second === undefined || third === undefined) throw new Error('expected three launches')
+    expect(second.process.killGraceMs).toEqual([])
+    emitRecording(second.process, { seed: 11 })
+    emitRecording(third.process, { seed: 12 })
+
+    await expect(terminal).resolves.toMatchObject({ status: 'completed' })
+    expect((await storage.listRunGames(run.id)).map((game) => game.status)).toEqual([
+      'failed',
+      'completed',
+      'completed',
+    ])
+  })
+
+  it('stops a delayed sibling launch after a fatal worker error and drains before failing', async () => {
+    const driver = new FakeDriver()
+    let markDelayedLaunch = (): void => {}
+    const delayedLaunch = new Promise<void>((resolve) => {
+      markDelayedLaunch = resolve
+    })
+    let releaseDelayedLaunch = (): void => {}
+    const delayedLaunchBarrier = new Promise<void>((resolve) => {
+      releaseDelayedLaunch = resolve
+    })
+    const immediateLaunch = driver.launch.bind(driver)
+    driver.launch = async (spec) => {
+      const process = await immediateLaunch(spec)
+      const config = JSON.parse(spec.argv[0] ?? '{}') as { seed: number }
+      if (config.seed === 11) {
+        markDelayedLaunch()
+        await delayedLaunchBarrier
+      }
+      return process
+    }
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+    const games = await storage.listRunGames(run.id)
+    const fatalGameId = games.find((game) => game.game_index === 0)?.id
+    const recordGameResult = storage.recordGameResult.bind(storage)
+    storage.recordGameResult = (input) => {
+      if (input.game_id === fatalGameId) throw new Error('synthetic result persistence failure')
+      return recordGameResult(input)
+    }
+
+    const terminal = runToTerminal(handle, run.id)
+    await delayedLaunch
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    const first = launchForSeed(driver, 10)
+    const delayed = launchForSeed(driver, 11)
+    if (first === undefined || delayed === undefined) throw new Error('expected two launches')
+    emitRecording(first.process, { seed: 10 })
+    await vi.waitFor(async () =>
+      expect((await storage.listRunGames(run.id))[0]?.status).toBe('failed'),
+    )
+
+    let terminalSettled = false
+    void terminal.then(() => {
+      terminalSettled = true
+    })
+    await Promise.resolve()
+    expect(terminalSettled).toBe(false)
+
+    releaseDelayedLaunch()
+    await expect(terminal).resolves.toMatchObject({ status: 'failed' })
+    expect(delayed.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
+    expect(driver.launches).toHaveLength(2)
+    expect((await storage.listRunGames(run.id)).map((game) => game.status)).toEqual([
+      'failed',
+      'cancelled',
+      'cancelled',
+    ])
+  })
+
+  it('attempts image release and awaits it after process cleanup fails', async () => {
+    const driver = new FakeDriver()
+    driver.ensureImage = () => Promise.resolve({ ref: 'fake-session-overlay:cleanup-test' })
+    let cleanupAttempts = 0
+    driver.onLaunch = (launch): void => {
+      launch.process.kill = () => {
+        cleanupAttempts += 1
+        return Promise.reject(undefined)
+      }
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config)
+    }
+    let markReleaseStarted = (): void => {}
+    const releaseStarted = new Promise<void>((resolve) => {
+      markReleaseStarted = resolve
+    })
+    let finishRelease = (): void => {}
+    const releaseBarrier = new Promise<void>((resolve) => {
+      finishRelease = resolve
+    })
+    const immediateRelease = driver.releaseSessionOverlay.bind(driver)
+    driver.releaseSessionOverlay = async (ref) => {
+      await immediateRelease(ref)
+      markReleaseStarted()
+      await releaseBarrier
+    }
+    const handle = makeRunner(storage, driver)
+    const run = await makeRun(storage, [naiveGame(0)])
+
+    const terminal = runToTerminal(handle, run.id)
+    await releaseStarted
+    let terminalSettled = false
+    void terminal.then(() => {
+      terminalSettled = true
+    })
+    await Promise.resolve()
+    expect(terminalSettled).toBe(false)
+
+    finishRelease()
+    await expect(terminal).resolves.toMatchObject({ status: 'failed' })
+    expect(cleanupAttempts).toBe(1)
+    expect(driver.releasedSessionOverlays).toEqual(['fake-session-overlay:cleanup-test'])
+    expect((await storage.listRunGames(run.id))[0]?.status).toBe('failed')
+  })
+
+  it('stops every sibling when one process kill throws synchronously', async () => {
+    const driver = new FakeDriver()
+    let throwingKillAttempts = 0
+    driver.onLaunch = (launch): void => {
+      if (launchSeed(launch) === 10) {
+        launch.process.kill = () => {
+          throwingKillAttempts += 1
+          // Model a driver that did stop the process but throws while reporting cleanup. The worker
+          // can then drain, and the test isolates whether sibling cleanup was still attempted.
+          launch.process.finish({ code: 137, oomKilled: false })
+          throw new Error('synthetic synchronous kill failure')
+        }
+      }
+    }
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 2 })
+    const run = await makeRun(storage, [naiveGame(0, 10), naiveGame(1, 11), naiveGame(2, 12)])
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    const sibling = launchForSeed(driver, 11)
+    if (sibling === undefined) throw new Error('sibling launch was not recorded')
+
+    handle.runner.cancel(run.id)
+    await expect(terminal).resolves.toMatchObject({ status: 'failed' })
+    expect(throwingKillAttempts).toBe(1)
+    expect(sibling.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
+    expect(driver.launches).toHaveLength(2)
+  })
+
+  it.each([
+    {
+      label: 'an invalid CPU count',
+      driver: new FakeDriver({ cpuCount: 0, memoryBytes: 8 * 1024 ** 3 }),
+      options: { leaderboardConcurrency: null },
+      error: /cpuCount.*positive integer/,
+    },
+    {
+      label: 'an invalid concurrency override',
+      driver: new FakeDriver(),
+      options: { leaderboardConcurrency: 0 },
+      error: /concurrency override.*positive integer/,
+    },
+    {
+      label: 'an invalid memory total',
+      driver: new FakeDriver({ cpuCount: 8, memoryBytes: Number.NaN }),
+      options: { leaderboardConcurrency: null },
+      error: /memoryBytes.*positive integer/,
+    },
+    {
+      label: 'no room in the half-host memory budget',
+      driver: new FakeDriver({ cpuCount: 8, memoryBytes: 512 * 1024 ** 2 }),
+      options: { leaderboardConcurrency: 4 },
+      error: /memory budget cannot fit one/,
+    },
+  ])('fails before launch for $label', async ({ driver, options, error }) => {
+    const handle = makeRunner(storage, driver, options)
+    const run = await makeRun(storage, [naiveGame(0)])
+
+    const { status } = await runToTerminal(handle, run.id)
+
+    expect(status).toBe('failed')
+    expect(driver.launches).toEqual([])
+    expect((await storage.getRun(run.id))?.error).toMatch(error)
   })
 
   it('starts work enqueued while the previous pump transitions to idle', async () => {
@@ -1937,16 +2297,14 @@ describe('Docker-backed workflow runner', () => {
       officialGrantIssuer: issuer,
       officialTelemetry: emptyOfficialTelemetry,
       llmInternalPort: 9472,
+      leaderboardConcurrency: 2,
     })
-    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
-    let markLaunched = (): void => {}
-    const launched = new Promise<void>((resolve) => {
-      markLaunched = resolve
+    const run = await makeRun(storage, [naiveGame(0), naiveGame(1)], {
+      llmPolicy: enabledLlmPolicy(),
     })
-    handle.driver.onLaunch = () => markLaunched()
 
     const terminal = runToTerminal(handle, run.id)
-    await launched
+    await vi.waitFor(() => expect(handle.driver.launches).toHaveLength(2))
     const shutdown = handle.runner.shutdown()
     await revocationStarted
     let shutdownSettled = false
@@ -1959,7 +2317,10 @@ describe('Docker-backed workflow runner', () => {
 
     releaseRevocation()
     await shutdown
-    expect(handle.driver.lastLaunch()?.process.killGraceMs).toEqual([DEFAULT_KILL_GRACE_MS])
+    expect(handle.driver.launches.map((launch) => launch.process.killGraceMs)).toEqual([
+      [DEFAULT_KILL_GRACE_MS],
+      [DEFAULT_KILL_GRACE_MS],
+    ])
     await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
   })
 

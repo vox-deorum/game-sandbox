@@ -176,6 +176,7 @@ async function main(): Promise<void> {
   // process, so an abrupt stop never leaves per-player LLM keys on disk.
   await removeAllLlmKeysFiles(resolve(config.dataDir, 'llm-keys'))
   const workflowRunner = createWorkflowRunner({
+    leaderboardConcurrency: config.leaderboardConcurrency,
     driver,
     storage,
     environments,

@@ -169,6 +169,24 @@ describe('loadConfig', () => {
     expect(() => load({ EXECUTION_DRIVER: 'kubernetes' })).toThrow(/EXECUTION_DRIVER/)
   })
 
+  it('leaves leaderboard concurrency automatic unless a positive count is supplied', () => {
+    expect(load({ LEADERBOARD_CONCURRENCY: undefined }).leaderboardConcurrency).toBeNull()
+    expect(load({ LEADERBOARD_CONCURRENCY: '' }).leaderboardConcurrency).toBeNull()
+    expect(load({ LEADERBOARD_CONCURRENCY: '1' }).leaderboardConcurrency).toBe(1)
+    expect(load({ LEADERBOARD_CONCURRENCY: '8' }).leaderboardConcurrency).toBe(8)
+  })
+
+  it.each([
+    '0',
+    '-1',
+    '1.5',
+    'NaN',
+    'Infinity',
+    'many',
+  ])('rejects invalid leaderboard concurrency: %s', (value) => {
+    expect(() => load({ LEADERBOARD_CONCURRENCY: value })).toThrow(/LEADERBOARD_CONCURRENCY/)
+  })
+
   it('rejects a non-integer port', () => {
     expect(() => load({ PORT: 'eighty-eighty' })).toThrow(/PORT/)
   })

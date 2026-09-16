@@ -35,6 +35,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `LOAD_LOCAL_ENV` | `true` | Whether the machine-local Git-ignored `.env` is loaded. `false` skips it entirely, so a launcher (such as the browser e2e suite) can boot immune to a deployment's `.env` left in the tree. |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no viewer in scripted mode, or no owner socket in human mode |
 | `SESSION_MAX_DURATION_MS` | unset | Optional positive chargeable-duration override. When unset, each session derives its limit from its pace and episode rules. |
+| `LEADERBOARD_CONCURRENCY` | half of Docker's CPUs, rounded down, minimum `1` | Maximum simultaneous matches within one leaderboard run. Unset or empty selects the automatic count. A positive integer overrides it, but the memory ceiling always applies. |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
 | `SANDBOX_MEMORY_MB` | `512` | Base session memory quota |
 | `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |
@@ -42,6 +43,8 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SANDBOX_PIDS_LIMIT` | `512` | Per-container pid ceiling, so a fork bomb cannot exhaust the shared host pid table |
 
 `LOCAL_HTTPS_PORT` is a Docker setup and Compose value, not a backend listener. It defaults to `8443`, cannot use the public HTTPS port `443`, and publishes the proxy's local HTTPS listener on `127.0.0.1` only. [Run the app in Docker](docker.md) describes the two proxy listeners.
+
+Leaderboard runs read Docker's CPU count and total RAM when execution starts, including Docker Desktop's VM capacity. Each match reserves its full sandbox quota: `SANDBOX_MEMORY_MB + SANDBOX_MEMORY_PER_PLAYER_MB × (player_count - 1)`. Concurrent match quotas may consume at most half of Docker's total RAM, even when `LEADERBOARD_CONCURRENCY` requests more. The remaining half is for the backend, image builds, LLM relays, and other activity. This fixed ceiling does not monitor currently free memory. If capacity is unavailable or invalid, the match quota is not positive, or one match cannot fit, the run fails before launching containers. Season runs remain queued one at a time. Use `LEADERBOARD_CONCURRENCY=1` to reduce timing contention with sequential matches, still subject to the memory ceiling.
 
 ## Authentication
 
@@ -121,7 +124,7 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 | `SUBMISSION_MAX_SIZE_MB` | `25` | Maximum checked-out submission source size, in MB, measured after dropping VCS history, dependency and virtual-environment directories, tool caches, compiled bytecode, and build or dist output; a submission's own `data/` directory counts. A per-season `overrides.submission_max_size_mb` takes precedence. `0` rejects every submission |
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
-| `SESSION_OVERLAY_RECLAIM_AGE_MS` | `3600000` | A session overlay younger than this is never evicted (a compose may still be mid-build); anything older is reclaimed outright |
+| `SESSION_OVERLAY_RECLAIM_AGE_MS` | `3600000` | Age threshold for reclaiming unused composed images. Active acquisitions and build intermediates remain protected; unused older images and orphaned intermediates are reclaimed. |
 
 `DATA_DIR` also contains the submission snapshot directory at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Data folders](../data/folders.md) for locations and [Backend](../runtime/backend.md) for the pipeline.
 

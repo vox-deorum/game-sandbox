@@ -18,6 +18,7 @@ import Docker from 'dockerode'
 import type { DockerDriverOptions } from '../../config/config.js'
 import type {
   ExecutionDriver,
+  HostResources,
   ImageRef,
   ImageSpec,
   LaunchSpec,
@@ -30,8 +31,10 @@ import {
   ensureOverlayImage,
   ensureSessionOverlayImage,
   listOverlayImages,
+  parseSessionOverlayTag,
   releaseSessionOverlayImage,
   removeImage,
+  sessionOverlayImageTag,
 } from './overlay.js'
 import { DockerSessionProcess } from './session-process.js'
 
@@ -51,6 +54,12 @@ const LLM_RELAY_IMAGE = 'alpine/socat:1.8.0.3'
 interface LlmNetworkResources {
   networkName: string
   cleanup: () => Promise<void>
+}
+
+interface SessionOverlayState {
+  acquisitions: number
+  building: boolean
+  image: Promise<ImageRef>
 }
 
 /** Whether a process with this id currently exists, so its containers are not orphans yet. */
@@ -136,12 +145,19 @@ export function resolveLlmListenHost(
 
 export class DockerDriver implements ExecutionDriver {
   private relayImageReady: Promise<void> | undefined
+  private readonly sessionOverlayStates = new Map<string, SessionOverlayState>()
+  private readonly sessionOverlayLocks = new Map<string, Promise<void>>()
 
   constructor(
     private readonly docker: Docker,
     private readonly options: DockerDriverOptions,
     private readonly llmInternalPort?: number,
   ) {}
+
+  async getHostResources(): Promise<HostResources> {
+    const info = await this.docker.info()
+    return { cpuCount: info.NCPU, memoryBytes: info.MemTotal }
+  }
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
     const { imageTagPrefix, imagePolicy } = this.options
@@ -167,14 +183,7 @@ export class DockerDriver implements ExecutionDriver {
     }
     // A composed multi-agent session image: one COPY chained per submitted seat, each
     // into its own per-seat directory (see ensureSessionOverlayImage).
-    return ensureSessionOverlayImage(
-      this.docker,
-      imageTagPrefix,
-      imagePolicy,
-      overlayBuildTimeoutMs,
-      baseTag,
-      spec,
-    )
+    return this.acquireSessionOverlay(baseTag, spec)
   }
 
   /** Enumerate the overlay images this driver manages, for the Stage 5.4 eviction sweep. */
@@ -184,12 +193,126 @@ export class DockerDriver implements ExecutionDriver {
 
   /** Remove one image by ref, tolerating an already-absent image. */
   removeImage(ref: string): Promise<void> {
-    return removeImage(this.docker, ref)
+    const overlay = this.sessionOverlayFamily(ref)
+    if (overlay === undefined) {
+      return removeImage(this.docker, ref)
+    }
+    return this.withSessionOverlayLock(overlay.family, async () => {
+      const state = this.sessionOverlayStates.get(overlay.family)
+      if (state !== undefined && (!overlay.staged || state.building)) {
+        return
+      }
+      await removeImage(this.docker, ref)
+    })
   }
 
   /** Release a composed session-overlay image once its session ends; a no-op for any other ref. */
   releaseSessionOverlay(ref: string): Promise<void> {
-    return releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+    const parsed = parseSessionOverlayTag(this.options.imageTagPrefix, ref)
+    if (parsed === null || parsed.staged) {
+      return Promise.resolve()
+    }
+    return this.withSessionOverlayLock(ref, async () => {
+      const state = this.sessionOverlayStates.get(ref)
+      if (state === undefined) {
+        await releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+        return
+      }
+      if (state.acquisitions > 1) {
+        state.acquisitions -= 1
+        return
+      }
+      try {
+        await releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+      } finally {
+        if (this.sessionOverlayStates.get(ref) === state) {
+          this.sessionOverlayStates.delete(ref)
+        }
+      }
+    })
+  }
+
+  /**
+   * Acquire one reference to a composed image. Identical concurrent requests share one build, and
+   * the state remains present until every successful caller releases its reference.
+   */
+  private async acquireSessionOverlay(
+    baseTag: string,
+    spec: Extract<ImageSpec, { kind: 'session-overlay' }>,
+  ): Promise<ImageRef> {
+    const tag = sessionOverlayImageTag(this.options.imageTagPrefix, spec.depsVersion, spec.seats)
+    let state!: SessionOverlayState
+    await this.withSessionOverlayLock(tag, () => {
+      const active = this.sessionOverlayStates.get(tag)
+      if (active !== undefined) {
+        active.acquisitions += 1
+        state = active
+        return Promise.resolve()
+      }
+      state = {
+        acquisitions: 1,
+        building: true,
+        image: ensureSessionOverlayImage(
+          this.docker,
+          this.options.imageTagPrefix,
+          this.options.imagePolicy,
+          this.options.overlayBuildTimeoutMs,
+          baseTag,
+          spec,
+        ),
+      }
+      this.sessionOverlayStates.set(tag, state)
+      return Promise.resolve()
+    })
+
+    try {
+      const image = await state.image
+      await this.withSessionOverlayLock(tag, () => {
+        if (this.sessionOverlayStates.get(tag) === state) {
+          state.building = false
+        }
+        return Promise.resolve()
+      })
+      return image
+    } catch (error) {
+      await this.withSessionOverlayLock(tag, () => {
+        if (this.sessionOverlayStates.get(tag) === state) {
+          this.sessionOverlayStates.delete(tag)
+        }
+        return Promise.resolve()
+      })
+      throw error
+    }
+  }
+
+  /** Map a final or scratch tag to the final composition tag that owns its lifecycle. */
+  private sessionOverlayFamily(ref: string): { family: string; staged: boolean } | undefined {
+    const parsed = parseSessionOverlayTag(this.options.imageTagPrefix, ref)
+    if (parsed === null) {
+      return undefined
+    }
+    return {
+      family: parsed.staged ? ref.replace(/-stage\d+$/, '') : ref,
+      staged: parsed.staged,
+    }
+  }
+
+  /** Serialize acquisition and deletion decisions for one composed-image tag family. */
+  private async withSessionOverlayLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.sessionOverlayLocks.get(key) ?? Promise.resolve()
+    const result = previous.catch(() => undefined).then(task)
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.sessionOverlayLocks.set(key, tail)
+    try {
+      return await result
+    } finally {
+      if (this.sessionOverlayLocks.get(key) === tail) {
+        this.sessionOverlayLocks.delete(key)
+      }
+    }
   }
 
   async launch(spec: LaunchSpec): Promise<SessionProcess> {

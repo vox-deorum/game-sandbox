@@ -174,6 +174,8 @@ export interface Config {
   sessionIdleTimeoutMs: number
   /** Optional deployment-wide wall-clock backstop, otherwise derived from the environment. */
   sessionMaxDurationMs: number | null
+  /** Maximum simultaneous leaderboard matches; null derives half of Docker's CPU count. */
+  leaderboardConcurrency: number | null
   /** Retention window in days: an unpinned recording older than this is swept. */
   recordingRetentionDays: number
   /** Per-user recording quota; oldest-unpinned-first eviction brings a user back within it. */
@@ -189,11 +191,8 @@ export interface Config {
   /** How often the overlay-image sweep runs (it also runs at startup and after each overlay build). */
   overlayImageSweepIntervalMs: number
   /**
-   * A composed session overlay younger than this is never evicted: it may be the image a session is
-   * composing at this instant, so evicting it would break the compose-to-launch gap. The orchestrator
-   * and workflow runner release a composed image on every path once its session ends, so anything
-   * older than this window is necessarily a release that failed, crashed, or never ran, and the sweep
-   * reclaims it outright — age alone forces its eviction.
+   * Age threshold for reclaiming unused composed images. Active acquisitions and builds remain
+   * protected by the driver regardless of age; the final release normally removes the image.
    */
   sessionOverlayReclaimAgeMs: number
   /**
@@ -719,6 +718,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     submissionsDir: join(dataDir, 'submissions'),
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS'),
     sessionMaxDurationMs: optionalPositiveIntVar(env, 'SESSION_MAX_DURATION_MS'),
+    leaderboardConcurrency: optionalPositiveIntVar(env, 'LEADERBOARD_CONCURRENCY'),
     recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS'),
     recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA'),
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS'),
