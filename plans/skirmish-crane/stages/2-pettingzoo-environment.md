@@ -31,7 +31,7 @@ The mask carries one binary vector per component. The stay and none bits are alw
 
 ### Observation
 
-Declared exactly as the spec's table: positions as `{"q", "r"}` Dicts, `battlefield.side` plus the square `tiles[r][q]` array with terrain void outside the hex field, seven-tile zone Dicts, rosters, resolved parameters, and no charging field. Spaces are built once from the resolved parameters and never change within an episode.
+Declared exactly as the spec's table: positions as `{"q", "r"}` Dicts, `battlefield.side` plus the square `tiles[r][q]` array with terrain void outside the hex field, seven-tile zone Dicts, rosters, resolved parameters, and no charging field. Each `visible_units` record includes `has_acted`, which is false at round start and becomes true after the visible unit completes its activation, including a stay order. It resets at the next round and does not expose future activation order. Spaces are built once from the resolved parameters and never change within an episode.
 
 Gymnasium `Text` spaces have no production precedent in this repo, so a small spike test lands first: it pins `contains()` behavior, the charset, and JSON round-trips for every emitted string field before the full observation is assembled. If Text proves unusable, the fix is an observation-schema revision to the spec, which goes back to the owner before any deviation.
 
@@ -86,6 +86,7 @@ Under `environments/skirmish_crane/tests/`, mirroring the shared conformance sui
 - PettingZoo `api_test` (with the known 1211 tolerance) at both seat plans and at parameter extremes, `observation_space.contains()` on every turn of full episodes, `action_mask_problems` on every emitted mask, and strict JSON round-trips with `allow_nan=False`.
 - The Text-space spike, first.
 - Emitted masks agree with the engine: a sampled set of masked-1 paths walk successfully, masked-0 paths and targets are rejected by `env.step()`, and the stay and none bits are always 1.
+- Perception reports `has_acted` correctly for visible allies and enemies before and after activation, including stay orders, and resets it at the next round without exposing the remaining activation order.
 - Dead-step choreography, complete final results for all of `possible_agents`, and the truncation path at a small round_cap.
 - Seeded golden rollouts at both plans: same seed and scripted actions produce identical recordings.
 - The recording-size test: a full-variant 6000-tick army episode through `run_episode`, using the season field extent of 10 and the shape pinned above, stays at or under 6.5 MiB (6,815,744 bytes). Its header stays below 16 KiB.

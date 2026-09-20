@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from . import me
 
 if TYPE_CHECKING:
-    from sandbox.observation_types import AxialPosition, SkirmishObservation, VisibleUnit, Zone
+    from sandbox.observation_types import AxialPosition, SkirmishObservation, UnitSummary, Zone
 
 __all__ = ["at", "occupants", "zones"]
 
@@ -35,14 +35,14 @@ def at(observation: SkirmishObservation, position: AxialPosition) -> Zone | None
     return None
 
 
-def occupants(observation: SkirmishObservation, area: Zone) -> list[VisibleUnit]:
+def occupants(observation: SkirmishObservation, area: Zone) -> list[UnitSummary]:
     """Return the units standing in ``area``, your own unit first when it is one of them.
 
     A unit you cannot see is simply absent, so an empty result here is not proof the zone is
     free.
     """
     own = observation["observation"]["self"]
-    found: list[VisibleUnit] = []
+    found: list[UnitSummary] = []
     if _covers(area, own["position"]):
         found.append(
             {

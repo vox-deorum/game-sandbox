@@ -82,10 +82,10 @@ The unit's observation identifies every walkable path and every nameable target,
 At activation a unit receives:
 
 - Itself: id, type, position, hit points, and movement points.
-- Every unit within its vision radius, friend or enemy: id, side, type, position, and hit points.
+- Every unit within its vision radius, friend or enemy: id, side, type, position, hit points, and whether it has completed its activation in the current round.
 - The round number, and both sides' capture scores when the capture variant is on.
 
-This observation is the information available when the unit selects its order. Standing knowledge, available to every unit: the full generated battlefield, both sides' rosters, and the season's parameter values. Anything beyond vision travels by message; anything about the past, including messages received after a prior order, lives in that unit's own code.
+For each visible unit, `has_acted` is false at round start and becomes true after that unit completes its activation, including a stay order. It resets at the next round. This reveals no future activation order. This observation is the information available when the unit selects its order. Standing knowledge, available to every unit: the full generated battlefield, both sides' rosters, and the season's parameter values. Anything beyond vision travels by message; anything about the past, including messages received after a prior order, lives in that unit's own code.
 
 ## Variants
 

@@ -31,7 +31,12 @@ from skirmish_crane.engine import Activation, Unit
 from skirmish_crane.env import FORWARD_DIRECTION, IllegalMoveError, default_action, make_env
 from skirmish_crane.hexes import DIRECTIONS
 from skirmish_crane.naive import Agent, _decode_path, _distance, _end
-from skirmish_crane.observation_types import SelfUnit, SkirmishObservation, SkirmishObservationData
+from skirmish_crane.observation_types import (
+    SelfUnit,
+    SkirmishObservation,
+    SkirmishObservationData,
+    VisibleUnit,
+)
 from skirmish_crane.overlay import OVERLAY_VERSION, decode_overlay, extract_overlay, extract_overlay_static
 from skirmish_crane.paths import MAX_PATH_ID, MAX_PATH_STEPS, decode_path, encode_path
 from skirmish_crane.scoring import Result
@@ -185,6 +190,8 @@ def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip()
     state = observation["observation"]
     assert set(state) == set(SkirmishObservationData.__annotations__)
     assert set(state["self"]) == set(SelfUnit.__annotations__)
+    for unit in state["visible_units"]:
+        assert set(unit) == set(VisibleUnit.__annotations__)
     strings = [state["self"]["unit_id"], state["self"]["type"], state["parameters"]["seat_plan"]]
     strings.extend(unit[field] for unit in state["visible_units"] for field in ("unit_id", "side", "type"))
     strings.extend(
@@ -201,6 +208,38 @@ def test_text_observation_fields_obey_the_declared_charset_and_json_round_trip()
     for player in env.possible_agents:
         emitted = env.observe(player)
         _assert_text_leaves(env.observation_space(player), emitted)
+    env.close()
+
+
+def test_visible_units_report_completed_activations_and_reset_each_round() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=0)
+    match = env.unwrapped.match
+    # Keep allies and enemies in sight, with enough space to survive two stationary rounds.
+    positions = ((3, 7), (4, 7), (5, 7), (9, 7), (10, 7), (11, 7))
+    for unit, position in zip(match.units.values(), positions, strict=True):
+        unit.position = position
+    acted: set[str] = set()
+    round_number = match.round
+    while match.round < 3:
+        for player in env.agents:
+            observation = env.observe(player)
+            assert env.observation_space(player).contains(observation)
+            records = observation["observation"]["visible_units"]
+            assert records
+            for unit in records:
+                assert unit["has_acted"] is (unit["unit_id"] in acted)
+        acting_id = env.unwrapped.unit_by_agent[env.agent_selection]
+        env.step({"path": 0, "target": 0})
+        acted.add(acting_id)
+        if match.round != round_number:
+            acted.clear()
+            round_number = match.round
+    for player in env.agents:
+        assert all(not unit["has_acted"] for unit in env.observe(player)["observation"]["visible_units"])
+    env.reset(seed=0)
+    for player in env.agents:
+        assert all(not unit["has_acted"] for unit in env.observe(player)["observation"]["visible_units"])
     env.close()
 
 

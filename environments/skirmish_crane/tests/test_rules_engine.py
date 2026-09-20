@@ -584,6 +584,29 @@ def test_capture_elimination_on_the_capped_round_reports_elimination_not_round_c
     assert (match.result.reason, match.result.red, match.result.blue) == ("elimination", 100, 0)
 
 
+def test_perception_acted_flag_survives_skipped_dead_units_and_final_round() -> None:
+    match = Match(MatchConfig(seed=7, round_cap=1))
+    killer = Unit("red_footman_0", "red", "footman", (7, 7), 12)
+    victim = Unit("blue_archer_0", "blue", "archer", (8, 7), 1)
+    observer = Unit("blue_footman_0", "blue", "footman", (7, 9), 12)
+    _planted(match, (killer, victim, observer))
+
+    with pytest.raises(ValueError, match="not nameable"):
+        match.apply_order(Order(target="unseen"))
+    assert all(not unit["has_acted"] for unit in match.perception(observer.unit_id)["visible_units"])
+
+    match.apply_order(Order(target=victim.unit_id))
+    assert match.current_unit_id == observer.unit_id
+    seen = match.perception(observer.unit_id)["visible_units"]
+    assert [(unit["unit_id"], unit["has_acted"]) for unit in seen] == [(killer.unit_id, True)]
+    assert match.perception(killer.unit_id)["visible_units"][0]["has_acted"] is False
+
+    match.apply_order(Order())
+    assert match.result is not None
+    assert match.round == 1
+    assert match.perception(killer.unit_id)["visible_units"][0]["has_acted"] is True
+
+
 def test_perception_is_defensive_and_exposes_authoritative_legality() -> None:
     match = Match(MatchConfig(seed=7))
     unit_id = match.current_unit_id

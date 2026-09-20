@@ -117,7 +117,7 @@ Its schema is fixed by the resolved parameters at construction and stays constan
 | Field | Space | Content |
 | --- | --- | --- |
 | self | Dict | unit_id, type, position, hit_points, movement_points, direction |
-| visible_units | Sequence of Dicts | every other unit within vision, in player order: unit_id, side, type, position, hit_points |
+| visible_units | Sequence of Dicts | every other unit within vision, in player order: unit_id, side, type, position, hit_points, has_acted: bool |
 | round | Discrete | the current round number, from 1 through round_cap |
 | capture | Dict | scores for red and blue and the target; all 0 when the capture variant is off |
 | battlefield | Dict | side, tiles, zones; generated at reset and constant |
@@ -131,6 +131,7 @@ Its schema is fixed by the resolved parameters at construction and stays constan
 - In `battlefield.tiles`, terrain is `Text(max_length=5)` and feature is `Text(max_length=6)`, both with minimum length 1. These declared bounds do not change with wasteland: "waste" is five characters, inside the existing feature bound. battlefield.side is `Discrete(field_side + 1)` and always contains field_side; the tile array is square, so one field describes it.
 - `parameters` contains `seat_plan` as `Text(max_length=8)`; `field_extent` as `Discrete(18, start=5)`; `terrain`, `wasteland`, and `unit_abilities` as `Discrete(2)` flags; `capture_zones` as `Discrete(6)`; `capture_target` as `Discrete(9991, start=10)`; and `round_cap` as `Discrete(9901, start=100)`.
 - visible_units excludes the observing unit itself and is emitted as a tuple.
+- Each visible unit's `has_acted` is false at round start and true after that unit completes its activation in the current round, including a stay order. It resets at the next round and does not expose the future activation order.
 - movement_points always equals the type's movement stat, since a unit starts every activation with full points and an activation is a single step.
 - `direction` is the digit that heads toward the enemy side, `2` (east) for red and `5` (west) for blue, constant for the whole match.
 - `action_mask` carries one binary vector per action component, in that component's value order. The stay bit and the none bit are always 1. A player receives no later observation after it terminates.

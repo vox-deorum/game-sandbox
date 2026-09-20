@@ -35,14 +35,20 @@ class SelfUnit(TypedDict):
     direction: int  # the digit heading toward the enemy side: 2 east for red, 5 west for blue
 
 
-class VisibleUnit(TypedDict):
-    """One friendly or enemy unit currently visible to your unit."""
+class UnitSummary(TypedDict):
+    """Unit details shared by visible records and the zone occupant helper."""
 
     unit_id: str
     side: str  # "red" or "blue"
     type: str  # "footman", "archer", or "cavalry"
     position: AxialPosition
     hit_points: int
+
+
+class VisibleUnit(UnitSummary):
+    """One friendly or enemy unit currently visible to your unit."""
+
+    has_acted: bool  # whether this unit has completed its activation in the current round
 
 
 class Capture(TypedDict):

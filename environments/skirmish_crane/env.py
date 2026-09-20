@@ -153,6 +153,7 @@ class SkirmishCraneEnv(AECEnv):
                 "type": _text(7),
                 "position": position,
                 "hit_points": spaces.Discrete(13),
+                "has_acted": spaces.Discrete(2),
             }
         )
         self_unit = spaces.Dict(
@@ -361,6 +362,7 @@ class SkirmishCraneEnv(AECEnv):
                 "type": other["type"],
                 "position": self._position(other["position"]),
                 "hit_points": other["hit_points"],
+                "has_acted": other["has_acted"],
             }
             for other in visible_units
         )

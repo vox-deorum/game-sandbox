@@ -24,7 +24,7 @@ Modules are flat top-level files, because template composition (`scripts/_envs.p
 | movement.py | Path legality and walking |
 | combat.py | Strike resolution and damage |
 | scoring.py | Capture scoring, end conditions, 0-100 team scores |
-| engine.py | Rounds, activation order, order application, perception |
+| engine.py | Rounds, activation order, per-round acted state, order application, perception |
 | ascii_runner.py | The dev-only terminal runner and renderer described below |
 
 ### Hex geometry
@@ -73,7 +73,7 @@ Pure pytest under `environments/skirmish_crane/tests/`, no Docker, no DB:
 - Capture scoring: sole occupancy earns 1, contested and empty earn nothing, seven-tile membership.
 - All four end-condition score formulas pinned against hand-worked totals, elimination and capture, wins, losses, and draws, including the round-cap tiebreaks. Elimination landing on the capped round is covered in both modes, since it must score and name itself as elimination rather than as the round cap.
 - Randomness and determinism: identical replay from a fixed seed and scripted orders, battlefield generation does not consume match-play draws, and an automatic strike can affect a later match-play draw.
-- Perception: the observation advertises the same walkable paths and nameable targets the engine will accept, and every structure it hands out is immutable, so a participant cannot write back into match state.
+- Perception: the observation advertises the same walkable paths and nameable targets the engine will accept, reports whether each visible unit has completed its activation in the current round, and every structure it hands out is immutable, so a participant cannot write back into match state. The acted flag includes stay orders, resets at the next round, and does not expose the remaining activation order.
 - The messages flag is inert at this stage: orders carry no message field, and a match plays out identically with the flag on and off.
 - A killed unit is skipped for the rest of the round, while the initial rosters still list it and remain immutable.
 

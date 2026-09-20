@@ -155,7 +155,7 @@ from sandbox.crane import action, me, tile, visible
 
 `roster`, `paths`, `units`, and `zone` are available when you need them, but the first improvement does not need them. The helpers do not choose strategy or include a pathfinder, so you plan routes yourself.
 
-`act` receives one dictionary with `observation` and `action_mask` keys. The current match state is under `observation["observation"]`. Its `self` field describes your unit, `visible_units` lists other units in vision, `round` starts at 1, and `capture` holds both scores and the target. `battlefield`, both `rosters`, and `parameters` are shared match knowledge and stay constant for the match, so you may cache them from `reset`. Treat them as read-only: every player receives the same objects, so mutating them corrupts what other players observe.
+`act` receives one dictionary with `observation` and `action_mask` keys. The current match state is under `observation["observation"]`. Its `self` field describes your unit, `visible_units` lists other units in vision, `round` starts at 1, and `capture` holds both scores and the target. A visible unit's `has_acted` field says whether that unit has completed its activation in the current round. It is false at round start and resets for every unit at the next round. It does not reveal the remaining activation order. `battlefield`, both `rosters`, and `parameters` are shared match knowledge and stay constant for the match, so you may cache them from `reset`. Treat them as read-only: every player receives the same objects, so mutating them corrupts what other players observe.
 
 Units outside vision are absent, with no count of what is missing. The observation has no history and does not say who attacked you. Store information you need on that unit's own `Agent` instance. Information from beyond vision must arrive through a message. In `sandbox.observation_types`, `SkirmishObservation` and `SkirmishAction` provide the exact TypedDict shapes for your editor and type checker.
 
@@ -252,7 +252,7 @@ Target `0` names nobody. Target `i` is slot `i - 1` in the enemy roster, in play
 | Field | Content |
 | --- | --- |
 | `self` | Your `unit_id`, `type`, `position`, `hit_points`, `movement_points`, and `direction`. `movement_points` is always the type's full stat at a new activation. |
-| `visible_units` | Every other unit inside vision, in player order: `unit_id`, `side`, `type`, `position`, `hit_points`. |
+| `visible_units` | Every other unit inside vision, in player order: `unit_id`, `side`, `type`, `position`, `hit_points`, and `has_acted: bool`. `has_acted` is true after that unit completes its activation in this round, including a stay order, and false before then. It resets at the next round and does not expose future activation order. |
 | `round` | Current round, from `1` through the cap. |
 | `capture` | `red`, `blue`, and `target`, all `0` when capture is off. |
 | `battlefield` | `side`, square-array width, `tiles[r][q]` terrain-feature pairs, and seven-tile `zones` as `{"center", "tiles"}` pairs. |

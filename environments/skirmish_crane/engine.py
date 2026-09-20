@@ -198,6 +198,7 @@ class Match:
         unit = self.units[unit_id]
         visible = visible_units(unit, self.units, self.battlefield)
         walkable_paths, nameable_targets = self.legal_orders(unit_id)
+        acted = set(self.activation_order[: self.activation_index])
         return {
             "self": {
                 "unit_id": unit.unit_id,
@@ -213,6 +214,7 @@ class Match:
                     "type": other.kind,
                     "position": other.position,
                     "hit_points": other.hit_points,
+                    "has_acted": other.unit_id in acted,
                 }
                 for other in visible
             ),
