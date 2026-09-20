@@ -8,8 +8,8 @@
  * frame instead, because what they mark changes with the state.
  */
 import { stableHash } from '@renderers/base/math.js'
-import { flattenPoints } from '@renderers/base/pixi-helpers.js'
 import { clear } from '@renderers/base/PixiRenderer.js'
+import { flattenPoints } from '@renderers/base/pixi-helpers.js'
 import { type Container, Graphics } from 'pixi.js'
 
 import type { CraneAssetName } from './assets.js'

@@ -427,8 +427,14 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
 
   const position = page.locator('.replay-position')
   await expect(position).toContainText('1/')
+  // Completion marks come from this frame, including when we seek without playing earlier turns.
+  const actedUnits = async () =>
+    (await rendererHost.getAttribute('data-crane-acted-units'))?.split(',').filter(Boolean) ?? []
+  await expect.poll(async () => (await actedUnits()).length).toBe(1)
+  const firstActedUnits = await actedUnits()
   await page.getByRole('button', { name: 'Step forward' }).click()
   await expect(position).toContainText('2/')
+  await expect.poll(async () => (await actedUnits()).length).toBe(2)
 
   // The skirmish starts with six units: frame 6 opens round 2.
   for (let frame = 2; frame < 6; frame += 1) {
@@ -436,8 +442,10 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   }
   await expect(rendererHost).toHaveAttribute('data-crane-round', '2')
   await expect(rendererHost).toHaveAttribute('data-crane-round-highlighted', 'false')
+  await expect.poll(actedUnits).toEqual([])
   await page.getByRole('button', { name: 'Step back' }).click()
   await expect(rendererHost).toHaveAttribute('data-crane-round', '1')
+  await expect.poll(async () => (await actedUnits()).length).toBe(5)
   await page.getByRole('button', { name: 'Play', exact: true }).click()
   await expect(rendererHost).toHaveAttribute('data-crane-round', '2')
   await expect(rendererHost).toHaveAttribute('data-crane-round-highlighted', 'true')
@@ -462,6 +470,7 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   await stage.press('Home')
   await expect(slider).toHaveAttribute('aria-valuenow', '0')
   await expect(position).toContainText('1/')
+  await expect.poll(actedUnits).toEqual(firstActedUnits)
 })
 
 test('run and release a full-variant Crane Reach army season', { tag: '@slow' }, async ({

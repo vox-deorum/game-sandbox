@@ -17,6 +17,8 @@ python -m sandbox eval   # compare your agent with Naive
 
 **Naive** is a simple built-in opponent. It holds the other side in `watch` and `eval`, so both commands measure the same matchup. `eval` runs repeatable matches and reports your selected side's average team score. Use the same seeds before and after a change. Local results cannot predict a leaderboard result.
 
+On the board, muted units with a checkmark have already acted this round. Their normal colors return next round. Hover over a unit to inspect it; the same checkmark appears beside its name. You can still select an enemy that has acted as your attack target.
+
 ## Make an order
 
 On each activation, `act` returns one **order**: a path of at most four steps and an optional named enemy. The unit walks its whole path, then strikes once from its final tile. A minimal order is a dictionary:

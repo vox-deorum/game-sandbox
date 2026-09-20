@@ -65,6 +65,7 @@ function unitAt(
     side,
     type,
     hitPoints: 1,
+    hasActed: false,
     position: { x: q, y: r },
     tileKey,
   }

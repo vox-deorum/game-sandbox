@@ -78,6 +78,7 @@ export interface SceneUnit {
   side: 'red' | 'blue'
   type: 'footman' | 'archer' | 'cavalry'
   hitPoints: number
+  hasActed: boolean
   position: Point
   tileKey: string
 }
@@ -219,6 +220,8 @@ interface CompactOverlay {
   capture: [number, number, number]
   unitRecords: string[]
   activation: number | null
+  /** Roster-order base-64 bitmask of units that have completed an activation this round. */
+  actedRecord: string
   /** One entry per roster slot in player order: a base-64 bitmask for a living unit, null for a dead one. */
   visibilityRecords: (string | null)[]
   event: unknown[] | null
@@ -294,6 +297,10 @@ function asString(value: unknown, message: string): string {
   return value
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => key in value)
+}
+
 /**
  * Expand one visibility record into the roster slots it names. The environment writes the mask as a
  * big-endian base-64 number, so each digit carries six bits and the leftmost digit is the highest.
@@ -326,21 +333,33 @@ function decodeBase36(value: string, message: string): number {
 export function decodeOverlay(state: StepState, staticOverlay: unknown): CompactOverlay {
   const overlay = asRecord(state.overlay, 'Crane Reach state has no compact overlay')
   const staticData = asRecord(staticOverlay, 'Crane Reach header has no static overlay')
+  if (!hasExactKeys(staticData, ['k', 'p', 'b'])) {
+    throw new Error('Crane Reach static overlay has unexpected fields')
+  }
   const version = asInteger(overlay.k, 'Crane Reach overlay has an invalid version')
-  const staticVersion = asInteger(
-    staticData.k,
-    'Crane Reach static overlay has an invalid version',
-  )
+  const staticVersion = asInteger(staticData.k, 'Crane Reach static overlay has an invalid version')
   if (version !== 1 || staticVersion !== 1)
     throw new Error('Crane Reach overlay has an unsupported version')
   if ('p' in overlay || 'b' in overlay) {
     throw new Error('Crane Reach overlay must keep static battlefield data in the header')
   }
+  const dynamicFields = ['k', 'r', 'c', 'u', 'a', 'v', 'e', 'x', 'o']
+  if (!hasExactKeys(overlay, dynamicFields) && !hasExactKeys(overlay, [...dynamicFields, 'd'])) {
+    throw new Error('Crane Reach overlay has unexpected fields')
+  }
+  const acted = overlay.d
+  if ('d' in overlay && (typeof acted !== 'string' || acted.length === 0)) {
+    throw new Error('Crane Reach overlay has malformed acted state')
+  }
   const plan = asString(staticData.p, 'Crane Reach static overlay has an invalid seat plan')
   if (plan !== 'skirmish' && plan !== 'army') {
     throw new Error('Crane Reach static overlay has an unknown seat plan')
   }
+  if (typeof acted === 'string') decodeVisibilityBits(acted, rosterFor(plan).length)
   const battlefield = asRecord(staticData.b, 'Crane Reach static overlay has no battlefield')
+  if (!hasExactKeys(battlefield, ['s', 't', 'z'])) {
+    throw new Error('Crane Reach static overlay has malformed battlefield data')
+  }
   const side = asInteger(battlefield.s, 'Crane Reach overlay has an invalid battlefield side')
   const rows = battlefield.t
   const zones = battlefield.z
@@ -404,6 +423,7 @@ export function decodeOverlay(state: StepState, staticOverlay: unknown): Compact
     capture: capture as [number, number, number],
     unitRecords: units as string[],
     activation: activation as number | null,
+    actedRecord: typeof acted === 'string' ? acted : '0',
     visibilityRecords: visibility as (string | null)[],
     event: event as unknown[] | null,
     terminal,
@@ -535,6 +555,7 @@ function readUnits(
   roster: SceneRosterEntry[],
   centerFor: (q: number, r: number) => Point,
 ): SceneUnit[] {
+  const acted = decodeVisibilityBits(overlay.actedRecord, roster.length)
   return overlay.unitRecords.map((record) => {
     const playerIndex = decodeBase36(record.slice(0, 2), 'Crane Reach overlay has an invalid unit')
     const q = decodeBase36(record.slice(2, 4), 'Crane Reach overlay has an invalid unit')
@@ -547,6 +568,7 @@ function readUnits(
     return {
       ...entry,
       hitPoints,
+      hasActed: acted.has(playerIndex),
       position: centerFor(q, r),
       tileKey: tileKey(q, r),
     }

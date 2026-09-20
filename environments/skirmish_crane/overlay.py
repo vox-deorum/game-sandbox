@@ -124,6 +124,9 @@ def extract_overlay(env: Any) -> dict[str, Any]:
         )
         visibility[_player_index(env, unit.unit_id)] = _base64(bits)
     current = None if match.result is not None else match.current_unit_id
+    acted = sum(
+        1 << _player_index(env, unit_id) for unit_id in match.activation_order[: match.activation_index]
+    )
     return {
         "k": OVERLAY_VERSION,
         "r": match.round,
@@ -144,6 +147,7 @@ def extract_overlay(env: Any) -> dict[str, Any]:
             for unit in live
         ],
         "a": None if current is None else _player_index(env, current),
+        "d": _base64(acted),
         "v": visibility,
         "e": _event(env),
         "x": match.result is not None,
@@ -162,7 +166,8 @@ def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None 
     version = static["k"]
     if type(version) is not int or version != OVERLAY_VERSION:
         raise ValueError("compact overlay static data has an unsupported version")
-    if not isinstance(compact, Mapping) or set(compact) != {"k", "r", "c", "u", "a", "v", "e", "x", "o"}:
+    required_fields = {"k", "r", "c", "u", "a", "v", "e", "x", "o"}
+    if not isinstance(compact, Mapping) or set(compact) not in (required_fields, required_fields | {"d"}):
         raise ValueError("compact overlay dynamic frame has unexpected fields")
     if type(compact["k"]) is not int or compact["k"] != OVERLAY_VERSION:
         raise ValueError("compact overlay dynamic frame has an unsupported version")
@@ -226,6 +231,15 @@ def decode_overlay(compact: Mapping[str, Any], static: Mapping[str, Any] | None 
             raise ValueError("compact overlay unit record is out of range or duplicated")
         living_players.add(player)
         units.append({**roster[player], "position": {"q": q, "r": r}, "hit_points": hit_points})
+
+    acted_record = compact.get("d", "0")
+    if not isinstance(acted_record, str):
+        raise ValueError("compact overlay acted state must be a bitmask string")
+    acted_bits = _decode_number(acted_record, _BASE64)
+    if acted_bits >= 1 << player_count:
+        raise ValueError("compact overlay acted state has bits outside the roster")
+    for unit in units:
+        unit["has_acted"] = bool(acted_bits & (1 << int(unit["player"].removeprefix("player_"))))
 
     visibility_records = compact["v"]
     if not isinstance(visibility_records, list) or len(visibility_records) != player_count:

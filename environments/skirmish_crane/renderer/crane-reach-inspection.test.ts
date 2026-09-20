@@ -56,8 +56,50 @@ describe('Crane Reach HUD inspection and range', () => {
       expect(labels[0]).toBe(expected)
       expect(card?.title).toBe(expected)
       expect(labels).not.toContain(unit.unitId)
+      expect(card?.acted).toBe(unit.hasActed)
       layer.destroy({ children: true })
     }
+  })
+
+  it('adds only a completion glyph to acted board cards', () => {
+    const scene = skirmishScene(statesFrom(skirmishFixture)[0] as StepState)
+    const unit = scene.units[0]
+    if (unit === undefined) throw new Error('The skirmish fixture needs a unit')
+    const labels: string[] = []
+    const paint: HudPaint = {
+      sprite: () => null,
+      text: (value) => {
+        labels.push(value)
+        const text = new Text({ text: value })
+        Object.defineProperty(text, 'width', { value: 20 })
+        return text
+      },
+    }
+    const readyLayer = new Container()
+    const actedLayer = new Container()
+    const ready = drawInspectionCard(
+      readyLayer,
+      paint,
+      { ...scene, units: [{ ...unit, hasActed: false }] },
+      { kind: 'unit', unitId: unit.unitId },
+    )
+    const readyLabels = [...labels]
+    labels.length = 0
+    const acted = drawInspectionCard(
+      actedLayer,
+      paint,
+      { ...scene, units: [{ ...unit, hasActed: true }] },
+      { kind: 'unit', unitId: unit.unitId },
+    )
+    expect(ready?.acted).toBe(false)
+    expect(acted?.acted).toBe(true)
+    expect(labels).toEqual(readyLabels)
+    expect(labels.join(' ').toLowerCase()).not.toContain('acted')
+    const readyCard = readyLayer.children[0] as Container
+    const actedCard = actedLayer.children[0] as Container
+    expect(actedCard.children).toHaveLength(readyCard.children.length + 1)
+    readyLayer.destroy({ children: true })
+    actedLayer.destroy({ children: true })
   })
 
   it('ignores bubbling pointerout and clears hover only when the pointer leaves the unit', () => {
@@ -288,6 +330,7 @@ function projectedUnit(
       side,
       type,
       hitPoints: 10,
+      hasActed: false,
       position: point,
       tileKey: '0,0',
     },

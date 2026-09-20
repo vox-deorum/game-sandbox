@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
 import { Container } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import { FOG_CROSSFADE_MS } from './composition.js'
 import { CraneReachRenderer } from './index.js'
@@ -142,8 +142,7 @@ describe('Crane Reach event windows', () => {
       Object.assign(renderer, {
         eventSchedule: schedule,
         eventAnimating: true,
-        eventElapsedMs:
-          (schedule.movement?.endMs ?? schedule.activation.endMs) - 1,
+        eventElapsedMs: (schedule.movement?.endMs ?? schedule.activation.endMs) - 1,
         eventContacted: false,
         settleDurationMs: 0,
         settleRemainingMs: 0,

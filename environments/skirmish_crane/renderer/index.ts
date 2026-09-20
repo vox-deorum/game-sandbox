@@ -769,6 +769,7 @@ export class CraneReachRenderer extends PixiRenderer {
     }
     const level = presentationFor(scene.hexRadius, this.effectiveScale())
     this.ctx.container.dataset.cranePresentation = level
+    const actedUnitIds: string[] = []
     for (const unit of drawn) {
       let node = this.unitNodes.get(unit.unitId)
       if (node === undefined) {
@@ -782,7 +783,9 @@ export class CraneReachRenderer extends PixiRenderer {
         this.unitLayer.addChild(node.root)
       }
       drawUnit(node, unit, scene.hexRadius, level, this.textureFor)
+      if (node.actedMark.visible) actedUnitIds.push(unit.unitId)
     }
+    this.ctx.container.dataset.craneActedUnits = actedUnitIds.join(',')
   }
 
   private reconcileActivation(scene: CraneReachScene): void {
@@ -1352,6 +1355,7 @@ export class CraneReachRenderer extends PixiRenderer {
     delete this.ctx.container.dataset.craneInspectionFields
     delete this.ctx.container.dataset.craneInspectionTitle
     delete this.ctx.container.dataset.craneInspectionDetails
+    delete this.ctx.container.dataset.craneInspectionActed
     if (scene.hud.terminal !== null) {
       this.ctx.container.dataset.craneInspection = 'none'
       return
@@ -1365,6 +1369,7 @@ export class CraneReachRenderer extends PixiRenderer {
     if (card !== null) {
       this.ctx.container.dataset.craneInspectionTitle = card.title
       this.ctx.container.dataset.craneInspectionFields = card.fields
+      this.ctx.container.dataset.craneInspectionActed = String(card.acted)
       if (card.details !== null) this.ctx.container.dataset.craneInspectionDetails = card.details
     }
   }

@@ -58,6 +58,7 @@ export interface InspectionCardProbe {
   title: string
   fields: string
   details: string | null
+  acted: boolean
 }
 
 const ROSTER_TYPES: SceneUnit['type'][] = ['footman', 'archer', 'cavalry']
@@ -247,6 +248,7 @@ export function drawInspectionCard(
       titleFont: MONO,
       type: unit.type,
       currentHitPoints: unit.hitPoints,
+      acted: unit.hasActed,
       abilities: scene.hud.unitAbilities,
       tile,
     })
@@ -271,6 +273,7 @@ function drawRosterCard(
     titleFont: LATO,
     type: target.type,
     currentHitPoints: null,
+    acted: false,
     abilities: scene.hud.unitAbilities,
     tile: null,
   })
@@ -283,6 +286,7 @@ interface CardOptions {
   titleFont: string
   type: SceneUnit['type']
   currentHitPoints: number | null
+  acted: boolean
   abilities: boolean
   tile: Pick<HexTile, 'terrain' | 'feature'> | null
 }
@@ -315,6 +319,7 @@ function drawCard(layer: Container, paint: HudPaint, options: CardOptions): Insp
   )
   heading.position.set(x + 14, y + 12)
   card.addChild(heading)
+  if (options.acted) drawActedCardMark(card, x + 222, y + 25)
   for (const [index, field] of specification.fields.entries()) {
     const column = index % 2
     const row = Math.floor(index / 2)
@@ -349,7 +354,24 @@ function drawCard(layer: Container, paint: HudPaint, options: CardOptions): Insp
     title: options.title,
     fields: specification.fields.map((field) => `${field.icon}:${field.label}`).join(','),
     details: details.length === 0 ? null : details.join(','),
+    acted: options.acted,
   }
+}
+
+/** The card repeats the board's completion mark without adding a status sentence. */
+function drawActedCardMark(card: Container, x: number, y: number): void {
+  const mark = new Graphics()
+  mark
+    .moveTo(x - 8, y)
+    .lineTo(x - 2, y + 6)
+    .lineTo(x + 9, y - 8)
+    .stroke({ color: CRANE_STYLE.shadow, width: 4, cap: 'round', join: 'round' })
+  mark
+    .moveTo(x - 8, y)
+    .lineTo(x - 2, y + 6)
+    .lineTo(x + 9, y - 8)
+    .stroke({ color: CRANE_STYLE.text, width: 2, cap: 'round', join: 'round' })
+  card.addChild(mark)
 }
 
 /** Card height follows the same 24-unit rhythm as its optional context rows. */

@@ -49,6 +49,19 @@ describe('Crane Reach event transitions', () => {
     expect(roundHighlightKey(first, next, key)).toBeNull()
   })
 
+  it('keeps the completed round visible through its final event, then clears completion in the new round', () => {
+    const completedRound = armyScene(armyStates[38] as StepState)
+    const newRound = armyScene(armyStates[39] as StepState)
+
+    expect(completedRound.units.filter((unit) => unit.hasActed)).toHaveLength(39)
+    expect(
+      completedRound.units.find((unit) => unit.unitId === newRound.event?.actorId)?.hasActed,
+    ).toBe(false)
+    expect(newRound.units.some((unit) => unit.hasActed)).toBe(false)
+    expect(transitionSceneFor(completedRound, newRound, true)).toBe(completedRound)
+    expect(transitionSceneFor(completedRound, newRound, false)).toBe(newRound)
+  })
+
   it('does not highlight a mounted event, a backwards seek, or a terminal scene', () => {
     const opening = armyScene(armyStates[0] as StepState)
     const eventMount = armyScene(armyStates[1] as StepState)

@@ -158,7 +158,7 @@ The messages variant maps onto the platform messaging layer, so it changes neith
 
 The `crane-reach-field` renderer draws only from recording payloads. It reads episode-static semantic data from `ctx.header.overlay_static` at mount and dynamic semantic data from each state overlay, so live play and a replay seek produce the same frame. The header contains the battlefield and capture zones. Each dynamic overlay contains:
 
-- The round, capture scores, living units, current activation, visible-unit ids for each living player, and the most recent resolved move, attack, damage, death, and capture-score changes for optional animation.
+- The round, capture scores, living units, completed activations in the current round, current activation, visible-unit ids for each living player, and the most recent resolved move, attack, damage, death, and capture-score changes for optional animation.
 - The exact executed path id for each resolved event, allowing movement through every entered tile.
 
 The production overlay contains no observations, action masks, or legal-choice lists. `current_activation` identifies the next living player who can take a real action. PettingZoo cleanup selections never appear as activations, and `current_activation` is null only after the match ends.

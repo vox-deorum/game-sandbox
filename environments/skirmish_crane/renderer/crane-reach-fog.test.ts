@@ -12,12 +12,7 @@ import {
   visionRadius,
 } from './fog.js'
 import { hexDistance, type SceneUnit, tileCoordinate } from './scene.js'
-import {
-  armyScene,
-  armyStates,
-  skirmishScene,
-  skirmishStates,
-} from './test-helpers.js'
+import { armyScene, armyStates, skirmishScene, skirmishStates } from './test-helpers.js'
 
 const SEATS: RecordingHeader['seats'] = {
   seat_0: ['player_0', 'player_1', 'player_2'],
@@ -208,7 +203,11 @@ describe('Crane Reach fog of war', () => {
         .filter((unit) => unit.unitId !== target.unitId)
         .map((unit) =>
           unit.unitId === observer.unitId
-            ? { ...unit, tileKey: destination?.key ?? unit.tileKey, position: destination?.center ?? unit.position }
+            ? {
+                ...unit,
+                tileKey: destination?.key ?? unit.tileKey,
+                position: destination?.center ?? unit.position,
+              }
             : unit,
         ),
       visibility: new Map([[observer.playerId, new Set<string>()]]),

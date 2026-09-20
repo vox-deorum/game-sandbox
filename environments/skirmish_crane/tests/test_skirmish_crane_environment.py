@@ -648,7 +648,7 @@ def test_compact_overlay_decodes_every_state_field() -> None:
     decoded = decode_overlay(compact, static)
 
     assert compact["k"] == OVERLAY_VERSION
-    assert set(compact) == {"k", "r", "c", "u", "a", "v", "e", "x", "o"}
+    assert set(compact) == {"k", "r", "c", "u", "a", "d", "v", "e", "x", "o"}
     assert static["k"] == OVERLAY_VERSION
     assert set(static) == {"k", "p", "b"}
     # The full variant exercises every wire code the renderer has to read back.
@@ -675,6 +675,7 @@ def test_compact_overlay_decodes_every_state_field() -> None:
         assert decoded_units[unit_id]["type"] == unit.kind
         assert decoded_units[unit_id]["position"] == {"q": unit.position[0], "r": unit.position[1]}
         assert decoded_units[unit_id]["hit_points"] == unit.hit_points
+        assert decoded_units[unit_id]["has_acted"] is False
         expected_visible = tuple(
             visible.unit_id for visible in visible_units(unit, env.match.units, env.match.battlefield)
         )
@@ -685,6 +686,53 @@ def test_compact_overlay_decodes_every_state_field() -> None:
     assert decoded["event"] is None
     assert decoded["terminal"] is False
     assert decoded["outcome"] is None
+    env.close()
+
+
+def test_compact_overlay_records_acted_units_for_each_frame_and_resets_each_round() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=0)
+    first, second = env.match.activation_order[:2]
+    env.match.activation_index = 0
+    assert extract_overlay(env)["d"] == "0"
+
+    env.match.activation_index = 1
+    one_acted = decode_overlay(extract_overlay(env), extract_overlay_static(env))
+    assert {unit["unit_id"] for unit in one_acted["units"] if unit["has_acted"]} == {first}
+
+    env.match.activation_index = 2
+    two_acted = decode_overlay(extract_overlay(env), extract_overlay_static(env))
+    assert {unit["unit_id"] for unit in two_acted["units"] if unit["has_acted"]} == {first, second}
+
+    while env.match.round == 1:
+        env.step({"path": 0, "target": 0})
+    reset = decode_overlay(extract_overlay(env), extract_overlay_static(env))
+    assert reset["round"] == 2
+    assert all(not unit["has_acted"] for unit in reset["units"])
+    env.close()
+
+
+def test_compact_overlay_accepts_legacy_frames_without_acted_state_and_rejects_malformed_state() -> None:
+    env = make_env(_parameters())
+    env.reset(seed=0)
+    compact = extract_overlay(env)
+    static = extract_overlay_static(env)
+
+    legacy = {key: value for key, value in compact.items() if key != "d"}
+    assert all(not unit["has_acted"] for unit in decode_overlay(legacy, static)["units"])
+
+    compact["d"] = ""
+    with pytest.raises(ValueError, match="invalid encoded number"):
+        decode_overlay(compact, static)
+    compact["d"] = "?"
+    with pytest.raises(ValueError, match="invalid encoded number"):
+        decode_overlay(compact, static)
+    compact["d"] = None
+    with pytest.raises(ValueError, match="bitmask string"):
+        decode_overlay(compact, static)
+    compact["d"] = "10"
+    with pytest.raises(ValueError, match="outside the roster"):
+        decode_overlay(compact, static)
     env.close()
 
 

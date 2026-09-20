@@ -12,7 +12,7 @@ The HUD is information design: what a spectator needs at 40 units, in which type
 
 ### Typography
 
-Canvas typography adopts the host's families deliberately: Lato (fallback system-ui) for labels and ui-monospace for every number and identifier, including round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary. Every icon-and-text row uses one shared centerline layout in both reading directions. HUD labels use the larger 16 to 34 px scale, and inspection-card labels use 17 px type.
+Canvas typography adopts the host's families deliberately: Lato (fallback system-ui) for labels and ui-monospace for every number and identifier, including round, scores, damage, and the hover chip. The host pages already load the families; the renderer names them with fallbacks and never fetches fonts. Colors come from the step 4.1 palette: bone for primary text, faded ink for secondary. Every icon-and-text row uses one shared centerline layout in both reading directions. HUD labels use the larger 16 to 36 px scale, and inspection-card labels use 17 px type.
 
 ### Canvas layout
 
@@ -37,7 +37,7 @@ Legend, used in every mockup below: `(R)` and `(B)` are painted seal dots in cin
 
 The top and bottom strips are screen-fixed above the [step 4.3 camera](4-3-camera.md) world view. At the default fit, the full board remains visible and may extend below the sparse strips near the field edges.
 
-- Left: `ROUND` in 18 px Lato caps, faded ink, above the round number in 34 px bone mono. Both turn gilt when the displayed round advances and remain highlighted through its first activation. The live opening activation is also highlighted. Redraws preserve the highlight, the next activation clears it, and replay seeks clear it without triggering a new highlight.
+- Left: `ROUND` in 18 px Lato caps, faded ink, above the round number in 36 px bone mono. Both turn gilt when the displayed round advances and remain highlighted through its first activation. The live opening activation is also highlighted. Redraws preserve the highlight, the next activation clears it, and replay seeks clear it without triggering a new highlight.
 - Right: the capture score as a cinnabar seal dot with Red's number, an indigo seal dot with Blue's number, then `/ 200` in faded ink. Without the capture variant the right side is empty.
 - Each populated corner group has a rounded rectangular, semi-translucent night-ink field behind it. The field uses the scene backdrop color and remains fixed above the moving board.
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import '@renderers/index.js'
 import tileTypes from '../tile_types.json'
-import { CRANE_STYLE, decodeOverlay, unitCardFor } from './scene.js'
+import { CRANE_STYLE, computeScene, decodeOverlay, unitCardFor } from './scene.js'
 import {
   armyFixture,
   armyLegalityRaw,
@@ -195,6 +195,47 @@ describe('Crane Reach scene geometry and compact overlay', () => {
         skirmishStaticOverlay,
       ),
     ).toThrow('unsupported version')
+  })
+
+  it('decodes acted state per frame and treats recordings without it as legacy frames', () => {
+    const state = skirmishStates[0] as StepState
+    const overlay = state.overlay as Record<string, unknown>
+    const withActed = computeScene(
+      { ...state, overlay: { ...overlay, d: '9' } },
+      { staticOverlay: skirmishStaticOverlay },
+    )
+    expect(withActed.units.filter((unit) => unit.hasActed).map((unit) => unit.playerId)).toEqual([
+      'player_0',
+      'player_3',
+    ])
+    const legacy = computeScene(
+      {
+        ...state,
+        overlay: Object.fromEntries(Object.entries(overlay).filter(([key]) => key !== 'd')),
+      },
+      { staticOverlay: skirmishStaticOverlay },
+    )
+    expect(legacy.units.every((unit) => !unit.hasActed)).toBe(true)
+  })
+
+  it('rejects malformed or unexpected compact acted-state fields', () => {
+    const state = skirmishStates[0] as StepState
+    const overlay = state.overlay as Record<string, unknown>
+    expect(() =>
+      decodeOverlay({ ...state, overlay: { ...overlay, d: '' } }, skirmishStaticOverlay),
+    ).toThrow('malformed acted state')
+    expect(() =>
+      decodeOverlay({ ...state, overlay: { ...overlay, d: '?' } }, skirmishStaticOverlay),
+    ).toThrow('invalid visibility mask')
+    expect(() =>
+      decodeOverlay({ ...state, overlay: { ...overlay, d: '10' } }, skirmishStaticOverlay),
+    ).toThrow('outside the roster')
+    expect(() =>
+      decodeOverlay({ ...state, overlay: { ...overlay, d: null } }, skirmishStaticOverlay),
+    ).toThrow('malformed acted state')
+    expect(() =>
+      decodeOverlay({ ...state, overlay: { ...overlay, extra: true } }, skirmishStaticOverlay),
+    ).toThrow('unexpected fields')
   })
 })
 

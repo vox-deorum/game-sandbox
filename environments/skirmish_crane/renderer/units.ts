@@ -29,6 +29,7 @@ export interface UnitNode {
   body: Graphics
   artEdge: Sprite
   art: Sprite
+  actedMark: Graphics
 }
 
 /** Overrides the side colors, which the death dissolve uses to redraw a unit in dilute ink. */
@@ -68,8 +69,18 @@ export function createUnitNode(
   artEdge.anchor.set(0.5)
   const art = new Sprite()
   art.anchor.set(0.5)
-  root.addChild(shadowArt, shadow, body, artEdge, art)
-  return { root, unitId, shadowArt, shadow, body, artEdge, art }
+  const actedMark = new Graphics()
+  root.addChild(shadowArt, shadow, body, artEdge, art, actedMark)
+  return { root, unitId, shadowArt, shadow, body, artEdge, art, actedMark }
+}
+
+/** A completed activation stays legible as its side, with less saturation and a little less light. */
+export function unitPaletteFor(unit: Pick<SceneUnit, 'side' | 'hasActed'>): UnitPalette {
+  const side = unit.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue
+  const deep = unit.side === 'red' ? CRANE_STYLE.redDeep : CRANE_STYLE.blueDeep
+  return unit.hasActed
+    ? { side: mutedInk(side), deep: mutedInk(deep), gauge: CRANE_STYLE.text }
+    : { side, deep, gauge: CRANE_STYLE.text }
 }
 
 /** Redraw a unit node for the current scene at the given presentation level. */
@@ -81,8 +92,9 @@ export function drawUnit(
   textureFor: (name: CraneAssetName) => Texture | null,
   palette?: UnitPalette,
 ): void {
-  const side = palette?.side ?? (unit.side === 'red' ? CRANE_STYLE.red : CRANE_STYLE.blue)
-  const deep = palette?.deep ?? (unit.side === 'red' ? CRANE_STYLE.redDeep : CRANE_STYLE.blueDeep)
+  const colors = palette ?? unitPaletteFor(unit)
+  const side = colors.side
+  const deep = colors.deep
   const radius = Math.max(5, hexRadius * UNIT_RADIUS_FACTORS[level])
   const unitGauge = gaugeFor(unit)
   const gauge = palette === undefined ? unitGauge : { ...unitGauge, color: palette.gauge }
@@ -130,6 +142,7 @@ export function drawUnit(
       drawSengokuFigure(node.body, unit.type, radius, deep)
     }
     drawEllipseGauge(node.body, 0, groundY, radius * 0.94, radius * 0.3, gauge, deep)
+    drawActedMark(node.actedMark, radius, level, groundY, unit.hasActed && palette === undefined)
     return
   }
   if (level === 'token') {
@@ -146,10 +159,63 @@ export function drawUnit(
       drawWeaponGlyph(node.body, unit.type, radius * 0.92, CRANE_STYLE.text)
     }
     drawGauge(node.body, radius, gauge, deep)
+    drawActedMark(node.actedMark, radius, level, groundY, unit.hasActed && palette === undefined)
     return
   }
   drawCompactMark(node.body, unit.type, radius, deep)
   drawCompactGauge(node.body, unit.type, radius, gauge, deep)
+  drawActedMark(node.actedMark, radius, level, groundY, unit.hasActed && palette === undefined)
+}
+
+/** A small bone tick stays beside every presentation's base without competing with its HP gauge. */
+function drawActedMark(
+  mark: Graphics,
+  radius: number,
+  level: PresentationLevel,
+  groundY: number,
+  visible: boolean,
+): void {
+  mark.clear()
+  mark.visible = visible
+  if (!visible) return
+  // The mark starts outside the gauge's outer edge at every level, so it cannot be mistaken for HP.
+  const size = Math.max(2.3, radius * (level === 'compact' ? 0.2 : 0.22))
+  const x = radius * 1.2 + size + Math.max(1, size * 0.31)
+  const y = level === 'figure' ? groundY - radius * 0.05 : groundY + radius * 0.04
+  mark
+    .moveTo(x - size, y)
+    .lineTo(x - size * 0.2, y + size * 0.7)
+    .lineTo(x + size, y - size * 0.8)
+    .stroke({
+      color: CRANE_STYLE.shadow,
+      width: Math.max(1.5, size * 0.62),
+      cap: 'round',
+      join: 'round',
+    })
+  mark
+    .moveTo(x - size, y)
+    .lineTo(x - size * 0.2, y + size * 0.7)
+    .lineTo(x + size, y - size * 0.8)
+    .stroke({
+      color: CRANE_STYLE.text,
+      width: Math.max(1, size * 0.32),
+      cap: 'round',
+      join: 'round',
+    })
+}
+
+/** Pull a side ink toward neutral and lower its lightness without making it translucent. */
+function mutedInk(color: string): string {
+  const channels = color.match(/[\da-f]{2}/gi)?.map((channel) => Number.parseInt(channel, 16))
+  if (channels === undefined || channels.length !== 3) return color
+  const neutral = channels.reduce((sum, channel) => sum + channel, 0) / 3
+  return `#${channels
+    .map((channel) =>
+      Math.round((channel * 0.68 + neutral * 0.32) * 0.86)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`
 }
 
 function figureAsset(type: SceneUnit['type']): CraneAssetName {

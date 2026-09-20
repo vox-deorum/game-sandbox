@@ -13,14 +13,16 @@ import {
   labelRowLayout,
   presentationFor,
   TERRAIN_MARKS,
+  UNIT_RADIUS_FACTORS,
 } from './presentation.js'
 import { CRANE_STYLE } from './scene.js'
 import { armyScene, armyStates } from './test-helpers.js'
+import { createUnitNode, drawUnit, unitPaletteFor } from './units.js'
 
 describe('Crane Reach Estuary Ink presentation', () => {
   it('uses the larger round type scale and highlights both round labels together', () => {
     expect(HUD_TEXT_SIZES.roundLabel).toBe(18)
-    expect(HUD_TEXT_SIZES.roundValue).toBe(34)
+    expect(HUD_TEXT_SIZES.roundValue).toBe(36)
 
     const scene = armyScene(armyStates[39] as StepState)
     scene.hud.capture = null
@@ -47,7 +49,7 @@ describe('Crane Reach Estuary Ink presentation', () => {
     }
 
     const normal = draw(false)
-    expect(normal.map((text) => text.style.fontSize)).toEqual([18, 34])
+    expect(normal.map((text) => text.style.fontSize)).toEqual([18, 36])
     expect(normal.map((text) => text.style.fill)).toEqual([CRANE_STYLE.mutedText, CRANE_STYLE.text])
 
     const highlighted = draw(true)
@@ -108,6 +110,53 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(gaugeFor({ type: 'cavalry', hitPoints: 10 }).fraction).toBe(1)
   })
 
+  it('mutes completed unit ink while keeping the hit point gauge at full bone contrast', () => {
+    const ready = unitPaletteFor({ side: 'red', hasActed: false })
+    const acted = unitPaletteFor({ side: 'red', hasActed: true })
+    expect(ready).toEqual({
+      side: CRANE_STYLE.red,
+      deep: CRANE_STYLE.redDeep,
+      gauge: CRANE_STYLE.text,
+    })
+    expect(acted).toEqual({
+      side: '#814035',
+      deep: '#5c2b24',
+      gauge: CRANE_STYLE.text,
+    })
+  })
+
+  it('draws a completion check at every level and leaves an acted figure gauge at its damage color', () => {
+    const unit = {
+      playerId: 'player_0',
+      unitId: 'red_footman_0',
+      side: 'red' as const,
+      type: 'footman' as const,
+      hitPoints: 6,
+      hasActed: true,
+      position: { x: 0, y: 0 },
+      tileKey: '0,0',
+    }
+    for (const level of ['figure', 'token', 'compact'] as const) {
+      for (const hexRadius of [1, 30]) {
+        const node = createUnitNode(unit.unitId, null, () => false)
+        drawUnit(node, unit, hexRadius, level, () => null)
+        expect(node.root.alpha).toBe(1)
+        expect(node.actedMark.visible).toBe(true)
+        expect(graphicsColors(node.actedMark)).toEqual([
+          colorNumber(CRANE_STYLE.shadow),
+          colorNumber(CRANE_STYLE.text),
+        ])
+        const radius = Math.max(5, hexRadius * UNIT_RADIUS_FACTORS[level])
+        expect(Math.min(...graphicsPathX(node.actedMark))).toBeGreaterThan(radius * 1.16)
+        expect(graphicsColors(node.body)).toContain(colorNumber(CRANE_STYLE.hpLow))
+
+        drawUnit(node, { ...unit, hasActed: false }, hexRadius, level, () => null)
+        expect(node.actedMark.visible).toBe(false)
+        node.root.destroy({ children: true })
+      }
+    }
+  })
+
   it('lays out icon labels on one centerline in both directions', () => {
     const rightward = labelRowLayout(40, 100, 20, [30, 12], 1, 6)
     expect(rightward).toEqual({
@@ -139,3 +188,24 @@ describe('Crane Reach Estuary Ink presentation', () => {
     expect(loaded.figCavalry).toBe('stub:figCavalry')
   })
 })
+
+function graphicsColors(graphics: { context: unknown }): number[] {
+  return (
+    graphics.context as { instructions: Array<{ data: { style: { color: number } } }> }
+  ).instructions.map((instruction) => instruction.data.style.color)
+}
+
+function graphicsPathX(graphics: { context: unknown }): number[] {
+  const instructions = (
+    graphics.context as {
+      instructions: Array<{ data: { path: { instructions: Array<{ data: number[] }> } } }>
+    }
+  ).instructions
+  return instructions.flatMap((instruction) =>
+    instruction.data.path.instructions.map((path) => path.data[0] as number),
+  )
+}
+
+function colorNumber(color: string): number {
+  return Number.parseInt(color.slice(1), 16)
+}

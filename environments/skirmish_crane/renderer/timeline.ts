@@ -10,8 +10,9 @@
  *
  * `art-direction.md` describes what each beat looks like. This file decides when it happens.
  */
-import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
+
 import { clamp } from '@renderers/base/math.js'
+import { type RenderOptions, transitionScaleOf } from '@renderers/types.js'
 
 /** The natural duration of every beat, at scale 1. Presentation tuning starts here. */
 export interface CraneTiming {
