@@ -12,7 +12,7 @@ The template layer is the student contract, and its centerpiece, the helper pack
 
 ### The helper package
 
-`template/sandbox/crane/`, the surface the [environment spec](../environment.md) names, is six small namespaces a student imports individually, for example `from sandbox.crane import action, me, tile, visible`:
+`template/sandbox/crane/`, the surface the [environment spec](../environment.md) names, is seven small namespaces a student imports individually, for example `from sandbox.crane import action, me, tile, visible`:
 
 - `paths`: `encode(directions)` and `decode(path_id)`, owning the student-facing path encoding. `encode(())` returns `0`, `decode(0)` returns an empty tuple, and ids 1 through `MAX_ID` (1554, at `MAX_STEPS` 4 steps deep) round-trip to direction tuples. Invalid encoded values raise `ValueError`.
 - `action`: `move(path_id, target_id=None, observation=None)` and `stay(target_id=None, observation=None)`, returning action Dicts and resolving a target id to its enemy roster slot through the observation. `move` accepts an encoded path id. `legal_paths(observation)` and `possible_targets(observation)` are driven by the authoritative mask, never by a second implementation of the rules, and `legal_steps(observation)` narrows `legal_paths` to the single-step ids, 1 through 6.
@@ -20,6 +20,7 @@ The template layer is the student contract, and its centerpiece, the helper pack
 - `visible`: `enemies(observation)` and `allies(observation)`, the units currently in sight.
 - `roster`: `allies(observation)` and `enemies(observation)`, the two sides' full starting rosters, visible or not.
 - `tile`: hex geometry and the ground: `DIRECTIONS`, `distance(first, second)`, `neighbors(position)`, `at_path_end(position, path_id)`, `at_center(observation)`, `at_mirror(position, observation)`, `terrain_at(observation, position)`.
+- `forecast`: `from_observation(observation)`, constructing an independent initialized `SkirmishCraneEnv` from the observation alone. It uses visible `has_acted` values to skip completed activations, locally shuffles other visible units, and uses deterministic local randomness seeded at 0. It contains no unseen units and has no policy, pathfinding, search, hidden-state estimate, or extra seed argument.
 
 Deliberately no pathfinder: turning routes into legal orders is Season 2's core technique and stays student work.
 
@@ -38,7 +39,7 @@ Two, both kept internal, and `PUBLISHED_EXAMPLES` stays empty. Step 7 adds banne
 
 ## Tests
 
-- Pin tests under `template/tests/` freeze the encoding forever, now over the namespaced surface: literal vectors ([] = 0, [northeast] = 1, [northwest] = 6, [northeast, northeast] = 7, [northwest x4] = 1554) through `paths.encode`/`paths.decode`, and a full 0 through `paths.MAX_ID` round-trip against the step 1 decoder, plus invalid-value checks and the standard import probe keeping the package free of heavy imports.
+- Pin tests under `template/tests/` freeze the encoding forever, now over the namespaced surface: literal vectors ([] = 0, [northeast] = 1, [northwest] = 6, [northeast, northeast] = 7, [northwest x4] = 1554) through `paths.encode`/`paths.decode`, and a full 0 through `paths.MAX_ID` round-trip against the step 1 decoder, plus invalid-value checks and the standard import probe keeping the package free of heavy imports. Importing helpers remains light; only constructing a forecast loads the engine.
 - Reader pin tests cover the rest of the package: `tile.at_path_end` against stepwise neighbor walks over the whole id range, `tile.at_mirror`, `tile.at_center`, and `tile.terrain_at`; the `me` readers; the `roster` readers; `visible`'s partition into allies and enemies; `action.legal_steps` as the 1-through-6 subset of `action.legal_paths`; and that `visible.enemies` ids equal `action.possible_targets`.
 - Helper accessors agree with raw observations and masks while driving real environment states: `action.legal_paths` and `action.possible_targets` equal the mask bits, `action.move` and `action.stay` produce in-space, mask-legal Dicts, and target-id resolution matches the roster.
 - A `template/tests/test_episode.py` end-to-end episode test on the spades pattern, inherited by composed examples.

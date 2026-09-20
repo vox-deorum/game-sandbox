@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from sandbox.crane import action, me, paths, roster, tile, units, visible, zone
+from sandbox.crane import action, forecast, me, paths, roster, tile, units, visible, zone
 from sandbox.env import META, make_env
 from sandbox.env.skirmish_crane import engine, hexes
 from sandbox.env.skirmish_crane import paths as engine_paths
@@ -141,7 +141,8 @@ def test_importing_the_helpers_stays_light():
     # An agent imports sandbox.crane at module top, so it must not pull in the environment engine.
     # Check in a fresh interpreter, since this test process has already loaded it.
     code = (
-        "import sys; from sandbox.crane import action, me, paths, roster, tile, units, visible, zone; "
+        "import sys; "
+        "from sandbox.crane import action, forecast, me, paths, roster, tile, units, visible, zone; "
         "assert 'pettingzoo' not in sys.modules; "
         "assert 'gymnasium' not in sys.modules; "
         "assert 'numpy' not in sys.modules"
@@ -300,6 +301,54 @@ def test_occupants_omits_your_own_unit_when_it_stands_outside_the_zone():
 
 
 # -- the mask and the order it builds ---------------------------------------------------------------
+
+
+def test_forecast_helper_builds_an_independent_environment_ready_for_an_order():
+    live = make_env(resolve_parameters(META))
+    live.reset(seed=SEED)
+    source = live.observe(live.agent_selection)
+    predicted = forecast.from_observation(source)
+    assert predicted.agent_selection == live.agent_selection
+    assert me.unit_id(predicted.last()[0]) == me.unit_id(source)
+    assert set(predicted.match.units) == {
+        me.unit_id(source),
+        *(unit["unit_id"] for unit in source["observation"]["visible_units"]),
+    }
+    predicted.step(action.stay())
+    assert len(predicted.match.history) == 1
+    assert live.match.history == []
+    live.close()
+    predicted.close()
+
+
+def test_forecast_guide_agent_chooses_a_move_that_survives_the_archer_reply():
+    guide = (REPO_ROOT / "environment.md").read_text(encoding="utf-8")
+    section = guide.split("### Forecast a local future", 1)[1].split("\n## ", 1)[0]
+    example = section.split("```python\n", 1)[1].split("```", 1)[0]
+    namespace = {}
+    exec(compile(example, "environment.md forecast example", "exec"), namespace)
+    agent = namespace["Agent"]()
+
+    live = make_env(resolve_parameters(META))
+    live.reset(seed=SEED)
+    own = live.match.units["red_cavalry_0"]
+    enemy = live.match.units["blue_archer_0"]
+    own.position, own.hit_points = (7, 7), 2
+    enemy.position = (13, 7)
+    live.match.units = {own.unit_id: own, enemy.unit_id: enemy}
+    live.match.activation_order = [own.unit_id, enemy.unit_id]
+    live.match.activation_index = 0
+    live.agent_selection = live.agent_by_unit[own.unit_id]
+    observation = live.observe(live.agent_selection)
+    agent.reset(SEED, observation)
+    order = agent.act(observation)
+
+    assert order["path"] in action.legal_steps(observation)
+    destination = tile.at_path_end(me.position(observation), order["path"])
+    assert tile.distance(destination, _position(*enemy.position)) > enemy.stats.attack_range
+    assert live.match.history == []
+    assert own.position == (7, 7)
+    live.close()
 
 
 def test_helper_accessors_agree_with_live_environment_states():

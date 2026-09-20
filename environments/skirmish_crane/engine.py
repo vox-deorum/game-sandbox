@@ -6,14 +6,18 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from random import Random
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
-from .battlefield import Battlefield, generate_battlefield
+from .battlefield import Battlefield, CaptureZone, generate_battlefield
 from .combat import Strike, resolve_strike, visible_units
-from .hexes import DIRECTIONS, Position, path_positions
+from .hexes import DIRECTIONS, Position, Tile, path_positions
 from .movement import legal_paths, walk
 from .paths import MAX_PATH_STEPS
 from .scoring import Result, capture_result, elimination_result, score_capture
 from .unit_stats import UNIT_STATS, UnitStats
+
+if TYPE_CHECKING:
+    from .observation_types import SkirmishObservationData
 
 COMPOSITIONS = {
     "skirmish": {"footman": 1, "archer": 1, "cavalry": 1},
@@ -176,6 +180,89 @@ class Match:
             }
         )
         self.activation_order = self._draw_activation_order()
+
+    @classmethod
+    def from_observation(cls, state: SkirmishObservationData) -> Match:
+        """Build the visible-only forecast state described by one unit's observation.
+
+        The observation contains the whole static field and both starting rosters, but only the
+        observing unit and units in its vision have live state. Those visible units are the
+        forecast's complete living roster. This deliberately makes later elimination and capture
+        results estimates whenever a hidden unit could affect them.
+        """
+        parameters = state["parameters"]
+        config = MatchConfig(
+            seed=0,
+            seat_plan=parameters["seat_plan"],
+            field_extent=parameters["field_extent"],
+            terrain=bool(parameters["terrain"]),
+            wasteland=bool(parameters["wasteland"]),
+            unit_abilities=bool(parameters["unit_abilities"]),
+            capture_zones=parameters["capture_zones"],
+            capture_target=parameters["capture_target"],
+            round_cap=parameters["round_cap"],
+        )
+        # Calling the usual constructor would generate a different battlefield and roster before
+        # replacing them. Build the observed snapshot directly instead.
+        match = cls.__new__(cls)
+        match.config = config
+        match.battlefield_rng = Random("0:battlefield")
+        match.match_rng = Random(0)
+
+        field = state["battlefield"]
+        tiles = tuple(tuple(Tile(tile["terrain"], tile["feature"]) for tile in row) for row in field["tiles"])
+        zones = tuple(
+            CaptureZone(
+                (zone["center"]["q"], zone["center"]["r"]),
+                tuple((tile["q"], tile["r"]) for tile in zone["tiles"]),
+            )
+            for zone in field["zones"]
+        )
+        match.battlefield = Battlefield(
+            config.field_extent,
+            tiles,
+            MappingProxyType({"red": (), "blue": ()}),
+            zones,
+            (),
+        )
+
+        own = state["self"]
+        seen = state["visible_units"]
+        records = (own, *seen)
+        match.units = {
+            unit["unit_id"]: Unit(
+                unit["unit_id"],
+                unit["unit_id"].split("_", 1)[0],
+                unit["type"],
+                (unit["position"]["q"], unit["position"]["r"]),
+                unit["hit_points"],
+            )
+            for unit in records
+        }
+        match.initial_rosters = MappingProxyType(
+            {
+                side: tuple(
+                    RosterEntry(entry["unit_id"], entry["side"], entry["type"])
+                    for entry in state["rosters"][side]
+                )
+                for side in ("red", "blue")
+            }
+        )
+        match.starting_hit_points = {
+            side: sum(UNIT_STATS[entry.kind].hit_points for entry in match.initial_rosters[side])
+            for side in ("red", "blue")
+        }
+        match.capture_scores = {"red": state["capture"]["red"], "blue": state["capture"]["blue"]}
+        match.round = state["round"]
+        match.result = None
+        match.history = []
+
+        acted = [unit["unit_id"] for unit in seen if unit["has_acted"]]
+        unacted = [unit["unit_id"] for unit in seen if not unit["has_acted"]]
+        match.match_rng.shuffle(unacted)
+        match.activation_order = [*acted, own["unit_id"], *unacted]
+        match.activation_index = len(acted)
+        return match
 
     def _draw_activation_order(self) -> list[str]:
         order = sorted(self.units)

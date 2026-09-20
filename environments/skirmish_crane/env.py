@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         SelfUnit,
         SkirmishAction,
         SkirmishObservation,
+        SkirmishObservationData,
         Tile,
         VisibleUnit,
         Zone,
@@ -266,6 +267,47 @@ class SkirmishCraneEnv(AECEnv):
         # PettingZoo can request a final observation while consuming a dead step. Preserve each
         # player's last living observation because the engine removes killed units immediately.
         self._last_observations = {agent: self._observe_living(agent) for agent in self.possible_agents}
+
+    @classmethod
+    def from_observation(cls, observation: SkirmishObservation) -> SkirmishCraneEnv:
+        """Build a visible-only forecast environment from one current observation.
+
+        The source observation has no state for hidden units, so this environment contains only
+        the observing unit and the units it can see. It uses the real rules for that reduced
+        state, while capture and elimination results remain estimates when hidden units exist.
+        """
+        match = Match.from_observation(observation["observation"])
+        env = cls(match.config)
+        state: SkirmishObservationData = observation["observation"]
+        rosters = state["rosters"]
+        entries = (*rosters["red"], *rosters["blue"])
+        env.possible_agents = [entry["player"] for entry in entries]
+        env.agent_by_unit = {entry["unit_id"]: entry["player"] for entry in entries}
+        env.unit_by_agent = {agent: unit_id for unit_id, agent in env.agent_by_unit.items()}
+        env._enemy_roster = {
+            entry["player"]: tuple(
+                opponent["unit_id"] for opponent in rosters["blue" if entry["side"] == "red" else "red"]
+            )
+            for entry in entries
+        }
+        env.match = match
+        env.last_activation = None
+        env.last_capture_changes = {"red": 0, "blue": 0}
+        env.agents = [agent for agent in env.possible_agents if env.unit_by_agent[agent] in match.units]
+        env.rewards = {agent: 0.0 for agent in env.agents}
+        env._cumulative_rewards = {agent: 0.0 for agent in env.agents}
+        env.terminations = {agent: False for agent in env.agents}
+        env.truncations = {agent: False for agent in env.agents}
+        env.infos = {agent: {} for agent in env.agents}
+        current = match.current_unit_id
+        if current is None:
+            raise RuntimeError("a forecast needs its observing unit as the current activation")
+        env.agent_selection = env.agent_by_unit[current]
+        env._battlefield_snapshot = env._battlefield()
+        env._rosters_snapshot = env._rosters()
+        env._parameters_snapshot = env._parameters()
+        env._last_observations = {agent: env._observe_living(agent) for agent in env.agents}
+        return env
 
     def _position(self, value: tuple[int, int]) -> AxialPosition:
         return {"q": value[0], "r": value[1]}

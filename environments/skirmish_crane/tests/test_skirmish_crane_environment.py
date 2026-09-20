@@ -9,6 +9,7 @@ import sys
 import types
 import warnings
 from collections.abc import Iterator
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,7 @@ from skirmish_crane import ENTRY, META
 from skirmish_crane.ascii_runner import replay_jsonl
 from skirmish_crane.combat import Strike, visible_units
 from skirmish_crane.engine import Activation, Unit
-from skirmish_crane.env import FORWARD_DIRECTION, IllegalMoveError, default_action, make_env
+from skirmish_crane.env import FORWARD_DIRECTION, IllegalMoveError, SkirmishCraneEnv, default_action, make_env
 from skirmish_crane.hexes import DIRECTIONS
 from skirmish_crane.naive import Agent, _decode_path, _distance, _end
 from skirmish_crane.observation_types import (
@@ -259,6 +260,102 @@ def test_every_unit_is_told_the_direction_that_heads_toward_the_enemy() -> None:
         gap_after = min(_distance(_end(here, unit["direction"]), spawn) for spawn in enemy_ground)
         assert gap_after < gap_now
     env.close()
+
+
+def test_forecast_restores_only_observed_state_without_generating_a_battlefield(monkeypatch) -> None:
+    live = make_env(_parameters(terrain=True, wasteland=True, unit_abilities=True, capture_zones=3))
+    live.reset(seed=9)
+    live.step({"path": 0, "target": 0})
+    source = live.observe(live.agent_selection)
+    before = deepcopy(source)
+    state = source["observation"]
+
+    def unexpected_generation(*args, **kwargs):
+        pytest.fail("forecast construction must use the observed battlefield")
+
+    monkeypatch.setattr("skirmish_crane.engine.generate_battlefield", unexpected_generation)
+    forecast = SkirmishCraneEnv.from_observation(source)
+    restored = forecast.last()[0]
+    known = {state["self"]["unit_id"], *(unit["unit_id"] for unit in state["visible_units"])}
+    assert set(forecast.match.units) == known
+    assert len(known) < len(live.match.units)
+    assert forecast.agent_selection == live.agent_selection
+    assert forecast.possible_agents == live.possible_agents
+    for field in ("self", "round", "capture", "battlefield", "rosters", "parameters"):
+        assert restored["observation"][field] == state[field]
+    assert {unit["unit_id"]: unit for unit in restored["observation"]["visible_units"]} == {
+        unit["unit_id"]: unit for unit in state["visible_units"]
+    }
+    for player in forecast.agents:
+        assert forecast.observation_space(player).contains(forecast.observe(player))
+
+    forecast.step({"path": 0, "target": 0})
+    assert source["observation"] == before["observation"]
+    assert np.array_equal(source["action_mask"]["path"], before["action_mask"]["path"])
+    assert np.array_equal(source["action_mask"]["target"], before["action_mask"]["target"])
+    assert live.observe(live.agent_selection)["observation"] == before["observation"]
+    # Mutating forecast observations must not write through to the source observation either.
+    restored["observation"]["rosters"]["red"][0]["unit_id"] = "changed"
+    restored["observation"]["battlefield"]["tiles"][0][0]["terrain"] = "changed"
+    assert source["observation"] == before["observation"]
+
+
+def test_forecast_skips_completed_activations_and_repeats_from_the_same_observation() -> None:
+    live = make_env(_parameters())
+    live.reset(seed=0)
+    for unit, position in zip(
+        live.match.units.values(), ((5, 7), (5, 8), (6, 7), (9, 7), (8, 7), (8, 8)), strict=True
+    ):
+        unit.position = position
+    live.step({"path": 0, "target": 0})
+    live.step({"path": 0, "target": 0})
+    source = live.observe(live.agent_selection)
+    state = source["observation"]
+    completed = {unit["unit_id"] for unit in state["visible_units"] if unit["has_acted"]}
+    assert completed
+    first = SkirmishCraneEnv.from_observation(source)
+    second = SkirmishCraneEnv.from_observation(source)
+    pending = set(first.match.units) - completed
+    activated = []
+    while first.match.round == state["round"]:
+        actor = first.match.current_unit_id
+        assert actor == second.match.current_unit_id
+        assert actor not in completed
+        activated.append(actor)
+        first.step({"path": 0, "target": 0})
+        second.step({"path": 0, "target": 0})
+        assert first.last_activation == second.last_activation
+    assert activated[0] == state["self"]["unit_id"]
+    assert set(activated) == pending
+    assert len(activated) == len(pending)
+    for player in first.agents:
+        assert all(not unit["has_acted"] for unit in first.observe(player)["observation"]["visible_units"])
+
+
+def test_forecast_uses_live_combat_and_cleans_up_killed_players() -> None:
+    live = make_env(_parameters())
+    live.reset(seed=0)
+    killer = live.match.units["red_archer_0"]
+    victim = live.match.units["blue_archer_0"]
+    killer.position = (7, 7)
+    victim.position = (8, 7)
+    victim.hit_points = 1
+    live.match.activation_order = [killer.unit_id, victim.unit_id] + [
+        unit_id for unit_id in live.match.units if unit_id not in (killer.unit_id, victim.unit_id)
+    ]
+    live.agent_selection = live.agent_by_unit[killer.unit_id]
+    source = live.observe(live.agent_selection)
+    forecast = SkirmishCraneEnv.from_observation(source)
+    action = {"path": 0, "target": 2}  # The blue archer keeps its full-roster target slot.
+    forecast.step(action)
+    assert victim.hit_points == 1
+    live.step(action)
+    assert forecast.last_activation == live.last_activation
+    killed_player = live.agent_by_unit[victim.unit_id]
+    assert forecast.agent_selection == killed_player
+    assert forecast.last()[2] is True
+    forecast.step(None)
+    assert killed_player not in forecast.agents
 
 
 def test_metadata_chat_policy_and_factory_bounds_match_the_stage_contract() -> None:

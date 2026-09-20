@@ -188,8 +188,80 @@ The rosters list every starting unit, including units no longer alive. Use a ros
 | Zone | `zone.occupants(observation, area)` | The units you can see standing in that zone, your own unit first if it stands there. An enemy outside your vision is missing from the list, so an empty result does not prove the zone is free. |
 | Paths | `paths.encode(directions)`, `paths.decode(path_id)` | Convert direction sequences and path ids. |
 | Paths | `paths.MAX_ID`, `paths.MAX_STEPS` | `1554` and `4`. |
+| Forecast | `forecast.from_observation(observation)` | Build an independent local `SkirmishCraneEnv` from one observation. |
 
 Invalid path ids or direction digits passed to `paths` raise `ValueError`. `tile.neighbors` is geometry, not a legality check. The mask remains the source of truth.
+
+### Forecast a local future
+
+`forecast.from_observation(observation)` gives you a separate game in which to try orders before choosing your real action. Replace your starter's `agent.py` with this example: it compares staying with every legal one-step move and chooses the order that preserves the most health until its next activation.
+
+```python
+from sandbox.crane import action, forecast, me
+
+
+class Agent:
+    def reset(self, seed, observation):
+        # This strategy plans from scratch each time, so it needs no saved state.
+        pass
+
+    def act(self, observation):
+        # Unit IDs identify pieces on the battlefield, such as "red_cavalry_0".
+        own_id = me.unit_id(observation)
+        best_order = action.stay()
+        # Health cannot be negative here, so the first candidate always beats -1.
+        best_health = -1
+
+        # Path 0 means stay. The * adds each legal one-step path to this list.
+        # Trying stay first makes it our preferred choice when scores tie.
+        for path_id in [0, *action.legal_steps(observation)]:
+            # Start every candidate from the same observed position. Changes to
+            # this copy affect neither the real game nor the other candidates.
+            # It keeps the map, scores, round, and visible has_acted flags.
+            # Only your unit and visible units exist in this simulated battle.
+            trial = forecast.from_observation(observation)
+
+            # The copy is ready to play, with our unit next. Do not call reset():
+            # that would generate a new battle instead of using this position.
+            # Player IDs, such as "player_2", identify whose activation is next.
+            own_player = trial.agent_selection
+            order = action.move(path_id)
+            # Resolve our candidate's movement and automatic attack.
+            trial.step(order)
+
+            # Play forward until it is our turn again or the simulation ends.
+            # Units with has_acted=True wait for the next round. The remaining
+            # order and automatic targets use local randomness seeded at 0,
+            # so they can differ from what happens in the real game.
+            while trial.agents and trial.agent_selection != own_player:
+                # last() describes the next player. We only need the end flags;
+                # _ discards the observation, reward, and extra information.
+                _, _, terminated, truncated, _ = trial.last()
+                if terminated or truncated:
+                    # A dead player or one whose match ended needs cleanup,
+                    # not a new order. None removes it from the turn sequence.
+                    trial.step(None)
+                else:
+                    # Our simple prediction: everyone else stays in place.
+                    # They still attack enemies in range. You can replace this
+                    # with a better prediction of the other units' choices.
+                    trial.step(action.stay())
+
+            # The simulated battlefield stores living units by unit ID.
+            # get() returns None if our unit was killed, which scores zero.
+            survivor = trial.match.units.get(own_id)
+            health = survivor.hit_points if survivor is not None else 0
+            # Keep the healthiest outcome. To pursue a different goal, replace
+            # this score with one based on damage, capture progress, or position.
+            if health > best_health:
+                best_order = order
+                best_health = health
+            # Finished with this candidate's private simulation.
+            trial.close()
+
+        # Only this returned order is played in the real game.
+        return best_order
+```
 
 ## Season settings
 
