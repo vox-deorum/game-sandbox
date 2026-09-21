@@ -46,9 +46,10 @@
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { blockedBeforeStart, type Command } from '@game-sandbox/schema/protocol'
-import { onBeforeUnmount, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
+import { type HealthVerdict, SessionHealth } from '../lib/session-health.js'
 import {
   latestPlayerScores,
   type PlayerScoreMap,
@@ -69,6 +70,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** How often the health verdict is recomputed while no frame arrives, so staleness can advance. */
+const HEALTH_TICK_MS = 1000
+
 /** How much playback to buffer before starting, to absorb network jitter. The added startup latency
  *  is irrelevant for a non-interactive watch run, and it keeps a late or bursty frame from starving
  *  the very first cadence ticks. */
@@ -87,8 +91,10 @@ export interface SessionFrameHandlers {
 export interface ConnectOptions {
   /** Buffer frames and play them out at {@link paceMs}, holding the end facts until they drain. */
   pace?: boolean
-  /** The environment's pace interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
+  /** The viewing interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
   paceMs?: number | null
+  /** The environment's step interval, independent of playback speed; null means turn-based. */
+  stepIntervalMs?: number | null
   /**
    * Wait for the recording header, then use watch pacing only when every attributed player is an agent.
    * This lets the standalone local page share one socket entry point for human and watch launches.
@@ -129,6 +135,14 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   // True while playout has begun but the jitter buffer has run dry awaiting more frames, so the page
   // can show a waiting indicator over the held last frame. Only ever set in buffered (watch) mode.
   const buffering = ref(false)
+  // Why the picture is standing still, derived from the per-step timing every state already carries
+  // (see lib/session-health.ts). The measured verdict is kept apart from the gate so that pausing or
+  // ending clears the badge the instant it happens rather than on the next health tick, and so the
+  // states that already have their own wording never compete with it.
+  const measuredHealth = ref<HealthVerdict | null>(null)
+  const health = computed<HealthVerdict | null>(() =>
+    status.value !== 'running' || paused.value || awaitingStart.value ? null : measuredHealth.value,
+  )
   // shallowRef: the socket is an imperative class, not reactive data.
   const socket = shallowRef<SessionSocket | null>(null)
   let connectionId = 0
@@ -160,6 +174,15 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   let sessionPause = false
   let runningAwaitingStartSeen = false
 
+  // --- health ---
+  // One tracker per physical connection, and the environment cadence its ticks are judged against.
+  // That cadence is deliberately not `cadence` above, which carries a *playout* rate and stays at its
+  // default for an unpaced human session, which is exactly where a slow agent most needs catching.
+  let healthTracker: SessionHealth | null = null
+  let healthTargetMs = 0
+  let healthHumanPlayers: ReadonlySet<string> | null = null
+  let healthTimer: ReturnType<typeof setInterval> | null = null
+
   // --- the move clock ---
   // Which player the renderer currently has the controls open for, and which player the container was
   // last told is holding them. The container spends a move budget only while it believes someone
@@ -190,6 +213,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       endReason.value = reason
     }
     buffering.value = false
+    retireHealth()
     retirePlayout()
   }
 
@@ -280,6 +304,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
    *  backlog at once and reveals an end that was waiting on the viewer. */
   function resumePlayout(): void {
     paused.value = false
+    startHealth()
     syncClock()
     if (pacing) {
       maybeStart(endHeld)
@@ -305,6 +330,41 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     runningAwaitingStartSeen = false
   }
 
+  /** Re-measure. Called on every arrival and on the interval, so staleness advances while nothing arrives. */
+  function refreshHealth(): void {
+    measuredHealth.value = healthTracker?.verdict(Date.now(), healthTargetMs) ?? null
+  }
+
+  /** Start a fresh measurement window after a header or an intentional pause. */
+  function startHealth(): void {
+    retireHealth()
+    if (
+      healthHumanPlayers === null ||
+      paused.value ||
+      awaitingStart.value ||
+      endHeld ||
+      status.value === 'ended'
+    ) {
+      return
+    }
+    const unpacedHuman = healthTargetMs === 0 && healthHumanPlayers.size > 0
+    healthTracker = new SessionHealth({
+      humanPlayers: healthTargetMs === 0 ? healthHumanPlayers : undefined,
+      continuous: !unpacedHuman,
+    })
+    healthTimer = setInterval(refreshHealth, HEALTH_TICK_MS)
+  }
+
+  /** Drop the tracker and its interval. A reconnect starts a fresh one, so no verdict outlives its socket. */
+  function retireHealth(): void {
+    healthTracker = null
+    measuredHealth.value = null
+    if (healthTimer !== null) {
+      clearInterval(healthTimer)
+      healthTimer = null
+    }
+  }
+
   /** Retire the current transport before starting another explicit connection. */
   function retireConnection(): void {
     connectionId += 1
@@ -324,6 +384,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     awaitingStart.value = false
     resetStartReadiness()
     buffering.value = false
+    retireHealth()
+    healthHumanPlayers = null
     heldPlayer = null
     believedRunning = null
     socket.value?.close()
@@ -358,9 +420,20 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     // The live human throttle is the alternative to watch pacing (never both); off unless the env
     // declares a positive cadence.
     liveMs = !pacing && !paceWhenSpectating ? requestedLiveMs : 0
+    // The environment's own cadence, independent of how this viewer plays frames out.
+    healthTargetMs =
+      typeof options.stepIntervalMs === 'number' && options.stepIntervalMs > 0
+        ? options.stepIntervalMs
+        : 0
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
       onHeader: (header) => {
         if (connectionId === activeConnectionId) {
+          healthHumanPlayers = new Set(
+            Object.entries(header.players)
+              .filter(([, player]) => player.kind === 'human')
+              .map(([player]) => player),
+          )
+          startHealth()
           if (paceWhenSpectating) {
             pacing = !Object.values(header.players).some((player) => player.kind === 'human')
             cadence =
@@ -378,6 +451,10 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           return
         }
         latestState.value = state
+        // Sampled here, before the watch buffer and the live throttle, so playout pacing can never be
+        // mistaken for a slow link.
+        healthTracker?.observe(state, Date.now(), healthTargetMs)
+        refreshHealth()
         accumulatedScores.value = {
           ...accumulatedScores.value,
           ...latestPlayerScores([state]),
@@ -402,6 +479,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           const wasAwaitingStart = awaitingStart.value
           awaitingStart.value = nextAwaitingStart
           if (nextAwaitingStart) {
+            retireHealth()
             runningAwaitingStartSeen = true
           } else {
             // A reconnect may miss the resume echo. A false replay is enough to clear the initial
@@ -410,6 +488,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
             resetStartReadiness()
             if (wasAwaitingStart && paused.value) {
               resumePlayout()
+            } else if (wasAwaitingStart) {
+              startHealth()
             }
           }
           // Attach replays `running` first and a `pause` echo after it only while the container is
@@ -422,6 +502,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           }
           return
         }
+        retireHealth()
         // ended: hold it while paced frames are still playing out, so the result lands with the final
         // frame rather than ahead of it; else reveal it now. A pause holds it in every mode too: the
         // viewer stopped the picture, so game over waits until they start it again.
@@ -450,6 +531,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       onPause: () => {
         if (connectionId === activeConnectionId) {
           paused.value = true
+          retireHealth()
           if (awaitingStart.value && runningAwaitingStartSeen) {
             // Receiving a relay frame proves this socket is live. The explicit connection-state
             // check would make lightweight hosts that feed frames synchronously miss the gate.
@@ -489,6 +571,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           // socket went away, so re-assert whatever the renderer still has open.
           if (state === 'open') syncClock()
           else {
+            retireHealth()
+            healthHumanPlayers = null
             believedRunning = null
             // Readiness is scoped to one physical connection. Keep the retained start state visible,
             // but wait for that connection's running-plus-pause replay before another Start attempt.
@@ -558,6 +642,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       resumePlayout()
     } else {
       paused.value = true
+      retireHealth()
       // A playback pause stops only this viewer's picture, so the container has to be told separately
       // that its human let go of the controls; that is what makes pausing on your own turn safe.
       syncClock()
@@ -610,6 +695,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     canStart,
     startPending,
     buffering,
+    health,
     endReason,
     finalResult,
     accumulatedScores,

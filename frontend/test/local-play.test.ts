@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RendererContext } from '../src/renderers/types.js'
@@ -102,6 +103,38 @@ describe('LocalPlayPage', () => {
     handlers.onResume?.()
     mountContext?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
+  })
+
+  it('uses step timing rather than the viewing interval for health on the local page', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    await renderLocal()
+    vi.useFakeTimers()
+    try {
+      handlers.onConnectionChange?.('open')
+      handlers.onHeader(
+        flappyHeader({
+          environment: 'hearts',
+          players: {
+            player_0: { kind: 'human', label: 'You' },
+            player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive' },
+          },
+        }),
+      )
+      handlers.onSessionStatus?.('running')
+      for (let tick = 0; tick < 12; tick += 1) {
+        vi.advanceTimersByTime(2400)
+        handlers.onState({
+          schema_version: 1,
+          tick,
+          agents: { player_1: { reward: 0, score: 0, timing: { decision_ms: 2400 } } },
+          timing: { started_at: 0, duration_ms: 2400 },
+        })
+      }
+      await nextTick()
+      expect(screen.getByText('P1 2.4s')).toBeVisible()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('uses the header human seat instead of every human-capable environment seat', async () => {

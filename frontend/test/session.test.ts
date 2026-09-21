@@ -209,6 +209,86 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
 
+  // A stalled session and a dropped connection look identical on screen, so the status strip carries a
+  // second badge naming which one it is. The wording itself is covered in session-health.test.ts; these
+  // confirm the page shows it, and that it never competes with chrome that already explains the pause.
+
+  it('names the slow agent beside the status badge when a session falls behind', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(flappyHeader())
+    handlers.onConnectionChange?.('open')
+    handlers.onSessionStatus?.('running')
+    // Mounting is done, so the clock can be taken over to age the ticks without really waiting.
+    vi.useFakeTimers()
+    try {
+      for (let tick = 0; tick < 12; tick += 1) {
+        vi.advanceTimersByTime(2100)
+        handlers.onState({
+          schema_version: 1,
+          tick,
+          agents: { player_0: { reward: 0, score: 0, timing: { decision_ms: 2100 } } },
+          timing: { started_at: 0, duration_ms: 2100 },
+        })
+      }
+      await nextTick()
+
+      expect(screen.getByText('Live')).toBeVisible()
+      expect(screen.getByText('P0 2.1s')).toBeVisible()
+
+      // Pausing explains the stillness on its own, so the health badge stands down.
+      handlers.onPause?.()
+      await nextTick()
+      expect(screen.queryByText('P0 2.1s')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the transport verdict rather than a timing one while the socket is away', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(flappyHeader())
+    handlers.onConnectionChange?.('open')
+    handlers.onSessionStatus?.('running')
+    await nextTick()
+    expect(screen.queryByText('Reconnecting…')).toBeNull()
+
+    handlers.onConnectionChange?.('reconnecting')
+    await nextTick()
+    expect(screen.getByText('Reconnecting…')).toBeVisible()
+
+    handlers.onConnectionChange?.('open')
+    await nextTick()
+    expect(screen.queryByText('Reconnecting…')).toBeNull()
+  })
+
+  it('reports slow agent work below a turn-based viewing interval', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue({ ...ownerRow(), env_id: 'hearts' })
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onConnectionChange?.('open')
+    handlers.onHeader(flappyHeader({ environment: 'hearts' }))
+    handlers.onSessionStatus?.('running')
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: { player_0: { reward: 0, score: 0, timing: { decision_ms: 2400 } } },
+      timing: { started_at: 0, duration_ms: 2400 },
+    })
+    await nextTick()
+    expect(screen.getByText('P0 2.4s')).toBeVisible()
+  })
+
   it('uses the shared stage overlay for an owned human session start gate', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())

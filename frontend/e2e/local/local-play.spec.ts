@@ -105,10 +105,16 @@ test('local play starts, reconnects while paused, and reaches a stopped terminal
   await expect(latestDecision.locator('td').nth(1)).toHaveText('2')
   await expect(latestDecision.locator('td').nth(2)).toHaveText('1')
 
+  await page.clock.install()
   await page.getByRole('button', { name: 'Pause' }).click()
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
+  await page.clock.fastForward(30_000)
   await page.getByRole('button', { name: 'Resume' }).click()
   await expect(page.locator('.overlay-banner')).toHaveCount(0)
+  // The next real socket frame must not treat the intentional pause as a slow connection.
+  await page.keyboard.press('Space')
+  await expect(latestDecision.locator('td').nth(1)).toHaveText('3')
+  await expect(page.locator('.local-play-status .ui-status-badge')).toHaveText(['Live'])
 
   // Refreshing closes the first browser socket and attaches a new one. The relay replays its header,
   // latest acted state, running status, and pause echo, so this is Resume rather than a fresh Start.

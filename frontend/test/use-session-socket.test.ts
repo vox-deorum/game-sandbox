@@ -96,6 +96,16 @@ function state(tick: number): StepState {
   }
 }
 
+/** A state whose single agent spent `decisionMs` thinking, and whose step cost the same wall clock. */
+function slowState(tick: number, decisionMs: number): StepState {
+  return {
+    schema_version: 1,
+    tick,
+    agents: { player_0: { reward: 0, score: 0, timing: { decision_ms: decisionMs } } },
+    timing: { started_at: 0, duration_ms: decisionMs },
+  }
+}
+
 describe('useSessionSocket', () => {
   beforeEach(() => {
     socketDouble.handlers.length = 0
@@ -743,6 +753,223 @@ describe('useSessionSocket', () => {
     handlers?.onPause?.()
     expect(session.canStart.value).toBe(true)
     wrapper.unmount()
+  })
+
+  // --- why the picture is standing still ---
+  //
+  // A stalled session and a dropped connection look identical on screen, so the page has to name which
+  // one it is. These cover the composable's half: sampling the timing every state already carries, and
+  // staying quiet whenever some other part of the chrome already explains the stillness.
+
+  describe('reporting session health', () => {
+    /** Connect, open, and run the session so the health gate is not held shut by `starting`. */
+    function runningSession() {
+      const mounted = mountSessionSocket()
+      mounted.session.connect({ stepIntervalMs: 250 })
+      const handlers = socketDouble.handlers[0]
+      handlers?.onConnectionChange?.('open')
+      handlers?.onHeader(header(false))
+      handlers?.onSessionStatus?.('running')
+      return { ...mounted, handlers }
+    }
+
+    /** Deliver enough slow ticks for the smoothing to settle on them. */
+    function feedSlowTicks(handlers: SessionSocketHandlers | undefined, decisionMs: number) {
+      for (let tick = 0; tick < 12; tick += 1) {
+        vi.advanceTimersByTime(decisionMs)
+        handlers?.onState?.(slowState(tick, decisionMs))
+      }
+    }
+
+    beforeEach(() => vi.useFakeTimers())
+
+    it('stays quiet while a session keeps up with its cadence', () => {
+      const { session, handlers, wrapper } = runningSession()
+
+      for (let tick = 0; tick < 12; tick += 1) {
+        vi.advanceTimersByTime(250)
+        handlers?.onState?.(slowState(tick, 40))
+      }
+
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('names the agent behind a slow tick, from the timing the state already carries', () => {
+      const { session, handlers, wrapper } = runningSession()
+
+      feedSlowTicks(handlers, 2100)
+
+      expect(session.health.value).toEqual({ label: 'P0 2.1s', tone: 'warning' })
+      wrapper.unmount()
+    })
+
+    it('calls out silence once frames stop arriving, without waiting for one to explain it', () => {
+      const { session, handlers, wrapper } = runningSession()
+
+      vi.advanceTimersByTime(250)
+      handlers?.onState?.(slowState(0, 40))
+      expect(session.health.value).toBeNull()
+      // Nothing more arrives. The interval keeps the verdict moving on its own.
+      vi.advanceTimersByTime(8000)
+
+      expect(session.health.value).toEqual({ label: 'No signal', tone: 'danger' })
+      wrapper.unmount()
+    })
+
+    it('starts fresh after a long session pause', () => {
+      const { session, handlers, wrapper } = runningSession()
+      feedSlowTicks(handlers, 2100)
+
+      handlers?.onPause?.()
+      expect(session.health.value).toBeNull()
+      vi.advanceTimersByTime(30_000)
+
+      handlers?.onResume?.()
+      expect(session.health.value).toBeNull()
+      vi.advanceTimersByTime(250)
+      handlers?.onState(slowState(12, 40))
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('does not count time spent at Start as delivery delay', () => {
+      const { session, handlers, wrapper } = runningSession()
+      handlers?.onState(state(0))
+      handlers?.onSessionStatus?.('running', undefined, true)
+      handlers?.onPause?.()
+      vi.advanceTimersByTime(30_000)
+      handlers?.onResume?.()
+      expect(session.health.value).toBeNull()
+      handlers?.onState(slowState(1, 40))
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('resets health after a browser playback pause', () => {
+      const { session, handlers, wrapper } = runningSession()
+      handlers?.onState(slowState(0, 40))
+      session.togglePause()
+      vi.advanceTimersByTime(30_000)
+      // The live producer can still send frames while this browser has paused playback.
+      handlers?.onState(slowState(1, 40))
+      session.togglePause()
+      expect(session.health.value).toBeNull()
+      handlers?.onState(slowState(2, 40))
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('says nothing once the session has ended, leaving the outcome to the status badge', () => {
+      const { session, handlers, wrapper } = runningSession()
+      feedSlowTicks(handlers, 2100)
+
+      handlers?.onSessionStatus?.('ended', 'completed')
+
+      expect(session.health.value).toBeNull()
+      // The measuring interval is retired with the run, so silence cannot resurrect a verdict.
+      vi.advanceTimersByTime(30_000)
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('does not carry a verdict or outage time across an automatic reconnect', () => {
+      const { session, handlers, wrapper } = runningSession()
+      feedSlowTicks(handlers, 2100)
+      expect(session.health.value).not.toBeNull()
+
+      handlers?.onConnectionChange?.('reconnecting')
+      vi.advanceTimersByTime(30_000)
+      handlers?.onConnectionChange?.('open')
+      handlers?.onHeader(header(false))
+      // Attach replays the current state on the same handlers, before running status.
+      handlers?.onState(slowState(20, 40))
+      handlers?.onSessionStatus?.('running')
+
+      expect(session.health.value).toBeNull()
+      vi.advanceTimersByTime(4000)
+      expect(session.health.value?.label).toBe('No signal')
+      wrapper.unmount()
+    })
+
+    it('retires health when a terminal stream still has buffered playback', async () => {
+      const { session, wrapper, drawn } = mountSessionSocket()
+      session.connect({ pace: true, paceMs: 3000 })
+      const handlers = socketDouble.handlers[0]
+      handlers?.onConnectionChange?.('open')
+      handlers?.onHeader(header(false))
+      handlers?.onSessionStatus?.('running')
+      for (let tick = 0; tick < 10; tick += 1) handlers?.onState(slowState(tick, 40))
+      handlers?.onSessionStatus?.('ended', 'completed')
+      handlers?.onConnectionChange?.('closed')
+
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(session.status.value).toBe('running')
+      expect(drawn.length).toBeGreaterThan(1)
+      expect(drawn.length).toBeLessThan(10)
+      expect(session.health.value).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(session.status.value).toBe('ended')
+      expect(session.health.value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('allows unpaced human deliberation and still reports slow agent hooks', () => {
+      const { session, wrapper } = mountSessionSocket()
+      session.connect({ paceMs: 3000, stepIntervalMs: null })
+      const handlers = socketDouble.handlers[0]
+      handlers?.onConnectionChange?.('open')
+      handlers?.onHeader(header(true))
+      handlers?.onState(state(0))
+      handlers?.onSessionStatus?.('running')
+
+      vi.advanceTimersByTime(30_000)
+      expect(session.health.value).toBeNull()
+      handlers?.onState({
+        ...state(1),
+        agents: { player_0: { reward: 0, score: 0, action: 1 } },
+        timing: { started_at: 0, duration_ms: 30_000 },
+      })
+      expect(session.health.value).toBeNull()
+      for (let tick = 2; tick < 14; tick += 1) {
+        vi.advanceTimersByTime(2400)
+        handlers?.onState({
+          ...slowState(tick, 2400),
+          agents: { player_1: { reward: 0, score: 0, timing: { decision_ms: 2400 } } },
+        })
+      }
+      expect(session.health.value).toEqual({ label: 'P1 2.4s', tone: 'warning' })
+      wrapper.unmount()
+    })
+
+    it('keeps silence detection for paced sessions with a human player', () => {
+      const { session, handlers, wrapper } = runningSession()
+      handlers?.onHeader(header(true))
+      handlers?.onState(state(0))
+      vi.advanceTimersByTime(8000)
+      expect(session.health.value?.label).toBe('No signal')
+      wrapper.unmount()
+    })
+
+    it('measures arrival at the transport, so a watch buffer is never mistaken for a slow link', () => {
+      // Paced playout holds frames back deliberately. Sampling on arrival rather than on draw is what
+      // keeps that deliberate delay from reading as a carrier problem.
+      const mounted = mountSessionSocket()
+      mounted.session.connect({ pace: true, paceMs: 250, stepIntervalMs: 250 })
+      const handlers = socketDouble.handlers[0]
+      handlers?.onConnectionChange?.('open')
+      handlers?.onHeader(header(false))
+      handlers?.onSessionStatus?.('running')
+
+      for (let tick = 0; tick < 12; tick += 1) {
+        vi.advanceTimersByTime(250)
+        handlers?.onState?.(slowState(tick, 40))
+      }
+
+      expect(mounted.session.health.value).toBeNull()
+      mounted.wrapper.unmount()
+    })
   })
 
   it('ignores togglePause before connect(), leaving paused false and sending nothing', () => {

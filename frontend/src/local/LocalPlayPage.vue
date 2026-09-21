@@ -43,6 +43,7 @@ const {
   canStart,
   startPending,
   buffering,
+  health,
   endReason,
   finalResult,
   accumulatedScores,
@@ -82,12 +83,16 @@ const {
   chatLog,
   completedOutcome,
   decisions,
+  healthLabel,
+  healthTone,
   statusLabel,
   statusTone,
 } = useLiveFramePresentation({
   status,
   paused,
   endReason,
+  connection,
+  health,
 })
 const completePlayerScores = computed(
   () => finalResult.value?.scores ?? accumulatedScores.value,
@@ -121,6 +126,7 @@ onMounted(async () => {
       // same resolution the session page uses; the raw view interval alone would leave a realtime
       // watch draining slower than the runner produces.
       paceMs: playbackIntervalMs(environment),
+      stepIntervalMs: environment.pace_interval_ms,
       liveMs: liveIntervalMs(environment),
       sessionPause: environment.human_pause === 'session',
     })
@@ -139,11 +145,7 @@ onMounted(async () => {
       </div>
       <div class="local-play-status">
         <UiStatusBadge :tone="statusTone" :label="statusLabel" />
-        <UiStatusBadge
-          v-if="connection === 'reconnecting' && status !== 'ended'"
-          tone="warning"
-          label="Reconnecting…"
-        />
+        <UiStatusBadge v-if="healthLabel !== null" :tone="healthTone" :label="healthLabel" />
       </div>
       <div v-if="controlsReady && status !== 'ended'" class="local-play-controls">
         <UiButton v-if="!awaitingStart" variant="secondary" @click="togglePause">

@@ -23,7 +23,7 @@ Participant hooks run sequentially on the harness thread, including within a sim
 
 ## Live sessions
 
-The backend launches a container, relays state objects to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent-controlled players, accepts actions for human bindings, and routes messages. The container lasts for the session.
+The backend launches a container, relays state objects to browsers over WebSocket, and forwards authorized commands to the harness. It also pings each attached socket and ends one that stops answering, so a viewer whose connection died without closing releases its controls and hands the session to the idle timeout like an ordinary disconnect. The harness steps the environment, calls agent-controlled players, accepts actions for human bindings, and routes messages. The container lasts for the session.
 
 When LLM access is enabled, the session gets a private network path that can reach only the backend LLM proxy. Before a session exits, it stops accepting new requests under its temporary LLM grants. It then aborts or finishes authenticated requests and waits for their accounting to settle. Only then may telemetry cleanup, network removal, and session completion proceed. See [LLM API for Agents](llm.md).
 

@@ -146,6 +146,7 @@ const {
   canStart,
   startPending,
   buffering,
+  health,
   endReason,
   finalResult,
   accumulatedScores,
@@ -189,12 +190,16 @@ const {
   chatLog,
   completedOutcome,
   decisions,
+  healthLabel,
+  healthTone,
   statusLabel,
   statusTone,
 } = useLiveFramePresentation({
   status,
   paused,
   endReason,
+  connection,
+  health,
 })
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
@@ -293,6 +298,7 @@ onMounted(async () => {
     // A realtime env paces by its step interval; a turn-based one (Hearts) declares a viewing cadence
     // so a scripted watch plays out at a watchable speed rather than the buffer's bare default.
     paceMs: playbackIntervalMs(meta.value),
+    stepIntervalMs: meta.value?.pace_interval_ms,
     // Live human play throttles opponents' moves at the env's live cadence; null (realtime, or an env
     // that declares none) keeps the unbuffered on-arrival behaviour.
     liveMs: fetched.mode === 'human' ? liveIntervalMs(meta.value) : null,
@@ -352,11 +358,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     <header class="session-bar">
       <div class="session-status">
         <UiStatusBadge :tone="statusTone" :label="statusLabel" />
-        <UiStatusBadge
-          v-if="connection === 'reconnecting' && status !== 'ended'"
-          tone="warning"
-          label="Reconnecting…"
-        />
+        <UiStatusBadge v-if="healthLabel !== null" :tone="healthTone" :label="healthLabel" />
         <RunMetadata class="status-facts" :items="statusFacts" />
       </div>
       <div

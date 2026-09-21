@@ -1,7 +1,9 @@
 import type { StepState } from '@game-sandbox/schema'
 import { computed, type Ref, ref } from 'vue'
 
+import type { ConnectionState } from '../api/socket.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
+import type { HealthVerdict } from '../lib/session-health.js'
 import { type DecisionEntry, decisionEntries } from '../lib/state.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
@@ -9,6 +11,9 @@ interface LiveFramePresentationOptions {
   status: Readonly<Ref<'starting' | 'running' | 'ended'>>
   paused: Readonly<Ref<boolean>>
   endReason: Readonly<Ref<string | null>>
+  connection: Readonly<Ref<ConnectionState>>
+  /** Why the picture is standing still, measured from per-step timing. See lib/session-health.ts. */
+  health: Readonly<Ref<HealthVerdict | null>>
 }
 
 /**
@@ -19,6 +24,8 @@ export function useLiveFramePresentation({
   status,
   paused,
   endReason,
+  connection,
+  health,
 }: LiveFramePresentationOptions) {
   const decisions = ref<DecisionEntry[]>([])
   const chatLog = ref<ChatEntry[]>([])
@@ -66,12 +73,33 @@ export function useLiveFramePresentation({
   })
   const completedOutcome = computed(() => isCompletedOutcome(endReason.value))
 
+  /**
+   * The second badge, beside the status one: why the picture is standing still, or null when there is
+   * nothing worth saying. A slow agent and a lost connection look identical on screen but want opposite
+   * things from the viewer, so the transport answers first (it alone knows for certain that it dropped)
+   * and the measured per-step timing answers only while the link is fine. A finished session says
+   * nothing here; its outcome is the status badge's to report.
+   */
+  const healthBadge = computed<HealthVerdict | null>(() => {
+    if (status.value === 'ended') {
+      return null
+    }
+    if (connection.value === 'reconnecting') {
+      return { label: 'Reconnecting…', tone: 'warning' }
+    }
+    return health.value
+  })
+  const healthLabel = computed(() => healthBadge.value?.label ?? null)
+  const healthTone = computed(() => healthBadge.value?.tone ?? 'warning')
+
   return {
     appendDecisions,
     appendMessages,
     chatLog,
     completedOutcome,
     decisions,
+    healthLabel,
+    healthTone,
     statusLabel,
     statusTone,
   }

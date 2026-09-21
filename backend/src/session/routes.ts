@@ -12,6 +12,48 @@ import { zodReason } from '../util/zod-error.js'
 import type { ClientSocket } from './live-session.js'
 import { type Orchestrator, OrchestratorError, type SeatAssignment } from './orchestrator.js'
 
+/**
+ * How often an attached socket is pinged, and therefore how long a dead one may linger. A socket that
+ * dies without a clean close (a sleeping laptop, a dropped VPN, a NAT timeout) never fires `close`, and
+ * everything that must happen when a viewer goes away hangs off that event: releasing the human's
+ * controls so their move budget stops draining, and re-arming the idle timer. Without this the session
+ * would hold both open until its wall-clock backstop. Two unanswered intervals end the socket, which
+ * runs the ordinary detach path and lets the browser's own reconnect take over.
+ */
+const KEEPALIVE_INTERVAL_MS = 15_000
+
+/** The part of a WebSocket the keepalive touches, so it can be driven without a real one. */
+export interface KeepaliveSocket {
+  ping(): void
+  terminate(): void
+  on(event: 'pong', listener: () => void): unknown
+}
+
+/**
+ * Ping an attached socket on an interval and end one that stops answering. Browsers reply in the
+ * protocol layer, so this needs no cooperation from the client. Returns the stop function the caller
+ * runs on `close`.
+ */
+export function startKeepalive(
+  socket: KeepaliveSocket,
+  intervalMs: number = KEEPALIVE_INTERVAL_MS,
+): () => void {
+  let awaitingPong = false
+  socket.on('pong', () => {
+    awaitingPong = false
+  })
+  const timer = setInterval(() => {
+    if (awaitingPong) {
+      // The previous ping went unanswered, so the peer is gone whatever the socket still reports.
+      socket.terminate()
+      return
+    }
+    awaitingPong = true
+    socket.ping()
+  }, intervalMs)
+  return () => clearInterval(timer)
+}
+
 export interface SessionRouteDeps {
   orchestrator: Orchestrator
   identity: RequestIdentity
@@ -190,7 +232,11 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
         return
       }
       socket.on('message', (data: Buffer) => attachment.handleMessage(data.toString()))
-      socket.on('close', () => attachment.detach())
+      const stopKeepalive = startKeepalive(socket)
+      socket.on('close', () => {
+        stopKeepalive()
+        attachment.detach()
+      })
     },
   )
 }

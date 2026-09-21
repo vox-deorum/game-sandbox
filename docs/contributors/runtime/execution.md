@@ -171,6 +171,8 @@ The browser sends the same command envelopes used on the container side. The bac
 
 Only the session owner can issue commands. Input also requires human mode and a human-capable player. A slow socket is dropped instead of blocking the relay.
 
+The backend pings each attached socket and ends one that stops answering. A socket that dies without a clean close never fires a close event on its own, and releasing the human's controls and re-arming the idle timer both hang off that event, so without the ping a vanished viewer would hold a session open until its wall-clock backstop.
+
 ## Local play
 
 Local play reuses the browser protocol and live runner without starting the backend or a container.
