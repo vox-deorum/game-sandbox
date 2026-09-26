@@ -273,10 +273,10 @@ Your submission uses the settings of the season you submit to. On your computer,
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1, The Skirmish | `season_1` | `skirmish` | 7 (15 across) | off | off | 0 | off |
 | 2, The March | `season_2` | `skirmish` | 7 (15 across) | on | off | 0 | off |
-| 3, The Army | `season_3` | `army` | 10 (21 across) | on | on | 0 | off |
-| 4, The Commander | `season_4` | `army` | 10 (21 across) | on | on | 1 | off |
-| 5, The General | `season_5` | `army` | 10 (21 across) | on | on | 3 | off |
-| 6, The Rivals | `season_6` | `army` | 10 (21 across) | on | on | 3 | on |
+| 3, The Army | `season_3` | `army` | 12 (25 across) | on | on | 0 | off |
+| 4, The Commander | `season_4` | `army` | 12 (25 across) | on | on | 1 | off |
+| 5, The General | `season_5` | `army` | 12 (25 across) | on | on | 3 | off |
+| 6, The Rivals | `season_6` | `army` | 12 (25 across) | on | on | 3 | on |
 
 Field extent is the hex distance from center to edge. All six included presets use a capture target of 200 and a round cap of 1000. Season settings and local overrides can change either. Messaging is controlled separately by the season, so it is always available in local runs. Season 6 adds wasteland, whose entry cost cannot kill a unit by itself.
 

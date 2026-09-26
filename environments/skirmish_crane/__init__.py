@@ -108,7 +108,7 @@ META = EnvironmentMeta(
             "Season 3: The Army",
             {
                 "seat_plan": "army",
-                "field_extent": 10,
+                "field_extent": 12,
                 "terrain": True,
                 "unit_abilities": True,
             },
@@ -118,7 +118,7 @@ META = EnvironmentMeta(
             "Season 4: The Commander",
             {
                 "seat_plan": "army",
-                "field_extent": 10,
+                "field_extent": 12,
                 "terrain": True,
                 "unit_abilities": True,
                 "capture_zones": 1,
@@ -129,7 +129,7 @@ META = EnvironmentMeta(
             "Season 5: The General",
             {
                 "seat_plan": "army",
-                "field_extent": 10,
+                "field_extent": 12,
                 "terrain": True,
                 "unit_abilities": True,
                 "capture_zones": 3,
@@ -140,7 +140,7 @@ META = EnvironmentMeta(
             "Season 6: The Rivals",
             {
                 "seat_plan": "army",
-                "field_extent": 10,
+                "field_extent": 12,
                 "terrain": True,
                 "wasteland": True,
                 "unit_abilities": True,

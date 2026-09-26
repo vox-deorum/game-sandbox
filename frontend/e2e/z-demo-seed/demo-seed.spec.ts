@@ -322,7 +322,7 @@ test('crane Reach Army: the example banner on the Season 5 preset, released', as
       setSeasonOverrides(admin, seasonId, {
         parameters: {
           seat_plan: 'army',
-          field_extent: 10,
+          field_extent: 12,
           terrain: true,
           unit_abilities: true,
           capture_zones: 3,

@@ -336,7 +336,7 @@
         "name": "season_3",
         "title": "Season 3: The Army",
         "values": {
-          "field_extent": 10,
+          "field_extent": 12,
           "seat_plan": "army",
           "terrain": true,
           "unit_abilities": true
@@ -348,7 +348,7 @@
         "title": "Season 4: The Commander",
         "values": {
           "capture_zones": 1,
-          "field_extent": 10,
+          "field_extent": 12,
           "seat_plan": "army",
           "terrain": true,
           "unit_abilities": true
@@ -360,7 +360,7 @@
         "title": "Season 5: The General",
         "values": {
           "capture_zones": 3,
-          "field_extent": 10,
+          "field_extent": 12,
           "seat_plan": "army",
           "terrain": true,
           "unit_abilities": true
@@ -372,7 +372,7 @@
         "title": "Season 6: The Rivals",
         "values": {
           "capture_zones": 3,
-          "field_extent": 10,
+          "field_extent": 12,
           "seat_plan": "army",
           "terrain": true,
           "unit_abilities": true,

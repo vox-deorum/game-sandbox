@@ -635,7 +635,7 @@ def test_compact_overlay_decodes_every_state_field() -> None:
     env = make_env(
         _parameters(
             seat_plan="army",
-            field_extent=10,
+            field_extent=12,
             terrain=True,
             wasteland=True,
             unit_abilities=True,
@@ -875,7 +875,7 @@ def test_full_army_recording_stays_under_six_and_a_half_megabytes_and_has_a_smal
     tmp_path: Any,
 ) -> None:
     parameters = _parameters(
-        seat_plan="army", field_extent=10, terrain=True, unit_abilities=True, capture_zones=3, round_cap=150
+        seat_plan="army", field_extent=12, terrain=True, unit_abilities=True, capture_zones=3, round_cap=150
     )
     store = FolderRecordingStore(tmp_path)
     players = {f"player_{index}": AgentPlayer(RetreatAgent()) for index in range(40)}
