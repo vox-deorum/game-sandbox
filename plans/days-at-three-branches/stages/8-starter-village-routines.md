@@ -10,7 +10,7 @@ Routines and dialogue ship together: each villager continues its day while it ta
 
 ## The agent the library serves
 
-Season 4 uses `cast_10` with daynight on. Each villager derives a role from its player id, chooses a routine and goal from phase and perception, revisits that pair at phase boundaries and when `player_0`, the visitor, comes near, then asks that routine for each tick's action. The shipped static role-and-phase schedule uses the interface that students replace with their own design.
+Season 4 uses `cast_10` with daynight on. Each villager derives a role from its player id. On every tick it asks `assign` for a routine and goal from phase and perception, starts a new plan whenever that pair changes, then asks the routine for the tick's action. The shipped static role-and-phase schedule uses the interface that students replace with their own design.
 
 1. **Dawn:** leave home with `go_to`.
 2. **Morning:** work at stalls, pump, plots, board, and repair bench with `tend` and `wander`.
@@ -20,7 +20,7 @@ Season 4 uses `cast_10` with daynight on. Each villager derives a role from its 
 
 Keep Season 3's live visitor reactions: `greet`, `follow`, and `avoid`.
 
-The shipped table assigns the guaranteed pump, board, repair bench, hearth, and bell once, then spreads three stall jobs and two plot jobs across explicit offsets. `me.rng` varies roles only within choices that keep those compatible targets. A visitor reaction lasts 40 ticks. Fixed per-slot return windows leave enough route time for each home, and residents who share a home use separate interior points. Lanterns are optional dressing, so a resident assigned to a missing lantern returns to that resident's guaranteed role prop for the evening work period.
+The shipped table assigns the guaranteed pump, board, repair bench, hearth, and bell once, then spreads three stall jobs and two plot jobs across explicit offsets. `me.rng` varies roles only within choices that keep those compatible targets. A visitor reaction lasts 40 ticks and happens once per visit: the villager then returns to its schedule until `player_0`, the visitor, leaves hearing range and comes back. Fixed per-slot return windows leave enough route time for each home, and residents who share a home use separate interior points. Lanterns are optional dressing, so a resident assigned to a missing lantern returns to that resident's guaranteed role prop for the evening work period.
 
 ## What to build
 
@@ -30,7 +30,7 @@ Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent
 
 `neighbor` is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/three_branches/neighbor` branch of the student repository, while `sweeper` stays internal. Its `README.md` therefore describes the runnable checkout a student clones, not the composition step.
 
-A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, player id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing.
+A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, player id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing. A new plan clears its routine's namespaced state, so, for example, `greet` waves again on each visit.
 
 ### Routing
 
@@ -55,7 +55,7 @@ The shipped example uses one graph node for every walkable cell. The village hel
 | watch(goal) | Stand still facing the goal and let the village come to it | Never |
 | sleep_at(goal) | Inside the goal building, stand still with the sleep emote | Not inside the goal building |
 
-`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. At reset it assigns roles through `me.rng`, maps each role to places and props by phase, and recomputes at phase boundaries and when the visitor enters hearing range. Spread roles across districts, avoid funneling ten villagers onto one prop, and exercise `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and fallback `wander`. The remaining routines support student schedules.
+`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. Roles are assigned at reset through `me.rng`. Two editable tables drive it: `ROLES` maps each role to places and props by phase and names its visitor reaction, and `RESIDENTS` gives each slot its role choices, prop offsets, and return-home tick. `assign` runs on every tick, so a student's new condition takes effect without a separate replanning trigger. Spread roles across districts, avoid funneling ten villagers onto one prop, and exercise `go_to`, `tend`, `gather_at`, `rest`, `sleep_at`, and fallback `wander`. The remaining routines support student schedules.
 
 ### Dialogue layer
 
@@ -83,6 +83,7 @@ Add `("three_branches", "neighbor")` to both the example inventory and the publi
 
 - A reset smoke test verifies private graphs, stable slots, and a legal first action.
 - A schedule test covers ten role-compatible targets, visitor reassignment, and the fixed return-home windows.
+- A visitor test covers the 40-tick reaction window and a fresh greeting on a later visit.
 - One constructed routine-menu test covers all ten routines, with a focused stalled-route replan regression.
 - Fake-proxy dialogue tests cover latest-line replacement, direct capped replies, fallbacks, hearing loss, and a real within-range wall blocking line of sight.
 - One pinned full Season 4 `cast_10` day keeps every action in space, requires every resident to move, realizes every commanded use, observes morning and evening work, and finishes with every resident sleeping at home.

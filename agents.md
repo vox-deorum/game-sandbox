@@ -1,10 +1,18 @@
-# Agents Guide
+# AGENTS.md
 
-This file is for AI coding agents working on the Game Sandbox repository. It captures the writing style we want and gives a quick orientation to the project. NEVER STAGE YOUR CHANGES UNLESS EXPLICITLY ASKED! However, if a change gets externally staged, it is from the human reviewer.
+NEVER STAGE YOUR CHANGES UNLESS EXPLICITLY ASKED! However, if a change gets externally staged, it is from the human reviewer. 
 
-## Use Subagents Whenever Appropriate
+When asking questions, come with a clear, plain description with an example. Do not assume the owner knows every detail in your context. DO NOT ASK asynchronous questions.
 
-ALWAYS delegate less critical/lower-level BATCH work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku, or from GPT Sol to Terra (reviewing/implementing)/Luna (exploring/batch editing). Report which model you used to spawn that agent in response text. Such work may involve exploring repo structure, finding references, summarizing information, or conducting less sophisticated edits in batches.
+## Use Subagents When Appropriate
+
+Delegate less critical/lower-level BATCH work to subagents with less capabilities for exploring, batch editing, and testing (e.g., running tests and report what is wrong). Always designate a model for subagents and report which model (or tool) you used in response text. Such work may involve exploring repo structure, finding references, summarizing information, or conducting less sophisticated edits in batches.
+
+Use OpenCode delegation if such a skill exists, with clear, bounded instructions. If OpenCode does not work, switch back to native subagents.
+
+DO NOT use weak models for complex diagnosis. For independent review, use OpenCode. For exploration and simple implementation task:
+- Claude Code: always delegate to OpenCode. Never use Sonnet or Haiku.
+- Codex: always delegate to OpenCode or GPT-6-Luna. Never use Sol.
 
 ## About this repo
 

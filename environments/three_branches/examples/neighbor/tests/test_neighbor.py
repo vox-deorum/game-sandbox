@@ -26,26 +26,25 @@ def scene():
 
 
 def _example(scene):
+    """Return a fresh resident that shares the fixture's route graph, and a copy of its observation."""
     _env, observations, first, _second = scene
     observation = copy.deepcopy(observations["player_1"])
     example = agent.Agent()
-    home = me.home(observation)
-    example.memory = {
-        "rng": me.rng(observation, 9),
-        "role": agent.SLOT_ROLE_CHOICES[0][0],
-        "slot": 0,
-        "job_offset": 0,
-        "home": home,
-        "home_point": agent.routines.building_slot_goal(observation, home, 0),
-        "graph": first.memory["graph"],
-        "schedule_mark": None,
-        "visitor_nearby": False,
-        "visitor_handled": False,
-        "reaction_until": None,
-        "routines": {},
-    }
+    example.memory = dict(first.memory, rng=me.rng(observation, 9), routines={})
     example.dialogue.observe(observation)
     return example, observation
+
+
+def _schedule_memory(observation, role, slot):
+    """Return the memory keys ``assign`` reads, for a resident with no plan yet."""
+    return {
+        "role": role,
+        "slot": slot,
+        "home": me.home(observation),
+        "home_point": {"x": 1.5, "y": 1.5},
+        "goal": None,
+        "visitor_handled": False,
+    }
 
 
 class _FakeLLM:
@@ -84,15 +83,9 @@ def test_schedule_spreads_roles_and_reassigns_for_visitor_and_home(scene, monkey
     monkeypatch.setattr(people, "nearby", lambda _observation: ())
     goals = []
 
-    for slot, choices in enumerate(agent.SLOT_ROLE_CHOICES):
-        assert len({agent.ROLE_JOBS[role] for role in choices}) == 1
-        memory = {
-            "role": choices[0],
-            "slot": slot,
-            "job_offset": agent.SLOT_JOB_OFFSETS[slot],
-            "home": me.home(observation),
-        }
-        routine, goal = agent.assign(observation, memory)
+    for slot, resident in enumerate(agent.RESIDENTS):
+        assert len({agent.ROLES[role].work for role in resident.roles}) == 1
+        routine, goal = agent.assign(observation, _schedule_memory(observation, resident.roles[0], slot))
         assert routine == "tend"
         assert goal is not None
         goals.append(goal)
@@ -114,12 +107,7 @@ def test_schedule_spreads_roles_and_reassigns_for_visitor_and_home(scene, monkey
         "stall",
     ]
 
-    memory = {
-        "role": "stallkeeper",
-        "slot": 5,
-        "job_offset": 0,
-        "home": me.home(observation),
-    }
+    memory = _schedule_memory(observation, "stallkeeper", 5)
     monkeypatch.setattr(
         people,
         "nearby",
@@ -134,7 +122,32 @@ def test_schedule_spreads_roles_and_reassigns_for_visitor_and_home(scene, monkey
         observation["tick"] = boundary - 1
         assert agent.assign(observation, home_memory)[0] == "tend"
         observation["tick"] = boundary
-        assert agent.assign(observation, home_memory) == ("go_to", home_memory["home"])
+        assert agent.assign(observation, home_memory) == ("go_to", home_memory["home_point"])
+
+
+def test_visitor_reaction_lasts_its_window_and_repeats_on_the_next_visit(scene, monkeypatch):
+    example, observation = _example(scene)
+    observation["phase"] = "morning"
+    visitor = {"id": "player_0", "position": dict(me.position(observation))}
+    heard = []
+    monkeypatch.setattr(people, "nearby", lambda _observation: tuple(heard))
+    monkeypatch.setattr(people, "seen", lambda _observation: tuple(heard))
+
+    def run(tick):
+        observation["tick"] = tick
+        order = example.act(observation)
+        return example.memory["routine"], order["action"]
+
+    wave = action.stand(0.0, "wave")["action"]
+    example.memory.update(role="stallkeeper", routine=None, goal=None)
+    assert run(100)[0] == "tend"
+    for arrival in (101, 200):
+        heard[:] = [visitor]
+        assert run(arrival) == ("greet", wave)
+        assert run(arrival + agent.REACTION_TICKS - 1)[0] == "greet"
+        assert run(arrival + agent.REACTION_TICKS)[0] == "tend"
+        heard[:] = []
+        assert run(arrival + agent.REACTION_TICKS + 1)[0] == "tend"
 
 
 def test_documented_routine_menu_returns_its_expected_orders(scene, monkeypatch):
